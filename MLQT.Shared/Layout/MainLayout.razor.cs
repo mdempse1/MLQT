@@ -910,11 +910,22 @@ public partial class MainLayout : IDisposable
     /// 3. Deletes orphaned files that are no longer part of the new structure
     /// 4. Updates FileNodes in the graph with new file paths
     /// </summary>
-    private Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
-        => FormattingPipeline.SaveAllLibrariesWithFormattingAsync(
+    private async Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
+    {
+        var skipped = await FormattingPipeline.SaveAllLibrariesWithFormattingAsync(
             filterRepositoryId,
             onLibraryFailed: (name, ex) =>
                 _ = InvokeAsync(() => Snackbar.Add($"Failed to format {name}: {ex.Message}", Severity.Warning)));
+
+        // A file with syntax errors was left as it is (B414); say which, or the user reads the
+        // completion message as every file having been formatted.
+        if (skipped.Count > 0)
+        {
+            var root = filterRepositoryId is null ? null : RepositoryService.GetRepository(filterRepositoryId)?.LocalPath;
+            var message = FormattingPipelineReport.SkippedForSyntaxErrors(skipped, root);
+            await InvokeAsync(() => Snackbar.Add(message, Severity.Warning, o => o.RequireInteraction = true));
+        }
+    }
 
     private static bool SkipReferenceOnly(Repository repository, string what)
     {

@@ -153,6 +153,11 @@ If a library is currently one `.mo` file holding dozens of classes, a full forma
 From then on MLQT treats the library as the directory `Lib/` — Refresh, Code Review and version-control updates
 place the classes in the new files in the library, and the project records the library at its new
 path — exactly as it would after reloading the project, which is not needed.
+A file with **syntax errors** is not formatted and not restructured: it is left exactly as it is,
+with every class it holds, and MLQT lists it when the format finishes. A single-file library whose
+file has a syntax error therefore stays one file; a `package.mo` with a syntax error keeps its inline
+classes and its `package.order`, while the package's classes in files of their own are formatted as
+usual. Fix the errors and run **Format All Files** again to finish the job.
 If any file of a library cannot be written, **none of that library's files is deleted**: MLQT warns
 that the library could not be formatted completely, and the log names the files. The library may then
 define some classes twice — in the old file and in the new one — which is recoverable, where
@@ -329,6 +334,7 @@ Understanding when formatting is skipped is equally important:
 - **Formatting disabled** — If **Apply formatting rules** is disabled for a repository, no formatting occurs for that repository regardless of the trigger.
 - **Files outside the library directory** — The file monitor covers the VCS root path (which may be a parent of the Modelica library directory), but only files within `LocalPath` are formatted.
 - **Files in hidden directories** — Files inside `.git`, `.svn`, or other hidden directories are never formatted.
+- **Files with syntax errors** — A file that does not parse is left exactly as it is, by every formatting path. The formatter can still produce output for malformed Modelica, but that output is not a faithful copy of the file, so writing it back could lose code. The incremental path notes the file in the log; **Format All Files** also tells you which files it left alone when it finishes. Code Review lists the syntax errors (`MLQT.Parse.SyntaxError`); fix them and the file is formatted the next time.
 - **Files not in the graph** — If a file has not been loaded into the library graph (e.g., a newly added file that hasn't been refreshed), it cannot be formatted by the incremental formatter. Use the Refresh button to load new files first.
 
 ## File Monitor Coordination
@@ -354,7 +360,7 @@ Used for startup, VCS operations, pre-commit, and manual refresh. Only the speci
 
 Used when formatting settings change or when the **Format All Files** button is clicked. The entire library is rebuilt through a four-phase process:
 
-1. **Pre-parse** — All models are parsed in parallel
+1. **Pre-parse** — Every file of the library is checked for syntax errors, and one that has any is set aside untouched with the classes it holds; all the other models are parsed in parallel
 2. **Structure build** — The parent-child package tree is constructed
 3. **Pre-render** — All models are rendered in parallel with the new formatting rules
 4. **Write** — Files are written sequentially, and orphaned files (no longer needed) are cleaned up

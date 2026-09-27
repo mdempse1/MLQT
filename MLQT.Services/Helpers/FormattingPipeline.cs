@@ -3,6 +3,7 @@ using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 using RevisionControl;
 using static MLQT.Services.LoggingService;
 
@@ -138,10 +139,13 @@ public sealed class FormattingPipeline : IFormattingPipeline
     /// so paths are filtered to LocalPath to scope analysis to Modelica files only.
     /// </summary>
 
-    public async Task SaveAllLibrariesWithFormattingAsync(
+    public async Task<IReadOnlyList<string>> SaveAllLibrariesWithFormattingAsync(
         string? filterRepositoryId = null, Action<string, Exception>? onLibraryFailed = null)
     {
         LogProcessStart(nameof(FormattingPipeline), "Saving all libraries with formatting");
+
+        // Files left untouched for their syntax errors (B414), for the caller to tell the user about.
+        var skippedFiles = new List<string>();
 
         // Reference and encrypted libraries are dropped before anything else looks at the list. The
         // rule and the reasons live in FormattableLibraries, where they can be asked on their own —
@@ -292,6 +296,24 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         return;
                     }
 
+                    // A file with syntax errors is left exactly as it is, with every class it holds -
+                    // the incremental formatter's rule, asked of the same parse (B414). Kept from the
+                    // orphan sweep as if written, with a package.mo's package.order, which the save
+                    // does not write for a package it leaves alone.
+                    var unparsable = FilesWithSyntaxErrors(graph, library);
+                    var untouched = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var (filePath, modelsInFile) in unparsable)
+                    {
+                        untouched.UnionWith(modelsInFile);
+                        lock (allWrittenFiles)
+                        {
+                            skippedFiles.Add(filePath);
+                            allWrittenFiles.Add(filePath);
+                            if (string.Equals(Path.GetFileName(filePath), "package.mo", StringComparison.OrdinalIgnoreCase))
+                                allWrittenFiles.Add(Path.Combine(Path.GetDirectoryName(filePath)!, "package.order"));
+                        }
+                    }
+
                     // Save the library and get information about written files using repository-specific settings
                     var saveResult = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
                         graph,
@@ -299,7 +321,8 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         saveDirectory,
                         showAnnotations: true,
                         formatting: styleSettings.ToFormattingOptions(),
-                        settings: styleSettings);
+                        settings: styleSettings,
+                        untouchedModelIds: untouched);
 
                     // Collect written files and directories
                     lock (allWrittenFiles)
@@ -425,6 +448,53 @@ public sealed class FormattingPipeline : IFormattingPipeline
             await _repositories.RelocateLibraryAsync(library.Id, directory);
 
         LogProcessEnd(nameof(FormattingPipeline), "Saving all libraries with formatting");
+        return skippedFiles;
+    }
+
+    /// <summary>
+    /// The files of a library that have syntax errors, each with the classes stored in it. Asked of
+    /// the file's own text on disk through <see cref="ModelicaPackageSaver.SyntaxErrorsInFile"/> — the
+    /// parse the incremental formatter refuses a file on — so the two formatters cannot disagree
+    /// about which files they leave alone (B414).
+    /// </summary>
+    private static List<(string FilePath, IReadOnlyList<string> ModelIds)> FilesWithSyntaxErrors(
+        DirectedGraph graph, LoadedLibrary library)
+    {
+        var fileIds = library.ModelIds
+            .Select(id => graph.GetNode<ModelNode>(id)?.ContainingFileId)
+            .Where(id => id is not null)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var found = new System.Collections.Concurrent.ConcurrentBag<(string, IReadOnlyList<string>)>();
+        Parallel.ForEach(fileIds, fileId =>
+        {
+            if (graph.GetNode<FileNode>(fileId!) is not { } fileNode || !File.Exists(fileNode.FilePath))
+                return;
+
+            var models = graph.GetModelsInFile(fileId!).ToList();
+            var owner = IncrementalFormatter.FileOwner(graph, fileId!, models);
+            if (owner is null)
+                return;
+
+            try
+            {
+                var errors = ModelicaPackageSaver.SyntaxErrorsInFile(
+                    ModelicaFileEncoding.ReadAllTextOnly(fileNode.FilePath), owner.ParentModelName);
+                if (errors.Count == 0)
+                    return;
+
+                Warn(nameof(FormattingPipeline),
+                    $"Not formatting {fileNode.FilePath}: {ModelicaPackageSaver.DescribeSyntaxErrors(errors)}");
+                found.Add((fileNode.FilePath, models.Select(m => m.Id).ToList()));
+            }
+            catch (Exception ex)
+            {
+                Warn(nameof(FormattingPipeline), $"Could not read {fileNode.FilePath} to check its syntax: {ex.Message}");
+            }
+        });
+
+        return found.OrderBy(f => f.Item1, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>

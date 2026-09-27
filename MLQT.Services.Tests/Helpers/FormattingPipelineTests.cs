@@ -411,4 +411,91 @@ public sealed class FormattingPipelineTests : IDisposable
 
         Assert.True(File.Exists(extraFile));
     }
+
+    // ============================================================================
+    // Format All leaves a file with syntax errors as it is, and says so (B414)
+    // ============================================================================
+
+    [Fact]
+    public async Task ASingleFileLibraryWithASyntaxError_IsNeitherFormattedNorSplit()
+    {
+        // The library is one file, so leaving the file alone is leaving the library alone: it is not
+        // expanded into a directory, the file is not deleted as the orphan an expansion leaves, and
+        // the library is not re-registered as a directory that does not exist (B373, B417).
+        var original = Path.Combine(_root, "MyLib.mo");
+        const string broken = "package MyLib\nmodel A\nReal x\nend A;\nmodel B\nend B;\nend MyLib;\n";
+        File.WriteAllText(original, broken);
+        var (service, pipeline) = await RepositoryWith(original);
+
+        var skipped = await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.Equal(broken, File.ReadAllText(original));
+        Assert.False(Directory.Exists(Path.Combine(_root, "MyLib")));
+        _repositories.Verify(r => r.RelocateLibraryAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        Assert.Equal(original, Assert.Single(service.Libraries).SourcePath);
+        Assert.Equal([original], skipped);
+    }
+
+    [Fact]
+    public async Task AFileWithASyntaxError_IsLeftAsItIs_AndTheOthersAreFormatted()
+    {
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(lib);
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        var order = Path.Combine(lib, "package.order");
+        File.WriteAllText(order, "Good\nBad\n");
+        var good = Path.Combine(lib, "Good.mo");
+        const string unformatted = "within Lib;\nmodel Good\nReal x;\nequation\nx=1;\nend Good;\n";
+        File.WriteAllText(good, unformatted);
+        var bad = Path.Combine(lib, "Bad.mo");
+        const string broken = "within Lib;\nmodel Bad\nReal x\nequation\nx=1;\nend Bad;\n";
+        File.WriteAllText(bad, broken);
+        var (_, pipeline) = await RepositoryWith(lib);
+
+        var skipped = await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.Equal(broken, File.ReadAllText(bad));
+        Assert.NotEqual(unformatted, File.ReadAllText(good));
+        Assert.True(File.Exists(order));
+        Assert.Equal([bad], skipped);
+    }
+
+    [Fact]
+    public async Task APackageFileWithASyntaxError_KeepsItsInlineClassesItsOrderAndItsChildren()
+    {
+        // A package whose package.mo will not parse: the class inline in it would normally be split
+        // out into a file of its own, which would define it twice beside a file that still holds it.
+        // The order file is the package's, which the save does not write for a package it leaves
+        // alone - and must not then delete as an orphan. Its child in a file of its own is formatted.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(lib);
+        var package = Path.Combine(lib, "package.mo");
+        const string broken = "package Lib\nmodel Inner\nReal x\nend Inner;\nend Lib;\n";
+        File.WriteAllText(package, broken);
+        var order = Path.Combine(lib, "package.order");
+        File.WriteAllText(order, "Inner\nOther\n");
+        var other = Path.Combine(lib, "Other.mo");
+        const string unformatted = "within Lib;\nmodel Other\nReal x;\nequation\nx=1;\nend Other;\n";
+        File.WriteAllText(other, unformatted);
+        var (_, pipeline) = await RepositoryWith(lib);
+
+        var skipped = await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.Equal(broken, File.ReadAllText(package));
+        Assert.False(File.Exists(Path.Combine(lib, "Inner.mo")));
+        Assert.Equal("Inner\nOther\n", File.ReadAllText(order));
+        Assert.True(File.Exists(other));
+        Assert.NotEqual(unformatted, File.ReadAllText(other));
+        Assert.Equal([package], skipped);
+    }
+
+    [Fact]
+    public async Task ALibraryWithNoSyntaxErrors_ReportsNothingSkipped()
+    {
+        var original = Path.Combine(_root, "MyLib.mo");
+        File.WriteAllText(original, SingleFileLibrary);
+        var (_, pipeline) = await RepositoryWith(original);
+
+        Assert.Empty(await pipeline.SaveAllLibrariesWithFormattingAsync("repo"));
+    }
 }

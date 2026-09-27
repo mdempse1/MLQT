@@ -37,13 +37,28 @@ public class ModelicaPackageSaver
     /// own either way; null writes a new one as UTF-8 with line feeds. Split into files passes the
     /// style of the file the package came from, so its new files match it (B308).
     /// </param>
+    /// <param name="untouchedModelIds">
+    /// The classes stored in files the save must leave exactly as they are — a file with syntax
+    /// errors, for Format All (B414). Such a class is neither parsed, rendered nor written, and does
+    /// not move: a package's inline children stay in its file rather than being split out beside
+    /// it, and a single-file library is not expanded. Classes below it that are stored in files of
+    /// their own are still written, into the directory the package already has. The caller keeps
+    /// those files (and a skipped <c>package.mo</c>'s <c>package.order</c>), which this does not
+    /// write and so does not report.
+    /// </param>
     /// <returns>SaveResult containing information about all written files and model-to-file mappings</returns>
-    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, StyleCheckingSettings? settings = null, ModelicaFileEncoding.FileStyle? newFileStyle = null)
+    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, StyleCheckingSettings? settings = null, ModelicaFileEncoding.FileStyle? newFileStyle = null, IReadOnlySet<string>? untouchedModelIds = null)
     {
         var result = new SaveResult();
+        var untouched = untouchedModelIds ?? new HashSet<string>(StringComparer.Ordinal);
 
         // Get only the models belonging to this library
         var allModels = graph.ModelNodes.Where(m => modelIds.Contains(m.Id)).ToList();
+
+        // The ones the save renders: every class but those in a file it must leave alone.
+        var modelsToRender = untouched.Count == 0
+            ? allModels
+            : allModels.Where(m => !untouched.Contains(m.Id)).ToList();
 
         // Refuse outright rather than filtering them out. A stub stands for a class in an encrypted
         // third-party library, and its "source" is a reconstruction from documentation — writing it
@@ -59,7 +74,7 @@ public class ModelicaPackageSaver
         }
 
         // PHASE 1: Pre-parse all models in parallel (batched to limit peak memory)
-        PreParseModelsParallel(allModels, modelIds);
+        PreParseModelsParallel(modelsToRender, modelIds);
 
         // PHASE 2: Pre-compute tree structure (parent-child relationships and standalone status)
         var modelIndex = allModels.ToDictionary(m => m.Id);
@@ -82,7 +97,8 @@ public class ModelicaPackageSaver
             // used to read the name list only and reordered the classes the annotation was written
             // on, and Split into files passed no list at all and reformatted the ones named in it
             // (B65, B305). A repository with formatting off has every class moved as it was written.
-            if (settings is { ApplyFormattingRules: false } || FormattingExclusion.Excludes(model, settings))
+            if (!untouched.Contains(model.Id)
+                && (settings is { ApplyFormattingRules: false } || FormattingExclusion.Excludes(model, settings)))
                 formatPreserved.Add(model.Id);
 
             // Pre-compute element names for packages without a stored package.order
@@ -108,7 +124,7 @@ public class ModelicaPackageSaver
         // is not ordering declarations must not pay for it.
         var isSimpleType = formatting.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null;
 
-        var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
+        var renderedCode = PreRenderModelsParallel(modelsToRender, childrenByParent, standaloneChildren,
             formatting, excludedOrNull, isSimpleType, verbatimText);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
@@ -122,7 +138,8 @@ public class ModelicaPackageSaver
         foreach (var model in topLevelModels)
         {
             WriteModelFiles(model, rootDirectory, allModels, savedModels, childrenByParent,
-                standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result, newFileStyle);
+                standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result, newFileStyle,
+                untouched);
         }
 
         return result;
@@ -193,9 +210,36 @@ public class ModelicaPackageSaver
         out IReadOnlyList<ParserError> parserErrors, string? rootClassId = null,
         Func<string, string, bool>? isSimpleType = null)
     {
-        var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(WithinClause.Ensure(fileSource, withinParent));
+        var (parseTree, errors) = ParseFileSource(fileSource, withinParent);
         parserErrors = errors;
         return RenderStoredDefinition(parseTree, formatting, rootClassId, isSimpleType);
+    }
+
+    /// <summary>
+    /// The syntax errors in a file's own text, parsed exactly as <see cref="RenderFileSource(string, string?, FormattingOptions, out IReadOnlyList{ParserError}, string?, Func{string, string, bool}?)"/>
+    /// parses it before rendering.
+    ///
+    /// <para><b>The one rule both formatters apply</b>: a file with any is left exactly as the user
+    /// left it, because the renderer still produces output for malformed input and that output is
+    /// not a faithful copy of the file. The incremental formatter asks it through
+    /// <c>RenderFileSource</c>; <b>Format All Files</b> asks it here, of every file of a library
+    /// before the save, and leaves every class stored in such a file where it is (B414).</para>
+    /// </summary>
+    /// <param name="fileSource">The complete current text of the file, as read from disk.</param>
+    /// <param name="withinParent">The package the file's classes live in, used only if the file
+    /// carries no within clause of its own.</param>
+    public static IReadOnlyList<ParserError> SyntaxErrorsInFile(string fileSource, string? withinParent)
+        => ParseFileSource(fileSource, withinParent).Errors;
+
+    /// <summary>How a file refused for its syntax errors is described in the log.</summary>
+    public static string DescribeSyntaxErrors(IReadOnlyList<ParserError> errors)
+        => $"{errors.Count} syntax error(s), first at line {errors[0].Line}: {errors[0].Message}";
+
+    private static (modelicaParser.Stored_definitionContext Tree, IReadOnlyList<ParserError> Errors) ParseFileSource(
+        string fileSource, string? withinParent)
+    {
+        var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(WithinClause.Ensure(fileSource, withinParent));
+        return (parseTree, errors);
     }
 
     /// <summary>Renders a parsed stored_definition with the standard save-time renderer settings.</summary>
@@ -444,12 +488,32 @@ public class ModelicaPackageSaver
         Dictionary<string, List<string>> preComputedElementNames,
         ConcurrentDictionary<string, string> renderedCode,
         SaveResult result,
-        ModelicaFileEncoding.FileStyle? newFileStyle)
+        ModelicaFileEncoding.FileStyle? newFileStyle,
+        IReadOnlySet<string> untouched)
     {
         if (savedModels.Contains(model.Id))
             return;
 
         savedModels.Add(model.Id);
+
+        // A class in a file the save must leave alone (B414) is not written and does not move. The
+        // classes nested in its file are untouched with it; any below it stored in files of their
+        // own are written where they already are, in the directory the package has.
+        if (untouched.Contains(model.Id))
+        {
+            if (childrenByParent.TryGetValue(model.Id, out var below))
+            {
+                var packageDir = Path.Combine(parentDirectory, model.Definition.Name);
+                foreach (var child in below.Where(c => !untouched.Contains(c.Id)))
+                {
+                    WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
+                        standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
+                        newFileStyle, untouched);
+                }
+            }
+
+            return;
+        }
 
         if (!renderedCode.TryRemove(model.Id, out var code))
             return;
@@ -523,7 +587,7 @@ public class ModelicaPackageSaver
                     // Recursively write standalone child
                     WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
                         standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
-                        newFileStyle);
+                        newFileStyle, untouched);
                 }
                 else
                 {

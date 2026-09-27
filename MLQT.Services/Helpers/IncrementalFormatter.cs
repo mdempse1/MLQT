@@ -97,11 +97,7 @@ public static class IncrementalFormatter
                 continue;
             }
 
-            // The owner is the topmost class stored in the file: it has no parent, or its parent
-            // lives in another file. Only its within clause describes the file.
-            var owner = modelNodes.FirstOrDefault(m =>
-                string.IsNullOrEmpty(m.ParentModelName)
-                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId);
+            var owner = FileOwner(graph, fileId, modelNodes);
             if (owner is null)
                 continue;
 
@@ -110,6 +106,15 @@ public static class IncrementalFormatter
 
         return selected;
     }
+
+    /// <summary>
+    /// The topmost class stored in a file: it has no parent, or its parent lives in another file.
+    /// Only its within clause describes the file. Null when no class in the file qualifies.
+    /// </summary>
+    public static ModelNode? FileOwner(DirectedGraph graph, string fileId, IEnumerable<ModelNode> modelsInFile)
+        => modelsInFile.FirstOrDefault(m =>
+            string.IsNullOrEmpty(m.ParentModelName)
+            || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId);
 
     /// <summary>
     /// Reformats and rewrites the changed files, and brings each class's stored source up to date.
@@ -156,12 +161,12 @@ public static class IncrementalFormatter
 
                 // Reformatting invalid Modelica produces unreliable output, and this overwrites the
                 // file in place. Leave a file we cannot parse exactly as the user left it — the style
-                // check reports the syntax error, which is the actionable result.
+                // check reports the syntax error, which is the actionable result. Format All asks the
+                // same question of the same parse (ModelicaPackageSaver.SyntaxErrorsInFile, B414).
                 if (parserErrors.Count > 0)
                 {
                     Warn(nameof(IncrementalFormatter),
-                        $"Not formatting {fileEntry.FilePath}: {parserErrors.Count} syntax error(s), "
-                        + $"first at line {parserErrors[0].Line}: {parserErrors[0].Message}");
+                        $"Not formatting {fileEntry.FilePath}: {ModelicaPackageSaver.DescribeSyntaxErrors(parserErrors)}");
                     return;
                 }
 
