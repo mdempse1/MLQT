@@ -96,6 +96,11 @@ public static class DeclarationKinds
     /// signature is inputs and outputs, which are one group; a connector's members are matched by name
     /// in a connection; a model, block or class is never called positionally — so the exemption is the
     /// record's alone.</para>
+    ///
+    /// <para>It covers the record's <c>extends</c> clauses too, which the renderer and
+    /// <c>ExtendsClausesAtTop</c> leave where they stand: Modelica places the inherited fields at the
+    /// clause (§7.1), so lifting it above a field reorders the constructor's inputs the same way
+    /// (B378).</para>
     /// </summary>
     public static bool KeepsSourceOrder(modelicaParser.CompositionContext composition)
     {

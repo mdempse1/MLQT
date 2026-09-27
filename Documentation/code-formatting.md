@@ -38,7 +38,10 @@ asks for.
 **A record keeps its fields in the order they are written**, whatever this option says, and the rule
 does not report them. A record's field order is its constructor's signature — `R(2.0)` sets the
 first field declared — so sorting it would silently change what every positional call in the
-library sets. The same goes for an `operator record`.
+library sets. The same goes for an `operator record`. For the same reason **a record's `extends`
+clause stays where it is among its fields** rather than being moved to the top: Modelica places the
+inherited fields where the `extends` clause stands, so moving it would reorder the constructor's
+inputs too. `MLQT.Style.ExtendsAtTop` does not report it.
 
 **One of each section is the master switch for layout.** With it off the formatter writes the class in
 source order and moves nothing at all — so the other switches are **switched off with it**, both as

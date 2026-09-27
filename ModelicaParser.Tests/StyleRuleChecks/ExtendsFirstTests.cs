@@ -166,5 +166,22 @@ end SimpleModel;
         // Assert
         Assert.Single(ruleFindings);
         Assert.Contains("This class does not have its import statements before its extends clauses", ruleFindings[0].Summary);
-    }    
+    }
+
+    [Theory]
+    [InlineData("record")]
+    [InlineData("operator record")]
+    public void ARecordsExtendsClause_AmongItsFields_IsNotReported(string restriction)
+    {
+        // B378: where a record's extends clause stands is where its inherited fields go in the
+        // constructor's inputs, so the formatter leaves it there and the rule must not ask otherwise.
+        var code = $"""
+{restriction} R
+  Real a;
+  extends Base;
+end R;
+""";
+
+        Assert.Empty(CheckRule(code, true));
+    }
 }

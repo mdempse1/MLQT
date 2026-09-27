@@ -233,6 +233,49 @@ public class DeclarationOrderRenderingTests
         TestHelpers.AssertClass(source, onlyOneOfEachSection: true, declarationOrder: true);
     }
 
+    [Theory]
+    [InlineData("record", true)]
+    [InlineData("record", false)]
+    [InlineData("operator record", true)]
+    public void ARecordsExtendsClause_StaysWhereItIsAmongItsFields(string restriction, bool componentsBeforeClasses)
+    {
+        // B378: an inherited field is placed where the extends clause stands (Modelica 7.1), so it
+        // takes that place in the constructor's inputs (12.6). Lifting `extends Base;` above `Real a;`
+        // would make every R(1, 2) in the library bind its arguments the other way round.
+        var source = $"""
+            {restriction} R
+              import SI = Modelica.Units.SI;
+              Real a;
+              extends Base;
+              Real c;
+            end R;
+            """;
+
+        TestHelpers.AssertClass(source, onlyOneOfEachSection: true, importsFirst: true,
+            componentsBeforeClasses: componentsBeforeClasses, declarationOrder: true);
+    }
+
+    [Fact]
+    public void AModelsExtendsClause_IsStillLiftedToTheTop()
+    {
+        // The exemption is the record's alone: a model's extends clause goes to the top as before.
+        var source = """
+            model M
+              Real a;
+              extends Base;
+            end M;
+            """;
+
+        var expected = """
+            model M
+              extends Base;
+              Real a;
+            end M;
+            """;
+
+        TestHelpers.AssertClass(source, expectedOutput: expected, onlyOneOfEachSection: true);
+    }
+
     [Fact]
     public void ARecordNestedInAModel_KeepsItsOrder_WhileTheModelIsOrdered()
     {

@@ -1118,6 +1118,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         int elementCounter=0;
 
+        // A record's extends clause is written where it stands among its fields, not lifted to the
+        // top: the inherited fields take its place in the constructor's inputs (B378).
+        var extendsInPlace = context.Parent is modelicaParser.CompositionContext composition
+                             && DeclarationKinds.KeepsSourceOrder(composition);
+
         // Process all children (elements and comments) in order
         for (int i = 0; i < context.ChildCount; i++)
         {
@@ -1144,12 +1149,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);
                 }
-                else if (_currentElement.Peek() == Element.Extends && element.extends_clause() != null)
+                else if (_currentElement.Peek() == Element.Extends && element.extends_clause() != null && !extendsInPlace)
                 {
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);
                 }
-                else if ((_currentElement.Peek() == Element.Components || _currentElement.Peek() == Element.ClassAndComponents) && element.component_clause() != null)
+                else if ((_currentElement.Peek() == Element.Components || _currentElement.Peek() == Element.ClassAndComponents)
+                         && (element.component_clause() != null || (extendsInPlace && element.extends_clause() != null)))
                 {
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);
