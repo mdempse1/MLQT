@@ -56,6 +56,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private readonly HashSet<int> _noPostIndentLines = new(); // Lines exempt from public/protected post-processing indent
     private int _bracketDepth = 0;
     private int _equationContinuationIndent = 0;
+    // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
+    // written at (B475), or -1 when the equation being written did not wrap at its '='.
+    private int _equalsLine = -1;
+    private int _equalsLevel = -1;
     private bool _isFunction = false;
     private bool _nameAsType = false;
 
@@ -2481,6 +2485,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     AddIndentToCurrentLine();
                     Write(Operator("=", false)); // No leading space, just "="
                     Space(); // Add space after =
+                    _equalsLine = _code.Count;
+                    _equalsLevel = _indentLevel;
                 }
                 else
                 {
@@ -2492,6 +2498,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (wrapBeforeEquals)
                 {
                     Dedent();
+                    _equalsLine = -1;
+                    _equalsLevel = -1;
                 }
             }
         }
@@ -3216,7 +3224,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     // back out, so an expression that is an argument wrapped onto a line of its
                     // own had its continuation at the argument's column (B470). It is kept a level
                     // in from the level the expression is written at.
-                    _currentLineMinimumIndent = (_indentLevel - _equationContinuationIndent) * IndentSpaces + IndentSpaces;
+                    int expressionLevel = _indentLevel - _equationContinuationIndent;
+                    _currentLineMinimumIndent = expressionLevel * IndentSpaces + IndentSpaces;
+                    // A right-hand side after a wrapped '=' is written on a line that carries its
+                    // own continuation indent, so a level in from its level was that line's own
+                    // column (B475). Its continuation is a level in from that line instead.
+                    if (expressionLevel == _equalsLevel)
+                        KeepInFrom(_equalsLine);
                     // Write operator without leading space (we're at start of line)
                     Write(Operator(addOps[i + addOpsOffset].GetText(), false));
                     Space(); // Add space after operator

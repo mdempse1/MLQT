@@ -31,6 +31,11 @@ namespace ModelicaParser.Tests;
 /// level it is written at. The line was ended after the argument list it is in had gone back out,
 /// so MSL's Media package had <c>+ reference_T</c> at the column of the <c>T=</c> it
 /// continues.</para>
+///
+/// <para>B475 - the same after a wrapped <c>=</c>: the right-hand side's line carries its own
+/// continuation indent, so a level in from the level it is written at was that line's column, and
+/// Buildings' <c>TwoPortMatrixRLC</c> had the <c>+</c> under the <c>=</c>. It is a level in from
+/// that line.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -483,6 +488,40 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(ArgumentExpressionContinued));
     }
 
+    private const string RightHandSideContinued = """
+        model M
+          Real v;
+
+        equation
+          terminal_n.phase[1].v - terminal_p.phase[1].v
+              = productAC1p(Z11, terminal_n.phase[1].i) + productAC1p(Z12, terminal_n.phase[2].i)
+                + productAC1p(Z13, terminal_n.phase[3].i);
+          for i in 1:3 loop
+            y[i] = productAC1p(Z11, terminal_n.phase[1].i) + productAC1p(Z12, terminal_n.phase[2].i)
+              + productAC1p(Z13, terminal_n.phase[3].i);
+          end for;
+        end M;
+        """;
+
+    [Fact]
+    public void ARightHandSideContinuedAfterAWrappedEqualsIsALevelInFromTheEqualsLine()
+    {
+        // Buildings' TwoPortMatrixRLC: the '+' continuing the right-hand side was at the column of
+        // the '=' line it continues (B475), where one continuing an unwrapped equation is a level in.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real v;
+                equation
+                  terminal_n.phase[1].v - terminal_p.phase[1].v = productAC1p(Z11, terminal_n.phase[1].i) + productAC1p(Z12, terminal_n.phase[2].i) + productAC1p(Z13, terminal_n.phase[3].i);
+                  for i in 1:3 loop
+                    y[i] = productAC1p(Z11, terminal_n.phase[1].i) + productAC1p(Z12, terminal_n.phase[2].i) + productAC1p(Z13, terminal_n.phase[3].i);
+                  end for;
+                end M;
+                """),
+            expectedOutput: Normalise(RightHandSideContinued));
+    }
+
     [Fact]
     public void AnArrayOfCallsStillOnTheLineItOpenedOnIsLeftThere()
     {
@@ -528,6 +567,7 @@ public class ContinuationIndentTests
     [InlineData(AnnotationArraysOfCalls, 60)]
     [InlineData(GraphicsElementWithALongArgument, 100)]
     [InlineData(ArgumentExpressionContinued, 100)]
+    [InlineData(RightHandSideContinued, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

@@ -335,6 +335,18 @@ Earlier versions wrote `+ reference_T` at the column of `T=`, and an equation's 
 continued after a wrapped `=` two spaces to the left of it. Over the Modelica Standard Library and
 Buildings, 19 files are written differently from before, only in indentation and only to the right.
 
+An equation's right-hand side written on a line of its own after a wrapped `=` is continued a level
+in from that line, as an unwrapped equation's is from its own:
+
+```modelica
+  terminal_n.phase[1].v - terminal_p.phase[1].v
+      = productAC1p(Z11, terminal_n.phase[1].i) + productAC1p(Z12, terminal_n.phase[2].i)
+        + productAC1p(Z13, terminal_n.phase[3].i);
+```
+
+Earlier versions wrote the `+` at the column of the `=`. Over the Modelica Standard Library and
+Buildings, 10 files are written differently from before, only in indentation and only to the right.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:
