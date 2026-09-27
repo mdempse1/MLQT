@@ -65,6 +65,31 @@ Modelica icons support inheritance through `extends` clauses. When a class exten
 3. Multiple inheritance levels are supported
 4. Circular inheritance is prevented with max depth parameter
 
+### Which coordinate system an inherited icon or diagram is drawn in
+
+The Modelica specification's rule (MLS 3.6 §18.6.1.1), implemented once in
+`IconData.ResolveCoordinateSystem` and used by both the icon merge and the MCP server's diagram
+(`DiagramImage.DiagramSystem`): "The coordinate system attributes (extent and preserveAspectRatio)
+of a class are **separately** defined by the following priority: 1. The coordinate system
+annotation given in the class (if specified). 2. The coordinate systems of the **first** base class
+where the extent on the extends-clause specifies a null-region (if any). 3. The default coordinate
+system." (B394)
+
+- **Separately**: `coordinateSystem(preserveAspectRatio=false)` with no extent - common in MSL and
+  Buildings - still takes the base's extent. `IconData.Declares*` records which attributes a class
+  stated; a stated `{{-100,-100},{100,100}}` and the default look the same otherwise.
+- **The first base**, resolved through its own chain - not the first base that states something.
+  A first base that states nothing lends the default.
+- **A base that draws nothing still lends its system.**
+- **Null region**: an extends clause with `IconMap(extent=...)` / `DiagramMap(extent=...)` other than
+  `{{0,0},{0,0}}` maps its base into that region (§18.6.3) and does not lend its system.
+  `IconExtractionResult.MappedExtends` lists those clauses. The mapping itself - drawing the base's
+  contents scaled into the region - is not implemented; MSL uses no such extent.
+
+Before B394 the icon merge kept the derived class's system whenever it had an Icon annotation,
+stated or not: 52 Buildings icons (e.g. `DHC.ETS.BaseClasses.CollectorDistributor`) were drawn in
+-100..100 when their bases state -200..200 or -300..300.
+
 ### API
 
 ```csharp

@@ -63,7 +63,7 @@ internal static class DiagramImage
         foreach (var baseNode in bases)
             if (baseNode.Definition.ModelicaCode is { Length: > 0 } baseCode)
                 connections.AddRange(Connections(libraries, node.Id, router, baseCode));
-        var diagramLayer = InheritedDiagram(bases, node);
+        var diagramLayer = InheritedDiagram(libraries, bases, node);
 
         if (components.Count == 0 && connections.Count == 0 && diagramLayer is not { HasGraphics: true })
             return null;
@@ -319,18 +319,20 @@ internal static class DiagramImage
     /// </summary>
     private static IconData? DiagramLayerOf(ILibraryDataService libraries, ModelNode type)
     {
-        var diagram = InheritedDiagram(ClassElementResolver.BaseClasses(libraries.CombinedGraph, type), type);
+        var diagram = InheritedDiagram(
+            libraries, ClassElementResolver.BaseClasses(libraries.CombinedGraph, type), type);
         return diagram is { HasGraphics: true } ? diagram : null;
     }
 
     /// <summary>
     /// The Diagram layer a class draws: each base's graphics beneath the next, the class's own on
-    /// top, and the coordinate system of the most derived class that states one. Null when neither
-    /// the class nor any base has a Diagram annotation.
+    /// top, in the coordinate system the specification gives the class (<see cref="DiagramSystem"/>).
+    /// Null when neither the class nor any base has a Diagram annotation.
     /// </summary>
     /// <param name="bases">The class's bases in drawing order, deepest first
     /// (<see cref="ClassElementResolver.BaseClasses"/>).</param>
-    private static IconData? InheritedDiagram(IReadOnlyList<ModelNode> bases, ModelNode node)
+    private static IconData? InheritedDiagram(
+        ILibraryDataService libraries, IReadOnlyList<ModelNode> bases, ModelNode node)
     {
         var layers = bases.Append(node)
             .Select(n => n.Definition.Borrow(IconExtractor.ExtractDiagram))
@@ -339,16 +341,42 @@ internal static class DiagramImage
         if (layers.Count == 0)
             return null;
 
-        var system = layers.LastOrDefault(l => l.DeclaresExtent) ?? layers[^1];
-        return new IconData
-        {
-            CoordinateExtent = system.CoordinateExtent,
-            DeclaresExtent = system.DeclaresExtent,
-            PreserveAspectRatio = system.PreserveAspectRatio,
-            InitialScale = system.InitialScale,
-            Graphics = [.. layers.SelectMany(l => l.Graphics)],
-        };
+        return DiagramSystem(libraries, node, [], 0)
+            .WithGraphics([.. layers.SelectMany(l => l.Graphics)]);
     }
+
+    /// <summary>
+    /// A class's Diagram coordinate system by MLS 3.6 §18.6.1.1 (B394): each attribute from the
+    /// class's own <c>coordinateSystem</c> where it states it, else from the <b>first</b> base whose
+    /// extends clause leaves <c>DiagramMap</c>'s extent at the null region - that base's own resolved
+    /// system, which is the default if nothing up its chain states one - else the default.
+    ///
+    /// <para>This used to be "the most derived class that states an extent", taken whole. That
+    /// took the last base rather than the first where a class extends two, and let a class that
+    /// states only <c>preserveAspectRatio</c> lose its base's extent.</para>
+    /// </summary>
+    private static IconData DiagramSystem(
+        ILibraryDataService libraries, ModelNode node, HashSet<string> visiting, int depth)
+    {
+        var own = node.Definition.Borrow(IconExtractor.ExtractDiagramWithInheritance);
+        if (depth > MaxInheritanceDepth || !visiting.Add(node.Id))
+            return IconData.ResolveCoordinateSystem(own?.Icon, null);
+
+        IconData? inherited = null;
+        foreach (var (written, baseNode) in ClassElementResolver.DirectBases(libraries.CombinedGraph, node))
+        {
+            if (own?.MappedExtends.Contains(written) == true)
+                continue;
+            inherited = DiagramSystem(libraries, baseNode, visiting, depth + 1);
+            break;
+        }
+
+        visiting.Remove(node.Id);
+        return IconData.ResolveCoordinateSystem(own?.Icon, inherited);
+    }
+
+    /// <summary>How far up an extends chain a coordinate system is looked for; guards a cycle.</summary>
+    private const int MaxInheritanceDepth = 32;
 
     private static ModelNode? Resolve(ILibraryDataService libraries, string fromId, string name)
         => TypeResolver.Resolve(libraries.CombinedGraph, fromId, name, []);

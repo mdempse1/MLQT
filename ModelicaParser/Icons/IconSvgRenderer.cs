@@ -177,7 +177,7 @@ public static class IconSvgRenderer
         int maxDepth = 10,
         string? initialPackageContext = null)
     {
-        return ExtractIconWithInheritanceInternal(modelicaCode, null, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext);
+        return ExtractIconWithInheritanceInternal(modelicaCode, null, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext, out _);
     }
 
     /// <summary>
@@ -197,17 +197,23 @@ public static class IconSvgRenderer
         int maxDepth = 10,
         string? initialPackageContext = null)
     {
-        return ExtractIconWithInheritanceInternal(null, parseTree, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext);
+        return ExtractIconWithInheritanceInternal(null, parseTree, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext, out _);
     }
 
+    /// <param name="system">The class's resolved Icon coordinate system (MLS 3.6 §18.6.1.1, see
+    /// <see cref="IconData.ResolveCoordinateSystem"/>), whether or not it draws anything - a base
+    /// that draws nothing still lends a derived class its coordinate system. Null only when the
+    /// class could not be read at all.</param>
     private static IconData? ExtractIconWithInheritanceInternal(
         string? modelicaCode,
         modelicaParser.Stored_definitionContext? parseTree,
         Func<string, string?> baseClassResolver,
         int remainingDepth,
         HashSet<string> visitedClasses,
-        string? packageContext)
+        string? packageContext,
+        out IconData? system)
     {
+        system = null;
         if (remainingDepth <= 0)
             return null;
 
@@ -234,17 +240,19 @@ public static class IconSvgRenderer
         // that have no 'within' clause but whose qualified name was known at the call site).
         var effectivePackage = result.WithinPackage ?? packageContext;
 
-        // Start with this class's icon (may be null if no Icon annotation)
-        var mergedIcon = result.Icon;
-
         // Resolve and collect base class icons in extends-clause order.
         // All icons are gathered first so they can be layered correctly:
         // Modelica draws the 1st extends clause deepest (bottom), each subsequent extends
         // clause on top of the previous, and the class's own graphics on top of everything.
+        var baseIcons = new List<IconData>();
+
+        // The coordinate system of the first base whose extends clause does not map it into a
+        // region of its own - what this class uses for any attribute it does not state (B394).
+        IconData? inheritedSystem = null;
+        var systemChosen = false;
+
         if (result.HasExtends)
         {
-            var baseIcons = new List<IconData>();
-
             foreach (var baseClassName in result.ExtendsClasses)
             {
                 // Prevent infinite loops from circular inheritance
@@ -308,32 +316,35 @@ public static class IconSvgRenderer
                     baseClassResolver,
                     remainingDepth - 1,
                     visitedClasses,
-                    nextPackageContext);
+                    nextPackageContext,
+                    out var baseSystem);
+
+                // The FIRST such base, whether or not it states anything: one that states nothing
+                // has the default system, and that is what it lends. A base that could not be read
+                // is passed over, as an unresolved one is above.
+                if (!systemChosen && baseSystem != null && !result.MappedExtends.Contains(baseClassName))
+                {
+                    inheritedSystem = baseSystem;
+                    systemChosen = true;
+                }
 
                 if (baseIcon != null && baseIcon.HasGraphics)
                     baseIcons.Add(baseIcon);
             }
-
-            if (baseIcons.Count > 0)
-            {
-                // Concatenate all base graphics in extends-clause order: 1st extends is the deepest
-                // (bottom) layer, each subsequent extends sits on top of the previous one.
-                // This matches how Modelica tools composite multi-extends icons.
-                var combinedGraphics = baseIcons.SelectMany(b => b.Graphics).ToList();
-                var combinedBase = new IconData
-                {
-                    CoordinateExtent = baseIcons[0].CoordinateExtent,
-                    PreserveAspectRatio = baseIcons[0].PreserveAspectRatio,
-                    InitialScale = baseIcons[0].InitialScale,
-                    Graphics = combinedGraphics
-                };
-
-                // Place combined base layer beneath this class's own graphics
-                mergedIcon = mergedIcon == null ? combinedBase : mergedIcon.WithBaseLayer(combinedBase);
-            }
         }
 
-        return mergedIcon;
+        system = IconData.ResolveCoordinateSystem(result.Icon, inheritedSystem);
+
+        // Nothing drawn and no Icon annotation of its own: no icon, as before - but the system above
+        // still answers for a class extending this one.
+        if (result.Icon == null && baseIcons.Count == 0)
+            return null;
+
+        // All base graphics in extends-clause order beneath this class's own: 1st extends is the
+        // deepest (bottom) layer, each subsequent extends sits on top of the previous one. This
+        // matches how Modelica tools composite multi-extends icons.
+        return system.WithGraphics(
+            [.. baseIcons.SelectMany(b => b.Graphics), .. result.Icon?.Graphics ?? []]);
     }
 
     /// <summary>

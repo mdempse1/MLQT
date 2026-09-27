@@ -21,6 +21,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
 
     private readonly string _layer;
     private readonly List<string> _extendsClasses = new();
+    private readonly HashSet<string> _mappedExtends = new(StringComparer.Ordinal);
     private IconData? _currentIcon;
     private int _classDepth = 0;
     private string? _withinPackage;
@@ -51,6 +52,14 @@ public class IconExtractor : modelicaBaseVisitor<object?>
     /// </summary>
     public static IconData? ExtractDiagram(modelicaParser.Stored_definitionContext parseTree)
         => ExtractLayer(parseTree, DiagramLayer)?.Icon;
+
+    /// <summary>
+    /// The <c>Diagram</c> layer with the class's extends clauses, including which of them map their
+    /// base into a region with <c>DiagramMap(extent=...)</c> - what resolving an inherited coordinate
+    /// system needs to know (B394).
+    /// </summary>
+    public static IconExtractionResult? ExtractDiagramWithInheritance(modelicaParser.Stored_definitionContext parseTree)
+        => ExtractLayer(parseTree, DiagramLayer);
 
     /// <summary>
     /// Extracts Icon data from a pre-parsed Modelica parse tree.
@@ -103,6 +112,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             {
                 Icon = extractor._currentIcon,
                 ExtendsClasses = extractor._extendsClasses,
+                MappedExtends = extractor._mappedExtends,
                 WithinPackage = extractor._withinPackage
             };
         }
@@ -149,9 +159,42 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             if (!string.IsNullOrEmpty(baseClassName))
             {
                 _extendsClasses.Add(baseClassName);
+                if (MapsToARegion(context.annotation()))
+                    _mappedExtends.Add(baseClassName);
             }
         }
         return base.VisitExtends_clause(context);
+    }
+
+    /// <summary>
+    /// Whether an extends clause's <c>IconMap</c> / <c>DiagramMap</c> (whichever is this layer's)
+    /// gives an extent that is not the null region <c>{{0,0},{0,0}}</c>, its default (MLS 3.6
+    /// §18.6.3). Such a base is mapped into that region and does not lend the class its coordinate
+    /// system (§18.6.1.1).
+    /// </summary>
+    private bool MapsToARegion(modelicaParser.AnnotationContext? annotation)
+    {
+        var arguments = annotation?.class_modification()?.argument_list()?.argument();
+        if (arguments is null)
+            return false;
+
+        foreach (var arg in arguments)
+        {
+            var map = arg.element_modification_or_replaceable()?.element_modification();
+            if (map?.name()?.GetText() != _layer + "Map")
+                continue;
+
+            foreach (var inner in map.modification()?.class_modification()?.argument_list()?.argument() ?? [])
+            {
+                var extent = inner.element_modification_or_replaceable()?.element_modification();
+                if (extent?.name()?.GetText() != "extent")
+                    continue;
+                var e = ParseExtent(extent.modification()?.modification_expression()?.expression()?.GetText());
+                return e[0] != e[2] || e[1] != e[3];
+            }
+        }
+
+        return false;
     }
 
     public override object? VisitAnnotation(modelicaParser.AnnotationContext context)
@@ -247,10 +290,14 @@ public class IconExtractor : modelicaBaseVisitor<object?>
                         break;
                     case "preserveAspectRatio":
                         _currentIcon.PreserveAspectRatio = exprText?.ToLower() == "true";
+                        _currentIcon.DeclaresPreserveAspectRatio = true;
                         break;
                     case "initialScale":
                         if (double.TryParse(exprText, NumberStyles.Float, CultureInfo.InvariantCulture, out var scale))
+                        {
                             _currentIcon.InitialScale = scale;
+                            _currentIcon.DeclaresInitialScale = true;
+                        }
                         break;
                 }
             }

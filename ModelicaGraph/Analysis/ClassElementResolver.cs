@@ -203,8 +203,30 @@ public static class ClassElementResolver
     private static void WalkBases(
         DirectedGraph graph, ModelNode node, List<ModelNode> result, HashSet<string> visited, int depth)
     {
-        if (depth > MaxDepth || InterfaceCache.Extract(node) is not { } iface)
+        if (depth > MaxDepth)
             return;
+
+        foreach (var (_, baseNode) in DirectBases(graph, node))
+        {
+            if (!visited.Add(baseNode.Id))
+                continue;
+            WalkBases(graph, baseNode, result, visited, depth + 1);
+            result.Add(baseNode);
+        }
+    }
+
+    /// <summary>
+    /// The classes <paramref name="node"/>'s own <c>extends</c> clauses name, in clause order, each
+    /// with the name as written in the clause. A clause whose base is not loaded is skipped.
+    ///
+    /// <para>For a question the first clause answers differently from the others: which base lends
+    /// a class its coordinate system (MLS 3.6 §18.6.1.1, B394).</para>
+    /// </summary>
+    public static List<(string Written, ModelNode Base)> DirectBases(DirectedGraph graph, ModelNode node)
+    {
+        var result = new List<(string, ModelNode)>();
+        if (InterfaceCache.Extract(node) is not { } iface)
+            return result;
 
         var imports = iface.Elements
             .Where(e => e.Kind == ClassElementKind.Import)
@@ -212,13 +234,10 @@ public static class ClassElementResolver
             .ToList();
 
         foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
-        {
-            var baseNode = TypeResolver.Resolve(graph, node.Id, ext.Type, imports);
-            if (baseNode is null || !visited.Add(baseNode.Id))
-                continue;
-            WalkBases(graph, baseNode, result, visited, depth + 1);
-            result.Add(baseNode);
-        }
+            if (TypeResolver.Resolve(graph, node.Id, ext.Type, imports) is { } baseNode)
+                result.Add((ext.Type ?? string.Empty, baseNode));
+
+        return result;
     }
 
     // Modifications applying to a base's members: this extends clause's, with any already-accumulated

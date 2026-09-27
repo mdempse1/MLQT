@@ -24,6 +24,13 @@ public class IconExtractionResult
     public bool HasExtends => ExtendsClasses.Count > 0;
 
     /// <summary>
+    /// The extends clauses, by base name as written, whose <c>IconMap</c> / <c>DiagramMap</c> (this
+    /// layer's) states an extent other than the null region: the base is mapped into that region and
+    /// does not lend the class its coordinate system (MLS 3.6 §18.6.1.1, §18.6.3).
+    /// </summary>
+    public IReadOnlySet<string> MappedExtends { get; set; } = new HashSet<string>();
+
+    /// <summary>
     /// The package name from the 'within' clause of the stored_definition (e.g. "Modelica.Blocks").
     /// Null if there is no within clause (e.g. the class is an inner class snippet without a file header).
     /// Used to qualify unresolved base class names for proper multi-level inheritance resolution.
