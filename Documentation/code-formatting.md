@@ -295,6 +295,21 @@ a nested modification written an argument a line, or a data table (below) — ke
 so do the lists of a graphics annotation and a list inside one already written an argument a line,
 which have layouts of their own. A comment after the `(` already ends that line.
 
+**"A level in" is measured from the line the list opens on**, which is not always the line the
+statement starts on. A call that itself starts a continuation line has its arguments a level in
+from that line, and so does a graphics element written after `graphics={`:
+
+```modelica
+  y = a
+    + Some.Package.fn(table=table, iSam=pre(iSam),
+      Q_flow=QAve_flow, samplePeriod=samplePeriod);
+```
+
+Earlier versions could write such a list's last lines at the statement's continuation level, or
+even to the left of the line they continue — an Icon's `color=` two spaces left of the
+`graphics={Line(points=...` it belongs to. Over the Modelica Standard Library and Buildings, 150
+files are written differently from before, only in indentation.
+
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
 Buildings (8,367 files), 1,017 files are written differently from before, every one only in line

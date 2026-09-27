@@ -32,6 +32,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // follows, possibly after an argument list wrapped for length has gone back a level, so the
     // next EmitLine moves these lines to the level that line is written at.
     private (int Start, int End, int Level)? _pendingMatrixLines;
+    // The least indent, in spaces, the line being written may be ended at (B465): set when it starts
+    // an argument of a list wrapped for length, from the line that list opened on, and cleared by
+    // EmitLine. -1 when there is none.
+    private int _currentLineMinimumIndent = -1;
+    // The line the '(' of the innermost argument list being written is on (B465) - not always the
+    // line the list starts on, since a comment after the '(' ends that line first (B431).
+    private int _argumentsOpeningLine;
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -230,6 +237,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
         var indent = new string(' ', _indentLevel * IndentSpaces);
         var line = _currentLine.ToString().TrimEnd();
+
+        // A line is indented by the level it is ended at, which for the last line of a wrapped
+        // argument list is after the list has gone back out a level - so it can come out shallower
+        // than the line it continues (B465). Such a line keeps the indent it was started with.
+        int written = indent.Length + line.Length - line.TrimStart(' ').Length;
+        if (written < _currentLineMinimumIndent)
+            indent += new string(' ', _currentLineMinimumIndent - written);
+        _currentLineMinimumIndent = -1;
 
         // Check if we should suppress indentation for this line
         bool shouldIgnoreIndent = ignoreIndentation || _suppressNextIndentation;
@@ -482,6 +497,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         EmitLine();
         AddIndentToCurrentLine();
         IndentMatrixLine(baseSpaces);
+    }
+
+    /// <summary>
+    /// Keeps the line just started - one starting an argument of a list wrapped for length - at
+    /// least a level in from the line the list opened on, <paramref name="openingLine"/>, whatever
+    /// level it is ended at (B465). Only called once the list has wrapped, so that line has been
+    /// ended.
+    /// </summary>
+    private void KeepInFrom(int openingLine)
+    {
+        if (openingLine < _code.Count)
+        {
+            var opening = _code[openingLine];
+            _currentLineMinimumIndent = opening.Length - opening.TrimStart(' ').Length + IndentSpaces;
+        }
     }
 
     private void AddIndentToCurrentLine()
@@ -2080,9 +2110,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// table) has its own layout, and nothing but the '(' may have been written since the list
     /// opened, so a comment after the '(' keeps the line it leaves. A list inside one written an
     /// argument a line, and a graphics annotation's lists, are laid out by their own rules rather
-    /// than wrapped for length, and are left as they were.
+    /// than wrapped for length, and are left as they were. With <paramref name="keepInFromOpening"/>
+    /// the moved argument stays a level in from the line it left (B465).
     /// </summary>
-    private void VisitFirstArgument(IParseTree first, int argumentCount)
+    private void VisitFirstArgument(IParseTree first, int argumentCount, bool keepInFromOpening = false)
     {
         if (argumentCount < 2 || _parentUsingMultiLine || _inGraphicsAnnotationLevel > 0
             || !GetCurrentLinePlainText().EndsWith('('))
@@ -2102,6 +2133,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         _currentLine.Length = start;
         EmitLine();
         AddIndentToCurrentLine();
+        if (keepInFromOpening)
+            KeepInFrom(_code.Count - 1);
         _currentLine.Append(argument);
     }
 
@@ -3465,6 +3498,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         var opening = runs?[0] ?? default;
         var closing = runs is { Length: > 1 } ? runs[^1] : default;
 
+        int enclosingOpeningLine = _argumentsOpeningLine;
+        _argumentsOpeningLine = _code.Count;
         Write("(");
         if (opening.Any)
             WriteOpeningComments(opening, useMultiLine);
@@ -3486,6 +3521,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         Write(")");
 
         // Restore previous state
+        _argumentsOpeningLine = enclosingOpeningLine;
         _inSingleLineGraphicsElement = previousSingleLineState;
         _callUsingMultiLine = previousCallState;
 
@@ -3685,7 +3721,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (namedArgs == null || namedArgs.Length == 0)
             return null;
 
-        VisitFirstArgument(namedArgs[0], namedArgs.Length);
+        int opening = _argumentsOpeningLine;
+        VisitFirstArgument(namedArgs[0], namedArgs.Length, keepInFromOpening: true);
         var runs = CommentRuns(context);
 
         for (int i = 1; i < namedArgs.Length; i++)
@@ -3712,12 +3749,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             if (shouldWrap)
             {
                 bool needsExtraIndent = needsWrapForLength && !_parentUsingMultiLine;
-
                 EmitLine();
                 if (needsExtraIndent)
+                {
                     Indent();
-                if (needsExtraIndent)
                     AddIndentToCurrentLine();
+                    KeepInFrom(opening);
+                }
 
                 Visit(namedArgs[i]);
 
