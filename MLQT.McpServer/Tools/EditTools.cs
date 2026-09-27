@@ -952,7 +952,8 @@ public sealed class EditTools
                 "rewrites only the exact identifier tokens that refer to this class (the declaration plus " +
                 "qualified/relative/imported uses) — NOT textual name matches, so a same-named unrelated " +
                 "class is never touched. A whole directory package can be renamed too: its folder is renamed, " +
-                "its subtree's ids re-qualified, and package.order updated. Each changed file is re-parsed; " +
+                "its subtree's ids re-qualified, and package.order updated; a class stored in a file of its " +
+                "own name has that file renamed with it (and its package.order entry). Each changed file is re-parsed; " +
                 "if any would no longer parse, nothing is written. Set preview=true to see the planned " +
                 "per-file changes first. Note: deep member accesses like Pkg.OldName.someConstant are not " +
                 "rewritten (consistent with dependency analysis) — review those.")]
@@ -989,6 +990,26 @@ public sealed class EditTools
         if (dirCtx is not null && dirCtx.FileOwner.Id == classId &&
             string.Equals(Path.GetFileName(dirCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
             return await RenameDirectoryPackageAsync(classId, newId, oldLeaf, newName, dirCtx, preview);
+
+        // A class stored in a file of its own name has to take the file with it, and a directory
+        // package lists its children by name in package.order (MLS 13.4), so both follow the rename
+        // (B456). A file that was never named after its class keeps its name; a library's own file
+        // is where the library was loaded from, so it is not renamed either.
+        var ownFile = dirCtx is not null && dirCtx.FileOwner.Id == classId && !string.IsNullOrEmpty(parent) &&
+                      string.Equals(Path.GetFileNameWithoutExtension(dirCtx.FilePath), oldLeaf, StringComparison.Ordinal)
+            ? dirCtx.FilePath
+            : null;
+        var renamedFile = ownFile is null ? null : Path.Combine(Path.GetDirectoryName(ownFile)!, newName + ".mo");
+        if (renamedFile is not null && File.Exists(renamedFile) &&
+            !string.Equals(renamedFile, ownFile, StringComparison.OrdinalIgnoreCase))
+            return new ToolError($"A file '{renamedFile}' already exists, so '{Path.GetFileName(ownFile)}' cannot be " +
+                                 "renamed with its class. Choose a different name. Nothing was changed.");
+        var orderDirectory = dirCtx is null ? null
+            : dirCtx.FileOwner.Id == classId && !string.IsNullOrEmpty(parent) ? Path.GetDirectoryName(dirCtx.FilePath)
+            : dirCtx.FileOwner.Id == parent &&
+              string.Equals(Path.GetFileName(dirCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetDirectoryName(dirCtx.FilePath)
+                : null;
 
         var graph = _libraries.CombinedGraph;
 
@@ -1052,6 +1073,8 @@ public sealed class EditTools
         var note = $"Precise rename of the declaration and resolved references. Deep member accesses " +
                    $"(e.g. Pkg.{oldLeaf}.someMember) are not rewritten — consistent with dependency " +
                    "analysis; review those and verify with a model checker.";
+        if (renamedFile is not null)
+            note = $"The file '{Path.GetFileName(ownFile)}' is renamed to '{Path.GetFileName(renamedFile)}' with its class. " + note;
 
         if (preview)
         {
@@ -1063,15 +1086,25 @@ public sealed class EditTools
         if (FileWritability.PreflightWritable(planned.Select(p => p.path), $"rename '{classId}'") is { } readOnly)
             return readOnly;
 
+        // Moved before it is written, so the write keeps the file's own encoding and line endings.
+        if (renamedFile is not null)
+            File.Move(ownFile!, renamedFile);
+        string WrittenTo(string path) =>
+            renamedFile is not null && string.Equals(path, ownFile, StringComparison.OrdinalIgnoreCase) ? renamedFile : path;
+
         var affected = new List<string>();
         foreach (var (path, newContent, _) in planned)
         {
-            await ModelicaFileEncoding.WriteAllTextAsync(path, newContent);
-            affected.AddRange(await _libraries.ReloadFileAsync(path));
+            await ModelicaFileEncoding.WriteAllTextAsync(WrittenTo(path), newContent);
+            if (!string.Equals(WrittenTo(path), path, StringComparison.Ordinal))
+                affected.AddRange(await _libraries.ReloadFileAsync(path)); // gone -> its old ids are removed
+            affected.AddRange(await _libraries.ReloadFileAsync(WrittenTo(path)));
         }
+        if (orderDirectory is not null)
+            RenameInPackageOrder(orderDirectory, oldLeaf, newName);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
 
-        var changes = planned.Select(p => new RenameFileChange(p.path, p.count, null)).ToList();
+        var changes = planned.Select(p => new RenameFileChange(WrittenTo(p.path), p.count, null)).ToList();
         return new RenameClassResult(classId, newId, PreviewOnly: false, Changed: true,
             planned.Count, total, changes, note);
     }

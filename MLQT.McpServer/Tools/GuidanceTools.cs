@@ -87,7 +87,8 @@ public sealed class GuidanceTools
             Rename a class (updates references too):
               analyze_dependencies (once) -> rename_class(classId, newName) [preview first] -> the
               declaration and every resolved reference are rewritten and dependencies refreshed. Precise:
-              a same-named unrelated class is not touched. Read-only files abort the rename.
+              a same-named unrelated class is not touched. A class in a file of its own name takes the
+              file with it, and package.order follows. Read-only files abort the rename.
 
             Start a new library/project:
               create_library(name, directory) writes an empty top-level library on disk (package.mo +
