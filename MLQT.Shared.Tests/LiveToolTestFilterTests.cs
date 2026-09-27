@@ -129,6 +129,22 @@ public class LiveToolTestFilterTests
     }
 
     [Fact]
+    public void TheMutationCampaignLeavesBothToolAssembliesOut()
+    {
+        // Backlog B453. Stryker's MTP runner cannot be given the filter - its test-case-filter is
+        // read by the VSTest runner only - so mutating either assembly runs its suite whole and
+        // starts the tool. Adding one to -All's list without the filter reaching Stryker would start
+        // Dymola or omc for every mutant.
+        var script = Read("build", "run-mutation.ps1");
+        var list = Regex.Match(script, @"\$MutationProjects = @\((?<body>[^)]*)\)");
+
+        Assert.True(list.Success, "no $MutationProjects list in run-mutation.ps1");
+        Assert.Contains("'ModelicaParser'", list.Groups["body"].Value);
+        Assert.DoesNotContain("DymolaInterface", list.Groups["body"].Value);
+        Assert.DoesNotContain("OpenModelicaInterface", list.Groups["body"].Value);
+    }
+
+    [Fact]
     public void EveryCopyOfATraitFilterIsOneOfTheTwo()
     {
         // A third spelling - "Requires!=Omc", a stray space - selects no class, so the suite runs whole.

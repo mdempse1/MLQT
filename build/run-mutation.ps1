@@ -92,8 +92,20 @@ Push-Location $repoRoot
 
 # The assemblies the coverage gate measures, so the two agree about what "our code" means - all but
 # DymolaInterface and OpenModelicaInterface, which joined the gate in B438 measured from their suites
-# filtered to the classes needing no tool. This script runs a suite whole, which for those two would
-# start Dymola and omc for every mutant, so they stay out until it can pass the filter.
+# filtered to the classes needing no tool. Stryker runs a suite whole, which for those two starts
+# Dymola and omc, so they stay out - a decision, not an omission (B453), and
+# LiveToolTestFilterTests holds it.
+#
+# B399's filter cannot be handed to Stryker under --test-runner mtp. Stryker 5.0.0 has a
+# `test-case-filter` option (stryker-config.json only, no command-line flag), documented as dotnet
+# test --filter syntax, but only its VSTest runner reads it: the MTP runner selects tests by its own
+# test-uid filter and nothing else. Measured on 2026-09-27 with `"test-case-filter": "Requires!=Dymola"`
+# in DymolaInterface.Tests/stryker-config.json and -Mutate '**/DymolaSettings.cs': Stryker captured
+# coverage for 266 tests - the suite has 267, and 240 with the filter - the coverage pass timed out
+# test after test, and Dymola.exe started two minutes in. VSTest is no way round it: xUnit v3 is
+# MTP, which is why --test-runner mtp is required at all. Revisit if a later Stryker passes the
+# filter to MTP; then add both assemblies below with the filter and prove it by watching for
+# dymola/omc processes during a -Mutate run of one file each.
 # Ordered smallest-first on purpose: the early ones calibrate how long this machine takes before
 # anything committing starts, and a campaign abandoned half way still leaves useful reports.
 # 'mlqt' is the assembly name of MLQT.Cli, which is why this maps project to test project by name
@@ -342,6 +354,12 @@ try {
             Write-Host "FAIL: no such project: $file" -ForegroundColor Red
             exit 1
         }
+    }
+
+    if ($Project -in @('DymolaInterface', 'OpenModelicaInterface')) {
+        # See $MutationProjects (B453): Stryker cannot be told to leave the live-tool classes out.
+        Write-Host "$TestProject is run whole, including the classes that drive a live tool: this starts" -ForegroundColor Yellow
+        Write-Host "Dymola or omc if it is installed, and those tests time out or fail where it is not." -ForegroundColor Yellow
     }
 
     if ($Mutate.Count -eq 0) {

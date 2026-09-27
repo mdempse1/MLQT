@@ -699,8 +699,8 @@ dotnet tool install --global dotnet-stryker      # once
 **For a single run, always pass `-Mutate`**: one file takes about three minutes, most of it the build
 and the baseline test run, and a whole assembly takes many times as long.
 
-**`-All`** mutates the seven assemblies the coverage gate measures other than the two tool interfaces
-(it runs a suite whole, which for those would start Dymola and omc), smallest first so the early
+**`-All`** mutates the seven assemblies the coverage gate measures other than the two tool interfaces,
+smallest first so the early
 ones calibrate the machine before anything committing starts. **It takes about an hour**, not the
 many hours it took before B267: each assembly is now judged by its own suite rather than by every
 suite that references it, so a run of 24,901 mutants took 52 minutes on 2026-09-22 where 23,634
@@ -732,6 +732,15 @@ with no specification alone** — or write the specification down first.
 **It reports, it does not gate** — some survivors are equivalent mutants no test can kill, and some
 are in code nobody should test (an entry in a literal list of C header names). Read the survivors, not
 the score.
+
+**`DymolaInterface` and `OpenModelicaInterface` stay out of `-All`, by decision (B453).** The
+coverage gate measures them from their suites filtered with B399's `Requires!=Dymola` /
+`Requires!=OpenModelica`, but that filter cannot reach Stryker's MTP runner: Stryker 5.0.0's
+`test-case-filter` (config file only) is read by its VSTest runner alone. Measured with the filter set
+in a `stryker-config.json`: coverage was captured for 266 tests where the filtered suite has 240, and
+Dymola started two minutes in. VSTest is not a way round it — xUnit v3 is MTP. A single `-Project
+DymolaInterface` run still works, and warns that it starts the tool. Revisit when a Stryker release
+passes the filter to MTP; `LiveToolTestFilterTests` holds the list until then.
 
 Three things about it are not discoverable and cost an afternoon between them:
 
