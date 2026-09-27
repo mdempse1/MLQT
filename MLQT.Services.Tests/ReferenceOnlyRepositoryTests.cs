@@ -159,6 +159,52 @@ public class ReferenceOnlyRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task AReferenceRepository_IsNotCheckedByTheIncrementalReCheck()
+    {
+        // The re-check after a reload. Its classes reach it whenever a change made through another
+        // repository reloads them — a vendor library checked out inside the team's own tree is
+        // watched, pulled and refreshed as part of the team's repository (B330) — and this entry
+        // point grouped them by repository and ran each repository's per-class rules without asking
+        // whether it was one anybody here maintains (B404).
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: false, isReferenceOnly: true);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.CheckModelsAsync(
+            h.Libraries.GetAllModels().Select(m => m.Id).ToList(), h.Libraries.CombinedGraph);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Empty(found);
+    }
+
+    [Fact]
+    public async Task ARepositoryTheTeamMaintains_IsCheckedByTheIncrementalReCheck()
+    {
+        // The other half: the guard must not be the reason nothing was reported.
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.CheckModelsAsync(
+            h.Libraries.GetAllModels().Select(m => m.Id).ToList(), h.Libraries.CombinedGraph);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Contains(found, m => m.RuleId == RuleIds.ClassDescription);
+    }
+
+    [Fact]
     public async Task AReferenceRepository_HasNoWholeGraphAnalysesRunOnItEither()
     {
         // The graph analyses had no guard on any path — including inside the one entry point that

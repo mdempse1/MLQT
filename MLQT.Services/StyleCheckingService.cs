@@ -136,7 +136,8 @@ public class StyleCheckingService : IStyleCheckingService
     /// <see cref="StartBackgroundChecking"/>, which had no guard at all, and stayed quiet only while
     /// the vendor's own <c>.mlqt/settings.json</c> enabled nothing — which is not a property of the
     /// flag. The whole-graph analyses had no guard on any path; see
-    /// <see cref="StartGraphAnalyses"/>.</para>
+    /// <see cref="StartGraphAnalyses"/>. Nor did the incremental <see cref="CheckModelsAsync"/>,
+    /// which a reload reaches from another repository's change (B404).</para>
     /// </summary>
     private static bool SkipBecauseReferenceOnly(Repository repository)
     {
@@ -878,6 +879,15 @@ public class StyleCheckingService : IStyleCheckingService
             // Get the style settings for this repository
             StyleCheckingSettings settings;
             var repo = _repositoryService.Repositories.FirstOrDefault(r => r.Id == repoId);
+
+            // A reference-only repository's classes arrive here whenever a reload reaches them from
+            // somebody else's change — a library checked out inside another repository's tree, whose
+            // monitor and VCS pipeline are the other repository's (B330). The full run and the graph
+            // analyses below skip such a repository; this entry point did not, and ran the vendor's
+            // own per-class rules over them (B404).
+            if (repo is not null && SkipBecauseReferenceOnly(repo))
+                continue;
+
             if (repo?.StyleSettings != null)
             {
                 settings = repo.StyleSettings;
