@@ -421,6 +421,21 @@ Over the Modelica Standard Library and Buildings, 2 files are written differentl
 MSL's `MultiBody.Joints.Internal.InitAngle` and Buildings' EnergyPlus `RoomModel` - only in line
 breaks and indentation.
 
+An array with no argument to move - one after a `=` in an argument that already starts its line, or
+in a declaration - whose line is already past the limit when a call in it has to wrap moves to a
+line of its own after the `=`, provided what it has written then fits:
+
+```modelica
+    redeclare Buildings.Electrical.Transmission.LowVoltageCables.Generic cables=
+      {LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(),
+        LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl70(), LowVoltageCables.PvcAl35()}
+```
+
+Over the Modelica Standard Library and Buildings, 2 files are written differently from before -
+Buildings' `Electrical.Transmission.Grids.IEEE_34_AL120` and
+`Fluid.Actuators.BaseClasses.PartialDamperExponential` - only in line breaks and indentation, each
+with one line over 100 characters fewer.
+
 **A description too long for its line starts a line of its own**, a level in, for a short class
 definition as for a component:
 

@@ -49,6 +49,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // call's later positional argument, which is never wrapped for length (B483). The line it is on
     // and where it starts in that line; Lines is -1 when there is none.
     private (int Lines, int Start) _movableArgument = (-1, 0);
+    // The innermost array constructor being written: the line its '{' is on and where in that line
+    // (B484). Lines is -1 when there is none.
+    private (int Lines, int Start) _arrayStart = (-1, 0);
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -335,9 +338,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// <summary>
     /// Get the plain text from the current line (without markup tags)
     /// </summary>
-    private string GetCurrentLinePlainText()
+    private string GetCurrentLinePlainText() => PlainText(_currentLine.ToString());
+
+    /// <summary>Text as written for the code editor, without its markup tags.</summary>
+    private string PlainText(string line)
     {
-        var line = _currentLine.ToString();
         if (!_renderForCodeEditor)
             return line;
 
@@ -2207,7 +2212,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             return false;
         if (_code.Count != opening)
             return true;
-        if (MovedArgumentForArray())
+        if (MovedArgumentForArray() || MovedArrayPastTheLimit())
         {
             opening = _code.Count;
             if (!WrapsCallElementForLength(element))
@@ -2233,6 +2238,26 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (lines != _code.Count || start > _currentLine.Length)
             return false;
         // A line is ended by the move, so the argument can no longer be moved again.
+        MoveToContinuationLine(start);
+        return true;
+    }
+
+    /// <summary>
+    /// Moves an array whose elements so far have already taken its opening line past the maximum
+    /// length, when a call after them has to wrap, to a continuation line of its own - if there is
+    /// no argument to move instead and what it has written then fits (B484).
+    /// Buildings' IEEE 34-bus grid has <c>redeclare ... Generic cables={LowVoltageCables.PvcAl120(),</c>
+    /// in a list written an argument a line: the argument already starts its line, and wrapping
+    /// only the later elements left that line at 109 characters. True when it was moved.
+    /// </summary>
+    private bool MovedArrayPastTheLimit()
+    {
+        var (lines, start) = _arrayStart;
+        if (lines != _code.Count || start > _currentLine.Length
+            || GetCurrentLinePlainTextLength() <= _maxLineLength
+            // Past the limit, what the array has written fits only if something else came first.
+            || PlainText(_currentLine.ToString(start, _currentLine.Length - start)).Length > _maxLineLength)
+            return false;
         MoveToContinuationLine(start);
         return true;
     }
@@ -3524,6 +3549,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             var closing = runs is { Length: > 1 } ? runs[^1] : default;
             bool multiLine = resetGraphicsFlag && !singleLineGraphics;
 
+            var enclosingArray = _arrayStart;
+            _arrayStart = (_code.Count, _currentLine.Length);
             Write("{");
             if (opening.Any)
                 WriteOpeningComments(opening, multiLine);
@@ -3535,6 +3562,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             }
             if (context.array_arguments() != null)
                 Visit(context.array_arguments());
+            _arrayStart = enclosingArray;
             if (closing.Any)
                 WriteListComments(closing, multiLine, beforeClose: true);
             if (resetGraphicsFlag) {

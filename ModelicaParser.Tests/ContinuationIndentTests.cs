@@ -56,6 +56,10 @@ namespace ModelicaParser.Tests;
 /// line of its own before it wraps, as one in a first argument does (B474). Positional arguments are
 /// never wrapped for length, so the array broke mid-list: MSL's <c>InitAngle</c> had
 /// <c>{der(angle[1]),</c> at the end of one line and the rest of the array on the next.</para>
+///
+/// <para>B484 - an array with no argument to move, whose line is already past the limit when a call
+/// in it has to wrap, moves to a line of its own. Buildings' IEEE 34-bus grid had
+/// <c>cables={LowVoltageCables.PvcAl120(),</c> ending a 109-character line.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -787,6 +791,54 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(PositionalArraysMovedWhole));
     }
 
+    private const string ArraysMovedOffALongLine = """
+        record G "Grid"
+          extends Buildings.Electrical.Transmission.Grids.PartialGrid(
+            nNodes=34,
+            nLinks=33,
+            l=[48; 16],
+            redeclare Buildings.Electrical.Transmission.LowVoltageCables.Generic cables=
+              {LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(),
+                LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl70(), LowVoltageCables.PvcAl35()}
+          );
+          parameter Real[3] cL=
+            {(Modelica.Math.log(k0) - b - a)/yL^2, (-b*yL - 2*Modelica.Math.log(k0) + 2*b + 2*a)/yL,
+              Modelica.Math.log(k0)} "Polynomial coefficients";
+          parameter String filNam[2]={Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos"),
+            Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos")};
+          parameter Real x[3]={ // comment
+            Some.Long.Package.Function.name(aaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),
+              Other.fn(ccccccccccccccccc), Other.fn(dddddddddd)};
+        end G;
+        """;
+
+    [Fact]
+    public void AnArrayWithNoArgumentToMoveIsMovedOffALineItHasTakenPastTheLimit()
+    {
+        // Buildings' IEEE_34_AL120: the array is in a later argument of a list written an argument
+        // a line, so there is no first argument to move (B474) and its argument already starts its
+        // line; wrapping only the later elements left 'cables={LowVoltageCables.PvcAl120(),' at
+        // 109 characters. The array moves to a line of its own after the '=' (B484) - as
+        // Buildings' PartialDamperExponential 'cL=' does - but not when what it has written would
+        // not fit there either: a string that long cannot be helped by moving it. Nor when a
+        // comment after the '{' has ended the line the array opened on.
+        TestHelpers.AssertClass(
+            Normalise("""
+                record G "Grid"
+                  extends Buildings.Electrical.Transmission.Grids.PartialGrid(
+                    nNodes=34,
+                    nLinks=33,
+                    l=[48; 16],
+                    redeclare Buildings.Electrical.Transmission.LowVoltageCables.Generic cables={LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl120(), LowVoltageCables.PvcAl70(), LowVoltageCables.PvcAl35()});
+                  parameter Real[3] cL={(Modelica.Math.log(k0) - b - a)/yL^2, (-b*yL - 2*Modelica.Math.log(k0) + 2*b + 2*a)/yL, Modelica.Math.log(k0)} "Polynomial coefficients";
+                  parameter String filNam[2]={Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos"), Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos")};
+                  parameter Real x[3]={ // comment
+                    Some.Long.Package.Function.name(aaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), Other.fn(ccccccccccccccccc), Other.fn(dddddddddd)};
+                end G;
+                """),
+            expectedOutput: Normalise(ArraysMovedOffALongLine));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -820,6 +872,7 @@ public class ContinuationIndentTests
     [InlineData(ArraysWrappedFromTheirOpeningLine, 60)]
     [InlineData(ShortClassDescriptionsWrapped, 100)]
     [InlineData(PositionalArraysMovedWhole, 100)]
+    [InlineData(ArraysMovedOffALongLine, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
