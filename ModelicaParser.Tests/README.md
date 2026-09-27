@@ -58,7 +58,7 @@ dotnet test --filter "FullyQualifiedName~ModelicaRendererTests"
 
 Run with detailed output:
 ```bash
-dotnet test --logger "console;verbosity=detailed"
+dotnet test --output detailed
 ```
 
 ## Test Helper Methods

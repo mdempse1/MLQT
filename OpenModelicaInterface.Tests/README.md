@@ -82,7 +82,7 @@ dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --fil
 ### Run Tests with Detailed Output
 
 ```bash
-dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --logger "console;verbosity=detailed"
+dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --output detailed
 ```
 
 ## Test Categories
@@ -251,7 +251,7 @@ For automated testing in CI/CD pipelines:
 3. Run tests with timeout configuration:
 
 ```bash
-dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --logger trx --results-directory ./TestResults
+dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --report-trx --results-directory ./TestResults
 ```
 
 ## Coverage

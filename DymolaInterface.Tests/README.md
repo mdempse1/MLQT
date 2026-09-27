@@ -91,7 +91,7 @@ dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "FullyQu
 ### Run Tests with Detailed Output
 
 ```bash
-dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --logger "console;verbosity=detailed"
+dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --output detailed
 ```
 
 ## Test Categories
@@ -276,7 +276,7 @@ For automated testing in CI/CD pipelines:
 4. Run tests with timeout configuration:
 
 ```bash
-dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --logger trx --results-directory ./TestResults
+dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --report-trx --results-directory ./TestResults
 ```
 
 ## Coverage
