@@ -48,6 +48,14 @@ public class DymolaInterface : IDymolaSession
     private bool _isOffline;
 
     /// <summary>
+    /// The id for the next JSON-RPC request - the only way one is taken. Atomic, because a probe
+    /// (<see cref="GetSessionStateAsync"/>) runs outside the command lock and can take an id while a
+    /// command is taking one: <c>_rpcId++</c> followed by a second read of <c>_rpcId</c> could hand
+    /// both the same id, or skip one (B396).
+    /// </summary>
+    internal int NextRequestId() => Interlocked.Increment(ref _rpcId);
+
+    /// <summary>
     /// Offline because the caller said so, which no probe may undo (B262).
     /// </summary>
     /// <remarks>
@@ -365,8 +373,7 @@ public class DymolaInterface : IDymolaSession
 
         try
         {
-            _rpcId++;
-            var request = new { method = "ping", @params = (object?)null, id = _rpcId };
+            var request = new { method = "ping", @params = (object?)null, id = NextRequestId() };
             var jsonRequest = JsonSerializer.Serialize(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
             using var limit = new CancellationTokenSource(ConnectionProbeTimeout);
@@ -626,8 +633,7 @@ public class DymolaInterface : IDymolaSession
             // kind of failure, and the catches narrow it.
             LastOutcome = CommandOutcome.Failed;
 
-            _rpcId++;
-            int sentId = _rpcId;
+            int sentId = NextRequestId();
             var fixedParams = FixJsonParameterList(parameters) ?? Array.Empty<object?>();
             var request = new
             {
