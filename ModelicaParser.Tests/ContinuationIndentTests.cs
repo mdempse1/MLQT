@@ -77,7 +77,9 @@ namespace ModelicaParser.Tests;
 /// <c>timeGeometric(tSho_min,</c>. A long logical expression wraps before an <c>or</c> or
 /// <c>and</c> whose operand does not fit, as an arithmetic one does before a <c>+</c>: Buildings'
 /// VerifyDifferenceThreePeriods had its if-expression's condition whole on one line and broke inside
-/// <c>abs(u1 - u2)</c> instead.</para>
+/// <c>abs(u1 - u2)</c> instead. An argument after one whose if-expression started its branches on
+/// lines of their own starts a line: MSL's Fluid.Machines wrote <c>homotopy</c>'s second argument
+/// after the first's last branch, on its line.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1159,6 +1161,52 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(LogicalOperatorsInAFunction));
     }
 
+    private const string ArgumentsAfterBranchesStartLines = """
+        function f
+          input Real p;
+          output State state;
+
+        algorithm
+          head := homotopy(if s > 0 then (N/N_nominal)^2*flowCharacteristic(V_flow_single*N_nominal/N)
+              else (N/N_nominal)^2*flowCharacteristic(0) - s*unitHead,
+            if checkValveHomotopy == Types.CheckValveHomotopyType.Open then N/N_nominal*flowCharacteristic(V_flow_single_init)
+                else N/N_nominal*flowCharacteristic(0) - s*unitHead);
+          state := ThermodynamicState(d=density_ph(p, h, region=region),
+            T=temperature_ph(p, h, region=region), phase=if region == 0 then 0
+              else if region == 4 then 2
+              else 1,
+            h=h, p=p);
+          y := smooth(1, if xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > 0 then aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              else bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,
+            x=1);
+          z := if flag then g(1, 2)
+              else h(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, c);
+        end f;
+        """;
+
+    [Fact]
+    public void AnArgumentAfterAnIfExpressionThatBrokeItsBranchesStartsALine()
+    {
+        // In order: MSL's Fluid.Machines - the positional argument after one whose if-expression
+        // started its branches on lines of their own starts a line, where it followed the last
+        // branch on its line and read as part of it; Media's IF97 package - a named argument after
+        // such a one does the same, and so do the named arguments after such a positional one; and a
+        // call written in a branch that starts a line keeps its arguments on that line (B489).
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Real p;
+                  output State state;
+                algorithm
+                  head := homotopy(if s > 0 then (N/N_nominal)^2*flowCharacteristic(V_flow_single*N_nominal/N) else (N/N_nominal)^2*flowCharacteristic(0) - s*unitHead, if checkValveHomotopy == Types.CheckValveHomotopyType.Open then N/N_nominal*flowCharacteristic(V_flow_single_init) else N/N_nominal*flowCharacteristic(0) - s*unitHead);
+                  state := ThermodynamicState(d=density_ph(p, h, region=region), T=temperature_ph(p, h, region=region), phase=if region == 0 then 0 else if region == 4 then 2 else 1, h=h, p=p);
+                  y := smooth(1, if xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > 0 then aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa else bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, x=1);
+                  z := if flag then g(1, 2) else h(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, c);
+                end f;
+                """),
+            expectedOutput: Normalise(ArgumentsAfterBranchesStartLines));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1199,6 +1247,7 @@ public class ContinuationIndentTests
     [InlineData(FirstPositionalArgumentsStartLines, 100)]
     [InlineData(LogicalOperatorsStartLines, 100)]
     [InlineData(LogicalOperatorsInAFunction, 100)]
+    [InlineData(ArgumentsAfterBranchesStartLines, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

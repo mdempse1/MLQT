@@ -3834,6 +3834,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (context.expression() != null)
         {
             var funcArgs = context.function_argument();
+            int lines = _code.Count;
             if (_inGraphicsAnnotationLevel > 0)
                 _inGraphicsAnnotationLevel++;
 
@@ -3854,9 +3855,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 for (int j = 0; j < funcArgs.Length; j++)
                 {
                     Write(",");
+                    bool afterBranches = EndedOnABranchLine(lines);
+                    lines = _code.Count;
                     if (WroteSeparatorComments(runs, 1 + j))
                         VisitMovableArgument(funcArgs[j]);
-                    else if (WrapsPositionalArgument(funcArgs[j]))
+                    else if (afterBranches || WrapsPositionalArgument(funcArgs[j]))
                         VisitWrappedPositionalArgument(funcArgs[j]);
                     else
                     {
@@ -3870,9 +3873,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             if (context.named_arguments() != null)
             {
                 Write(",");
-                if (!WroteSeparatorComments(runs, 1 + (funcArgs?.Length ?? 0)))
+                if (WroteSeparatorComments(runs, 1 + (funcArgs?.Length ?? 0)))
+                    Visit(context.named_arguments());
+                else if (EndedOnABranchLine(lines))
+                    VisitWrappedPositionalArgument(context.named_arguments());
+                else
+                {
                     SeparateGraphicsArgument();
-                Visit(context.named_arguments());
+                    Visit(context.named_arguments());
+                }
             }
 
             if (context.for_indices() != null)
@@ -3963,6 +3972,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             + (_argumentsOpeningLine < _code.Count ? 0 : _indentLevel * IndentSpaces);
         int column = Math.Max(openingIndent, _indentLevel * IndentSpaces) + IndentSpaces;
         return column + length <= _maxLineLength - 3;
+    }
+
+    /// <summary>
+    /// Whether the argument just written, begun when <paramref name="lines"/> lines had been written,
+    /// ended on the line an if-expression in it started with its 'else' (B487), so that the
+    /// next argument starts a line of its own rather than following the last branch (B489): MSL's
+    /// Fluid.Machines had <c>else (N/N_nominal)^2*flowCharacteristic(0) - s*unitHead, if
+    /// checkValveHomotopy == ...</c>, where the second argument of <c>homotopy</c> read as part of
+    /// the first's last branch.
+    /// </summary>
+    private bool EndedOnABranchLine(int lines)
+    {
+        if (_code.Count == lines)
+            return false;
+        return GetCurrentLinePlainText().TrimStart().StartsWith("else ", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -4157,12 +4181,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             return null;
 
         int opening = _argumentsOpeningLine;
+        int lines = _code.Count;
         VisitFirstArgument(namedArgs[0], namedArgs.Length);
         var runs = CommentRuns(context);
 
         for (int i = 1; i < namedArgs.Length; i++)
         {
             Write(",");
+            bool afterBranches = EndedOnABranchLine(lines);
+            lines = _code.Count;
 
             // Comments after the ',' (B431), as in VisitFunction_arguments.
             if (WroteSeparatorComments(runs, i))
@@ -4174,7 +4201,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             // Check if line is too long or will be too long with next argument
             var nextArgText = namedArgs[i].GetText() ?? "";
             var estimatedLength = GetCurrentLinePlainTextLength() + 1 + nextArgText.Length; // +1 for space
-            bool needsWrapForLength = !_inDocumentationAnnotation && estimatedLength > (_maxLineLength - 3);
+            bool needsWrapForLength = !_inDocumentationAnnotation && estimatedLength > (_maxLineLength - 3)
+                || afterBranches;
 
             // Determine if we need to wrap
             bool anArgumentALine = (_inGraphicsAnnotationLevel > 0 || _parentUsingMultiLine) && !_inSingleLineGraphicsElement;

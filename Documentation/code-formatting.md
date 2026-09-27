@@ -430,6 +430,18 @@ left whole on one line and the line broke inside `abs(u1 - u2)`. Over the Modeli
 and Buildings, 31 files are written differently from before (15 MSL, 16 Buildings), only in line
 breaks and indentation - most of them an `assert` condition.
 
+**The argument after an if-expression that has broken its branches starts a line of its own**, so
+that it is not read as part of the last branch:
+
+```modelica
+  head = homotopy(if s > 0 then (N/N_nominal)^2*flowCharacteristic(V_flow_single*N_nominal/N)
+      else (N/N_nominal)^2*flowCharacteristic(0) - s*unitHead,
+    N/N_nominal*flowCharacteristic(0) - s*unitHead);
+```
+
+Earlier versions wrote it after the `else` branch, on its line. Over the Modelica Standard Library
+and Buildings, 3 files are written differently from before, only in line breaks and indentation.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:
