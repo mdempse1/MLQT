@@ -315,12 +315,27 @@ arguments a level in from its name, not at the column of the name or to the left
 
 ```modelica
   Modelica.Fluid.Interfaces.FluidPort_a port_1(redeclare package Medium = Medium,
-      m_flow(
-        min=if (portFlowDirection_1 == PortFlowDirection.Entering) then 0.0 else -Modelica.Constants.inf,
-        max=if (portFlowDirection_1 == PortFlowDirection.Leaving) then 0.0 else Modelica.Constants.inf));
+    m_flow(
+      min=if (portFlowDirection_1 == PortFlowDirection.Entering) then 0.0 else -Modelica.Constants.inf,
+      max=if (portFlowDirection_1 == PortFlowDirection.Leaving) then 0.0 else Modelica.Constants.inf));
 ```
 
 That changed a further 94 files of the two libraries, again only in indentation.
+
+**The arguments of a wrapped list start at one column**, whether or not an argument's own list
+wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
+siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:
+
+```modelica
+  parameter Data.DXCoil datCoi(sta={Some.Long.Package.Stage(
+    spe=900/60,
+    nomVal=Some.Long.Package.NominalValues(
+      Q_flow_nominal=-12000, COP_nominal=3, SHR_nominal=0.8),
+    perCur=Some.Long.Package.Curve_I())}, nSta=1);
+```
+
+Over the Modelica Standard Library and Buildings, 145 files are written differently from before,
+only in indentation and only to the left.
 
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and

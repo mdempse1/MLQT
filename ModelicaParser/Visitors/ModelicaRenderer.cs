@@ -36,6 +36,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // an argument of a list wrapped for length, from the line that list opened on, and cleared by
     // EmitLine. -1 when there is none.
     private int _currentLineMinimumIndent = -1;
+    // The deepest level the line being written may be ended at (B467): set when it starts an
+    // argument of a list wrapped for length, to the level its siblings are ended at, so an argument
+    // whose own list wraps - ending its first line inside the extra level the wrap adds - is not
+    // written deeper than they are. Cleared by EmitLine; -1 when there is none.
+    private int _currentLineMaximumLevel = -1;
     // The line the '(' of the innermost argument list being written is on (B465) - not always the
     // line the list starts on, since a comment after the '(' ends that line first (B431).
     private int _argumentsOpeningLine;
@@ -235,7 +240,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 MoveLinesBack(matrix.Start, matrix.End, (matrix.Level - _indentLevel) * IndentSpaces);
         }
 
-        var indent = new string(' ', _indentLevel * IndentSpaces);
+        // A line is indented by the level it is ended at, so one that starts a wrapped argument and
+        // is ended inside that argument's own wrapped list would be a level deeper than its
+        // siblings (B467). Such a line is ended no deeper than they are.
+        int level = _currentLineMaximumLevel >= 0 ? Math.Min(_indentLevel, _currentLineMaximumLevel) : _indentLevel;
+        _currentLineMaximumLevel = -1;
+        var indent = new string(' ', level * IndentSpaces);
         var line = _currentLine.ToString().TrimEnd();
 
         // A line is indented by the level it is ended at, which for the last line of a wrapped
@@ -2082,7 +2092,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                         EmitLine();
                         if (needsExtraIndent)
+                        {
+                            _currentLineMaximumLevel = _indentLevel;
                             Indent();
+                        }
                         // Add indent to current line unless parent is multi-line (parent already set up indent via Indent())
                         if (!_parentUsingMultiLine)
                         {
@@ -3342,7 +3355,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             // comment ends its line the same way. Read from the tokens, so a table written one
             // row a line keeps its rows on every save, and one written on one line stays there.
             var runs = CommentRuns(context);
-            int firstLine = _code.Count;
+            // A line starting a wrapped argument is ended at its siblings' level already (B467),
+            // so when the matrix begins on one, only the lines after it are moved.
+            int firstLine = _currentLineMaximumLevel >= 0 ? _code.Count + 1 : _code.Count;
             int level = _indentLevel;
             // A line the table starts is a level in from the line it began on, which may itself
             // be a continuation line carrying its indent as leading spaces.
@@ -3759,6 +3774,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 EmitLine();
                 if (needsExtraIndent)
                 {
+                    _currentLineMaximumLevel = _indentLevel;
                     Indent();
                     AddIndentToCurrentLine();
                     KeepInFrom(opening);
