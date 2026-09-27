@@ -1807,6 +1807,137 @@ public class GitOperationsTests : IDisposable
         Assert.Equal(featureTipBefore, repo.Head.Tip.Sha);
     }
 
+    /// <summary>
+    /// B418: in a rebase, Keep Mine keeps the user's own change - the commit being replayed, which
+    /// git calls "theirs" there - and the rebase finishes with it on top of main. It used to check
+    /// out HEAD, which mid-rebase is main, and so threw the user's change away.
+    /// </summary>
+    [Fact]
+    public void ResolveConflict_KeepMine_InARebase_KeepsTheUsersReplayedChange_AndContinuingCommitsIt()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var result = _git.ResolveConflict(repoPath, file, ConflictResolutionChoice.KeepMine);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("model A \"feature\" end A;", File.ReadAllText(file).Trim());
+        Assert.Empty(_git.GetRebaseInProgress(repoPath)!.ConflictedFiles);
+
+        Assert.True(_git.ContinueRebase(repoPath).Success);
+        using var repo = new Repository(repoPath);
+        Assert.Equal("feature", repo.Head.FriendlyName);
+        Assert.Equal("model A \"feature\" end A;", ((Blob)repo.Head.Tip["f.mo"].Target).GetContentText().Trim());
+        Assert.Equal("main edit", repo.Head.Tip.Parents.Single().MessageShort);
+    }
+
+    /// <summary>
+    /// B418: in a rebase, Accept Incoming takes the branch being rebased onto - HEAD there, git's
+    /// "ours". It used to check out MERGE_HEAD, which a rebase does not have, and fail.
+    /// </summary>
+    [Fact]
+    public void ResolveConflict_AcceptIncoming_InARebase_TakesTheBranchRebasedOnto()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var result = _git.ResolveConflict(repoPath, file, ConflictResolutionChoice.AcceptIncoming);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("model A \"main\" end A;", File.ReadAllText(file).Trim());
+        Assert.Empty(_git.GetRebaseInProgress(repoPath)!.ConflictedFiles);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(repo.Head.Tip["f.mo"].Target.Id, repo.Index["f.mo"].Id);
+    }
+
+    /// <summary>
+    /// B418: the conflict diff's "ours" is the user's side in a rebase as in a merge - git's
+    /// stage 3 there, the commit being replayed - so it matches what Keep Mine keeps.
+    /// </summary>
+    [Fact]
+    public void GetConflictVersions_InARebase_OursIsTheUsersReplayedChange()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+
+        var (ours, theirs) = _git.GetConflictVersions(repoPath, Path.Combine(repoPath, "f.mo"));
+
+        Assert.Equal("model A \"feature\" end A;", Encoding.UTF8.GetString(ours!));
+        Assert.Equal("model A \"main\" end A;", Encoding.UTF8.GetString(theirs!));
+    }
+
+    /// <summary>
+    /// B418: where the user's replayed commit deleted a file main edited, Keep Mine keeps the
+    /// deletion and Accept Incoming keeps main's edit.
+    /// </summary>
+    [Theory]
+    [InlineData(ConflictResolutionChoice.KeepMine, false)]
+    [InlineData(ConflictResolutionChoice.AcceptIncoming, true)]
+    public void ResolveConflict_InARebase_WhereTheUserDeletedTheFile_TakesTheChosenSide(ConflictResolutionChoice choice, bool fileKept)
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;", ["g.mo"] = "model G end G;" });
+        using (repo)
+        {
+            var main = repo.Head.FriendlyName;
+            Commands.Checkout(repo, repo.CreateBranch("feature"));
+            File.Delete(Path.Combine(repoPath, "f.mo"));
+            Commands.Stage(repo, "f.mo");
+            var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
+            repo.Commit("feature deletes f", sig, sig);
+            Commands.Checkout(repo, repo.Branches[main]);
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"main\" end A;" }, "main edit");
+            Commands.Checkout(repo, repo.Branches["feature"]);
+            Assert.True(_git.Rebase(repoPath, main).HasConflicts);
+        }
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var result = _git.ResolveConflict(repoPath, file, choice);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(fileKept, File.Exists(file));
+        if (fileKept)
+            Assert.Equal("model A \"main\" end A;", File.ReadAllText(file).Trim());
+        Assert.Empty(_git.GetRebaseInProgress(repoPath)!.ConflictedFiles);
+    }
+
+    /// <summary>A path that is not in conflict is refused during a rebase, not silently staged.</summary>
+    [Fact]
+    public void ResolveConflict_KeepMine_InARebase_OnAFileNotInConflict_Fails()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+
+        var result = _git.ResolveConflict(repoPath, Path.Combine(repoPath, "other.mo"), ConflictResolutionChoice.KeepMine);
+
+        Assert.False(result.Success);
+        Assert.Contains("not in conflict", result.ErrorMessage);
+    }
+
+    /// <summary>
+    /// B418's control: in a merge the choices keep their meaning - Keep Mine is the current branch
+    /// (HEAD), Accept Incoming the branch being merged in.
+    /// </summary>
+    [Theory]
+    [InlineData(ConflictResolutionChoice.KeepMine, "main version")]
+    [InlineData(ConflictResolutionChoice.AcceptIncoming, "feature version")]
+    public void ResolveConflict_InAMerge_KeepsMineAsTheCurrentBranch(ConflictResolutionChoice choice, string expected)
+    {
+        var (repo, repoPath) = CreateConflictRepo();
+        using (repo) { }
+        var merge = _git.MergeBranch(repoPath, "conflict-branch");
+        Assert.True(merge.HasConflicts, merge.ErrorMessage);
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var (ours, theirs) = _git.GetConflictVersions(repoPath, file);
+        Assert.Contains("main version", Encoding.UTF8.GetString(ours!));
+        Assert.Contains("feature version", Encoding.UTF8.GetString(theirs!));
+
+        var result = _git.ResolveConflict(repoPath, file, choice);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(expected, File.ReadAllText(file).Trim());
+        using var r = new Repository(repoPath);
+        Assert.False(r.Index.Conflicts.Any());
+    }
+
     #endregion
 
     #region GetConflictVersions Tests

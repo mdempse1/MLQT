@@ -264,16 +264,22 @@ string? prUrl = git.GetPullRequestUrl(repoPath);
 
 ```csharp
 // Get conflict versions for a specific file
-var versions = git.GetConflictVersions(repoPath, "path/to/file.mo");
-if (versions != null)
-{
-    string baseContent = versions.Base;     // Common ancestor
-    string oursContent = versions.Ours;     // Current branch
-    string theirsContent = versions.Theirs; // Incoming branch
-}
+var (ours, theirs) = git.GetConflictVersions(repoPath, fullPathToFile);  // bytes (B240)
+// ours   = the user's own branch - what KeepMine keeps
+// theirs = the other branch      - what AcceptIncoming takes
+
+git.ResolveConflict(repoPath, fullPathToFile, ConflictResolutionChoice.KeepMine);
 ```
 
 Git reads conflict entries from the index; SVN reads `.mine` / `.r{n}` sidecar files.
+
+**"Mine" is the user's branch in a rebase too, which is the reverse of git (B418).** A rebase
+replays the user's commits onto the other branch, so HEAD (index stage 2, git's "ours") is the
+branch being rebased onto and the replayed commit is stage 3 (git's "theirs"), and there is no
+`MERGE_HEAD`. During a rebase `ResolveConflict` takes Keep Mine / Accept Incoming from those index
+stages, and `GetConflictVersions` swaps the pair, so both the buttons and the diff mean the same
+thing in a merge and a rebase. Checking out `MERGE_HEAD`/`HEAD` as a merge does made Accept
+Incoming fail and Keep Mine discard the user's change.
 
 ## Configurable SVN Branch Directories
 

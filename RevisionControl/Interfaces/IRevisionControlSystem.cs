@@ -287,6 +287,12 @@ public interface IRevisionControlSystem
     /// <summary>
     /// Resolves a conflict in a specific file using the given resolution strategy.
     /// </summary>
+    /// <remarks>
+    /// <see cref="ConflictResolutionChoice.KeepMine"/> keeps the user's own branch and
+    /// <see cref="ConflictResolutionChoice.AcceptIncoming"/> takes the other one - in a Git rebase,
+    /// the user's replayed commit and the branch being rebased onto respectively, which is the
+    /// reverse of git's own "ours" and "theirs" there (B418).
+    /// </remarks>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="filePath">Absolute path to the conflicted file</param>
     /// <param name="choice">How to resolve the conflict</param>
@@ -306,6 +312,8 @@ public interface IRevisionControlSystem
     /// <summary>
     /// Returns the "ours" (current branch) and "theirs" (incoming branch) content of a
     /// conflicted file so the user can compare the two versions before resolving.
+    /// "Ours" is always the user's own side, the one Keep Mine keeps: in a Git rebase that is the
+    /// commit being replayed, which git itself calls "theirs" (B418).
     /// For Git: reads blobs from the index conflict entry.
     /// For SVN: reads the .mine (ours) and highest-revision .r{n} (theirs) sidecar files.
     /// </summary>

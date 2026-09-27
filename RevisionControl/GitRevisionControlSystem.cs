@@ -1542,6 +1542,14 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// AcceptIncoming / KeepMine check out the appropriate version and stage it.
     /// MarkResolved stages the manually-edited file as-is.
     /// </summary>
+    /// <remarks>
+    /// <para><b>"Mine" is the user's own branch, in a rebase as in a merge (B418).</b> A rebase
+    /// replays the user's commits onto the other branch, so git's sides are the other way round
+    /// from a merge: HEAD (stage 2, "ours") is the branch being rebased onto, and the user's commit
+    /// being replayed is stage 3 ("theirs"). There is no <c>MERGE_HEAD</c> during one either. Taking
+    /// the merge's answer here made Accept Incoming fail outright and Keep Mine throw the user's
+    /// change away, so during a rebase both are taken from the conflict's index stages instead.</para>
+    /// </remarks>
     public VcsOperationResult ResolveConflict(string repositoryPath, string filePath, ConflictResolutionChoice choice)
     {
         var result = new VcsOperationResult();
@@ -1555,6 +1563,22 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 
             using var repo = new Repository(repositoryPath);
             var relPath = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, filePath));
+
+            if (choice != ConflictResolutionChoice.MarkResolved && IsRebasing(repo))
+            {
+                var conflict = repo.Index.Conflicts[relPath];
+                if (conflict == null)
+                {
+                    result.ErrorMessage = $"{relPath} is not in conflict.";
+                    return result;
+                }
+
+                // Mine = the replayed commit (stage 3); incoming = the branch rebased onto (stage 2).
+                var side = choice == ConflictResolutionChoice.KeepMine ? conflict.Theirs : conflict.Ours;
+                TakeConflictSide(repo, repositoryPath, relPath, side);
+                result.Success = true;
+                return result;
+            }
 
             switch (choice)
             {
@@ -1586,6 +1610,29 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
+    /// Writes one side of a conflict to the working copy, through the checkout filters so line
+    /// endings come out as a checkout would write them, and stages it. A side with no entry is one
+    /// that deleted the file, so taking it deletes the file.
+    /// </summary>
+    private static void TakeConflictSide(Repository repo, string repositoryPath, string relPath, IndexEntry? side)
+    {
+        var fullPath = Path.Combine(repositoryPath, relPath);
+        if (side == null)
+        {
+            if (File.Exists(fullPath))
+                File.Delete(fullPath);
+        }
+        else
+        {
+            var blob = repo.Lookup<Blob>(side.Id);
+            using var content = blob.GetContentStream(new FilteringOptions(relPath));
+            using var file = File.Create(fullPath);
+            content.CopyTo(file);
+        }
+        Commands.Stage(repo, relPath);
+    }
+
+    /// <summary>
     /// Returns the "ours" and "theirs" versions of a conflicted file from the Git index, as the
     /// bytes they were stored as.
     /// </summary>
@@ -1611,7 +1658,9 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             var ours = BlobBytes(repo, conflict.Ours?.Id);
             var theirs = BlobBytes(repo, conflict.Theirs?.Id);
 
-            return (ours, theirs);
+            // During a rebase git's "ours" is the branch being rebased onto and "theirs" the user's
+            // replayed commit; "ours" here means the user's side, as it does in a merge (B418).
+            return IsRebasing(repo) ? (theirs, ours) : (ours, theirs);
         }
         catch (Exception ex)
         {

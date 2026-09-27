@@ -271,7 +271,12 @@ MLQT replays your commits one at a time onto the target branch.
 
 **Phase 4: Conflict resolution** (if needed)
 Conflicts may arise at any commit during the replay. The dialog shows:
-- The list of conflicted files with the same resolution options as merge
+- The list of conflicted files with the same resolution options as merge, and the same meaning:
+  **Keep Mine** keeps your branch's version — the change from your commit being replayed — and
+  **Accept Incoming** takes the version on the branch you are rebasing onto. In the conflict diff,
+  "Ours (current branch)" is likewise your branch's version. (Git itself names the two sides the
+  other way round during a rebase, calling the branch being rebased onto "ours"; MLQT does not
+  follow it there, so the buttons mean the same thing in a merge and a rebase.)
 - An **Abort Rebase** button (red) to cancel the entire rebase and return to the original state
 - A **Continue Rebase** button to proceed to the next commit after resolving conflicts — the commit keeps its original message; there is no editor to change it in
 
