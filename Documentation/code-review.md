@@ -44,6 +44,12 @@ The diff view:
 - Compares the raw Modelica source of each version (syntax highlighting is applied for readability, but the text is not run through the formatter)
 - Displays added lines, removed lines, and unchanged context
 
+The class is found at HEAD by its full name in the file, or, if it has moved since, by its short name
+when only one class in the committed file has it. **If neither finds it** — the class was renamed, or
+the committed file does not parse — the diff says so rather than comparing the class with the whole
+committed file. And a diff too long to draw (more than 20,000 rows) says how many lines were added
+and removed and suggests an external diff tool, instead of rendering every row.
+
 ![Screenshot: The Code Review tab in side-by-side diff mode showing a model with changes. The left side should show the HEAD version and the right side the working copy, with added lines highlighted in green and removed lines in red.](Images/code-review-3.png)
 
 ### Additional Buttons

@@ -142,6 +142,58 @@ public class CodeReviewDiffSourceTests
         Assert.Equal("", CodeReview.HeadSideOf(null, graph.ModelNodes.First()));
     }
 
+    // ── a class HEAD does not have (B410) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Neither the full name nor the short name is in the file at HEAD. This returned the whole HEAD
+    /// file, which for a 7.5 MB file against a ten-line class was 157,852 removed rows.
+    /// </summary>
+    [Fact]
+    public void AClassNotInTheFileAtHeadHasNoHeadSide()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "package.mo", Lf("""
+            package P
+              model Renamed "new name"
+              end Renamed;
+            end P;
+            """));
+        var node = graph.GetNode<ModelNode>("P.Renamed")!;
+
+        Assert.Null(CodeReview.HeadSideOf(Lf("""
+            package P
+              model Original "old name"
+              end Original;
+            end P;
+            """), node));
+    }
+
+    [Fact]
+    public void AnAmbiguousShortNameIsNotTakenForTheClass()
+    {
+        // Moved out of Media.Air, and HEAD has two classes of its short name: neither is it.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "package.mo", Lf("""
+            package Media
+              function setState "moved up"
+                input Real p;
+              end setState;
+            end Media;
+            """));
+        var node = graph.GetNode<ModelNode>("Media.setState")!;
+
+        Assert.Null(CodeReview.HeadSideOf(TwoOfOneName, node));
+    }
+
+    [Fact]
+    public void AHeadFileThatDoesNotParseHasNoHeadSideForTheClass()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "M.mo", "model M end M;");
+
+        Assert.Null(CodeReview.HeadSideOf("this is not Modelica at all ((((", graph.ModelNodes.First()));
+    }
+
     [Fact]
     public void AnElementPrefixIsPutBackOnBothForTheDiff()
     {

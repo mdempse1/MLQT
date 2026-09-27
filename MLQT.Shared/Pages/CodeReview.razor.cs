@@ -264,6 +264,12 @@ public partial class CodeReview : IAsyncDisposable
     private VcsFileStatus? _currentModelFileStatus;
     private string? _originalModelCode;
     private string? _modifiedModelCode;
+
+    /// <summary>
+    /// Why the diff of the class shown cannot be drawn, or null. Set with <see cref="_originalModelCode"/>
+    /// by the load that sets it, so it is only read while that is set (B410).
+    /// </summary>
+    private string? _diffUnavailable;
     private bool _isLoadingDiff;
 
     /// <summary>The class the latest diff load is for — the one whose finishing clears the spinner.</summary>
@@ -960,18 +966,27 @@ public partial class CodeReview : IAsyncDisposable
 
         string original;
         string modified;
+        string? cannotCompare = null;
         try
         {
-            (original, modified) = await Task.Run(() =>
+            string? head;
+            (head, modified) = await Task.Run(() =>
             {
                 var headFileContent = RepositoryService.GetFileContentAtRevision(repositoryId, relativePath, "HEAD");
                 return (HeadSideOf(headFileContent, node), WorkingCopyText(node, graph));
             });
+
+            // Not the whole file in its place (B410): that is not a diff of the class, and for a
+            // large file it was every line of it as a removed row.
+            original = head ?? "";
+            if (head is null)
+                cannotCompare = HeadSideMissingMessage(node, relativePath);
         }
         catch (Exception ex)
         {
-            original = $"Error loading HEAD version: {ex.Message}";
+            original = "";
             modified = node.Definition.ModelicaCode ?? "";
+            cannotCompare = $"The HEAD version of {relativePath} could not be loaded: {ex.Message}";
         }
 
         await InvokeAsync(() =>
@@ -991,6 +1006,7 @@ public partial class CodeReview : IAsyncDisposable
             {
                 _originalModelCode = original;
                 _modifiedModelCode = modified;
+                _diffUnavailable = cannotCompare;
             }
 
             StateHasChanged();
@@ -1006,10 +1022,13 @@ public partial class CodeReview : IAsyncDisposable
     /// the full name is not there (the class was moved or renamed since) does a short name stand
     /// in, and then only if it is unambiguous.</para>
     ///
-    /// <para>Empty when the file is not at HEAD, which is a new file; the whole file when the class
-    /// cannot be found in it or the file does not parse, so the user still sees what HEAD had.</para>
+    /// <para>Empty when the file is not at HEAD, which is a new file. <b>Null when the class cannot
+    /// be found in it</b>, or the file does not parse (B410). It used to be the whole HEAD file, meant
+    /// as "the user still sees what HEAD had" - but a ten-line class diffed against a 157,852-line
+    /// file is every line of the file as a removed row, which is not what HEAD had for the class,
+    /// and rendering it took the page down.</para>
     /// </summary>
-    internal static string HeadSideOf(string? headFileContent, ModelNode node)
+    internal static string? HeadSideOf(string? headFileContent, ModelNode node)
     {
         if (string.IsNullOrEmpty(headFileContent))
             return "";
@@ -1027,7 +1046,7 @@ public partial class CodeReview : IAsyncDisposable
             }
 
             if (match is null)
-                return headFileContent;
+                return null;
 
             return string.IsNullOrEmpty(match.ElementPrefix)
                 ? match.SourceCode
@@ -1035,10 +1054,15 @@ public partial class CodeReview : IAsyncDisposable
         }
         catch
         {
-            // HEAD version may not parse correctly
-            return headFileContent;
+            // HEAD version may not parse correctly, and then the class is not found in it either.
+            return null;
         }
     }
+
+    /// <summary>What the diff says instead of a diff, when the class is not in its file at HEAD (B410).</summary>
+    internal static string HeadSideMissingMessage(ModelNode node, string? relativePath) =>
+        $"{node.Id} could not be found in {relativePath} at HEAD, so there is nothing to compare it with. " +
+        "It may have been renamed or moved since the last commit, or the committed file may not parse.";
 
     #endregion
 

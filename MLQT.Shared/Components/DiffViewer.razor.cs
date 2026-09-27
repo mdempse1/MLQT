@@ -69,6 +69,19 @@ public partial class DiffViewer : IAsyncDisposable
     /// </summary>
     private const long MaxLcsCells = 50_000_000;
 
+    /// <summary>
+    /// The most rows the viewer will lay out and render (B410).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A limit on cells is not a limit on rows.</b> The LCS bound is on the product of the
+    /// two lengths, so a ten-line class against a 157,852-line file passes it at 1.9M cells of 50M
+    /// - and every line of the file then becomes a removed row. Side by side rendered all of them;
+    /// the page said "Comparing…" and then Blazor's unhandled-error banner, with nothing in the log.
+    /// The largest diff the cell limit was sized for, two ~7,000-line files, is at most 14,000 rows,
+    /// so this takes away nothing that used to work.</para>
+    /// </remarks>
+    internal const int MaxRows = 20_000;
+
     private List<DiffLine> _unifiedLines = new();
     private List<DiffLine> _leftLines = new();
     private List<DiffLine> _rightLines = new();
@@ -379,6 +392,19 @@ public partial class DiffViewer : IAsyncDisposable
             ComputeSideBySideWithContext(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
         else
             ComputeUnifiedWithContext(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
+
+        // Counted after laying out, which is linear and cheap, rather than guessed from the edit
+        // script: with context, a long script can still be a short diff. The counts stay, so the
+        // summary still says how big the change is.
+        var rows = Math.Max(_unifiedLines.Count, _leftLines.Count);
+        if (rows > MaxRows)
+        {
+            _unifiedLines.Clear();
+            _leftLines.Clear();
+            _rightLines.Clear();
+            _errorMessage = $"This diff is {rows:N0} rows long, too many to show here (the limit is {MaxRows:N0}). " +
+                "Compare the file using an external diff tool.";
+        }
     }
 
     /// <summary>

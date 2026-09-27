@@ -185,6 +185,11 @@
                     <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                 </div>
             }
+            else if (_diffUnavailable is not null && _originalModelCode is not null)
+            {
+                @* Said, rather than diffed against something else (B410). *@
+                <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Class="ma-2 mlqt-diff-unavailable">@_diffUnavailable</MudAlert>
+            }
             else
             {
                 <div style="flex: 1; overflow: hidden;">
