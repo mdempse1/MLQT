@@ -112,7 +112,7 @@ $bars = $MlqtBars
 $suites = @(
     @{ Project = 'ModelicaParser.Tests';  Filter = $null }
     @{ Project = 'ModelicaGraph.Tests';   Filter = $null }
-    @{ Project = 'MLQT.Services.Tests';   Filter = $null }
+    @{ Project = 'MLQT.Services.Tests';   Filter = 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
     @{ Project = 'MLQT.Cli.Tests';        Filter = $null }
     @{ Project = 'MLQT.McpServer.Tests';  Filter = $null }
     @{ Project = 'MLQT.Shared.Tests';     Filter = $null }

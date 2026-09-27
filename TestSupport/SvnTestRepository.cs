@@ -1,17 +1,17 @@
 using System.ComponentModel;
 using System.Diagnostics;
 
-namespace RevisionControl.Tests;
+namespace MLQT.TestSupport;
 
 /// <summary>
 /// A Subversion repository of the test run's own, built with <c>svnadmin create</c> in a temporary
-/// folder and deleted again on disposal - the SVN counterpart of <see cref="GitTestRepositoryFixture"/>.
+/// folder and deleted again on disposal - the SVN counterpart of <c>RevisionControl.Tests</c>'
+/// <c>GitTestRepositoryFixture</c>.
 /// </summary>
 /// <remarks>
 /// <para><b>Why every run has its own (B426).</b> The SVN integration tests used to share one
-/// repository on the developer's machine, <c>file:///C:/Projects/SVN/ModelicaEditorTest</c>, and a
-/// working copy of it at <c>C:\Projects\ModelicaEditorTest</c>. The tests commit - to branches, but a
-/// commit anywhere moves HEAD - so two runs at the same time (two worktrees, two agents) moved it
+/// repository on the developer's machine, and a working copy of it, both at fixed paths. The tests
+/// commit - to branches, but a commit anywhere moves HEAD - so two runs at the same time (two worktrees, two agents) moved it
 /// under each other: <c>UpdateToLatest_AlreadyUpToDate_ReturnsNoChanges</c> read the other run's
 /// commit as an update and failed, and passed again on its own. The shared repository had also
 /// collected 22,000 revisions and 12,000 branches of earlier runs' debris, and on a machine without
@@ -26,6 +26,11 @@ namespace RevisionControl.Tests;
 /// <para>Needs <c>svnadmin</c> and <c>svn</c> on PATH. The classes filtered out where there is no
 /// client take it as a class fixture and fail without one; the classes that run everywhere use
 /// <see cref="SvnWorkingCopyFixture"/>, which asks <see cref="ToolsAvailable"/> first.</para>
+///
+/// <para><b>Linked into each suite that needs it</b> (<c>RevisionControl.Tests</c> and
+/// <c>MLQT.Services.Tests</c>), as <c>InMemorySettingsService</c> is, rather than copied: the
+/// repository a suite tests against is one decision, and <c>RepositoryServiceSvnIntegrationTests</c>
+/// was the last user of the shared working copy when it had not been made (B471).</para>
 /// </remarks>
 public sealed class SvnTestRepository : IDisposable
 {
@@ -189,7 +194,7 @@ public sealed class SvnTestRepository : IDisposable
 /// A working copy of a run's own <see cref="SvnTestRepository"/>, for the classes that run
 /// everywhere - including CI, which has no svn client. <see cref="WorkingCopy"/> is null when the
 /// tools are absent, and the tests that need it return early, as they did when they probed for the
-/// shared working copy at <c>C:\Projects\ModelicaEditorTest</c>. With the tools present it is always
+/// shared working copy at a fixed path. With the tools present it is always
 /// there, so on a developer's machine these tests always assert.
 /// </summary>
 public sealed class SvnWorkingCopyFixture : IDisposable

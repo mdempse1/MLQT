@@ -88,12 +88,21 @@ Push-Location $repositoryRoot
 # svnadmin (SvnTestRepository, B426) - so two runs at once, from two worktrees, no longer commit
 # into one repository under each other. That is the point of this script - excusing a suite by
 # category is how a real failure hides in it.
+#
+# MLQT.Services.Tests has one such class too, RepositoryServiceSvnIntegrationTests (B471), and takes
+# the same filter under the same condition.
 $svnAvailable = [bool](Get-Command svn -ErrorAction SilentlyContinue)
+$svnFilter = if ($svnAvailable) { $null }
+             else { 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
 
 $suiteNotes = @{
     'RevisionControl.Tests' = @{
-        Filter       = if ($svnAvailable) { $null }
-                       else { 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
+        Filter       = $svnFilter
+        Why          = 'the SVN integration tests need an svn client'
+        NeedsTooling = $false
+    }
+    'MLQT.Services.Tests' = @{
+        Filter       = $svnFilter
         Why          = 'the SVN integration tests need an svn client'
         NeedsTooling = $false
     }

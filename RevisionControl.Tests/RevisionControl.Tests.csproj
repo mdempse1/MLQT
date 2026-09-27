@@ -22,6 +22,12 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="MLQT.TestSupport" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Linked, not copied: MLQT.Services.Tests builds its SVN repository the same way (B471). -->
+    <Compile Include="../TestSupport/SvnTestRepository.cs" Link="TestSupport/SvnTestRepository.cs" />
   </ItemGroup>
 
   <ItemGroup>

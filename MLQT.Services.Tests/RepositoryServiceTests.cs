@@ -475,88 +475,6 @@ public class RepositoryServiceTests
 
     #endregion
 
-    #region Root-Level Library Tests
-
-    [Fact]
-    public async Task AddRepositoryAsync_WithRootLevelLibrary_DiscoversLibrary()
-    {
-        // This repository has package.mo at the root level (not in a subdirectory)
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-
-        var result = await service.AddRepositoryAsync(testPath);
-
-        Assert.True(result.Success);
-        Assert.NotEmpty(result.DiscoveredLibraries);
-
-        // Should discover the library at root level
-        var rootLibrary = result.DiscoveredLibraries.FirstOrDefault(l => l.RelativePath == "");
-        Assert.NotNull(rootLibrary);
-        Assert.Single(result.DiscoveredLibraries);
-        Assert.Equal("ModelicaEditorTest", rootLibrary.LibraryName);
-    }
-
-    [Fact]
-    public async Task LoadLibrariesAsync_WithRootLevelLibrary_LoadsCorrectly()
-    {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        //var service = CreateService();
-        var libraryDataService = new LibraryDataService();
-        var settingsService = new InMemorySettingsService();
-        var fileMonitoringService = new FileMonitoringService();
-        var service = new RepositoryService(libraryDataService, settingsService, fileMonitoringService);
-
-
-        var result = await service.AddRepositoryAsync(testPath);
-        Assert.True(result.Success);
-
-        // Load the root-level library (empty relative path)
-        var rootLibraryPaths = result.DiscoveredLibraries
-            .Where(l => l.RelativePath == "")
-            .Select(l => l.RelativePath)
-            .ToList();
-
-        await service.LoadLibrariesAsync(result.Repository!.Id, rootLibraryPaths);
-
-        // Check that the library was loaded
-        Assert.NotEmpty(result.Repository.LibraryIds);
-        Assert.Single(libraryDataService.Libraries);
-        Assert.NotEmpty(libraryDataService.CombinedGraph.ModelNodes);
-    }
-
-    [Fact]
-    public void DetectVcsType_WithLocalSvnRepo_ReturnsSvnLocal()
-    {
-        // This directory is an SVN working copy with library at root
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-
-        var (vcsType, isLocal) = service.DetectVcsType(testPath);
-
-        Assert.Equal(RepositoryVcsType.SVN, vcsType);
-        Assert.True(isLocal);
-    }
-
-    #endregion
-
     #region MergeBranchAsync Tests
 
     [Fact]
@@ -614,33 +532,6 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public async Task MergeBranchAsync_WithValidSvnRepository_AndNonExistentBranch_ReturnsError()
-    {
-        // This test requires C:\Projects\ModelicaEditorTest to be an SVN working copy
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
-        if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.SVN)
-        {
-            return;
-        }
-
-        // Act
-        var result = await service.MergeBranchAsync(addResult.Repository!.Id, "branches/non-existent-branch-12345");
-
-        // Assert
-        Assert.False(result.Success);
-        Assert.NotNull(result.ErrorMessage);
-    }
-
-    [Fact]
     public async Task MergeBranchAsync_WithValidGitRepository_ReturnsResult()
     {
         // This test requires C:\Projects\ModelicaStandardLibrary to be a Git repository
@@ -664,55 +555,6 @@ public class RepositoryServiceTests
 
         // Assert - Git merge is implemented; merging the current branch returns a valid result
         Assert.NotNull(result);
-    }
-
-    [Fact]
-    public async Task MergeBranchAsync_FiresOnRepositoriesChangedEvent_OnSuccess()
-    {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
-        if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.SVN)
-        {
-            return;
-        }
-
-        // Get available branches
-        var branches = service.GetBranches(addResult.Repository!.Id);
-        if (branches.Count < 2)
-        {
-            // Need at least 2 branches to test merge
-            return;
-        }
-
-        // Find a branch that is not the current one
-        var currentBranch = addResult.Repository!.CurrentBranch;
-        var otherBranch = branches.FirstOrDefault(b => b.Name != currentBranch && !b.IsCurrent);
-
-        if (otherBranch == null)
-        {
-            return;
-        }
-
-        var eventFired = false;
-        service.OnRepositoriesChanged += () => eventFired = true;
-
-        // Act - even if merge has no changes, event should fire
-        var result = await service.MergeBranchAsync(addResult.Repository!.Id, otherBranch.Name);
-
-        // Assert - we can't control whether there are actual changes to merge,
-        // but if the merge completes (with or without changes), event should fire
-        if (result.Success || result.HasConflicts)
-        {
-            Assert.True(eventFired);
-        }
     }
 
     [Fact]
@@ -754,12 +596,12 @@ public class RepositoryServiceTests
     /// it, reads included — a read that has strayed outside the sandbox is the warning that the next
     /// write will too.</para>
     ///
-    /// <para><b>The SVN tests above are the deliberate exception</b> and do not call this. They need a
-    /// server, so they run against <c>C:\Projects\ModelicaEditorTest</c> — a working copy the developer
-    /// sets up, outside the temp directory by design, and skipped entirely when it is absent. They
-    /// carry the same hazard and no guard; naming a fixed path is the whole of what protects them.</para>
+    /// <para>The SVN tests are no exception. They once ran against a fixed working copy the developer
+    /// set up outside the temp directory, and could not call this; since B471 they check out a
+    /// repository the run builds for itself under the temp directory
+    /// (<see cref="RepositoryServiceSvnIntegrationTests"/>), and call it like every other test.</para>
     /// </summary>
-    private static string SandboxedId(AddRepositoryResult addResult)
+    internal static string SandboxedId(AddRepositoryResult addResult)
     {
         var repository = addResult.Repository!;
         var temp = Path.GetTempPath();

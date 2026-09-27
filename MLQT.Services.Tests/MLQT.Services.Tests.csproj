@@ -61,6 +61,9 @@
     <Compile Include="../TestSupport/InMemorySettingsService.cs" Link="TestSupport/InMemorySettingsService.cs" />
     <Compile Include="../TestSupport/SettingsServiceContract.cs" Link="TestSupport/SettingsServiceContract.cs" />
 
+    <!-- The SVN repository each run builds for itself, shared with RevisionControl.Tests (B426, B471). -->
+    <Compile Include="../TestSupport/SvnTestRepository.cs" Link="TestSupport/SvnTestRepository.cs" />
+
     <!-- Project-wide, so the double keeps the name every existing test already calls it by. -->
     <Using Include="MLQT.TestSupport" />
   </ItemGroup>

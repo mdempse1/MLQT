@@ -129,13 +129,16 @@ jobs:
       # (build/fetch-svn-tools.ps1) does not help: it supplies svn.exe, not svnadmin, and is
       # validated by the release workflow's "Verify bundled svn client" step instead.
       # run-all-tests.ps1 runs all three on a machine that has svn.
+      #
+      # MLQT.Services.Tests takes the same filter for the same reason: its one class that needs
+      # svn, RepositoryServiceSvnIntegrationTests, builds a repository with svnadmin too (B471).
       - name: Run RevisionControl tests (exclude the SVN integration classes)
         if: '!cancelled()'
         run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename revcontrol.trx --results-directory ${{ github.workspace }}/TestResults
 
-      - name: Run MLQT.Services tests
+      - name: Run MLQT.Services tests (exclude the SVN integration class)
         if: '!cancelled()'
-        run: dotnet test MLQT.Services.Tests -c Release --no-build --report-trx --report-trx-filename services.trx --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.Services.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename services.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.McpServer tests
         if: '!cancelled()'
@@ -276,9 +279,9 @@ jobs:
         if: '!cancelled()'
         run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename revcontrol-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
-      - name: Run MLQT.Services tests
+      - name: Run MLQT.Services tests (exclude the SVN integration class)
         if: '!cancelled()'
-        run: dotnet test MLQT.Services.Tests -c Release --no-build --report-trx --report-trx-filename services-linux.trx --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.Services.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename services-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.McpServer tests
         if: '!cancelled()'

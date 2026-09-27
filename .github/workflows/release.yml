@@ -98,9 +98,10 @@ jobs:
         if: '!cancelled()'
         run: dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit"
 
-      - name: Run MLQT.Services tests
+      # The same filter, for RepositoryServiceSvnIntegrationTests (B471).
+      - name: Run MLQT.Services tests (exclude the SVN integration class)
         if: '!cancelled()'
-        run: dotnet test MLQT.Services.Tests -c Release --no-restore
+        run: dotnet test MLQT.Services.Tests -c Release --no-restore --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit"
 
       - name: Run MLQT.McpServer tests
         if: '!cancelled()'

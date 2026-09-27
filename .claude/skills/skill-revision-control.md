@@ -353,11 +353,12 @@ dotnet test RevisionControl.Tests
 
 Tests create temporary Git/SVN repositories and clean them up automatically using `IDisposable`.
 
-SVN tests never use a fixed repository: `SvnTestRepository` builds one per run with `svnadmin create`
+SVN tests never use a fixed repository: `SvnTestRepository` (`TestSupport/`, linked into
+`RevisionControl.Tests` and `MLQT.Services.Tests`) builds one per run with `svnadmin create`
 (trunk with a small `ModelicaEditorTest` library, tags `v1.0`/`v2.0`, `branches/feature-test`) and
-deletes it on disposal. The shared `file:///C:/Projects/SVN/ModelicaEditorTest` and its working copy
-at `C:\Projects\ModelicaEditorTest` are retired: the tests commit, so two runs at once moved HEAD
-under each other (B426). `SvnWorkingCopyFixture` gives the classes CI runs a trunk working copy, or
+deletes it on disposal. The shared repository and working copy the tests once kept at a fixed path
+on the developer's machine are retired: the tests commit, so two runs at once moved HEAD under each
+other (B426), and `RepositoryServiceTests`, the last to use it, asserted nothing anywhere else (B471). `SvnWorkingCopyFixture` gives the classes CI runs a trunk working copy, or
 none where svn is not installed.
 
 The Git repositories dedicated to testing has the URL https://github.com/mdempse1/ModelicaEditorTests.git
