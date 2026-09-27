@@ -408,6 +408,19 @@ constructions and over 1,000 in its IEEE 34-bus grid, and at about 200 in MSL's
 differently from before (9 MSL, 48 Buildings), only in line breaks and indentation, and lines over 100
 characters in them fall from 640 to 599.
 
+The same holds for an array in a call's later positional argument. Positional arguments are not
+wrapped for length, so such an array used to break after its first element; the argument now moves
+to a line of its own first:
+
+```modelica
+  R_rel = Frames.axesRotations(sequence_start, {angle[1], angle[2], angle[3]},
+    {der(angle[1]), der(angle[2]), der(angle[3])});
+```
+
+Over the Modelica Standard Library and Buildings, 2 files are written differently from before -
+MSL's `MultiBody.Joints.Internal.InitAngle` and Buildings' EnergyPlus `RoomModel` - only in line
+breaks and indentation.
+
 **A description too long for its line starts a line of its own**, a level in, for a short class
 definition as for a component:
 

@@ -44,10 +44,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // The line the '(' of the innermost argument list being written is on (B465) - not always the
     // line the list starts on, since a comment after the '(' ends that line first (B431).
     private int _argumentsOpeningLine;
-    // The first argument being written that VisitFirstArgument may still move to a line of its own
-    // (B464): the line it is on and where it starts in that line, so an array of calls inside it can
-    // move it before wrapping (B474). Lines is -1 when there is none.
-    private (int Lines, int Start) _movableFirstArgument = (-1, 0);
+    // The innermost argument being written that an array of calls inside it may move to a line of
+    // its own before wrapping (B474): a first argument VisitFirstArgument may still move (B464), or a
+    // call's later positional argument, which is never wrapped for length (B483). The line it is on
+    // and where it starts in that line; Lines is -1 when there is none.
+    private (int Lines, int Start) _movableArgument = (-1, 0);
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -2166,10 +2167,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
         int start = _currentLine.Length;
         int lines = _code.Count;
-        var enclosing = _movableFirstArgument;
-        _movableFirstArgument = (lines, start);
+        var enclosing = _movableArgument;
+        _movableArgument = (lines, start);
         Visit(first);
-        _movableFirstArgument = enclosing;
+        _movableArgument = enclosing;
         // The ',' that follows is on this line too.
         if (_code.Count != lines || GetCurrentLinePlainTextLength() + 1 <= _maxLineLength)
             return;
@@ -2194,8 +2195,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// <summary>
     /// Whether an array element after the first starts a line of its own: a call that does not fit
     /// (B468), in an array that has wrapped already or is still on the line it opened on (B474).
-    /// An array still on its opening line inside a first argument that can be moved to a line of
-    /// its own (B464) moves that argument first, and opens on that line from then on. An array that
+    /// An array still on its opening line inside an argument that can be moved to a line of its own
+    /// - a first argument (B464) or a call's later positional one (B483) - moves that argument
+    /// first, and opens on that line from then on. An array that
     /// wraps from its opening line has its wrapped elements a level in, even in a list written an
     /// argument a line, where they would otherwise be at the column of its siblings.
     /// </summary>
@@ -2205,7 +2207,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             return false;
         if (_code.Count != opening)
             return true;
-        if (MovedFirstArgumentForArray())
+        if (MovedArgumentForArray())
         {
             opening = _code.Count;
             if (!WrapsCallElementForLength(element))
@@ -2216,14 +2218,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     }
 
     /// <summary>
-    /// Moves the first argument an array still on its opening line is in to a line of its own, as
-    /// VisitFirstArgument would once it was written (B464) - before the array wraps an element,
-    /// since an argument over more than one line is not moved (B474). Only the innermost such
-    /// argument, and only while it is still on the line it started on. True when it was moved.
+    /// Moves the argument an array still on its opening line is in to a line of its own, as
+    /// VisitFirstArgument would a first argument once it was written (B464) - before the array wraps
+    /// an element, since an argument over more than one line is not moved (B474). A call's later
+    /// positional argument is moved the same way, so its array wraps whole rather than mid-list
+    /// (B483). Only the innermost such argument, and only while it is still on the line it started
+    /// on. True when it was moved.
     /// </summary>
-    private bool MovedFirstArgumentForArray()
+    private bool MovedArgumentForArray()
     {
-        var (lines, start) = _movableFirstArgument;
+        var (lines, start) = _movableArgument;
         // The start is past the end only if the line was cleared without being ended, which
         // nothing inside an argument does; it is checked so a save cannot fail on it.
         if (lines != _code.Count || start > _currentLine.Length)
@@ -3671,7 +3675,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     Write(",");
                     if (!WroteSeparatorComments(runs, 1 + j))
                         SeparateGraphicsArgument();
-                    Visit(funcArgs[j]);
+                    VisitMovableArgument(funcArgs[j]);
                 }
             }
 
@@ -3722,6 +3726,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Writes a call's later positional argument so that an array of calls inside it, still on the
+    /// line it opened on, moves the argument to a line of its own before it wraps (B483). Positional
+    /// arguments are never wrapped for length, so only the array broke, mid-list:
+    /// <c>axesRotations(sequence_start, {angle[1], ...}, {der(angle[1]),</c> then the rest of that
+    /// array on the next line.
+    /// </summary>
+    private void VisitMovableArgument(modelicaParser.Function_argumentContext argument)
+    {
+        var enclosing = _movableArgument;
+        _movableArgument = (_code.Count, _currentLine.Length);
+        Visit(argument);
+        _movableArgument = enclosing;
     }
 
     /// <summary>

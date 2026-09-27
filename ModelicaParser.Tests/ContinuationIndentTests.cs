@@ -51,6 +51,11 @@ namespace ModelicaParser.Tests;
 /// <para>B482 - a short class definition's description that does not fit starts a line of its own,
 /// a level in, as a component's does. It was never measured, so once an array wrapped the closing
 /// argument joined its short last line and the description ran past the limit.</para>
+///
+/// <para>B483 - an array of calls in a call's later positional argument moves that argument to a
+/// line of its own before it wraps, as one in a first argument does (B474). Positional arguments are
+/// never wrapped for length, so the array broke mid-list: MSL's <c>InitAngle</c> had
+/// <c>{der(angle[1]),</c> at the end of one line and the rest of the array on the next.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -738,6 +743,50 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(ShortClassDescriptionsWrapped));
     }
 
+    private const string PositionalArraysMovedWhole = """
+        model M
+          Real R_rel;
+
+        equation
+          R_rel = Frames.axesRotations(sequence_start, {angle[1], angle[2], angle[3]},
+            {der(angle[1]), der(angle[2]), der(angle[3])});
+          when initial() then
+            x = 1;
+          elsewhen newInput({T, X, mInlets_flow, QGaiRad_flow, TAveInlet},
+            {pre(TLast), pre(XLast), pre(mInlets_flowLast), pre(QGaiRad_flowLast), pre(TAveInletLast)}) then
+            x = 2;
+          end when;
+          y = f(a,
+            {g(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa), g(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),
+              g(ccccccccccccccccccccccccccccccccccccccccc), g(ddddddddddddddddddddddddddddd)});
+        end M;
+        """;
+
+    [Fact]
+    public void AnArrayOfCallsInALaterPositionalArgumentMovesTheArgumentBeforeWrapping()
+    {
+        // MSL's MultiBody.Joints.Internal.InitAngle and Buildings' EnergyPlus RoomModel: a call's
+        // positional arguments are never wrapped for length, so only the array broke, after its
+        // first element - '{der(angle[1]),' at the end of one line and the rest of the array on the
+        // next. The argument now moves to a line of its own first, as a first argument does (B474),
+        // and its array wraps from there only if it still does not fit (B483).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real R_rel;
+                equation
+                  R_rel = Frames.axesRotations(sequence_start, {angle[1], angle[2], angle[3]}, {der(angle[1]), der(angle[2]), der(angle[3])});
+                  when initial() then
+                    x = 1;
+                  elsewhen newInput({T, X, mInlets_flow, QGaiRad_flow, TAveInlet}, {pre(TLast), pre(XLast), pre(mInlets_flowLast), pre(QGaiRad_flowLast), pre(TAveInletLast)}) then
+                    x = 2;
+                  end when;
+                  y = f(a, {g(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa), g(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), g(ccccccccccccccccccccccccccccccccccccccccc), g(ddddddddddddddddddddddddddddd)});
+                end M;
+                """),
+            expectedOutput: Normalise(PositionalArraysMovedWhole));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -770,6 +819,7 @@ public class ContinuationIndentTests
     [InlineData(ComponentGraphics, 100)]
     [InlineData(ArraysWrappedFromTheirOpeningLine, 60)]
     [InlineData(ShortClassDescriptionsWrapped, 100)]
+    [InlineData(PositionalArraysMovedWhole, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
