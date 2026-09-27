@@ -473,7 +473,8 @@ have added a class or moved code between them.
 `-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
 only visible here: `DymolaInterface` and `OpenModelicaInterface`, whose suites the gate does not
 measure (CI runs only their tool-free classes, and does not gate on them), and the ~8 points the browser journeys add to `MLQT.Shared`
-by exercising the real UI. Both scripts take their assembly lists from
+by exercising the real UI. With `-CoreOnly` the two tool assemblies are still in the summary, measured
+from their tool-free classes and marked so (B437). Both scripts take their assembly lists from
 `build/CoverageAssemblies.ps1`, so they cannot disagree about what "our code" means.
 
 It runs **every** suite, which is more than CI does and more than the coverage gate does:

@@ -39,9 +39,10 @@
     than a shrug.
 
 .PARAMETER Coverage
-    Also collect coverage and print a per-assembly summary. This is the only way to see coverage for
-    DymolaInterface and OpenModelicaInterface: their suites drive a live simulation tool, so no CI job
-    runs them and build/check-coverage.ps1 does not measure them.
+    Also collect coverage and print a per-assembly summary, over every assembly we own. This is the
+    only way to see what the live-tool tests add to DymolaInterface and OpenModelicaInterface: CI runs
+    only their classes needing no tool. With -CoreOnly those two are measured from that tool-free part
+    alone, as CI measures them, and the summary marks them so (B437).
 
     It reports; it does not gate. The ratchet lives in check-coverage.ps1 and is deliberately fed by
     the suites CI can actually run, so that a number it enforces is one CI can defend.
@@ -317,11 +318,21 @@ if ($Coverage) {
         Write-Host ''
         Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
 
-        # Only the assemblies whose suites actually ran. With -CoreOnly the simulation interfaces
-        # are skipped, and listing them anyway showed DymolaInterface at 0% when it is at 91% - a
-        # suite that did not run is no information, not zero coverage, which is the same misreading
-        # that made the headline 19.2% (B117).
-        $measured = if ($CoreOnly) { @($MlqtBars.Keys) } else { $MlqtOwnedAssemblies }
+        # Every assembly we own, -CoreOnly or not. -CoreOnly used to drop the simulation interfaces,
+        # because their suites were skipped and a suite that did not run is no information, not zero
+        # coverage (B117). Since B399 they are not skipped: the classes needing no tool run, as in
+        # CI, so what they cover is real information and leaving it out hid it (B437). The figure is
+        # the tool-free part only, and the line below says so.
+        $measured = $MlqtOwnedAssemblies
+
+        # Which assemblies were measured from a filtered suite, so the summary can say its figure is
+        # partial rather than let it be read as the whole suite's.
+        $partial = @{}
+        if ($CoreOnly) {
+            foreach ($s in $suites | Where-Object { $_.CoreFilter -and $_.Filter -eq $_.CoreFilter }) {
+                $partial[($s.Name -replace '\.Tests$', '')] = $true
+            }
+        }
 
         if (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $measured) {
             $summary = Get-Content (Join-Path $ReportDirectory 'Summary.json') -Raw | ConvertFrom-Json
@@ -334,7 +345,8 @@ if ($Coverage) {
                 # Named where the gate has an opinion, so the two numbers are never confused: this
                 # report covers more suites than the gate does and is not the thing CI enforces.
                 $bar = if ($MlqtBars.ContainsKey($assembly.name)) { "bar {0}% per class" -f $MlqtBars[$assembly.name] }
-                       else { 'not gated - no CI job runs its suite' }
+                       else { 'not gated' }
+                if ($partial.ContainsKey($assembly.name)) { $bar += '; tests needing no tool only' }
 
                 Write-Host ("  {0,-22} {1,6}%   ({2})" -f $assembly.name, $assembly.coverage, $bar)
             }

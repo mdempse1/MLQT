@@ -173,6 +173,27 @@ public class TestRunnerScriptTests
     }
 
     [Fact]
+    public void TheCoreOnlyCoverageSummaryKeepsTheSimulationToolAssemblies()
+    {
+        // Backlog B437. -CoreOnly once skipped the Dymola and OpenModelica suites, so its summary
+        // rightly left their assemblies out - a suite that did not run is no information. Since B399
+        // it runs them filtered to the classes needing no tool, and the summary still dropped them,
+        // hiding a real figure. It now measures every owned assembly either way, and says which
+        // figures came from a filtered suite.
+        var script = Script();
+
+        Assert.Contains("$measured = $MlqtOwnedAssemblies\n", script);
+        Assert.DoesNotContain("if ($CoreOnly) { @($MlqtBars.Keys) }", script);
+        Assert.Contains("$_.CoreFilter -and $_.Filter -eq $_.CoreFilter", script);
+        Assert.Contains("'; tests needing no tool only'", script);
+
+        // And the owned list still names the two, so "every owned assembly" includes them.
+        var assemblies = FileAt("build", "CoverageAssemblies.ps1");
+        Assert.Contains("'DymolaInterface'", assemblies);
+        Assert.Contains("'OpenModelicaInterface'", assemblies);
+    }
+
+    [Fact]
     public void TheJourneySuiteGetsPlaywrightsPlatformOverrideOnAnUbuntuItDoesNotSupport()
     {
         var script = Script();
