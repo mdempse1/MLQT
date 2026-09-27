@@ -41,7 +41,7 @@ public class OpenModelicaInterfaceTests
         );
 
         // Act
-        await omc.StartAsync();
+        await omc.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(omc.IsConnected);
@@ -97,7 +97,7 @@ public class OpenModelicaInterfaceTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act
-        var response = await _fixture.Omc.SendCommandAsync("getVersion()");
+        var response = await _fixture.Omc.SendCommandAsync("getVersion()", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(response);

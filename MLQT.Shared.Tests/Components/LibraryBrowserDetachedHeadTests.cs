@@ -137,10 +137,11 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
 
         Button(browser, "More actions").Click();
 
+        var popovers = _popovers!;
         foreach (var label in BranchActions)
         {
-            _popovers!.WaitForAssertion(() =>
-                Assert.Equal(disabled, _popovers.Find($"button[aria-label='{label}']").HasAttribute("disabled")));
+            popovers.WaitForAssertion(() =>
+                Assert.Equal(disabled, popovers.Find($"button[aria-label='{label}']").HasAttribute("disabled")));
         }
     }
 

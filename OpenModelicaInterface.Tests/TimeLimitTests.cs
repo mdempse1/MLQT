@@ -57,7 +57,7 @@ public class TimeLimitTests
         omc.CommandTimeout = TimeSpan.FromMilliseconds(200);
 
         var clock = Stopwatch.StartNew();
-        var failure = await Assert.ThrowsAsync<TimeoutException>(() => omc.SendCommandAsync("loadModel(Modelica)"));
+        var failure = await Assert.ThrowsAsync<TimeoutException>(() => omc.SendCommandAsync("loadModel(Modelica)", cancellationToken: TestContext.Current.CancellationToken));
         clock.Stop();
 
         // Closed, not merely given up on: the REQ socket cannot send again until it has received, and
@@ -85,7 +85,7 @@ public class TimeLimitTests
     {
         using var omc = new OpenModelicaInterface(OmcPath, 13134) { StartupTimeout = TimeSpan.FromMilliseconds(1) };
 
-        await Assert.ThrowsAsync<TimeoutException>(() => omc.StartAsync());
+        await Assert.ThrowsAsync<TimeoutException>(() => omc.StartAsync(cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.False(omc.IsConnected);
     }
@@ -102,10 +102,10 @@ public class TimeLimitTests
         });
         try
         {
-            var first = (OpenModelicaInterface)await factory.GetOrCreateAsync();
-            await Assert.ThrowsAsync<TimeoutException>(() => first.SendCommandAsync("loadModel(Modelica)"));
+            var first = (OpenModelicaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<TimeoutException>(() => first.SendCommandAsync("loadModel(Modelica)", cancellationToken: TestContext.Current.CancellationToken));
 
-            var second = (OpenModelicaInterface)await factory.GetOrCreateAsync();
+            var second = (OpenModelicaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.NotSame(first, second);
             Assert.True(second.IsConnected);
@@ -129,7 +129,7 @@ public class TimeLimitTests
         });
         try
         {
-            var omc = (OpenModelicaInterface)await factory.GetOrCreateAsync();
+            var omc = (OpenModelicaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(TimeSpan.FromSeconds(45), omc.CommandTimeout);
             Assert.Equal(TimeSpan.FromSeconds(20), omc.StartupTimeout);

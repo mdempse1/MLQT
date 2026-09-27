@@ -43,7 +43,7 @@ public class LibraryBrowserRepositorySwapTests : MlqtComponentTestBase
         };
 
     [Fact]
-    public void AStatusQueryThatReturnsAfterTheRepositoryChanged_IsDiscarded()
+    public async Task AStatusQueryThatReturnsAfterTheRepositoryChanged_IsDiscarded()
     {
         // One class, in a file repo-a reports as modified and repo-b does not.
         var graph = new DirectedGraph();
@@ -94,11 +94,11 @@ public class LibraryBrowserRepositorySwapTests : MlqtComponentTestBase
         browser.WaitForAssertion(() => repositories.Verify(r => r.GetWorkingCopyChanges("repo-b"), Times.Once));
 
         release.Set();
-        Assert.True(classified.Wait(TimeSpan.FromSeconds(10)), "repo-a's query never came back");
+        Assert.True(classified.Wait(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken), "repo-a's query never came back");
 
         // Let the late answer reach the dispatcher, where it used to be applied.
         Thread.Sleep(200);
-        browser.InvokeAsync(() => { }).Wait();
+        await browser.InvokeAsync(() => { });
 
         Assert.Equal(0, browser.Instance.CountFor(LibraryBrowser.ChangeFilter.Changed));
         Assert.Equal(ChangeMarker.None, browser.Instance.MarkerFor(model));

@@ -20,7 +20,7 @@ namespace MLQT.Shared.Tests.Components;
 public class SettingsUIThemeSaveTests : MlqtComponentTestBase
 {
     [Fact]
-    public void ChoosingDark_SavesTheDarkSyntaxColours()
+    public async Task ChoosingDark_SavesTheDarkSyntaxColours()
     {
         var light = SyntaxHighlightingSettings.GetLightTheme();
         light.ThemeName = "VSCode";
@@ -37,7 +37,7 @@ public class SettingsUIThemeSaveTests : MlqtComponentTestBase
         Services.AddSingleton(settings.Object);
         var panel = Render<SettingsUI>();
 
-        panel.InvokeAsync(() => panel.Instance.ApplyPresetUITheme("Dark")).Wait();
+        await panel.InvokeAsync(() => panel.Instance.ApplyPresetUITheme("Dark"));
 
         settings.Verify(s => s.SetAsync("UI", It.Is<UISettings>(ui => ui.Theme == Theme.Dark)), Times.Once);
         Assert.NotNull(saved);

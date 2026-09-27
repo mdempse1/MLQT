@@ -510,8 +510,8 @@ public class CommandTimeoutTests
             new DymolaInterface(string.Empty, settings.PortNumber, "127.0.0.1", TimeSpan.Zero));
         factory.UpdateSettings(new DymolaSettings { DymolaPath = string.Empty, PortNumber = server.Port });
 
-        var first = (DymolaInterface)await factory.GetOrCreateAsync();
-        var second = (DymolaInterface)await factory.GetOrCreateAsync();
+        var first = (DymolaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var second = (DymolaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Same(first, second);
         Assert.False(first.IsOfflineMode(), "its commands would be held back rather than wait for Dymola");

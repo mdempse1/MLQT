@@ -32,7 +32,7 @@ public class VcsPipelineQueueTests
         Assert.True(_state.IsVcsWorkInProgress);
 
         release.SetResult();
-        await run.WaitAsync(Patience);
+        await run.WaitAsync(Patience, TestContext.Current.CancellationToken);
         Assert.False(_state.IsVcsWorkInProgress);
     }
 
@@ -56,7 +56,7 @@ public class VcsPipelineQueueTests
         }
 
         var runs = Enumerable.Range(0, 3).Select(_ => queue.Enqueue(Pipeline)).ToList();
-        await Task.WhenAll(runs).WaitAsync(Patience);
+        await Task.WhenAll(runs).WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, mostAtOnce);
         Assert.True(workSeenWhileRunning, "the work ended while a queued pipeline was still to run");
@@ -78,10 +78,10 @@ public class VcsPipelineQueueTests
         var queue = new VcsPipelineQueue(_state);
 
         var failed = queue.Enqueue(() => throw new InvalidOperationException("the analysis failed"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => failed.WaitAsync(Patience));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => failed.WaitAsync(Patience, TestContext.Current.CancellationToken));
 
         var ran = false;
-        await queue.Enqueue(() => { ran = true; return Task.CompletedTask; }).WaitAsync(Patience);
+        await queue.Enqueue(() => { ran = true; return Task.CompletedTask; }).WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         Assert.True(ran);
         Assert.False(_state.IsVcsWorkInProgress);

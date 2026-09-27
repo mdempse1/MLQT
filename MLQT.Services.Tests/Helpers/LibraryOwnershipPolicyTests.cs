@@ -123,7 +123,7 @@ public class LibraryOwnershipPolicyTests
         // Guards the scan itself: a root or a pattern that found nothing would pass the first test
         // over an empty set, which is the failure shape this repository keeps finding.
         Assert.Contains("MLQT.Services/Helpers/LibraryOwnership.cs", ReadsByFile().Keys);
-        Assert.True(LibraryMembershipRead.IsMatch("Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))"));
-        Assert.False(LibraryMembershipRead.IsMatch("_knownModelIds.Contains(id)"));
+        Assert.Matches(LibraryMembershipRead, "Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))");
+        Assert.DoesNotMatch(LibraryMembershipRead, "_knownModelIds.Contains(id)");
     }
 }

@@ -25,7 +25,7 @@ public class LibraryBrowserFilteredRevealTests : MlqtComponentTestBase
     private static readonly string Root = Path.Combine(Path.GetTempPath(), "mlqt-tests", "Reveal");
 
     [Fact]
-    public void RevealingAChangedClassUnderAFilter_OpensTheFilteredTree()
+    public async Task RevealingAChangedClassUnderAFilter_OpensTheFilteredTree()
     {
         var graph = new DirectedGraph();
         var lib = new ModelNode("Lib", "Lib", "package Lib end Lib;") { ClassType = "package", LibraryId = "lib-1" };
@@ -82,7 +82,7 @@ public class LibraryBrowserFilteredRevealTests : MlqtComponentTestBase
         browser.WaitForAssertion(() =>
             Assert.Equal(1, browser.Instance.CountFor(LibraryBrowser.ChangeFilter.Changed)));
 
-        browser.InvokeAsync(() => browser.Instance.OnChangeFilterChanged(LibraryBrowser.ChangeFilter.Changed)).Wait();
+        await browser.InvokeAsync(() => browser.Instance.OnChangeFilterChanged(LibraryBrowser.ChangeFilter.Changed));
 
         // Nothing is open yet: the filtered tree opens exactly as far as the user had the tree open.
         var closed = Assert.Single(browser.Instance.ActiveTreeItems);

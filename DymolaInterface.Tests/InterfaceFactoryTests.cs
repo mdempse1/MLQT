@@ -71,7 +71,7 @@ public class InterfaceFactoryTests
         // Act - Will throw because Dymola is not installed
         try
         {
-            await factory.GetOrCreateAsync();
+            await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
         catch
         {

@@ -88,7 +88,7 @@ public class ReferenceOnlyToggleTests : MlqtComponentTestBase
     }
 
     [Fact]
-    public void TheSettingsToggle_GoesThroughTheService()
+    public async Task TheSettingsToggle_GoesThroughTheService()
     {
         // The service is what starts and stops the watch and announces the change; setting the flag
         // here alone was the defect.
@@ -111,11 +111,11 @@ public class ReferenceOnlyToggleTests : MlqtComponentTestBase
         RenderProviders();
 
         var panel = Render<SettingsRepositories>();
-        panel.InvokeAsync(() =>
+        await panel.InvokeAsync(() =>
         {
             panel.Instance.OnRepoClick(repository);
             panel.Instance.OnReferenceOnlyChanged(true);
-        }).Wait();
+        });
 
         service.Verify(s => s.SetReferenceOnly("repo-1", true), Times.Once);
     }

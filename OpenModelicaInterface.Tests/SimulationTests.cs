@@ -22,7 +22,7 @@ public class SimulationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Blocks.Examples.PID_Controller";
 
         // Act
@@ -59,11 +59,11 @@ public class SimulationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Electrical.Analog.Examples.ChuaCircuit";
 
         // Act
-        var result = await _fixture.Omc.CheckModelAsync(modelName);
+        var result = await _fixture.Omc.CheckModelAsync(modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result, "Model check should succeed");
@@ -77,7 +77,7 @@ public class SimulationTests
         var modelName = "Invalid.Model.Name";
 
         // Act
-        var result = await _fixture.Omc.CheckModelAsync(modelName);
+        var result = await _fixture.Omc.CheckModelAsync(modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result, "Model check should fail for invalid model");
@@ -88,7 +88,7 @@ public class SimulationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Mechanics.Rotational.Examples.First";
 
         // Act
@@ -103,7 +103,7 @@ public class SimulationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Electrical.Analog.Basic.Resistor";
 
         // Act
@@ -129,7 +129,7 @@ public class SimulationTests
         // how it passed alone and failed in the suite.
         await _fixture.Omc.GetErrorStringAsync();
 
-        var loaded = await _fixture.Omc.LoadFileAsync("NonExistent.mo");
+        var loaded = await _fixture.Omc.LoadFileAsync("NonExistent.mo", cancellationToken: TestContext.Current.CancellationToken);
         var error = await _fixture.Omc.GetErrorStringAsync();
 
         Assert.False(loaded);
@@ -181,7 +181,7 @@ public class SimulationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Mechanics.Rotational.Examples.First";
 
         // Act

@@ -22,7 +22,7 @@ public class ModelExplorationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var packageName = "Modelica.Blocks";
 
         // Act
@@ -55,7 +55,7 @@ public class ModelExplorationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Blocks.Continuous.PID";
 
         // Act
@@ -71,7 +71,7 @@ public class ModelExplorationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var className = "Modelica.Blocks.Continuous.PID";
 
         // Act
@@ -87,7 +87,7 @@ public class ModelExplorationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var className = "Modelica.Blocks.Continuous.PID";
 
         // Act
@@ -118,7 +118,7 @@ public class ModelExplorationTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var modelName = "Modelica.Electrical.Analog.Basic.Resistor";
 
         // Act
@@ -136,7 +136,7 @@ public class ModelExplorationTests
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
         await _fixture.Omc.ClearAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var classes = await _fixture.Omc.GetClassNamesAsync();
@@ -153,7 +153,7 @@ public class ModelExplorationTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act
-        var response = await _fixture.Omc.SendCommandAsync("getInstallationDirectoryPath()");
+        var response = await _fixture.Omc.SendCommandAsync("getInstallationDirectoryPath()", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(response);
@@ -170,7 +170,7 @@ public class ModelExplorationTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act - Get list of available commands (help)
-        var response = await _fixture.Omc.SendCommandAsync("getAvailableLibraries()");
+        var response = await _fixture.Omc.SendCommandAsync("getAvailableLibraries()", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(response);

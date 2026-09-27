@@ -114,7 +114,7 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
     /// pipeline is wired here as MainLayout wires it, through a <see cref="VcsPipelineQueue"/>.
     /// </summary>
     [Fact]
-    public void WhileThePipelineAnUpdateStartedRuns_NoOtherOperationCanStart()
+    public async Task WhileThePipelineAnUpdateStartedRuns_NoOtherOperationCanStart()
     {
         _repositories.Setup(r => r.UpdateRepositoryAsync("repo-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new VcsUpdateResult { Success = true, HasChanges = true, NewRevision = "b2" });
@@ -133,7 +133,9 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
         });
 
         UpdateButton(browser).Click();
-        Assert.True(pipelineStarted.Task.Wait(TimeSpan.FromSeconds(10)), "the update never fired its pipeline");
+        var fired = await Task.WhenAny(pipelineStarted.Task,
+                                       Task.Delay(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken));
+        Assert.True(fired == pipelineStarted.Task, "the update never fired its pipeline");
 
         // The update itself has finished; its pipeline has not.
         browser.WaitForAssertion(() => Assert.True(UpdateButton(browser).HasAttribute("disabled")));
