@@ -120,18 +120,7 @@ public sealed class TestHostFixture : IAsyncLifetime
     /// </remarks>
     public async Task<IPage> NewPageAsync()
     {
-        if (_lastPage is { IsClosed: false } previous)
-        {
-            try
-            {
-                await previous.CloseAsync();
-            }
-            catch (PlaywrightException)
-            {
-                // Already gone with its context, or the browser is shutting down. Either way there
-                // is no circuit left to leak.
-            }
-        }
+        await CloseLastPageAsync();
 
         var context = await Browser.NewContextAsync();
 
@@ -165,6 +154,23 @@ public sealed class TestHostFixture : IAsyncLifetime
         return _lastPage = page;
     }
 
+    /// <summary>Closes the page handed out last, if it is still open. See <see cref="NewPageAsync"/>.</summary>
+    private async Task CloseLastPageAsync()
+    {
+        if (_lastPage is { IsClosed: false } previous)
+        {
+            try
+            {
+                await previous.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Already gone with its context, or the browser is shutting down. Either way there
+                // is no circuit left to leak.
+            }
+        }
+    }
+
     /// <summary>
     /// Unloads every library a previous journey left behind, so this one starts on an empty graph.
     /// </summary>
@@ -193,6 +199,9 @@ public sealed class TestHostFixture : IAsyncLifetime
         await WaitForIdleAsync();
     }
 
+    /// <summary>Longer than startup's pause before it reads the saved projects. See ResetRepositoriesAsync.</summary>
+    private static readonly TimeSpan StartupPauseAllowance = TimeSpan.FromSeconds(1);
+
     /// <summary>
     /// Unloads every repository and forgets every saved project, so the next page opened starts as
     /// the application does on a first run.
@@ -210,6 +219,15 @@ public sealed class TestHostFixture : IAsyncLifetime
     /// </remarks>
     public async Task ResetRepositoriesAsync()
     {
+        // The last journey's page may still be starting up, and closing it does not stop that: the
+        // run is on the singletons. Startup pauses 200 ms before it reads the saved projects, so a
+        // repository this journey saves inside that pause is loaded by that run too - a second copy
+        // beside ours, which the Library Browser refuses to render (two siblings with one key). Seen
+        // once in a full run. There is no signal for "no startup is pending" that a page with nothing
+        // to load raises, so this outlasts the pause instead.
+        await CloseLastPageAsync();
+        await Task.Delay(StartupPauseAllowance);
+
         var repositories = Services.GetRequiredService<IRepositoryService>();
         repositories.ClearAllRepositories();
 

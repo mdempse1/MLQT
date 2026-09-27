@@ -58,16 +58,18 @@ public class MetricsLayoutJourney(TestHostFixture host) : IDisposable
         {
             Assert.True(DateTime.UtcNow < giveUp, "the Metrics tab never showed its coverage grid");
 
-            if (await compute.IsVisibleAsync() && await compute.IsEnabledAsync())
+            // Every step of this under a short timeout, IsEnabled included: it waits for the element
+            // like a click does, so a relabel between IsVisible and it cost the whole 30 seconds.
+            // That became likely once another journey had run a startup to the end, which leaves
+            // the analyses recorded as done, so this page computes on arrival (B407's journey).
+            try
             {
-                try
-                {
+                if (await compute.IsVisibleAsync() && await compute.IsEnabledAsync(new LocatorIsEnabledOptions { Timeout = 2_000 }))
                     await compute.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
-                }
-                catch (TimeoutException)
-                {
-                    // Relabelled or disabled between the check and the click - the loop looks again.
-                }
+            }
+            catch (TimeoutException)
+            {
+                // Relabelled or disabled between the check and the click - the loop looks again.
             }
 
             await page.WaitForTimeoutAsync(200);
