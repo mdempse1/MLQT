@@ -56,7 +56,57 @@ public sealed class HookCommandTests : IDisposable
 
         public (int Code, string Output) Git(string arguments) => _workspace.Git(arguments);
 
+        /// <summary>Runs git in another directory — a worktree of this repository.</summary>
+        public (int Code, string Output) GitIn(string directory, string arguments) =>
+            _workspace.Git($"-C \"{directory.Replace('\\', '/')}\" {arguments}");
+
+        /// <summary>
+        /// A second working tree of this repository, in its own temporary directory beside it — not
+        /// inside this one's, which would make it a working copy inside another.
+        /// </summary>
+        public TempWorktree AddWorktree()
+        {
+            var path = Path.Combine(Path.GetTempPath(), $"mlqt-hook-wt-{Guid.NewGuid():N}");
+            var (code, output) = Git($"worktree add -q \"{path.Replace('\\', '/')}\"");
+            Assert.True(code == 0, $"git worktree add failed: {output}");
+            Assert.Null(StrayHookGuard.EnclosingWorkingCopy(path));
+            return new TempWorktree(this, path);
+        }
+
         public void Dispose() => _workspace.Dispose();
+    }
+
+    private sealed class TempWorktree(TempRepo repo, string root) : IDisposable
+    {
+        public string Root => root;
+        public string LibraryPath => Path.Combine(root, "Lib");
+
+        /// <summary>The worktree's own git directory's hooks: where an install from here went before
+        /// B490, and where git never looks.</summary>
+        public string OwnGitDirHookPath =>
+            Path.Combine(repo.Root, ".git", "worktrees", Path.GetFileName(root), "hooks", "pre-commit");
+
+        public (int Code, string Output) Git(string arguments) => repo.GitIn(root, arguments);
+
+        public void Dispose()
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                    File.SetAttributes(file, FileAttributes.Normal);
+                Directory.Delete(root, recursive: true);
+            }
+            catch (IOException) { /* best effort, as TempWorkspace */ }
+            catch (UnauthorizedAccessException) { /* likewise */ }
+        }
+    }
+
+    /// <summary>A class with no description in the library, and the commit that adds it staged.</summary>
+    private static void StageAFinding(string libraryPath, Func<string, (int Code, string Output)> git)
+    {
+        File.WriteAllText(Path.Combine(libraryPath, "package.mo"), LibraryWithAnUndescribedClass);
+        File.WriteAllText(Path.Combine(libraryPath, "package.order"), "Good\nSloppy\n");
+        git("add -A");
     }
 
     private const string GoodLibrary = """
@@ -186,6 +236,189 @@ public sealed class HookCommandTests : IDisposable
 
         Assert.Equal(0, Cli.Run("hook", "uninstall", repo.LibraryPath).code);
         Assert.False(File.Exists(repo.HookPath));           // a stale hook can still be removed
+    }
+
+    [Fact]
+    public void ARelativeHooksPathIsResolvedFromTheTopOfTheWorkingTree_NotFromTheLibrary()
+    {
+        // git runs hooks from the top of the working tree, so a relative core.hooksPath is relative
+        // to that - here Root/.husky, where the library is Root/Lib.
+        using var repo = new TempRepo();
+        repo.Git("config core.hooksPath .husky");
+        var managed = Path.Combine(repo.Root, ".husky", "pre-commit");
+        Directory.CreateDirectory(Path.GetDirectoryName(managed)!);
+        File.WriteAllText(managed, "#!/bin/sh\nnpx lint-staged\n");
+
+        var install = Cli.Run("hook", "install", repo.LibraryPath);
+        var status = Cli.Run("hook", "status", repo.LibraryPath);
+
+        Assert.Equal(2, install.code);
+        Assert.Contains($"runs its hooks from {Path.Combine(repo.Root, ".husky")}", install.stderr);
+        Assert.Contains($"A pre-commit hook exists at {managed}, but mlqt did not write it", status.stdout);
+    }
+
+    [Fact]
+    public void AnAbsoluteHooksPathIsWhereStatusLooks_AndItIsNeverWrittenTo()
+    {
+        using var repo = new TempRepo();
+        using var elsewhere = new TempWorkspace("mlqt-hook-shared");
+        repo.Git($"config core.hooksPath \"{elsewhere.Root.Replace('\\', '/')}\"");
+        Cli.Run("hook", "install", repo.LibraryPath, "--force");     // refused, --force or not
+
+        var status = Cli.Run("hook", "status", repo.LibraryPath);
+        var uninstall = Cli.Run("hook", "uninstall", repo.LibraryPath, "--force");
+
+        Assert.Contains($"No pre-commit hook at {elsewhere.PathTo("pre-commit")}", status.stdout);
+        Assert.Contains($"runs its hooks from {elsewhere.Root}", status.stderr);
+        Assert.Equal(0, uninstall.code);
+        Assert.False(File.Exists(elsewhere.PathTo("pre-commit")));
+        Assert.False(File.Exists(repo.HookPath));
+    }
+
+    [Fact]
+    public void StatusNamesAnMlqtHookThatARedirectHasLeftUnrun()
+    {
+        using var repo = new TempRepo();
+        Cli.Run("hook", "install", repo.LibraryPath);
+        repo.Git("config core.hooksPath .husky");
+
+        var (_, stdout, _) = Cli.Run("hook", "status", repo.LibraryPath);
+
+        Assert.Contains($"No pre-commit hook at {Path.Combine(repo.Root, ".husky", "pre-commit")}", stdout);
+        Assert.Contains($"An mlqt pre-commit hook is also at {repo.HookPath}, where git does not run it", stdout);
+    }
+
+    // ---- worktrees, whose hooks are the repository's (B490) ------------------------------------
+
+    [Fact]
+    public void AnInstallFromAWorktreeGoesWhereGitRunsHooks()
+    {
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;
+        using var worktree = repo.AddWorktree();
+
+        var (code, stdout, _) = Cli.Run("hook", "install", worktree.LibraryPath);
+
+        // Following the worktree's .git file wrote .git/worktrees/<name>/hooks/pre-commit, which git
+        // never reads: git asks the common directory.
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(repo.HookPath));
+        Assert.False(File.Exists(worktree.OwnGitDirHookPath));
+        Assert.Contains($"Installed pre-commit hook: {repo.HookPath}", stdout);
+        Assert.Contains("every worktree", stdout);
+        Assert.Contains($"mlqt pre-commit hook installed at {repo.HookPath}",
+            Cli.Run("hook", "status", worktree.LibraryPath).stdout);
+    }
+
+    [Fact]
+    public void AnInstallFromAWorktreeBlocksACommitThere()
+    {
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;
+        using var worktree = repo.AddWorktree();
+        Assert.Equal(0, Cli.Run("hook", "install", worktree.LibraryPath).code);
+
+        StageAFinding(worktree.LibraryPath, worktree.Git);
+        var (code, output) = worktree.Git("commit -m \"add a class\"");
+
+        Assert.NotEqual(0, code);
+        Assert.Contains("commit blocked", output);
+    }
+
+    [Fact]
+    public void AHookInstalledFromOneWorktreeChecksTheWorktreeBeingCommitted()
+    {
+        // One hook serves every worktree. Baked in as an absolute path, the library checked was the
+        // one it was installed from - clean here - so the finding committed in the other went through.
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;
+        using var worktree = repo.AddWorktree();
+        Assert.Equal(0, Cli.Run("hook", "install", repo.LibraryPath).code);
+
+        StageAFinding(worktree.LibraryPath, worktree.Git);
+        var (code, output) = worktree.Git("commit -m \"add a class\"");
+
+        Assert.NotEqual(0, code);
+        Assert.Contains("commit blocked", output);
+        Assert.Contains("\"$TOP\"/\"Lib\"", File.ReadAllText(repo.HookPath));
+    }
+
+    [Fact]
+    public void AHookAnOlderInstallLeftInAWorktreesOwnGitDirectoryIsReportedAndRemoved()
+    {
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;
+        using var worktree = repo.AddWorktree();
+        Directory.CreateDirectory(Path.GetDirectoryName(worktree.OwnGitDirHookPath)!);
+        File.WriteAllText(worktree.OwnGitDirHookPath, "#!/bin/sh\n# installed by `mlqt hook install` - safe to delete\n");
+
+        var status = Cli.Run("hook", "status", worktree.LibraryPath);
+        var uninstall = Cli.Run("hook", "uninstall", worktree.LibraryPath);
+
+        Assert.Contains($"No pre-commit hook at {repo.HookPath}", status.stdout);
+        Assert.Contains($"also at {worktree.OwnGitDirHookPath}, where git does not run it", status.stdout);
+        Assert.Equal(0, uninstall.code);
+        Assert.False(File.Exists(worktree.OwnGitDirHookPath));
+    }
+
+    [Fact]
+    public void UninstallFromAWorktreeRemovesTheRepositorysHook()
+    {
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;
+        using var worktree = repo.AddWorktree();
+        Cli.Run("hook", "install", repo.LibraryPath);
+
+        Assert.Equal(0, Cli.Run("hook", "uninstall", worktree.LibraryPath).code);
+        Assert.False(File.Exists(repo.HookPath));
+    }
+
+    // ---- without git on PATH -------------------------------------------------------------------
+
+    [Fact]
+    public void WithoutGit_AWorktreeIsFollowedToTheCommonDirectory_AndTheFallbackIsSaid()
+    {
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;   // git is needed to make the worktree, not to read it
+        using var worktree = repo.AddWorktree();
+
+        var location = HookLocation.Resolve(worktree.LibraryPath, git: $"no-such-git-{Guid.NewGuid():N}");
+
+        Assert.NotNull(location);
+        Assert.Contains("git could not be run", location.FallbackReason);
+        Assert.Equal(Path.GetDirectoryName(repo.HookPath), location.HooksDirectory);
+        Assert.Equal(Path.GetDirectoryName(worktree.OwnGitDirHookPath), location.WorktreeHooksDirectory);
+        Assert.Equal(worktree.Root, location.WorkingTreeRoot);
+        Assert.False(location.IsRedirected);
+    }
+
+    [Fact]
+    public void WithoutGit_APlainRepositoryIsItsDotGitDirectory()
+    {
+        using var repo = new TempRepo();
+
+        var location = HookLocation.Resolve(repo.LibraryPath, git: $"no-such-git-{Guid.NewGuid():N}");
+
+        Assert.NotNull(location);
+        Assert.NotNull(location.FallbackReason);
+        Assert.Equal(repo.HookPath, location.HookPath);
+        Assert.Null(location.WorktreeHooksDirectory);
+        Assert.Equal(repo.Root, location.WorkingTreeRoot);
+    }
+
+    [Fact]
+    public void WithGit_TheLocationIsGitsAnswer_AndNothingIsSaidAboutAFallback()
+    {
+        using var repo = new TempRepo();
+        if (!GitIsAvailable(repo)) return;
+
+        var location = HookLocation.Resolve(repo.LibraryPath);
+        var (_, _, stderr) = Cli.Run("hook", "status", repo.LibraryPath);
+
+        Assert.NotNull(location);
+        Assert.Null(location.FallbackReason);
+        Assert.Equal(repo.HookPath, location.HookPath);
+        Assert.DoesNotContain("note:", stderr);
     }
 
     // ---- the hook script is a shell script (B48) -----------------------------------------------

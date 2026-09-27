@@ -80,7 +80,8 @@ internal sealed class StrayHookGuard : IDisposable
     /// <summary>
     /// Every place the hook command could write a <c>pre-commit</c> for the repository enclosing
     /// <paramref name="start"/>: its <c>.git/hooks</c>, or for a worktree both the worktree's git
-    /// directory (where the command follows a <c>.git</c> file to) and the common one (where git reads).
+    /// directory (where the command wrote before B490) and the common one (where git reads, and where
+    /// it writes now).
     /// </summary>
     private static IEnumerable<string> HookPathsEnclosing(string start)
     {

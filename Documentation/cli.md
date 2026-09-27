@@ -839,9 +839,20 @@ mlqt hook uninstall ./MyLibrary
 ```
 
 The library path defaults to the current directory, so standing in your repository `mlqt hook install`
-is usually the whole command. The repository is located by walking up from the library, so a library
-in a subdirectory needs nothing extra, and a worktree or submodule (whose `.git` is a file) is
-followed to the directory git actually reads hooks from.
+is usually the whole command. The repository is the one enclosing the library, so a library in a
+subdirectory needs nothing extra, and where its hooks live is asked of git itself
+(`git rev-parse --git-path hooks`) rather than assumed to be `.git/hooks` beside it.
+
+**Worktrees share one hook.** Git reads a worktree's hooks from the main repository's `.git/hooks`,
+not from the worktree's own git directory, so an install from any worktree goes there and applies to
+all of them — `status` and `uninstall` look in the same place. The hook checks the library in
+*whichever worktree is committing*: its path is written relative to the top of the working tree, not
+as the absolute path you installed from. (Before this was fixed, an install from a worktree wrote a
+hook git never ran; `status` reports such a leftover and `uninstall` removes it.)
+
+**Without git on your `PATH`**, the hooks directory is worked out from the `.git` directory instead —
+following a worktree's `.git` file to the repository it belongs to — and the command prints a `note:`
+saying so, because only git can say whether `core.hooksPath` sends it elsewhere.
 
 **The path must hold a library.** Because the repository is found from it, the path decides where the
 hook lands as well as what it checks. `install` looks for a library there the way `mlqt check` does —
@@ -895,10 +906,12 @@ framework's. Add the check to that script yourself, or pass `--force`.
 
 **`core.hooksPath` is refused, not worked around.** If your repository sets it — husky, pre-commit
 and lefthook all do — git reads hooks only from that directory, so one written under `.git/hooks`
-would never run. `mlqt hook install` detects this and stops, naming the directory and printing the
-`mlqt check` line to add to whatever your hook manager runs. `status` and `uninstall` still work, so
-a hook installed before the redirect was set can be seen and removed; both say the redirect is
-there.
+would never run. `mlqt hook install` detects this and stops, naming the directory git uses (a
+relative `core.hooksPath` is taken from the top of the working tree, as git takes it) and printing the
+`mlqt check` line to add to whatever your hook manager runs. `status` reports on the hook git will
+actually run, in that directory, and also names an mlqt hook installed under `.git/hooks` before the
+redirect was set; `uninstall` removes that one and never touches the redirected directory. Both say
+the redirect is there.
 
 **Git only.** SVN has no client-side hooks: a pre-commit hook there runs on the server and would need
 MLQT installed on it. Outside a git working copy the command says so rather than writing a file
