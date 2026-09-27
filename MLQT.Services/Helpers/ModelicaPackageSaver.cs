@@ -73,6 +73,19 @@ public class ModelicaPackageSaver
                 "reconstruction from vendor documentation. Reference libraries are read-only.");
         }
 
+        // A directory whose package.mo defines a model rather than a package cannot be written back
+        // as it is laid out: the class is written as a file, and the classes stored in the directory
+        // beside it have nowhere to go. Refused before anything is written, rather than leaving a
+        // Lib.mo beside the untouched Lib/ that defines Lib a second time (B443).
+        result.NonPackageDirectoryIds.AddRange(NonPackageDirectories(graph, modelsToRender));
+        if (result.NonPackageDirectoryIds.Count > 0)
+        {
+            Warn(nameof(ModelicaPackageSaver),
+                $"Not saving: {string.Join(", ", result.NonPackageDirectoryIds)} is stored as a directory " +
+                "but is not a package, and only a package is written as one");
+            return result;
+        }
+
         // PHASE 1: Pre-parse all models in parallel (batched to limit peak memory)
         PreParseModelsParallel(modelsToRender, modelIds);
 
@@ -751,6 +764,39 @@ public class ModelicaPackageSaver
         => model.ContainingFileId is not null
             && enclosingFileId is not null
             && !string.Equals(model.ContainingFileId, enclosingFileId, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The classes among <paramref name="models"/> that a directory's <c>package.mo</c> defines and
+    /// that the save would not write as a directory — a <c>model</c>, <c>block</c> or short class
+    /// definition rather than a package (B443). MLS 3.6 §13.4.1 asks only that the node define "a
+    /// class A", so such a layout loads, but <see cref="PackageFileLayout.WrittenAsDirectory"/> gives a
+    /// directory to a package alone, and saving one would move the class out of its directory.
+    ///
+    /// <para>A class heads a <c>package.mo</c> when that is its file, its name is the directory's, and
+    /// it is not nested inline in a class of the same file. The name is what tells the node from a
+    /// class called <c>Package</c> in its own <c>Package.mo</c>, which a case-sensitive filesystem can
+    /// hold beside it.</para>
+    /// </summary>
+    public static IReadOnlyList<string> NonPackageDirectories(DirectedGraph graph, IEnumerable<ModelNode> models)
+    {
+        var found = new List<string>();
+        foreach (var model in models)
+        {
+            if (model.ContainingFileId is null
+                || graph.GetNode<FileNode>(model.ContainingFileId)?.FilePath is not { } path
+                || !string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), model.Definition.Name, StringComparison.Ordinal))
+                continue;
+
+            var parent = model.ParentModelName is null ? null : graph.GetNode<ModelNode>(model.ParentModelName);
+            if (parent is not null && string.Equals(parent.ContainingFileId, model.ContainingFileId, StringComparison.Ordinal))
+                continue;
+
+            if (!PackageFileLayout.WrittenAsDirectory(model))
+                found.Add(model.Id);
+        }
+        return found;
+    }
 
     /// <summary>
     /// Builds the package.order list for a package model.

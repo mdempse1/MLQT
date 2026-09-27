@@ -193,6 +193,13 @@ own stays there, whatever its name collides with: it is written back to that fil
 `package.mo`. And if a full save ever cannot put a class of the library into any file it writes, it
 reports the library as not saved and deletes none of its files, so no class's only copy is removed.
 
+Only a **package** is written as a directory. The Modelica specification lets a directory's
+`package.mo` define any class (`model Lib` in `Lib/package.mo`, with more classes beside it), and MLQT
+loads such a library, but Format All cannot write it back as it is laid out. It leaves the whole
+library untouched — nothing written, nothing deleted — and reports which class to declare as a
+`package` before it can be formatted. The same applies to a `package.mo` holding a short class
+definition (`package Lib = Other;`).
+
 ### When the restructure happens
 
 Only on the **full** library save: the [Format All Files](#format-all-files-button) button, and the automatic full reformat that runs when you change a repository's formatting settings.

@@ -597,23 +597,64 @@ public sealed class FormattingPipelineTests : IDisposable
     {
         // The last line (B441): a class that was in the library before the save and is in no file
         // the save wrote or kept is an error, and nothing of the library is deleted. A directory whose
-        // package.mo holds a model rather than a package is written as a file, so its child in a file
-        // of its own has nowhere to go.
+        // package.mo holds a model rather than a package is the one layout known to reach it, and is
+        // now refused before anything is written (B443) - so nothing is written beside it either:
+        // a Lib.mo there defined Lib a second time.
         var dir = Path.Combine(_root, "Lib");
         Directory.CreateDirectory(dir);
         var packageMo = Path.Combine(dir, "package.mo");
-        File.WriteAllText(packageMo, "model Lib\nReal x;\nend Lib;\n");
+        const string packageText = "model Lib\nReal x;\nend Lib;\n";
+        File.WriteAllText(packageMo, packageText);
         var child = Path.Combine(dir, "Child.mo");
-        File.WriteAllText(child, "within Lib;\nmodel Child\nend Child;\n");
+        const string childText = "within Lib;\nmodel Child\nend Child;\n";
+        File.WriteAllText(child, childText);
         var (service, pipeline) = await RepositoryWith(dir);
         Assert.Contains("Lib.Child", Assert.Single(service.Libraries).ModelIds);
+        var failures = new List<(string Name, Exception Error)>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, ex) => failures.Add((name, ex)));
+
+        Assert.Equal(packageText, File.ReadAllText(packageMo));
+        Assert.Equal(childText, File.ReadAllText(child));
+        Assert.False(File.Exists(Path.Combine(_root, "Lib.mo")));
+        var (failed, error) = Assert.Single(failures);
+        Assert.Equal("Lib", failed);
+        Assert.Contains("defines a model, not a package", error.Message);
+    }
+
+    [Fact]
+    public async Task AModelInlineInPackageMo_NamedAfterTheDirectory_IsNotTakenForTheDirectory()
+    {
+        // Only the class that heads package.mo is the directory's class (B443). A model nested in it
+        // that happens to share the directory's name is an ordinary child, and the library saves.
+        var dir = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "package.mo"), "package Lib\nmodel Lib\nReal x;\nend Lib;\nend Lib;\n");
+        var (_, pipeline) = await RepositoryWith(dir);
         var failures = new List<string>();
 
         await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
 
-        Assert.True(File.Exists(packageMo));
-        Assert.True(File.Exists(child));
-        Assert.Equal(["Lib"], failures);
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public async Task ADirectoryWhosePackageMoIsAShortClass_IsLeftAsItIs()
+    {
+        // The other class the layout writes as a file although it heads a directory (B443).
+        var dir = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(dir);
+        var packageMo = Path.Combine(dir, "package.mo");
+        const string packageText = "package Lib = Other;\n";
+        File.WriteAllText(packageMo, packageText);
+        var (_, pipeline) = await RepositoryWith(dir);
+        var failures = new List<(string Name, Exception Error)>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, ex) => failures.Add((name, ex)));
+
+        Assert.Equal(packageText, File.ReadAllText(packageMo));
+        Assert.False(File.Exists(Path.Combine(_root, "Lib.mo")));
+        Assert.Contains("defines a short class definition", Assert.Single(failures).Error.Message);
     }
 
     [Fact]

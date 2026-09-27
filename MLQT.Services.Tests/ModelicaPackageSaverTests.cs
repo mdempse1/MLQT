@@ -132,6 +132,8 @@ public class ModelicaPackageSaverTests : IDisposable
             graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.Contains(result.FailedFiles, f => Path.GetFileName(f) == "Inner.mo");
+        // B441's last line names it too, whatever the reason it went unwritten.
+        Assert.Equal(["TestPackage.Inner"], result.UnplacedModelIds);
         Assert.Equal(original, inner.Definition.ModelicaCode);
         Assert.True(inner.SourceMatchesFile);
     }

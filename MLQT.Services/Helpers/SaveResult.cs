@@ -35,4 +35,13 @@ public class SaveResult
     /// when this is not empty. Classes left untouched in their files (B414) are never listed.
     /// </summary>
     public List<string> UnplacedModelIds { get; } = new();
+
+    /// <summary>
+    /// Classes defined by a directory's <c>package.mo</c> that are not packages — <c>model Lib</c> in
+    /// <c>Lib/package.mo</c>. The save writes only a package as a directory, so it would write such a
+    /// class as <c>Lib.mo</c> beside the directory it came from and have nowhere to put the classes in
+    /// that directory. When this is not empty the save refused before writing anything (B443):
+    /// <see cref="WrittenFiles"/> is empty and a caller must keep every file of the library.
+    /// </summary>
+    public List<string> NonPackageDirectoryIds { get; } = new();
 }

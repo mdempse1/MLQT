@@ -340,8 +340,24 @@ public sealed class FormattingPipeline : IFormattingPipeline
                             modelIdToFilePath[kvp.Key] = kvp.Value;
                         }
 
-                        if (saveResult.FailedFiles.Count > 0 || saveResult.UnplacedModelIds.Count > 0)
+                        if (saveResult.FailedFiles.Count > 0 || saveResult.UnplacedModelIds.Count > 0
+                            || saveResult.NonPackageDirectoryIds.Count > 0)
                             librariesToKeep.Add(library);
+                    }
+
+                    // Refused before anything was written (B443): the library is left as it is and
+                    // the user is told which directory to change.
+                    if (saveResult.NonPackageDirectoryIds.Count > 0)
+                    {
+                        var first = saveResult.NonPackageDirectoryIds[0];
+                        var what = graph.GetNode<ModelNode>(first)?.ClassType is { } type && type != "package"
+                            ? $"a {type}"
+                            : "a short class definition";
+                        onLibraryFailed?.Invoke(library.Name, new InvalidOperationException(
+                            $"{first} is stored as a directory, but its package.mo defines {what}, not a package, " +
+                            "and Format All writes only a package as a directory. Nothing of the library was " +
+                            "changed; declare the class as a package to format the library."));
+                        return;
                     }
 
                     if (saveResult.FailedFiles.Count > 0)
