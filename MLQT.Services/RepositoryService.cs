@@ -32,6 +32,10 @@ public class RepositoryService : IRepositoryService
     // takes it - CreateAndSelectProjectAsync and the legacy migration in LoadRepositorySettingsAsync
     // as well (B452) - and nothing holding it may call anything that saves.
     private readonly SemaphoreSlim _saveGate = new(1, 1);
+
+    // Whether memory owns the settings key: set by the first LoadRepositorySettingsAsync, or by a
+    // save that found nothing saved. Until then a save leaves the key alone (B455).
+    private volatile bool _settingsOwned;
     private readonly Dictionary<string, (List<VcsWorkingCopyFile> Changes, long Ticks)> _workingCopyCache = new();
     private readonly object _workingCopyCacheLock = new();
     private const long WorkingCopyCacheLifetimeMs = 300000; // 5 minutes — event-based invalidation handles real changes
@@ -879,6 +883,14 @@ public class RepositoryService : IRepositoryService
     /// id back. Creating and renaming now await their save; removing a repository still does not (its
     /// callers are synchronous), and this is what makes that safe: a later save waits behind the
     /// earlier one and then reads the state as it is, so whichever write lands last is the newest.</para>
+    ///
+    /// <para><b>Nothing saved is overwritten before it has been loaded (B455).</b> A save writes the
+    /// whole project list from memory, and before the first <see cref="LoadRepositorySettingsAsync"/>
+    /// memory holds none of it - so a save then replaced every saved project with one empty Default,
+    /// and a legacy <c>Repositories</c> list with nothing before the load could migrate it. Until the
+    /// first load, a save writes the key only if nothing is saved there yet; otherwise it leaves it
+    /// alone and writes only each repository's own <c>.mlqt/settings.json</c>, and the load that
+    /// follows replaces memory with what is saved, as it always has.</para>
     /// </remarks>
     public async Task SaveRepositorySettingsAsync()
     {
@@ -964,7 +976,20 @@ public class RepositoryService : IRepositoryService
             settings.ActiveProjectId = _activeProjectId;
         }
 
+        if (!_settingsOwned)
+        {
+            var stored = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+            if (stored.Projects.Count > 0 || stored.Repositories.Count > 0)
+            {
+                Warn("RepositoryService",
+                    "Repository settings were not saved: the saved projects have not been loaded yet, " +
+                    "and saving now would replace them.");
+                return;
+            }
+        }
+
         await _settingsService.SetAsync(SettingsKey, settings);
+        _settingsOwned = true;
     }
 
     public async Task LoadRepositorySettingsAsync(string? projectId = null, CancellationToken cancellationToken = default)
@@ -1050,6 +1075,9 @@ public class RepositoryService : IRepositoryService
         }
 
         _activeProjectId = activeProject.Id;
+
+        // From here memory holds the saved projects, so a save may write them (B455).
+        _settingsOwned = true;
 
         Info("RepositoryService", $"Loading project '{activeProject.Name}' with {activeProject.Repositories.Count} repositories");
 

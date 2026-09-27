@@ -2507,8 +2507,8 @@ public class RepositoryServiceTests
     {
         // B452: the migration wrote with SetAsync directly. A save queued before the load, held,
         // landed after the migration's write, so the file held a different project from the one
-        // loaded into memory. With the gate the load reads what that save wrote - which has already
-        // replaced the legacy list, since a save writes only projects - and memory and file agree.
+        // loaded into memory. With the gate the load reads the file only after that save - which,
+        // since B455, leaves a file it has not loaded alone - and memory and file agree.
         var settings = new HeldSettings();
         await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
         {
@@ -2558,6 +2558,68 @@ public class RepositoryServiceTests
         Assert.Equal("legacy", Assert.Single(migrated.Repositories).Id);
         Assert.Empty(saved.Repositories);
         await service.SaveRepositorySettingsAsync().WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ASaveBeforeTheFirstLoad_KeepsUnmigratedLegacyRepositories()
+    {
+        // B455: a save before the first load wrote only Projects - a Default project built from an
+        // empty memory - over a legacy file, so its Repositories list was gone before the load could
+        // migrate it. A save now leaves saved contents it has never loaded alone.
+        var settings = new HeldSettings();
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Repositories = { new RepositorySettingsEntry { Id = "legacy", Name = "Legacy", LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b455-" + Guid.NewGuid().ToString("N")) } }
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        await service.SaveRepositorySettingsAsync();
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var migrated = Assert.Single((await settings.SavedAsync()).Projects);
+        Assert.Equal("legacy", Assert.Single(migrated.Repositories).Id);
+        Assert.Equal(migrated.Id, service.GetActiveProject()?.Id);
+    }
+
+    [Fact]
+    public async Task ASaveBeforeTheFirstLoad_KeepsTheSavedProjects()
+    {
+        // B455's wider case: the same save replaced every saved project with one empty Default.
+        var settings = new HeldSettings();
+        var mine = new ProjectProfile { Name = "Mine" };
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Projects = { mine },
+            ActiveProjectId = mine.Id
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        await service.CreateProjectAsync("Early");
+
+        var saved = await settings.SavedAsync();
+        Assert.Equal(mine.Id, Assert.Single(saved.Projects).Id);
+        Assert.Equal(mine.Id, saved.ActiveProjectId);
+
+        // ...and once loaded, saves write as they always did.
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var later = await service.CreateProjectAsync("Later");
+        Assert.Contains((await settings.SavedAsync()).Projects, p => p.Id == later.Id);
+    }
+
+    [Fact]
+    public async Task ASaveBeforeTheFirstLoad_OverAnEmptyStore_StillWrites()
+    {
+        // Nothing saved means nothing to lose: a service that never loads (the MCP server, most
+        // tests) still persists what it does, and every save after the first one too.
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        var first = await service.CreateProjectAsync("First");
+        var second = await service.CreateProjectAsync("Second");
+
+        var saved = await settings.SavedAsync();
+        Assert.Contains(saved.Projects, p => p.Id == first.Id);
+        Assert.Contains(saved.Projects, p => p.Id == second.Id);
     }
 
     #endregion
