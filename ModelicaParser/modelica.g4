@@ -39,8 +39,20 @@ grammar modelica;
 // A file has at most ONE within clause (Modelica spec 13.2.2.2). Accepting a repeated clause here
 // let a file that had been written with a duplicated 'within' parse clean, so nothing downstream
 // ever reported it and reformatting preserved the damage instead of flagging it.
+// Comments may also follow the clause and the file's last class (B430): `within P; // note` and
+// `end M; // trailer` were syntax errors. None of this text is in any class's source span, so a
+// writer that rebuilds the file from stored source keeps it only because FileLevelText carries it
+// (B445) - which it does for these two positions and the header, and not for a comment BETWEEN two
+// top-level classes, which Format All's one-file-per-class restructure would silently drop. That
+// position stays a syntax error, visible, rather than becoming a quiet deletion.
+// Each run can belong to one loop only: the trailing comments are inside the group that starts with
+// a class, so a run at the top or after the clause cannot be claimed by them. That keeps every choice
+// one token ahead - a comment continues its run, anything else ends it - so a long run is never
+// rescanned per comment (B235). A trailing loop outside the group would let a comment after the
+// clause belong to either, and deciding that means scanning to the end of the run for each one.
 stored_definition
-    : c_comment* ('within' (name)? ';')? (('final')? class_definition ';')* EOF
+    : c_comment* ('within' (name)? ';' c_comment*)?
+      (('final')? class_definition ';' (('final')? class_definition ';')* c_comment*)? EOF
     ;
 
 class_definition

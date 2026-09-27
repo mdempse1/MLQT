@@ -41,8 +41,8 @@ public class FileTextLoadTests
     [Fact]
     public void CommentsAfterTheClauseAndAfterTheClassAreCarriedToo()
     {
-        // Neither position parses today (B430), but the classes still load, and what a writer puts
-        // back must not depend on the grammar accepting them yet.
+        // Both positions parse since B430, and neither is in the class's stored source, so this is
+        // the only place a writer can find them.
         var graph = Load("within Lib; // after\nmodel M\nend M; // trailer\n");
 
         var text = graph.GetNode<ModelNode>("Lib.M")!.FileText!;

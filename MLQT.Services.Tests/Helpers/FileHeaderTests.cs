@@ -88,6 +88,26 @@ public class FileHeaderTests : IDisposable
     }
 
     [Fact]
+    public void FormatAll_WritesCommentsAfterTheClauseAndAfterTheClassExactlyAsTheIncrementalFormatterDoes()
+    {
+        // B430: both positions parse now, so the incremental formatter renders them from the tree
+        // while Format All writes them from FileLevelText. The two must still write the same file.
+        const string file =
+            "// header\nwithin Lib; // after\n/* more */\nmodel M \"m\"\n  Real x;\nend M; // trailer\n// last\n";
+        var lib = WriteLibrary(file);
+        var graph = Load(lib);
+        var incremental = ModelicaFileEncoding.EnsureFinalNewline(
+            ModelicaPackageSaver.RenderFileSource(file, "Lib", FormattingOptions.None));
+
+        FormatAll(graph);
+
+        Assert.Equal(
+            "// header\nwithin Lib;\n// after\n/* more */\nmodel M \"m\"\n  Real x;\nend M;\n// trailer\n// last\n",
+            incremental);
+        Assert.Equal(incremental, Read(Path.Combine(lib, "M.mo")));
+    }
+
+    [Fact]
     public void FormatAll_TwiceWritesTheSameFile()
     {
         var lib = WriteLibrary();
@@ -177,8 +197,8 @@ public class FileHeaderTests : IDisposable
     [Fact]
     public void RenderFileOwnerModel_KeepsCommentsAfterTheClauseAndAfterTheClass()
     {
-        // The grammar does not accept either position yet (B430), so the file loads with a syntax
-        // error - but a writer must not be the thing that quietly removes them.
+        // Both positions parse since B430, which is what made it safe to accept them: a writer
+        // must not be the thing that quietly removes them.
         var lib = WriteLibrary("within Lib; // after\nmodel M \"m\"\n  Real x;\nend M; // trailer\n");
         var graph = Load(lib);
 

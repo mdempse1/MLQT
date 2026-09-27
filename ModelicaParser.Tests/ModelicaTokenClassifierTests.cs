@@ -132,6 +132,14 @@ public class ModelicaTokenClassifierTests
               ;
             end M;
             """ },
+        // B430: comments after the within clause and after the class, at file level.
+        { "comments after within and after the class", """
+            within P; // after
+            /* more */
+            model M
+            end M; // trailer
+            // last
+            """ },
     };
 
     // ── property 1: round trip ────────────────────────────────────────────────────

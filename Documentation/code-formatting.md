@@ -265,9 +265,12 @@ the class that heads the file**, and every path that writes the file keeps it:
   class is moved into a file another class heads (which has a header of its own), directly above
   the class.
 
-A comment after `within ...;` or after the last `end X;` is still reported as a syntax error today,
-so a file carrying one is not formatted (see [When Formatting Does NOT Happen](#when-formatting-does-not-happen)).
-Moving it above the `within` clause is the way to keep it and have the file formatted.
+A comment **between two top-level classes** in the same file is the one position that is still
+reported as a syntax error, so a file carrying one is not formatted (see
+[When Formatting Does NOT Happen](#when-formatting-does-not-happen)). Nothing carries it: a full
+format writes each top-level class to a file of its own, so accepting it would mean deleting it
+without a word. Moving it into one of the classes, or above the `within` clause, is the way to keep
+it and have the file formatted.
 
 ## Line endings and how files end
 

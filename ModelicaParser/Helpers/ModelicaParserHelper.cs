@@ -34,9 +34,45 @@ public class ModelicaParserHelper
     public static string PreprocessCode(string modelicaCode)
     {
         var code = NormalizeLineEndings(modelicaCode).TrimEnd();
-        if (!code.EndsWith(';'))
-            code += ";";
-        return code;
+        if (code.EndsWith(';'))
+            return code;
+
+        // A file may end in a comment after its last `end X;` (B430). A ';' appended to a line
+        // comment became part of it - `// trailer;`, written back by every save - and one after a
+        // block comment was a stray ';' and a syntax error. So when the text ends in a comment, the
+        // question is whether what comes before the comments ends in one. Lexed only then, which a
+        // class's stored source (ending in its name) and a file ending in `end X;` never are.
+        if (MayEndInComment(code))
+        {
+            var (last, lastSignificant) = LastTokens(code);
+            if (last is { Type: modelicaLexer.COMMENT or modelicaLexer.LINE_COMMENT })
+                return lastSignificant is null || lastSignificant.Text == ";"
+                    ? code
+                    : code + "\n;";   // on a line of its own, out of the comment's reach
+        }
+
+        return code + ";";
+    }
+
+    private static bool MayEndInComment(string code) =>
+        code.EndsWith("*/", StringComparison.Ordinal)
+        || code.AsSpan(code.LastIndexOf('\n') + 1).Contains("//", StringComparison.Ordinal);
+
+    /// <summary>The last token on the default channel, and the last of those that is not a comment.</summary>
+    private static (IToken? Last, IToken? LastSignificant) LastTokens(string code)
+    {
+        var lexer = new modelicaLexer(new AntlrInputStream(code));
+        lexer.RemoveErrorListeners();
+        IToken? last = null, lastSignificant = null;
+        for (var token = lexer.NextToken(); token.Type != TokenConstants.EOF; token = lexer.NextToken())
+        {
+            if (token.Channel != TokenConstants.DefaultChannel)
+                continue;
+            last = token;
+            if (token.Type is not (modelicaLexer.COMMENT or modelicaLexer.LINE_COMMENT))
+                lastSignificant = token;
+        }
+        return (last, lastSignificant);
     }
 
     /// <summary>
