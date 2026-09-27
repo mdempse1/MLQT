@@ -1181,11 +1181,11 @@ public partial class CodeReview : IAsyncDisposable
             // replaces it when the parse lands.
             if ((modelNode.Definition.ModelicaCode?.Length ?? 0) > PaintBeforeParsingAbove)
             {
-                _ = Task.Run(() => Show(modelNode, graph, showHighlighted, showAnnotations,
-                                        excludeClassDefs, parse: false))
+                _ = Task.Run(() => FirstPaint(modelNode, graph, showHighlighted, showAnnotations, excludeClassDefs))
                     .ContinueWith(async quick =>
                     {
-                        if (!quick.IsCompletedSuccessfully)
+                        // Null when the paint would show something the class is about to hide (B402).
+                        if (!quick.IsCompletedSuccessfully || quick.Result is null)
                             return;
 
                         await InvokeAsync(() =>
@@ -1360,18 +1360,19 @@ public partial class CodeReview : IAsyncDisposable
     /// </summary>
     internal static ShownClass Show(
         ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations,
-        bool hideClassDefinitions, bool parse = true)
+        bool hideClassDefinitions, bool parse = true, (string Source, BufferedTokenStream Stream)? lexed = null)
     {
         // The stored text while it is still the file's, otherwise the file sliced again — for a
-        // package whose inline children the trimmer removed, or a class the formatter rewrote.
-        var source = ClassSource.For(model, graph);
+        // package whose inline children the trimmer removed. A caller that has already read and
+        // lexed it for the first paint passes both, rather than have the file read twice.
+        var source = lexed?.Source ?? ClassSource.For(model, graph);
 
         modelicaParser.Stored_definitionContext? tree = null;
         BufferedTokenStream stream;
         if (parse)
             (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
         else
-            stream = ModelicaTokenClassifier.TokensOnly(source);
+            stream = lexed?.Stream ?? ModelicaTokenClassifier.TokensOnly(source);
 
         // Annotations come out of the text before it is coloured, because the ones that matter share
         // a line with code and cannot be taken out by dropping whole lines (B233). Line numbers
@@ -1405,6 +1406,43 @@ public partial class CodeReview : IAsyncDisposable
 
         return new ShownClass(display, elision);
     }
+
+    /// <summary>
+    /// The lexer's first paint of a large class (B185), or null when it would show something the
+    /// parse is about to hide (B402).
+    ///
+    /// <para>Hiding needs the tree, and the first paint exists because the tree may be a long time
+    /// coming - so a package's nested classes, and every annotation when they are hidden, were drawn
+    /// in full and then collapsed out from under the reader when the parse landed: the class jumped,
+    /// and whatever line they had started reading moved. A spinner until the parse is the better of
+    /// the two there. The case B185 was for is untouched: a model with annotations shown hides
+    /// nothing, so it still paints at once.</para>
+    ///
+    /// <para><b>Asked cheaply, and erring towards the spinner.</b> Nested classes are asked of the
+    /// graph - a class stored in the same file whose parent is this one is a nested class definition
+    /// in this source - and annotations of the lexer, which the paint runs anyway. A nested class
+    /// sharing a line with code is not hidden, and is still counted here; that costs a spinner, where
+    /// the other mistake would cost the jump.</para>
+    /// </summary>
+    internal static ShownClass? FirstPaint(
+        ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations, bool hideClassDefinitions)
+    {
+        if (hideClassDefinitions && HasNestedClassInItsSource(model, graph))
+            return null;
+
+        var source = ClassSource.For(model, graph);
+        var stream = ModelicaTokenClassifier.TokensOnly(source);
+        if (!showAnnotations && stream.GetTokens().Any(t => t.Text == "annotation"))
+            return null;
+
+        return Show(model, graph, showHighlighted, showAnnotations, hideClassDefinitions, parse: false,
+            lexed: (source, stream));
+    }
+
+    private static bool HasNestedClassInItsSource(ModelNode model, DirectedGraph graph) =>
+        !string.IsNullOrEmpty(model.ContainingFileId)
+        && graph.GetModelsInFile(model.ContainingFileId)
+            .Any(m => string.Equals(m.ParentModelName, model.Id, StringComparison.Ordinal));
 
     /// <summary>
     /// What stands in for a hidden nested class: its declaration, so the package still reads as a
