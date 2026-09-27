@@ -182,7 +182,7 @@ public sealed class CodeReviewSplitSingleFileLibraryTests : CodeReviewTestBase
 
         var libraries = new LibraryDataService();
         var repositories = new RepositoryService(libraries, _settings, new FileMonitoringService());
-        await repositories.LoadRepositorySettingsAsync();
+        await repositories.LoadRepositorySettingsAsync(cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
         var before = Library;
         var after = Assert.Single(libraries.Libraries);
