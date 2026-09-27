@@ -179,10 +179,11 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
 
         Button(browser, "More actions").Click();
 
-        _popovers!.WaitForAssertion(() =>
-            Assert.False(_popovers.Find("button[aria-label='Rebase current branch']").HasAttribute("disabled")));
+        var popovers = _popovers!;
+        popovers.WaitForAssertion(() =>
+            Assert.False(popovers.Find("button[aria-label='Rebase current branch']").HasAttribute("disabled")));
         foreach (var label in BranchActions.Where(l => l != "Rebase current branch"))
-            Assert.True(_popovers.Find($"button[aria-label='{label}']").HasAttribute("disabled"), label);
+            Assert.True(popovers.Find($"button[aria-label='{label}']").HasAttribute("disabled"), label);
     }
 
     [Fact]

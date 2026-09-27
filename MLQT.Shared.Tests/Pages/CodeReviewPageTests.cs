@@ -88,8 +88,8 @@ public class CodeReviewPageTests : CodeReviewTestBase
         Assert.StartsWith("model A", diff.Instance.OriginalContent);
         Assert.Contains("Real a = 1;", diff.Instance.OriginalContent);
         Assert.Contains("Real a = 2;", diff.Instance.ModifiedContent);
-        Assert.Equal(1, diff.FindAll(".diff-line-added").Count);
-        Assert.Equal(1, diff.FindAll(".diff-line-removed").Count);
+        Assert.Single(diff.FindAll(".diff-line-added"));
+        Assert.Single(diff.FindAll(".diff-line-removed"));
     }
 
     // ---------------------------------------------------------------- B344, the click path
@@ -156,6 +156,6 @@ public class CodeReviewPageTests : CodeReviewTestBase
         var diff = WaitForDiff(page);
         Assert.Contains("Real b = 1;", diff.Instance.OriginalContent);
         Assert.Contains("Real b = 2;", diff.Instance.ModifiedContent);
-        Assert.Equal(1, diff.FindAll(".diff-line-added").Count);
+        Assert.Single(diff.FindAll(".diff-line-added"));
     }
 }

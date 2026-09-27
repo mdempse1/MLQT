@@ -125,31 +125,31 @@ public class ReferenceOnlyToggleTests : MlqtComponentTestBase
     /// through the service, which is what stops or starts the watch it started or stopped.
     /// </summary>
     [Fact]
-    public void Cancel_UndoesTheToggle_ThroughTheService()
+    public async Task Cancel_UndoesTheToggle_ThroughTheService()
     {
         var (panel, service, repository) = RenderPanel();
 
-        panel.InvokeAsync(() =>
+        await panel.InvokeAsync(() =>
         {
             panel.Instance.OnRepoClick(repository);
             panel.Instance.OnReferenceOnlyChanged(true);
             panel.Instance.CancelChanges();
-        }).Wait();
+        });
 
         Assert.False(repository.IsReferenceOnly);
         service.Verify(s => s.SetReferenceOnly("repo-1", false), Times.Once);
     }
 
     [Fact]
-    public void Cancel_WithoutTouchingTheToggle_LeavesItAlone()
+    public async Task Cancel_WithoutTouchingTheToggle_LeavesItAlone()
     {
         var (panel, service, repository) = RenderPanel();
 
-        panel.InvokeAsync(() =>
+        await panel.InvokeAsync(() =>
         {
             panel.Instance.OnRepoClick(repository);
             panel.Instance.CancelChanges();
-        }).Wait();
+        });
 
         service.Verify(s => s.SetReferenceOnly(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
     }

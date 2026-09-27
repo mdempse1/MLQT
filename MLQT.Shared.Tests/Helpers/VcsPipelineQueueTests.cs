@@ -113,7 +113,7 @@ public class VcsPipelineQueueTests
         Assert.NotNull(run);
         Assert.True(_state.IsVcsWorkInProgress);
         release.SetResult();
-        await run.WaitAsync(Patience);
+        await run.WaitAsync(Patience, Xunit.TestContext.Current.CancellationToken);
         Assert.False(_state.IsVcsWorkInProgress);
     }
 

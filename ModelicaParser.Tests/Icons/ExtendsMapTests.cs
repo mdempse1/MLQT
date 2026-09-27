@@ -37,19 +37,19 @@ public class ExtendsMapTests
             """;
 
         var icon = IconExtractor.ExtractIconWithInheritance(code)!;
-        Assert.Equal([-50, -50, 50, 50], icon.MapFor("A")!.Region);
+        Assert.Equal([-50, -50, 50, 50], icon.MapFor("A")!.Region!);
         Assert.True(icon.MapFor("A")!.PrimitivesVisible);
         Assert.Null(icon.MapFor("B")!.Region);
         Assert.False(icon.MapFor("B")!.PrimitivesVisible);
         Assert.Null(icon.MapFor("C"));
-        Assert.Equal([-20, -20, 20, 20], icon.MapFor("D")!.Region);
+        Assert.Equal([-20, -20, 20, 20], icon.MapFor("D")!.Region!);
         Assert.False(icon.MapFor("D")!.PrimitivesVisible);
         Assert.Null(icon.MapFor("E"));
         Assert.Equal(["A", "D"], icon.MappedExtends.Order());
 
         var diagram = IconExtractor.ExtractDiagramWithInheritance(ModelicaParserHelper.Parse(code))!;
         Assert.Equal(["B"], diagram.ExtendsMaps.Keys);
-        Assert.Equal([-10, -10, 10, 10], diagram.MapFor("B")!.Region);
+        Assert.Equal([-10, -10, 10, 10], diagram.MapFor("B")!.Region!);
         Assert.True(diagram.MapFor("B")!.PrimitivesVisible);
     }
 
