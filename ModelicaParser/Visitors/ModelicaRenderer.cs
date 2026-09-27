@@ -3430,7 +3430,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             // Array constructor
             bool resetGraphicsFlag = false;
             bool singleLineGraphics = false;
-            if (_classAnnotation && GetCurrentLinePlainText().EndsWith("graphics="))
+            // Any annotation's graphics whose Icon or Diagram is written an argument a line are laid
+            // out as the class annotation's are (B476): a short class definition's annotation, or a
+            // component's, had each element's arguments at the element's own column.
+            bool wasClassAnnotation = _classAnnotation;
+            if ((_classAnnotation || (_inAnnotation && _parentUsingMultiLine)) && GetCurrentLinePlainText().EndsWith("graphics="))
             {
                 _inGraphicsAnnotationLevel = 1;
                 _classAnnotation = false;
@@ -3460,7 +3464,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 WriteListComments(closing, multiLine, beforeClose: true);
             if (resetGraphicsFlag) {
                 _inGraphicsAnnotationLevel = 0;
-                _classAnnotation = true;
+                _classAnnotation = wasClassAnnotation;
                 if (!singleLineGraphics)
                 {
                     EndLineBeforeClose(closing.Any);

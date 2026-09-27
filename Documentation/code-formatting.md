@@ -395,6 +395,34 @@ on the declaration's line at 110 characters or more. Over the Modelica Standard 
 Buildings (8,367 files), 1,017 files are written differently from before, every one only in line
 breaks and indentation.
 
+**Graphics are laid out the same wherever the annotation is.** A class's `Icon` and `Diagram`
+graphics are written an element a line, with each element's arguments a line each a level in. The
+annotation of a short class definition - `connector RealInput = input Real annotation (...)` - and a
+component's annotation whose `Icon` or `Diagram` is written an argument a line now get the same
+layout:
+
+```modelica
+connector RealInput = input Real "'input Real' as connector"
+  annotation (
+    defaultComponentName="u",
+    Icon(
+      graphics={
+        Polygon(
+          lineColor={0, 0, 127},
+          fillColor={0, 0, 127},
+          fillPattern=FillPattern.Solid,
+          points={{-100.0, 100.0}, {100.0, 0.0}, {-100.0, -100.0}}
+        )
+      },
+      ...
+```
+
+Earlier versions wrote `fillColor=` and the arguments after it at the column of
+`graphics={Polygon(`. An `Icon(graphics={...})` written on one line keeps its graphics wrapped for
+length, as before. Over the Modelica Standard Library and Buildings, 22 files are written
+differently from before, only in line breaks and indentation - among them MSL's `Blocks.Interfaces`
+and Buildings' CDL connectors.
+
 ## Matrices and data tables
 
 **A matrix keeps its rows where you wrote them.** Where a row starts a new line in the source, it

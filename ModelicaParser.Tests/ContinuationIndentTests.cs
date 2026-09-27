@@ -36,6 +36,12 @@ namespace ModelicaParser.Tests;
 /// continuation indent, so a level in from the level it is written at was that line's column, and
 /// Buildings' <c>TwoPortMatrixRLC</c> had the <c>+</c> under the <c>=</c>. It is a level in from
 /// that line.</para>
+///
+/// <para>B476 - the graphics of an annotation that is not a long class's own, in an Icon or
+/// Diagram written an argument a line, are laid out as a class annotation's are. They were not
+/// recognised as graphics, so each element's arguments were written an argument a line at the
+/// element's own column: MSL's <c>RealInput</c> had <c>fillColor=</c> under
+/// <c>graphics={Polygon(</c>.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -522,6 +528,95 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(RightHandSideContinued));
     }
 
+    private const string ShortClassGraphics = """
+        connector ModeTypeOutput = output Types.Mode "Output connector"
+          annotation (
+            defaultComponentName="y",
+            Icon(
+              coordinateSystem(
+                preserveAspectRatio=true,
+                extent={{-100.0, -100.0}, {100.0, 100.0}}
+              ),
+              graphics={
+                Polygon(
+                  lineColor={0, 127, 0},
+                  fillColor={255, 255, 255},
+                  fillPattern=FillPattern.Solid,
+                  points={{-100.0, 100.0}, {100.0, 0.0}, {-100.0, -100.0}}
+                )
+              }
+            ),
+            Diagram(
+              coordinateSystem(
+                preserveAspectRatio=true,
+                extent={{-100.0, -100.0}, {100.0, 100.0}}
+              ),
+              graphics={
+                Polygon(
+                  lineColor={0, 127, 0},
+                  fillColor={255, 255, 255},
+                  fillPattern=FillPattern.Solid,
+                  points={{-100.0, 50.0}, {0.0, 0.0}, {-100.0, -50.0}}
+                ),
+                Text(
+                  textColor={0, 0, 127},
+                  extent={{30.0, 60.0}, {30.0, 110.0}},
+                  textString="%name"
+                )
+              }
+            )
+          );
+        """;
+
+    [Fact]
+    public void AShortClassDefinitionsGraphicsAreLaidOutAsALongClasssAre()
+    {
+        // Buildings' CHPs ModeTypeOutput, and MSL's RealInput and RealOutput: the annotation of a
+        // short class definition is not the one a long class's composition carries, so its
+        // graphics were not recognised and each element's arguments were written at the element's
+        // own column (B476).
+        TestHelpers.AssertClass(
+            Normalise("""
+                connector ModeTypeOutput = output Types.Mode "Output connector" annotation (defaultComponentName="y", Icon(coordinateSystem(preserveAspectRatio=true, extent={{-100.0,-100.0},{100.0,100.0}}), graphics={Polygon(lineColor={0,127,0}, fillColor={255,255,255}, fillPattern=FillPattern.Solid, points={{-100.0,100.0},{100.0,0.0},{-100.0,-100.0}})}), Diagram(coordinateSystem(preserveAspectRatio=true, extent={{-100.0,-100.0},{100.0,100.0}}), graphics={Polygon(lineColor={0,127,0}, fillColor={255,255,255}, fillPattern=FillPattern.Solid, points={{-100.0,50.0},{0.0,0.0},{-100.0,-50.0}}), Text(textColor={0,0,127}, extent={{30.0,60.0},{30.0,110.0}}, textString="%name")}));
+                """),
+            expectedOutput: Normalise(ShortClassGraphics));
+    }
+
+    private const string ComponentGraphics = """
+        model M
+          Real x
+            annotation (Icon(
+              coordinateSystem(extent={{-100, -100}, {100, 100}}),
+              graphics={
+                Polygon(
+                  lineColor={0, 127, 0},
+                  fillColor={255, 255, 255},
+                  fillPattern=FillPattern.Solid,
+                  points={{-100, 50}, {0, 0}, {-100, -50}}
+                )
+              }
+            ));
+          Real y
+            annotation (Icon(graphics={Polygon(lineColor={0, 127, 0}, fillColor={255, 255, 255},
+              fillPattern=FillPattern.Solid)}));
+        end M;
+        """;
+
+    [Fact]
+    public void AComponentsGraphicsInAnIconWrittenAnArgumentALineAreLaidOutAsTheClasssAre()
+    {
+        // The same in a component's annotation (B476). An Icon on one line keeps the graphics
+        // wrapped for length, and the next component's annotation is not taken for the class's.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real x annotation (Icon(coordinateSystem(extent={{-100,-100},{100,100}}), graphics={Polygon(lineColor={0,127,0}, fillColor={255,255,255}, fillPattern=FillPattern.Solid, points={{-100,50},{0,0},{-100,-50}})}));
+                  Real y annotation (Icon(graphics={Polygon(lineColor={0,127,0}, fillColor={255,255,255}, fillPattern=FillPattern.Solid)}));
+                end M;
+                """),
+            expectedOutput: Normalise(ComponentGraphics));
+    }
+
     [Fact]
     public void AnArrayOfCallsStillOnTheLineItOpenedOnIsLeftThere()
     {
@@ -568,6 +663,8 @@ public class ContinuationIndentTests
     [InlineData(GraphicsElementWithALongArgument, 100)]
     [InlineData(ArgumentExpressionContinued, 100)]
     [InlineData(RightHandSideContinued, 100)]
+    [InlineData(ShortClassGraphics, 100)]
+    [InlineData(ComponentGraphics, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
