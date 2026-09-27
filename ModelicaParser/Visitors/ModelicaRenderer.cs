@@ -49,6 +49,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // call's later positional argument, which is never wrapped for length (B483). The line it is on
     // and where it starts in that line; Lines is -1 when there is none.
     private (int Lines, int Start) _movableArgument = (-1, 0);
+    // The line the innermost first argument VisitFirstArgument may still move (B464) started on, or
+    // -1. Nothing inside it ends a line for length while it is still on that line (B487): an
+    // argument over more than one line is not moved.
+    private int _firstArgumentLine = -1;
     // The innermost array constructor being written: the line its '{' is on and where in that line
     // (B484). Lines is -1 when there is none.
     private (int Lines, int Start) _arrayStart = (-1, 0);
@@ -66,6 +70,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // Whether the expression being written is inside an if-expression or an array constructor,
     // at any depth (B485).
     private bool _inBranchOrArray;
+    // Whether the if-expression about to be written is the 'if' of an 'else if' in a chain that
+    // starts each branch on a line of its own, whether a branch of such a chain is being written,
+    // and whether any if-expression is (B487).
+    private bool _continuesBrokenChain;
+    private bool _inBrokenChain;
+    private bool _inIfExpression;
     private int _equationContinuationIndent = 0;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
@@ -2177,8 +2187,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         int lines = _code.Count;
         var enclosing = _movableArgument;
         _movableArgument = (lines, start);
+        int enclosingFirst = _firstArgumentLine;
+        _firstArgumentLine = lines;
         Visit(first);
         _movableArgument = enclosing;
+        _firstArgumentLine = enclosingFirst;
         // The ',' that follows is on this line too.
         if (_code.Count != lines || GetCurrentLinePlainTextLength() + 1 <= _maxLineLength)
             return;
@@ -3148,6 +3161,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         {
             // if expression then expression elseif ... else expression
             var expressions = context.expression();
+            // An if-expression that does not fit where it starts has each 'elseif' and 'else' start
+            // a line of its own, and an 'else if' continues the chain it is in (B487).
+            bool breakBranches = _continuesBrokenChain || BreaksIfExpression(context);
+            _continuesBrokenChain = false;
+            bool enclosingBroken = _inBrokenChain;
+            _inBrokenChain = breakBranches || enclosingBroken;
+            bool enclosingIf = _inIfExpression;
+            _inIfExpression = true;
             bool enclosingNested = _inBranchOrArray;
             _inBranchOrArray = true;
             Write(Keyword("if"));
@@ -3166,6 +3187,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 foreach (var elseif in context.elseif_expression())
                 {
+                    if (breakBranches)
+                        StartContinuationLine(branchLine: true);
                     Write(Keyword("elseif"));
                     Space();
                     var elseifExpressions = elseif.expression();
@@ -3180,11 +3203,18 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 }
             }
 
+            if (breakBranches)
+                StartContinuationLine(branchLine: true);
             Write(Keyword("else"));
             Space();
             if (expressions != null && expressions.Length == 3)
+            {
+                _continuesBrokenChain = breakBranches && expressions[2].simple_expression() == null;
                 Visit(expressions[2]);
+            }
             _inBranchOrArray = enclosingNested;
+            _inBrokenChain = enclosingBroken;
+            _inIfExpression = enclosingIf;
         }
 
         return null;
@@ -3320,35 +3350,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                 if (shouldWrap)
                 {
-                    EmitLine();
-                    // Add the continuation indent
-                    for (int j = 0; j < _equationContinuationIndent; j++)
-                        Indent();
-                    AddIndentToCurrentLine();
-                    // The line is ended after any argument list the expression is in has gone
-                    // back out, so an expression that is an argument wrapped onto a line of its
-                    // own had its continuation at the argument's column (B470). It is kept a level
-                    // in from the level the expression is written at.
-                    int expressionLevel = _indentLevel - _equationContinuationIndent;
-                    _currentLineMinimumIndent = expressionLevel * IndentSpaces + IndentSpaces;
-                    // A right-hand side after a wrapped '=' is written on a line that carries its
-                    // own continuation indent, so a level in from its level was that line's own
-                    // column (B475). Its continuation is a level in from that line instead.
-                    if (expressionLevel == _equalsLevel)
-                        KeepInFrom(_equalsLine);
-                    // A '+' inside an if-expression or an array continues a term of it, not of the
-                    // statement, so it is a level further in than the statement's own continuation
-                    // (B485). A call's parentheses alone do not count: a statement's continuation
-                    // is usually in them - an assert's message.
-                    if (_inBranchOrArray)
-                        _currentLineMinimumIndent += IndentSpaces;
+                    StartContinuationLine(branchLine: false);
                     // Write operator without leading space (we're at start of line)
                     Write(Operator(addOps[i + addOpsOffset].GetText(), false));
                     Space(); // Add space after operator
-
-                    // Remove the continuation indent
-                    for (int j = 0; j < _equationContinuationIndent; j++)
-                        Dedent();
                 }
                 else
                 {
@@ -3361,6 +3366,79 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Ends the line inside an equation's or a statement's expression and starts its continuation:
+    /// before a '+' or '-' that does not fit, or before an 'elseif' or 'else' of an if-expression
+    /// that does not fit (<paramref name="branchLine"/>, B487).
+    /// </summary>
+    private void StartContinuationLine(bool branchLine)
+    {
+        EmitLine();
+        // Add the continuation indent
+        for (int j = 0; j < _equationContinuationIndent; j++)
+            Indent();
+        AddIndentToCurrentLine();
+        // The line is ended after any argument list the expression is in has gone
+        // back out, so an expression that is an argument wrapped onto a line of its
+        // own had its continuation at the argument's column (B470). It is kept a level
+        // in from the level the expression is written at.
+        int expressionLevel = _indentLevel - _equationContinuationIndent;
+        _currentLineMinimumIndent = expressionLevel * IndentSpaces + IndentSpaces;
+        // A right-hand side after a wrapped '=' is written on a line that carries its
+        // own continuation indent, so a level in from its level was that line's own
+        // column (B475). Its continuation is a level in from that line instead.
+        if (expressionLevel == _equalsLevel)
+            KeepInFrom(_equalsLine);
+        // A '+' inside an if-expression or an array continues a term of it, not of the
+        // statement, so it is a level further in than the statement's own continuation
+        // (B485). A call's parentheses alone do not count: a statement's continuation
+        // is usually in them - an assert's message.
+        if (_inBranchOrArray)
+            _currentLineMinimumIndent += IndentSpaces;
+        // A term continuing a branch that starts a line of its own is a level in from the
+        // 'else' that starts it (B487).
+        if (_inBrokenChain && !branchLine)
+            _currentLineMinimumIndent += IndentSpaces;
+        // Remove the continuation indent
+        for (int j = 0; j < _equationContinuationIndent; j++)
+            Dedent();
+    }
+
+    /// <summary>
+    /// Whether an if-expression is written a branch a line: where a '+' or '-' could wrap, and it
+    /// does not fit on the line it starts on (B487). It was wrapped only where the line ran out,
+    /// mid-term, so MSL's PartialFriction had <c>else if startBackward then sa</c> at the end of one
+    /// line and <c>+ tau0_max/unitTorque else if ...</c> on the next. Not one inside another's
+    /// condition or 'then' branch: its 'else' would start a line at the column of the outer one's,
+    /// and read as that.
+    /// </summary>
+    private bool BreaksIfExpression(modelicaParser.ExpressionContext context)
+        => _bracketDepth == 0 && _equationContinuationIndent > 0 && _firstArgumentLine != _code.Count
+           && !_inIfExpression
+           && GetCurrentLinePlainTextLength() + EstimatedLength(context) > _maxLineLength - 3;
+
+    /// <summary>
+    /// About how long an expression is once written: its tokens, a space either side of a keyword
+    /// or a '+', '-' or relational operator, and one after a ','.
+    /// </summary>
+    private static int EstimatedLength(IParseTree tree)
+    {
+        if (tree is ITerminalNode terminal)
+        {
+            var text = terminal.GetText();
+            return text switch
+            {
+                "," => 2,
+                "if" or "then" or "elseif" or "else" or "and" or "or" or "not" or "for" or "in" => text.Length + 2,
+                _ => text.Length,
+            };
+        }
+        int length = tree is modelicaParser.Add_opContext or modelicaParser.Rel_opContext ? 2 : 0;
+        for (int i = 0; i < tree.ChildCount; i++)
+            length += EstimatedLength(tree.GetChild(i));
+        return length;
     }
 
     public override object? VisitAdd_op([NotNull] modelicaParser.Add_opContext context)
@@ -3715,9 +3793,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 for (int j = 0; j < funcArgs.Length; j++)
                 {
                     Write(",");
-                    if (!WroteSeparatorComments(runs, 1 + j))
+                    if (WroteSeparatorComments(runs, 1 + j))
+                        VisitMovableArgument(funcArgs[j]);
+                    else if (WrapsPositionalArgument(funcArgs[j]))
+                        VisitWrappedPositionalArgument(funcArgs[j]);
+                    else
+                    {
                         SeparateGraphicsArgument();
-                    VisitMovableArgument(funcArgs[j]);
+                        VisitMovableArgument(funcArgs[j]);
+                    }
                 }
             }
 
@@ -3783,6 +3867,60 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         _movableArgument = (_code.Count, _currentLine.Length);
         Visit(argument);
         _movableArgument = enclosing;
+    }
+
+    /// <summary>
+    /// Whether a call's later positional argument, in an equation or a statement, starts a line of
+    /// its own because it does not fit after the ',' (B487). Positional arguments were never wrapped
+    /// for length, so the line broke wherever a '+' or '-' fell: MSL's
+    /// PolyphaseElectroMagneticConverter had <c>Complex(sum({...}), sum({sTM[j, k].re*v[k].im</c> and
+    /// the rest of the second argument on the next line. Only an argument that then fits: one that
+    /// would still wrap stays where it is, rather than taking a line more to wrap anyway, and so does
+    /// one holding a string written over several lines, and one inside a first argument that could
+    /// still be moved to a line of its own (B464) or an array still on the line it opened on (B474).
+    /// A graphics annotation's calls - an equation's annotation is written while it is still the
+    /// equation being written - have rules of their own.
+    /// </summary>
+    private bool WrapsPositionalArgument(modelicaParser.Function_argumentContext argument)
+    {
+        if (_inGraphicsAnnotationLevel > 0 || _bracketDepth > 0 || _equationContinuationIndent == 0
+            || argument.GetText().Contains('\n')
+            || _firstArgumentLine == _code.Count
+            // An array still on the line it opened on wraps its elements by its own rules (B474).
+            || _arrayStart.Lines == _code.Count)
+            return false;
+        int length = EstimatedLength(argument);
+        if (GetCurrentLinePlainTextLength() + 1 + length <= _maxLineLength - 3)
+            return false;
+        // The line it starts is a level in from the line the call opened on, which, if it is this
+        // one, has not been indented yet.
+        var opening = _argumentsOpeningLine < _code.Count ? _code[_argumentsOpeningLine] : _currentLine.ToString();
+        int openingIndent = opening.Length - opening.TrimStart(' ').Length
+            + (_argumentsOpeningLine < _code.Count ? 0 : _indentLevel * IndentSpaces);
+        int column = Math.Max(openingIndent, _indentLevel * IndentSpaces) + IndentSpaces;
+        return column + length <= _maxLineLength - 3;
+    }
+
+    /// <summary>
+    /// Writes a later positional argument on a line of its own, a level in from the line the call
+    /// opened on, as a wrapped array element is (B468, B487).
+    /// </summary>
+    private void VisitWrappedPositionalArgument(modelicaParser.Function_argumentContext argument)
+    {
+        EmitLine();
+        int argumentLine = _code.Count;
+        _currentLineMaximumLevel = _indentLevel;
+        Indent();
+        AddIndentToCurrentLine();
+        KeepInFrom(_argumentsOpeningLine);
+        // Already at the start of a line, so there is nothing to move (B483).
+        Visit(argument);
+        if (argumentLine < _code.Count)
+        {
+            var first = _code[argumentLine];
+            _currentLineMinimumIndent = Math.Max(_currentLineMinimumIndent, first.Length - first.TrimStart(' ').Length);
+        }
+        Dedent();
     }
 
     /// <summary>

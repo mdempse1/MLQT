@@ -351,18 +351,48 @@ A term wrapped inside an if-expression or an array is a level further in than th
 continuation, since it continues a branch or an element rather than the whole right-hand side:
 
 ```modelica
-  p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent else s1*unitCurrent
-      + s3*unitVoltage*Goff;
-  y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}), sum({sTM[j, k].re*v[k].im
-      + sTM[j, k].im*v[k].re for k in 1:m}));
+  w = sum({sTM[j, k].re*v[k].re*aaaaaaaaaaaaaaaaaaaa
+      - sTM[j, k].im*v[k].im*bbbbbbbbbbbbbbbbbbbbbbbbb + cccccccccccccccccccc for k in 1:m});
 ```
 
 A call's parentheses alone do not count, so an `assert` message continues at the statement's column
 as before. Earlier versions wrote such a term at the statement's continuation column, where it read
 as a term of the whole right-hand side. Over the Modelica Standard Library and Buildings, 54 files
 are written differently from before (34 MSL, 20 Buildings), 104 lines each two spaces to the right
-and nothing else. The formatter still wraps such an expression where the line runs out rather than
-at an `else` or between arguments, so these lines stay long.
+and nothing else.
+
+**A long if-expression breaks at its branches, and a long call between its arguments**, before
+either is wrapped at a `+` or `-`. An if-expression in an equation or a statement that does not fit
+on the line it starts on has each `elseif`, `else if` and `else` start a line of its own, a level
+in from the statement's continuation; one that fits stays on its line, and so does one inside
+another's condition or `then` branch, whose `else` would read as the outer one's. A call's later
+positional argument that does not fit after its `,`, but does on a line of its own, starts one, a
+level in from the line the call opened on:
+
+```modelica
+  a_relfric/unitAngularAcceleration
+      = if locked then 0
+          else if free then sa
+          else if startForward then sa - tau0_max/unitTorque
+          else if startBackward then sa + tau0_max/unitTorque
+          else sa - sign(w_relfric)*tau0_max/unitTorque;
+  y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}),
+    sum({sTM[j, k].re*v[k].im + sTM[j, k].im*v[k].re for k in 1:m}));
+  assert(abs(flowCharacteristics.y[size(flowCharacteristics.y, 1)] - 1) < Modelica.Constants.eps,
+    "flowCharateristics.y[end] must be 1.");
+```
+
+Only where nothing else fits does the formatter wrap at a `+` or `-`: a branch too long for its own
+line wraps a level in from its `else`, and an argument too long for a line of its own - an assert
+message built from several strings, say - stays after its `,` and wraps as before. A string written
+over several lines is left where it is, and so is anything inside a first argument that may yet be
+moved to a line of its own, or inside an array still on the line it opened on, which have rules of
+their own (above). Earlier versions wrapped both only where the line ran out, mid-term: MSL's
+`PartialFriction` had `else if startBackward then sa` ending one line and
+`+ tau0_max/unitTorque else if ...` starting the next. Over the Modelica Standard Library and
+Buildings, 321 files are written differently from before (141 MSL, 180 Buildings), only in line
+breaks and indentation - 114 only in an `assert` whose message now starts a line, 94 only in
+if-expressions; lines over 100 characters in those files go from 9,172 to 8,639.
 
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its

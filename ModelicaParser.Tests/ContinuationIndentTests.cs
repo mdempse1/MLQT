@@ -65,6 +65,12 @@ namespace ModelicaParser.Tests;
 /// a level further in than the statement's own continuation, which is where it was, reading as a
 /// term of the whole right-hand side: MSL's <c>PolyphaseElectroMagneticConverter</c> had
 /// <c>+ sTM[j, k].im*v[k].re for k in 1:m}));</c> at the column of any other continuation.</para>
+///
+/// <para>B487 - an if-expression that does not fit where it starts has each <c>elseif</c> and
+/// <c>else</c> start a line, and a call's later positional argument that does not fit after its
+/// <c>,</c> but does on a line of its own starts one. Both were wrapped only where the line ran out,
+/// at a <c>+</c> or <c>-</c> mid-term: MSL's <c>PartialFriction</c> had <c>else if startBackward
+/// then sa</c> ending one line and <c>+ tau0_max/unitTorque else if ...</c> starting the next.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -130,9 +136,10 @@ public class ContinuationIndentTests
 
         algorithm
           state := if size(X, 1) == nX then ThermodynamicState(p=p,
-            T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X), X=X) else ThermodynamicState(
-              p=p, T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X),
-              X=cat(1, X, {1 - sum(X)}));
+            T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X), X=X)
+              else ThermodynamicState(p=p,
+                T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X), X=cat(1, X,
+                  {1 - sum(X)}));
         end f;
         """;
 
@@ -849,15 +856,19 @@ public class ContinuationIndentTests
           Real y;
 
         equation
-          p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent else s1*unitCurrent
-              + s3*unitVoltage*Goff;
-          y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}), sum({sTM[j, k].re*v[k].im
-              + sTM[j, k].im*v[k].re for k in 1:m}));
-          i = smooth(1, if (v > Maxexp*Vt) then Ids*(exp(Maxexp)*(1 + v/Vt - Maxexp) - 1) + v/R else if ((v + Bv) < -Maxexp*(Nbv*Vt)) then -Ids
-              - Ibv*exp(Maxexp)*(1 - (v + Bv)/(Nbv*Vt) - Maxexp) + v/R else Ids*(exp(v/Vt) - 1)
-              - Ibv*exp(-(v + Bv)/(Nbv*Vt)) + v/R);
-          z = if flag then 0 else Modelica.Math.exp(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbb
-              + ccccccccccccccccccccccccccccccc*dddddddd);
+          p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent
+              else s1*unitCurrent + s3*unitVoltage*Goff;
+          y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}),
+            sum({sTM[j, k].re*v[k].im + sTM[j, k].im*v[k].re for k in 1:m}));
+          w = sum({sTM[j, k].re*v[k].re*aaaaaaaaaaaaaaaaaaaa
+              - sTM[j, k].im*v[k].im*bbbbbbbbbbbbbbbbbbbbbbbbb + cccccccccccccccccccc for k in 1:m});
+          i = smooth(1, if (v > Maxexp*Vt) then Ids*(exp(Maxexp)*(1 + v/Vt - Maxexp) - 1) + v/R
+              else if ((v + Bv) < -Maxexp*(Nbv*Vt)) then -Ids - Ibv*exp(Maxexp)*(1 - (v + Bv)/(Nbv*Vt) - Maxexp)
+                + v/R
+              else Ids*(exp(v/Vt) - 1) - Ibv*exp(-(v + Bv)/(Nbv*Vt)) + v/R);
+          z = if flag then 0
+              else Modelica.Math.exp(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbb
+                + ccccccccccccccccccccccccccccccc*dddddddd);
           assert(s_rel >= -1e-12, "flange_b.s - flange_a.s (= " + String(s_rel, significantDigits=14)
             + ") >= 0 required for GasForce2 component.\n" + "Most likely, the component has to be flipped.");
         end M;
@@ -872,7 +883,8 @@ public class ContinuationIndentTests
         // side - '+ s3*unitVoltage*Goff' under the 'if', not in the else-branch it continues. It is
         // a level further in (B485), and so is one inside a call inside a branch. A term inside
         // a call's parentheses only is not: an assert's message continues at the statement's
-        // column as before.
+        // column as before. Since B487 the if-expressions here break at their 'else' first, and a
+        // term wrapped inside a branch that starts a line is a level in from the 'else' too.
         TestHelpers.AssertClass(
             Normalise("""
                 model M
@@ -880,12 +892,126 @@ public class ContinuationIndentTests
                 equation
                   p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent else s1*unitCurrent + s3*unitVoltage*Goff;
                   y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}), sum({sTM[j, k].re*v[k].im + sTM[j, k].im*v[k].re for k in 1:m}));
+                  w = sum({sTM[j, k].re*v[k].re*aaaaaaaaaaaaaaaaaaaa - sTM[j, k].im*v[k].im*bbbbbbbbbbbbbbbbbbbbbbbbb + cccccccccccccccccccc for k in 1:m});
                   i = smooth(1, if (v > Maxexp*Vt) then Ids*(exp(Maxexp)*(1 + v/Vt - Maxexp) - 1) + v/R else if ((v + Bv) < -Maxexp*(Nbv*Vt)) then -Ids - Ibv*exp(Maxexp)*(1 - (v + Bv)/(Nbv*Vt) - Maxexp) + v/R else Ids*(exp(v/Vt) - 1) - Ibv*exp(-(v + Bv)/(Nbv*Vt)) + v/R);
                   z = if flag then 0 else Modelica.Math.exp(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbb + ccccccccccccccccccccccccccccccc*dddddddd);
                   assert(s_rel >= -1e-12, "flange_b.s - flange_a.s (= " + String(s_rel, significantDigits=14) + ") >= 0 required for GasForce2 component.\n" + "Most likely, the component has to be flipped.");
                 end M;
                 """),
             expectedOutput: Normalise(BranchAndArrayTermsContinued));
+    }
+
+    private const string BranchesAndArgumentsStartLines = """
+        model M
+          Real y;
+
+        equation
+          a_relfric/unitAngularAcceleration
+              = if locked then 0
+                  else if free then sa
+                  else if startForward then sa - tau0_max/unitTorque
+                  else if startBackward then sa + tau0_max/unitTorque
+                  else if pre(mode) == Forward then sa - tau0_max/unitTorque
+                  else if pre(mode) == Backward then sa + tau0_max/unitTorque
+                  else sa - sign(w_relfric)*tau0_max/unitTorque;
+          stopped = if s <= smin + L/2 then -1 else if s >= smax - L/2 then +1 else 0;
+          for j in 1:m loop
+            vSymmetricalComponent[j]
+                = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}),
+                  sum({sTM[j, k].re*v[k].im + sTM[j, k].im*v[k].re for k in 1:m}));
+          end for;
+          mEva_flow = -dX*smooth(1, noEvent(Buildings.Utilities.Math.Functions.spliceFunction(
+            pos=if abs(mAir_flow) > mAir_flow_small/3 then abs(mAir_flow)*(1 - Modelica.Math.exp(-K2*m*abs(mAir_flow)^(-0.2))) else 0,
+            neg=K2*mAir_flow_small^(-0.2)*m*mAir_flow^2, x=abs(mAir_flow) - 2*mAir_flow_small/3,
+            deltax=mAir_flow_small/3)));
+          assert(p > triple.ptriple, "IF97 medium function boundary23ofp called with too low pressure\n"
+            + "p = " + String(p) + " Pa <= " + String(triple.ptriple) + " Pa (triple point pressure)");
+          assert(abs(flowCharacteristics.y[size(flowCharacteristics.y, 1)] - 1) < Modelica.Constants.eps,
+            "flowCharateristics.y[end] must be 1.");
+          assert(noEvent(length2_n2_a > 1e-10) and some_other_condition_long_enough_to_matter, "
+        The length of axis vector n is too small");
+          y = if u > uMax then uMax + kkkkkkkkkkkkkkkkkkkkkkk*(u - uMax) + mmmmmmmmmmm*(u - uMax)^2
+              else if u < uMin then uMin
+              else u;
+          fstatus[2] = if IN_con.target == TYP.UndevOne or IN_con.target == TYP.UndevBoth then if Pr > prandtlMax or Pr < prandtlMin then 1 else 0
+              else 0;
+          q = if flag then 0
+              else if other then if c then aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                + cccccccccccccccccccccccccccc*ddddddddddddddd else 1
+              else 2;
+        end M;
+        """;
+
+    private const string BranchesStartLinesInAFunction = """
+        function f
+          input Real p;
+          output State state;
+
+        algorithm
+          d := smooth(1, if state.T < 278.15 then -0.042860825*state.T + 1011.9695761
+              elseif state.T < 373.15 then 0.000015009*state.T^3 - 0.01813488505*state.T^2
+                + 6.5619527954075*state.T + 254.900074971947
+              else -0.7025109*state.T + 1220.35045233);
+          R := Orientation(
+            T=TM.axisRotation(sequence[3], angles[3])*TM.axisRotation(sequence[2], angles[2])*TM.axisRotation(sequence[1], angles[1]),
+            w=zeros(3));
+        end f;
+        """;
+
+    [Fact]
+    public void ALongIfExpressionBreaksAtItsBranchesAndACallBetweenItsArguments()
+    {
+        // In order: MSL's Rotational PartialFriction - an if-expression that does not fit starts
+        // each 'else if' on a line of its own, a level in from the statement's continuation, where
+        // it was wrapped only where the line ran out, mid-term ('else if startBackward then sa' then
+        // '+ tau0_max/unitTorque else if ...'); one that fits stays on its line;
+        // PolyphaseElectroMagneticConverter - a call's later positional argument that does not fit
+        // after the ',' starts a line of its own, a level in from the line the call opened on,
+        // rather than wrapping inside it at a '+'; Buildings' Evaporation - nothing inside a first
+        // argument that can still be moved to a line of its own (B464) ends a line, since the
+        // argument would then not be moved; an argument that would not fit on a line of its own
+        // either stays where it is and wraps as before; a short one after a long first argument
+        // starts a line; one holding a string written over several lines stays where it is; and an
+        // 'else if' whose rest would fit after the 'else' still starts each branch a line, as the
+        // chain it continues does, while MSL Dissipation's if-expression in another's 'then' does
+        // not break at all, since its 'else' would start a line at the column of the outer one's;
+        // a term wrapped inside such a one, in a branch that starts a line, is a level in from it.
+        // Buildings' TemperatureDependentDensity - 'elseif' breaks as 'else if' does, and a
+        // branch too long for its line still wraps at a '+', a level in from the 'elseif'. And
+        // MSL's axesRotations: a later argument inside a first argument that can still be moved
+        // does not start a line (B487).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  a_relfric/unitAngularAcceleration = if locked then 0 else if free then sa else if startForward then sa - tau0_max/unitTorque else if startBackward then sa + tau0_max/unitTorque else if pre(mode) == Forward then sa - tau0_max/unitTorque else if pre(mode) == Backward then sa + tau0_max/unitTorque else sa - sign(w_relfric)*tau0_max/unitTorque;
+                  stopped = if s <= smin + L/2 then -1 else if s >= smax - L/2 then +1 else 0;
+                  for j in 1:m loop
+                    vSymmetricalComponent[j] = Complex(sum({sTM[j,k].re*v[k].re - sTM[j,k].im*v[k].im for k in 1:m}), sum({sTM[j,k].re*v[k].im + sTM[j,k].im*v[k].re for k in 1:m}));
+                  end for;
+                  mEva_flow = -dX*smooth(1, noEvent(Buildings.Utilities.Math.Functions.spliceFunction(pos=if abs(mAir_flow) > mAir_flow_small/3 then abs(mAir_flow)*(1 - Modelica.Math.exp(-K2*m*abs(mAir_flow)^(-0.2))) else 0, neg=K2*mAir_flow_small^(-0.2)*m*mAir_flow^2, x=abs(mAir_flow) - 2*mAir_flow_small/3, deltax=mAir_flow_small/3)));
+                  assert(p > triple.ptriple, "IF97 medium function boundary23ofp called with too low pressure\n" + "p = " + String(p) + " Pa <= " + String(triple.ptriple) + " Pa (triple point pressure)");
+                  assert(abs(flowCharacteristics.y[size(flowCharacteristics.y, 1)] - 1) < Modelica.Constants.eps, "flowCharateristics.y[end] must be 1.");
+                  assert(noEvent(length2_n2_a > 1e-10) and some_other_condition_long_enough_to_matter, "
+                The length of axis vector n is too small");
+                  y = if u > uMax then uMax + kkkkkkkkkkkkkkkkkkkkkkk*(u - uMax) + mmmmmmmmmmm*(u - uMax)^2 else if u < uMin then uMin else u;
+                  fstatus[2] = if IN_con.target == TYP.UndevOne or IN_con.target == TYP.UndevBoth then if Pr > prandtlMax or Pr < prandtlMin then 1 else 0 else 0;
+                  q = if flag then 0 else if other then if c then aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + cccccccccccccccccccccccccccc*ddddddddddddddd else 1 else 2;
+                end M;
+                """),
+            expectedOutput: Normalise(BranchesAndArgumentsStartLines));
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Real p;
+                  output State state;
+                algorithm
+                  d := smooth(1, if state.T < 278.15 then -0.042860825*state.T + 1011.9695761 elseif state.T < 373.15 then 0.000015009*state.T^3 - 0.01813488505*state.T^2 + 6.5619527954075*state.T + 254.900074971947 else -0.7025109*state.T + 1220.35045233);
+                  R := Orientation(T=TM.axisRotation(sequence[3], angles[3])*TM.axisRotation(sequence[2], angles[2])*TM.axisRotation(sequence[1], angles[1]), w=zeros(3));
+                end f;
+                """),
+            expectedOutput: Normalise(BranchesStartLinesInAFunction));
     }
 
     [Fact]
@@ -923,6 +1049,8 @@ public class ContinuationIndentTests
     [InlineData(PositionalArraysMovedWhole, 100)]
     [InlineData(ArraysMovedOffALongLine, 100)]
     [InlineData(BranchAndArrayTermsContinued, 100)]
+    [InlineData(BranchesAndArgumentsStartLines, 100)]
+    [InlineData(BranchesStartLinesInAFunction, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
