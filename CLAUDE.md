@@ -136,7 +136,7 @@ Centralized state container in `MLQT.Shared/Models/AppState.cs`:
 - **Events**:
   - Model/UI: `OnChangeModel`, `OnSelectedModelsChanged`, `OnEnableMultiSelect`, `OnModelContentChanged`, `OnThemeChanged`
   - Settings: `OnSaveSettings`, `OnClearLogMessages`, `OnRepositorySettingsApplied`
-  - VCS: `OnVcsFilesChanged`, `OnVcsModelsChanged`, `OnVcsWorkChanged` — `IsVcsWorkInProgress` is true while a VCS operation or the analysis pipeline one started is running, and no VCS operation may start then (B326); take `BeginVcsWork()`, and queue pipelines through `VcsPipelineQueue` (`MLQT.Shared/Helpers`), which counts them from the moment they are queued
+  - VCS: `OnVcsFilesChanged`, `OnVcsModelsChanged`, `OnVcsWorkChanged` — `IsVcsWorkInProgress` is true while a VCS operation or the analysis pipeline one started is running, and no VCS operation may start then (B326); take `BeginVcsWork()`, and queue pipelines through `VcsPipelineQueue` (`MLQT.Shared/Helpers`), which counts them from the moment they are queued. Format All Files is VCS work too, and goes through its `TryEnqueue`, which refuses while any VCS work runs (B385)
   - Projects: `OnProjectSwitchStarting`, `OnProjectChanged`
   - Deferred analysis: `OnRunDeferredDependencies`, `OnRunDeferredStyleChecking`, `OnRunDeferredExternalResources`, `OnRunAllDeferredAnalysis`, `OnDeferredAnalysisCompleted`
   - Formatting: `OnFormatChangedFilesForCommit`

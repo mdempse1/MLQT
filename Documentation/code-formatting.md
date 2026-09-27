@@ -134,6 +134,8 @@ The **Format All Files** button in repository settings forces a complete reforma
 
 This is the most thorough formatting operation, and the one that restructures the repository on disk: it writes every package as a directory with one file per class. See [One File Per Class](#one-file-per-class) — the first run on a single-file library produces a very large commit.
 
+A full reformat and a version-control operation never run at the same time. While a full reformat runs, the Library Browser's version-control actions and the **Refresh** button are disabled, as they are during an update's own analysis. And a full reformat is not started while a version-control operation or its analysis is running: MLQT says so, keeps the new settings and re-checks the findings against them, and you press **Format All Files** again once the operation has finished.
+
 ### On Manual Refresh
 
 When you click the **Refresh** button to process pending file changes from external edits, formatting is applied to the changed files. Each repository's own formatting settings are used, so files from different repositories are formatted with the correct rules.

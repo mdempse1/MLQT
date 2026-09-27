@@ -26,6 +26,21 @@ public sealed class VcsPipelineQueue
     /// Queues a pipeline behind any already queued. Returns the task that completes when it has
     /// run; callers that fire and forget may discard it.
     /// </summary>
+    /// <summary>
+    /// Queues <paramref name="work"/> only when no VCS work is in progress, and returns
+    /// <see langword="null"/> without running it otherwise - for work that must not start under a VCS
+    /// operation rather than merely wait behind its pipeline.
+    /// </summary>
+    /// <remarks>
+    /// Format All Files is the case (B385). It rewrites every file in the repository, so a VCS
+    /// operation must not start under it - which queueing gives it - and it must not start under
+    /// one either: an Update holds no place in this queue while it runs, only its pipeline does
+    /// once it has finished, so queued work would take the gate and format files the Update is still
+    /// writing.
+    /// </remarks>
+    public Task? TryEnqueue(Func<Task> work) =>
+        _state.IsVcsWorkInProgress ? null : Enqueue(work);
+
     public Task Enqueue(Func<Task> pipeline)
     {
         var work = _state.BeginVcsWork();

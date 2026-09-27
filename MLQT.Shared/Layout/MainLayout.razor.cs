@@ -1490,94 +1490,114 @@ public partial class MainLayout : IDisposable
 
     private void OnRepositorySettingsApplied(string repositoryId, bool formattingChanged, bool styleSettingsChanged)
     {
-        _ = Task.Run(async () =>
+        if (!formattingChanged)
         {
-            try
+            _ = Task.Run(() => ProcessRepositorySettingsAsync(repositoryId, false, styleSettingsChanged));
+            return;
+        }
+
+        // Rewriting every file is VCS work (B385): counted from here, behind any analysis pipeline
+        // already queued, so no VCS operation starts under it - and refused while one runs, because
+        // an operation in flight holds no place in the queue and would be written over.
+        if (_vcsPipelines.TryEnqueue(() => ProcessRepositorySettingsAsync(repositoryId, true, styleSettingsChanged)) is not null)
+            return;
+
+        Warn("MainLayout", "Full format refused: a version-control operation or its analysis is running");
+        _ = InvokeAsync(() => Snackbar.Add(
+            "Files were not reformatted: a version-control operation or its analysis is running. " +
+            "Use Format All Files in repository settings when it has finished.", Severity.Warning));
+
+        // The findings still follow the new rules; only the rewrite waits for the user.
+        _ = Task.Run(() => ProcessRepositorySettingsAsync(repositoryId, false, styleSettingsChanged: true));
+    }
+
+    private async Task ProcessRepositorySettingsAsync(string repositoryId, bool formattingChanged, bool styleSettingsChanged)
+    {
+        try
+        {
+            var repository = RepositoryService.GetRepository(repositoryId);
+            if (repository == null) return;
+
+            if (formattingChanged)
             {
-                var repository = RepositoryService.GetRepository(repositoryId);
-                if (repository == null) return;
+                // Clear cached timestamps since formatting rules changed
+                FormattingPipeline.ClearWrittenFileTimestamps();
 
-                if (formattingChanged)
+                // Show progress dialog — full formatting can take several minutes
+                _fullFormatStatusMessage = $"Formatting all files in {repository.Name}...";
+                _fullFormatRunning = true;
+                await InvokeAsync(StateHasChanged);
+
+                // Pause monitoring to suppress the thousands of change events that
+                // formatting generates; clear any events that slipped through afterwards
+                FileMonitoringService.StopMonitoring(repositoryId);
+                try
                 {
-                    // Clear cached timestamps since formatting rules changed
-                    FormattingPipeline.ClearWrittenFileTimestamps();
+                    await SaveAllLibrariesWithFormattingAsync(repositoryId);
+                }
+                finally
+                {
+                    FileMonitoringService.ClearPendingChanges(repositoryId);
+                    if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                        FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
 
-                    // Show progress dialog — full formatting can take several minutes
-                    _fullFormatStatusMessage = $"Formatting all files in {repository.Name}...";
-                    _fullFormatRunning = true;
+                    // Invalidate working copy cache and notify the library browser
+                    // so it picks up the thousands of files modified by formatting
+                    RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+                    FileMonitoringService.NotifyFileActivity(repositoryId);
+
+                    _fullFormatRunning = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                await InvokeAsync(() => Snackbar.Add("Code formatting complete.", Severity.Success));
+            }
+
+            if (formattingChanged || styleSettingsChanged)
+            {
+                var repositoryModelIds = LibraryDataService.Libraries
+                    .Where(l => l.RepositoryId == repositoryId)
+                    .SelectMany(l => l.ModelIds)
+                    .ToHashSet();
+
+                // Decide there is work before showing the progress dialog, not after. It is
+                // modal and cannot be dismissed, and the only thing that closes it is the
+                // completion event — so opening it on a path that then starts nothing leaves the
+                // application wedged with no way out and nothing further in the log.
+                if (repositoryModelIds.Count > 0)
+                {
+                    _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
+                    _styleCheckRunning = true;
                     await InvokeAsync(StateHasChanged);
 
-                    // Pause monitoring to suppress the thousands of change events that
-                    // formatting generates; clear any events that slipped through afterwards
-                    FileMonitoringService.StopMonitoring(repositoryId);
                     try
                     {
-                        await SaveAllLibrariesWithFormattingAsync(repositoryId);
+                        CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
+                        // The clear above takes the parser findings with it — put them back.
+                        SurfaceParserErrors(repositoryModelIds);
+                        await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
+                        _showStyleCheckingCompleteMessage = true;
+
+                        // Signals completion itself even when it finds nothing to do (no rules
+                        // enabled), which is what closes the dialog.
+                        StyleCheckingService.StartBackgroundChecking(repository);
                     }
-                    finally
+                    catch
                     {
-                        FileMonitoringService.ClearPendingChanges(repositoryId);
-                        if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                            FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
-
-                        // Invalidate working copy cache and notify the library browser
-                        // so it picks up the thousands of files modified by formatting
-                        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
-                        FileMonitoringService.NotifyFileActivity(repositoryId);
-
-                        _fullFormatRunning = false;
+                        // Nothing will signal completion now, so close the dialog here rather
+                        // than leaving it up for a run that never started.
+                        _styleCheckRunning = false;
                         await InvokeAsync(StateHasChanged);
-                    }
-
-                    await InvokeAsync(() => Snackbar.Add("Code formatting complete.", Severity.Success));
-                }
-
-                if (formattingChanged || styleSettingsChanged)
-                {
-                    var repositoryModelIds = LibraryDataService.Libraries
-                        .Where(l => l.RepositoryId == repositoryId)
-                        .SelectMany(l => l.ModelIds)
-                        .ToHashSet();
-
-                    // Decide there is work before showing the progress dialog, not after. It is
-                    // modal and cannot be dismissed, and the only thing that closes it is the
-                    // completion event — so opening it on a path that then starts nothing leaves the
-                    // application wedged with no way out and nothing further in the log.
-                    if (repositoryModelIds.Count > 0)
-                    {
-                        _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
-                        _styleCheckRunning = true;
-                        await InvokeAsync(StateHasChanged);
-
-                        try
-                        {
-                            CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
-                            // The clear above takes the parser findings with it — put them back.
-                            SurfaceParserErrors(repositoryModelIds);
-                            await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
-                            _showStyleCheckingCompleteMessage = true;
-
-                            // Signals completion itself even when it finds nothing to do (no rules
-                            // enabled), which is what closes the dialog.
-                            StyleCheckingService.StartBackgroundChecking(repository);
-                        }
-                        catch
-                        {
-                            // Nothing will signal completion now, so close the dialog here rather
-                            // than leaving it up for a run that never started.
-                            _styleCheckRunning = false;
-                            await InvokeAsync(StateHasChanged);
-                            throw;
-                        }
+                        throw;
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                Error("MainLayout", "Error applying repository settings", ex);
-                await InvokeAsync(() => Snackbar.Add($"Error applying settings: {ex.Message}", Severity.Error));
-            }
-        });
+        }
+        catch (Exception ex)
+        {
+            Error("MainLayout", "Error applying repository settings", ex);
+            await InvokeAsync(() => Snackbar.Add($"Error applying settings: {ex.Message}", Severity.Error));
+        }
     }
 
     /// <summary>

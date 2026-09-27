@@ -88,6 +88,36 @@ public class VcsPipelineQueueTests
     }
 
     [Fact]
+    public void WorkThatMustNotStartUnderAVcsOperation_IsRefusedWhileOneRuns()
+    {
+        // B385: Format All during an Update. The Update holds VCS work but no place in the queue.
+        var queue = new VcsPipelineQueue(_state);
+        var ran = false;
+
+        using (_state.BeginVcsWork())
+            Assert.Null(queue.TryEnqueue(() => { ran = true; return Task.CompletedTask; }));
+
+        Assert.False(ran);
+        Assert.False(_state.IsVcsWorkInProgress);
+    }
+
+    [Fact]
+    public async Task WorkQueuedWhenNothingRuns_IsVcsWork_UntilItHasFinished()
+    {
+        // ...and while Format All runs, no VCS operation may start under it (B385).
+        var queue = new VcsPipelineQueue(_state);
+        var release = new TaskCompletionSource();
+
+        var run = queue.TryEnqueue(() => release.Task);
+
+        Assert.NotNull(run);
+        Assert.True(_state.IsVcsWorkInProgress);
+        release.SetResult();
+        await run.WaitAsync(Patience);
+        Assert.False(_state.IsVcsWorkInProgress);
+    }
+
+    [Fact]
     public void VcsWork_EndedTwice_IsCountedOffOnce()
     {
         var changes = 0;
