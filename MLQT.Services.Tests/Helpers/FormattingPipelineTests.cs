@@ -198,6 +198,92 @@ public sealed class FormattingPipelineTests : IDisposable
     }
 
     // ============================================================================
+    // A reference library inside a maintained repository's folder is never written (B421)
+    // ============================================================================
+
+    /// <summary>
+    /// A maintained repository at the root, and a vendor library checked out inside its folder that
+    /// belongs to a reference-only repository. The watched repository - and so every change's
+    /// RepositoryId, and the settings the caller passes - is the outer one.
+    /// </summary>
+    private string AddVendorFileInsideAMaintainedRepository(bool referenceByLibraryFlag = false)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "Vendor"));
+        var path = AddUnformattedFile(Path.Combine("Vendor", "Thing.mo"));
+
+        var outer = new Repository
+        {
+            Id = "repo", Name = "Repo", LocalPath = _root, VcsRootPath = _root, StyleSettings = Formatting(),
+        };
+        var vendor = new Repository
+        {
+            Id = "ref", Name = "Vendor", LocalPath = Path.Combine(_root, "Vendor"),
+            VcsRootPath = Path.Combine(_root, "Vendor"), IsReferenceOnly = true, StyleSettings = Formatting(),
+        };
+        _repositories.SetupGet(r => r.Repositories).Returns([outer, vendor]);
+        _repositories.Setup(r => r.GetRepository("repo")).Returns(outer);
+        _repositories.Setup(r => r.GetRepository("ref")).Returns(vendor);
+        _repositories.Setup(r => r.GetWorkingCopyChanges("repo")).Returns(
+        [
+            new VcsWorkingCopyFile { Path = "Vendor/Thing.mo", Status = VcsFileStatus.Modified },
+        ]);
+
+        _libraries.Setup(l => l.GetOwningLibrary("Thing")).Returns(referenceByLibraryFlag
+            ? new LoadedLibrary { Name = "Vendor", SourcePath = Path.Combine(_root, "Vendor"), IsReferenceOnly = true }
+            : new LoadedLibrary { Name = "Vendor", SourcePath = Path.Combine(_root, "Vendor"), RepositoryId = "ref" });
+        return path;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AChangedFileOwnedByAReferenceLibrary_IsNotWritten_WhateverSettingsItIsHandedWith(
+        bool referenceByLibraryFlag)
+    {
+        // Refresh groups a change by the watched repository, which for a file in a nested vendor
+        // checkout is the outer one, and hands it over with the outer repository's settings.
+        var path = AddVendorFileInsideAMaintainedRepository(referenceByLibraryFlag);
+        var before = File.ReadAllText(path);
+        var pipeline = Pipeline();
+
+        await pipeline.FormatChangedFilesAsync([path], Formatting());
+
+        Assert.Equal(before, File.ReadAllText(path));
+        Assert.Empty(pipeline.WrittenFileTimestamps);
+    }
+
+    [Fact]
+    public async Task AModifiedFileOfANestedReferenceLibrary_IsNotFormattedWithTheOuterRepository()
+    {
+        // The startup path: the outer repository's VCS status reports the vendor's file as modified.
+        var path = AddVendorFileInsideAMaintainedRepository();
+        var before = File.ReadAllText(path);
+
+        await Pipeline().FormatModifiedFilesAsync();
+
+        Assert.Equal(before, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public async Task AChangedFileOwnedByAMaintainedLibrary_IsStillWritten()
+    {
+        // The control: asking the owner is not a reason to skip the user's own file.
+        var path = AddUnformattedFile();
+        var before = File.ReadAllText(path);
+        var repository = new Repository
+        {
+            Id = "repo", Name = "Repo", LocalPath = _root, VcsRootPath = _root, StyleSettings = Formatting(),
+        };
+        _repositories.SetupGet(r => r.Repositories).Returns([repository]);
+        _libraries.Setup(l => l.GetOwningLibrary("Thing")).Returns(
+            new LoadedLibrary { Name = "Thing", SourcePath = _root, RepositoryId = "repo" });
+
+        await Pipeline().FormatChangedFilesAsync([path], Formatting());
+
+        Assert.NotEqual(before, File.ReadAllText(path));
+    }
+
+    // ============================================================================
     // Format All deletes only what it has written somewhere else (B373)
     // ============================================================================
 

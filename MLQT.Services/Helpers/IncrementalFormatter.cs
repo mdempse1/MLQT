@@ -41,11 +41,19 @@ public static class IncrementalFormatter
     /// that should not have been.
     /// </remarks>
     /// <param name="fileExists">Injected so the selection can be exercised without files on disk.</param>
+    /// <param name="neverWritten">
+    /// Whether a class must never be written, by its id - a class of a reference-only library
+    /// (<see cref="MLQT.Services.Checking.ReferenceOnlyScope.OwnedByReference"/>). A file holding one
+    /// is not touched. Asked here, of each class, because the files arrive by path and the settings
+    /// they arrive with are the caller's guess at whose they are: a vendor library checked out inside
+    /// a maintained repository's folder arrives as the outer repository's change (B421).
+    /// </param>
     public static List<FileToFormat> SelectFilesToFormat(
         DirectedGraph graph,
         IEnumerable<string> changedFilePaths,
         StyleCheckingSettings settings,
-        Func<string, bool> fileExists)
+        Func<string, bool> fileExists,
+        Func<string, bool>? neverWritten = null)
     {
         var selected = new List<FileToFormat>();
         if (!settings.ApplyFormattingRules)
@@ -83,6 +91,12 @@ public static class IncrementalFormatter
                 continue;
             }
 
+            if (neverWritten is not null && modelNodes.Any(m => neverWritten(m.Id)))
+            {
+                Debug(nameof(IncrementalFormatter), $"Skipping {filePath}: it belongs to a reference-only library");
+                continue;
+            }
+
             // The owner is the topmost class stored in the file: it has no parent, or its parent
             // lives in another file. Only its within clause describes the file.
             var owner = modelNodes.FirstOrDefault(m =>
@@ -100,15 +114,17 @@ public static class IncrementalFormatter
     /// <summary>
     /// Reformats and rewrites the changed files, and brings each class's stored source up to date.
     /// </summary>
+    /// <param name="neverWritten">See <see cref="SelectFilesToFormat"/>.</param>
     /// <returns>Each file written, with the write time recorded against it.</returns>
     public static async Task<IReadOnlyDictionary<string, DateTime>> FormatAndWriteAsync(
         DirectedGraph graph,
         IEnumerable<string> changedFilePaths,
-        StyleCheckingSettings settings)
+        StyleCheckingSettings settings,
+        Func<string, bool>? neverWritten = null)
     {
         var written = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
-        var filesToProcess = SelectFilesToFormat(graph, changedFilePaths, settings, File.Exists);
+        var filesToProcess = SelectFilesToFormat(graph, changedFilePaths, settings, File.Exists, neverWritten);
         if (filesToProcess.Count == 0)
             return written;
 

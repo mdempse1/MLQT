@@ -48,6 +48,15 @@ public sealed class FormattingPipeline : IFormattingPipeline
         return true;
     }
 
+    /// <summary>
+    /// The classes the incremental formatter must not write, asked per class of the library that owns
+    /// it. Skipping a reference-only repository is not enough on its own: the files arrive by path,
+    /// grouped by the repository that <em>watches</em> them, and a vendor library checked out inside a
+    /// maintained repository's folder is watched, and reported as changed, by the outer one (B421).
+    /// </summary>
+    private Func<string, bool> NeverWritten() =>
+        ReferenceOnlyScope.OwnedByReference(_libraryData, _repositories);
+
     /// <summary>The repository's modified and untracked Modelica files, as the VCS reports them.</summary>
     private HashSet<string> GetModifiedFilePathsFromVcs(Repository repository)
     {
@@ -71,7 +80,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
         IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings)
     {
         var written = await IncrementalFormatter.FormatAndWriteAsync(
-            _libraryData.CombinedGraph, changedFilePaths, styleSettings);
+            _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten());
 
         foreach (var (filePath, writtenAt) in written)
             _writtenFileTimestamps[filePath] = writtenAt;
@@ -107,7 +116,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
 
                 Info(nameof(FormattingPipeline), $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
                 var written = await IncrementalFormatter.FormatAndWriteAsync(
-                    _libraryData.CombinedGraph, changedFilePaths, styleSettings);
+                    _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten());
                 foreach (var (writtenPath, writtenAt) in written)
                     _writtenFileTimestamps[writtenPath] = writtenAt;
                 totalFormatted += changedFilePaths.Count;

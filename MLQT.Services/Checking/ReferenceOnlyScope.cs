@@ -59,6 +59,28 @@ public static class ReferenceOnlyScope
     }
 
     /// <summary>
+    /// Whether a class is owned by a library loaded only for reference, asked of
+    /// <see cref="ILibraryDataService.GetOwningLibrary"/> - for a writer handed files by path, which
+    /// cannot tell from the path whose they are. A vendor library checked out inside a maintained
+    /// repository's folder is watched, reloaded and handed to the formatter as the outer repository's
+    /// change, with the outer repository's settings (B421); the owner is the only thing that knows.
+    ///
+    /// <para>The reference-only repositories are read once, when the predicate is made, so it is
+    /// cheap to ask per class. A class no loaded library claims is not a reference class.</para>
+    /// </summary>
+    public static Func<string, bool> OwnedByReference(
+        ILibraryDataService libraries, IRepositoryService repositories)
+    {
+        var referenceOnly = repositories.Repositories
+            .Where(r => r.IsReferenceOnly)
+            .Select(r => r.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return modelId => libraries.GetOwningLibrary(modelId) is { } library
+                          && IsReference(library, referenceOnly);
+    }
+
+    /// <summary>
     /// Whether a library is loaded only for reference — by its own flag, or by the repository it came
     /// from. Public because the question is also asked per library rather than per class: the metrics
     /// history is written per library, and a snapshot describing a vendor's code belongs in no file.
