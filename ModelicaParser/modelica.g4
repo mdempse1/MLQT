@@ -520,12 +520,23 @@ subscript_
     ;
 
 //description in Modelica 3.6
+// Comments may also come before the annotation (B409), on the same terms as before a description:
+// they belong here only when an annotation follows, so the choice is taken once and the loop ends on
+// the 'annotation' keyword, one token ahead. Nothing that can follow this rule starts with a comment.
 comment
-    : string_comment (annotation)?
+    : string_comment (c_comment* annotation)?
     ;
 
+// Comments may come before a description string (B409): `function f // note` then the string on the
+// next line. Modelica allows a comment anywhere, and without this one here the description was a
+// syntax error and error recovery detached every later class in the file from its package.
+// The comments belong to this rule only when a STRING follows them - otherwise the rule is empty and
+// they fall to whatever comes next (a class body's element_list) exactly as before. That keeps the
+// choice unambiguous: entering is decided once, by scanning the run to the token after it, and the
+// loop inside ends on the STRING, one token ahead, so a long run is not rescanned per comment (B235).
+// A string_comment therefore still has text if and only if it has a STRING.
 string_comment
-    : (STRING ('+' STRING)*)?
+    : (c_comment* STRING ('+' STRING)*)?
     ;
 
 annotation

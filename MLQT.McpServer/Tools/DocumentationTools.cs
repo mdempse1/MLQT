@@ -53,8 +53,10 @@ public sealed class DocumentationTools
         var quoted = ModelicaNav.Quote(description);
         var sc = longSpec.string_comment();
         string newCode;
+        // From the first STRING, not the rule's start: comments before a description are part of the
+        // string_comment (B409), and replacing from its start would delete them.
         if (sc is not null && sc.STRING().Length > 0)
-            newCode = code[..sc.Start.StartIndex] + quoted + code[(sc.Stop.StopIndex + 1)..];
+            newCode = code[..sc.STRING(0).Symbol.StartIndex] + quoted + code[(sc.Stop.StopIndex + 1)..];
         else
         {
             var nameStop = longSpec.IDENT(0).Symbol.StopIndex;
@@ -91,7 +93,7 @@ public sealed class DocumentationTools
         var sc = decl.comment()?.string_comment();
         string newCode;
         if (sc is not null && sc.STRING().Length > 0)
-            newCode = code[..sc.Start.StartIndex] + quoted + code[(sc.Stop.StopIndex + 1)..];
+            newCode = code[..sc.STRING(0).Symbol.StartIndex] + quoted + code[(sc.Stop.StopIndex + 1)..];
         else
         {
             // Insert after the declaration (name/subscripts/modification), before any annotation.

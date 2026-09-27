@@ -1674,7 +1674,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         {
             // Estimate the length with the comment added (comment text + space before it)
             // Only consider string_comment, not annotation (annotation always goes on new line)
-            var stringCommentText = context.comment().string_comment()?.GetText() ?? "";
+            var stringCommentText = DescriptionText(context.comment().string_comment());
             var estimatedLength = GetCurrentLinePlainTextLength() + 1 + stringCommentText.Length;
             bool willBeTooLong = !_inDocumentationAnnotation && estimatedLength > _maxLineLength;
 
@@ -3519,6 +3519,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         if (_showAnnotations && context.annotation() != null)
         {
+            // Comments before the annotation (B409) go with it, and are hidden with it.
+            if (context.c_comment() is { Length: > 0 } comments)
+                WriteLeadingComments(comments);
+
             // Flush current line content before starting annotation on a new line.
             // If _currentLine is whitespace-only (e.g., indent left over after the parent
             // visitor already wrapped a long line), clear it instead of emitting a blank line.
@@ -3542,6 +3546,17 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitString_comment([NotNull] modelicaParser.String_commentContext context)
     {
+        // Comments before the description (B409) are written first, each where it stood: one that
+        // shared a line with what came before it stays on that line, one that started a line of its
+        // own starts one here too, a level in. The description then follows on the next line, a
+        // level in, because a comment ends its line. Dropping them would lose the user's text on save.
+        var comments = context.c_comment();
+        if (comments is { Length: > 0 })
+        {
+            WriteLeadingComments(comments);
+            AddIndentToCurrentLine();
+        }
+
         var strings = context.STRING();
         if (strings != null && strings.Length > 0)
         {
@@ -3554,6 +3569,71 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         return null;
     }
+
+    /// <summary>
+    /// Writes comments that stand before a description or an annotation (B409), each where it
+    /// stood: one that shared a line with what came before it stays on that line, one that started a
+    /// line of its own starts one here too, a level in. Every comment ends its line, so whatever
+    /// follows starts a new one.
+    /// </summary>
+    private void WriteLeadingComments(modelicaParser.C_commentContext[] comments)
+    {
+        var previousLine = LastLineOfTokenBefore(comments[0]);
+        foreach (var comment in comments)
+        {
+            if (previousLine is null || comment.Start.Line > previousLine)
+            {
+                if (_currentLine.ToString().Trim().Length > 0)
+                    EmitLine();
+                else
+                    _currentLine.Clear();
+                Indent();
+                Visit(comment);
+                Dedent();
+            }
+            else
+            {
+                Space();
+                Visit(comment);
+            }
+            previousLine = LastLineOf(comment.Start);
+        }
+    }
+
+    /// <summary>The line a token ends on — a block comment or a string can span several.</summary>
+    private static int LastLineOf(IToken token)
+        => token.Line + (token.Text?.Count(c => c == '\n') ?? 0);
+
+    /// <summary>
+    /// The last line of the token that comes before <paramref name="node"/> in the tree, or null
+    /// when nothing does. Read from the tree rather than the token stream, which a caller may not
+    /// have given the renderer.
+    /// </summary>
+    private static int? LastLineOfTokenBefore(IParseTree node)
+    {
+        var current = node;
+        while (current.Parent is ParserRuleContext parent && parent.children != null)
+        {
+            for (int j = parent.children.IndexOf(current) - 1; j >= 0; j--)
+            {
+                switch (parent.children[j])
+                {
+                    case ITerminalNode terminal:
+                        return LastLineOf(terminal.Symbol);
+                    case ParserRuleContext rule when rule.Stop != null && rule.Stop.TokenIndex >= rule.Start.TokenIndex:
+                        return LastLineOf(rule.Stop);
+                }
+            }
+            current = parent;
+        }
+        return null;
+    }
+
+    /// <summary>The description strings of a string_comment, without any comments before them.</summary>
+    private static string DescriptionText(modelicaParser.String_commentContext? context)
+        => context?.STRING() is { Length: > 0 } strings
+            ? string.Join(" ", strings.Select(s => s.GetText()))
+            : "";
 
     public override object? VisitAnnotation([NotNull] modelicaParser.AnnotationContext context)
     {

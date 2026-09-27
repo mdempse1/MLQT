@@ -102,6 +102,19 @@ public class ModelicaTokenClassifierTests
               m[integer(i),1] := a[2];
             end F;
             """ },
+        // B409: a comment before a description string is inside string_comment in the tree.
+        { "comments before description strings", """
+            package P
+              function f
+                // a comment here
+                "description"
+                input Real x // why
+                  "input";
+              end f;
+              model g "after it"
+              end g;
+            end P;
+            """ },
     };
 
     // ── property 1: round trip ────────────────────────────────────────────────────

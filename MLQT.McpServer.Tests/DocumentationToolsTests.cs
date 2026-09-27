@@ -52,6 +52,38 @@ public class DocumentationToolsTests
     }
 
     [Fact]
+    public async Task SetDescriptions_KeepCommentsBeforeTheDescription()
+    {
+        // B409: a comment before a description is part of the string_comment in the tree, so
+        // replacing from the rule's start instead of the first STRING deleted the comment.
+        const string source = """
+            within;
+            package P "p"
+              model D
+                // why D exists
+                "old desc"
+                Real m // why m
+                  "old m";
+              end D;
+            end P;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = source.Replace("\r\n", "\n") });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new DocumentationTools(host.Libraries, host.Resources, host.Session);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.SetClassDescription("P.D", "new desc"));
+        ToolAssert.Ok<StructureEditResult>(await tools.SetComponentDescription("P.D", "m", "new m"));
+
+        var src = Source(host, "P.D");
+        Assert.Contains("// why D exists", src);
+        Assert.Contains("// why m", src);
+        Assert.Contains("\"new desc\"", src);
+        Assert.Contains("\"new m\"", src);
+        Assert.DoesNotContain("old", src);
+    }
+
+    [Fact]
     public async Task SetComponentDescription_AddsAndReplaces()
     {
         using var host = new TestHost();
