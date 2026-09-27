@@ -163,7 +163,8 @@ building it **before** a migration rather than during one:
   a step - buttons during Format All (B385), a reload during startup (B407) - has nothing to look at
   on the fixture library, where every step is over in milliseconds. The test host wraps the real
   service in a gate (`GatedFormattingPipeline`, `host.Formatting.HoldAllFiles()` /
-  `HoldModifiedFiles()`) that holds the next call until the journey calls `Release()`, and
+  `HoldModifiedFiles()`; `GatedSettingsService`, `host.Settings.HoldWrite(predicate)`, for a project
+  switch's step 1, which ends with a settings write) that holds the next call until the journey calls `Release()`, and
   `WaitForArrivalAsync()` fails rather than hangs when nothing arrives. Unarmed, every call goes
   straight through, so every other journey runs the application's own pipeline.
 - **A journey that adds a repository or saves projects takes them out again**, at its start and its

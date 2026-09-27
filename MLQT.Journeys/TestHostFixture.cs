@@ -226,6 +226,9 @@ public sealed class TestHostFixture : IAsyncLifetime
     /// <summary>The formatting pipeline's door, for a journey that needs a pass held part-way.</summary>
     public GatedFormattingPipeline Formatting => Services.GetRequiredService<GatedFormattingPipeline>();
 
+    /// <summary>The settings service's door, for a journey that needs a save held part-way.</summary>
+    public GatedSettingsService Settings => Services.GetRequiredService<GatedSettingsService>();
+
     /// <summary>Blocks until MLQT's analysis pipeline has gone quiet. See PipelineQuiescence.</summary>
     public async Task WaitForIdleAsync()
     {

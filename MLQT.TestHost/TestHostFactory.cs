@@ -56,7 +56,10 @@ public static class TestHostFactory
         builder.Services.AddSingleton<ScriptedFilePickerService>();
         builder.Services.AddSingleton<IFilePickerService>(sp => sp.GetRequiredService<ScriptedFilePickerService>());
         builder.Services.AddSingleton<InMemorySettingsService>();
-        builder.Services.AddSingleton<ISettingsService>(sp => sp.GetRequiredService<InMemorySettingsService>());
+        // Behind a door for the same reason as the formatting pipeline below: B423's hand check
+        // reloads the window during a project switch's step 1, which ends with a settings write.
+        builder.Services.AddSingleton<GatedSettingsService>(sp => new(sp.GetRequiredService<InMemorySettingsService>()));
+        builder.Services.AddSingleton<ISettingsService>(sp => sp.GetRequiredService<GatedSettingsService>());
         builder.Services.AddSingleton<RecordingPowerManagementService>();
         builder.Services.AddSingleton<IPowerManagementService>(sp => sp.GetRequiredService<RecordingPowerManagementService>());
 

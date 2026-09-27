@@ -45,12 +45,15 @@ internal static class RepositoryShell
     /// For the buttons that carry a tooltip and no accessible name - MudTooltip text is not in the
     /// markup, so the icon's own path is the one thing that names them (see skill-gui-testing.md).
     /// </remarks>
-    internal static ILocator ButtonWithIcon(IPage page, string icon)
+    internal static ILocator ButtonWithIcon(IPage page, string icon) => ButtonWithIcon(page, page.Locator("body"), icon);
+
+    /// <summary>A button inside <paramref name="scope"/>, found by the icon it draws.</summary>
+    internal static ILocator ButtonWithIcon(IPage page, ILocator scope, string icon)
     {
         var path = Regex.Matches(icon, "d=\"([^\"]+)\"")
                         .Select(m => m.Groups[1].Value)
                         .First(d => d != "M0 0h24v24H0z" && d != "M0 0h24v24H0V0z");
-        return page.Locator("button").Filter(new LocatorFilterOptions { Has = page.Locator($"path[d='{path}']") });
+        return scope.Locator("button").Filter(new LocatorFilterOptions { Has = page.Locator($"path[d='{path}']") });
     }
 
     /// <summary>
