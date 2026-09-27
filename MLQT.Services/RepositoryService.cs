@@ -347,11 +347,14 @@ public class RepositoryService : IRepositoryService
             // Save settings
             await SaveRepositorySettingsAsync();
 
+            // Worded as the repository dialog's alert is (B424). A readable file's settings are the
+            // ones used - only changes to them are not kept - and a repository with no file uses
+            // the defaults, so "global settings will be used instead" was true of neither.
             if (repository.IsSettingsReadOnly)
             {
                 result.Warnings.Add(
-                    $"Could not write settings to '{repository.Name}' repository " +
-                    "(insufficient permissions). Global settings will be used instead.");
+                    $"Settings cannot be saved to the '{repository.Name}' repository " +
+                    "(insufficient permissions). Changes will only apply to the current session.");
             }
 
             Info("RepositoryService", $"Successfully added repository: {repository.Name} with {discoveredLibraries.Count} libraries");
@@ -809,7 +812,7 @@ public class RepositoryService : IRepositoryService
         {
             Warn("RepositoryService",
                 $"Cannot write .mlqt/settings.json for '{repositoryName}': {ex.Message}. " +
-                "Repository will use global settings.");
+                "Changes to its settings will only apply to the current session.");
             return false;
         }
     }
@@ -858,7 +861,7 @@ public class RepositoryService : IRepositoryService
         {
             Warn("RepositoryService",
                 $"Could not write .mlqt/settings.json for '{repo.Name}': {ex.Message}. " +
-                "Repository will use global settings.");
+                "Changes to its settings will only apply to the current session.");
             repo.IsSettingsReadOnly = true;
         }
     }

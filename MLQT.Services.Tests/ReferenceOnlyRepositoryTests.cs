@@ -483,7 +483,7 @@ public class ReferenceOnlyRepositoryTests : IDisposable
 
         Assert.True(added.Repository!.IsSettingsReadOnly);
         Assert.False(added.Repository.IsReferenceOnly);   // still the user's own repository
-        Assert.Contains(added.Warnings, w => w.Contains("Ours") && w.Contains("Global settings"));
+        Assert.Contains(added.Warnings, w => w.Contains("Ours") && w.Contains("current session"));
     }
 
     [Fact]
@@ -513,7 +513,7 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         var path = WriteLibrary("Ours");
         var settingsPath = Path.Combine(path, ".mlqt", "settings.json");
         Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
-        File.WriteAllText(settingsPath, "{}\n");
+        File.WriteAllText(settingsPath, "{ \"CommitRequiresIssueNumber\": true }\n");
         File.SetAttributes(settingsPath, FileAttributes.ReadOnly);
         try
         {
@@ -529,7 +529,12 @@ public class ReferenceOnlyRepositoryTests : IDisposable
                 path, startMonitoring: false, isReferenceOnly: false);
 
             Assert.True(added.Repository!.IsSettingsReadOnly);
-            Assert.Contains(added.Warnings, w => w.Contains("Ours") && w.Contains("Global settings"));
+            // B424: the file can be read, so its settings are the ones used and only changes are
+            // lost - the warning must not say another set of settings is used in their place.
+            Assert.True(added.Repository.StyleSettings!.CommitRequiresIssueNumber);
+            var warning = Assert.Single(added.Warnings, w => w.Contains("Ours"));
+            Assert.Contains("Changes will only apply to the current session", warning);
+            Assert.DoesNotContain("global settings", warning, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
