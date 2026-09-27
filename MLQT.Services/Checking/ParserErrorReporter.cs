@@ -1,6 +1,7 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
+using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
 
@@ -100,6 +101,30 @@ public static class ParserErrorReporter
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// Puts the parser findings for <paramref name="models"/> on <paramref name="store"/> as the
+    /// classes have them now, replacing whatever parser findings it held for them - so reading
+    /// again neither duplicates an error nor keeps one the class no longer has.
+    ///
+    /// <para><b>Read after anything that parses, not only after a load.</b> A class nothing has
+    /// parsed yet records its errors when something first does, and for the app that is the style
+    /// check. Read only before the check, such an error reached the list when something unrelated
+    /// happened to read again, while the tree badge - which asks the class - showed it at once
+    /// (B390, the ordering B352 fixed in <see cref="LibraryCheckSession"/>).</para>
+    /// </summary>
+    public static void Refresh(ICodeReviewService store, IReadOnlyCollection<ModelNode> models)
+    {
+        if (models.Count == 0)
+            return;
+
+        var ids = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+        store.RemoveLogMessagesByPredicate(m => m.Source == SourceName && ids.Contains(m.ModelName));
+
+        var messages = ToLogMessages(models);
+        if (messages.Count > 0)
+            store.AddLogMessages(messages);
     }
 
     /// <summary>Counts parser errors by kind, for a load-time summary notification.</summary>

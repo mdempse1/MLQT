@@ -115,6 +115,29 @@ public class ParserErrorReporterTests
     }
 
     [Fact]
+    public void Refresh_ReplacesTheParserFindingsOfTheGivenClasses_AndTouchesNothingElse()
+    {
+        // B390: read before and after a check, so a second read must replace the first.
+        var store = new MLQT.Services.CodeReviewService();
+        var a = NodeWith("Lib.A", new ParserError { Line = 3, Message = "current" });
+        store.AddLogMessages([
+            new LogMessage("Lib.A", "Error", 9, "Parser error", "stale") { Source = ParserErrorReporter.SourceName },
+            new LogMessage("Lib.A", "Style warning", 1, "style", "kept") { Source = LogMessage.StyleCheckingSource },
+            new LogMessage("Lib.B", "Error", 2, "Parser error", "not asked about") { Source = ParserErrorReporter.SourceName }
+        ]);
+
+        ParserErrorReporter.Refresh(store, [a]);
+        ParserErrorReporter.Refresh(store, [a]);   // and again: no second copy
+
+        var details = store.LogMessages.Select(m => m.Details).OrderBy(d => d).ToList();
+        Assert.Equal(3, details.Count);
+        Assert.Contains("current", details);
+        Assert.Contains("kept", details);
+        Assert.Contains("not asked about", details);
+        Assert.DoesNotContain("stale", details);
+    }
+
+    [Fact]
     public void FatalParseFailure_IsDistinguishedFromARecoveredError()
     {
         var node = NodeWith("Lib.A", new ParserError

@@ -260,7 +260,7 @@ For details on configuring naming conventions, presets, exception names, and und
 ### Finding Lifecycle
 
 - Findings are **cleared and recalculated** whenever a library is loaded or reloaded
-- **Parser errors** are detected immediately during loading
+- **Parser errors** are detected immediately during loading, and read again when a style check finishes — code reformatted in place (**Format All Files**) is parsed again by that check, so its errors, if it has any, are listed then
 - **Style findings** are detected by a background process that runs after loading completes
 - **External tool errors** are added when you manually run a Dymola or OpenModelica check
 - Findings persist across model selections — switching models does not clear the findings list

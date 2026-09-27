@@ -998,6 +998,11 @@ public partial class MainLayout : IDisposable
             if (!analysisFailures.IsEmpty)
                 CodeReviewService.AddLogMessages(analysisFailures.ToList());
 
+            // Read again now the pass has parsed every class: one nothing had parsed records its
+            // errors when this pass first does, after any read made before it (B390). This pass does
+            // not go through the style check's workers, which read them again when they finish.
+            SurfaceParserErrors();
+
             // Compact the LOH after dependency analysis released all parse trees
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
@@ -1438,18 +1443,11 @@ public partial class MainLayout : IDisposable
         var models = modelIds is null
             ? LibraryDataService.GetAllModels().ToList()
             : modelIds.Select(LibraryDataService.GetModelById).Where(m => m is not null).Cast<ModelNode>().ToList();
-        if (models.Count == 0)
-            return;
 
-        // Drop the previous parser findings for exactly these models before re-adding, so repeated
-        // re-analysis can neither duplicate them nor leave behind ones the file no longer has.
-        var ids = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
-        CodeReviewService.RemoveLogMessagesByPredicate(
-            m => m.Source == ParserErrorReporter.SourceName && ids.Contains(m.ModelName));
-
-        var messages = ParserErrorReporter.ToLogMessages(models);
-        if (messages.Count > 0)
-            CodeReviewService.AddLogMessages(messages);
+        // Replaces the previous parser findings for exactly these models, so repeated re-analysis
+        // can neither duplicate them nor leave behind ones the file no longer has. The style check
+        // reads them again when it finishes, because it is what parses a class nothing had (B390).
+        ParserErrorReporter.Refresh(CodeReviewService, models);
     }
 
     /// <summary>

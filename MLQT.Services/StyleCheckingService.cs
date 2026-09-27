@@ -965,6 +965,21 @@ public class StyleCheckingService : IStyleCheckingService
             // Final flush when done
             FlushPendingFindings();
 
+            // The parse errors, read now that the check has parsed. A class nothing had parsed
+            // records its errors when the check first does, and the caller read them before starting
+            // it - so they reached the list only if something unrelated read again (B390). Every
+            // class, not only this run's: they are derived from the graph, and reading them for all
+            // costs one pass over it, once per run.
+            try
+            {
+                ParserErrorReporter.Refresh(_codeReviewService, _libraryDataService.GetAllModels().ToList());
+            }
+            catch (Exception ex)
+            {
+                // A library replaced mid-read, say. The errors read before the run are still listed.
+                Error("StyleCheckingService", "Reading parse errors after the check failed", ex);
+            }
+
             // The workers have finished, so what is left unmeasured is what no check reached. Inside
             // the run, so the progress dialog covers it and completion still means everything is done.
             if (Interlocked.Exchange(ref _coverageSweepPending, false))
