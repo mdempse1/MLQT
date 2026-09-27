@@ -72,10 +72,12 @@ public static class ParserErrorReporter
             if (model?.Definition?.ParserErrors is not { Count: > 0 } errors)
                 continue;
 
-            // The parser reads whole files, so its line is the file's. Findings carry class-relative
-            // lines (see Finding.LineNumber), and for a class nested in a package.mo the two are
-            // hundreds of lines apart — which is how a parse error came to point at an unrelated line
-            // of the class the app was showing.
+            // The load parses whole files, so an error it recorded is on the file's line. Findings
+            // carry class-relative lines (see Finding.LineNumber), and for a class nested in a
+            // package.mo the two are hundreds of lines apart — which is how a parse error came to
+            // point at an unrelated line of the class the app was showing. An error recorded later,
+            // by parsing the class's own source, is already relative to the class and is taken as it
+            // is: subtracting the start line again put it on line 1 (B388).
             var classStart = model.StartLine > 0 ? model.StartLine : 1;
 
             foreach (var error in errors)
@@ -91,7 +93,7 @@ public static class ParserErrorReporter
                     Discriminator = error.Message,
                     Message = error.Message +
                               (error.OffendingToken is not null ? $" (token: '{error.OffendingToken}')" : ""),
-                    LineNumber = Math.Max(1, error.Line - classStart + 1),
+                    LineNumber = Math.Max(1, error.LineIsClassRelative ? error.Line : error.Line - classStart + 1),
                     Severity = RuleSeverity.Error
                 });
             }

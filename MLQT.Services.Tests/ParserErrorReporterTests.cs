@@ -84,6 +84,37 @@ public class ParserErrorReporterTests
     }
 
     [Fact]
+    public void AnErrorRecordedByParsingTheClassOnItsOwn_KeepsItsLineInTheClass()
+    {
+        // B388. A class nested far down a package.mo, whose stored source nothing has parsed yet: the
+        // semicolon missing after `x` is found on the class's fourth line when its own source is
+        // parsed. That line is already relative to the class, and subtracting the class's start line
+        // from it again put the error on line 1, the declaration.
+        var node = new ModelNode("Lib.Late", "Late",
+            "model Late \"d\"\n  Real a;\n  Real x\n  Real y;\nend Late;") { StartLine = 300 };
+
+        node.Definition.EnsureParsed();
+
+        var error = Assert.Single(node.Definition.ParserErrors);
+        Assert.True(error.Line > 1);   // the precondition: an error below the declaration
+        Assert.Equal(error.Line, Assert.Single(ParserErrorReporter.ToFindings([node])).LineNumber);
+    }
+
+    [Fact]
+    public void AClassRelativeErrorAndAFileLineError_AreEachReportedWithinTheClass()
+    {
+        // The flag, not the class, decides: the same class can be read either way.
+        var fileLine = NodeWith("Lib.A", new ParserError { Line = 120, Message = "from the load" });
+        fileLine.StartLine = 118;
+        var classLine = NodeWith("Lib.B", new ParserError { Line = 3, Message = "own parse", LineIsClassRelative = true });
+        classLine.StartLine = 118;
+
+        var findings = ParserErrorReporter.ToFindings([fileLine, classLine]);
+
+        Assert.All(findings, f => Assert.Equal(3, f.LineNumber));
+    }
+
+    [Fact]
     public void FatalParseFailure_IsDistinguishedFromARecoveredError()
     {
         var node = NodeWith("Lib.A", new ParserError

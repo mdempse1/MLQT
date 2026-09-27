@@ -149,8 +149,15 @@ public class ModelDefinition
         // file was parsed once and each error attributed to the innermost class whose text it is in;
         // every class enclosing that one fails to parse for the same reason, so letting each record
         // its own copy gives one problem as many owners as it has ancestors.
+        //
+        // What is recorded here was parsed from this class's own source, so its lines count from the
+        // class, not the file - and are marked so, because a report cannot tell by looking (B388).
         if (MayRecordParserErrors && ParserErrors.Count == 0)
+        {
+            foreach (var error in errors)
+                error.LineIsClassRelative = true;
             ParserErrors = errors;
+        }
 
         return parseTree;
     }
