@@ -27,6 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../TestSupport/InMemorySettingsService.cs" Link="TestSupport/InMemorySettingsService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="TestFiles\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

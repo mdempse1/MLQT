@@ -268,6 +268,12 @@ public partial class CodeReview : IAsyncDisposable
 
     /// <summary>The class the latest diff load is for — the one whose finishing clears the spinner.</summary>
     private ModelNode? _diffLoadNode;
+
+    /// <summary>
+    /// How many diff loads have come back to the dispatcher, whether or not what they found was still
+    /// wanted - so a test can wait for a load the user overtook, which renders nothing of its own.
+    /// </summary>
+    internal int DiffLoadsFinished { get; private set; }
     private DiffViewMode _diffViewMode = DiffViewMode.Unified;
     private string? _currentRepositoryId;
     private string? _currentRelativeFilePath;
@@ -970,6 +976,8 @@ public partial class CodeReview : IAsyncDisposable
 
         await InvokeAsync(() =>
         {
+            DiffLoadsFinished++;
+
             // The spinner belongs to the latest load, whichever class that is for.
             if (ReferenceEquals(_diffLoadNode, node))
             {

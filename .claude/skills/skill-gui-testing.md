@@ -37,6 +37,18 @@ A test belongs in 1b only if there is no behaviour without a render tree. The on
   dialog closes with**: `MudDialog.Close` goes to a cascaded instance that a directly rendered
   component does not have, so every Close and Cancel in one is a silent no-op.
 - **Two-way binding** round-trips through a parent.
+- **The Code Review page's click paths** — select a class, switch to the diff, move on while it
+  loads. `CodeReviewTestBase` (B377) supplies all fifteen of the page's services over a real
+  `DirectedGraph` and one Git repository: `LoadFile` puts Modelica text in the graph, `SetHead` says
+  what a file held at HEAD and marks it modified, and `HoldHeadReads`/`ReleaseHeadRead` hold HEAD
+  reads at a gate so a test decides which of two loads lands first. Two things it had to learn:
+  bUnit's one-second default wait is shorter than the first parse in a cold process (use
+  `Eventually`, which waits `Patience`), and bUnit re-checks a wait only when something renders, so
+  anything that happens on a pool thread and renders nothing — a read arriving at the gate, a load
+  the user overtook — is waited for by polling (`WaitForHeldReads`) or by a counter the page bumps on
+  the dispatcher (`CodeReview.DiffLoadsFinished`). Also: `RenderCount` on the page counts every
+  descendant's renders, several hundred per selection, so it is no signal that the page itself did
+  anything.
 - **`CytoscapeGraph` interop sequence** — assert the calls and payloads with
   `JSInterop.VerifyInvoke("cytoscapeGraph.init")`. Whether Cytoscape actually *draws* is Layer 3.
 
