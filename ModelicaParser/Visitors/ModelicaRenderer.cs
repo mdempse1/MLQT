@@ -761,6 +761,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 Visit(context.array_subscripts());
             if (context.class_modification() != null)
                 Visit(context.class_modification());
+            // Not an enumeration's: its literals are written a line each, so its ')' starts a line
+            // and moving the description would only leave that ')' alone on it.
+            WrapBeforeDescription(context.comment());
         }
         Visit(context.comment());
         return null;
@@ -1851,21 +1854,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Check if line is too long or will be too long with comment - if so, wrap before comment
         if (context.comment() != null && !string.IsNullOrWhiteSpace(context.comment().GetText()))
         {
-            // Estimate the length with the comment added (comment text + space before it)
-            // Only consider string_comment, not annotation (annotation always goes on new line)
-            var stringCommentText = DescriptionText(context.comment().string_comment());
-            var estimatedLength = GetCurrentLinePlainTextLength() + 1 + stringCommentText.Length;
-            bool willBeTooLong = !_inDocumentationAnnotation && estimatedLength > _maxLineLength;
-
-            if (IsLineTooLong() || willBeTooLong)
-            {
-                EmitLine();
-                // Add continuation indent without changing indent level
-                // AddIndentToCurrentLine() adds 2 spaces, then EmitLine() will add (_indentLevel * 2) spaces
-                // For models without public/protected: _indentLevel=1, so total = 2 + 2 = 4 spaces
-                // For models with public/protected: _indentLevel=0, total = 2 + 0 = 2, then AddIndentAtLineStart adds 2 more = 4 spaces
-                AddIndentToCurrentLine();
-            }
+            WrapBeforeDescription(context.comment());
             Visit(context.comment());
         }
 
@@ -1874,6 +1863,30 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Dedent();
 
         return null;
+    }
+
+    /// <summary>
+    /// Ends the line before a description that would take it past the maximum length, or that
+    /// follows a line already past it, and starts the description a level in - for a component and
+    /// for a short class definition alike (B482). Only the description is measured: an annotation
+    /// always starts a line of its own. A short class's description was always left on the line, so
+    /// once its modification's array wrapped (B474) the closing argument joined the short last line
+    /// and the description ran past the limit.
+    /// </summary>
+    private void WrapBeforeDescription(modelicaParser.CommentContext? comment)
+    {
+        if (comment == null || string.IsNullOrWhiteSpace(comment.GetText()))
+            return;
+        var description = DescriptionText(comment.string_comment());
+        bool willBeTooLong = !_inDocumentationAnnotation
+            && GetCurrentLinePlainTextLength() + 1 + description.Length > _maxLineLength;
+        if (IsLineTooLong() || willBeTooLong)
+        {
+            EmitLine();
+            // A continuation indent without changing the level: the line is ended at the level
+            // it is written at, and this adds one more.
+            AddIndentToCurrentLine();
+        }
     }
 
     public override object? VisitDeclaration([NotNull] modelicaParser.DeclarationContext context)

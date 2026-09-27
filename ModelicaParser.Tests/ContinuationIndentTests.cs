@@ -47,6 +47,10 @@ namespace ModelicaParser.Tests;
 /// has already wrapped. Wrapping it inside a list's first argument would leave that argument over
 /// more than one line, which B464 does not move, so the argument is moved first. Buildings' FLEXLAB
 /// constructions and MSL's PumpingSystem had such arrays on one line of up to 600 characters.</para>
+///
+/// <para>B482 - a short class definition's description that does not fit starts a line of its own,
+/// a level in, as a component's does. It was never measured, so once an array wrapped the closing
+/// argument joined its short last line and the description ran past the limit.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -696,6 +700,44 @@ public class ContinuationIndentTests
             maxLineLength: 60);
     }
 
+    private const string ShortClassDescriptionsWrapped = """
+        model M
+          record R = Buildings.HeatTransfer.Data.OpaqueConstructions.Generic(
+            final material={Buildings.HeatTransfer.Data.Solids.InsulationBoard(x=0.08255),
+              Buildings.HeatTransfer.Data.Solids.Plywood(x=0.0127),
+              Buildings.HeatTransfer.Data.Solids.GypsumBoard(x=0.01588)}, final nLay=3)
+            "South wall in test bed X2";
+          type T = Real(final quantity="Temp", final unit="K")
+            "A description that is long enough to wrap onto a line of its own"
+            annotation (absoluteValue=true);
+          replaceable package Medium = Some.Media.Water "Medium in the system";
+          type E = enumeration(
+            a "First",
+            b "Second"
+          ) "Enumeration defining in which way the fixed orientation of frame_b with respect to frame_a is given";
+        end M;
+        """;
+
+    [Fact]
+    public void AShortClassDescriptionThatDoesNotFitStartsALineOfItsOwn()
+    {
+        // Buildings' FLEXLAB Construction2: once the array wrapped (B474) the closing argument
+        // joined its short last line, and the description after the ')' took that line to 105
+        // characters. A short class's description was never measured; a component's always was,
+        // and is moved to a line of its own, a level in (B482). One that fits stays, and so does an
+        // enumeration's, whose ')' starts its line and would be left alone on it.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  record R = Buildings.HeatTransfer.Data.OpaqueConstructions.Generic(final material={Buildings.HeatTransfer.Data.Solids.InsulationBoard(x=0.08255), Buildings.HeatTransfer.Data.Solids.Plywood(x=0.0127), Buildings.HeatTransfer.Data.Solids.GypsumBoard(x=0.01588)}, final nLay=3) "South wall in test bed X2";
+                  type T = Real(final quantity="Temp", final unit="K") "A description that is long enough to wrap onto a line of its own" annotation(absoluteValue=true);
+                  replaceable package Medium = Some.Media.Water "Medium in the system";
+                  type E = enumeration(a "First", b "Second") "Enumeration defining in which way the fixed orientation of frame_b with respect to frame_a is given";
+                end M;
+                """),
+            expectedOutput: Normalise(ShortClassDescriptionsWrapped));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -727,6 +769,7 @@ public class ContinuationIndentTests
     [InlineData(ShortClassGraphics, 100)]
     [InlineData(ComponentGraphics, 100)]
     [InlineData(ArraysWrappedFromTheirOpeningLine, 60)]
+    [InlineData(ShortClassDescriptionsWrapped, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

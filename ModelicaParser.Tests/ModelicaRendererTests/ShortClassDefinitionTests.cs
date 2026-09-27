@@ -95,9 +95,13 @@ public class ShortClassDefinitionTests
     public void ShortPackageDefinition_FormatsCorrectly()
     {
         var testModel = """ 
-        package StandardWaterOnePhase = WaterIF97_pT "Water using the IF97 standard, explicit in p and T. Recommended for one-phase applications";        
+        package StandardWaterOnePhase = WaterIF97_pT "Water using the IF97 standard, explicit in p and T. Recommended for one-phase applications";
         """;
-        TestHelpers.AssertClass(testModel);
+        // A description too long for the line starts a line of its own, as a component's does (B482).
+        TestHelpers.AssertClass(testModel, expectedOutput: """
+            package StandardWaterOnePhase = WaterIF97_pT
+              "Water using the IF97 standard, explicit in p and T. Recommended for one-phase applications";
+            """);
     }
 
     [Fact]

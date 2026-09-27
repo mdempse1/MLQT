@@ -408,6 +408,25 @@ constructions and over 1,000 in its IEEE 34-bus grid, and at about 200 in MSL's
 differently from before (9 MSL, 48 Buildings), only in line breaks and indentation, and lines over 100
 characters in them fall from 640 to 599.
 
+**A description too long for its line starts a line of its own**, a level in, for a short class
+definition as for a component:
+
+```modelica
+record Construction2 = Buildings.HeatTransfer.Data.OpaqueConstructions.Generic(
+  final material={Buildings.HeatTransfer.Data.Solids.InsulationBoard(x=0.08255),
+    Buildings.HeatTransfer.Data.Solids.Plywood(x=0.0127),
+    Buildings.HeatTransfer.Data.Solids.GypsumBoard(x=0.01588)}, final nLay=3)
+  "South wall in test bed X2"
+```
+
+Earlier versions moved a component's description and never a short class's, so once an array like
+the one above wrapped, its closing argument joined the short last line and the description took it
+past the limit. An enumeration's description stays after its `)`, which starts a line of its own
+already. Over the Modelica Standard Library and Buildings, 101 files are written differently from
+before (25 MSL, 76 Buildings), only in line breaks and indentation, and lines over 100 characters in
+them fall from 2,569 to 2,429 - each one left over is part of a longer line it was split from, most
+of them a description longer than the limit on its own.
+
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
 Buildings (8,367 files), 1,017 files are written differently from before, every one only in line
