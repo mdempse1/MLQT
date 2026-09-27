@@ -370,6 +370,30 @@ public class AppState
     }
 
     /// <summary>
+    /// Event fired when a switch announced by <see cref="ProjectSwitchStarting"/> ended without the
+    /// project changing - it failed, or the project was not found. Listeners close whatever the
+    /// announcement opened (B435).
+    /// </summary>
+    public event Action? OnProjectSwitchAbandoned;
+
+    /// <summary>
+    /// Notifies that a project switch ended without <c>OnProjectChanged</c>, and clears the progress it
+    /// published.
+    /// </summary>
+    /// <remarks>
+    /// The switch's progress is cleared by the handler of <c>OnProjectChanged</c>, so a switch that
+    /// never raised it left <see cref="StartupStep"/> set for the rest of the session: the six-step
+    /// dialog stayed open, and a reload afterwards showed the non-closable earlier-run dialog for
+    /// ever and skipped startup (B422, B423). Cleared here, not by a listener, so it is cleared in a
+    /// session whose layout is not listening.
+    /// </remarks>
+    public void ProjectSwitchAbandoned()
+    {
+        StartupProgress(null);
+        OnProjectSwitchAbandoned?.Invoke();
+    }
+
+    /// <summary>
     /// Forgets the classes visited, the class shown and the selection (B359).
     /// </summary>
     /// <remarks>

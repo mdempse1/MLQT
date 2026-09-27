@@ -164,11 +164,55 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
 
         // Automatically load the new empty project
-        NavState.ProjectSwitchStarting();
-        await RepositoryService.SwitchProjectAsync(newProject.Id);
+        var switched = await SwitchToProjectAsync(newProject.Id);
         RefreshProjects();
-        await InvokeAsync(() => Snackbar.Add($"Project '{newProject.Name}' created and loaded", Severity.Success));
+        if (switched)
+            await InvokeAsync(() => Snackbar.Add($"Project '{newProject.Name}' created and loaded", Severity.Success));
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Switches to a project the way every switch on this panel does: announces it, so the layout
+    /// shows its progress, and awaits it. Returns whether the project changed.
+    /// </summary>
+    /// <remarks>
+    /// The progress the announcement opens is closed by the handler of <c>OnProjectChanged</c>, so a
+    /// switch that throws before raising it, or returns early because the project is not found, left
+    /// the six-step dialog open and its step published for the rest of the session (B435). Whether
+    /// it was raised is the one thing that says the switch happened, so that is what this watches;
+    /// when it was not, the switch is abandoned on <see cref="AppState"/> and the user told why.
+    /// </remarks>
+    internal async Task<bool> SwitchToProjectAsync(string projectId)
+    {
+        var changed = false;
+        void OnChanged(string _) => changed = true;
+
+        RepositoryService.OnProjectChanged += OnChanged;
+        string? failure = null;
+        try
+        {
+            NavState.ProjectSwitchStarting();
+            await RepositoryService.SwitchProjectAsync(projectId);
+            if (!changed)
+                failure = "the project was not found";
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(SettingsRepositories), $"Switching to project {projectId} failed", ex);
+            failure = ex.Message;
+        }
+        finally
+        {
+            RepositoryService.OnProjectChanged -= OnChanged;
+        }
+
+        if (failure is null)
+            return true;
+
+        if (!changed)
+            NavState.ProjectSwitchAbandoned();
+        await InvokeAsync(() => Snackbar.Add($"The project could not be loaded: {failure}", Severity.Error));
+        return changed;
     }
 
     private void CancelProjectName()
@@ -214,8 +258,7 @@ public partial class SettingsRepositories : IDisposable
     private async Task LoadProject(string projectId)
     {
         // Signal MainLayout to show progress dialog immediately before loading starts
-        NavState.ProjectSwitchStarting();
-        await RepositoryService.SwitchProjectAsync(projectId);
+        await SwitchToProjectAsync(projectId);
         RefreshProjects();
         StateHasChanged();
     }
@@ -248,8 +291,7 @@ public partial class SettingsRepositories : IDisposable
             var firstProject = _projects.FirstOrDefault();
             if (firstProject != null)
             {
-                NavState.ProjectSwitchStarting();
-                await RepositoryService.SwitchProjectAsync(firstProject.Id);
+                await SwitchToProjectAsync(firstProject.Id);
                 RefreshProjects();
             }
         }

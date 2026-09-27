@@ -109,6 +109,7 @@ public partial class MainLayout : IDisposable
         NavState.OnVcsWorkChanged += OnVcsWorkChanged;
         NavState.OnStartupProgressChanged += OnStartupProgressChanged;
         NavState.OnProjectSwitchStarting += OnProjectSwitchStarting;
+        NavState.OnProjectSwitchAbandoned += OnProjectSwitchAbandoned;
         RepositoryService.OnProjectChanged += OnProjectChanged;
         NavState.OnThemeChanged += OnThemeChangedHandler;
         NavState.OnRunDeferredDependencies += RunDeferredDependenciesOnlyAsync;
@@ -587,6 +588,18 @@ public partial class MainLayout : IDisposable
         // in whichever instance is subscribed when the switch raises it.
         NavState.StartupProgress("Loading libraries from repositories");
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Closes the dialog <see cref="OnProjectSwitchStarting"/> opened, for a switch that ended without
+    /// <c>OnProjectChanged</c> - which is what would otherwise have closed it (B435). The published
+    /// step has already been cleared by <see cref="AppState.ProjectSwitchAbandoned"/>.
+    /// </summary>
+    private void OnProjectSwitchAbandoned()
+    {
+        ResetStartupSteps();
+        _startupProcessRunning = false;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async void OnProjectChanged(string projectId)
@@ -1455,6 +1468,7 @@ public partial class MainLayout : IDisposable
         NavState.OnThemeChanged -= OnThemeChangedHandler;
         NavState.OnRepositorySettingsApplied -= OnRepositorySettingsApplied;
         NavState.OnProjectSwitchStarting -= OnProjectSwitchStarting;
+        NavState.OnProjectSwitchAbandoned -= OnProjectSwitchAbandoned;
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
         NavState.OnVcsModelsChanged -= OnVcsModelsChanged;
         NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
