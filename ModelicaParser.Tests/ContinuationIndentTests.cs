@@ -16,6 +16,11 @@ namespace ModelicaParser.Tests;
 /// siblings. Its line was ended inside the extra level the wrap adds, so it came out a level deeper
 /// than a sibling that did not wrap: Buildings' DXSystems <c>DryCoil</c> had <c>nomVal=</c> two
 /// spaces to the right of <c>spe=</c> and <c>perCur=</c>.</para>
+///
+/// <para>B468 - an array's call elements that do not fit start a line each, at one column. Each
+/// was written on the last line of the element before it, so B465's floor put each one's wrapped
+/// arguments a level deeper than the last one's, and those lines ran to 170 characters: Buildings'
+/// <c>DryCoil</c> had <c>sta={Stage(...), Stage(...), ...}</c> with <c>spe=</c> at 4, 6, 8 and 10.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -245,6 +250,177 @@ public class ContinuationIndentTests
             maxLineLength: 60);
     }
 
+    private const string ArrayOfWrappedCalls = """
+        model M
+          parameter Data.DXCoil datCoi(sta={Some.Long.Package.Stage(
+            spe=900/60,
+            nomVal=Some.Long.Package.NominalValues(
+              Q_flow_nominal=-12000, COP_nominal=3),
+            perCur=Some.Long.Package.Curve_I()),
+            Some.Long.Package.Stage(spe=1200/60,
+              nomVal=Some.Long.Package.NominalValues(
+                Q_flow_nominal=-18000, COP_nominal=3),
+              perCur=Some.Long.Package.Curve_I()),
+            Some.Long.Package.Stage(spe=1800/60,
+              nomVal=Some.Long.Package.NominalValues(
+                Q_flow_nominal=-21000, COP_nominal=3),
+              perCur=Some.Long.Package.Curve_II())}, nSta=3);
+        end M;
+        """;
+
+    [Fact]
+    public void AnArraysCallElementsThatDoNotFitEachStartALineAtTheSameColumn()
+    {
+        // Buildings' DXSystems DryCoil: each Stage( followed the last line of the Stage before it,
+        // so each one's wrapped arguments were a level deeper than the last one's (B468).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  parameter Data.DXCoil datCoi(sta={Some.Long.Package.Stage(spe=900/60, nomVal=Some.Long.Package.NominalValues(Q_flow_nominal=-12000, COP_nominal=3), perCur=Some.Long.Package.Curve_I()), Some.Long.Package.Stage(spe=1200/60, nomVal=Some.Long.Package.NominalValues(Q_flow_nominal=-18000, COP_nominal=3), perCur=Some.Long.Package.Curve_I()), Some.Long.Package.Stage(spe=1800/60, nomVal=Some.Long.Package.NominalValues(Q_flow_nominal=-21000, COP_nominal=3), perCur=Some.Long.Package.Curve_II())}, nSta=3);
+                end M;
+                """),
+            expectedOutput: Normalise(ArrayOfWrappedCalls),
+            maxLineLength: 60);
+    }
+
+    private const string ArrayOfCallsAnArgumentALine = """
+        model M
+          parameter Data cellData2(
+            Qnom=18000,
+            useLinearSOCDependency=false,
+            Ri=cellData2.OCVmax/Isc,
+            Idis=0.1,
+            nRC=2,
+            rcData={Some.Package.RCData(
+              R=0.2*cellData2.Ri,
+              C=60/(0.2*cellData2.Ri)
+            ),
+            Some.Package.RCData(
+              R=0.1*cellData2.Ri,
+              C=10/(0.1*cellData2.Ri)
+            )}
+          );
+        end M;
+        """;
+
+    [Fact]
+    public void AnArraysCallElementInsideAListWrittenAnArgumentALineStartsWhereTheOneBeforeEnded()
+    {
+        // MSL's Batteries.Examples.BatteryDischargeCharge: the elements' ')' is at the column the
+        // list puts them at, so the next element starts there too rather than a level in.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  parameter Data cellData2(Qnom=18000, useLinearSOCDependency=false, Ri=cellData2.OCVmax/Isc, Idis=0.1, nRC=2, rcData={Some.Package.RCData(R=0.2*cellData2.Ri, C=60/(0.2*cellData2.Ri)), Some.Package.RCData(R=0.1*cellData2.Ri, C=10/(0.1*cellData2.Ri))});
+                end M;
+                """),
+            expectedOutput: Normalise(ArrayOfCallsAnArgumentALine),
+            maxLineLength: 60);
+    }
+
+    private const string ArrayElementsWrappedOrNot = """
+        model M
+          Real y;
+
+        equation
+          y = a
+            + Some.Package.total(parts={Some.Package.part(first=1,
+              second=2, third=3),
+              Some.Package.part(first=4, second=5, third=6)});
+          y = Some.Package.total(parts={Some.Package.part(first=1,
+            second=2, third=3), Some.Long.Package.With.A.Longer.Name.constantValue, 1});
+          y = Some.Package.total(parts={Some.Package.part(first=1,
+            second=2, third=3),
+            Some.Package.part(first=4, second=5000)});
+          y = Some.Package.total(parts={Some.Package.part(first=1,
+            second=2, third=3), Some.Package.part(first=4, second=500)});
+        end M;
+        """;
+
+    [Fact]
+    public void AnArraysCallElementIsWrappedAsAWrappedArgumentIsAndNothingElseIs()
+    {
+        // In order: an array opened on a continuation line keeps its wrapped element a level in
+        // from that line (B465); an element that is not a call is not wrapped for length; and a
+        // call is wrapped with the three-character margin a wrapped argument has - 58 characters
+        // wrap at 60, 57 do not.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  y = a + Some.Package.total(parts={Some.Package.part(first=1, second=2, third=3), Some.Package.part(first=4, second=5, third=6)});
+                  y = Some.Package.total(parts={Some.Package.part(first=1, second=2, third=3), Some.Long.Package.With.A.Longer.Name.constantValue, 1});
+                  y = Some.Package.total(parts={Some.Package.part(first=1, second=2, third=3), Some.Package.part(first=4, second=5000)});
+                  y = Some.Package.total(parts={Some.Package.part(first=1, second=2, third=3), Some.Package.part(first=4, second=500)});
+                end M;
+                """),
+            expectedOutput: Normalise(ArrayElementsWrappedOrNot),
+            maxLineLength: 60);
+    }
+
+    private const string AnnotationArraysOfCalls = """
+        connector C
+          Real x;
+
+          annotation (
+            defaultComponentName="port_n",
+            Diagram(graphics={
+              Text(
+                extent={{-100, 100}, {100, 60}},
+                textColor={255, 170, 85},
+                textString="%name"
+              ),
+              Ellipse(
+                extent={{-40, 40}, {40, -40}},
+                lineColor={255, 170, 85},
+                fillColor={255, 255, 255},
+                fillPattern=FillPattern.Solid
+              )
+            }),
+            Documentation(figures={Figure(title="Anti-windup", plots={Plot(
+              title="Reference tracking", curves={Curve(y=integrator.y, legend="Reference speed")}),
+              Plot(title="Anti-windup limiter", identifier="limiter")})})
+          );
+        end C;
+        """;
+
+    [Fact]
+    public void AGraphicsArrayKeepsItsOwnLayoutAndADocumentationFiguresPlotsAreWrapped()
+    {
+        // A graphics annotation's elements are already a line each, at their own column (MSL
+        // Magnetic.QuasiStatic.FundamentalWave.Interfaces.NegativeMagneticPort). A figure's plots
+        // are wrapped like any other call's (MSL Blocks' UsersGuide): the second Plot( followed
+        // the first's last line, a level deeper than it.
+        TestHelpers.AssertClass(
+            Normalise("""
+                connector C
+                  Real x;
+                  annotation (defaultComponentName="port_n", Diagram(graphics={Text(extent={{-100, 100}, {100, 60}}, textColor={255, 170, 85}, textString="%name"), Ellipse(extent={{-40, 40}, {40, -40}}, lineColor={255, 170, 85}, fillColor={255, 255, 255}, fillPattern=FillPattern.Solid)}), Documentation(figures={Figure(title="Anti-windup", plots={Plot(title="Reference tracking", curves={Curve(y=integrator.y, legend="Reference speed")}), Plot(title="Anti-windup limiter", identifier="limiter")})}));
+                end C;
+                """),
+            expectedOutput: Normalise(AnnotationArraysOfCalls),
+            maxLineLength: 60);
+    }
+
+    [Fact]
+    public void AnArrayOfCallsStillOnTheLineItOpenedOnIsLeftThere()
+    {
+        // Buildings' FLEXLAB constructions: wrapping the array would leave the list's first
+        // argument over more than one line, so it could no longer be moved to a line of its own
+        // (B464), and the record's first line would run past the limit instead.
+        TestHelpers.AssertClass(
+            Normalise("""
+                record R = Some.Package.Generic(final material={Solids.Insulation(x=0.08255), Solids.Plywood(x=0.0127), Solids.Gypsum(x=0.01588)}, final nLay=3) "South wall";
+                """),
+            expectedOutput: Normalise("""
+                record R = Some.Package.Generic(
+                  final material={Solids.Insulation(x=0.08255), Solids.Plywood(x=0.0127), Solids.Gypsum(x=0.01588)},
+                  final nLay=3) "South wall";
+                """),
+            maxLineLength: 60);
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -266,6 +442,10 @@ public class ContinuationIndentTests
     [InlineData(NestedModificationAnArgumentALine, 40)]
     [InlineData(CallArgumentWhoseListWraps, 60)]
     [InlineData(MatrixArgumentWrapped, 60)]
+    [InlineData(ArrayOfWrappedCalls, 60)]
+    [InlineData(ArrayOfCallsAnArgumentALine, 60)]
+    [InlineData(ArrayElementsWrappedOrNot, 60)]
+    [InlineData(AnnotationArraysOfCalls, 60)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

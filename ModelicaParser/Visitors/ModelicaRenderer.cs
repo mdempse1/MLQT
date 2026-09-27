@@ -3701,16 +3701,36 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Comments after a ',' (B431). A multi-line graphics array already puts one
         // element a line; anywhere else the element after a comment continues a level in.
         var runs = CommentRuns(context);
+        int opening = _code.Count;
         if (expressions != null && expressions.Length > 0)
         {
             for (int i = 0; i < expressions.Length; i++)
             {
+                bool wrapped = false;
                 if (i > 0)
                 {
                     Write(",");
                     if (runs != null && runs[i].Any)
                         WriteListComments(runs[i],
                             _inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement);
+                    else if (WrapsCallElementForLength(expressions[i], opening))
+                    {
+                        // A call that will not fit after the element before it, which has already
+                        // taken the array over more than one line, starts a line of its own (B468):
+                        // left on the last line of the element before, each call's wrapped
+                        // arguments were a level deeper than the last one's. It is a level in from
+                        // the line the array opened on, as a wrapped argument is - or, inside a
+                        // list written an argument a line, where the element before it ended.
+                        EmitLine();
+                        if (!_parentUsingMultiLine)
+                        {
+                            _currentLineMaximumLevel = _indentLevel;
+                            Indent();
+                            AddIndentToCurrentLine();
+                            KeepInFrom(opening);
+                            wrapped = true;
+                        }
+                    }
                     else
                         SeparateGraphicsArgument();
                 }
@@ -3722,6 +3742,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                 if (_inGraphicsAnnotationLevel > 0)
                     _inGraphicsAnnotationLevel--;
+                if (wrapped)
+                    Dedent();
             }
 
             if (context.for_indices() != null)
@@ -3734,6 +3756,26 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether an array element after the first is a function call that would not fit on the
+    /// current line after a space, in an array that has already been written over more than one
+    /// line since <paramref name="opening"/> (B468). Only a call: a graphics annotation's arrays
+    /// are laid out by their own rules, and an array of numbers is not wrapped for length at all.
+    /// And only once the array spans lines: an array still on the line it opened on is left there,
+    /// so a list's first argument holding it can still be moved to a line of its own (B464).
+    /// </summary>
+    private bool WrapsCallElementForLength(modelicaParser.ExpressionContext element, int opening)
+    {
+        if (_inGraphicsAnnotationLevel > 0 || _code.Count == opening)
+            return false;
+        IParseTree node = element;
+        while (node is ParserRuleContext { ChildCount: 1 } rule && node is not modelicaParser.PrimaryContext)
+            node = rule.GetChild(0);
+        if (node is not modelicaParser.PrimaryContext { } primary || primary.function_call_args() == null)
+            return false;
+        return GetCurrentLinePlainTextLength() + 1 + element.GetText().Length > _maxLineLength - 3;
     }
 
     public override object? VisitNamed_arguments([NotNull] modelicaParser.Named_argumentsContext context)

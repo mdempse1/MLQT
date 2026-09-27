@@ -337,6 +337,29 @@ siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:
 Over the Modelica Standard Library and Buildings, 145 files are written differently from before,
 only in indentation and only to the left.
 
+**An array of calls that has already wrapped starts each call that would not fit on a line of its
+own**, a level in from the line the array opens on - or, inside a list written an argument a line,
+at the column the call before it ended at. Earlier versions kept each call on the last line of the
+one before it, so each call's wrapped arguments were a level deeper than the last one's, and those
+lines ran to 170 characters:
+
+```modelica
+  parameter Data.DXCoil datCoi(sta={Some.Long.Package.Stage(
+    spe=900/60,
+    nomVal=Some.Long.Package.NominalValues(
+      Q_flow_nominal=-12000, COP_nominal=3),
+    perCur=Some.Long.Package.Curve_I()),
+    Some.Long.Package.Stage(spe=1200/60,
+      nomVal=Some.Long.Package.NominalValues(
+        Q_flow_nominal=-18000, COP_nominal=3),
+      perCur=Some.Long.Package.Curve_I())}, nSta=2);
+```
+
+Only calls are moved, and only once the array spans lines: an array still on the line it opened on
+stays there, and an array of numbers is not wrapped for length at all. A graphics annotation's
+arrays keep their own layout, an element a line. Over the Modelica Standard Library and Buildings,
+63 files are written differently from before, only in line breaks and indentation.
+
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
 Buildings (8,367 files), 1,017 files are written differently from before, every one only in line
