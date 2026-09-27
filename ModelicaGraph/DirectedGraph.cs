@@ -190,7 +190,7 @@ public class DirectedGraph
 
         lock (_lock) {
             // Remove all edges to this node
-            foreach (var edges in _edges.Values)
+            foreach (var edges in ScanEdgeSets())
             {
                 edges.Remove(nodeId);
             }
@@ -233,12 +233,12 @@ public class DirectedGraph
             if (ids.Count == 1)
             {
                 var only = ids.First();
-                foreach (var edges in _edges.Values)
+                foreach (var edges in ScanEdgeSets())
                     edges.Remove(only);
             }
             else
             {
-                foreach (var edges in _edges.Values)
+                foreach (var edges in ScanEdgeSets())
                     edges.RemoveWhere(ids.Contains);
             }
 
@@ -252,6 +252,25 @@ public class DirectedGraph
 
             return removed;
         }
+    }
+
+    /// <summary>
+    /// How many times removal has walked every node's edge set - the pass that makes removing a node
+    /// cost the size of the graph, and the one <see cref="RemoveNodes"/> exists to take once rather
+    /// than once per node.
+    /// </summary>
+    /// <remarks>
+    /// Counted so a test can ask how much work a removal did instead of timing it (B461): the same
+    /// question as a stopwatch ratio, with an exact answer under any load. Only ever changed under
+    /// <c>_lock</c>.
+    /// </remarks>
+    internal long EdgeSetScans { get; private set; }
+
+    /// <summary>Every node's edge set, for a pass over all of them; counts the pass.</summary>
+    private ICollection<HashSet<string>> ScanEdgeSets()
+    {
+        EdgeSetScans++;
+        return _edges.Values;
     }
 
     /// <summary>

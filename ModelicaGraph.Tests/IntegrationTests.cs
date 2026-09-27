@@ -115,8 +115,16 @@ public class IntegrationTests
     }
 
     [Fact]
-    public void LargeGraph_PerformanceTest()
+    public void LargeGraph_LoadsAndResolvesAChainOfDependencies()
     {
+        // This asserted that loading and analysis finished within 5 s, and no longer does (B461). A
+        // wall-clock bound on a shared runner is the flaky shape B459 removed from the parser's tests,
+        // and this one could not have caught anything worth catching: a hundred small models take
+        // milliseconds, so it would pass through any regression short of a catastrophic one, while a
+        // loaded runner is the thing it could fail on. There is no count to put in its place either -
+        // nothing here scales with anything but the hundred models, so there is no growth to measure.
+        // What the test can check exactly is what it loaded and resolved, which it now does per link.
+
         // Arrange
         var graph = new DirectedGraph();
         var content = new System.Text.StringBuilder();
@@ -142,19 +150,16 @@ public class IntegrationTests
         content.AppendLine("end LargeLibrary;");
 
         // Act
-        var sw = System.Diagnostics.Stopwatch.StartNew();
         GraphBuilder.LoadModelicaFile(graph, "Large.mo", content.ToString());
         GraphBuilder.AnalyzeDependenciesAsync(graph).GetAwaiter().GetResult();
-        sw.Stop();
 
         // Assert
         Assert.Equal(101, graph.ModelNodes.Count()); // 100 models + package
-        Assert.True(sw.ElapsedMilliseconds < 5000, "Loading and analysis should complete in under 5 seconds");
 
-        // Verify some dependencies were created
-        var lastModel = graph.ModelNodes.First(m => m.Definition.Name == "Model99");
-        var deps = graph.GetUsedModels(lastModel.Id).ToList();
-        Assert.NotEmpty(deps);
+        // Every model but the first uses the one before it
+        var byName = graph.ModelNodes.ToDictionary(m => m.Definition.Name);
+        for (int i = 1; i < 100; i++)
+            Assert.Contains(byName[$"Model{i - 1}"], graph.GetUsedModels(byName[$"Model{i}"].Id));
     }
 
     [Fact]

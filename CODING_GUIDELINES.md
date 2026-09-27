@@ -1042,6 +1042,9 @@ full parallel run the timing is noise: the parser's timed growth tests failed ab
 while the same parse measured linear on its own (B459). Use `ParseGrowth.AssertLinear` in
 `ModelicaParser.Tests`, which counts the tokens ANTLR looks ahead over with its profiler — exact, and
 the same on every machine — and watch it fail against the quadratic grammar it is meant to catch.
+The same holds outside the parser: `GraphNodeRemovalTests` counts `DirectedGraph.EdgeSetScans`, the
+passes over every edge set that batched removal exists to take once (B461). Where there is nothing to
+count and the only bound is wall-clock, drop the bound and keep the functional assertions.
 
 ---
 
