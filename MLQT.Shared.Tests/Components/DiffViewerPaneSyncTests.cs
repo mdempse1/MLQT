@@ -61,7 +61,27 @@ public class DiffViewerPaneSyncTests : MlqtComponentTestBase
 
         // The diff is computed off the dispatcher (B341), so the first render is the placeholder.
         viewer.WaitForState(() => !viewer.Instance.IsPreparing);
+        WaitForTheAfterRender(viewer);
         return viewer;
+    }
+
+    /// <summary>
+    /// Waits until the viewer has decided, after rendering the prepared diff, whether to wire the
+    /// panes - B401. Without this the "no call" tests below asserted after the render and before
+    /// <c>OnAfterRenderAsync</c>, so they passed against a viewer that made the call a moment later:
+    /// with a 100 ms await put in front of the call and the <c>ShowsPanes</c> guard removed, all
+    /// three stayed green. Polled, because a finished after-render renders nothing for bUnit's own
+    /// waits to wake up on.
+    /// </summary>
+    private static void WaitForTheAfterRender(IRenderedComponent<DiffViewer> viewer)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (viewer.Instance.SettledAfterRenders == 0)
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail("The viewer never finished an after-render pass over the prepared diff.");
+            Thread.Sleep(5);
+        }
     }
 
     private static int SyncCalls(BunitJSInterop interop) =>
@@ -108,8 +128,9 @@ public class DiffViewerPaneSyncTests : MlqtComponentTestBase
         var viewer = Render("Real x;\n", "Real y;\n", mode);
 
         Assert.Equal(2, viewer.FindAll(".diff-pane-content").Count);
-        // After the render that shows the panes, not during it: OnAfterRenderAsync makes the call.
-        viewer.WaitForAssertion(() => Assert.True(SyncCalls(JSInterop) > 0));
+        // After the render that shows the panes, not during it: OnAfterRenderAsync makes the call,
+        // and Render has waited for it.
+        Assert.True(SyncCalls(JSInterop) > 0);
     }
 
     // ---------------------------------------------------------------- when the interop fails anyway
@@ -135,6 +156,9 @@ public class DiffViewerPaneSyncTests : MlqtComponentTestBase
             .Add(c => c.FileName, "Small.mo")
             .Add(c => c.ViewMode, DiffViewMode.SideBySide));
         viewer.WaitForState(() => !viewer.Instance.IsPreparing);
+        // The failing call is made - and swallowed - in the after-render, so wait for it to be over.
+        WaitForTheAfterRender(viewer);
+        Assert.True(SyncCalls(JSInterop) > 0);
 
         // Markup, not FindAll: this is where bUnit re-raises whatever the render threw, so it is
         // the assertion that can actually fail if the exception escaped.

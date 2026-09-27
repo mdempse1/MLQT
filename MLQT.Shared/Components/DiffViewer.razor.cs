@@ -199,8 +199,25 @@ public partial class DiffViewer : IAsyncDisposable
         && !(string.IsNullOrEmpty(OriginalContent) && string.IsNullOrEmpty(ModifiedContent))
         && ViewMode is DiffViewMode.SideBySide or DiffViewMode.SideBySideFull;
 
+    /// <summary>
+    /// How many after-render passes have finished that began with the diff already prepared — so a
+    /// test can wait for the interop decision about the content it gave, rather than asserting
+    /// before it has been made (B401).
+    /// </summary>
+    /// <remarks>
+    /// A render notification reaches a test before <see cref="OnAfterRenderAsync"/> runs, and a
+    /// finished after-render renders nothing, so neither a wait on the markup nor one on
+    /// <see cref="IsPreparing"/> can see it. Asserting "no interop call" at that point passes
+    /// whether or not the call was about to be made. Written on the dispatcher, read from the test's
+    /// thread, hence the interlocked access.
+    /// </remarks>
+    internal int SettledAfterRenders => Volatile.Read(ref _settledAfterRenders);
+    private int _settledAfterRenders;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        var settled = !IsPreparing;
+
         // Wiring the panes together is a convenience. Losing the window is not, and an exception out
         // of OnAfterRenderAsync takes the whole app down with a banner whose only offer is Reload.
         try
@@ -221,6 +238,11 @@ public partial class DiffViewer : IAsyncDisposable
             // The panes still scroll; they just stop following each other.
             LoggingService.Warn("DiffViewer", $"Could not synchronise the diff panes' scrolling: {ex.Message}");
             _scrollSyncActive = false;
+        }
+        finally
+        {
+            if (settled)
+                Interlocked.Increment(ref _settledAfterRenders);
         }
     }
 
