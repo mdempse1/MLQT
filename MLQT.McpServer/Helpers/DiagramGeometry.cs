@@ -41,17 +41,82 @@ internal static class DiagramGeometry
         @"origin\s*=\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}", RegexOptions.Compiled);
 
     /// <summary>The orthogonal poly-line for a connection, or null when it cannot be drawn (an endpoint's
-    /// component has no Placement). Points are integer diagram coordinates.</summary>
+    /// component has no Placement). Points are integer diagram coordinates.
+    ///
+    /// <para>For one connection. A caller routing several in the same class uses one
+    /// <see cref="Router"/> for all of them.</para></summary>
     public static IReadOnlyList<Pt>? RouteConnection(
         ILibraryDataService libraries, string classId, string classCode, string portA, string portB)
-    {
-        var placements = Placements(libraries, classId, classCode);
-        var a = Locate(libraries, classId, classCode, placements, portA);
-        var b = Locate(libraries, classId, classCode, placements, portB);
-        if (a is null || b is null)
-            return null;
+        => new Router(libraries, classId, classCode).Route(portA, portB);
 
-        return Route(a.Value.Point, a.Value.Facing, b.Value.Point, b.Value.Facing);
+    /// <summary>
+    /// Routes the connections of one class, building each component once however many connections
+    /// end on it (B392).
+    ///
+    /// <para>Locating an endpoint means building its component as the image draws it - the type's
+    /// icon down its extends chain, its connectors, its parameter values - and collecting the class's
+    /// placements and members first. Done per connection, a component with six wires was built
+    /// twelve times over, and <c>ConnectionLineAnnotator</c> routes every connection in the class on
+    /// each <c>add_connection</c> and <c>set_component_placement</c>. Nothing here changes while a
+    /// class is being routed, so one router serves every connection in it and then is dropped.</para>
+    /// </summary>
+    public sealed class Router
+    {
+        private readonly ILibraryDataService _libraries;
+        private readonly string _classId;
+        private readonly string _classCode;
+        private readonly Dictionary<string, DiagramComponent?> _components = new(StringComparer.Ordinal);
+        private Dictionary<string, Placement>? _placements;
+        private IReadOnlyList<ResolvedElement>? _members;
+
+        /// <param name="classCode">The text to position against, which may be part-way through an edit.</param>
+        /// <param name="built">Components the caller has already built exactly as
+        /// <see cref="DiagramImage.ComponentOn"/> would - the image has every one of them in hand.</param>
+        public Router(
+            ILibraryDataService libraries, string classId, string classCode,
+            IEnumerable<DiagramComponent>? built = null)
+        {
+            _libraries = libraries;
+            _classId = classId;
+            _classCode = classCode;
+            foreach (var component in built ?? [])
+                _components[component.Name] = component;
+        }
+
+        /// <summary>How many components this router has built itself, for the test that holds B392.</summary>
+        internal int ComponentsBuilt { get; private set; }
+
+        /// <inheritdoc cref="RouteConnection"/>
+        public IReadOnlyList<Pt>? Route(string portA, string portB)
+        {
+            var a = Locate(portA);
+            var b = Locate(portB);
+            if (a is null || b is null)
+                return null;
+
+            return DiagramGeometry.Route(a.Value.Point, a.Value.Facing, b.Value.Point, b.Value.Facing);
+        }
+
+        private Dictionary<string, Placement> PlacementsOf()
+            => _placements ??= Placements(_libraries, _classId, _classCode);
+
+        private DiagramComponent? Component(string name)
+        {
+            if (_components.TryGetValue(name, out var known))
+                return known;
+
+            _members ??= _libraries.GetModelById(_classId) is { } node
+                ? [.. DiagramImage.Members(_libraries, node)]
+                : [];
+            var built = DiagramImage.ComponentOn(_libraries, _classId, PlacementsOf(), name, _members);
+            ComponentsBuilt++;
+            _components[name] = built;
+            return built;
+        }
+
+        /// <inheritdoc cref="DiagramGeometry.Locate"/>
+        private (Pt Point, Facing Facing)? Locate(string portRef)
+            => DiagramGeometry.Locate(_libraries, _classId, _classCode, Component(Segment(portRef, 0)), portRef);
     }
 
     // --- Endpoint location -------------------------------------------------------------------------
@@ -68,10 +133,10 @@ internal static class DiagramGeometry
     /// </summary>
     private static (Pt Point, Facing Facing)? Locate(
         ILibraryDataService libraries, string classId, string classCode,
-        IReadOnlyDictionary<string, Placement> placements, string portRef)
+        DiagramComponent? component, string portRef)
     {
         var root = Segment(portRef, 0);
-        if (DiagramImage.ComponentOn(libraries, classId, placements, root) is not { } comp)
+        if (component is not { } comp)
             return null; // component not positioned — cannot route to it
 
         var dot = portRef.IndexOf('.');

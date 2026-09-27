@@ -55,10 +55,14 @@ internal static class DiagramImage
 
         var placements = DiagramGeometry.Placements(libraries, node.Id, code);
         var components = Components(libraries, node, placements);
-        var connections = Connections(libraries, node.Id, code, code);
+
+        // One router for every connection, own and inherited, seeded with the components just built
+        // for the picture: routing used to build each endpoint's component again per connection (B392).
+        var router = new DiagramGeometry.Router(libraries, node.Id, code, components);
+        var connections = Connections(libraries, node.Id, router, code);
         foreach (var baseNode in bases)
             if (baseNode.Definition.ModelicaCode is { Length: > 0 } baseCode)
-                connections.AddRange(Connections(libraries, node.Id, code, baseCode));
+                connections.AddRange(Connections(libraries, node.Id, router, baseCode));
         var diagramLayer = InheritedDiagram(bases, node);
 
         if (components.Count == 0 && connections.Count == 0 && diagramLayer is not { HasGraphics: true })
@@ -125,9 +129,12 @@ internal static class DiagramImage
     /// work from the same <see cref="DiagramComponent"/>. A component the graph does not know yet -
     /// declared in text mid-edit - is framed by its placement alone.</para>
     /// </summary>
+    /// <param name="members">The class's <see cref="Members"/>, when the caller already has them -
+    /// a router asks for many components of one class and collects them once (B392).</param>
     public static DiagramComponent? ComponentOn(
         ILibraryDataService libraries, string classId,
-        IReadOnlyDictionary<string, DiagramGeometry.Placement> placements, string name)
+        IReadOnlyDictionary<string, DiagramGeometry.Placement> placements, string name,
+        IEnumerable<ResolvedElement>? members = null)
     {
         if (!placements.TryGetValue(name, out var placement))
             return null;
@@ -135,7 +142,7 @@ internal static class DiagramImage
         var node = libraries.GetModelById(classId);
         var member = node is null
             ? null
-            : Members(libraries, node).FirstOrDefault(m => string.Equals(m.Element.Name, name, StringComparison.Ordinal));
+            : (members ?? Members(libraries, node)).FirstOrDefault(m => string.Equals(m.Element.Name, name, StringComparison.Ordinal));
 
         return member is null
             ? new DiagramComponent(name, placement.Extent, placement.Rotation, null, null, placement.RotationCentre)
@@ -364,11 +371,11 @@ internal static class DiagramImage
     /// annotation is routed the same way <c>add_connection</c> would route it, so a model assembled
     /// by an agent draws before it has been annotated.
     /// </summary>
-    /// <param name="code">The class being drawn, which routing positions against.</param>
+    /// <param name="router">Routes against the class being drawn.</param>
     /// <param name="source">The class whose <c>connect</c> equations to read: the class itself, or
     /// one of its bases - an inherited connection names the same components the class has.</param>
     private static List<DiagramConnection> Connections(
-        ILibraryDataService libraries, string classId, string code, string source)
+        ILibraryDataService libraries, string classId, DiagramGeometry.Router router, string source)
     {
         var connections = new List<DiagramConnection>();
 
@@ -393,8 +400,7 @@ internal static class DiagramImage
                 continue;
             }
 
-            var route = DiagramGeometry.RouteConnection(
-                libraries, classId, code, refs[0].GetText(), refs[1].GetText());
+            var route = router.Route(refs[0].GetText(), refs[1].GetText());
             if (route is { Count: >= 2 })
                 connections.Add(new DiagramConnection(
                     [.. route.Select(p => new[] { p.X, p.Y })],

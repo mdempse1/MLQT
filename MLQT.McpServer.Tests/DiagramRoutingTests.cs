@@ -53,6 +53,15 @@ public class DiagramRoutingTests
           equation
             connect(src.y, f.u);
           end Turned;
+
+          model Fan "one source, two sinks: four endpoints on three components"
+            Src src annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
+            Framed f1 annotation (Placement(transformation(extent={{-10,20},{10,40}})));
+            Framed f2 annotation (Placement(transformation(extent={{-10,-40},{10,-20}})));
+          equation
+            connect(src.y, f1.u);
+            connect(src.y, f2.u);
+          end Fan;
         end R;
         """.Replace("\r\n", "\n");
 
@@ -62,7 +71,7 @@ public class DiagramRoutingTests
         var dir = host.WriteLibraryDir(new Dictionary<string, string>
         {
             ["package.mo"] = Package,
-            ["package.order"] = "RealInput\nRealOutput\nSrc\nFramed\nSys\nTurned\n",
+            ["package.order"] = "RealInput\nRealOutput\nSrc\nFramed\nSys\nTurned\nFan\n",
         });
         host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
         return host;
@@ -113,5 +122,46 @@ public class DiagramRoutingTests
 
         var code = host.Libraries.GetModelById("R.Sys")!.Definition.ModelicaCode!;
         Assert.Matches(@"connect\(src\.y, f\.u\) annotation \(Line\(points=\{\{-39,0\},.*\{2,8\}\}", code);
+    }
+
+    /// <summary>
+    /// A router builds each component once, however many connections end on it (B392). Routing
+    /// rebuilt both endpoints' components - the icon down its extends chain, its connectors, its
+    /// parameter values - for every connection, and the annotator routes every connection in the
+    /// class on each edit: on MSL's <c>CauerLowPassSC</c> that was 0.98 s per edit, 0.24 s since.
+    /// </summary>
+    [Fact]
+    public void ARouterBuildsEachComponentOnce_HoweverManyConnectionsEndOnIt()
+    {
+        using var host = Load();
+        var code = host.Libraries.GetModelById("R.Fan")!.Definition.ModelicaCode!;
+        var router = new DiagramGeometry.Router(host.Libraries, "R.Fan", code);
+
+        var first = router.Route("src.y", "f1.u");
+        var second = router.Route("src.y", "f2.u");
+
+        // Four endpoints, three components.
+        Assert.Equal(3, router.ComponentsBuilt);
+
+        // And the same answers as routing each connection on its own.
+        Assert.Equal(DiagramGeometry.RouteConnection(host.Libraries, "R.Fan", code, "src.y", "f1.u"), first);
+        Assert.Equal(DiagramGeometry.RouteConnection(host.Libraries, "R.Fan", code, "src.y", "f2.u"), second);
+    }
+
+    [Fact]
+    public void ARouterSeededWithTheImagesComponents_BuildsNone()
+    {
+        using var host = Load();
+        var code = host.Libraries.GetModelById("R.Fan")!.Definition.ModelicaCode!;
+        var placements = DiagramGeometry.Placements(host.Libraries, "R.Fan", code);
+        var built = new[] { "src", "f1", "f2" }
+            .Select(n => DiagramImage.ComponentOn(host.Libraries, "R.Fan", placements, n)!)
+            .ToList();
+        var router = new DiagramGeometry.Router(host.Libraries, "R.Fan", code, built);
+
+        var route = router.Route("src.y", "f2.u");
+
+        Assert.Equal(0, router.ComponentsBuilt);
+        Assert.Equal(DiagramGeometry.RouteConnection(host.Libraries, "R.Fan", code, "src.y", "f2.u"), route);
     }
 }
