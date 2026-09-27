@@ -347,6 +347,23 @@ in from that line, as an unwrapped equation's is from its own:
 Earlier versions wrote the `+` at the column of the `=`. Over the Modelica Standard Library and
 Buildings, 10 files are written differently from before, only in indentation and only to the right.
 
+A term wrapped inside an if-expression or an array is a level further in than the statement's own
+continuation, since it continues a branch or an element rather than the whole right-hand side:
+
+```modelica
+  p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent else s1*unitCurrent
+      + s3*unitVoltage*Goff;
+  y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}), sum({sTM[j, k].re*v[k].im
+      + sTM[j, k].im*v[k].re for k in 1:m}));
+```
+
+A call's parentheses alone do not count, so an `assert` message continues at the statement's column
+as before. Earlier versions wrote such a term at the statement's continuation column, where it read
+as a term of the whole right-hand side. Over the Modelica Standard Library and Buildings, 54 files
+are written differently from before (34 MSL, 20 Buildings), 104 lines each two spaces to the right
+and nothing else. The formatter still wraps such an expression where the line runs out rather than
+at an `else` or between arguments, so these lines stay long.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

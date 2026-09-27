@@ -60,6 +60,11 @@ namespace ModelicaParser.Tests;
 /// <para>B484 - an array with no argument to move, whose line is already past the limit when a call
 /// in it has to wrap, moves to a line of its own. Buildings' IEEE 34-bus grid had
 /// <c>cables={LowVoltageCables.PvcAl120(),</c> ending a 109-character line.</para>
+///
+/// <para>B485 - a term wrapped before a <c>+</c> or <c>-</c> inside an if-expression or an array is
+/// a level further in than the statement's own continuation, which is where it was, reading as a
+/// term of the whole right-hand side: MSL's <c>PolyphaseElectroMagneticConverter</c> had
+/// <c>+ sTM[j, k].im*v[k].re for k in 1:m}));</c> at the column of any other continuation.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -839,6 +844,50 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(ArraysMovedOffALongLine));
     }
 
+    private const string BranchAndArrayTermsContinued = """
+        model M
+          Real y;
+
+        equation
+          p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent else s1*unitCurrent
+              + s3*unitVoltage*Goff;
+          y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}), sum({sTM[j, k].re*v[k].im
+              + sTM[j, k].im*v[k].re for k in 1:m}));
+          i = smooth(1, if (v > Maxexp*Vt) then Ids*(exp(Maxexp)*(1 + v/Vt - Maxexp) - 1) + v/R else if ((v + Bv) < -Maxexp*(Nbv*Vt)) then -Ids
+              - Ibv*exp(Maxexp)*(1 - (v + Bv)/(Nbv*Vt) - Maxexp) + v/R else Ids*(exp(v/Vt) - 1)
+              - Ibv*exp(-(v + Bv)/(Nbv*Vt)) + v/R);
+          z = if flag then 0 else Modelica.Math.exp(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbb
+              + ccccccccccccccccccccccccccccccc*dddddddd);
+          assert(s_rel >= -1e-12, "flange_b.s - flange_a.s (= " + String(s_rel, significantDigits=14)
+            + ") >= 0 required for GasForce2 component.\n" + "Most likely, the component has to be flipped.");
+        end M;
+        """;
+
+    [Fact]
+    public void ATermWrappedInsideAnIfExpressionOrAnArrayIsALevelInFromTheStatementsContinuation()
+    {
+        // MSL's IdealIntermediateSwitch, PolyphaseElectroMagneticConverter and ZDiode: a term
+        // wrapped before a '+' or '-' inside an if-expression's branch, or inside an array, was at
+        // the statement's own continuation column, where it read as a term of the whole right-hand
+        // side - '+ s3*unitVoltage*Goff' under the 'if', not in the else-branch it continues. It is
+        // a level further in (B485), and so is one inside a call inside a branch. A term inside
+        // a call's parentheses only is not: an assert's message continues at the statement's
+        // column as before.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  p1.i = if control then s1*unitVoltage*Goff + s3*unitCurrent else s1*unitCurrent + s3*unitVoltage*Goff;
+                  y = Complex(sum({sTM[j, k].re*v[k].re - sTM[j, k].im*v[k].im for k in 1:m}), sum({sTM[j, k].re*v[k].im + sTM[j, k].im*v[k].re for k in 1:m}));
+                  i = smooth(1, if (v > Maxexp*Vt) then Ids*(exp(Maxexp)*(1 + v/Vt - Maxexp) - 1) + v/R else if ((v + Bv) < -Maxexp*(Nbv*Vt)) then -Ids - Ibv*exp(Maxexp)*(1 - (v + Bv)/(Nbv*Vt) - Maxexp) + v/R else Ids*(exp(v/Vt) - 1) - Ibv*exp(-(v + Bv)/(Nbv*Vt)) + v/R);
+                  z = if flag then 0 else Modelica.Math.exp(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*bbbbbbbbbbbbbbbbbbbbbbb + ccccccccccccccccccccccccccccccc*dddddddd);
+                  assert(s_rel >= -1e-12, "flange_b.s - flange_a.s (= " + String(s_rel, significantDigits=14) + ") >= 0 required for GasForce2 component.\n" + "Most likely, the component has to be flipped.");
+                end M;
+                """),
+            expectedOutput: Normalise(BranchAndArrayTermsContinued));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -873,6 +922,7 @@ public class ContinuationIndentTests
     [InlineData(ShortClassDescriptionsWrapped, 100)]
     [InlineData(PositionalArraysMovedWhole, 100)]
     [InlineData(ArraysMovedOffALongLine, 100)]
+    [InlineData(BranchAndArrayTermsContinued, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

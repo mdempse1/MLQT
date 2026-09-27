@@ -63,6 +63,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private bool _inDocumentationAnnotation = false;
     private readonly HashSet<int> _noPostIndentLines = new(); // Lines exempt from public/protected post-processing indent
     private int _bracketDepth = 0;
+    // Whether the expression being written is inside an if-expression or an array constructor,
+    // at any depth (B485).
+    private bool _inBranchOrArray;
     private int _equationContinuationIndent = 0;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
@@ -3145,6 +3148,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         {
             // if expression then expression elseif ... else expression
             var expressions = context.expression();
+            bool enclosingNested = _inBranchOrArray;
+            _inBranchOrArray = true;
             Write(Keyword("if"));
             Space();
             if (expressions != null && expressions.Length > 0)
@@ -3179,7 +3184,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Space();
             if (expressions != null && expressions.Length == 3)
                 Visit(expressions[2]);
-
+            _inBranchOrArray = enclosingNested;
         }
 
         return null;
@@ -3331,6 +3336,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     // column (B475). Its continuation is a level in from that line instead.
                     if (expressionLevel == _equalsLevel)
                         KeepInFrom(_equalsLine);
+                    // A '+' inside an if-expression or an array continues a term of it, not of the
+                    // statement, so it is a level further in than the statement's own continuation
+                    // (B485). A call's parentheses alone do not count: a statement's continuation
+                    // is usually in them - an assert's message.
+                    if (_inBranchOrArray)
+                        _currentLineMinimumIndent += IndentSpaces;
                     // Write operator without leading space (we're at start of line)
                     Write(Operator(addOps[i + addOpsOffset].GetText(), false));
                     Space(); // Add space after operator
@@ -3551,6 +3562,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
             var enclosingArray = _arrayStart;
             _arrayStart = (_code.Count, _currentLine.Length);
+            bool enclosingNested = _inBranchOrArray;
+            _inBranchOrArray = true;
             Write("{");
             if (opening.Any)
                 WriteOpeningComments(opening, multiLine);
@@ -3563,6 +3576,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             if (context.array_arguments() != null)
                 Visit(context.array_arguments());
             _arrayStart = enclosingArray;
+            _inBranchOrArray = enclosingNested;
             if (closing.Any)
                 WriteListComments(closing, multiLine, beforeClose: true);
             if (resetGraphicsFlag) {
