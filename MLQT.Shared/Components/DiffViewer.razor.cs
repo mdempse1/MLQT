@@ -746,15 +746,13 @@ public partial class DiffViewer : IAsyncDisposable
             leadingSpaces++;
         }
 
-        // Apply Modelica syntax highlighting (includes HTML encoding) or plain encoding
-        if (isModelicaFile)
-        {
-            content = ApplyModelicaSyntaxHighlighting(content);
-        }
-        else if (!content.Contains("<span"))
-        {
-            content = System.Web.HttpUtility.HtmlEncode(content);
-        }
+        // A Modelica line is already HTML (see ApplyModelicaSyntaxHighlighting); any other file's
+        // line is the file's own text and is always encoded. It was skipped for a line containing
+        // "<span", a guess at "already highlighted" left over from the old highlighter - which let a
+        // text file's own markup through as markup (B403).
+        content = isModelicaFile
+            ? ApplyModelicaSyntaxHighlighting(content)
+            : System.Web.HttpUtility.HtmlEncode(content);
 
         // Preserve leading spaces as non-breaking spaces
         if (leadingSpaces > 0)
@@ -778,11 +776,16 @@ public partial class DiffViewer : IAsyncDisposable
     /// same conversion <c>CodeViewer</c> makes — so the diff and the single-file view now follow one
     /// scheme (B178).
     ///
-    /// <para>A line with no tags is HTML-encoded and shown plain. That covers a file that is not
-    /// Modelica, the <c>...</c> that marks elided context, and the fallback in
-    /// <see cref="DisplayLines"/>. It replaced a second highlighter — a keyword-list regex over the
-    /// raw line, with its own palette — which coloured the same code differently from the pane
-    /// beside it and ignored the user's chosen preset entirely.</para>
+    /// <para><b>Only what is inside a tag is encoded here</b>; everything outside one, and so a line
+    /// with no tags at all, is passed through as it is (B403). It is already HTML by the time it
+    /// arrives: <see cref="ModelicaTokenClassifier"/> encodes whatever it leaves untagged, and the
+    /// fallback in <see cref="DisplayLines"/> encodes its plain lines. Encoding it again would show
+    /// the user <c>&amp;amp;</c>. A file that is not Modelica never comes here - <c>ParseContent</c>
+    /// encodes it instead - and the <c>...</c> between hunks is layout, added after this runs.</para>
+    ///
+    /// <para>This replaced a second highlighter — a keyword-list regex over the raw line, with its
+    /// own palette — which coloured the same code differently from the pane beside it and ignored the
+    /// user's chosen preset entirely.</para>
     /// </summary>
     internal static string ApplyModelicaSyntaxHighlighting(string line) =>
         _tagRegex.Replace(line, match =>

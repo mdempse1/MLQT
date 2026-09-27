@@ -102,4 +102,17 @@ public class DiffViewerHighlightingTests
         Assert.Equal("  &amp;  ", DiffViewer.ApplyModelicaSyntaxHighlighting("  &amp;  "));
         Assert.Equal("...", DiffViewer.ApplyModelicaSyntaxHighlighting("..."));
     }
+
+    /// <summary>
+    /// B403: a file that is not Modelica is shown as its own text, whatever that text is. A line
+    /// containing <c>&lt;span</c> used to be taken for one already highlighted and passed through
+    /// unencoded, so a text file's markup was rendered as markup.
+    /// </summary>
+    [Fact]
+    public void ALineOfAnotherFileIsEncodedEvenWhenItLooksLikeMarkup()
+    {
+        var diff = DiffViewer.Prepare("<span style=\"color:red\">x & y</span>\n", "other\n", isModelica: false);
+
+        Assert.Equal("&lt;span style=&quot;color:red&quot;&gt;x &amp; y&lt;/span&gt;", diff.OriginalHtml[0]);
+    }
 }
