@@ -21,7 +21,9 @@ namespace ModelicaGraph;
 /// written, so it is the answer. Slicing anyway left only a check that the slice named the class on
 /// its first line between that and a chunk of some other code: a class a few characters further
 /// along after a save shortened the one above it began mid-declaration, ran into the next class,
-/// and passed.</para>
+/// and passed. The incremental formatter is the exception that proves the rule: it takes each class
+/// back out of the text it wrote, offsets and all, so its classes say they match the file because
+/// they do (B444).</para>
 ///
 /// <para><b>Slicing is not as obvious as the fields make it look</b>, which is why it is here and
 /// not at each call site. The offsets are into the file's text with line endings normalised, because
