@@ -92,7 +92,9 @@ public static class PackageCodeTrimmer
                 // rebuilt the whole package as a side effect of removing part of it, and the line
                 // mapping went with it: every finding in a trimmed package pointed at the class
                 // declaration because nothing could say where it really was.
-                var lines = model.Definition.ModelicaCode.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                var code = model.Definition.ModelicaCode.Replace("\r\n", "\n").Replace('\r', '\n');
+                var lines = code.Split('\n');
+                var lineStarts = LineStarts(code);
 
                 var ranges = new List<ElidedRange>();
                 foreach (var child in children)
@@ -120,10 +122,10 @@ public static class PackageCodeTrimmer
                     // same call for the same reason: a construct goes as a unit or not at all.
                     if (first < 2 || last < first || last >= lines.Length)
                         continue;
-                    if (!OwnsItsLines(lines, first, last))
+                    if (!OwnsItsLines(code, lineStarts, model, child, first, last, out var through))
                         continue;
 
-                    ranges.Add(new ElidedRange(first, last, Replacement: null));
+                    ranges.Add(new ElidedRange(first, through, Replacement: null));
                 }
 
                 if (ranges.Count == 0)
@@ -219,8 +221,8 @@ public static class PackageCodeTrimmer
     /// <summary>
     /// Whether the text from <paramref name="start"/> to <paramref name="end"/> (inclusive) has its
     /// lines to itself: nothing but whitespace before it on its first line or after it on its last.
-    /// Asked by token position rather than by <see cref="OwnsItsLines(string[], int, int)"/>'s
-    /// "the last line ends with a semicolon", which <c>model A end A; model B end B;</c> satisfies for
+    /// Asked by token position rather than by the line-based "the last line ends with a semicolon"
+    /// the trim above once asked (B379), which <c>model A end A; model B end B;</c> satisfies for
     /// both classes — and cutting either line out would take the other with it.
     /// </summary>
     private static bool OwnsItsLines(string[] lines, Antlr4.Runtime.IToken start, Antlr4.Runtime.IToken end)
@@ -247,8 +249,9 @@ public static class PackageCodeTrimmer
     }
 
     /// <summary>
-    /// Whether the class occupying lines <paramref name="first"/>..<paramref name="last"/> has those
-    /// lines to itself, so dropping them takes nothing else with it.
+    /// Whether <paramref name="child"/>, inline in <paramref name="package"/>'s text
+    /// <paramref name="code"/>, has its lines to itself, so dropping them takes nothing else with it —
+    /// and if so, <paramref name="through"/> is the line holding the <c>;</c> that ends it.
     ///
     /// <para>A class written as <c>model A end A; model B end B;</c> on one line shares it with its
     /// neighbour; so does one whose <c>end</c> is followed by a comment about the next declaration.
@@ -256,17 +259,72 @@ public static class PackageCodeTrimmer
     /// such a child is simply kept. It is then still nested inside the package's source, which is
     /// harmless: a rule visitor skips a nested standalone class definition because it has its own
     /// node and is checked there.</para>
+    ///
+    /// <para><b>Asked by character position, as <see cref="ExciseInlineClasses"/> asks it by token
+    /// (B379).</b> This used to look at whole lines and ask only that the last one end with a
+    /// <c>;</c> — which <c>model A end A; model B end B;</c> satisfies for both classes. Both were
+    /// offered for the same line, the ranges overlapped, <see cref="SourceElision.Of"/> threw, and the
+    /// whole package went untrimmed; and <c>model A end A; constant Real k = 1;</c> satisfied it for
+    /// the one class, so the constant was cut out of the checked text with it. The nodes' offsets are
+    /// into the text the package's source was sliced from, so the child's own characters say where it
+    /// starts and stops on its lines. Where they disagree with its line numbers the stored text is no
+    /// longer that slice, and the child is kept rather than cut by guesswork.</para>
     /// </summary>
-    private static bool OwnsItsLines(string[] lines, int first, int last)
+    private static bool OwnsItsLines(
+        string code, int[] lineStarts, ModelNode package, ModelNode child, int first, int last, out int through)
     {
-        var opening = lines[first - 1].TrimStart();
-        var closing = lines[last - 1].TrimEnd();
+        through = 0;
+        if (package.StartIndex < 0 || child.StartIndex < 0 || child.StopIndex < child.StartIndex)
+            return false;
 
-        // The parser's start line is the class_definition, which begins at its first keyword — so
-        // anything before it on that line belongs to something else. The stop line ends at `end X`,
-        // and the `;` after it is the only thing allowed to follow.
-        return opening.Length > 0
-            && lines[first - 1].AsSpan(0, lines[first - 1].Length - opening.Length).IsWhiteSpace()
-            && closing.EndsWith(';');
+        var start = child.StartIndex - package.StartIndex;
+        var stop = child.StopIndex - package.StartIndex;
+        if (start < 0 || stop >= code.Length)
+            return false;
+        if (LineOf(lineStarts, start) != first || LineOf(lineStarts, stop) != last)
+            return false;
+
+        // Nothing but indentation before the class on its first line. The class_definition starts
+        // at its first keyword, so anything else there belongs to something else.
+        if (!code.AsSpan(lineStarts[first - 1], start - lineStarts[first - 1]).IsWhiteSpace())
+            return false;
+
+        // The rule stops at `end X` (or a short class's last token); the `;` that ends the element
+        // follows it, possibly after whitespace, and nothing but whitespace may follow that on its
+        // own line.
+        var semicolon = stop + 1;
+        while (semicolon < code.Length && char.IsWhiteSpace(code[semicolon]))
+            semicolon++;
+        if (semicolon >= code.Length || code[semicolon] != ';')
+            return false;
+
+        var lineEnd = code.IndexOf('\n', semicolon);
+        if (lineEnd < 0)
+            lineEnd = code.Length;
+        if (!code.AsSpan(semicolon + 1, lineEnd - semicolon - 1).IsWhiteSpace())
+            return false;
+
+        // The package's own `end P;` is on its last line, so a child's `;` never is.
+        through = LineOf(lineStarts, semicolon);
+        return through < lineStarts.Length;
+    }
+
+    /// <summary>The offset at which each line of <paramref name="code"/> starts, first line first.</summary>
+    private static int[] LineStarts(string code)
+    {
+        var starts = new List<int> { 0 };
+        for (var i = 0; i < code.Length; i++)
+        {
+            if (code[i] == '\n')
+                starts.Add(i + 1);
+        }
+        return starts.ToArray();
+    }
+
+    /// <summary>The one-based line holding <paramref name="offset"/>.</summary>
+    private static int LineOf(int[] lineStarts, int offset)
+    {
+        var index = Array.BinarySearch(lineStarts, offset);
+        return index >= 0 ? index + 1 : ~index;
     }
 }

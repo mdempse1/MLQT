@@ -28,8 +28,9 @@ namespace ModelicaGraph.Tests;
 /// <item><c>if (standaloneNames.Count == 0) return;</c> is the same shape: with no names, no ranges
 /// are built and the method returns on the next check anyway.</item>
 /// <item>The range guards (<c>first &lt; 2</c>, <c>last &gt;= lines.Length</c>) and
-/// <c>OwnsItsLines</c>'s leading-whitespace check are bounds checks on data a loader does not
-/// produce: a child of a package is inside it. They turn a swallowed <c>IndexOutOfRangeException</c>
+/// <c>OwnsItsLines</c>'s offset bounds checks are checks on data a loader does not
+/// produce: a child of a package is inside it. (Its leading-whitespace check is no longer one of
+/// these: since B379 it is asked by character position, and two classes on one line kill it.) They turn a swallowed <c>IndexOutOfRangeException</c>
 /// into a clean skip, and a test would have to fabricate a node to reach them.</item>
 /// </list>
 /// </summary>
@@ -396,7 +397,82 @@ public class PackageCodeTrimmerTests
     }
 
     /// <summary>
-    /// The control for the test above, on the same shape: one child per line really is excised, so
+    /// Two children sharing a line are kept, and <b>the rest of the package is still trimmed</b>
+    /// (B379). The line-based check this used to make asked only that the last line end with a
+    /// <c>;</c>, which both classes on <c>model A end A; model B end B;</c> satisfy — so both were
+    /// offered for the same line, the ranges overlapped, the elision threw, and the exception left the
+    /// whole package untrimmed. The test above passed through that failure; this one cannot.
+    /// </summary>
+    [Fact]
+    public void ChildrenSharingALine_DoNotStopTheRestOfThePackageBeingTrimmed()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "T2.mo", """
+            package T2 "t"
+              model A "a" end A; model B "b" end B;
+              model C "c"
+              end C;
+            end T2;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var node = graph.GetNode<ModelNode>("T2")!;
+        var after = node.Definition.ModelicaCode;
+        Assert.Contains("model A \"a\" end A; model B \"b\" end B;", after);
+        Assert.DoesNotContain("model C", after);
+        Assert.NotNull(node.TrimElision);
+        Assert.Equal(["package T2 \"t\"", "  model A \"a\" end A; model B \"b\" end B;", "end T2;"], after.Split('\n'));
+    }
+
+    /// <summary>
+    /// A child whose line goes on after its <c>;</c> is kept, so what follows it is not cut out of the
+    /// checked text with it (B379). The line-based check saw a line ending in <c>;</c> and excised it,
+    /// and the constant beside the class vanished from the package every rule then read.
+    /// </summary>
+    [Fact]
+    public void AChildSharingItsLineWithADeclaration_IsKept_AndTheDeclarationWithIt()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "T3.mo", """
+            package T3 "t"
+              model A "a" end A; constant Real k = 1;
+            end T3;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("T3")!.Definition.ModelicaCode;
+        Assert.Contains("constant Real k = 1;", after);
+        Assert.Contains("model A", after);
+    }
+
+    /// <summary>
+    /// A child whose <c>;</c> is on a line of its own below it goes with that line, and a short class
+    /// is judged the same way as a long one (B379: the range runs to the terminator, as
+    /// <see cref="PackageCodeTrimmer.ExciseInlineClasses"/> has it).
+    /// </summary>
+    [Fact]
+    public void AChildWhoseSemicolonIsOnTheNextLine_IsExcisedWithIt()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "T4.mo", """
+            package T4 "t"
+              type Voltage = Real(unit = "V")
+                ;
+              constant Real k = 1;
+            end T4;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("T4")!.Definition.ModelicaCode;
+        Assert.Equal(["package T4 \"t\"", "  constant Real k = 1;", "end T4;"], after.Split('\n'));
+    }
+
+    /// <summary>
+    /// The control for <see cref="AChildSharingALineWithItsNeighbourIsNotExcised"/>, on the same
+    /// shape: one child per line really is excised, so
     /// the guard is about sharing a line and not about this fixture.
     /// </summary>
     [Fact]
