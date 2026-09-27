@@ -140,11 +140,12 @@ public class OpenModelicaCheckingService : IModelCheckingService
         }
     }
 
-    public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph)
+    public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            _omc ??= await _omcFactory.GetOrCreateAsync();
+            _omc ??= await _omcFactory.GetOrCreateAsync(cancellationToken);
 
             // The library's own package.mo, not the class's file. OpenModelica will not load a
             // class out of the middle of a package: handed Integrator.mo it sees a class called
@@ -154,10 +155,17 @@ public class OpenModelicaCheckingService : IModelCheckingService
             var rootFile = LibraryRootFile.For(graph, modelNode);
             if (rootFile != null)
             {
-                var load = await LoadLibraryAsync(rootFile, CancellationToken.None);
+                var load = await LoadLibraryAsync(rootFile, cancellationToken);
+
+                // A load the caller stopped is not a library that failed to load.
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!load.Success)
                     return load.FailureFor(modelNode.Id, ToolName);
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -165,8 +173,11 @@ public class OpenModelicaCheckingService : IModelCheckingService
             return await FailedResultAsync(modelNode.Id, ex);
         }
 
-        return await CheckSingleModelAsync(modelNode)
-               ?? new ModelCheckResult { ModelId = modelNode.Id, Success = false, Summary = "Cancelled" };
+        // Null is a check the caller cancelled: the token reaches the one in flight, as it does for
+        // a run (B397). Thrown rather than returned, because a result saying "Cancelled" was a
+        // failed check to anything that read it - IsModelFailure is true of it.
+        return await CheckSingleModelAsync(modelNode, cancellationToken)
+               ?? throw new OperationCanceledException(cancellationToken);
     }
 
     public Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default)

@@ -58,7 +58,8 @@ public class ExternalCheckSessionTests
             + (OnModelChecked?.GetInvocationList().Length ?? 0)
             + (OnCheckingComplete?.GetInvocationList().Length ?? 0);
 
-        public Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph) =>
+        public Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
+            CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath) =>
             throw new NotSupportedException();

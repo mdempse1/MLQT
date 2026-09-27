@@ -912,6 +912,60 @@ public abstract class ModelCheckingServiceContract
         Assert.Equal(1, harness.Tool.Calls.Count(c => c == "check"));
     }
 
+    // ── cancelling a single-class check (B397) ──────────────────────────────────
+
+    /// <summary>
+    /// B397: <c>CheckModelAsync</c> took no token, so a single-class check could only be waited out.
+    /// The token reaches the check in flight, and a cancelled check is not a result - a "Cancelled"
+    /// result was a failed model to anything that read it.
+    /// </summary>
+    [Fact]
+    public async Task ASingleClassCheckEndsWhenCancelledWhileItRuns()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        harness.Tool.WaitsForCancel = true;
+        using var cancel = new CancellationTokenSource();
+
+        var check = harness.Service.CheckModelAsync(model, graph, cancel.Token);
+        await WaitUntilAsync(() => harness.Tool.Calls.Contains("check"), "the check never started");
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => check.WaitAsync(TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, harness.Tool.ChecksRun);
+    }
+
+    [Fact]
+    public async Task ASingleClassCheckEndsWhenCancelledWhileTheToolIsStarting()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        harness.StartSlowly();
+        using var cancel = new CancellationTokenSource();
+
+        var check = harness.Service.CheckModelAsync(model, graph, cancel.Token);
+        await WaitUntilAsync(() => harness.Connections > 0, "the check never asked for the tool");
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => check.WaitAsync(TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken));
+        Assert.Equal(0, harness.Tool.ChecksRun);
+    }
+
+    [Fact]
+    public async Task ASingleClassCheckCancelledBeforeItStartsAsksTheToolNothing()
+    {
+        // Cancelled while opening the library, which the fake does at once: still not a load failure.
+        var harness = NewHarness();
+        var (graph, package) = PackageInAFile(1);
+        using var cancel = new CancellationTokenSource();
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => harness.Service.CheckModelAsync(package, graph, cancel.Token));
+        Assert.Equal(0, harness.Tool.ChecksRun);
+    }
+
     /// <summary>
     /// A library that runs out of time opening is not cleared and opened again: the retry exists for
     /// a library the tool already has, and after a timeout it would wait out the whole limit again.

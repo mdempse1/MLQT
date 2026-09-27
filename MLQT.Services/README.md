@@ -324,8 +324,9 @@ var warnings = externalResourceService.GetWarnings();
 Both `DymolaCheckingService` and `OpenModelicaCheckingService` implement `IModelCheckingService`:
 
 ```csharp
-// Check a single model
-var result = await checkingService.CheckModelAsync(modelNode, graph);
+// Check a single model. Cancelling the token ends the check even while the tool is running it,
+// and throws OperationCanceledException rather than returning a result
+var result = await checkingService.CheckModelAsync(modelNode, graph, cancellationToken);
 if (!result.Success)
     Console.WriteLine($"Check failed: {result.ErrorMessage}");
 
