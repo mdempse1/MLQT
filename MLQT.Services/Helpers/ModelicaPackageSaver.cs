@@ -111,6 +111,8 @@ public class ModelicaPackageSaver
             }
         }
 
+        AddChildrenSavedElsewhere(graph, allModels, modelIds, preComputedElementNames);
+
         var standaloneChildren = ComputeStandaloneChildren(childrenByParent, shortClassIds);
 
         // PHASE 3: Pre-render all models in parallel
@@ -313,6 +315,44 @@ public class ModelicaPackageSaver
             // Hint GC between batches to reclaim intermediate allocations
             // (e.g., old ModelicaCode strings replaced by within-prepended versions)
             GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
+        }
+    }
+
+    /// <summary>
+    /// Adds to a package's <c>package.order</c> names the children the save was not given (B375).
+    ///
+    /// <para>A package with no stored <c>package.order</c> gets one built from what the save knows:
+    /// the children in its set and the names in the package's own source. A save of part of a
+    /// library — Split into files, which is given only the classes in the package's own file (B305)
+    /// — does not have the children that already live in files of their own, and the order it wrote
+    /// left them out. A <c>package.order</c> that omits a class is one a tool may read as the whole
+    /// list. They go last, by name, because nothing on disk says where else they belong.</para>
+    ///
+    /// <para>A package with a stored order is left to it: that order is the user's, and it already
+    /// names whatever it names.</para>
+    /// </summary>
+    private static void AddChildrenSavedElsewhere(
+        DirectedGraph graph, List<ModelNode> allModels, HashSet<string> modelIds,
+        Dictionary<string, List<string>> orderNames)
+    {
+        var unordered = allModels
+            .Where(m => m.PackageOrder == null && m.ClassType == "package")
+            .Select(m => m.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (unordered.Count == 0)
+            return;
+
+        foreach (var group in graph.ModelNodes
+                     .Where(m => !modelIds.Contains(m.Id)
+                                 && m.ParentModelName is { } parent && unordered.Contains(parent))
+                     .GroupBy(m => m.ParentModelName!))
+        {
+            if (!orderNames.TryGetValue(group.Key, out var names))
+                orderNames[group.Key] = names = [];
+
+            foreach (var name in group.Select(m => m.Definition.Name).OrderBy(n => n, StringComparer.Ordinal))
+                if (!names.Contains(name))
+                    names.Add(name);
         }
     }
 

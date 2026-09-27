@@ -544,6 +544,41 @@ public class PackageSplitterTests : IDisposable
     }
 
     [Fact]
+    public async Task WithNoPackageOrder_TheNewOneNamesTheChildrenAlreadyInTheirOwnFiles()
+    {
+        // B375: a directory package with no package.order, one class inline and one already in its
+        // own file. The save is given only the inline class (B305), and the package.order it wrote
+        // was built from what it was given - so Beta, which is in the library and on disk, was not
+        // in it.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.mo"),
+            "within Lib;\npackage Sub \"inline and separate\"\n"
+            + "  model Alpha \"inline\"\n  end Alpha;\nend Sub;\n");
+        var beta = Path.Combine(lib, "Sub", "Beta.mo");
+        File.WriteAllText(beta, "within Lib.Sub;\nmodel Beta \"already separate\"\nend Beta;\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        var betaBefore = File.ReadAllBytes(beta);
+
+        var result = Split(service, "Lib.Sub", new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        var order = File.ReadAllLines(Path.Combine(lib, "Sub", "package.order"));
+        Assert.Equal(["Alpha", "Beta"], order);
+        Assert.Equal(betaBefore, File.ReadAllBytes(beta));
+
+        var reloaded = new LibraryDataService();
+        await reloaded.AddLibraryFromDirectoryAsync(lib);
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Sub.Alpha"));
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Sub.Beta"));
+    }
+
+    [Fact]
     public async Task TheReloadAfterASplitNamesTheMovedClassesNotTheLibrary()
     {
         // B307: the page announces what this returns for re-analysis. It announced the whole

@@ -215,7 +215,10 @@ own, because the formatting that runs day to day rewrites files in place and nev
 between them.
 
 The action writes that package as a directory with one file per class and a matching
-`package.order`, deletes the file it came from, and leaves the rest of the repository untouched. It
+`package.order`, deletes the file it came from, and leaves the rest of the repository untouched. A
+package that is already a directory, with some classes inline in its `package.mo` and others in files
+of their own, has only the inline ones moved; where it had no `package.order`, the one written names
+the classes that were already in their own files too, after the ones it moved. It
 asks first, since it creates a directory and deletes a file. Everything it does is an ordinary
 working-copy change, so version control can undo it. A library that is itself a single `.mo` file is the one exception: splitting it would change what the library is loaded from, so the action declines and says so - use **Format All Files** (below), which expands such a library and carries on with it as the directory, or split it outside MLQT and open the library as a directory.
 
