@@ -85,7 +85,7 @@ public class CheckPipelineTests : IDisposable
     {
         var lib = Library(NewDirectory());
         Write(lib, ".mlqt/settings.json",
-            """{ "RuleSeverities": { "MLQT.Structure.SingleFilePackage": "Off" } }""");
+            """{ "RuleSeverities": { "MLQT.Structure.SingleFilePackage": "Off", "MLQT.Structure.WithinClause": "Off" } }""");
 
         var (code, _, stderr) = Run("check", lib);
 
@@ -107,6 +107,35 @@ public class CheckPipelineTests : IDisposable
         Assert.Equal(ExitCodes.Ok, code);
         Assert.Contains("only the rules that are on by default", stderr);
         Assert.DoesNotContain("no style rules are enabled", stderr);
+    }
+
+    [Fact]
+    public void AWithinClauseThatDoesNotMatchItsDirectory_FailsARunWithNoSettings()
+    {
+        // B458: on by default at Error, so a library nobody has configured is gated on it. A class
+        // other tools cannot find is not a matter of taste.
+        var lib = Library(NewDirectory(), "Lib");
+        Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
+        Write(lib, "Sub/X.mo", "within Lib;\nmodel X\nend X;\n");
+
+        var (code, stdout, _) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.GateFailed, code);
+        Assert.Contains("MLQT.Structure.WithinClause", stdout);
+        Assert.Contains("within Lib.Sub;", stdout);
+    }
+
+    [Fact]
+    public void ALibraryWhoseWithinClausesMatchTheirDirectories_Passes()
+    {
+        var lib = Library(NewDirectory(), "Lib");
+        Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
+        Write(lib, "Sub/X.mo", "within Lib.Sub;\nmodel X\nend X;\n");
+
+        var (code, stdout, _) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.DoesNotContain("MLQT.Structure.WithinClause", stdout);
     }
 
     [Fact]

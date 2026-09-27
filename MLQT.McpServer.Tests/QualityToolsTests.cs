@@ -32,6 +32,27 @@ public class QualityToolsTests
         Assert.Contains(cr.Findings, v => v.Summary.Contains("Ghost"));   // stale package.order entry
     }
 
+    [Fact]
+    public void CheckLibrary_ReportsAWithinClauseThatDoesNotMatchItsDirectory()
+    {
+        // B458: R.mo is in Lib/ and says it is in Lib.Q. The same finding the app and mlqt check give.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Lib\n  package Q\n  end Q;\nend Lib;",
+            ["R.mo"] = "within Lib.Q;\nmodel R\nend R;",
+            ["S.mo"] = "within Lib;\nmodel S\nend S;",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var result = ToolAssert.Ok<CheckResult>(Style(host)
+            .CheckLibrary(settings: new StyleSettingsInput { CheckWithinClause = true }).GetAwaiter().GetResult());
+
+        var finding = Assert.Single(result.Findings, v => v.Summary.Contains("within Lib.Q;"));
+        Assert.Equal("Lib.Q.R", finding.ModelName);
+        Assert.DoesNotContain(result.Findings, v => v.ModelName == "Lib.S");
+    }
+
     // ----- style -----
 
     [Fact]

@@ -247,7 +247,7 @@ for good.
 
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
 desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, only the rules that are on
-by default run — currently `MLQT.Structure.SingleFilePackage` — alongside the
+by default run — currently `MLQT.Structure.SingleFilePackage` and `MLQT.Structure.WithinClause` — alongside the
 [diagnostics](#diagnostics), and `mlqt` says so with `note: only the rules that are on by default are
 enabled; nothing else has been configured for this library. See settings-reference.md to choose the
 rules you want.` (`note: no style rules are enabled; no findings will be produced.` appears only when

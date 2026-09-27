@@ -19,6 +19,7 @@ public static class GraphAnalysisRunner
     {
         new PackageOrderAnalyzer(),
         new SingleFilePackageAnalyzer(),
+        new WithinClauseAnalyzer(),
         new UsesHygieneAnalyzer(),
         new UnusedClassAnalyzer(),
         new ShadowingAnalyzer(),

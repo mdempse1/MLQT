@@ -34,11 +34,12 @@ public class DefaultOnRuleTests
     }
 
     [Fact]
-    public void ItIsTheOnlyRuleOnByDefault()
+    public void TheRulesOnByDefaultAreTheOnesChosenToBe()
     {
-        // Stated as an assertion because the default is a decision, not a convenience: a second rule
+        // Stated as an assertion because the default is a decision, not a convenience: another rule
         // arriving with EnabledByDefault set is a change to what every existing repository reports
-        // the next time it is opened, and that should be deliberate.
+        // the next time it is opened, and that should be deliberate. The second was B458's: a file
+        // whose within clause does not match its directory is a class no other tool will find.
         var settings = new StyleCheckingSettings();
 
         var onByDefault = RuleCatalog.Configurable
@@ -46,7 +47,7 @@ public class DefaultOnRuleTests
             .Select(d => d.Id)
             .ToList();
 
-        Assert.Equal([Rule], onByDefault);
+        Assert.Equal([Rule, RuleIds.WithinClause], onByDefault);
     }
 
     [Fact]
@@ -166,7 +167,7 @@ public class DefaultOnRuleTests
 
         settings.RecordDefaults();
 
-        Assert.Equal([Rule], settings.RuleSeverities.Keys);
+        Assert.Equal([Rule, RuleIds.WithinClause], settings.RuleSeverities.Keys);
     }
 
     [Fact]
@@ -194,10 +195,11 @@ public class DefaultOnRuleTests
     [Fact]
     public void ARepositoryThatSwitchedItOffHasNoRulesEnabled()
     {
-        // The other side of that: switching off the only rule that was on must leave nothing on,
+        // The other side of that: switching off the rules that were on must leave nothing on,
         // rather than leaving the short-circuit permanently open.
         var settings = new StyleCheckingSettings();
         settings.SetRuleEnabled(Rule, false);
+        settings.SetRuleEnabled(RuleIds.WithinClause, false);
 
         Assert.False(settings.HasAnyStyleRuleEnabled);
     }

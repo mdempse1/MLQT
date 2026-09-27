@@ -31,7 +31,7 @@ are set under **Settings > Manage Repositories** and stored in that repository's
 `.mlqt/settings.json`, so they travel with the code and every tool that reads it (the app, the `mlqt`
 CLI, the MCP server) applies the same ones.
 
-A newly added repository starts with every rule **Off** except one, and a library loaded outside any
+A newly added repository starts with every rule **Off** except two, and a library loaded outside any
 repository — a reference library, say — has no rules at all and is never reported on.
 
 **The exception is [`MLQT.Structure.SingleFilePackage`](#static-analysis-rules), which is on at
@@ -45,6 +45,14 @@ heard of the rule is exactly the user who needs it, so it is not something to op
 Switch it off in the usual way if your repository keeps libraries single-file on purpose. That choice
 is written into `.mlqt/settings.json` as `"MLQT.Structure.SingleFilePackage": "Off"` rather than by
 removing the entry, because for this rule an absent entry means *on*.
+
+**The other is [`MLQT.Structure.WithinClause`](#static-analysis-rules), on at Error.** It reports a
+file whose `within` clause does not name the package whose directory it is stored in — `Lib/R.mo`
+saying `within Lib.Q;`, or a file in `Lib/Sub/` with no `within` at all. MLQT places a class by its
+`within` clause, so it shows such a class somewhere no other Modelica tool will look for it, and
+**Format All Files** cannot write it back and refuses the library. Nothing about that is a matter of
+taste, and the files that trip it are written by other tools and by hand, so it is on unless you turn
+it off — the same way, as `"MLQT.Structure.WithinClause": "Off"`.
 
 ---
 
@@ -296,6 +304,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
 | `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`), one called `package`, and one whose name differs from a sibling's only in case are all left alone, because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
+| `MLQT.Structure.WithinClause` | Error **(on by default)** | A file stored in a package's directory whose `within` clause does not name that package — the rule of [MLS 13.4.3](https://specification.modelica.org/maint/3.6/packages.html#the-within-clause): "For a sub-entity of an enclosing structured entity, the within-clause shall designate the class of the enclosing entity". A `package.mo` is its directory's package, so it names the package of the directory above. A missing `within` below the top level is reported too. Only files inside a loaded package directory are judged: a library's root `package.mo`, or a `.mo` file in a directory with no `package.mo`, is a top-level entity whose `within` cannot be judged from where it is stored. The expected name is built from the root package's loaded name and the class names in each nested `package.mo`, so one wrong `package.mo` is one finding rather than one on every correct file below it. | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
@@ -425,7 +434,7 @@ also works for the built-in style rules:
 
 `MLQT.Structure.SingleFilePackage` has no on/off key of its own: it is on by default, and the only way
 to set it in `settings.json` is through `RuleSeverities`, for example
-`"MLQT.Structure.SingleFilePackage": "Off"`.
+`"MLQT.Structure.SingleFilePackage": "Off"`. The same is true of `MLQT.Structure.WithinClause`.
 
 A per-finding waiver can be written into the source with a `__MLQT(suppress="<rule id>")` annotation
 (see [Code Review](code-review.md#suppressing-a-rule)).
