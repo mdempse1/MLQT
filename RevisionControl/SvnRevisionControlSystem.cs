@@ -1432,11 +1432,13 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
 
             // Remove files that must be committed separately (new files in merge-added directories).
-            // Record them as skipped so the UI can offer a follow-up commit.
+            // Record them as skipped so the UI can offer a follow-up commit. Forward-slashed, the
+            // shape GetWorkingCopyChanges reports them in, so the list matches the one the dialog
+            // reloads for that commit (B478).
             foreach (var skipPath in filesToSkip)
             {
                 pathsToCommit.Remove(skipPath);
-                result.SkippedFiles.Add(Path.GetRelativePath(repositoryPath, skipPath));
+                result.SkippedFiles.Add(VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, skipPath)));
             }
 
             // Add any parent directories that were scheduled for add to the commit paths.

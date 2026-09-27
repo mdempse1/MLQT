@@ -211,10 +211,19 @@ public class SvnMergeCommitTests : IClassFixture<SvnTestRepository>, IDisposable
             $"SkippedFiles=[{string.Join(", ", firstCommitResult.SkippedFiles)}]\n" +
             $"GetWCChanges=[{changesSummary}]\nRaw SVN=[{rawStatusSummary}]");
 
+        // ...and reported relative and forward-slashed, as working-copy status is (B478). It was
+        // built with a bare Path.GetRelativePath, so on Windows it read .mlqt-test-x\settings.json.
+        Assert.Equal([VcsRelativePath.Canonical(settingsRelPath)], firstCommitResult.SkippedFiles);
+
         // === Step 7: Inspect working copy after first commit ===
         var changesAfterFirst = _svn.GetWorkingCopyChanges(targetCheckoutPath);
         var changesAfterFirstSummary = string.Join(", ",
             changesAfterFirst.Select(c => $"{c.Path}({c.Status})"));
+
+        // "Commit Skipped Files" reloads the working-copy status for the second commit: each skipped
+        // file must be there by the very string the first commit reported it as.
+        Assert.All(firstCommitResult.SkippedFiles,
+            f => Assert.Contains(f, changesAfterFirst.Select(c => c.Path)));
 
         // The directory should be committed — no longer in pending changes
         var mlqtAfterFirst = changesAfterFirst.FirstOrDefault(c =>
