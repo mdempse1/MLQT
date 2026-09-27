@@ -152,8 +152,15 @@ public partial class MainLayout : IDisposable
     ///
     /// <para>Zero is a genuine first run <i>or</i> a reload of a session that had nothing open, and
     /// re-running startup is the right answer to both: there is nothing to load twice.</para>
+    ///
+    /// <para><b>Except while a run is still loading them</b> (B422). Startup publishes its first
+    /// step before <c>LoadRepositorySettingsAsync</c> has added a single repository, so a reload in
+    /// that window found none, and started a second load beside the first into one graph. A run in
+    /// progress says so on <see cref="AppState.StartupStep"/>, which survives the reload as the
+    /// repositories do.</para>
     /// </remarks>
-    internal static bool StartupAlreadyRan(int loadedRepositoryCount) => loadedRepositoryCount > 0;
+    internal static bool StartupAlreadyRan(int loadedRepositoryCount, string? startupStep)
+        => loadedRepositoryCount > 0 || startupStep is not null;
 
     /// <summary>
     /// Whether to show the progress of a startup begun by an earlier instance of this layout: only
@@ -164,7 +171,14 @@ public partial class MainLayout : IDisposable
 
     private bool EarlierStartupVisible => ShowsEarlierStartup(_watchingEarlierStartup, NavState.StartupStep);
 
-    private void OnStartupProgressChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnStartupProgressChanged()
+    {
+        // A reload early in step 1 reaches this instance before the run it skipped for has opened a
+        // project (B422), so the title is taken again as the run moves on rather than only once.
+        if (_watchingEarlierStartup)
+            _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+        _ = InvokeAsync(StateHasChanged);
+    }
 
     private async Task RunStartUpAsync()
     {
@@ -181,7 +195,7 @@ public partial class MainLayout : IDisposable
             // the component tree and leaves the services standing, so without this the user is asked
             // to choose a project while the one they have open is still in the browser behind the
             // dialog.
-            if (StartupAlreadyRan(RepositoryService.Repositories.Count))
+            if (StartupAlreadyRan(RepositoryService.Repositories.Count, NavState.StartupStep))
             {
                 _currentProjectName = RepositoryService.GetActiveProject()?.Name;
                 _watchingEarlierStartup = true;

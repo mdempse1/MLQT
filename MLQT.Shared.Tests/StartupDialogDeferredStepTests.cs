@@ -139,8 +139,8 @@ public class StartupDialogDeferredStepTests
     [Fact]
     public void AReloadWithAProjectOpenDoesNotRunStartupAgain()
     {
-        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 1));
-        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 4));
+        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 1, startupStep: null));
+        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 4, startupStep: null));
     }
 
     /// <summary>
@@ -150,17 +150,29 @@ public class StartupDialogDeferredStepTests
     [Fact]
     public void WithNothingLoadedStartupStillRuns()
     {
-        Assert.False(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 0));
+        Assert.False(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 0, startupStep: null));
     }
 
     /// <summary>
-    /// The question is asked of the service that survives a reload, not of a flag on the component
-    /// that does not — the wiring is the part a static predicate cannot hold.
+    /// B422: startup publishes its first step before the first repository is added, so a reload in
+    /// that window finds none loaded while a run is loading them. The run in progress is what says
+    /// startup has already begun.
     /// </summary>
     [Fact]
-    public void TheGuardAsksTheRepositoryServiceHowMuchIsLoaded()
+    public void AReloadWhileARunIsStillLoadingDoesNotRunStartupAgain()
     {
-        Assert.Contains("StartupAlreadyRan(RepositoryService.Repositories.Count)", CodeBehindSource());
+        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 0, "Loading libraries from repositories"));
+    }
+
+    /// <summary>
+    /// The question is asked of what survives a reload - the repository service and the published
+    /// startup step - not of a flag on the component that does not. The wiring is the part a static
+    /// predicate cannot hold.
+    /// </summary>
+    [Fact]
+    public void TheGuardAsksTheRepositoryServiceAndTheRunningStartup()
+    {
+        Assert.Contains("StartupAlreadyRan(RepositoryService.Repositories.Count, NavState.StartupStep)", CodeBehindSource());
     }
 
     // ---------------------------------------------------------------- the run a reload left going
@@ -189,7 +201,7 @@ public class StartupDialogDeferredStepTests
         var source = System.Text.RegularExpressions.Regex.Replace(CodeBehindSource(), @"\s+", " ");
 
         Assert.Contains(
-            "if (StartupAlreadyRan(RepositoryService.Repositories.Count)) { _currentProjectName = RepositoryService.GetActiveProject()?.Name; _watchingEarlierStartup = true;",
+            "if (StartupAlreadyRan(RepositoryService.Repositories.Count, NavState.StartupStep)) { _currentProjectName = RepositoryService.GetActiveProject()?.Name; _watchingEarlierStartup = true;",
             source);
         foreach (var step in new[]
                  {
