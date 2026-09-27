@@ -147,7 +147,10 @@ public sealed class FormattingPipeline : IFormattingPipeline
         foreach (var fileNode in _libraryData.CombinedGraph.FileNodes)
         {
             if (File.Exists(fileNode.FilePath) &&
-                (filterRepositoryId == null || librarySourcePaths.Any(sp => fileNode.FilePath.StartsWith(sp, StringComparison.OrdinalIgnoreCase))))
+                // Contained, not prefixed: `…/Lib` is a prefix of `…/LibExtra/Other.mo`, so a sibling
+                // library's files counted as this one's, were not written, and were deleted (B323's
+                // shape, found with B373).
+                (filterRepositoryId == null || librarySourcePaths.Any(sp => PathContainment.IsWithin(fileNode.FilePath, sp))))
             {
                 originalFiles.Add(fileNode.FilePath);
             }
@@ -178,6 +181,13 @@ public sealed class FormattingPipeline : IFormattingPipeline
         var allCreatedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var modelIdToFilePath = new Dictionary<string, string>();
 
+        // Libraries whose files are not the save's to delete: one it skipped or could not finish.
+        // An original file is an orphan only when everything it held was written somewhere else,
+        // and a library with a failed write cannot say that of any of its files - so a single-file
+        // library expanded into a directory lost every class whose new file failed, with the one
+        // file that still held it (B373, the B303 shape in Format All).
+        var librariesToKeep = new List<LoadedLibrary>();
+
         // Process libraries sequentially to limit peak memory. Each library already
         // parallelizes its parse/render phases internally (Parallel.ForEach in batches).
         // Running libraries concurrently causes nested parallelism: N libraries × M cores
@@ -193,6 +203,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
             // Skip single-file libraries (they don't have a directory structure)
             if (library.SourceType == LibrarySourceType.File && !Directory.Exists(library.SourcePath))
             {
+                librariesToKeep.Add(library);
                 continue;
             }
 
@@ -264,6 +275,8 @@ public sealed class FormattingPipeline : IFormattingPipeline
                     if (saveDirectory is null)
                     {
                         Warn(nameof(FormattingPipeline), $"No writable save directory for library {library.Name} at {library.SourcePath}");
+                        lock (allWrittenFiles)
+                            librariesToKeep.Add(library);
                         return;
                     }
 
@@ -291,6 +304,21 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         {
                             modelIdToFilePath[kvp.Key] = kvp.Value;
                         }
+
+                        if (saveResult.FailedFiles.Count > 0)
+                            librariesToKeep.Add(library);
+                    }
+
+                    if (saveResult.FailedFiles.Count > 0)
+                    {
+                        Warn(nameof(FormattingPipeline),
+                            $"Library {library.Name}: {saveResult.FailedFiles.Count} file(s) could not be written " +
+                            $"({string.Join(", ", saveResult.FailedFiles)}); its original files were kept");
+                        onLibraryFailed?.Invoke(library.Name, new IOException(
+                            $"{saveResult.FailedFiles.Count} file(s) could not be written, including " +
+                            $"{saveResult.FailedFiles.First()}. No file of the library was deleted, so it may now " +
+                            "define some classes twice; see the log."));
+                        return;
                     }
 
                     Debug(nameof(FormattingPipeline), $"Successfully saved library: {library.Name} ({saveResult.WrittenFiles.Count} files)");
@@ -299,6 +327,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
             catch (Exception ex)
             {
                 Error(nameof(FormattingPipeline), $"Failed to format library {library.Name}", ex);
+                librariesToKeep.Add(library);
                 onLibraryFailed?.Invoke(library.Name, ex);
             }
         }
@@ -330,7 +359,9 @@ public sealed class FormattingPipeline : IFormattingPipeline
         }
 
         var orphaned = OrphanedFileSelector.SelectOrphans(
-            originalFiles, originalOrderFiles, allWrittenFiles, vcsAddedFiles);
+                originalFiles, originalOrderFiles, allWrittenFiles, vcsAddedFiles)
+            .Where(f => !librariesToKeep.Any(l => PathContainment.IsWithin(f, l.SourcePath)))
+            .ToList();
 
         Debug(nameof(FormattingPipeline), $"Deleting {orphaned.Count} orphaned file(s) left by the save");
 

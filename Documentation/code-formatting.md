@@ -150,6 +150,10 @@ See [File Monitoring & Refresh](file-monitoring.md) for details on the refresh p
 MLQT stores a library the way Modelica's own directory mapping describes it: **a package is a directory**, holding a `package.mo` for the package itself, **one `.mo` file per class inside it**, and a `package.order` naming them in order.
 
 If a library is currently one `.mo` file holding dozens of classes, a full format **expands it**. `Lib.mo` becomes `Lib/package.mo`, `Lib/Resistor.mo`, `Lib/Capacitor.mo` and so on; nested packages become nested directories; and the original single file is deleted once everything in it has been written somewhere else.
+If any file of a library cannot be written, **none of that library's files is deleted**: MLQT warns
+that the library could not be formatted completely, and the log names the files. The library may then
+define some classes twice — in the old file and in the new one — which is recoverable, where
+deleting the only file that still held a class is not.
 
 > **Expect a very large commit the first time.** One file disappears and dozens appear in its place. Do it deliberately — on a clean working copy, as a commit of its own, at a moment when nobody has a long-running branch open — and say so in the commit message. It is a move, not a rewrite, but version control cannot tell until you commit it.
 

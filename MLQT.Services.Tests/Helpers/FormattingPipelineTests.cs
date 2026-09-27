@@ -196,4 +196,88 @@ public sealed class FormattingPipelineTests : IDisposable
         Assert.Equal(1, formatted);
         Assert.NotEqual(before, File.ReadAllText(path));
     }
+
+    // ============================================================================
+    // Format All deletes only what it has written somewhere else (B373)
+    // ============================================================================
+
+    private const string SingleFileLibrary =
+        "package MyLib\nmodel A\nReal x;\nend A;\nmodel B\nend B;\nend MyLib;\n";
+
+    /// <summary>A real library service with the given libraries loaded into repository "repo".</summary>
+    private async Task<(LibraryDataService Service, FormattingPipeline Pipeline)> RepositoryWith(
+        params string[] libraryPaths)
+    {
+        var service = new LibraryDataService();
+        foreach (var path in libraryPaths)
+        {
+            var library = await service.AddLibraryFromPathAsync(path);
+            library.SourceType = LibrarySourceType.Git;
+            library.RepositoryId = "repo";
+        }
+
+        var repository = new Repository
+        {
+            Id = "repo", Name = "Repo", LocalPath = _root, VcsRootPath = _root, StyleSettings = Formatting(),
+        };
+        _repositories.SetupGet(r => r.Repositories).Returns([repository]);
+        _repositories.Setup(r => r.GetRepository("repo")).Returns(repository);
+        _repositories.Setup(r => r.GetWorkingCopyChanges("repo")).Returns([]);
+        return (service, new FormattingPipeline(service, _repositories.Object));
+    }
+
+    [Fact]
+    public async Task AClassWhoseNewFileCannotBeWritten_KeepsTheFileItCameFrom()
+    {
+        // A single-file library in a repository is expanded into a directory. When A's new file
+        // could not be written, MyLib.mo - the only file still holding A - was deleted as an orphan.
+        var original = Path.Combine(_root, "MyLib.mo");
+        File.WriteAllText(original, SingleFileLibrary);
+        var obstruction = Path.Combine(_root, "MyLib", "A.mo");
+        Directory.CreateDirectory(obstruction);
+        File.WriteAllText(Path.Combine(obstruction, "in the way"), "");
+        var (_, pipeline) = await RepositoryWith(original);
+        var failures = new List<string>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
+
+        Assert.Equal(SingleFileLibrary, File.ReadAllText(original));
+        Assert.Equal(["MyLib"], failures);
+    }
+
+    [Fact]
+    public async Task ALibraryWhoseSaveCompletes_StillLosesItsOrphans()
+    {
+        // The other half: the protection is for a library with a failed write, not a reason to stop
+        // tidying up after one that wrote everything (B373 is still open on whether this expansion
+        // should happen at all - this holds only what the save does today).
+        var original = Path.Combine(_root, "MyLib.mo");
+        File.WriteAllText(original, SingleFileLibrary);
+        var (_, pipeline) = await RepositoryWith(original);
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.False(File.Exists(original));
+        Assert.True(File.Exists(Path.Combine(_root, "MyLib", "A.mo")));
+    }
+
+    [Fact]
+    public async Task ASiblingLibraryWhoseNameExtendsThisOnes_IsNotTakenForAnOrphan()
+    {
+        // `…/Lib` is a prefix of `…/LibExtra/package.mo`. LibExtra belongs to no repository being
+        // formatted, so it is not written - and a prefix test counted its file as Lib's original.
+        var lib = Path.Combine(_root, "Lib");
+        var extra = Path.Combine(_root, "LibExtra");
+        Directory.CreateDirectory(lib);
+        Directory.CreateDirectory(extra);
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        var extraFile = Path.Combine(extra, "package.mo");
+        File.WriteAllText(extraFile, "package LibExtra\nend LibExtra;\n");
+        var (service, pipeline) = await RepositoryWith(lib);
+        await service.AddLibraryFromDirectoryAsync(extra);
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.True(File.Exists(extraFile));
+    }
 }
