@@ -19,7 +19,9 @@ MLQT attempts to auto-detect installed tools on startup:
 - **Dymola**: Looks in `Program Files` for `bin64\dymola.exe` under a folder named `Dymola {year}x Refresh 1`,
   `Dymola {year}x` or `Dymola {year}` — for example `Dymola 2026x Refresh 1`, `Dymola 2024x` or
   `Dymola 2023` — for every year from next year's back to 2021, and takes the newest it finds.
-  Anything else (Dymola 2020 or earlier, a renamed folder, another drive) is set by hand
+  Anything else (Dymola 2020 or earlier, a renamed folder, another drive) is set by hand, or found
+  as `dymola.exe` in a folder on `PATH`, which is looked at after Program Files. On Linux, see
+  [Dymola on Linux](#dymola-on-linux)
 - **OpenModelica**: on Windows, looks in `Program Files` for the installer's versioned folders
   (`OpenModelica1.26.0-64bit\bin\omc.exe` and so on, newest first, back to 1.21), then for `omc.exe`
   in each folder on `PATH`. On Linux, looks for `/usr/bin/omc` (where OpenModelica's own apt
@@ -28,8 +30,8 @@ MLQT attempts to auto-detect installed tools on startup:
 
 If auto-detection succeeds, the path is pre-filled. If your tool is installed in a non-standard location, you'll need to set the path manually.
 
-For OpenModelica, a **blank** path is looked for again every time the settings are loaded, so clearing
-the field and restarting MLQT finds the installation again. The **Auto-detect** button beside the
+For both tools, a **blank** path is looked for again every time the settings are loaded, so clearing
+the field and restarting MLQT finds the installation again. The **Auto-detect** button beside each
 path runs the same search on demand, whatever the field holds: it fills in the installation it finds,
 or clears the field if it finds none.
 
@@ -37,11 +39,31 @@ or clears the field if it finds none.
 
 | Field | Description |
 |-------|-------------|
-| **Path to Dymola Executable** | The full path to `dymola.exe`. Click the folder icon to browse — MLQT navigates to the selected folder and looks for `bin64/dymola.exe`. |
+| **Path to Dymola Executable** | The full path to `dymola.exe` on Windows, or to `dymola` or its launcher on Linux. **Auto-detect**, beside the field, searches for it — see [Auto-Detection](#auto-detection). Click the folder icon to browse. On Windows, choose the installation folder and MLQT takes `bin64\dymola.exe` inside it, or `dymola.exe` directly if you chose the `bin64` folder itself. On Linux, choose the program or its launcher itself — the dialog opens in `/usr/local/bin`, where Dymola's launcher scripts go. |
 | **Port Number** | The port Dymola uses for its HTTP JSON-RPC interface. Default: `8082`. Change this if the default conflicts with another service. |
 | **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `300` (five minutes). `0` means no limit. |
 
 If the specified executable is not found, a warning message appears below the path field.
+
+### Dymola on Linux
+
+Dassault's installation guide puts Dymola in `/opt/dymola-<version>-x86_64` (for example
+`/opt/dymola-2025x-x86_64`), with the program at `bin64/dymola` inside it, and installs a launcher
+script, `/usr/local/bin/dymola-<version>-x86_64`, that sets the environment Dymola needs to find its
+libraries. Setup guides often add `/usr/local/bin/dymola` as a shorter name for it. MLQT looks for, in
+order:
+
+1. `/usr/local/bin/dymola`
+2. the versioned launchers `/usr/local/bin/dymola-<version>-x86_64`, newest release first
+3. `bin64/dymola` in each `/opt/dymola-<version>-x86_64`, newest release first
+4. `dymola` in each folder on `PATH`
+
+Launchers come first because the program started directly may not find its own libraries.
+
+**This search has not yet been tried against a real Linux installation of Dymola** — the locations
+come from Dassault's installation guide and published setup guides rather than from a machine MLQT
+has run on. If it finds nothing, or finds something that will not start, type or browse to the
+launcher your installation uses.
 
 ## OpenModelica Configuration
 

@@ -154,4 +154,77 @@ public class SettingsExternalToolsTests : MlqtComponentTestBase
         Assert.Equal("", panel.Instance.OmcPath);
         Assert.DoesNotContain("Could not find OpenModelica", panel.Markup);
     }
+
+    // ---- Browsing for and detecting Dymola (B395) ----------------------------------------------
+    //
+    // The same two branches as omc: on Linux the user chooses the program or its launcher, on
+    // Windows the installation folder, whose bin64\dymola.exe is taken.
+
+    [Fact]
+    public async Task Dymola_OnLinux_TheChosenFileIsTheProgram_AsChosen()
+    {
+        var dymola = Path.Combine(Path.GetTempPath(), "mlqt-tests", Guid.NewGuid().ToString("N"), "dymola");
+        _picker.Setup(p => p.PickExecutableAsync(It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(dymola);
+        var panel = RenderPanel(300_000, 60_000);
+
+        await panel.InvokeAsync(() => panel.Instance.BrowseForDymola(windows: false));
+
+        Assert.Equal(dymola, panel.Instance.DymolaPath);
+        _picker.Verify(p => p.PickFolderAsync(It.IsAny<string>()), Times.Never);
+        Assert.Contains("Could not find Dymola", panel.Markup);   // it does not exist
+    }
+
+    [Fact]
+    public async Task Dymola_OnWindows_TheChosenFolderIsTheInstallation_AndDymolaIsTakenUnderBin64()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "mlqt-tests", Guid.NewGuid().ToString("N"));
+        _picker.Setup(p => p.PickFolderAsync(It.IsAny<string>())).ReturnsAsync(folder);
+        var panel = RenderPanel(300_000, 60_000);
+
+        await panel.InvokeAsync(() => panel.Instance.BrowseForDymola(windows: true));
+
+        Assert.Equal(Path.Combine(folder, "bin64", "dymola.exe"), panel.Instance.DymolaPath);
+        _picker.Verify(p => p.PickExecutableAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Dymola_ACancelledPickerLeavesThePathAlone(bool windows)
+    {
+        var panel = RenderPanel(300_000, 60_000);
+        var before = panel.Instance.DymolaPath;
+
+        await panel.InvokeAsync(() => panel.Instance.BrowseForDymola(windows));
+
+        Assert.Equal(before, panel.Instance.DymolaPath);
+    }
+
+    [Fact]
+    public void Dymola_AutoDetect_FillsThePathWithWhatItFinds_WhateverWasThere()
+    {
+        var found = Path.Combine(Path.GetTempPath(), "mlqt-tests", "found", "dymola");
+        var panel = RenderPanel(300_000, 60_000);
+        panel.Instance.FindInstalledDymola = () => found;
+
+        panel.Find("button[aria-label='Auto-detect Dymola']").Click();
+
+        Assert.Equal(found, panel.Instance.DymolaPath);
+    }
+
+    [Fact]
+    public async Task Dymola_AutoDetect_BlanksThePathWhenNothingIsFound()
+    {
+        var chosen = Path.Combine(Path.GetTempPath(), "mlqt-tests", Guid.NewGuid().ToString("N"), "dymola");
+        _picker.Setup(p => p.PickExecutableAsync(It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(chosen);
+        var panel = RenderPanel(300_000, 60_000);
+        await panel.InvokeAsync(() => panel.Instance.BrowseForDymola(windows: false));
+        Assert.Equal(chosen, panel.Instance.DymolaPath);
+        panel.Instance.FindInstalledDymola = () => "";
+
+        panel.Find("button[aria-label='Auto-detect Dymola']").Click();
+
+        Assert.Equal("", panel.Instance.DymolaPath);
+        Assert.DoesNotContain("Could not find Dymola", panel.Markup);
+    }
 }
