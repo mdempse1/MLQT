@@ -272,6 +272,31 @@ format writes each top-level class to a file of its own, so accepting it would m
 without a word. Moving it into one of the classes, or above the `within` clause, is the way to keep
 it and have the file formatted.
 
+## Matrices and data tables
+
+**A matrix keeps its rows where you wrote them.** Where a row starts a new line in the source, it
+starts a new line when the file is formatted, one level in from the line the matrix begins on; rows
+you wrote on one line stay on one line, and a table written entirely on one line stays that way:
+
+```modelica
+  Modelica.Blocks.Sources.TimeTable setPoint(table=[0, 20;
+    8*3600, 21;
+    18*3600, 20;
+    24*3600, 20]) "Set point schedule";
+  parameter Real k[:, :]=[1, 2; 3, 4];
+```
+
+Only where the rows break is kept, not how far they are indented, and a line break *inside* a row
+(between two of its elements) is not kept — the elements of a row are written on one line. A comment
+after a row's `;` stays where it was, and the next row starts a line of its own after it.
+
+Earlier versions wrote every matrix on one line, so a table laid out a row a line came back as a
+single line that could run to thousands of characters. Over the Modelica Standard Library and
+Buildings (8,367 files), 232 files are now written differently from before, and in every one of them
+the only difference is line breaks and indentation inside a matrix. A file an earlier version has
+already saved has lost its rows — there is nothing left in it to say where they were — so it keeps
+its one-line tables until you break them by hand; from then on they stay broken.
+
 ## Line endings and how files end
 
 **A file is written back with the line endings it already had.** A Windows checkout is CRLF, a Linux

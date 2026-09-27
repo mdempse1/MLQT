@@ -27,6 +27,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // Whether the function call being written puts one argument a line, which is where a comment
     // between its arguments (B431) leaves the next one: on its own line, or a level in.
     private bool _callUsingMultiLine = false;
+    // The lines a matrix has already ended (B462) - its first line and each row before its last -
+    // and the indent level they were ended at. Its last line is ended by whoever writes what
+    // follows, possibly after an argument list wrapped for length has gone back a level, so the
+    // next EmitLine moves these lines to the level that line is written at.
+    private (int Start, int End, int Level)? _pendingMatrixLines;
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -216,6 +221,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     private void EmitLine(bool ignoreIndentation=false)
     {
+        if (_pendingMatrixLines is { } matrix)
+        {
+            _pendingMatrixLines = null;
+            if (_indentLevel < matrix.Level)
+                MoveLinesBack(matrix.Start, matrix.End, (matrix.Level - _indentLevel) * IndentSpaces);
+        }
+
         var indent = new string(' ', _indentLevel * IndentSpaces);
         var line = _currentLine.ToString().TrimEnd();
 
@@ -436,6 +448,30 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             return;
         _code[lineNumber] = new string(' ', IndentSpaces) + line;
     }
+
+    /// <summary>
+    /// Moves lines <paramref name="start"/> to <paramref name="end"/> (exclusive) back by
+    /// <paramref name="spaces"/> of their indent (B462). Only ever back: the line that ends a matrix
+    /// is written at the level the matrix began at or an enclosing one, never a deeper one (none
+    /// was, over the 8,367 files of MSL and Buildings), so there is nothing to move along.
+    /// </summary>
+    private void MoveLinesBack(int start, int end, int spaces)
+    {
+        for (int i = start; i < end; i++)
+        {
+            var line = _code[i];
+            int leading = line.Length - line.TrimStart(' ').Length;
+            _code[i] = line[Math.Min(leading, spaces)..];
+        }
+    }
+
+    /// <summary>
+    /// Indents a line a matrix has just started (B462) - after a row break or a comment, so nothing
+    /// is on it yet but its continuation indent - by the leading spaces of the line the matrix
+    /// began on, so its rows stay a level in from that line when it is itself a continuation.
+    /// </summary>
+    private void IndentMatrixLine(int baseSpaces)
+        => _currentLine.Insert(0, new string(' ', baseSpaces));
 
     private void AddIndentToCurrentLine()
     {
@@ -3216,9 +3252,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             // Array expression [expression_list (';' expression_list)*]
             // Comments after the '[', after a row's ';' and before the ']' (B431): run i
             // is what comes before row i, and the last run what comes after the last row. A data
-            // table is written on one line as it always was, except that a comment ends its line
-            // and the table continues on the next, a level in.
+            // table keeps the rows its author wrote (B462): a row that starts a line in the source
+            // starts one here, a level in, and rows the author ran together stay together - a
+            // comment ends its line the same way. Read from the tokens, so a table written one
+            // row a line keeps its rows on every save, and one written on one line stays there.
             var runs = CommentRuns(context);
+            int firstLine = _code.Count;
+            int level = _indentLevel;
+            // A line the table starts is a level in from the line it began on, which may itself
+            // be a continuation line carrying its indent as leading spaces.
+            int baseSpaces = _currentLine.Length - _currentLine.ToString().TrimStart(' ').Length;
             Write("[");
             _bracketDepth++;
             var expressionLists = context.expression_list();
@@ -3230,7 +3273,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     {
                         Write(";");
                         if (runs == null || !runs[i].Any)
-                            Space();
+                        {
+                            if (RowStartsLine(expressionLists[i - 1], expressionLists[i]))
+                            {
+                                EmitLine();
+                                AddIndentToCurrentLine();
+                                IndentMatrixLine(baseSpaces);
+                            }
+                            else
+                                Space();
+                        }
                     }
                     if (runs != null && runs[i].Any)
                     {
@@ -3238,14 +3290,20 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                             WriteOpeningComments(runs[i], multiLine: false);
                         else
                             WriteListComments(runs[i], multiLine: false);
+                        IndentMatrixLine(baseSpaces);
                     }
                     Visit(expressionLists[i]);
                 }
             }
             if (runs != null && runs[^1].Any)
+            {
                 WriteListComments(runs[^1], multiLine: false, beforeClose: true);
+                IndentMatrixLine(baseSpaces);
+            }
             _bracketDepth--;
             Write("]");
+            if (_code.Count > firstLine)
+                _pendingMatrixLines = (firstLine, _code.Count, level);
         }
         else if (context.GetText().StartsWith('{'))
         {
@@ -3940,6 +3998,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         else
             EmitLine();
     }
+
+    /// <summary>
+    /// Whether a matrix row starts a line of its own in the source (B462): on a later line than the
+    /// row before it ends on, whichever side of the ';' the break was written.
+    /// </summary>
+    private static bool RowStartsLine(ParserRuleContext previousRow, ParserRuleContext row)
+        => row.Start.Line > LastLineOf(previousRow.Stop);
 
     /// <summary>The line a token ends on — a block comment or a string can span several.</summary>
     private static int LastLineOf(IToken token)
