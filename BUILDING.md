@@ -81,8 +81,9 @@ dotnet build MLQT.slnx -c Release
 ./build/run-all-tests.ps1 -Coverage         # reports, does not gate — and measures more
 ```
 
-`run-all-tests.ps1 -Coverage` sees two things the gate cannot: the two tool-dependent suites, and the
-points the browser journeys add to `MLQT.Shared` by exercising the real UI.
+`run-all-tests.ps1 -Coverage` sees two things the gate cannot: what the classes needing a live Dymola
+or omc add to the two tool interfaces - the gate measures those assemblies from their tool-free tests
+only (B438) - and the points the browser journeys add to `MLQT.Shared` by exercising the real UI.
 
 ## Bundling the SVN client
 

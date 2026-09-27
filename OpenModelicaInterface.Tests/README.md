@@ -56,6 +56,10 @@ dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --fil
 A new class that needs omc must carry the trait. `ToolTraitTests` fails for one that takes the shared
 fixture without it; one that starts its own omc, as `TimeLimitTests` does, has to be marked by hand.
 
+That filtered run is also what the coverage ratchet measures `OpenModelicaInterface` from
+(`build/check-coverage.ps1`, B438), so code only a live omc reaches is recorded as debt with that
+reason in `build/coverage-baseline.json`.
+
 ### Run Specific Test Class
 
 ```bash

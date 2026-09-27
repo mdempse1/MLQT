@@ -90,7 +90,10 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 
-# The seven assemblies the coverage gate measures, so the two agree about what "our code" means.
+# The assemblies the coverage gate measures, so the two agree about what "our code" means - all but
+# DymolaInterface and OpenModelicaInterface, which joined the gate in B438 measured from their suites
+# filtered to the classes needing no tool. This script runs a suite whole, which for those two would
+# start Dymola and omc for every mutant, so they stay out until it can pass the filter.
 # Ordered smallest-first on purpose: the early ones calibrate how long this machine takes before
 # anything committing starts, and a campaign abandoned half way still leaves useful reports.
 # 'mlqt' is the assembly name of MLQT.Cli, which is why this maps project to test project by name

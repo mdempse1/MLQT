@@ -8,7 +8,9 @@
                  "MLQT.McpServer":  80,
                  "MLQT.Shared":  80,
                  "MLQT.Services":  80,
-                 "ModelicaParser":  95
+                 "ModelicaParser":  95,
+                 "DymolaInterface":  80,
+                 "OpenModelicaInterface":  80
              },
     "classes":  {
                     "MLQT.McpServer::MLQT.McpServer.Helpers.ClassBodyEditor":  {
@@ -203,6 +205,18 @@
                                                                                             "bar":  95,
                                                                                             "reason":  "2 points under the bar, and deliberately. B175 added the removal half of the writer, whose uncovered lines are two `Parse(...) is null` guards: one before the splice and one re-parsing the result. Neither is reachable from these entry points - the parser recovers rather than returning nothing - but the second is the backstop on a method that rewrites a class\u0027s source rather than adding to it, and removing a safety net to move a number is the wrong trade. The rest of the class is the older debt: splice positions for annotation shapes no fixture yet produces."
                                                                                         },
+                    "OpenModelicaInterface::OpenModelicaInterface.OpenModelicaInterface":  {
+                                                                                               "coverage":  4.6,
+                                                                                               "lines":  257,
+                                                                                               "bar":  80,
+                                                                                               "reason":  "Needs a live omc. Everything here but the static Exchange and BuildSimulateCommand, which are tested, runs through a session StartAsync opens by spawning omc and connecting a ZeroMQ socket to it, and the classes that drive one carry Requires=OpenModelica and run in no CI job (B399). Not all of it is the tool's, though: the reply parsers (ParseStringArray, ParseSimulationResult, UnquoteString, ParseBoolean) are pure and private, and could be tested without omc if made internal - nobody has written those tests yet (B438)."
+                                                                                           },
+                    "OpenModelicaInterface::OpenModelicaInterface.OpenModelicaInterfaceFactory":  {
+                                                                                                      "coverage":  62.5,
+                                                                                                      "lines":  48,
+                                                                                                      "bar":  80,
+                                                                                                      "reason":  "Needs a live omc. What is uncovered is GetOrCreateAsync once omc has started and ResetAsync with a session to end: both work on a concrete OpenModelicaInterface whose StartAsync spawns omc, with no seam to hand the factory a fake, so only the Requires=OpenModelica classes reach them. UpdateSettings, IsConnected, Dispose, ResetAsync with no session and a start that fails are tested without the tool (B438)."
+                                                                                                  },
                     "RevisionControl::RevisionControl.SvnCli":  {
                                                                     "coverage":  27.3,
                                                                     "lines":  91,

@@ -590,10 +590,18 @@ jobs:
       - name: Build RevisionControl.Tests
         run: dotnet build RevisionControl.Tests -c Release --no-restore
 
+      # Measured from their classes needing no tool - check-coverage.ps1 runs them with the same
+      # trait filters as the test jobs above (B399, B438).
+      - name: Build DymolaInterface.Tests
+        run: dotnet build DymolaInterface.Tests -c Release --no-restore
+
+      - name: Build OpenModelicaInterface.Tests
+        run: dotnet build OpenModelicaInterface.Tests -c Release --no-restore
+
       - name: Install ReportGenerator
         run: dotnet tool install -g dotnet-reportgenerator-globaltool
 
-      # Runs the suites, merges the six reports, and fails when a class drops below what
+      # Runs the suites, merges their reports, and fails when a class drops below what
       # build/coverage-baseline.json records - see the script header for why it is a ratchet rather
       # than a flat threshold.
       - name: Run tests with coverage and gate on it

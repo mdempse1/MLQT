@@ -65,6 +65,10 @@ dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "Require
 A new class that needs Dymola must carry the trait. `ToolTraitTests` fails for one that takes the
 shared fixture without it; one that starts a Dymola some other way has to be marked by hand.
 
+That filtered run is also what the coverage ratchet measures `DymolaInterface` from
+(`build/check-coverage.ps1`, B438), so code only a live Dymola reaches is recorded as debt with that
+reason in `build/coverage-baseline.json`.
+
 ### Run Specific Test Class
 
 ```bash

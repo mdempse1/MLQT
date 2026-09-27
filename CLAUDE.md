@@ -471,10 +471,11 @@ have added a class or moved code between them.
 ```
 
 `-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
-only visible here: `DymolaInterface` and `OpenModelicaInterface`, whose suites the gate does not
-measure (CI runs only their tool-free classes, and does not gate on them), and the ~8 points the browser journeys add to `MLQT.Shared`
-by exercising the real UI. With `-CoreOnly` the two tool assemblies are still in the summary, measured
-from their tool-free classes and marked so (B437). Both scripts take their assembly lists from
+only visible here: what the classes needing a live Dymola or omc add to `DymolaInterface` and
+`OpenModelicaInterface` (the gate measures those two from their tool-free classes only, B438), and the
+~8 points the browser journeys add to `MLQT.Shared` by exercising the real UI. With `-CoreOnly` the
+two tool assemblies are still in the summary, measured from their tool-free classes and marked so
+(B437). Both scripts take their assembly lists from
 `build/CoverageAssemblies.ps1`, so they cannot disagree about what "our code" means.
 
 It runs **every** suite, which is more than CI does and more than the coverage gate does:
@@ -483,7 +484,7 @@ It runs **every** suite, which is more than CI does and more than the coverage g
 |---|---|
 | `run-all-tests.ps1` | all 10 — the 7 below, plus `DymolaInterface.Tests`, `OpenModelicaInterface.Tests` and `MLQT.Journeys` |
 | CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform, plus the Dymola and OpenModelica suites **without their tool classes** (B399); `ui-journeys` runs the journeys on both |
-| `check-coverage.ps1` | the same 7 — the other three contribute no coverage |
+| `check-coverage.ps1` | the same as CI's test jobs — the 7, plus the Dymola and OpenModelica suites without their tool classes (B438); the journeys contribute no gated coverage |
 
 **The suite list is read from `MLQT.slnx`**, not written out in the script, so a test project added to
 the solution is picked up without anyone remembering a list. This repository has been bitten by the
@@ -582,8 +583,10 @@ holds that chain together, as `WindowsInstallerTests` does for the Inno script.
 
 ### "Would the coverage gate pass?" — `build/check-coverage.ps1`
 
-**CI enforces the per-class bar** — this script runs the seven measured suites, merges their reports,
-and fails the build per class. Run it locally the same way:
+**CI enforces the per-class bar** — this script runs the measured suites, merges their reports,
+and fails the build per class. `DymolaInterface` and `OpenModelicaInterface` are measured from their
+suites' tool-free classes, with the same `Requires!=` filters CI's test jobs use; code only a live tool
+reaches is ledger debt saying so (B438). Run it locally the same way:
 
 ```powershell
 dotnet build MLQT.slnx -c Release
@@ -691,7 +694,8 @@ dotnet tool install --global dotnet-stryker      # once
 **For a single run, always pass `-Mutate`**: one file takes about three minutes, most of it the build
 and the baseline test run, and a whole assembly takes many times as long.
 
-**`-All`** mutates the same seven assemblies the coverage gate measures, smallest first so the early
+**`-All`** mutates the seven assemblies the coverage gate measures other than the two tool interfaces
+(it runs a suite whole, which for those would start Dymola and omc), smallest first so the early
 ones calibrate the machine before anything committing starts. **It takes about an hour**, not the
 many hours it took before B267: each assembly is now judged by its own suite rather than by every
 suite that references it, so a run of 24,901 mutants took 52 minutes on 2026-09-22 where 23,634

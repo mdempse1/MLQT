@@ -15,7 +15,8 @@ namespace MLQT.Shared.Tests;
 /// what a class needs, never by what it is called, which is the lesson <see cref="SvnTestFilterTests"/>
 /// was written for (B266).</para>
 ///
-/// <para>The filter is written in three places - both CI jobs and <c>run-all-tests.ps1</c> - and the
+/// <para>The filter is written in four places - both CI jobs, <c>run-all-tests.ps1</c> and, since
+/// B438, <c>check-coverage.ps1</c> - and the
 /// trait in two test projects. A filter that drifts from the trait selects nothing, or everything:
 /// the first reads as a suite with nothing to run, the second starts a Dymola on a runner that has
 /// none. Each suite's own <c>ToolTraitTests</c> holds its classes to the trait; this holds the
@@ -111,6 +112,23 @@ public class LiveToolTestFilterTests
     }
 
     [Fact]
+    public void TheCoverageGateMeasuresBothSuitesWithTheirFilter()
+    {
+        // Backlog B438. The two assemblies are under the ratchet, measured from what CI can run. The
+        // gate runs its suites itself, so it is a fourth place the filter is written: without it the
+        // coverage job would start Dymola and omc on a runner that has neither, and fail.
+        var script = Read("build", "check-coverage.ps1");
+
+        Assert.Contains($"@{{ Project = 'DymolaInterface.Tests';       Filter = '{DymolaFilter}' }}", script);
+        Assert.Contains($"@{{ Project = 'OpenModelicaInterface.Tests'; Filter = '{OpenModelicaFilter}' }}", script);
+
+        // And both assemblies carry a bar, or their suites would run for nothing.
+        var assemblies = Read("build", "CoverageAssemblies.ps1");
+        Assert.Matches(@"(?m)^\s*'DymolaInterface'\s*=\s*80\.0", assemblies);
+        Assert.Matches(@"(?m)^\s*'OpenModelicaInterface'\s*=\s*80\.0", assemblies);
+    }
+
+    [Fact]
     public void EveryCopyOfATraitFilterIsOneOfTheTwo()
     {
         // A third spelling - "Requires!=Omc", a stray space - selects no class, so the suite runs whole.
@@ -119,6 +137,7 @@ public class LiveToolTestFilterTests
             Read(".github", "workflows", "build-and-test.yml"),
             Read(".github", "workflows", "release.yml"),
             Read("build", "run-all-tests.ps1"),
+            Read("build", "check-coverage.ps1"),
         };
 
         var filters = files.SelectMany(f => Regex.Matches(f, @"Requires\s*!=\s*[A-Za-z]+").Select(m => m.Value))

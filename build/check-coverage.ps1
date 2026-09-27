@@ -13,8 +13,8 @@
       - Not every suite can run everywhere. The SVN tests need a working copy and a server no runner
         has, so on CI the SVN classes in RevisionControl sit near zero. That is a fact about the
         runner, not about the code, and a gate that fails on it teaches people to ignore the gate.
-      - Some real debt predates the bar. DymolaCheckingService and OpenModelicaCheckingService are
-        around 32% because they talk to a live tool.
+      - Some real debt predates the bar, and some of it is code only a live tool reaches: most of
+        OpenModelicaInterface runs through a session that starts omc, which no runner has.
 
     So this is a ratchet, which is the same answer MLQT gives its own users: today's numbers are
     recorded in build/coverage-baseline.json, and the build fails when a class goes backwards from
@@ -55,7 +55,11 @@
       - Generated code, which nobody wrote and nobody can sensibly test to a bar: ANTLR's output from
         modelica.g4 (modelicaParser and friends - 4,862 coverable lines of it, which on its own moves
         the assembly's average by more than any real class can) and the regex source generator's.
-      - DymolaInterface and OpenModelicaInterface, whose tests drive a live install.
+
+    DymolaInterface and OpenModelicaInterface ARE gated (B438), measured from the part of their suites
+    that needs no tool - the same trait filters CI's test jobs use (B399). A class there that only
+    a live Dymola or omc reaches is ledger debt with that reason, which is a different fact from a
+    class nobody has written tests for, and the ledger says which.
 
     MLQT.Shared joined the gate in phase 7a-5, and deliberately with no file filter. The plan for that
     step assumed a Razor component's generated BuildRenderTree would be attributed to the component's
@@ -113,6 +117,11 @@ $suites = @(
     @{ Project = 'MLQT.McpServer.Tests';  Filter = $null }
     @{ Project = 'MLQT.Shared.Tests';     Filter = $null }
     @{ Project = 'RevisionControl.Tests'; Filter = 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
+    # The classes needing a live tool carry [Trait("Requires", ...)] and are left out, as CI's test
+    # jobs leave them out (B399). Run whole, these would start Dymola and omc - on this machine if
+    # it has them, and fail on a runner that has neither (B438).
+    @{ Project = 'DymolaInterface.Tests';       Filter = 'Requires!=Dymola' }
+    @{ Project = 'OpenModelicaInterface.Tests'; Filter = 'Requires!=OpenModelica' }
 )
 
 function Fail([string] $message) {
