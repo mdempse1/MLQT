@@ -484,11 +484,7 @@ public class ModelicaPackageSaver
                 result.FailedFiles.Add(packageFile);
             }
 
-            // Update ModelicaCode with the rendered version to free the old source string.
-            // The within clause is stripped back off: it belongs to the file just written, not
-            // to the class, and every other path stores class source without one.
-            model.Definition.ModelicaCode = WithinClause.Strip(code);
-            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+            StoreWrittenCode(model, code, result.WrittenFiles.Contains(packageFile));
 
             // Get children for this package
             childrenByParent.TryGetValue(model.Id, out var children);
@@ -555,11 +551,7 @@ public class ModelicaPackageSaver
                 result.FailedFiles.Add(filePath);
             }
 
-            // Update ModelicaCode with the rendered version to free the old source string.
-            // The within clause is stripped back off: it belongs to the file just written, not
-            // to the class, and every other path stores class source without one.
-            model.Definition.ModelicaCode = WithinClause.Strip(code);
-            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+            StoreWrittenCode(model, code, result.WrittenFiles.Contains(filePath));
 
             // Update non-standalone children embedded in this model (e.g., nested classes
             // inside a model/block/connector) so their displayed code matches what was saved
@@ -572,6 +564,22 @@ public class ModelicaPackageSaver
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Stores the rendered text on the class, which frees the old source string - but only when the
+    /// file that holds it was written. A class whose file failed is still on disk as it was, and
+    /// storing the rendered text left the graph showing and checking code that was nowhere on disk
+    /// after a partial Format All (B374). The within clause is stripped back off: it belongs to the
+    /// file, and every other path stores class source without one.
+    /// </summary>
+    private static void StoreWrittenCode(ModelNode model, string code, bool written)
+    {
+        if (!written)
+            return;
+
+        model.Definition.ModelicaCode = WithinClause.Strip(code);
+        model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
     }
 
     /// <summary>
@@ -591,13 +599,11 @@ public class ModelicaPackageSaver
 
         // Only a file that was written holds the class. Mapping it to one whose write failed told a
         // caller the class was safely on disk when it was nowhere but the file it came from (B303).
-        if (result.WrittenFiles.Contains(containingFilePath))
+        var written = result.WrittenFiles.Contains(containingFilePath);
+        if (written)
             result.ModelIdToFilePath[model.Id] = containingFilePath;
         if (renderedCode.TryRemove(model.Id, out var childCode))
-        {
-            model.Definition.ModelicaCode = WithinClause.Strip(childCode);
-            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
-        }
+            StoreWrittenCode(model, childCode, written);
 
         // Recurse into this model's own nested children
         if (childrenByParent.TryGetValue(model.Id, out var grandchildren))

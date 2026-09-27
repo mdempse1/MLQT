@@ -104,6 +104,80 @@ public class ModelicaPackageSaverTests : IDisposable
             Assert.DoesNotContain("within", node.Definition.ModelicaCode);
     }
 
+    /// <summary>
+    /// A directory where the save means to write a file: stops the write on every platform, where an
+    /// open handle does not (see PackageSplitterTests.Obstruct).
+    /// </summary>
+    private static void Obstruct(string path)
+    {
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "in the way"), "");
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_AClassWhoseFileWasNotWritten_KeepsTheCodeOnDisk()
+    {
+        // B374. The saver stored the rendered text on every class it rendered, written or not, so
+        // after a partial Format All the graph showed - and checked - code that was on no disk.
+        const string original = "model Inner\nReal    y;\nend Inner;";
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", original, "model") });
+        var inner = graph.GetNode<ModelNode>("TestPackage.Inner")!;
+        inner.SourceMatchesFile = true;
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+        Obstruct(Path.Combine(outputDir, "TestPackage", "Inner.mo"));
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        Assert.Contains(result.FailedFiles, f => Path.GetFileName(f) == "Inner.mo");
+        Assert.Equal(original, inner.Definition.ModelicaCode);
+        Assert.True(inner.SourceMatchesFile);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_AClassInsideAFileThatWasNotWritten_KeepsTheCodeOnDisk()
+    {
+        // The same for a class that lives inline in its package's file (B374).
+        const string nested = "replaceable model Inner\nReal    y;\nend Inner;";
+        var graph = CreateGraphWithPackage("TestPackage",
+            "package TestPackage\n" + nested + "\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", nested, "model") });
+        var inner = graph.GetNode<ModelNode>("TestPackage.Inner")!;
+        inner.CanBeStoredStandalone = false;
+        var package = graph.GetNode<ModelNode>("TestPackage")!;
+        var packageCode = package.Definition.ModelicaCode;
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+        Obstruct(Path.Combine(outputDir, "TestPackage", "package.mo"));
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        Assert.Equal(packageCode, package.Definition.ModelicaCode);
+        Assert.Equal(nested, inner.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_AClassWhoseFileWasWritten_StoresWhatWasWritten()
+    {
+        // ...and the other side of it: a written class carries the text its file now holds.
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", "model Inner\nReal    y;\nend Inner;", "model") });
+        var inner = graph.GetNode<ModelNode>("TestPackage.Inner")!;
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        var file = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
+        Assert.Equal(WithinClause.Strip(ModelicaFileEncoding.ReadAllTextOnly(file)).TrimEnd(),
+            inner.Definition.ModelicaCode.TrimEnd());
+        Assert.False(inner.SourceMatchesFile);
+    }
+
     [Fact]
     public void SaveLibraryToDirectoryWithResult_WritesTheWithinClauseForAModelExcludedFromFormatting()
     {
