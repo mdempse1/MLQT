@@ -47,7 +47,7 @@
                     Variant="Variant.Outlined"
                     Adornment="Adornment.End"
                     AdornmentIcon="@Icons.Material.Filled.FolderOpen"
-                    OnAdornmentClick="BrowseForOpenModelicaFolder"
+                    OnAdornmentClick="@(() => BrowseForOpenModelica(OperatingSystem.IsWindows()))"
                     Margin="Margin.Dense"
                     Typo="Typo.body1" 
                     ShrinkLabel="true"

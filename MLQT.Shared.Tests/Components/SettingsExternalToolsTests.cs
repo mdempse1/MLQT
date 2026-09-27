@@ -16,6 +16,8 @@ namespace MLQT.Shared.Tests.Components;
 /// </summary>
 public class SettingsExternalToolsTests : MlqtComponentTestBase
 {
+    private readonly Mock<IFilePickerService> _picker = new();
+
     private IRenderedComponent<SettingsExternalTools> RenderPanel(int dymolaMs, int omcMs)
     {
         var settings = new Mock<ISettingsService>();
@@ -25,7 +27,7 @@ public class SettingsExternalToolsTests : MlqtComponentTestBase
             .ReturnsAsync(new OpenModelicaSettings { CommandTimeoutMs = omcMs });
 
         Services.AddSingleton(settings.Object);
-        Services.AddSingleton(new Mock<IFilePickerService>().Object);
+        Services.AddSingleton(_picker.Object);
 
         RenderProviders();
         return Render<SettingsExternalTools>();
@@ -75,5 +77,50 @@ public class SettingsExternalToolsTests : MlqtComponentTestBase
         var labels = panel.FindAll("label").Select(l => l.TextContent.Trim()).ToList();
 
         Assert.Equal(2, labels.Count(l => l.StartsWith(ToolTimeLimit.SettingName, StringComparison.Ordinal)));
+    }
+
+    // ---- Browsing for omc (B338) --------------------------------------------------------------
+    //
+    // On Linux omc is one file among many in /usr/bin, so the user chooses it; on Windows every
+    // installer puts it under bin in its own folder, so the user chooses that folder.
+
+    [Fact]
+    public async Task OnLinux_TheChosenFileIsTheCompiler_AsChosen()
+    {
+        var omc = Path.Combine(Path.GetTempPath(), "mlqt-tests", Guid.NewGuid().ToString("N"), "omc");
+        _picker.Setup(p => p.PickExecutableAsync(It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(omc);
+        var panel = RenderPanel(300_000, 60_000);
+
+        await panel.InvokeAsync(() => panel.Instance.BrowseForOpenModelica(windows: false));
+
+        Assert.Equal(omc, panel.Instance.OmcPath);
+        _picker.Verify(p => p.PickFolderAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task OnWindows_TheChosenFolderIsTheInstallation_AndOmcIsTakenUnderBin()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "mlqt-tests", Guid.NewGuid().ToString("N"));
+        _picker.Setup(p => p.PickFolderAsync(It.IsAny<string>())).ReturnsAsync(folder);
+        var panel = RenderPanel(300_000, 60_000);
+
+        await panel.InvokeAsync(() => panel.Instance.BrowseForOpenModelica(windows: true));
+
+        Assert.Equal(OpenModelicaSettings.OmcUnder(folder), panel.Instance.OmcPath);
+        Assert.StartsWith(Path.Combine(folder, "bin"), panel.Instance.OmcPath);
+        _picker.Verify(p => p.PickExecutableAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ACancelledPickerLeavesThePathAlone(bool windows)
+    {
+        var panel = RenderPanel(300_000, 60_000);
+        var before = panel.Instance.OmcPath;
+
+        await panel.InvokeAsync(() => panel.Instance.BrowseForOpenModelica(windows));
+
+        Assert.Equal(before, panel.Instance.OmcPath);
     }
 }

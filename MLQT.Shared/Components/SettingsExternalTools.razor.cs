@@ -40,6 +40,9 @@ public partial class SettingsExternalTools : IDisposable
         set => _settings.OpenModelica.CommandTimeoutMs = ToMilliseconds(value);
     }
 
+    /// <summary>The path to omc as the field shows it.</summary>
+    internal string OmcPath => _settings.OpenModelica.OmcPath;
+
     private static int ToMilliseconds(int seconds) => Math.Clamp(seconds, 0, MaxTimeLimitSeconds) * 1000;
 
     protected override void OnInitialized()
@@ -140,23 +143,40 @@ public partial class SettingsExternalTools : IDisposable
         }
     }
 
-    private async Task BrowseForOpenModelicaFolder()
+    /// <summary>
+    /// Browse for omc. On Windows the user chooses the installation folder and <c>bin\omc.exe</c> is
+    /// taken inside it, because that is where every OpenModelica installer puts it. On Linux the user
+    /// chooses <c>omc</c> itself: it lives in a shared folder such as <c>/usr/bin</c>, where "choose
+    /// <c>/usr</c>" is not something anyone would think to do (B338).
+    /// </summary>
+    internal async Task BrowseForOpenModelica(bool windows)
     {
         try
         {
-            var folder = await FilePickerService.PickFolderAsync("Select OpenModelica installation directory");
-            if (!string.IsNullOrEmpty(folder))
+            string? omc;
+            if (windows)
             {
-                // The platform's executable, and the folder itself when the user chose bin (B338).
-                _settings.OpenModelica.OmcPath = OpenModelicaSettings.OmcUnder(folder);
-                _showOpenModelicaWarning = !File.Exists(_settings.OpenModelica.OmcPath);
+                var folder = await FilePickerService.PickFolderAsync("Select OpenModelica installation directory");
+                // The folder itself when the user chose bin.
+                omc = string.IsNullOrEmpty(folder) ? null : OpenModelicaSettings.OmcUnder(folder);
+            }
+            else
+            {
+                omc = await FilePickerService.PickExecutableAsync("Select the OpenModelica compiler (omc)",
+                    Directory.Exists("/usr/bin") ? "/usr/bin" : null);
+            }
+
+            if (!string.IsNullOrEmpty(omc))
+            {
+                _settings.OpenModelica.OmcPath = omc;
+                _showOpenModelicaWarning = !File.Exists(omc);
                 StateHasChanged();
             }
         }
         catch (Exception ex)
         {
             LoggingService.Warn("SettingsExternalTools",
-                $"Could not browse for the OpenModelica folder: {ex.Message}");
+                $"Could not browse for omc: {ex.Message}");
         }
     }
 }

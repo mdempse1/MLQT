@@ -67,6 +67,24 @@ internal sealed class PhotinoFilePickerService(PhotinoWindowAccessor windows) : 
         return chosen is { Length: > 0 } ? chosen[0] : null;
     }
 
+    public async Task<string?> PickExecutableAsync(string title, string? startIn = null)
+    {
+        var window = windows.Window;
+        if (window is null)
+            return null;
+
+        // A Linux program has no extension, so any filter would hide the file being looked for.
+        (string, string[])[]? filters = OperatingSystem.IsWindows() ? [("Programs", ["*.exe"])] : null;
+
+        var chosen = await OnTheMessageLoopAsync(window, () => window.ShowOpenFile(
+            title,
+            defaultPath: startIn,
+            multiSelect: false,
+            filters: filters));
+
+        return chosen is { Length: > 0 } ? chosen[0] : null;
+    }
+
     private async Task<string?> PickFileAsync(string fileExtension)
     {
         var window = windows.Window;
