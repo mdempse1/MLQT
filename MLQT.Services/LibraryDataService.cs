@@ -104,11 +104,9 @@ public class LibraryDataService : ILibraryDataService
     {
         return Libraries.Select(lib =>
         {
-            // A file-backed library resolves modelica:// URIs relative to its containing directory.
-            var rootPath = lib.SourceType == LibrarySourceType.File
-                ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
-                : lib.SourcePath;
-            return new LibraryInfo(lib.Name, rootPath,
+            // A single-file library resolves modelica:// URIs relative to its containing directory,
+            // whatever its source type says (B428).
+            return new LibraryInfo(lib.Name, lib.RootDirectory,
                 isEncrypted: lib.SourceType == LibrarySourceType.EncryptedDirectory);
         }).ToList();
     }
@@ -1442,13 +1440,11 @@ public class LibraryDataService : ILibraryDataService
 
             if (matchingLibrary == null) return null;
 
-            // File-type libraries use a .mo file path; all other types (Directory, Git, SVN)
-        // have SourcePath pointing directly to the library root directory.
-        var rootDir = matchingLibrary.SourceType == LibrarySourceType.File
-                ? Path.GetDirectoryName(matchingLibrary.SourcePath)
-                : matchingLibrary.SourcePath;
+            // A single-file library, including one found in a repository, is rooted at the
+            // directory holding its file (B428).
+            var rootDir = matchingLibrary.RootDirectory;
 
-            if (rootDir == null) return null;
+            if (string.IsNullOrEmpty(rootDir)) return null;
 
             absolutePath = Path.Combine(rootDir, resourceRelativePath);
         }

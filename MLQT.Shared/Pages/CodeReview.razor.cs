@@ -2255,18 +2255,15 @@ document.head.appendChild(style);
     ///
     /// <para><b>Asked of the path, not the source type.</b> A library found in a repository has its
     /// source type overwritten with Git or SVN whatever shape it has on disk, so
-    /// <see cref="LibrarySourceType.File"/> is only what a library opened on its own says.</para>
+    /// <see cref="LibrarySourceType.File"/> is only what a library opened on its own says;
+    /// <see cref="LoadedLibrary.IsSingleFile"/> is the one answer.</para>
     /// </summary>
     internal static string? WhyNotSplit(LoadedLibrary library, string packageName)
     {
         if (library.SourceType == LibrarySourceType.Zip)
             return $"{packageName} is in a library read from an archive, which MLQT does not write to.";
 
-        var isSingleFile = library.SourceType == LibrarySourceType.File
-            || (library.SourcePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
-                && !Directory.Exists(library.SourcePath));
-
-        return isSingleFile
+        return library.IsSingleFile
             ? $"{packageName} cannot be split here: the library is loaded from the single file "
               + $"{Path.GetFileName(library.SourcePath)}, and splitting it would change what the library "
               + "is loaded from. Split it outside MLQT, then open the library as a directory."
