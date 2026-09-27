@@ -1,4 +1,3 @@
-using Antlr4.Runtime;
 using System.Text;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
@@ -178,33 +177,5 @@ public class FileLevelCommentTests
     [InlineData("after within alone")]
     [InlineData("after the class")]
     public void TwiceTheCommentsIsNotFourTimesTheLookahead(string position)
-    {
-        var small = Lookahead(Comments(400, position));
-        var large = Lookahead(Comments(1600, position));
-
-        // A run that needs no lookahead at all counts none, which is linear too.
-        Assert.True(large < Math.Max(small, 1) * 8,
-            $"400 comments {position} cost {small} tokens of lookahead and 1,600 cost {large} - that is "
-            + "superlinear (B235). See the comment on stored_definition in modelica.g4.");
-    }
-
-    private static long Lookahead(string source)
-    {
-        var lexer = new modelicaLexer(new AntlrInputStream(ModelicaParserHelper.PreprocessCode(source)));
-        var parser = new modelicaParser(new CommonTokenStream(lexer)) { Profile = true };
-        var errors = 0;
-        parser.RemoveErrorListeners();
-        parser.AddErrorListener(new CountingListener(() => errors++));
-
-        parser.stored_definition();
-
-        Assert.Equal(0, errors);
-        return parser.ParseInfo.getDecisionInfo().Sum(d => d.SLL_TotalLook + d.LL_TotalLook);
-    }
-
-    private sealed class CountingListener(Action onError) : BaseErrorListener
-    {
-        public override void SyntaxError(TextWriter output, IRecognizer recognizer, IToken offendingSymbol,
-            int line, int charPositionInLine, string msg, RecognitionException e) => onError();
-    }
+        => ParseGrowth.AssertLinear(count => Comments(count, position), $"comments {position}", "stored_definition");
 }

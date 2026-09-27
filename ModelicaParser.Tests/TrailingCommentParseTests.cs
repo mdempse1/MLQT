@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using ModelicaParser.Helpers;
 
@@ -37,41 +36,16 @@ public class TrailingCommentParseTests
 
     /// <summary>
     /// Growth, not a threshold. A time in milliseconds is a property of the machine; **four times
-    /// the work for twice the text** is a property of the parser, and it is what was wrong.
+    /// the work for four times the text** is a property of the parser, and sixteen is what was wrong.
+    /// The work is counted as lookahead rather than timed (B459) - see <see cref="ParseGrowth"/>.
+    /// The input is legal Modelica, which is what made this worth chasing.
     /// </summary>
     [Theory]
     [InlineData("equation\n")]
     [InlineData("")]
     public void TwiceTheCommentsIsNotFourTimesTheWork(string section)
-    {
-        // Warm ANTLR's prediction cache, or the first measurement includes building it.
-        ModelicaParserHelper.ParseWithTokens(WithTrailingComments(50, section));
-
-        // 1,000 and 4,000 rather than a smaller pair, so neither measurement sits near the
-        // stopwatch's granularity — a 2ms baseline makes any ratio meaningless on a loaded machine.
-        var small = Time(WithTrailingComments(1000, section));
-        var large = Time(WithTrailingComments(4000, section));
-
-        // Four times the text. Linear is ~4x and quadratic ~16x; measured at 3.6x after the fix and
-        // 16x before it, so the bar sits where only the defect can reach it.
-        Assert.True(large < small * 8,
-            $"1,000 comments took {small}ms and 4,000 took {large}ms — that is superlinear, which is "
-            + "what B235 was. See `c_comment+` in equation_or_comment, statement_or_comment and "
-            + "element_list.");
-    }
-
-    private static long Time(string source)
-    {
-        var clock = Stopwatch.StartNew();
-        var (tree, _, errors) = ModelicaParserHelper.ParseWithTokensAndErrors(source);
-        clock.Stop();
-
-        // The premise, and the thing that made this worth chasing: the input is legal Modelica. A
-        // measurement over input the parser is recovering from would be measuring error recovery.
-        Assert.NotNull(tree);
-        Assert.Empty(errors);
-        return Math.Max(1, clock.ElapsedMilliseconds);
-    }
+        => ParseGrowth.AssertLinear(count => WithTrailingComments(count, section),
+            "trailing comments", "`c_comment+` in equation_or_comment, statement_or_comment and element_list");
 
     [Fact]
     public void EveryCommentIsStillInTheTree()

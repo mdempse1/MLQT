@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
@@ -274,28 +273,5 @@ public class CommentPositionTests
     /// </summary>
     [Fact]
     public void TwiceTheBodyCommentsIsNotFourTimesTheWork()
-    {
-        ModelicaParserHelper.ParseWithTokens(BodyComments(50));
-
-        var small = Enumerable.Range(0, 5).Min(_ => Time(BodyComments(400)));
-        var bar = small * 8;
-        var large = long.MaxValue;
-        for (var i = 0; i < 5 && large >= bar; i++)
-            large = Math.Min(large, Time(BodyComments(1600)));
-
-        Assert.True(large < bar,
-            $"400 comments took {small} ticks and 1,600 took {large} - that is superlinear (B235). "
-            + "See the comment on composition in modelica.g4.");
-    }
-
-    private static long Time(string source)
-    {
-        var clock = Stopwatch.StartNew();
-        var (tree, _, errors) = ModelicaParserHelper.ParseWithTokensAndErrors(source);
-        clock.Stop();
-
-        Assert.NotNull(tree);
-        Assert.Empty(errors);
-        return Math.Max(1, clock.ElapsedTicks);
-    }
+        => ParseGrowth.AssertLinear(BodyComments, "comments opening a class body", "composition");
 }

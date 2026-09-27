@@ -1035,6 +1035,14 @@ rather than that it looks a particular way.
 **Do not write test source through a shell heredoc.** It turns backslashes into escapes silently,
 and the failure is invisible in exactly the cases where the result still compiles.
 
+### A growth test counts work, it does not time it
+
+A test that a parse does not grow quadratically must not compare two stopwatch readings. Under a
+full parallel run the timing is noise: the parser's timed growth tests failed about one run in three
+while the same parse measured linear on its own (B459). Use `ParseGrowth.AssertLinear` in
+`ModelicaParser.Tests`, which counts the tokens ANTLR looks ahead over with its profiler — exact, and
+the same on every machine — and watch it fail against the quadratic grammar it is meant to catch.
+
 ---
 
 ## Working a Defect

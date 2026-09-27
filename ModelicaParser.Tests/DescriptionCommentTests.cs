@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using ModelicaParser.Helpers;
 
@@ -189,31 +188,6 @@ public class DescriptionCommentTests
     /// </summary>
     [Fact]
     public void TwiceTheHeaderCommentsIsNotFourTimesTheWork()
-    {
-        ModelicaParserHelper.ParseWithTokens(HeaderComments(50, description: false));
-
-        // The times are in ticks, the smaller is the best of five, and the larger gets up to five
-        // tries to come in under the bar: the whole suite runs in parallel, and a sample of a few
-        // milliseconds is at the mercy of whatever else the machine is doing.
-        var small = Enumerable.Range(0, 5).Min(_ => Time(HeaderComments(400, description: false)));
-        var bar = small * 8;
-        var large = long.MaxValue;
-        for (var i = 0; i < 5 && large >= bar; i++)
-            large = Math.Min(large, Time(HeaderComments(1600, description: false)));
-
-        Assert.True(large < bar,
-            $"400 comments took {small} ticks and 1,600 took {large} - that is superlinear (B235). "
-            + "See the comment on string_comment in modelica.g4.");
-    }
-
-    private static long Time(string source)
-    {
-        var clock = Stopwatch.StartNew();
-        var (tree, _, errors) = ModelicaParserHelper.ParseWithTokensAndErrors(source);
-        clock.Stop();
-
-        Assert.NotNull(tree);
-        Assert.Empty(errors);
-        return Math.Max(1, clock.ElapsedTicks);
-    }
+        => ParseGrowth.AssertLinear(count => HeaderComments(count, description: false),
+            "comments after a class name", "string_comment");
 }
