@@ -1216,6 +1216,23 @@ public class RepositoryService : IRepositoryService
     {
         LogProcessStart("RepositoryService", $"Switching to project: {projectId}");
 
+        // Look the project up before anything is saved, cleared or changed (B440). This used to be
+        // done after the repositories and the graph were cleared and the active id set to the one
+        // asked for, so a switch to a missing project left nothing loaded, an active id naming no
+        // project, and that id written at the next save. Returning without raising OnProjectChanged
+        // is how the caller learns the switch did not happen (SettingsRepositories.SwitchToProjectAsync).
+        ProjectProfile? project;
+        lock (_lock)
+        {
+            project = _projects.FirstOrDefault(p => p.Id == projectId);
+        }
+        if (project == null)
+        {
+            Warn("RepositoryService", $"Project '{projectId}' was not found; the current project stays open");
+            LogProcessEnd("RepositoryService", "Switching project - project not found");
+            return;
+        }
+
         // Save current project's state before switching
         await SaveRepositorySettingsAsync();
 
@@ -1237,12 +1254,6 @@ public class RepositoryService : IRepositoryService
 
         // Set active project
         _activeProjectId = projectId;
-        var project = _projects.FirstOrDefault(p => p.Id == projectId);
-        if (project == null)
-        {
-            LogProcessEnd("RepositoryService", "Switching project - project not found");
-            return;
-        }
 
         Info("RepositoryService", $"Loading project '{project.Name}' with {project.Repositories.Count} repositories");
 

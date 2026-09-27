@@ -2493,13 +2493,49 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public async Task SwitchProjectAsync_WithInvalidProjectId_ReturnsEarly()
+    public async Task SwitchProjectAsync_ToAProjectThatDoesNotExist_LeavesThePreviousProjectOpen()
     {
-        var settingsService = new InMemorySettingsService();
-        var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        // B440: the switch saved, cleared every repository and the graph, and set the active id to
+        // the requested one before looking the project up - so a switch to a missing project left
+        // nothing loaded, an active id naming no project, and that id written at the next save. It
+        // must look first and change nothing; not raising OnProjectChanged is what tells the caller
+        // (SettingsRepositories.SwitchToProjectAsync, B435) that the switch did not happen.
+        var tempDir = CreateTempGitRepo("package TestLib\n  model M\n  end M;\nend TestLib;\n");
+        if (tempDir == null) return; // git not available, skip
 
-        // Should not throw
-        await service.SwitchProjectAsync("non-existent-project-id");
+        try
+        {
+            var settingsService = new InMemorySettingsService();
+            var libraryData = new LibraryDataService();
+            var service = new RepositoryService(libraryData, settingsService, new FileMonitoringService());
+            await service.LoadRepositorySettingsAsync();
+            var previous = service.GetActiveProject()!;
+            var repository = (await service.AddRepositoryAsync(tempDir, startMonitoring: false)).Repository!;
+            await service.LoadLibrariesAsync(repository.Id);
+            Assert.NotEmpty(libraryData.Libraries);
+
+            var projectChanged = false;
+            var repositoriesChanged = false;
+            service.OnProjectChanged += _ => projectChanged = true;
+            service.OnRepositoriesChanged += () => repositoriesChanged = true;
+
+            await service.SwitchProjectAsync("non-existent-project-id");
+
+            Assert.False(projectChanged);
+            Assert.False(repositoriesChanged);
+            Assert.Equal(previous.Id, service.GetActiveProject()?.Id);
+            Assert.Equal(repository.Id, Assert.Single(service.Repositories).Id);
+            Assert.NotEmpty(libraryData.Libraries);
+            Assert.NotNull(libraryData.GetModelById("TestLib.M"));
+
+            // ...and the next save writes the project that is open, with its repository.
+            await service.SaveRepositorySettingsAsync();
+            var saved = await settingsService.GetAsync("Repositories", new RepositorySettingsCollection());
+            Assert.Equal(previous.Id, saved.ActiveProjectId);
+            Assert.Equal(repository.Id,
+                Assert.Single(saved.Projects.Single(p => p.Id == previous.Id).Repositories).Id);
+        }
+        finally { try { Directory.Delete(tempDir, true); } catch { } }
     }
 
     [Fact]

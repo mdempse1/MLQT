@@ -442,6 +442,9 @@ public interface IRepositoryService
 
     /// <summary>
     /// Switches to a different project profile: unloads current repos, loads the target project's repos.
+    /// A project that does not exist changes nothing - the current project stays open and active -
+    /// and <see cref="OnProjectChanged"/> is not raised, which is how a caller learns the switch did
+    /// not happen (B440).
     /// </summary>
     /// <param name="projectId">ID of the project to switch to.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
