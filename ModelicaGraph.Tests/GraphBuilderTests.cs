@@ -31,6 +31,34 @@ public class GraphBuilderTests
     }
 
     [Fact]
+    public void LoadModelicaFile_AClassInItsOwnFile_LeavesItsPackagesSourceOrderAlone()
+    {
+        // B450: Sub/Beta.mo names Lib.Sub as its parent, and loading it after Sub/package.mo wrote
+        // ["Beta"] over the ["Alpha"] read from the package's own source. A parallel directory load
+        // finishes its files in any order, so the package's order changed from run to run.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "package.mo"),
+            "within Lib;\npackage Sub\n  model Alpha\n  end Alpha;\n  model Gamma\n  end Gamma;\nend Sub;\n");
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "Beta.mo"),
+            "within Lib.Sub;\nmodel Beta\nend Beta;\n");
+
+        Assert.Equal(["Alpha", "Gamma"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder);
+    }
+
+    [Fact]
+    public void LoadModelicaFile_APackageLoadedAfterAClassInItsOwnFile_KeepsItsSourceOrder()
+    {
+        // The other order: the package is not yet in the graph, and its own file sets its order.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "Beta.mo"),
+            "within Lib.Sub;\nmodel Beta\nend Beta;\n");
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "package.mo"),
+            "within Lib;\npackage Sub\n  model Alpha\n  end Alpha;\nend Sub;\n");
+
+        Assert.Equal(["Alpha"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder);
+    }
+
+    [Fact]
     public void LoadModelicaFile_SetsFileNodeProperties()
     {
         // Arrange

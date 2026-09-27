@@ -131,10 +131,18 @@ public static class GraphBuilder
                 graph.AddFileContainsModel(fileId, modelId);
             }
 
-            // Store the child order in package properties
+            // Store the child order in package properties — only on a package this file defines.
+            // A file holding one class of a directory package (Sub/Beta.mo) names that package as
+            // its parent too, and writing its one-name list onto Lib.Sub replaced the order read
+            // from Sub/package.mo with whichever of the directory's files the parallel load
+            // happened to finish last (B450). The order is of the classes nested in the package's
+            // own source; classes in files of their own are ordered by package.order.
+            var definedHere = new HashSet<string>(modelIDs, StringComparer.Ordinal);
             foreach (var kvp in packageChildOrder)
             {
                 var packageId = kvp.Key;
+                if (!definedHere.Contains(packageId))
+                    continue;
                 var childNames = kvp.Value.ToArray(); // Reverse to maintain original order when using stack-based traversal
 
                 // Find the package model node

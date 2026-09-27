@@ -251,7 +251,10 @@ public class ModelNode : GraphNode
     public string[]? PackageOrder { get; set; }
 
     /// <summary>
-    /// Ordering of nested children within this model.
+    /// Ordering of nested children within this model: the classes written inside its own source,
+    /// in source order. Never the classes in files of their own below a directory package — those
+    /// are ordered by <see cref="PackageOrder"/>, and taking them from whichever such file loaded
+    /// last made the order vary between loads (B450).
     /// </summary>
     public string[]? NestedChildrenOrder { get; set; }
 

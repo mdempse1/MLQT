@@ -579,6 +579,38 @@ public class PackageSplitterTests : IDisposable
     }
 
     [Fact]
+    public void WithNoPackageOrder_TheNewOneIsTheSameWhicheverFileLoadedLast()
+    {
+        // B450: the test above failed about one run in three, writing Beta before Alpha. The
+        // directory is loaded in parallel, and when Sub/Beta.mo happened to finish after
+        // Sub/package.mo its one-name child list replaced the package's source order, which the
+        // saver puts first. Loaded here in exactly that order, so the outcome is not left to it.
+        var lib = Path.Combine(_root, "Lib");
+        var sub = Path.Combine(lib, "Sub");
+        Directory.CreateDirectory(sub);
+
+        var files = new (string Path, string Text)[]
+        {
+            (Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n"),
+            (Path.Combine(sub, "package.mo"), "within Lib;\npackage Sub \"inline and separate\"\n"
+                + "  model Alpha \"inline\"\n  end Alpha;\nend Sub;\n"),
+            (Path.Combine(sub, "Beta.mo"), "within Lib.Sub;\nmodel Beta \"already separate\"\nend Beta;\n"),
+        };
+        var graph = new DirectedGraph();
+        foreach (var (path, text) in files)
+        {
+            File.WriteAllText(path, text);
+            GraphBuilder.LoadModelicaFile(graph, path, text);
+        }
+
+        var result = PackageSplitter.Split(graph, graph.GetNode<ModelNode>("Lib.Sub")!,
+            FormattingOptions.None, new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(["Alpha", "Beta"], File.ReadAllLines(Path.Combine(sub, "package.order")));
+    }
+
+    [Fact]
     public async Task TheReloadAfterASplitNamesTheMovedClassesNotTheLibrary()
     {
         // B307: the page announces what this returns for re-analysis. It announced the whole
