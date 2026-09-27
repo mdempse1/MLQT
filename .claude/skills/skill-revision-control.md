@@ -56,6 +56,7 @@ public interface IRevisionControlSystem
     VcsOperationResult Rebase(string repositoryPath, string targetBranch);
     VcsOperationResult ContinueRebase(string repositoryPath);
     VcsOperationResult AbortRebase(string repositoryPath);
+    VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath);  // a rebase left stopped (B382)
 
     // Push operations
     VcsOperationResult ForcePush(string repositoryPath);
@@ -238,6 +239,11 @@ if (!result.Success && result.Message.Contains("conflict"))
     // Or abort
     var abortResult = git.AbortRebase(repoPath);
 }
+
+// A rebase stopped on conflicts stays stopped after the dialog closes, with HEAD detached. This is
+// how anything opened later finds it - the branch being rebased and the files still in conflict
+// (empty once resolved, which is when Continue is offered). The rebase dialog opens on it (B382).
+var stopped = git.GetRebaseInProgress(repoPath);
 
 // Force push after successful rebase
 var pushResult = git.ForcePush(repoPath);

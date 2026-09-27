@@ -315,6 +315,13 @@ public interface IRepositoryService
     int CountCommitsOnNoBranch(string repositoryId);
 
     /// <summary>
+    /// The rebase this repository's working copy is part-way through, or null - asked when the
+    /// rebase dialog opens, so one left stopped can be continued or aborted from it (B382). Also
+    /// updates <see cref="Repository.RebaseInProgress"/>. Always null for SVN.
+    /// </summary>
+    Task<VcsRebaseInProgress?> GetRebaseInProgressAsync(string repositoryId);
+
+    /// <summary>
     /// Merges changes from a source branch into the current working copy.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>

@@ -144,6 +144,46 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
         }
     }
 
+    // ---- A rebase left in progress (B382) -----------------------------------------------------
+    //
+    // A stopped rebase detaches HEAD too, and B327's advice for a detached HEAD - create a branch -
+    // is the wrong way out of it: the rebase has to be continued or aborted, and Rebase was one of
+    // the actions a detached HEAD turned off, so it could be done nowhere in MLQT.
+
+    private static Repository Rebasing()
+    {
+        var repository = Repo(branch: null, detachedLabel: "a1b2c3d");
+        repository.RebaseInProgress = new VcsRebaseInProgress("feature", []);
+        return repository;
+    }
+
+    [Fact]
+    public void ARebaseInProgress_IsNamed_InsteadOfTheDetachedHead()
+    {
+        var browser = RenderBrowser(Rebasing());
+
+        Assert.Contains("feature", browser.Find("[data-testid=rebase-in-progress]").TextContent);
+        Assert.DoesNotContain("Detached HEAD", browser.Markup);
+    }
+
+    [Fact]
+    public void ARebaseInProgress_LeavesRebaseOn_AndLeadsToIt_RatherThanToCreatingABranch()
+    {
+        var browser = RenderBrowser(Rebasing(), withChanges: true);
+
+        browser.WaitForAssertion(() => Assert.False(Button(browser, "Revert changes").HasAttribute("disabled")));
+        Assert.True(Button(browser, "Commit changes").HasAttribute("disabled"));
+        Assert.DoesNotContain("mud-button-filled", Button(browser, "Create new branch").ClassName);
+        Assert.Contains("mud-button-filled", Button(browser, "More actions").ClassName);
+
+        Button(browser, "More actions").Click();
+
+        _popovers!.WaitForAssertion(() =>
+            Assert.False(_popovers.Find("button[aria-label='Rebase current branch']").HasAttribute("disabled")));
+        foreach (var label in BranchActions.Where(l => l != "Rebase current branch"))
+            Assert.True(_popovers.Find($"button[aria-label='{label}']").HasAttribute("disabled"), label);
+    }
+
     [Fact]
     public void OnABranchTheBranchIsNamedAndNothingIsDetached()
     {

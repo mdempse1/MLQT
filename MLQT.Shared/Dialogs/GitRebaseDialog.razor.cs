@@ -31,6 +31,13 @@ public partial class GitRebaseDialog : IDisposable
     // Revert all discarded the user's changes before the rebase, which an abort does not bring back.
     private bool _discardedChanges;
 
+    // The dialog opened on a rebase already stopped part-way - left by an earlier visit, or by
+    // another tool - rather than starting one (B382). The libraries were reloaded from the
+    // half-rebased working copy when that earlier dialog closed, so an abort now changes what they
+    // should show.
+    private bool _resumed;
+    private string? _rebasingBranch;
+
     private enum RebasePhase
     {
         CheckingState,
@@ -57,7 +64,17 @@ public partial class GitRebaseDialog : IDisposable
     private string? _errorMessage;
     private bool _isWorking = false;
 
-    private bool AllResolved => VcsConflictRules.AllResolved(_conflictStates);
+    /// <summary>
+    /// Whether Continue Rebase is offered: every file that was in conflict has been resolved.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="VcsConflictRules.AllResolved"/>, which is false for an empty list so that a
+    /// merge dialog's commit button stays off until its list has loaded. This phase is only entered
+    /// with the list in hand, and a rebase stopped with nothing in conflict - resolved in another
+    /// tool before the dialog was opened again, or stopped for some other reason - has to be
+    /// continuable, or it cannot be finished from here at all (B382).
+    /// </remarks>
+    private bool CanContinue => _conflictStates.Values.All(s => s == ConflictFileState.Resolved);
 
     private Repository? _repository;
 
@@ -65,7 +82,30 @@ public partial class GitRebaseDialog : IDisposable
     {
         _repository = RepositoryService.GetRepository(RepositoryId);
         _currentBranch = _repository?.CurrentBranch ?? "unknown";
+
+        // A rebase already stopped part-way is what this dialog has to finish or undo first - there
+        // is no branch to start another from, and nowhere else in MLQT to continue it (B382).
+        var inProgress = await RepositoryService.GetRebaseInProgressAsync(RepositoryId);
+        if (inProgress != null)
+        {
+            ResumeRebase(inProgress);
+            return;
+        }
+
         await CheckWorkingCopyState();
+    }
+
+    /// <summary>
+    /// Opens on the conflict phase of a rebase that was left in progress (B382).
+    /// </summary>
+    private void ResumeRebase(VcsRebaseInProgress inProgress)
+    {
+        _resumed = true;
+        _rebasingBranch = inProgress.Branch;
+        _pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId));
+        Outcome.LeftInProgress = true;
+        ApplyConflicts([.. inProgress.ConflictedFiles]);
+        _phase = RebasePhase.ConflictResolution;
     }
 
     private async Task CheckWorkingCopyState()
@@ -183,7 +223,12 @@ public partial class GitRebaseDialog : IDisposable
             var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
 
             if (result.Success)
+            {
                 _conflictStates[filePath] = ConflictFileState.Resolved;
+                // Keep Mine and Accept Incoming write the file; on a resumed rebase nothing else has
+                // said the working copy changed.
+                Outcome.WorkingCopyChanged = true;
+            }
             else
                 _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
         }
@@ -232,6 +277,7 @@ public partial class GitRebaseDialog : IDisposable
         }
 
         // All commits replayed successfully. The browser reloads and analyses once the dialog closes.
+        Outcome.WorkingCopyChanged = true;
         Outcome.LeftInProgress = false;
         _pause?.Dispose();
         _phase = RebasePhase.PushPrompt;
@@ -257,9 +303,11 @@ public partial class GitRebaseDialog : IDisposable
         if (result.Success)
         {
             // Back where it started. The libraries were never reloaded from the half-rebased working
-            // copy, so there is nothing to reload now - unless Revert all discarded changes first.
+            // copy, so there is nothing to reload now - unless Revert all discarded changes first, or
+            // this dialog was opened on a rebase left in progress, whose half-rebased files the
+            // libraries were reloaded from when it was left (B382).
             Outcome.LeftInProgress = false;
-            Outcome.WorkingCopyChanged = _discardedChanges;
+            Outcome.WorkingCopyChanged = _discardedChanges || _resumed;
             MudDialog?.Cancel();
         }
         else

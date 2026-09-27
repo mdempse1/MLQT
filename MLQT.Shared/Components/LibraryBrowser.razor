@@ -115,7 +115,13 @@ else if (Repository != null)
                            to a tag, and "Detached HEAD" on its own leaves the user to work out which
                            version they are looking at (B193). *@
                         <MudText Typo="Typo.body1">
-                            @if (!string.IsNullOrEmpty(Repository.DetachedHeadLabel))
+                            @if (Repository.RebaseInProgress is { } rebase)
+                            {
+                                @* HEAD is detached because a rebase stopped part-way, and the way out
+                                   is to continue or abort it, not to make a branch (B382). *@
+                                <span data-testid="rebase-in-progress">Rebase@(string.IsNullOrEmpty(rebase.Branch) ? "" : " of ")<strong>@rebase.Branch</strong> in progress</span>
+                            }
+                            else if (!string.IsNullOrEmpty(Repository.DetachedHeadLabel))
                             {
                                 <span>Detached HEAD at <strong>@Repository.DetachedHeadLabel</strong></span>
                             }
@@ -136,7 +142,7 @@ else if (Repository != null)
                        as a second button beside the state's name (B327). *@
                     <MudTooltip Text="@CreateBranchTooltip">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.ForkRight" Size="Size.Medium" OnClick="ShowCreateBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked"
-                                       Variant="@(IsDetachedHead ? Variant.Filled : Variant.Text)" aria-label="Create new branch" />
+                                       Variant="@(IsDetachedHead && !IsRebaseInProgress ? Variant.Filled : Variant.Text)" aria-label="Create new branch" />
                     </MudTooltip>
                     @if (Repository.VcsType == RepositoryVcsType.SVN) 
                     {
@@ -146,12 +152,17 @@ else if (Repository != null)
                     }
                     else 
                     {
-                        <MudTooltip Text="More actions ...">
-                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Medium" OnClick="ShowGitMenuDialog" Class="compact-icon-button" aria-label="More actions" Disabled="@VcsBlocked" />
+                        @* A rebase left in progress is continued or aborted from the Rebase button in
+                           here, so both are filled to lead the eye to it, as Create branch is on a
+                           detached HEAD (B382). *@
+                        <MudTooltip Text="@MoreActionsTooltip">
+                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Medium" OnClick="ShowGitMenuDialog" Class="compact-icon-button" aria-label="More actions" Disabled="@VcsBlocked"
+                                           Variant="@(IsRebaseInProgress ? Variant.Filled : Variant.Text)" />
                             <MudPopover OverflowBehavior="OverflowBehavior.FlipNever" Open="_showGitMenuDialog" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopLeft" Class="pt-0 pb-0 pl-2 pr-2">
                                 <MudStack Row="true" Spacing="1">
-                                    <MudTooltip Text="@NeedsABranch("Rebase current branch")">
-                                        <MudIconButton Color="Color.Primary" Icon="@_rebaseIcon" Size="Size.Medium" OnClick="RebaseBranch" Class="compact-icon-button" aria-label="Rebase current branch" Disabled="@(VcsBlocked || IsDetachedHead)" />
+                                    <MudTooltip Text="@RebaseTooltip">
+                                        <MudIconButton Color="Color.Primary" Icon="@_rebaseIcon" Size="Size.Medium" OnClick="RebaseBranch" Class="compact-icon-button" aria-label="Rebase current branch" Disabled="@(VcsBlocked || (IsDetachedHead && !IsRebaseInProgress))"
+                                                       Variant="@(IsRebaseInProgress ? Variant.Filled : Variant.Text)" />
                                     </MudTooltip>
                                     <MudTooltip Text="@NeedsABranch("Merge branch into working copy")">
                                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" aria-label="Merge branch into working copy" Disabled="@(VcsBlocked || IsDetachedHead)" />

@@ -1716,6 +1716,97 @@ public class GitOperationsTests : IDisposable
         Assert.NotNull(result.ErrorMessage);
     }
 
+    /// <summary>
+    /// A repository whose <c>feature</c> branch has been rebased onto main and stopped on a
+    /// conflict in f.mo, as the rebase dialog leaves it when it is closed there (B382).
+    /// </summary>
+    private (string repoPath, string featureTipBefore) RebaseStoppedOnAConflict()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (repo)
+        {
+            // rebase --continue makes commits through git.exe, which needs an identity of its own.
+            repo.Config.Set("user.name", "Test User");
+            repo.Config.Set("user.email", "test@example.com");
+
+            var main = repo.Head.FriendlyName;
+            Commands.Checkout(repo, repo.CreateBranch("feature"));
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"feature\" end A;" }, "feature edit");
+            var featureTip = repo.Head.Tip.Sha;
+            Commands.Checkout(repo, repo.Branches[main]);
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"main\" end A;" }, "main edit");
+            Commands.Checkout(repo, repo.Branches["feature"]);
+
+            var rebase = _git.Rebase(repoPath, main);
+            Assert.True(rebase.HasConflicts, rebase.ErrorMessage);
+            return (repoPath, featureTip);
+        }
+    }
+
+    [Fact]
+    public void GetRebaseInProgress_WithNoRebase_IsNull()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "v1" });
+        using (repo) { }
+
+        Assert.Null(_git.GetRebaseInProgress(repoPath));
+        Assert.Null(_git.GetRebaseInProgress(NewTempPath()));
+    }
+
+    /// <summary>
+    /// B382: a rebase stopped on a conflict is found after the fact - which branch, and which files -
+    /// so a dialog opened later can offer to continue or abort it.
+    /// </summary>
+    [Fact]
+    public void GetRebaseInProgress_FindsAStoppedRebase_ItsBranch_AndItsConflicts()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+
+        var rebase = _git.GetRebaseInProgress(repoPath);
+
+        Assert.NotNull(rebase);
+        Assert.Equal("feature", rebase.Branch);
+        Assert.Equal([Path.Combine(repoPath, "f.mo")], rebase.ConflictedFiles);
+    }
+
+    /// <summary>
+    /// B382: once its conflicts are resolved the rebase is still in progress, with nothing left in
+    /// conflict - which is when it may be continued, and continuing it finishes it.
+    /// </summary>
+    [Fact]
+    public void GetRebaseInProgress_AfterResolving_HasNoConflicts_AndContinuingFinishesIt()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+        var file = Path.Combine(repoPath, "f.mo");
+
+        File.WriteAllText(file, "model A \"both\" end A;");
+        Assert.True(_git.ResolveConflict(repoPath, file, ConflictResolutionChoice.MarkResolved).Success);
+
+        var resolved = _git.GetRebaseInProgress(repoPath);
+        Assert.NotNull(resolved);
+        Assert.Empty(resolved.ConflictedFiles);
+
+        var result = _git.ContinueRebase(repoPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.HasConflicts);
+        Assert.Null(_git.GetRebaseInProgress(repoPath));
+        Assert.Equal("feature", _git.GetCurrentBranch(repoPath));
+    }
+
+    [Fact]
+    public void GetRebaseInProgress_AfterAborting_IsNull_AndTheBranchIsBackWhereItWas()
+    {
+        var (repoPath, featureTipBefore) = RebaseStoppedOnAConflict();
+
+        Assert.True(_git.AbortRebase(repoPath).Success);
+
+        Assert.Null(_git.GetRebaseInProgress(repoPath));
+        using var repo = new Repository(repoPath);
+        Assert.Equal("feature", repo.Head.FriendlyName);
+        Assert.Equal(featureTipBefore, repo.Head.Tip.Sha);
+    }
+
     #endregion
 
     #region GetConflictVersions Tests

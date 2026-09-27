@@ -1125,7 +1125,11 @@ public partial class LibraryBrowser : IDisposable
             await ReloadAndAnalyseAsync(repository, pause: null, analyse: !outcome.LeftInProgress);
 
             if (outcome.LeftInProgress)
-                Snackbar.Add($"The {operation} is not finished: resolve the remaining conflicts and commit, or abort it.",
+                Snackbar.Add(operation == "rebase"
+                        // A rebase is finished by continuing it, not by a commit, which is refused
+                        // while it is in progress (B327) - and Rebase is where that is (B382).
+                        ? "The rebase is not finished: resolve the remaining conflicts and continue it, or abort it, from Rebase."
+                        : $"The {operation} is not finished: resolve the remaining conflicts and commit, or abort it.",
                     Severity.Warning);
         }
         catch (Exception ex)
@@ -1154,13 +1158,33 @@ public partial class LibraryBrowser : IDisposable
 
     /// <summary>The tooltip for an action that needs a branch, saying why it is off when it is.</summary>
     private string NeedsABranch(string tooltip) =>
-        IsDetachedHead ? $"{tooltip} - needs a branch: HEAD is detached. Create a branch here first." : tooltip;
+        IsRebaseInProgress
+            ? $"{tooltip} - a rebase is in progress: continue or abort it first (More actions, Rebase)"
+            : IsDetachedHead ? $"{tooltip} - needs a branch: HEAD is detached. Create a branch here first." : tooltip;
 
     /// <summary>The Create new branch tooltip, which on a detached HEAD says why it is highlighted.</summary>
     private string CreateBranchTooltip =>
-        IsDetachedHead
+        IsDetachedHead && !IsRebaseInProgress
             ? "Create a branch here - HEAD is detached, so Commit, Merge, Rebase and Push need a branch first"
             : "Create new branch";
+
+    /// <summary>
+    /// Whether this Git working copy is part-way through a rebase that stopped - HEAD is detached
+    /// until it is continued or aborted, and the Rebase button is where both are done (B382).
+    /// </summary>
+    /// <remarks>
+    /// Before this, a rebase that closed its dialog with conflicts could be finished nowhere in MLQT:
+    /// the dialog never looked for one in progress, and Rebase was disabled on the detached HEAD the
+    /// rebase itself had left.
+    /// </remarks>
+    private bool IsRebaseInProgress =>
+        Repository is { VcsType: RepositoryVcsType.Git, RebaseInProgress: not null };
+
+    private string MoreActionsTooltip =>
+        IsRebaseInProgress ? "More actions - a rebase is in progress: continue or abort it from Rebase" : "More actions ...";
+
+    private string RebaseTooltip =>
+        IsRebaseInProgress ? "Continue or abort the rebase in progress" : NeedsABranch("Rebase current branch");
 
     /// <summary>
     /// Whether a VCS operation started from this browser is still running, so the others stay

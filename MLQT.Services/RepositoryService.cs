@@ -1330,6 +1330,11 @@ public class RepositoryService : IRepositoryService
                     ? vcs.GetDetachedHeadLabel(repository.VcsRootPath)
                     : null;
 
+                // A stopped rebase detaches HEAD, so it too is only asked for on no branch (B382).
+                repository.RebaseInProgress = repository.CurrentBranch is null
+                    ? vcs.GetRebaseInProgress(repository.VcsRootPath)
+                    : null;
+
                 if (repository.CurrentRevision != null)
                 {
                     repository.RevisionDescription = vcs.GetRevisionDescription(
@@ -1801,6 +1806,19 @@ public class RepositoryService : IRepositoryService
         return repository?.VcsType == RepositoryVcsType.Git
             ? _git.CountCommitsOnNoBranch(repository.VcsRootPath)
             : 0;
+    }
+
+    /// <inheritdoc/>
+    public async Task<VcsRebaseInProgress?> GetRebaseInProgressAsync(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository?.VcsType != RepositoryVcsType.Git)
+            return null;
+
+        var rebase = await Task.Run(() => _git.GetRebaseInProgress(repository.VcsRootPath));
+        foreach (var each in GetRepositoriesWithVcsRoot(repository.VcsRootPath))
+            each.RebaseInProgress = rebase;
+        return rebase;
     }
 
     public async Task<VcsOperationResult> CheckoutRevisionAsync(string repositoryId, string revision, CancellationToken cancellationToken = default)

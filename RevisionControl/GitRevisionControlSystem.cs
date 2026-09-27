@@ -992,6 +992,57 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
     }
 
+    /// <inheritdoc/>
+    public VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return null;
+
+            using var repo = new Repository(repositoryPath);
+            if (!IsRebasing(repo))
+                return null;
+
+            return new VcsRebaseInProgress(RebasingBranch(repo), ConflictedFilePaths(repo, repositoryPath));
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetRebaseInProgress", ex);
+            return null;
+        }
+    }
+
+    /// <summary>Whether git is part-way through a rebase, by either of its backends.</summary>
+    private static bool IsRebasing(Repository repo) =>
+        repo.Info.CurrentOperation is CurrentOperation.Rebase or CurrentOperation.RebaseInteractive or CurrentOperation.RebaseMerge;
+
+    /// <summary>
+    /// The branch a stopped rebase is rewriting, as git recorded it when it started: <c>head-name</c>
+    /// in the rebase's state directory, which is all there is while HEAD is detached.
+    /// </summary>
+    private static string? RebasingBranch(Repository repo)
+    {
+        foreach (var dir in new[] { "rebase-merge", "rebase-apply" })
+        {
+            var headName = Path.Combine(repo.Info.Path, dir, "head-name");
+            if (!File.Exists(headName))
+                continue;
+
+            var name = File.ReadAllText(headName).Trim();
+            if (name.Length == 0 || name == "detached HEAD")
+                return null;
+            return name.StartsWith("refs/heads/", StringComparison.Ordinal) ? name["refs/heads/".Length..] : name;
+        }
+        return null;
+    }
+
+    /// <summary>The files git reports in conflict, as full paths under the working copy.</summary>
+    private static List<string> ConflictedFilePaths(Repository repo, string repositoryPath) =>
+        [.. repo.RetrieveStatus(new StatusOptions())
+            .Where(s => s.State == FileStatus.Conflicted)
+            .Select(s => Path.Combine(repositoryPath, s.FilePath.Replace('/', Path.DirectorySeparatorChar)))];
+
     public int CountCommitsOnNoBranch(string repositoryPath)
     {
         try
@@ -1681,7 +1732,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// wrong: the rebase has to be continued or aborted, and says so instead.
     /// </remarks>
     private static string DetachedHeadRefusal(Repository repo, string operation) =>
-        repo.Info.CurrentOperation is CurrentOperation.Rebase or CurrentOperation.RebaseInteractive or CurrentOperation.RebaseMerge
+        IsRebasing(repo)
             ? $"Cannot {operation}: a rebase is in progress and HEAD is detached until it finishes. Continue or abort the rebase first."
             : $"Cannot {operation}: HEAD is detached, so it is on no branch. Create a branch here first, or switch to one.";
 
@@ -2012,10 +2063,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             result.HasConflicts = true;
             result.HasChanges = true;
             using var repo = new Repository(repositoryPath);
-            result.ConflictedFiles = repo.RetrieveStatus(new StatusOptions())
-                .Where(s => s.State == FileStatus.Conflicted)
-                .Select(s => Path.Combine(repositoryPath, s.FilePath.Replace('/', Path.DirectorySeparatorChar)))
-                .ToList();
+            result.ConflictedFiles = ConflictedFilePaths(repo, repositoryPath);
         }
         else
         {

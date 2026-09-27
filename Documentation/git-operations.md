@@ -154,7 +154,9 @@ switching to a branch:
 Afterwards the repository header says **Detached HEAD at v2.0.0** where it would normally name the
 branch, and the **Create new branch** button beside it is highlighted. A commit made in that state would belong
 to no branch and be easy to lose, so while HEAD is detached MLQT does not offer Commit, Merge,
-Rebase, Push or Create pull request: create a branch first, and they come back.
+Rebase, Push or Create pull request: create a branch first, and they come back. (A rebase that
+stopped part-way also detaches HEAD; there the way out is to continue or abort it — see
+[A rebase left in progress](#a-rebase-left-in-progress).)
 
 If commits made on a detached HEAD by another tool are held by no branch or tag, the Switch Branch
 dialog says how many before you switch away from them — Git itself would leave them behind without a
@@ -279,6 +281,18 @@ After a successful rebase, the dialog shows an important warning:
 > "Because rebase rewrites history, a force push is required if this branch was previously pushed."
 
 Click **Force Push** to push the rebased branch, or **Skip** to handle it later.
+
+### A rebase left in progress
+
+If you close the dialog while there are still conflicts, the rebase stays stopped where it was — as
+it does in any Git client — until it is continued or aborted. HEAD is detached until then, so Commit,
+Merge and Push are off, and the repository header says **Rebase of feature in progress** instead of
+naming a branch. The **More actions** button and the **Rebase** button inside it are highlighted.
+
+Click **Rebase** to open the dialog on that rebase rather than on a new one. It lists the files still
+in conflict, with the same resolution options, and offers **Continue Rebase** once every one of them
+is resolved (straight away, if you resolved them in another tool) and **Abort Rebase** to put the
+branch back as it was before the rebase started. This also finds a rebase started outside MLQT.
 
 ### When to Use Rebase vs Merge
 

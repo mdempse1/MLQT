@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using RevisionControl;
 
 namespace MLQT.Services.DataTypes;
 
@@ -76,6 +77,18 @@ public class Repository
     /// one. Always null for SVN, which has no such state (B193).
     /// </remarks>
     public string? DetachedHeadLabel { get; set; }
+
+    /// <summary>
+    /// The Git rebase this working copy is part-way through, or null (B382). Its conflict list is
+    /// as of the last refresh; a dialog about to act on it asks
+    /// <see cref="MLQT.Services.Interfaces.IRepositoryService.GetRebaseInProgressAsync"/> for a current one.
+    /// </summary>
+    /// <remarks>
+    /// A rebase that stops for conflicts leaves HEAD detached, so <see cref="CurrentBranch"/> is
+    /// null and the browser would otherwise say only "Detached HEAD" - and advise creating a branch,
+    /// which is the wrong way out: the rebase has to be continued or aborted.
+    /// </remarks>
+    public VcsRebaseInProgress? RebaseInProgress { get; set; }
 
     /// <summary>
     /// Current branch name (e.g., "main", "trunk", "branches/release-1.0").

@@ -1667,6 +1667,9 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// <inheritdoc/>
     public int CountCommitsOnNoBranch(string repositoryPath) => 0;
 
+    /// <inheritdoc/>
+    public VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath) => null;
+
     /// <summary>SVN commits go directly to the remote server, so push is a no-op.</summary>
     public VcsOperationResult Push(string repositoryPath, string? branchName = null)
         => new() { Success = true };

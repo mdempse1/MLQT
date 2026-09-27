@@ -188,6 +188,17 @@ public interface IRevisionControlSystem
     int CountCommitsOnNoBranch(string repositoryPath);
 
     /// <summary>
+    /// The rebase this working copy is part-way through, or null when there is none (B382).
+    /// </summary>
+    /// <remarks>
+    /// A rebase that stopped for conflicts stays stopped after the dialog that started it has
+    /// closed, and HEAD stays detached, so everything that needs a branch is refused until it is
+    /// continued or aborted. This is how a dialog opened later finds it. Always null for SVN, which
+    /// has no rebase.
+    /// </remarks>
+    VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath);
+
+    /// <summary>
     /// Commits changes to the repository.
     /// </summary>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
