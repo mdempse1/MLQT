@@ -1436,7 +1436,8 @@ public partial class MainLayout : IDisposable
         }
 
         LogProcessStart("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
-        FileMonitoringService.StopMonitoring(repositoryId);
+        // Every repository in the working copy, not only this one (B416): see ProcessRepositorySettingsAsync.
+        var pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
         try
         {
             await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
@@ -1444,8 +1445,7 @@ public partial class MainLayout : IDisposable
         finally
         {
             FileMonitoringService.ClearPendingChanges(repositoryId);
-            if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+            pause.Dispose();
         }
         LogProcessEnd("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
     }
@@ -1593,8 +1593,14 @@ public partial class MainLayout : IDisposable
                 await InvokeAsync(StateHasChanged);
 
                 // Pause monitoring to suppress the thousands of change events that
-                // formatting generates; clear any events that slipped through afterwards
-                FileMonitoringService.StopMonitoring(repositoryId);
+                // formatting generates; clear any events that slipped through afterwards.
+                //
+                // Every repository in the working copy (B416, as B325 found for the VCS pipeline):
+                // the watcher is shared, so a sibling left watching recorded this formatter's writes
+                // as its own pending changes. A pause (B296), which starts again only what was being
+                // watched, however the format ends.
+                var pause = MonitorPause.Begin(FileMonitoringService,
+                    RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
                 try
                 {
                     await SaveAllLibrariesWithFormattingAsync(repositoryId);
@@ -1602,8 +1608,7 @@ public partial class MainLayout : IDisposable
                 finally
                 {
                     FileMonitoringService.ClearPendingChanges(repositoryId);
-                    if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                        FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+                    pause.Dispose();
 
                     // Invalidate working copy cache and notify the library browser
                     // so it picks up the thousands of files modified by formatting
