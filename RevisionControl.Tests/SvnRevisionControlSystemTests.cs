@@ -2,16 +2,19 @@ namespace RevisionControl.Tests;
 
 /// <summary>
 /// Tests for SvnRevisionControlSystem.
-/// Note: These are basic API tests. Full integration tests would require
-/// an actual SVN repository setup.
+/// Mostly basic API tests; the integration region at the end uses a working copy of a repository
+/// this run builds for itself (<see cref="SvnWorkingCopyFixture"/>, B426), and returns early where
+/// svn is not installed.
 /// </summary>
-public class SvnRevisionControlSystemTests
+public class SvnRevisionControlSystemTests : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn;
+    private readonly string? _workingCopy;
 
-    public SvnRevisionControlSystemTests()
+    public SvnRevisionControlSystemTests(SvnWorkingCopyFixture fixture)
     {
         _svn = new SvnRevisionControlSystem();
+        _workingCopy = fixture.WorkingCopy;
     }
 
     [Fact]
@@ -801,14 +804,8 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void IsValidRepository_WithRealSvnWorkingCopy_ReturnsTrue()
     {
-        // This test requires C:\Projects\ModelicaEditorTest to be an SVN working copy
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
+        if (_workingCopy is not { } testPath)
             return;
-        }
 
         // Act
         var result = _svn.IsValidRepository(testPath);
@@ -820,12 +817,8 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void GetCurrentRevision_WithRealSvnWorkingCopy_ReturnsRevision()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
+        if (_workingCopy is not { } testPath)
             return;
-        }
 
         // Act
         var result = _svn.GetCurrentRevision(testPath);
@@ -838,12 +831,8 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void GetCurrentBranch_WithRealSvnWorkingCopy_ReturnsBranch()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
+        if (_workingCopy is not { } testPath)
             return;
-        }
 
         // Act
         var result = _svn.GetCurrentBranch(testPath);
@@ -857,12 +846,8 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void GetWorkingCopyChanges_WithRealSvnWorkingCopy_ReturnsChanges()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
+        if (_workingCopy is not { } testPath)
             return;
-        }
 
         // Act
         var result = _svn.GetWorkingCopyChanges(testPath);
@@ -875,12 +860,8 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void GetBranches_WithRealSvnWorkingCopy_ReturnsBranches()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
+        if (_workingCopy is not { } testPath)
             return;
-        }
 
         // Act
         var result = _svn.GetBranches(testPath, includeRemote: false);
@@ -895,12 +876,8 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void MergeBranch_WithRealSvnWorkingCopy_AndNonExistentBranch_ReturnsFailure()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
+        if (_workingCopy is not { } testPath)
             return;
-        }
 
         // Act - try to merge a non-existent branch
         var result = _svn.MergeBranch(testPath, "branches/this-branch-does-not-exist-12345");
@@ -911,15 +888,4 @@ public class SvnRevisionControlSystemTests
     }
 
     #endregion
-
-    // Note: Integration tests with actual SVN repositories would be added here
-    // Examples:
-    // - Test checkout from real SVN repository
-    // - Test update between revisions
-    // - Test clean workspace with real working copy
-    // - Test revision resolution (HEAD, BASE, revision numbers)
-    // - Test GetCurrentBranch with real working copies
-    //
-    // These require setting up a test SVN repository, which is beyond
-    // the scope of basic unit tests but would be valuable for CI/CD pipelines
 }

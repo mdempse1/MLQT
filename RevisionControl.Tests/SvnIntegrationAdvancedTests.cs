@@ -4,32 +4,21 @@ namespace RevisionControl.Tests;
 
 /// <summary>
 /// Advanced integration tests for SvnRevisionControlSystem using actual repository content.
-/// Repository: file:///C:/Projects/SVN/ModelicaEditorTest
 ///
-/// These tests verify operations with real Modelica files and tags/trunk structure.
+/// These tests verify operations with real Modelica files and tags/trunk structure, against a
+/// repository this run builds for itself (<see cref="SvnTestRepository"/>): they commit, so a
+/// repository shared with another run moved HEAD under both of them (B426).
 /// </summary>
-public class SvnIntegrationAdvancedTests : IDisposable
+public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDisposable
 {
-    private const string TestRepoUrl = "file:///C:/Projects/SVN/ModelicaEditorTest";
+    private readonly string _repoUrl;
     private readonly SvnRevisionControlSystem _svn;
     private readonly List<string> _checkoutPaths = new();
-    private readonly bool _repositoryAvailable;
 
-    public SvnIntegrationAdvancedTests()
+    public SvnIntegrationAdvancedTests(SvnTestRepository repository)
     {
         _svn = new SvnRevisionControlSystem();
-
-        // Test if repository is available
-        try
-        {
-            using var client = new SvnClient();
-            client.GetInfo(new Uri(TestRepoUrl + "/trunk"), out _);
-            _repositoryAvailable = true;
-        }
-        catch
-        {
-            _repositoryAvailable = false;
-        }
+        _repoUrl = repository.RootUrl;
     }
 
     public void Dispose()
@@ -80,11 +69,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_TrunkUrl_ChecksOutCorrectStructure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         var result = _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -100,11 +87,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_TagV1_ChecksOutTag()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var tagUrl = TestRepoUrl + "/tags/v1.0";
+        var tagUrl = _repoUrl + "/tags/v1.0";
 
         // Act
         var result = _svn.CheckoutRevision(tagUrl, "HEAD", checkoutPath);
@@ -118,11 +103,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_TagV2_ChecksOutTag()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var tagUrl = TestRepoUrl + "/tags/v2.0";
+        var tagUrl = _repoUrl + "/tags/v2.0";
 
         // Act
         var result = _svn.CheckoutRevision(tagUrl, "HEAD", checkoutPath);
@@ -136,11 +119,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_VerifiesModelicaFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -155,11 +136,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_ModelsDirectory_ContainsExpectedFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -175,11 +154,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_VerifiesModelicaContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -198,12 +175,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_BetweenTrunkAndTag_UpdatesFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
-        var tagUrl = TestRepoUrl + "/tags/v1.0";
+        var trunkUrl = _repoUrl + "/trunk";
+        var tagUrl = _repoUrl + "/tags/v1.0";
 
         // Act - checkout trunk first
         _svn.UpdateExistingCheckout(checkoutPath, trunkUrl, "HEAD");
@@ -221,11 +196,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CleanWorkspace_AfterModifyingFile_RevertsChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
@@ -246,11 +219,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetCurrentRevision_AfterCheckout_ReturnsValidRevision()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -265,10 +236,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void IsValidRepository_WithTrunkUrl_ReturnsTrue()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         var result = _svn.IsValidRepository(trunkUrl);
@@ -280,10 +249,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void IsValidRepository_WithTagUrl_ReturnsTrue()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
-        var tagUrl = TestRepoUrl + "/tags/v1.0";
+        var tagUrl = _repoUrl + "/tags/v1.0";
 
         // Act
         var result = _svn.IsValidRepository(tagUrl);
@@ -295,11 +262,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_PreservesFilePermissions()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -318,11 +283,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_MultipleModelicaFiles_ChecksOutAll()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -344,11 +307,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_ToSameRevision_Succeeds()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act - checkout and update to same revision
         _svn.UpdateExistingCheckout(checkoutPath, trunkUrl, "HEAD");
@@ -362,11 +323,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithREADME_ContainsFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -381,11 +340,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CleanWorkspace_WithAddedFile_Succeeds()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var newFilePath = Path.Combine(checkoutPath, "unversioned.txt");
@@ -403,11 +360,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_VerifiesWithinStatements()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
@@ -425,11 +380,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_FromNonExistent_PerformsInitialCheckout()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act - update non-existent directory (should perform initial checkout)
         var result = _svn.UpdateExistingCheckout(checkoutPath, trunkUrl, "HEAD");
@@ -447,11 +400,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetLogEntries_WithDefaultOptions_ReturnsLogEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -471,11 +422,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetLogEntries_WithMaxEntries_RespectsLimit()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var options = new VcsLogOptions { MaxEntries = 2 };
@@ -490,10 +439,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetLogEntries_FromRepositoryUrl_ReturnsLogEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act - can get log from URL directly
         var entries = _svn.GetLogEntries(trunkUrl);
@@ -505,11 +452,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetLogEntries_WithSinceDate_ReturnsEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var allEntries = _svn.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 100 });
@@ -532,11 +477,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetLogEntries_WithUntilDate_FiltersNewCommits()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var allEntries = _svn.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 100 });
@@ -555,10 +498,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetLogEntries_RevisionIsNumeric()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         var entries = _svn.GetLogEntries(trunkUrl);
@@ -589,10 +530,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetChangedFiles_ForRevision_ReturnsChangedFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         var entries = _svn.GetLogEntries(trunkUrl, new VcsLogOptions { MaxEntries = 10 });
         if (entries.Count == 0) return;
 
@@ -606,11 +545,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetChangedFiles_FromWorkingCopy_ReturnsChangedFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var entries = _svn.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 10 });
@@ -626,10 +563,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetChangedFiles_ReturnsRelativePaths()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         var entries = _svn.GetLogEntries(trunkUrl, new VcsLogOptions { MaxEntries = 10 });
         if (entries.Count == 0) return;
 
@@ -654,10 +589,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetChangedFiles_InvalidRevision_ReturnsEmptyList()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
-        var changedFiles = _svn.GetChangedFiles(TestRepoUrl + "/trunk", "999999");
+        var changedFiles = _svn.GetChangedFiles(_repoUrl + "/trunk", "999999");
 
         // Assert
         Assert.Empty(changedFiles);
@@ -670,11 +603,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetFileContentAtRevision_ExistingFile_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -688,11 +619,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetFileContentAtRevision_WithSpecificRevision_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var currentRevision = _svn.GetCurrentRevision(checkoutPath);
@@ -708,11 +637,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetFileContentAtRevision_NestedFile_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -726,11 +653,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetFileContentAtRevision_NonExistentFile_ReturnsNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -743,11 +668,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetFileContentAtRevision_WithHEAD_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -760,11 +683,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetFileContentAtRevision_WithBASE_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -781,11 +702,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetWorkingCopyChanges_CleanWorkingCopy_ReturnsEmptyList()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -798,11 +717,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetWorkingCopyChanges_WithModifiedFile_ReturnsModifiedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
@@ -823,11 +740,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetWorkingCopyChanges_WithUntrackedFile_ReturnsUntrackedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var newFilePath = Path.Combine(checkoutPath, "NewUntrackedFile.txt");
@@ -846,11 +761,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetWorkingCopyChanges_WithDeletedFile_ReturnsDeletedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
@@ -881,11 +794,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetWorkingCopyChanges_ReturnsRelativePaths()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         File.WriteAllText(Path.Combine(checkoutPath, "Models", "NewModel.mo"), "model NewModel end NewModel;");
@@ -908,11 +819,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void RevertFiles_ModifiedFile_RevertsChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
@@ -933,11 +842,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void RevertFiles_UntrackedFile_DeletesFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var newFilePath = Path.Combine(checkoutPath, "UntrackedFile.txt");
@@ -954,11 +861,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void RevertFiles_MultipleFiles_RevertsAll()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
@@ -983,11 +888,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void RevertFiles_NestedFile_RevertsCorrectly()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
@@ -1011,11 +914,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void UpdateToLatest_ValidWorkingCopy_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1029,11 +930,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void UpdateToLatest_AlreadyUpToDate_ReturnsNoChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.UpdateToLatest(checkoutPath);
 
@@ -1058,11 +957,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void UpdateToLatest_ReturnsRevisionNumbers()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1082,11 +979,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetBranches_FromTrunk_ReturnsAvailableBranches()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1101,11 +996,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetBranches_IncludesTags()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1120,10 +1013,8 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetBranches_FromUrl_ReturnsAvailableBranches()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
-        var branches = _svn.GetBranches(TestRepoUrl + "/trunk");
+        var branches = _svn.GetBranches(_repoUrl + "/trunk");
 
         // Assert
         Assert.NotEmpty(branches);
@@ -1132,11 +1023,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetBranches_HasCurrentBranch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1150,11 +1039,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetBranches_BranchHasName()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1181,11 +1068,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetCurrentBranch_FromTrunk_ReturnsTrunk()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1199,11 +1084,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetCurrentBranch_FromTag_ReturnsTagPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var tagUrl = TestRepoUrl + "/tags/v1.0";
+        var tagUrl = _repoUrl + "/tags/v1.0";
         _svn.CheckoutRevision(tagUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1231,11 +1114,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void SwitchBranch_FromTrunkToTag_SwitchesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act - switch to tags/v1.0
@@ -1250,11 +1131,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void SwitchBranch_FromTagToTrunk_SwitchesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var tagUrl = TestRepoUrl + "/tags/v1.0";
+        var tagUrl = _repoUrl + "/tags/v1.0";
         _svn.CheckoutRevision(tagUrl, "HEAD", checkoutPath);
 
         // Act - switch to trunk
@@ -1269,11 +1148,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void SwitchBranch_BetweenTags_SwitchesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var tagUrl = TestRepoUrl + "/tags/v1.0";
+        var tagUrl = _repoUrl + "/tags/v1.0";
         _svn.CheckoutRevision(tagUrl, "HEAD", checkoutPath);
 
         // Act - switch to tags/v2.0
@@ -1288,11 +1165,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void SwitchBranch_NonExistentBranch_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1309,11 +1184,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_NoChanges_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1339,12 +1212,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_NewFilesToAdd_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
         var newDirName = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -1366,12 +1237,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_ModifiedFile_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create a branch to avoid modifying trunk
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1392,12 +1261,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_MultipleNewFiles_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1427,12 +1294,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_NestedDirectories_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1458,12 +1323,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_AllChangesWithoutSpecificFiles_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1481,12 +1344,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_DeletedFile_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1511,12 +1372,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_MixedNewAndModifiedFiles_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1540,12 +1399,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_ReturnsValidRevisionNumber()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1565,12 +1422,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_FileInExistingDirectory_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1593,12 +1448,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_EmptyMessage_StillCommits()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
         var branchName = "branches/" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
@@ -1615,11 +1468,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void Commit_SpecificFileUnchanged_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act - try to commit an unchanged file
@@ -1636,11 +1487,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void ResolveRevision_HEAD_ReturnsRevisionNumber()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1655,11 +1504,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void ResolveRevision_NumericRevision_ReturnsSameRevision()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var currentRevision = _svn.GetCurrentRevision(checkoutPath);
@@ -1674,11 +1521,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void ResolveRevision_InvalidRevision_ReturnsHeadOrNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1702,11 +1547,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetRevisionDescription_ValidRevision_ReturnsDescription()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var currentRevision = _svn.GetCurrentRevision(checkoutPath);
@@ -1722,11 +1565,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetRevisionDescription_HEAD_ReturnsDescription()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1740,11 +1581,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void GetRevisionDescription_InvalidRevision_ReturnsNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         // Act
@@ -1761,11 +1600,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithSpecificRevision_ChecksOutThatRevision()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Get an older revision
         var entries = _svn.GetLogEntries(trunkUrl, new VcsLogOptions { MaxEntries = 10 });
@@ -1785,11 +1622,9 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithNullRevision_ChecksOutHEAD()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         var result = _svn.CheckoutRevision(trunkUrl, "", checkoutPath);
@@ -1805,12 +1640,10 @@ public class SvnIntegrationAdvancedTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithEmptyRevision_ChecksOutHEAD()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath1 = CreateCheckoutPath();
         var checkoutPath2 = CreateCheckoutPath();
-        var trunkUrl = TestRepoUrl + "/trunk";
+        var trunkUrl = _repoUrl + "/trunk";
 
         // Act
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath1);

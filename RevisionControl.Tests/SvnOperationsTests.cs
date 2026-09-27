@@ -5,19 +5,21 @@ namespace RevisionControl.Tests;
 /// no-op stub methods, GetConflictVersions, GetFileContentAtRevision,
 /// Commit, RevertFiles, SwitchBranch, CreateBranch, UpdateToLatest,
 /// GetLogEntries, GetChangedFiles, and ExtractBranchFromSvnUrl edge cases.
-/// Integration tests use the real SVN working copy at C:\Projects\ModelicaEditorTest.
+/// Integration tests use a working copy of a repository this run builds for itself
+/// (<see cref="SvnWorkingCopyFixture"/>, B426), and return early where svn is not installed.
 /// </summary>
-public class SvnOperationsTests
+public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn;
-    private static readonly string RealSvnPath = @"C:\Projects\ModelicaEditorTest";
+    private readonly string _workingCopy;
 
-    public SvnOperationsTests()
+    public SvnOperationsTests(SvnWorkingCopyFixture fixture)
     {
         _svn = new SvnRevisionControlSystem();
+        _workingCopy = fixture.WorkingCopy ?? "";
     }
 
-    private static bool RealSvnAvailable => Directory.Exists(RealSvnPath);
+    private bool WorkingCopyAvailable => _workingCopy.Length > 0;
 
     #region No-op Stub Method Tests
 
@@ -62,30 +64,30 @@ public class SvnOperationsTests
     [Fact]
     public void FindRepositoryRoot_WithRealSvnWorkingCopyRoot_ReturnsRoot()
     {
-        if (!RealSvnAvailable)
+        if (!WorkingCopyAvailable)
             return;
 
-        var result = _svn.FindRepositoryRoot(RealSvnPath);
+        var result = _svn.FindRepositoryRoot(_workingCopy);
 
         Assert.NotNull(result);
-        Assert.Equal(RealSvnPath, result, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(_workingCopy, result, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void FindRepositoryRoot_WithSubdirectoryOfSvnWorkingCopy_ReturnsRoot()
     {
-        if (!RealSvnAvailable)
+        if (!WorkingCopyAvailable)
             return;
 
         // Find any subdirectory of the SVN WC to test from
-        var subDir = Directory.GetDirectories(RealSvnPath).FirstOrDefault();
+        var subDir = Directory.GetDirectories(_workingCopy).FirstOrDefault();
         if (subDir == null)
             return;
 
         var result = _svn.FindRepositoryRoot(subDir);
 
         Assert.NotNull(result);
-        Assert.Equal(RealSvnPath, result, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(_workingCopy, result, StringComparer.OrdinalIgnoreCase);
     }
 
     #endregion
@@ -529,9 +531,9 @@ public class SvnOperationsTests
     [Fact]
     public void GetLogEntries_WithRealSvnWorkingCopy_ReturnsEntries()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var entries = _svn.GetLogEntries(RealSvnPath, new VcsLogOptions { MaxEntries = 5 });
+        var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions { MaxEntries = 5 });
 
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
@@ -546,11 +548,11 @@ public class SvnOperationsTests
     [Fact]
     public void GetLogEntries_WithRealSvnWorkingCopy_UntilFilter_FiltersEntries()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Until 1 hour ago - should return 0 or few entries (recent commits excluded)
         var pastTime = DateTimeOffset.Now.AddHours(-1);
-        var entries = _svn.GetLogEntries(RealSvnPath, new VcsLogOptions
+        var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions
         {
             MaxEntries = 5,
             Until = pastTime
@@ -563,13 +565,13 @@ public class SvnOperationsTests
     [Fact]
     public void GetChangedFiles_WithRealSvnWorkingCopy_AtKnownRevision_ReturnsFiles()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Get the current revision first
-        var currentRevision = _svn.GetCurrentRevision(RealSvnPath);
+        var currentRevision = _svn.GetCurrentRevision(_workingCopy);
         if (currentRevision == null) return;
 
-        var files = _svn.GetChangedFiles(RealSvnPath, currentRevision);
+        var files = _svn.GetChangedFiles(_workingCopy, currentRevision);
 
         // Files at the current revision may or may not exist, but shouldn't throw
         Assert.NotNull(files);
@@ -578,18 +580,18 @@ public class SvnOperationsTests
     [Fact]
     public void GetFileContentAtRevision_WithRealSvnWorkingCopy_ReturnsContent()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Find any tracked file to read
-        var allFiles = Directory.GetFiles(RealSvnPath, "*", SearchOption.TopDirectoryOnly)
+        var allFiles = Directory.GetFiles(_workingCopy, "*", SearchOption.TopDirectoryOnly)
             .Where(f => !Path.GetFileName(f).StartsWith("."))
             .ToArray();
         if (allFiles.Length == 0) return;
 
-        var relativePath = Path.GetRelativePath(RealSvnPath, allFiles[0]);
+        var relativePath = Path.GetRelativePath(_workingCopy, allFiles[0]);
 
         // HEAD revision
-        var content = _svn.GetFileContentAtRevision(RealSvnPath, relativePath, "HEAD");
+        var content = _svn.GetFileContentAtRevision(_workingCopy, relativePath, "HEAD");
 
         Assert.NotNull(content);
         Assert.NotEmpty(content);
@@ -598,17 +600,17 @@ public class SvnOperationsTests
     [Fact]
     public void GetFileContentAtRevision_WithRealSvnWorkingCopy_NullRevision_ReturnsContent()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var allFiles = Directory.GetFiles(RealSvnPath, "*", SearchOption.TopDirectoryOnly)
+        var allFiles = Directory.GetFiles(_workingCopy, "*", SearchOption.TopDirectoryOnly)
             .Where(f => !Path.GetFileName(f).StartsWith("."))
             .ToArray();
         if (allFiles.Length == 0) return;
 
-        var relativePath = Path.GetRelativePath(RealSvnPath, allFiles[0]);
+        var relativePath = Path.GetRelativePath(_workingCopy, allFiles[0]);
 
         // null revision → BASE
-        var content = _svn.GetFileContentAtRevision(RealSvnPath, relativePath, null);
+        var content = _svn.GetFileContentAtRevision(_workingCopy, relativePath, null);
 
         Assert.NotNull(content);
     }
@@ -616,9 +618,9 @@ public class SvnOperationsTests
     [Fact]
     public void UpdateToLatest_WithRealSvnWorkingCopy_Succeeds()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var result = _svn.UpdateToLatest(RealSvnPath);
+        var result = _svn.UpdateToLatest(_workingCopy);
 
         Assert.True(result.Success);
         Assert.NotNull(result.OldRevision);
@@ -628,18 +630,18 @@ public class SvnOperationsTests
     [Fact]
     public void RevertFiles_WithRealSvnWorkingCopy_UntrackedFile_DeletesFile()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Create a temporary unversioned file in the working copy
         var tempFileName = $"__test_revert_{Guid.NewGuid():N}.txt";
-        var tempFilePath = Path.Combine(RealSvnPath, tempFileName);
+        var tempFilePath = Path.Combine(_workingCopy, tempFileName);
 
         try
         {
             File.WriteAllText(tempFilePath, "temporary test file - should be deleted by RevertFiles");
             Assert.True(File.Exists(tempFilePath));
 
-            var result = _svn.RevertFiles(RealSvnPath, new[] { tempFileName });
+            var result = _svn.RevertFiles(_workingCopy, new[] { tempFileName });
 
             Assert.True(result.Success);
             Assert.False(File.Exists(tempFilePath), "Unversioned file should be deleted by RevertFiles");
@@ -655,9 +657,9 @@ public class SvnOperationsTests
     [Fact]
     public void SwitchBranch_WithRealSvnWorkingCopy_ToNonExistentBranch_ReturnsError()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var result = _svn.SwitchBranch(RealSvnPath, "branches/this-branch-does-not-exist-99999");
+        var result = _svn.SwitchBranch(_workingCopy, "branches/this-branch-does-not-exist-99999");
 
         Assert.False(result.Success);
         Assert.NotNull(result.ErrorMessage);
@@ -666,19 +668,19 @@ public class SvnOperationsTests
     [Fact]
     public void GetFileContentAtRevision_WithRealSvnWorkingCopy_NumericRevision_ReturnsContent()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var allFiles = Directory.GetFiles(RealSvnPath, "*", SearchOption.TopDirectoryOnly)
+        var allFiles = Directory.GetFiles(_workingCopy, "*", SearchOption.TopDirectoryOnly)
             .Where(f => !Path.GetFileName(f).StartsWith("."))
             .ToArray();
         if (allFiles.Length == 0) return;
 
-        var relativePath = Path.GetRelativePath(RealSvnPath, allFiles[0]);
-        var currentRevision = _svn.GetCurrentRevision(RealSvnPath);
+        var relativePath = Path.GetRelativePath(_workingCopy, allFiles[0]);
+        var currentRevision = _svn.GetCurrentRevision(_workingCopy);
         if (currentRevision == null) return;
 
         // Use numeric revision (exercises the long.TryParse branch)
-        var content = _svn.GetFileContentAtRevision(RealSvnPath, relativePath, currentRevision);
+        var content = _svn.GetFileContentAtRevision(_workingCopy, relativePath, currentRevision);
 
         // May be null if file doesn't exist at that revision, but should not throw
         // A successful read returns content
@@ -687,11 +689,11 @@ public class SvnOperationsTests
     [Fact]
     public void GetWorkingCopyChanges_WithRealSvnWorkingCopy_UntrackedDirectory_ExpandsToFiles()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Create an unversioned directory with files inside the working copy
         var testDirName = $"__test_dir_{Guid.NewGuid():N}";
-        var testDirPath = Path.Combine(RealSvnPath, testDirName);
+        var testDirPath = Path.Combine(_workingCopy, testDirName);
         var testFilePath = Path.Combine(testDirPath, "test_file.txt");
 
         try
@@ -699,14 +701,14 @@ public class SvnOperationsTests
             Directory.CreateDirectory(testDirPath);
             File.WriteAllText(testFilePath, "test content");
 
-            var changes = _svn.GetWorkingCopyChanges(RealSvnPath);
+            var changes = _svn.GetWorkingCopyChanges(_workingCopy);
 
             // The unversioned directory should be expanded to its individual files
             Assert.NotNull(changes);
             // The directory itself should NOT appear (it gets replaced by its file entries)
             Assert.DoesNotContain(changes, f => f.Path == testDirName || f.Path == testDirName + Path.DirectorySeparatorChar);
             // The file inside should appear as untracked
-            var relativeFilePath = Path.GetRelativePath(RealSvnPath, testFilePath);
+            var relativeFilePath = Path.GetRelativePath(_workingCopy, testFilePath);
             Assert.Contains(changes, f => f.Path.Equals(relativeFilePath, StringComparison.OrdinalIgnoreCase)
                                          && f.Status == VcsFileStatus.Untracked);
         }
@@ -721,11 +723,11 @@ public class SvnOperationsTests
     [Fact]
     public void GetLogEntries_WithRealSvnWorkingCopy_SinceFilter_FiltersCorrectly()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Get entries from 1 year ago to exercise the Since filter path
         var since = DateTimeOffset.Now.AddYears(-1);
-        var entries = _svn.GetLogEntries(RealSvnPath, new VcsLogOptions
+        var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions
         {
             MaxEntries = 100,
             Since = since
@@ -740,12 +742,12 @@ public class SvnOperationsTests
     [Fact]
     public void GetLogEntries_WithRealSvnWorkingCopy_BranchFilter_UsesCurrentBranch()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var currentBranch = _svn.GetCurrentBranch(RealSvnPath);
+        var currentBranch = _svn.GetCurrentBranch(_workingCopy);
         if (currentBranch == null) return;
 
-        var entries = _svn.GetLogEntries(RealSvnPath, new VcsLogOptions
+        var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions
         {
             MaxEntries = 5,
             Branch = currentBranch
@@ -761,14 +763,14 @@ public class SvnOperationsTests
     [Fact]
     public void GetChangedFiles_WithRealSvnWorkingCopy_AtHeadRevision_ReturnsFiles()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Get a few log entries to find a revision with known changed files
-        var logEntries = _svn.GetLogEntries(RealSvnPath, new VcsLogOptions { MaxEntries = 3 });
+        var logEntries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions { MaxEntries = 3 });
         if (logEntries.Count == 0) return;
 
         var revision = logEntries[0].Revision;
-        var files = _svn.GetChangedFiles(RealSvnPath, revision);
+        var files = _svn.GetChangedFiles(_workingCopy, revision);
 
         Assert.NotNull(files);
         // The latest commit should have at least one changed file
@@ -803,16 +805,16 @@ public class SvnOperationsTests
     [Fact]
     public void RevertFiles_WithRealSvnWorkingCopy_TrackedFile_RevertsChanges()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Find any tracked file to modify and revert
-        var allFiles = Directory.GetFiles(RealSvnPath, "*", SearchOption.TopDirectoryOnly)
+        var allFiles = Directory.GetFiles(_workingCopy, "*", SearchOption.TopDirectoryOnly)
             .Where(f => !Path.GetFileName(f).StartsWith("."))
             .ToArray();
         if (allFiles.Length == 0) return;
 
         var filePath = allFiles[0];
-        var relativePath = Path.GetRelativePath(RealSvnPath, filePath);
+        var relativePath = Path.GetRelativePath(_workingCopy, filePath);
         var originalContent = File.ReadAllText(filePath);
 
         try
@@ -820,7 +822,7 @@ public class SvnOperationsTests
             // Modify the tracked file
             File.WriteAllText(filePath, originalContent + "\n// temporary test modification");
 
-            var result = _svn.RevertFiles(RealSvnPath, new[] { relativePath });
+            var result = _svn.RevertFiles(_workingCopy, new[] { relativePath });
 
             Assert.True(result.Success);
             Assert.Equal(originalContent, File.ReadAllText(filePath));
@@ -836,12 +838,12 @@ public class SvnOperationsTests
     [Fact]
     public void GetRevisionDescription_WithRealSvnWorkingCopy_ReturnsDescription()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var currentRevision = _svn.GetCurrentRevision(RealSvnPath);
+        var currentRevision = _svn.GetCurrentRevision(_workingCopy);
         if (currentRevision == null) return;
 
-        var desc = _svn.GetRevisionDescription(RealSvnPath, currentRevision);
+        var desc = _svn.GetRevisionDescription(_workingCopy, currentRevision);
 
         Assert.NotNull(desc);
         Assert.NotEmpty(desc);
@@ -850,9 +852,9 @@ public class SvnOperationsTests
     [Fact]
     public void ResolveRevision_WithRealSvnWorkingCopy_HeadRevision_ReturnsNumber()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var resolved = _svn.ResolveRevision(RealSvnPath, "HEAD");
+        var resolved = _svn.ResolveRevision(_workingCopy, "HEAD");
 
         Assert.NotNull(resolved);
         Assert.True(long.TryParse(resolved, out _), $"Resolved revision should be numeric, got: {resolved}");
@@ -861,9 +863,9 @@ public class SvnOperationsTests
     [Fact]
     public void GetBranches_WithRealSvnWorkingCopy_IncludeRemote_ReturnsBranches()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
-        var branches = _svn.GetBranches(RealSvnPath, includeRemote: true);
+        var branches = _svn.GetBranches(_workingCopy, includeRemote: true);
 
         Assert.NotNull(branches);
         Assert.NotEmpty(branches);
@@ -873,16 +875,16 @@ public class SvnOperationsTests
     [Fact]
     public void GetWorkingCopyChanges_WithRealSvnWorkingCopy_MissingFile_ShowsDeletedStatus()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         // Find any tracked file to temporarily delete (use top-level files to ensure they're tracked)
-        var allFiles = Directory.GetFiles(RealSvnPath, "*", SearchOption.TopDirectoryOnly)
+        var allFiles = Directory.GetFiles(_workingCopy, "*", SearchOption.TopDirectoryOnly)
             .Where(f => !Path.GetFileName(f).StartsWith("."))
             .ToArray();
         if (allFiles.Length == 0) return;
 
         var filePath = allFiles[0];
-        var relativePath = Path.GetRelativePath(RealSvnPath, filePath);
+        var relativePath = Path.GetRelativePath(_workingCopy, filePath);
 
         try
         {
@@ -890,7 +892,7 @@ public class SvnOperationsTests
             File.Delete(filePath);
             Assert.False(File.Exists(filePath));
 
-            var changes = _svn.GetWorkingCopyChanges(RealSvnPath);
+            var changes = _svn.GetWorkingCopyChanges(_workingCopy);
 
             // Missing file should appear with Deleted status
             var missing = changes.FirstOrDefault(f =>
@@ -901,7 +903,7 @@ public class SvnOperationsTests
         finally
         {
             // Revert to restore the file from SVN
-            _svn.RevertFiles(RealSvnPath, new[] { relativePath });
+            _svn.RevertFiles(_workingCopy, new[] { relativePath });
             Assert.True(File.Exists(filePath), "File should be restored by RevertFiles");
         }
     }
@@ -909,10 +911,10 @@ public class SvnOperationsTests
     [Fact]
     public void GetWorkingCopyChanges_WithRealSvnWorkingCopy_AddedFile_ShowsAddedStatus()
     {
-        if (!RealSvnAvailable) return;
+        if (!WorkingCopyAvailable) return;
 
         var tempFileName = $"__test_added_{Guid.NewGuid():N}.txt";
-        var tempFilePath = Path.Combine(RealSvnPath, tempFileName);
+        var tempFilePath = Path.Combine(_workingCopy, tempFileName);
 
         try
         {
@@ -920,7 +922,7 @@ public class SvnOperationsTests
 
             // svn add via client - but we can't call svn add without SharpSvn directly here.
             // Instead verify untracked status (the Added status is covered by SVN add operations)
-            var changes = _svn.GetWorkingCopyChanges(RealSvnPath);
+            var changes = _svn.GetWorkingCopyChanges(_workingCopy);
 
             var added = changes.FirstOrDefault(f =>
                 f.Path.Equals(tempFileName, StringComparison.OrdinalIgnoreCase));

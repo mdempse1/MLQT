@@ -121,13 +121,12 @@ jobs:
       # exactly SvnIntegrationTests, SvnIntegrationAdvancedTests and SvnMergeCommitTests
       # fail, and every other test passes.
       #
-      # The two that want the fixed working copy at C:\Projects\ModelicaEditorTest probe for
-      # it and skip themselves when it is absent, so they would pass here as no-ops; they are
-      # excluded anyway rather than reporting a pass nothing earned. SvnIntegrationTests
-      # builds its own repository with svnadmin, so it needs only the client - installing
-      # subversion on the runner would make it runnable, which is the obvious next step if
-      # these ever matter here. Bundling the SlikSVN client (build/fetch-svn-tools.ps1) does
-      # NOT make the other two runnable: it supplies svn.exe, not a repository, and is
+      # All three build their own repository with svnadmin (SvnTestRepository, B426), so they
+      # need only the client - installing subversion on the runner (svn and svnadmin) would
+      # make them runnable, which is the obvious next step if these ever matter here. The
+      # classes that do run here take SvnWorkingCopyFixture, which is empty without svn, so
+      # their working-copy tests return early. Bundling the SlikSVN client
+      # (build/fetch-svn-tools.ps1) does not help: it supplies svn.exe, not svnadmin, and is
       # validated by the release workflow's "Verify bundled svn client" step instead.
       # run-all-tests.ps1 runs all three on a machine that has svn.
       - name: Run RevisionControl tests (exclude the SVN integration classes)
@@ -271,8 +270,8 @@ jobs:
         if: '!cancelled()'
         run: dotnet test ModelicaGraph.Tests -c Release --no-build --report-trx --report-trx-filename graph-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
-      # Same exclusion as the Windows job: the SVN integration tests need a working copy and a server
-      # no runner has. Kept identical so the two platforms measure the same thing.
+      # Same exclusion as the Windows job: the SVN integration tests need an svn client (and
+      # svnadmin, to build their own repository) no runner has. Kept identical so the two platforms measure the same thing.
       - name: Run RevisionControl tests (exclude the SVN integration classes)
         if: '!cancelled()'
         run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename revcontrol-linux.trx --results-directory ${{ github.workspace }}/TestResults

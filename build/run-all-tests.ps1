@@ -84,10 +84,10 @@ Push-Location $repositoryRoot
 # assumed: with svn taken off PATH, exactly SvnIntegrationTests, SvnIntegrationAdvancedTests and
 # SvnMergeCommitTests fail; every other test passes (B266).
 #
-# On a machine that HAS svn, all three run: the two that want the fixed working copy at
-# C:\Projects\ModelicaEditorTest probe for it and skip themselves when it is absent, and
-# SvnIntegrationTests builds its own repository with svnadmin. That is the point of this script -
-# excusing a suite by category is how a real failure hides in it.
+# On a machine that HAS svn, all three run, each against a repository it builds for itself with
+# svnadmin (SvnTestRepository, B426) - so two runs at once, from two worktrees, no longer commit
+# into one repository under each other. That is the point of this script - excusing a suite by
+# category is how a real failure hides in it.
 $svnAvailable = [bool](Get-Command svn -ErrorAction SilentlyContinue)
 
 $suiteNotes = @{

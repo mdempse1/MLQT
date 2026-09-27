@@ -353,6 +353,11 @@ dotnet test RevisionControl.Tests
 
 Tests create temporary Git/SVN repositories and clean them up automatically using `IDisposable`.
 
-The SVN repositories dedicated to testing has the URL file:///C:/Projects/SVN/ModelicaEditorTest
+SVN tests never use a fixed repository: `SvnTestRepository` builds one per run with `svnadmin create`
+(trunk with a small `ModelicaEditorTest` library, tags `v1.0`/`v2.0`, `branches/feature-test`) and
+deletes it on disposal. The shared `file:///C:/Projects/SVN/ModelicaEditorTest` and its working copy
+at `C:\Projects\ModelicaEditorTest` are retired: the tests commit, so two runs at once moved HEAD
+under each other (B426). `SvnWorkingCopyFixture` gives the classes CI runs a trunk working copy, or
+none where svn is not installed.
 
 The Git repositories dedicated to testing has the URL https://github.com/mdempse1/ModelicaEditorTests.git

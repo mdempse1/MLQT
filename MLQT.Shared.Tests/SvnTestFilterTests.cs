@@ -21,9 +21,8 @@ namespace MLQT.Shared.Tests;
 public class SvnTestFilterTests
 {
     /// <summary>
-    /// The filter every caller must use. The two classes needing the fixed working copy skip
-    /// themselves when it is absent; <c>SvnIntegrationTests</c> builds its own repository and needs
-    /// only the client.
+    /// The filter every caller must use. All three classes build their own repository with svnadmin
+    /// (<c>SvnTestRepository</c>, B426) and need only the client.
     /// </summary>
     internal const string Expected =
         "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit";

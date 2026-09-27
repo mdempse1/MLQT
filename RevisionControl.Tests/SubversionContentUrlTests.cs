@@ -18,8 +18,8 @@ namespace RevisionControl.Tests;
 /// library called "VeSyMA - Suspensions" that has to survive being put in a URL.</para>
 ///
 /// <para><b>The class is called Subversion and not Svn on purpose.</b> <c>run-all-tests.ps1</c> and
-/// CI run this suite with <c>FullyQualifiedName!~Svn</c>, because the SVN integration tests need a
-/// working copy and a server no runner has - and that filter is a substring, so it would have
+/// CI run this suite with <c>FullyQualifiedName!~Svn</c>, because the SVN integration tests need an
+/// svn client no runner has - and that filter is a substring, so it would have
 /// excluded these too. They need nothing at all. A guard written for a defect a user reported, that
 /// no automated run ever executes, is not a guard. The size of the rest of that hole is B266.</para>
 /// </remarks>

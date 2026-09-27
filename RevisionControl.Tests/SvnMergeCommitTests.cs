@@ -18,34 +18,20 @@ namespace RevisionControl.Tests;
 ///   - Target branch: the branch being worked on (simulates the user's working copy)
 /// Both branches are disposable test artefacts that do not affect trunk.
 ///
-/// Test repository: file:///C:/Projects/SVN/ModelicaEditorTest
+/// Test repository: this run's own, from <see cref="SvnTestRepository"/> (B426)
 /// Branch source:   tags/v2.0  (predates the test directories)
 /// </summary>
-public class SvnMergeCommitTests : IDisposable
+public class SvnMergeCommitTests : IClassFixture<SvnTestRepository>, IDisposable
 {
-    private const string TestRepoUrl = "file:///C:/Projects/SVN/ModelicaEditorTest";
-    private const string TrunkUrl = TestRepoUrl + "/trunk";
-    private const string TagV2Url = TestRepoUrl + "/tags/v2.0";
+    private readonly string _repoUrl;
 
     private readonly SvnRevisionControlSystem _svn;
     private readonly List<string> _checkoutPaths = new();
-    private readonly bool _repositoryAvailable;
 
-    public SvnMergeCommitTests()
+    public SvnMergeCommitTests(SvnTestRepository repository)
     {
         _svn = new SvnRevisionControlSystem();
-
-        try
-        {
-            using var client = new SvnClient();
-            client.GetInfo(new Uri(TrunkUrl), out _);
-            client.GetInfo(new Uri(TagV2Url), out _);
-            _repositoryAvailable = true;
-        }
-        catch
-        {
-            _repositoryAvailable = false;
-        }
+        _repoUrl = repository.RootUrl;
     }
 
     public void Dispose()
@@ -85,7 +71,7 @@ public class SvnMergeCommitTests : IDisposable
     private (string Source, string Target) CreateTestBranches(string testId)
     {
         using var client = new SvnClient();
-        var repoRoot = new Uri(TestRepoUrl + "/");
+        var repoRoot = new Uri(_repoUrl + "/");
         var tagUri = new Uri(repoRoot, "tags/v2.0");
 
         var source = $"branches/test-src-{testId}";
@@ -121,8 +107,6 @@ public class SvnMergeCommitTests : IDisposable
     [Fact]
     public void Commit_MergeScenario_SkippedFileCommittedSuccessfullyInSecondCommit()
     {
-        if (!_repositoryAvailable) return;
-
         var testId = Guid.NewGuid().ToString("N")[..8];
         var (sourceBranch, targetBranch) = CreateTestBranches(testId);
         var mlqtDir = $".mlqt-test-{testId}";
@@ -130,7 +114,7 @@ public class SvnMergeCommitTests : IDisposable
         // === Step 1: Add a new directory to the source branch ===
         // (simulates trunk having the .mlqt/ directory that the target branch doesn't yet have)
         var sourceCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
 
         Directory.CreateDirectory(Path.Combine(sourceCheckoutPath, mlqtDir));
         File.WriteAllText(
@@ -146,7 +130,7 @@ public class SvnMergeCommitTests : IDisposable
 
         // === Step 2: Checkout the target branch ===
         var targetCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
 
         Assert.False(Directory.Exists(Path.Combine(targetCheckoutPath, mlqtDir)),
             $"Step 2: {mlqtDir} should not exist in the target branch");
@@ -299,15 +283,13 @@ public class SvnMergeCommitTests : IDisposable
     [Fact]
     public void Commit_MergeScenario_SettingsCreatedBeforeMerge_BothCommitsSucceed()
     {
-        if (!_repositoryAvailable) return;
-
         var testId = Guid.NewGuid().ToString("N")[..8];
         var (sourceBranch, targetBranch) = CreateTestBranches(testId);
         var mlqtDir = $".mlqt-pre-{testId}";
 
         // === Step 1: Add directory to source branch ===
         var sourceCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
 
         Directory.CreateDirectory(Path.Combine(sourceCheckoutPath, mlqtDir));
         File.WriteAllText(
@@ -323,7 +305,7 @@ public class SvnMergeCommitTests : IDisposable
 
         // === Step 2: Checkout target branch ===
         var targetCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
 
         // === Step 3: MLQT creates settings.json BEFORE the merge ===
         var settingsRelPath = Path.Combine(mlqtDir, "settings.json");
@@ -388,14 +370,12 @@ public class SvnMergeCommitTests : IDisposable
     [Fact]
     public void GetWorkingCopyChanges_AfterMerge_IncludesRootSvnMergeInfoPropertyChange()
     {
-        if (!_repositoryAvailable) return;
-
         var testId = Guid.NewGuid().ToString("N")[..8];
         var (sourceBranch, targetBranch) = CreateTestBranches(testId);
 
         // Put something on the source branch so the merge has something to do
         var sourceCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
         File.WriteAllText(
             Path.Combine(sourceCheckoutPath, "merge-marker.txt"),
             $"Marker for merge test {testId}");
@@ -405,7 +385,7 @@ public class SvnMergeCommitTests : IDisposable
         Assert.True(addResult.Success, $"Marker commit failed: {addResult.ErrorMessage}");
 
         var targetCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
 
         var mergeResult = _svn.MergeBranch(targetCheckoutPath, sourceBranch);
         Assert.True(mergeResult.Success, $"Merge failed: {mergeResult.ErrorMessage}");
@@ -429,15 +409,13 @@ public class SvnMergeCommitTests : IDisposable
     [Fact]
     public void Commit_AfterFirstMergeCommit_mlqtDirIsVersionedNotAdded()
     {
-        if (!_repositoryAvailable) return;
-
         var testId = Guid.NewGuid().ToString("N")[..8];
         var (sourceBranch, targetBranch) = CreateTestBranches(testId);
         var mlqtDir = $".mlqt-diag-{testId}";
 
         // Add directory to source branch
         var sourceCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
 
         Directory.CreateDirectory(Path.Combine(sourceCheckoutPath, mlqtDir));
         File.WriteAllText(Path.Combine(sourceCheckoutPath, mlqtDir, "config.json"), "{}");
@@ -447,7 +425,7 @@ public class SvnMergeCommitTests : IDisposable
 
         // Checkout target and merge
         var targetCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
 
         var mergeResult = _svn.MergeBranch(targetCheckoutPath, sourceBranch);
         Assert.True(mergeResult.Success, $"Merge failed: {mergeResult.ErrorMessage}");
@@ -520,8 +498,6 @@ public class SvnMergeCommitTests : IDisposable
     [Fact]
     public void Merge_NewModelicaFile_ExistsOnDiskAndReportedAsAdded()
     {
-        if (!_repositoryAvailable) return;
-
         var testId = Guid.NewGuid().ToString("N")[..8];
         var (sourceBranch, targetBranch) = CreateTestBranches(testId);
 
@@ -529,7 +505,7 @@ public class SvnMergeCommitTests : IDisposable
         // This mimics the real-world scenario where a poorly-formed Modelica file in trunk
         // would be merged into a branch and then deleted by the MLQT formatter.
         var sourceCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
 
         var newFileName = $"Diag_{testId}.mo";
         var newFilePath = Path.Combine(sourceCheckoutPath, "Models", newFileName);
@@ -546,7 +522,7 @@ public class SvnMergeCommitTests : IDisposable
 
         // === Step 2: Checkout target branch and merge ===
         var targetCheckoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
 
         var mergeResult = _svn.MergeBranch(targetCheckoutPath, sourceBranch);
         Assert.True(mergeResult.Success, $"Step 2 (merge): {mergeResult.ErrorMessage}");
@@ -578,8 +554,6 @@ public class SvnMergeCommitTests : IDisposable
     [Fact]
     public void SvnAdd_UntrackedFileInVersionedDirectory_StatusBecomesAdded()
     {
-        if (!_repositoryAvailable) return;
-
         var testId = Guid.NewGuid().ToString("N")[..8];
 
         // Use a branch (not trunk) so we never commit to trunk
@@ -587,14 +561,14 @@ public class SvnMergeCommitTests : IDisposable
         using (var client = new SvnClient())
         {
             var ok = client.RemoteCopy(
-                new Uri(TestRepoUrl + "/tags/v2.0"),
-                new Uri(TestRepoUrl + "/" + branchName),
+                new Uri(_repoUrl + "/tags/v2.0"),
+                new Uri(_repoUrl + "/" + branchName),
                 new SvnCopyArgs { LogMessage = $"Create branch for add test {testId}" });
             Assert.True(ok, "Failed to create test branch");
         }
 
         var checkoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl + "/" + branchName, "HEAD", checkoutPath);
+        _svn.CheckoutRevision(_repoUrl + "/" + branchName, "HEAD", checkoutPath);
 
         // Models directory should exist (it's in tags/v2.0)
         var modelsDir = Path.Combine(checkoutPath, "Models");

@@ -10,8 +10,8 @@
 
     Two things make a naive gate the wrong tool here, and both are why this one has a baseline:
 
-      - Not every suite can run everywhere. The SVN tests need a working copy and a server no runner
-        has, so on CI the SVN classes in RevisionControl sit near zero. That is a fact about the
+      - Not every suite can run everywhere. The SVN tests need an svn client no runner has (they
+        build their own repository with svnadmin), so on CI the SVN classes in RevisionControl sit near zero. That is a fact about the
         runner, not about the code, and a gate that fails on it teaches people to ignore the gate.
       - Some real debt predates the bar, and some of it is code only a live tool reaches: most of
         OpenModelicaInterface runs through a session that starts omc, which no runner has.
@@ -23,8 +23,8 @@
     diff - it is the point of keeping the file in the repository.
 
     -UpdateBaseline records what THIS machine measured, and this machine may measure more than the
-    runner can. The gate runs on windows-latest, which has no svn client and no working copy at
-    C:\Projects\ModelicaEditorTest, so the SVN tests that probe for it skip there and cover nothing;
+    runner can. The gate runs on windows-latest, which has no svn client, so the SVN tests that
+    need one skip there and cover nothing;
     a developer's machine that has it covers more and would write a baseline CI cannot meet. Recording
     an improvement is only safe from a machine configured like the runner - or after the run that
     produced it has been seen to pass there (B266).
@@ -106,8 +106,8 @@ Push-Location $repoRoot
 . (Join-Path $PSScriptRoot 'CoverageAssemblies.ps1')
 $bars = $MlqtBars
 
-# The suites, and the filter each needs. SVN integration tests want a working copy at
-# C:\Projects\ModelicaEditorTest plus a server; the build workflow excludes them the same way, so
+# The suites, and the filter each needs. SVN integration tests want an svn client and svnadmin, to
+# build a repository of their own; the build workflow excludes them the same way, so
 # this has to as well or the local numbers and CI's would not be comparable.
 $suites = @(
     @{ Project = 'ModelicaParser.Tests';  Filter = $null }

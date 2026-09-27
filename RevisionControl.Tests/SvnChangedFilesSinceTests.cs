@@ -11,15 +11,15 @@ namespace RevisionControl.Tests;
 /// escalate no debt and pass the build looking like a clean one, so the null paths are what most of
 /// this file is about — and they are the paths that need no working copy to reach.</para>
 ///
-/// <para>The integration tests use the real working copy at <c>C:\Projects\ModelicaEditorTest</c> and
-/// return without asserting when it is absent, matching <c>SvnOperationsTests</c>. CI has neither the
-/// working copy nor a server, and filters this suite out by name.</para>
+/// <para>The integration tests use a working copy of a repository this run builds for itself
+/// (<see cref="SvnWorkingCopyFixture"/>, B426) and return without asserting where svn is not
+/// installed, matching <c>SvnOperationsTests</c>. CI has no svn client, so there they are no-ops.</para>
 /// </summary>
-public class SvnChangedFilesSinceTests
+public class SvnChangedFilesSinceTests(SvnWorkingCopyFixture fixture) : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn = new();
-    private static readonly string RealSvnPath = @"C:\Projects\ModelicaEditorTest";
-    private static bool RealSvnAvailable => Directory.Exists(RealSvnPath);
+    private readonly string _workingCopy = fixture.WorkingCopy ?? "";
+    private bool WorkingCopyAvailable => _workingCopy.Length > 0;
 
     [Fact]
     public void NotAWorkingCopy_ReturnsNull()
@@ -50,23 +50,23 @@ public class SvnChangedFilesSinceTests
     [Fact]
     public void AnUnusableRevision_ReturnsNull()
     {
-        if (!RealSvnAvailable)
+        if (!WorkingCopyAvailable)
             return;
 
         // svn rejects the revision argument itself, so there is no diff to report — as distinct from
         // a diff that came back empty.
-        Assert.Null(_svn.GetChangedFilePathsSince(RealSvnPath, "not-a-revision"));
+        Assert.Null(_svn.GetChangedFilePathsSince(_workingCopy, "not-a-revision"));
     }
 
     [Fact]
     public void AgainstTheCurrentRevision_ReturnsSomethingRatherThanNull()
     {
-        if (!RealSvnAvailable)
+        if (!WorkingCopyAvailable)
             return;
 
         // Whatever the working copy happens to hold, the answer is a list: this is the "it worked"
         // case, and the point is that it is distinguishable from the failures above.
-        var changed = _svn.GetChangedFilePathsSince(RealSvnPath, "BASE");
+        var changed = _svn.GetChangedFilePathsSince(_workingCopy, "BASE");
 
         Assert.NotNull(changed);
     }
@@ -74,13 +74,13 @@ public class SvnChangedFilesSinceTests
     [Fact]
     public void ThePathsAreAbsolute()
     {
-        if (!RealSvnAvailable)
+        if (!WorkingCopyAvailable)
             return;
 
         // The caller matches them against the graph's file paths, which are absolute. `svn diff
         // --summarize --xml` reports working-copy paths, and a relative one would silently match
         // nothing — the failure mode phase 3 flagged as a path-normalisation risk.
-        var changed = _svn.GetChangedFilePathsSince(RealSvnPath, "1");
+        var changed = _svn.GetChangedFilePathsSince(_workingCopy, "1");
         if (changed is null or { Count: 0 })
             return;
 
@@ -90,13 +90,13 @@ public class SvnChangedFilesSinceTests
     [Fact]
     public void ADeletedFileIsNotReported()
     {
-        if (!RealSvnAvailable)
+        if (!WorkingCopyAvailable)
             return;
 
         // A file that is gone cannot be checked, so escalating debt in it would name a class that no
         // longer exists. Nothing here forces a deletion into the working copy; what it asserts is
         // that every path handed back is one that can still be read.
-        var changed = _svn.GetChangedFilePathsSince(RealSvnPath, "1");
+        var changed = _svn.GetChangedFilePathsSince(_workingCopy, "1");
         if (changed is null or { Count: 0 })
             return;
 

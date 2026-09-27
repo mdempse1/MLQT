@@ -25,8 +25,7 @@ namespace MLQT.Journeys;
 /// libraries of tens of thousands of classes, and nothing here says anything about that.</para>
 ///
 /// <para>There is no SVN fixture, for the reason <c>RevisionControl.Tests</c> already documents: SVN
-/// integration needs a live working copy and a server no runner has. The Git side covers the same
-/// pipeline.</para>
+/// integration needs an svn client no runner has. The Git side covers the same pipeline.</para>
 /// </remarks>
 public sealed class LibraryFixture : IDisposable
 {

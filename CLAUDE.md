@@ -517,6 +517,14 @@ excluded six classes needing no svn at all, hid 281 of the suite's 673 tests fro
 run, and hid a failing one among them (B266). **Classify a test by what it needs, never by what it is
 called.**
 
+**Every SVN test builds its own repository** — `RevisionControl.Tests/SvnTestRepository.cs`, with
+`svnadmin create` into a temporary folder, the way the Git tests use `Repository.Init`. They once
+shared `file:///C:/Projects/SVN/ModelicaEditorTest` and a working copy of it at
+`C:\Projects\ModelicaEditorTest`, and because they commit, two runs at once (two worktrees, two
+agents) moved HEAD under each other and failed a test that passed alone (B426). Never point a test
+at a fixed repository or working copy on the machine. The classes CI runs take
+`SvnWorkingCopyFixture`, which is empty where svn is not installed, so there they still return early.
+
 **A raw string literal's line endings are the checkout's, and a fixture must never be searched for
 one.** `"""..."""` carries whatever the *.cs file* carries — CRLF on a Windows checkout, LF on a
 runner with `core.autocrlf` off — so `fixture.Replace("x;\r\n", "")` matches on one platform and
@@ -601,8 +609,8 @@ dotnet build MLQT.slnx -c Release
 ```
 
 It is a **ratchet, not a flat threshold**, for the same reason MLQT offers its users one: some debt
-predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need a working copy
-and a server no runner has. `build/coverage-baseline.json` records the classes currently below their
+predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need an svn client
+no runner has. `build/coverage-baseline.json` records the classes currently below their
 bar, and the build fails when one goes further backwards, when a class that met the bar stops meeting
 it, or when a new class arrives below it.
 
