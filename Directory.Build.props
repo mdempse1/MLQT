@@ -23,4 +23,22 @@
     <VersionSuffix Condition="'$(VersionSuffix)' == '' and '$(Version)' == ''">dev</VersionSuffix>
   </PropertyGroup>
 
+  <!--
+    A warning fails a CI build, and only a CI build (B439).
+
+    B408 took a clean Release build from 56 warnings to none, and within hours tests written in
+    parallel had brought 13 back: nothing failed when one appeared, so nothing stopped them. GitHub
+    Actions sets CI=true on every runner, so every build in every workflow - the jobs, the release,
+    the publish - holds the count at zero, while a local build still reports a warning without
+    refusing to run the tests the work is in the middle of.
+
+    NuGet's vulnerability audit (NU1901-NU1904) is left a warning: it fires when an advisory is
+    published, which is news about a dependency, not a change anybody made, and a build that went red
+    overnight for it would teach people to ignore red.
+  -->
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+  </PropertyGroup>
+
 </Project>

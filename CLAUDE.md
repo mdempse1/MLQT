@@ -32,6 +32,10 @@ Test projects run on **xUnit v3 / Microsoft.Testing.Platform**, opted into repos
 error; use `--report-trx --report-trx-filename x` and `--coverlet` instead. `--filter` keeps its
 VSTest syntax. Test projects are `OutputType=Exe` and can be run directly as executables.
 
+**A warning fails a CI build** (`Directory.Build.props`, B439): wherever `CI=true` - every GitHub
+Actions runner - `TreatWarningsAsErrors` is on, except NuGet's vulnerability audit. A local build still
+only warns, so check the output: `CI=true dotnet build MLQT.slnx -c Release` is what CI will say.
+
 ```bash
 # Build entire solution
 dotnet build MLQT.slnx
