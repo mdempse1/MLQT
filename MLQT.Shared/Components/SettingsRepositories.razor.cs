@@ -45,7 +45,13 @@ public partial class SettingsRepositories : IDisposable
     /// the dialog renders into the provider's portal, not into this component's markup.
     /// </summary>
     internal bool _editRepository = false;
-    private readonly DialogOptions _dialogOptions = new() { FullWidth = false };
+    /// <summary>
+    /// The Edit Repository dialog's options. Neither a backdrop click nor Escape may close it: its
+    /// edits are made to the live repository and only <c>CancelChanges</c> puts them back, so a close
+    /// by either kept them without Apply. Said here rather than left to the provider it is shown
+    /// through, which happens to say the same (B425).
+    /// </summary>
+    private readonly DialogOptions _dialogOptions = new() { FullWidth = false, BackdropClick = false, CloseOnEscapeKey = false };
     private List<DictionaryInfo> _availableDictionaries = new();
     private string _newRepoExceptionName = "";
     private string _newBranchDirectory = "";
