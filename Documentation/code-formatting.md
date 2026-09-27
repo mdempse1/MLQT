@@ -247,6 +247,28 @@ your repository keeps packages single-file on purpose.
 
 A file that version control reports as newly **Added** is never removed by the tidy-up that follows a save, so a class you have created but not yet committed cannot be lost to it.
 
+## File headers and comments outside the class
+
+A comment that sits outside every class in a file — a licence or copyright header above `within`,
+a note between `within ...;` and the class, or one after the class's final `end X;` — **belongs to
+the class that heads the file**, and every path that writes the file keeps it:
+
+- **Formatting**, incremental and **Format All Files** alike, keeps it at the top (or bottom) of the
+  file. Formatting puts each comment on a line of its own and removes the blank lines around them,
+  the same way whichever path formats the file, so the two never disagree about it. A class
+  excluded from formatting keeps it exactly as it was written.
+- **Split into files**, and the one-file-per-class restructure of a full format, put it at the top
+  of the new `package.mo` — it headed the package's file, so it heads the package's file still. The
+  new per-class files get none.
+- The MCP server's edit tools keep it exactly as it was written; renaming a class keeps it, and
+  moving a class to another package takes it along: to the top of the class's new file, or, when the
+  class is moved into a file another class heads (which has a header of its own), directly above
+  the class.
+
+A comment after `within ...;` or after the last `end X;` is still reported as a syntax error today,
+so a file carrying one is not formatted (see [When Formatting Does NOT Happen](#when-formatting-does-not-happen)).
+Moving it above the `within` clause is the way to keep it and have the file formatted.
+
 ## Line endings and how files end
 
 **A file is written back with the line endings it already had.** A Windows checkout is CRLF, a Linux

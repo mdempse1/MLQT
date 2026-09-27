@@ -101,7 +101,7 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, oldClassCode, newSource);
         }
 
-        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText);
 
         if (preview)
             return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: false, 0, fileContent);
@@ -284,7 +284,7 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
 
-        var fileContent = WithinClause.Ensure(newOwnerCode, ctx.FileOwner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, ctx.FileOwner.ParentModelName, ctx.FileOwner.FileText);
 
         var (_, errs) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errs.Count > 0)
@@ -353,7 +353,7 @@ public sealed class EditTools
             var classCode = node.Definition.ModelicaCode ?? string.Empty;
             if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
                 return new ToolError("Could not uniquely locate the class within its file (cached source may be stale). Reload the library and retry.");
-            var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
+            var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName, ctx.FileOwner.FileText);
             var (_, errs) = ModelicaParserHelper.ParseWithErrors(content);
             if (errs.Count > 0)
                 return new ToolError($"Removing the class would make '{ctx.FilePath}' unparseable ({DescribeErrors(errs)}). Nothing was deleted.");
@@ -501,6 +501,8 @@ public sealed class EditTools
         //    place it under the new parent.
         var moved = _libraries.GetModelById(classId) ?? node;
         var classCode = moved.Definition.ModelicaCode ?? string.Empty;
+        // Its file's header goes with it if it headed one (B445); a nested class has none.
+        var fileText = srcCtx.FileOwner.Id == classId ? moved.FileText : null;
         var srcCtx2 = ModelFilePersistence.ResolveFileOwner(_libraries, classId) ?? srcCtx;
 
         var removeResult = await RemoveClassStorageAsync(moved, srcCtx2);
@@ -509,7 +511,7 @@ public sealed class EditTools
         touched.AddRange((List<string>)removeResult);
 
         var tgtCtx2 = ModelFilePersistence.ResolveFileOwner(_libraries, newParentId) ?? tgtCtx;
-        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2);
+        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2, fileText);
         if (addResult is ToolError addErr)
             return addErr;
         touched.AddRange((List<string>)addResult);
@@ -858,7 +860,7 @@ public sealed class EditTools
         var classCode = node.Definition.ModelicaCode ?? string.Empty;
         if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
             return new ToolError("Could not uniquely locate the class within its source file to move it.");
-        var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
+        var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName, ctx.FileOwner.FileText);
         await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, content);
         if (string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
             RemoveFromPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, node.Name);
@@ -868,7 +870,8 @@ public sealed class EditTools
     // Places 'classCode' under newParentId (standalone file if the parent is a directory package and the
     // class allows it, else nested in the parent's package.mo). Returns affected model ids or a ToolError.
     private async Task<object> AddClassStorageAsync(
-        string newParentId, string leaf, string classCode, ModelFilePersistence.FileOwnerContext tgtCtx)
+        string newParentId, string leaf, string classCode, ModelFilePersistence.FileOwnerContext tgtCtx,
+        FileLevelText? fileText = null)
     {
         var parentIsDirectoryPackage = tgtCtx.FileOwner.Id == newParentId &&
             string.Equals(Path.GetFileName(tgtCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase);
@@ -880,14 +883,16 @@ public sealed class EditTools
             var newFilePath = Path.Combine(dir, leaf + ".mo");
             // The move destination decides the clause, so replace whatever the class arrived with.
             await ModelicaFileEncoding.WriteAllTextAsync(
-                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId) + "\n");
+                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n");
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
 
         var parentNode = _libraries.GetModelById(newParentId)!;
         var parentCode = parentNode.Definition.ModelicaCode ?? string.Empty;
-        var inserted = InsertNestedClass(parentCode, parentNode.Name, classCode);
+        // Into a file another class heads, which has a header of its own: the moved class's goes
+        // with it, directly above it (B445).
+        var inserted = InsertNestedClass(parentCode, parentNode.Name, fileText?.AroundNested(classCode) ?? classCode);
         if (inserted is null)
             return new ToolError($"Could not find the end of destination '{newParentId}' to insert into.");
 
@@ -903,7 +908,7 @@ public sealed class EditTools
                 return new ToolError("Could not uniquely locate the destination within its file.");
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
-        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName));
+        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);

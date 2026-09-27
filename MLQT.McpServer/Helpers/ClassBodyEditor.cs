@@ -80,7 +80,7 @@ internal static class ClassBodyEditor
         ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
         ModelNode fileOwner, string filePath, string newOwnerCode, bool preview, string operation)
     {
-        var fileContent = WithinClause.Ensure(newOwnerCode, fileOwner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, fileOwner.ParentModelName, fileOwner.FileText);
 
         var (_, errors) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errors.Count > 0)

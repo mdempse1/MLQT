@@ -154,7 +154,7 @@ public class ModelicaPackageSaver
         {
             WriteModelFiles(model, rootDirectory, allModels, savedModels, childrenByParent,
                 standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result, newFileStyle,
-                untouched);
+                untouched, formatPreserved);
         }
 
         // The last line (B441): every class the save was given is in a file it wrote, or the caller
@@ -198,8 +198,15 @@ public class ModelicaPackageSaver
         var (parseTree, _) = ModelicaParserHelper.ParseWithErrors(sourceCode);
         fileOwner.Definition.ParsedCode = parseTree;
 
-        return RenderStoredDefinition(parseTree, formatting,
+        var rendered = RenderStoredDefinition(parseTree, formatting,
             rootClassId: isSimpleType is null ? null : fileOwner.Id, isSimpleType);
+
+        // The file's header and trailing comments, which the stored source never carries (B445), as
+        // the renderer writes them. Not when the source is already a whole file (format_class hands
+        // over the file as it is on disk): its own header was rendered with it.
+        return fileOwner.FileText is { } fileText && !WithinClause.Has(fileOwner.Definition.ModelicaCode ?? "")
+            ? fileText.Formatted().ApplyTo(rendered)
+            : rendered;
     }
 
     /// <summary>
@@ -550,7 +557,8 @@ public class ModelicaPackageSaver
         ConcurrentDictionary<string, string> renderedCode,
         SaveResult result,
         ModelicaFileEncoding.FileStyle? newFileStyle,
-        IReadOnlySet<string> untouched)
+        IReadOnlySet<string> untouched,
+        IReadOnlySet<string> verbatim)
     {
         if (savedModels.Contains(model.Id))
             return;
@@ -569,7 +577,7 @@ public class ModelicaPackageSaver
                 {
                     WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
                         standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
-                        newFileStyle, untouched);
+                        newFileStyle, untouched, verbatim);
                 }
             }
 
@@ -599,7 +607,7 @@ public class ModelicaPackageSaver
             var packageFile = Path.Combine(packageDir, "package.mo");
             try
             {
-                ModelicaFileEncoding.WriteAllTextLike(packageFile, code, newFileStyle);
+                ModelicaFileEncoding.WriteAllTextLike(packageFile, WithFileText(model, code, verbatim), newFileStyle);
                 result.WrittenFiles.Add(packageFile);
                 result.ModelIdToFilePath[model.Id] = packageFile;
             }
@@ -653,7 +661,7 @@ public class ModelicaPackageSaver
                     // Recursively write standalone child
                     WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
                         standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
-                        newFileStyle, untouched);
+                        newFileStyle, untouched, verbatim);
                 }
                 else
                 {
@@ -671,7 +679,7 @@ public class ModelicaPackageSaver
             var filePath = Path.Combine(parentDirectory, fileName);
             try
             {
-                ModelicaFileEncoding.WriteAllTextLike(filePath, code, newFileStyle);
+                ModelicaFileEncoding.WriteAllTextLike(filePath, WithFileText(model, code, verbatim), newFileStyle);
                 result.WrittenFiles.Add(filePath);
                 result.ModelIdToFilePath[model.Id] = filePath;
             }
@@ -695,6 +703,17 @@ public class ModelicaPackageSaver
             }
         }
     }
+
+    /// <summary>
+    /// The text of the file <paramref name="model"/> heads: <paramref name="code"/>, with the file's
+    /// own text outside the class put back around it (B445). A class written as it was keeps that text
+    /// as it was; a formatted one gets it as the renderer writes it, which is what the incremental
+    /// formatter writes for the same file. A class that headed no file has none, so a split's new
+    /// per-class files get no header and the package that headed the single file keeps it.
+    /// </summary>
+    private static string WithFileText(ModelNode model, string code, IReadOnlySet<string> verbatim)
+        => model.FileText is not { } fileText ? code
+            : (verbatim.Contains(model.Id) ? fileText : fileText.Formatted()).ApplyTo(code);
 
     /// <summary>
     /// Stores the rendered text on the class, which frees the old source string - but only when the

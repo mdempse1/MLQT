@@ -131,6 +131,14 @@ public static class GraphBuilder
                 graph.AddFileContainsModel(fileId, modelId);
             }
 
+            // The file's text outside every class goes on the class that heads the file (B445): a
+            // stored class source is its own span and nothing else, so this is the only place a
+            // licence header survives to be written back.
+            var topLevel = models.Where(m => !m.IsNested).ToList();
+            if (topLevel.Count > 0
+                && graph.GetNode<ModelNode>(GenerateModelId(topLevel[0].ParentModelName, topLevel[0].Name)) is { } head)
+                head.FileText = FileLevelText.Read(normalizedContent, topLevel[0].StartIndex, topLevel[^1].StopIndex);
+
             // Store the child order in package properties — only on a package this file defines.
             // A file holding one class of a directory package (Sub/Beta.mo) names that package as
             // its parent too, and writing its one-name list onto Lib.Sub replaced the order read

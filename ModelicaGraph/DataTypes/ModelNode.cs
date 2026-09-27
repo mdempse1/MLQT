@@ -141,6 +141,17 @@ public class ModelNode : GraphNode
     public bool IsNested { get; set; }
 
     /// <summary>
+    /// The text of this class's file that is outside every class in it — a licence header above
+    /// <c>within</c>, a comment after the clause or after the class — on the class that heads the
+    /// file, and null everywhere else (B445). Read once when the file is loaded; never part of
+    /// <see cref="ModelDefinition.ModelicaCode"/>, which every line number is counted from. Every
+    /// writer that rebuilds the file from the stored source puts it back through
+    /// <see cref="WithinClause.Ensure(string, string?, FileLevelText?)"/>, and it stays with this
+    /// class wherever the class is written: a rename keeps it, a move takes it along.
+    /// </summary>
+    public FileLevelText? FileText { get; set; }
+
+    /// <summary>
     /// Whether the class sits in a public section of its enclosing class — false only for one
     /// declared after a <c>protected</c> keyword. Top-level classes are always public.
     ///
