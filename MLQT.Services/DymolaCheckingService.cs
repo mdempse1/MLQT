@@ -1,8 +1,6 @@
 using MLQT.Services.DataTypes;
-using MLQT.Services.Interfaces;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
-using ModelicaParser.Helpers;
 using DymolaInterface.Interfaces;
 using static MLQT.Services.LoggingService;
 using DymolaInterface;
@@ -11,27 +9,14 @@ using MLQT.Services.Helpers;
 namespace MLQT.Services;
 
 /// <summary>
-/// Service for checking Modelica models using Dymola.
-/// Handles background processing, progress reporting, and cancellation.
+/// Service for checking Modelica models using Dymola. The run, its progress and cancellation are
+/// <see cref="ModelCheckingServiceBase{TSession}"/>'s; this is what Dymola does differently.
 /// </summary>
-public class DymolaCheckingService : IModelCheckingService
+public class DymolaCheckingService : ModelCheckingServiceBase<IDymolaInterface>
 {
     private readonly IDymolaInterfaceFactory _dymolaFactory;
-    private IDymolaInterface? _dymola;
-    private readonly CheckRunGate _runs = new();
-    private ModelCheckProgress _currentProgress = new();
 
-    // Throttling for UI updates
-    private DateTime _lastProgressUpdate = DateTime.MinValue;
-    private readonly TimeSpan _progressUpdateInterval = TimeSpan.FromMilliseconds(500);
-
-    public event Action<ModelCheckProgress>? OnProgressChanged;
-    public event Action<ModelCheckResult>? OnModelChecked;
-    public event Action<ModelCheckProgress>? OnCheckingComplete;
-
-    public bool IsRunning => _runs.IsRunning;
-    public ModelCheckProgress CurrentProgress => _currentProgress;
-    public string ToolName => "Dymola";
+    public override string ToolName => "Dymola";
 
     /// <summary>
     /// The one failure that is not the user's model. Singled out by its text so the result can say
@@ -59,19 +44,24 @@ public class DymolaCheckingService : IModelCheckingService
         _dymolaFactory.UpdateSettings(settings);
     }
 
-    public async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
+    private protected override Task<IDymolaInterface> GetSessionAsync(CancellationToken token) =>
+        _dymolaFactory.GetOrCreateAsync(token);
+
+    private protected override Task ResetSessionAsync() => _dymolaFactory.ResetAsync();
+
+    public override async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
     {
         var load = await LoadLibraryAsync(filePath, CancellationToken.None);
         return (load.Success, load.ErrorMessage);
     }
 
-    private async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
+    private protected override async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
     {
         try
         {
-            _dymola = await _dymolaFactory.GetOrCreateAsync(token);
+            Session = await _dymolaFactory.GetOrCreateAsync(token);
 
-            var isOpen = await _dymola.OpenModelAsync(filePath, false, false, cancellationToken: token);
+            var isOpen = await Session.OpenModelAsync(filePath, false, false, cancellationToken: token);
             if (!isOpen && Interrupted(filePath) is { } interrupted)
                 return interrupted;
 
@@ -81,9 +71,9 @@ public class DymolaCheckingService : IModelCheckingService
                 {
                     // File exists so maybe Dymola already had a version open. The log is cleared too, so
                     // what Dymola says about the retry is about the retry.
-                    await _dymola.ClearAsync();
+                    await Session.ClearAsync();
                     await SafeClearLogAsync();
-                    isOpen = await _dymola.OpenModelAsync(filePath, false, false, cancellationToken: token);
+                    isOpen = await Session.OpenModelAsync(filePath, false, false, cancellationToken: token);
                     if (!isOpen && Interrupted(filePath) is { } interruptedAgain)
                         return interruptedAgain;
 
@@ -117,7 +107,7 @@ public class DymolaCheckingService : IModelCheckingService
     /// answered, or the user cancelled. Asked before retrying, because a retry after a timeout waits
     /// out the whole limit again against a Dymola still busy with the first attempt.
     /// </summary>
-    private LibraryLoad? Interrupted(string filePath) => _dymola?.LastOutcome switch
+    private LibraryLoad? Interrupted(string filePath) => Session?.LastOutcome switch
     {
         CommandOutcome.Cancelled => LibraryLoad.Failed("Cancelled"),
         CommandOutcome.TimedOut => LibraryLoad.RanOutOfTime(
@@ -126,11 +116,6 @@ public class DymolaCheckingService : IModelCheckingService
     };
 
     /// <summary>
-    /// Dymola's log for the last command, or null when it cannot be read. Never throws: this is
-    /// asked on the success path too, and losing a clean result because the log could not be
-    /// fetched would be a worse answer than a result with no log on it.
-    /// </summary>
-    /// <summary>
     /// Empties Dymola's log so the next read belongs to the command that follows it. Never throws:
     /// failing to clear is not a reason to fail the check.
     /// </summary>
@@ -138,8 +123,8 @@ public class DymolaCheckingService : IModelCheckingService
     {
         try
         {
-            if (_dymola is not null)
-                await _dymola.ClearLogAsync();
+            if (Session is not null)
+                await Session.ClearLogAsync();
         }
         catch (Exception ex)
         {
@@ -147,11 +132,16 @@ public class DymolaCheckingService : IModelCheckingService
         }
     }
 
+    /// <summary>
+    /// Dymola's log for the last command, or null when it cannot be read. Never throws: this is
+    /// asked on the success path too, and losing a clean result because the log could not be
+    /// fetched would be a worse answer than a result with no log on it.
+    /// </summary>
     private async Task<string?> SafeLastErrorAsync()
     {
         try
         {
-            var log = _dymola is null ? null : await _dymola.GetLastErrorAsync();
+            var log = Session is null ? null : await Session.GetLastErrorAsync();
             return string.IsNullOrWhiteSpace(log) ? null : log;
         }
         catch (Exception ex)
@@ -161,12 +151,12 @@ public class DymolaCheckingService : IModelCheckingService
         }
     }
 
-    public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
+    public override async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            _dymola ??= await _dymolaFactory.GetOrCreateAsync(cancellationToken);
+            Session ??= await _dymolaFactory.GetOrCreateAsync(cancellationToken);
 
             // The library's own package.mo, not the class's file. Dymola would find the enclosing
             // package itself from the class's file, but OpenModelica will not — and the two tools
@@ -200,238 +190,6 @@ public class DymolaCheckingService : IModelCheckingService
                ?? throw new OperationCanceledException(cancellationToken);
     }
 
-    public Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default)
-    {
-        if (_runs.TryBegin(cancellationToken) is not { } run)
-        {
-            return Task.CompletedTask;
-        }
-
-        var token = run.Token;
-
-        // Run on a background thread to keep UI responsive. Not given the token: a run cancelled
-        // before it started would then never run at all, and never end.
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await RunCheckingAsync(modelNode, graph, token);
-            }
-            finally
-            {
-                _runs.End(run);
-            }
-        });
-
-        // Return immediately so UI remains responsive
-        return Task.CompletedTask;
-    }
-
-    private async Task RunCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken token)
-    {
-        try
-        {
-            ReportStatus($"Starting {ToolName}…");
-            if (!await ConnectAsync(modelNode, token))
-                return;
-
-            // The library's own package.mo, not the class's file. Dymola would find the enclosing
-            // package itself from the class's file, but OpenModelica will not — and the two tools
-            // answering "which file do I open?" differently is how one of them came to be broken
-            // for a release while the other worked (B170).
-            var rootFile = LibraryRootFile.For(graph, modelNode);
-            if (rootFile != null)
-            {
-                ReportStatus($"Opening {Path.GetFileName(rootFile)} in {ToolName}…");
-                var load = await LoadLibraryAsync(rootFile, token);
-                if (!load.Success && token.IsCancellationRequested)
-                {
-                    CompleteCancelled();
-                    return;
-                }
-
-                if (!load.Success)
-                {
-                    EndWithoutChecking(load.FailureFor(modelNode.Id, ToolName));
-                    return;
-                }
-            }
-
-            // Determine models to check
-            List<ModelNode> modelsToCheck;
-            if (modelNode.ClassType == "package")
-            {
-                modelsToCheck = graph.ModelNodes
-                    .Where(m => ModelicaName.IsStrictlyInside(m.Id, modelNode.Id) &&
-                                m.ClassType != "package")
-                    .ToList();
-            }
-            else
-            {
-                modelsToCheck = new List<ModelNode> { modelNode };
-            }
-
-            _currentProgress = new ModelCheckProgress
-            {
-                TotalModels = modelsToCheck.Count,
-                ModelsChecked = 0,
-                IsComplete = false,
-                WasCancelled = false
-            };
-
-            // Always fire initial progress
-            _lastProgressUpdate = DateTime.UtcNow;
-            OnProgressChanged?.Invoke(_currentProgress);
-
-            foreach (var model in modelsToCheck)
-            {
-                if (token.IsCancellationRequested)
-                {
-                    CompleteCancelled();
-                    return;
-                }
-
-                _currentProgress.CurrentModel = model.Id;
-
-                // Throttle progress updates to avoid overwhelming the UI
-                FireThrottledProgressUpdate();
-
-                // The token reaches the check itself now, so Cancel ends the one in flight rather
-                // than waiting for it to finish and stopping before the next (B262).
-                var result = await CheckSingleModelAsync(model, token);
-                if (result is null)
-                {
-                    CompleteCancelled();
-                    return;
-                }
-
-                // Every result, not only the failures. Reporting just the failures kept the UI quiet
-                // — and left a clean run with nothing at all to show, so the dialog that reports
-                // what the tool said correctly concluded it had checked nothing (B170). The
-                // subscriber batches its own re-renders, so the saving was not one worth having.
-                OnModelChecked?.Invoke(result);
-
-                _currentProgress.ModelsChecked++;
-
-                // Stopped at the first class to run out of time: the tool is still busy with it, or
-                // has been restarted, so every class after it would wait out the same limit (B263).
-                // Likewise at a tool that has gone: every class after it would be asked of nothing,
-                // and each came back as an empty "Check Failed" (B334).
-                if (result.TimedOut || result.ToolUnavailable)
-                {
-                    _currentProgress.IsComplete = true;
-                    OnProgressChanged?.Invoke(_currentProgress);
-                    Complete();
-                    return;
-                }
-
-                // Throttle progress updates
-                FireThrottledProgressUpdate();
-            }
-
-            // Always fire final progress update
-            _currentProgress.IsComplete = true;
-            OnProgressChanged?.Invoke(_currentProgress);
-            Complete();
-        }
-        catch (Exception ex)
-        {
-            // Handle unexpected errors
-            Error("DymolaCheckingService", "Unexpected error during model checking", ex);
-            _currentProgress.IsComplete = true;
-            _currentProgress.WasCancelled = false;
-            Complete();
-        }
-    }
-
-    /// <summary>
-    /// Takes the session for a run; false when Dymola could not be started or reached, or the user
-    /// stopped it starting - in which case the run has already been ended, saying which.
-    /// </summary>
-    /// <remarks>
-    /// Asked outside <see cref="LoadLibraryAsync"/>'s handling, so a
-    /// failure here used to land in the run's outer catch, which raised only the completion event: the
-    /// dialog said "Dymola checked nothing." in a success-coloured alert, and "Dymola path not
-    /// specified" or "did not start within the expected time" was in the log file only (B332).
-    /// </remarks>
-    private async Task<bool> ConnectAsync(ModelNode modelNode, CancellationToken token)
-    {
-        try
-        {
-            _dymola = await _dymolaFactory.GetOrCreateAsync(token);
-            return true;
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            // Stopped while the tool was starting - the user's decision, not a tool that failed (B335).
-            CompleteCancelled();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Error("DymolaCheckingService", "Could not start or connect to Dymola", ex);
-            EndWithoutChecking(UnavailableTool.CouldNotStart(ToolName, modelNode.Id, ex.Message));
-            return false;
-        }
-    }
-
-    /// <summary>A run that ends before any class is checked, with the one result that says why.</summary>
-    private void EndWithoutChecking(ModelCheckResult reason)
-    {
-        OnModelChecked?.Invoke(reason);
-        _currentProgress = new ModelCheckProgress { IsComplete = true };
-        Complete();
-    }
-
-    /// <summary>
-    /// Ends the run and then says so: a subscriber that starts another check from the completion
-    /// handler finds the service free, where it used to be refused without a word (B335).
-    /// </summary>
-    private void Complete()
-    {
-        _runs.EndCurrent();
-        OnCheckingComplete?.Invoke(_currentProgress);
-    }
-
-    /// <summary>
-    /// Says what is happening before there is anything to count.
-    /// </summary>
-    /// <remarks>
-    /// Starting the tool and opening the library is most of the wait on a large library, and
-    /// both counts are zero throughout it - so a progress dialog shown during it had nothing in
-    /// it, which reads as a stuck application rather than as a slow one (B259). Sent directly
-    /// rather than through the throttle: there are two of these in a whole run, and the first
-    /// is the one the user is waiting for.
-    /// </remarks>
-    private void ReportStatus(string status)
-    {
-        _currentProgress = new ModelCheckProgress { Status = status };
-        _lastProgressUpdate = DateTime.UtcNow;
-        OnProgressChanged?.Invoke(_currentProgress);
-    }
-
-    /// <summary>The run ends because the user cancelled it, before or during a check.</summary>
-    private void CompleteCancelled()
-    {
-        _currentProgress.WasCancelled = true;
-        _currentProgress.IsComplete = true;
-        Complete();
-    }
-
-    private void FireThrottledProgressUpdate()
-    {
-        var now = DateTime.UtcNow;
-        if (now - _lastProgressUpdate >= _progressUpdateInterval)
-        {
-            _lastProgressUpdate = now;
-            OnProgressChanged?.Invoke(_currentProgress);
-        }
-    }
-
-    /// <summary>
-    /// Checks one class in a session that is already open, and is <b>the only place a check
-    /// happens</b> — <see cref="CheckModelAsync"/> opens the library and then calls this.
-    /// </summary>
     /// <remarks>
     /// <para><b>It was not always the only place (B229).</b> The two paths each had their own copy
     /// of this, and the copy the package path used had neither the clear-the-log-first step nor the
@@ -441,8 +199,8 @@ public class DymolaCheckingService : IModelCheckingService
     /// from either path on its own, which is why the tests for this are a contract run against both
     /// tools rather than a test per service.</para>
     /// </remarks>
-    /// <returns>Null when the check was cancelled — the user's decision, which is not a result.</returns>
-    private async Task<ModelCheckResult?> CheckSingleModelAsync(ModelNode modelNode, CancellationToken token = default)
+    private protected override async Task<ModelCheckResult?> CheckSingleModelAsync(ModelNode modelNode,
+        CancellationToken token = default)
     {
         var result = new ModelCheckResult
         {
@@ -456,14 +214,14 @@ public class DymolaCheckingService : IModelCheckingService
             // from something checked before it — a wrong answer, and a worse one than no log at all.
             await SafeClearLogAsync();
 
-            var checkResult = await _dymola!.CheckModelAsync(modelNode.Id, false, false, cancellationToken: token);
+            var checkResult = await Session!.CheckModelAsync(modelNode.Id, false, false, cancellationToken: token);
 
             // False is the model's verdict only if Dymola gave it. A check that ran out of time or was
             // cancelled answered nothing - and asking for the log then would wait out the limit again,
             // against a Dymola still busy with the check (B263).
             if (!checkResult)
             {
-                switch (_dymola.LastOutcome)
+                switch (Session.LastOutcome)
                 {
                     case CommandOutcome.Cancelled:
                         return null;
@@ -490,7 +248,7 @@ public class DymolaCheckingService : IModelCheckingService
             }
             else
             {
-                var error = await _dymola.GetLastErrorAsync();
+                var error = await Session.GetLastErrorAsync();
                 result.Success = false;
                 result.Log = error;
                 result.Summary = error.Contains(DemoLicenceLimit)
@@ -513,7 +271,7 @@ public class DymolaCheckingService : IModelCheckingService
     {
         try
         {
-            return _dymola is not null && await _dymola.GetSessionStateAsync() == DymolaSessionState.Gone;
+            return Session is not null && await Session.GetSessionStateAsync() == DymolaSessionState.Gone;
         }
         catch (Exception ex)
         {
@@ -537,8 +295,8 @@ public class DymolaCheckingService : IModelCheckingService
 
         try
         {
-            result.ErrorMessage = _dymola != null
-                ? await _dymola.GetLastErrorAsync()
+            result.ErrorMessage = Session != null
+                ? await Session.GetLastErrorAsync()
                 : failure.Message;
         }
         catch (Exception innerEx)
@@ -548,17 +306,5 @@ public class DymolaCheckingService : IModelCheckingService
         }
 
         return result;
-    }
-
-    public void StopChecking()
-    {
-        _runs.Cancel();
-    }
-
-    public async Task ResetAsync()
-    {
-        StopChecking();
-        _dymola = null;
-        await _dymolaFactory.ResetAsync();
     }
 }

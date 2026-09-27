@@ -1,8 +1,6 @@
 using MLQT.Services.DataTypes;
-using MLQT.Services.Interfaces;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
-using ModelicaParser.Helpers;
 using OpenModelicaInterface.Interfaces;
 using static MLQT.Services.LoggingService;
 using OpenModelicaInterface;
@@ -12,27 +10,14 @@ using MLQT.Services.Helpers;
 namespace MLQT.Services;
 
 /// <summary>
-/// Service for checking Modelica models using OpenModelica.
-/// Handles background processing, progress reporting, and cancellation.
+/// Service for checking Modelica models using OpenModelica. The run, its progress and cancellation
+/// are <see cref="ModelCheckingServiceBase{TSession}"/>'s; this is what omc does differently.
 /// </summary>
-public class OpenModelicaCheckingService : IModelCheckingService
+public class OpenModelicaCheckingService : ModelCheckingServiceBase<IOpenModelicaInterface>
 {
     private readonly IOpenModelicaInterfaceFactory _omcFactory;
-    private IOpenModelicaInterface? _omc;
-    private readonly CheckRunGate _runs = new();
-    private ModelCheckProgress _currentProgress = new();
 
-    // Throttling for UI updates
-    private DateTime _lastProgressUpdate = DateTime.MinValue;
-    private readonly TimeSpan _progressUpdateInterval = TimeSpan.FromMilliseconds(500);
-
-    public event Action<ModelCheckProgress>? OnProgressChanged;
-    public event Action<ModelCheckResult>? OnModelChecked;
-    public event Action<ModelCheckProgress>? OnCheckingComplete;
-
-    public bool IsRunning => _runs.IsRunning;
-    public ModelCheckProgress CurrentProgress => _currentProgress;
-    public string ToolName => "OpenModelica";
+    public override string ToolName => "OpenModelica";
 
     /// <summary>
     /// The one failure that is not the user's model. Singled out by its text so the result can say
@@ -60,19 +45,24 @@ public class OpenModelicaCheckingService : IModelCheckingService
         _omcFactory.UpdateSettings(settings);
     }
 
-    public async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
+    private protected override Task<IOpenModelicaInterface> GetSessionAsync(CancellationToken token) =>
+        _omcFactory.GetOrCreateAsync(token);
+
+    private protected override Task ResetSessionAsync() => _omcFactory.ResetAsync();
+
+    public override async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
     {
         var load = await LoadLibraryAsync(filePath, CancellationToken.None);
         return (load.Success, load.ErrorMessage);
     }
 
-    private async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
+    private protected override async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
     {
         try
         {
-            _omc = await _omcFactory.GetOrCreateAsync(token);
+            Session = await _omcFactory.GetOrCreateAsync(token);
 
-            var isOpen = await _omc.LoadFileAsync(filePath, token);
+            var isOpen = await Session.LoadFileAsync(filePath, token);
             if (!isOpen)
             {
                 // Drained, so what omc says after the retry is about the retry. This read used to be
@@ -81,8 +71,8 @@ public class OpenModelicaCheckingService : IModelCheckingService
                 if (File.Exists(filePath))
                 {
                     // File exists so maybe OpenModelica already had a version open
-                    await _omc.ClearAsync();
-                    isOpen = await _omc.LoadFileAsync(filePath, token);
+                    await Session.ClearAsync();
+                    isOpen = await Session.LoadFileAsync(filePath, token);
                     if (!isOpen)
                     {
                         return LibraryLoad.Failed(LibraryLoad.WouldNotOpen(ToolName, await SafeErrorStringAsync()));
@@ -100,17 +90,17 @@ public class OpenModelicaCheckingService : IModelCheckingService
         {
             // Sent and abandoned closes the session; dropped here so the next request asks the
             // factory, which replaces a closed one.
-            _omc = null;
+            Session = null;
             return LibraryLoad.Failed("Cancelled");
         }
         catch (OpenModelicaExitedException ex)
         {
-            _omc = null;
+            Session = null;
             return LibraryLoad.Gone($"{ex.Message} The next check starts a new session.");
         }
         catch (TimeoutException)
         {
-            _omc = null;
+            Session = null;
             return LibraryLoad.RanOutOfTime(
                 ToolTimeLimit.LoadTimedOut(ToolName, filePath, _commandTimeout, SessionClosed));
         }
@@ -130,7 +120,7 @@ public class OpenModelicaCheckingService : IModelCheckingService
     {
         try
         {
-            var log = _omc is null ? null : await _omc.GetErrorStringAsync();
+            var log = Session is null ? null : await Session.GetErrorStringAsync();
             return string.IsNullOrWhiteSpace(log) ? null : log;
         }
         catch (Exception ex)
@@ -140,12 +130,12 @@ public class OpenModelicaCheckingService : IModelCheckingService
         }
     }
 
-    public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
+    public override async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            _omc ??= await _omcFactory.GetOrCreateAsync(cancellationToken);
+            Session ??= await _omcFactory.GetOrCreateAsync(cancellationToken);
 
             // The library's own package.mo, not the class's file. OpenModelica will not load a
             // class out of the middle of a package: handed Integrator.mo it sees a class called
@@ -180,238 +170,6 @@ public class OpenModelicaCheckingService : IModelCheckingService
                ?? throw new OperationCanceledException(cancellationToken);
     }
 
-    public Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default)
-    {
-        if (_runs.TryBegin(cancellationToken) is not { } run)
-        {
-            return Task.CompletedTask;
-        }
-
-        var token = run.Token;
-
-        // Run on a background thread to keep UI responsive. Not given the token: a run cancelled
-        // before it started would then never run at all, and never end.
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await RunCheckingAsync(modelNode, graph, token);
-            }
-            finally
-            {
-                _runs.End(run);
-            }
-        });
-
-        // Return immediately so UI remains responsive
-        return Task.CompletedTask;
-    }
-
-    private async Task RunCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken token)
-    {
-        try
-        {
-            ReportStatus($"Starting {ToolName}…");
-            if (!await ConnectAsync(modelNode, token))
-                return;
-
-            // The library's own package.mo, not the class's file. OpenModelica will not load a
-            // class out of the middle of a package: handed Integrator.mo it sees a class called
-            // Integrator with nothing to resolve its `within` against, and refuses. Dymola accepts
-            // the file and finds the enclosing package itself, which is why the same code worked
-            // for one tool and not the other (B170).
-            var rootFile = LibraryRootFile.For(graph, modelNode);
-            if (rootFile != null)
-            {
-                ReportStatus($"Opening {Path.GetFileName(rootFile)} in {ToolName}…");
-                var load = await LoadLibraryAsync(rootFile, token);
-                if (!load.Success && token.IsCancellationRequested)
-                {
-                    CompleteCancelled();
-                    return;
-                }
-
-                if (!load.Success)
-                {
-                    EndWithoutChecking(load.FailureFor(modelNode.Id, ToolName));
-                    return;
-                }
-            }
-
-            // Determine models to check
-            List<ModelNode> modelsToCheck;
-            if (modelNode.ClassType == "package")
-            {
-                modelsToCheck = graph.ModelNodes
-                    .Where(m => ModelicaName.IsStrictlyInside(m.Id, modelNode.Id) &&
-                                m.ClassType != "package")
-                    .ToList();
-            }
-            else
-            {
-                modelsToCheck = new List<ModelNode> { modelNode };
-            }
-
-            _currentProgress = new ModelCheckProgress
-            {
-                TotalModels = modelsToCheck.Count,
-                ModelsChecked = 0,
-                IsComplete = false,
-                WasCancelled = false
-            };
-
-            // Always fire initial progress
-            _lastProgressUpdate = DateTime.UtcNow;
-            OnProgressChanged?.Invoke(_currentProgress);
-
-            foreach (var model in modelsToCheck)
-            {
-                if (token.IsCancellationRequested)
-                {
-                    CompleteCancelled();
-                    return;
-                }
-
-                _currentProgress.CurrentModel = model.Id;
-
-                // Throttle progress updates to avoid overwhelming the UI
-                FireThrottledProgressUpdate();
-
-                // The token reaches the check itself now, so Cancel ends the one in flight rather
-                // than waiting for it to finish and stopping before the next (B262).
-                var result = await CheckSingleModelAsync(model, token);
-                if (result is null)
-                {
-                    CompleteCancelled();
-                    return;
-                }
-
-                // Every result, not only the failures — a clean run otherwise had nothing at all
-                // to show, so the dialog reporting what the tool said correctly concluded it had
-                // checked nothing (B170).
-                OnModelChecked?.Invoke(result);
-
-                _currentProgress.ModelsChecked++;
-
-                // Stopped at the first class to run out of time: the tool is still busy with it, or
-                // has been restarted, so every class after it would wait out the same limit (B263).
-                // Likewise at a tool that has gone: every class after it would be asked of nothing,
-                // and each came back as an empty "Check Failed" (B334).
-                if (result.TimedOut || result.ToolUnavailable)
-                {
-                    _currentProgress.IsComplete = true;
-                    OnProgressChanged?.Invoke(_currentProgress);
-                    Complete();
-                    return;
-                }
-
-                // Throttle progress updates
-                FireThrottledProgressUpdate();
-            }
-
-            // Always fire final progress update
-            _currentProgress.IsComplete = true;
-            OnProgressChanged?.Invoke(_currentProgress);
-            Complete();
-        }
-        catch (Exception ex)
-        {
-            // Handle unexpected errors
-            Error("OpenModelicaCheckingService", "Unexpected error during model checking", ex);
-            _currentProgress.IsComplete = true;
-            _currentProgress.WasCancelled = false;
-            Complete();
-        }
-    }
-
-    /// <summary>
-    /// Takes the session for a run; false when omc could not be started, or the user stopped it
-    /// starting - in which case the run has already been ended, saying which.
-    /// </summary>
-    /// <remarks>
-    /// Asked outside <see cref="LoadLibraryAsync"/>'s handling, so a
-    /// failure here used to land in the run's outer catch, which raised only the completion event: a
-    /// wrong path or a start that timed out read as "OpenModelica checked nothing." in a
-    /// success-coloured alert, and the reason was in the log file only (B332).
-    /// </remarks>
-    private async Task<bool> ConnectAsync(ModelNode modelNode, CancellationToken token)
-    {
-        try
-        {
-            _omc = await _omcFactory.GetOrCreateAsync(token);
-            return true;
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            // Stopped while the tool was starting - the user's decision, not a tool that failed (B335).
-            CompleteCancelled();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Error("OpenModelicaCheckingService", "Could not start OpenModelica", ex);
-            EndWithoutChecking(UnavailableTool.CouldNotStart(ToolName, modelNode.Id, ex.Message));
-            return false;
-        }
-    }
-
-    /// <summary>A run that ends before any class is checked, with the one result that says why.</summary>
-    private void EndWithoutChecking(ModelCheckResult reason)
-    {
-        OnModelChecked?.Invoke(reason);
-        _currentProgress = new ModelCheckProgress { IsComplete = true };
-        Complete();
-    }
-
-    /// <summary>
-    /// Ends the run and then says so: a subscriber that starts another check from the completion
-    /// handler finds the service free, where it used to be refused without a word (B335).
-    /// </summary>
-    private void Complete()
-    {
-        _runs.EndCurrent();
-        OnCheckingComplete?.Invoke(_currentProgress);
-    }
-
-    /// <summary>
-    /// Says what is happening before there is anything to count.
-    /// </summary>
-    /// <remarks>
-    /// Starting the tool and opening the library is most of the wait on a large library, and
-    /// both counts are zero throughout it - so a progress dialog shown during it had nothing in
-    /// it, which reads as a stuck application rather than as a slow one (B259). Sent directly
-    /// rather than through the throttle: there are two of these in a whole run, and the first
-    /// is the one the user is waiting for.
-    /// </remarks>
-    private void ReportStatus(string status)
-    {
-        _currentProgress = new ModelCheckProgress { Status = status };
-        _lastProgressUpdate = DateTime.UtcNow;
-        OnProgressChanged?.Invoke(_currentProgress);
-    }
-
-    /// <summary>The run ends because the user cancelled it, before or during a check.</summary>
-    private void CompleteCancelled()
-    {
-        _currentProgress.WasCancelled = true;
-        _currentProgress.IsComplete = true;
-        Complete();
-    }
-
-    private void FireThrottledProgressUpdate()
-    {
-        var now = DateTime.UtcNow;
-        if (now - _lastProgressUpdate >= _progressUpdateInterval)
-        {
-            _lastProgressUpdate = now;
-            OnProgressChanged?.Invoke(_currentProgress);
-        }
-    }
-
-    /// <summary>
-    /// Checks one class in a session that is already open, and is <b>the only place a check
-    /// happens</b> — <see cref="CheckModelAsync"/> opens the library and then calls this.
-    /// </summary>
     /// <remarks>
     /// <para><b>It was not always the only place (B229).</b> The two paths each had their own copy
     /// of this, and the copy the package path used had neither the drain-the-log-first step nor the
@@ -421,8 +179,8 @@ public class OpenModelicaCheckingService : IModelCheckingService
     /// from either path on its own, which is why the tests for this are a contract run against both
     /// tools rather than a test per service.</para>
     /// </remarks>
-    /// <returns>Null when the check was cancelled — the user's decision, which is not a result.</returns>
-    private async Task<ModelCheckResult?> CheckSingleModelAsync(ModelNode modelNode, CancellationToken token = default)
+    private protected override async Task<ModelCheckResult?> CheckSingleModelAsync(ModelNode modelNode,
+        CancellationToken token = default)
     {
         var result = new ModelCheckResult
         {
@@ -442,26 +200,26 @@ public class OpenModelicaCheckingService : IModelCheckingService
             bool checkResult;
             try
             {
-                checkResult = await _omc!.CheckModelAsync(modelNode.Id, token);
+                checkResult = await Session!.CheckModelAsync(modelNode.Id, token);
             }
             catch (OperationCanceledException)
             {
                 // The session is closed if the check had been sent; the factory replaces it.
-                _omc = null;
+                Session = null;
                 return null;
             }
             catch (TimeoutException)
             {
                 // Not the model's verdict, and not worth a log read: the session that would answer
                 // it has been closed (B263).
-                _omc = null;
+                Session = null;
                 return ToolTimeLimit.CheckTimedOut(ToolName, modelNode.Id, _commandTimeout, SessionClosed);
             }
             catch (OpenModelicaExitedException)
             {
                 // omc died under the check. Before the wait watched the process, this waited out the
                 // whole time limit and blamed it - or, with no limit, waited until Stop (B334).
-                _omc = null;
+                Session = null;
                 return UnavailableTool.WentAway(ToolName, modelNode.Id);
             }
 
@@ -476,7 +234,7 @@ public class OpenModelicaCheckingService : IModelCheckingService
             }
             else
             {
-                var error = await _omc!.GetErrorStringAsync();
+                var error = await Session!.GetErrorStringAsync();
                 result.Success = false;
                 result.Log = error;
                 result.Summary = error.Contains(DemoLicenceLimit)
@@ -509,8 +267,8 @@ public class OpenModelicaCheckingService : IModelCheckingService
 
         try
         {
-            result.ErrorMessage = _omc != null
-                ? await _omc.GetErrorStringAsync()
+            result.ErrorMessage = Session != null
+                ? await Session.GetErrorStringAsync()
                 : failure.Message;
         }
         catch (Exception innerEx)
@@ -520,17 +278,5 @@ public class OpenModelicaCheckingService : IModelCheckingService
         }
 
         return result;
-    }
-
-    public void StopChecking()
-    {
-        _runs.Cancel();
-    }
-
-    public async Task ResetAsync()
-    {
-        StopChecking();
-        _omc = null;
-        await _omcFactory.ResetAsync();
     }
 }
