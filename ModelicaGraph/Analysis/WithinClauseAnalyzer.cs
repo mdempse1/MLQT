@@ -29,9 +29,8 @@ namespace ModelicaGraph.Analysis;
 /// directories' names — so one wrong <c>within</c> in a <c>package.mo</c> is one finding, not one on
 /// every file below it that is right.</para>
 ///
-/// <para>Structural only, so it needs no dependency analysis. On by default, for the reason
-/// <see cref="SingleFilePackageAnalyzer"/> is: the files that trip it are written by other tools and
-/// by hand, and a user who has not heard of the rule is the user whose class has gone missing.</para>
+/// <para>Structural only, so it needs no dependency analysis. Off by default like most rules, and an
+/// Error once a repository enables it.</para>
 /// </summary>
 public sealed class WithinClauseAnalyzer : IGraphAnalyzer
 {

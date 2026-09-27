@@ -310,6 +310,14 @@ end Q;
 
     // --- A within clause that does not match the directory (B458) -------------------------------
 
+    /// <summary>The rule is off by default, so both surfaces are handed settings that enable it.</summary>
+    private static StyleCheckingSettings WithinClauseEnabled()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.WithinClause, true);
+        return settings;
+    }
+
     /// <summary>
     /// A library on disk with two files whose within clause names a package other than the one
     /// whose directory they are in, loaded the way every surface loads a directory.
@@ -326,9 +334,7 @@ end Q;
         File.WriteAllText(Path.Combine(lib, "Sub", "Y.mo"), "within Lib.Sub;\nmodel Y\nend Y;\n");
 
         var data = new LibraryDataService();
-        // No settings of its own: the rule is on by default, so this is what a repository nobody has
-        // configured reports.
-        var repo = new Repository { Name = "WithinRepo", StyleSettings = new StyleCheckingSettings() };
+        var repo = new Repository { Name = "WithinRepo", StyleSettings = WithinClauseEnabled() };
         var library = data.AddLibraryFromDirectoryAsync(lib).GetAwaiter().GetResult();
         library.RepositoryId = repo.Id;
         PackageCodeTrimmer.TrimStandaloneChildren(data.CombinedGraph);
@@ -344,7 +350,7 @@ end Q;
             var models = data.Libraries.SelectMany(l => l.ModelIds).Select(data.GetModelById)
                 .Where(m => m is not null && !m.IsParseFailurePlaceholder)!.Cast<ModelNode>().ToList();
             var facade = LibraryCheckSession
-                .Check(data.CombinedGraph, models, new StyleCheckingSettings(),
+                .Check(data.CombinedGraph, models, WithinClauseEnabled(),
                     new CustomDictionaryService(), new DictionaryManagerService())
                 .Where(f => f.RuleId == RuleIds.WithinClause)
                 .Select(f => f.ModelId).OrderBy(id => id, StringComparer.Ordinal).ToList();

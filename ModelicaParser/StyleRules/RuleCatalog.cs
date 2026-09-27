@@ -161,10 +161,10 @@ public static class RuleCatalog
             // leaves it that way. A user who has not heard of the rule is exactly the user who needs
             // it, so the default is the wrong place to ask them to opt in.
             new RuleDefinition(RuleIds.SingleFilePackage, "Packages are stored as directories", "Structure", RuleSeverity.Warning, "A package whose classes could each be stored in their own file must be a directory rather than a single .mo file.", EnabledByDefault: true),
-            // On by default and an Error, for SingleFilePackage's reason and one more: the file is
-            // not where its within clause puts it, so MLQT shows the class somewhere no other Modelica
-            // tool will find it, and Format All refuses the library rather than lose the file (B458).
-            new RuleDefinition(RuleIds.WithinClause, "within clause matches the directory", "Structure", RuleSeverity.Error, "A file stored in a package's directory must begin with a within clause naming that package (MLS 13.4.3); a package.mo names the package of the directory above. MLQT places a class by its within clause and other tools by its directory, so a mismatch puts the class where no other tool will find it.", EnabledByDefault: true),
+            // An Error when enabled: the file is not where its within clause puts it, so MLQT shows
+            // the class somewhere no other Modelica tool will find it, and Format All refuses the
+            // library rather than lose the file (B458). Opt-in like the rest, as the user decided.
+            new RuleDefinition(RuleIds.WithinClause, "within clause matches the directory", "Structure", RuleSeverity.Error, "A file stored in a package's directory must begin with a within clause naming that package (MLS 13.4.3); a package.mo names the package of the directory above. MLQT places a class by its within clause and other tools by its directory, so a mismatch puts the class where no other tool will find it."),
             new RuleDefinition(RuleIds.UsesUndeclared, "Referenced libraries are declared", "Structure", RuleSeverity.Warning, "A library referenced by the code must be declared in the top-level uses(...) annotation."),
             new RuleDefinition(RuleIds.UsesDeclaredUnused, "No unused uses() dependencies", "Structure", RuleSeverity.Warning, "A library declared in uses(...) must actually be referenced by the code."),
             new RuleDefinition(RuleIds.UnusedClass, "No unused protected classes", "Unused", RuleSeverity.Warning, "A protected nested class that nothing references is dead code. Classes with an experiment(...) annotation are exempt — they are simulation entry points."),

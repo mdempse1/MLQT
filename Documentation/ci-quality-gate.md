@@ -79,16 +79,14 @@ repo is a single library or several side by side. A single `<root>/.mlqt/setting
 mlqt check /path/to/MyLibrary
 ```
 
-Out of the box only the rules that are **on by default** run — currently
-`MLQT.Structure.SingleFilePackage` (Warning) and `MLQT.Structure.WithinClause` (Error) — so you'll see `note: only the rules that are on by default are
+Out of the box only the rules that are **on by default** run — currently just
+`MLQT.Structure.SingleFilePackage` — so you'll see `note: only the rules that are on by default are
 enabled; nothing else has been configured for this library. See settings-reference.md to choose the
 rules you want.` Enable rules next.
 
 One more thing is reported even with no rules configured: a **parse error**. If a file has a syntax error
 you will see it on this very first run, and the command will exit `1`. That is deliberate — see
-[Parse errors always fail](#parse-errors-always-fail). So does a file whose `within` clause does not
-name the package whose directory it is in (`MLQT.Structure.WithinClause`), because other Modelica
-tools will not find that class where MLQT shows it; unlike a parse error, it can be switched off.
+[Parse errors always fail](#parse-errors-always-fail).
 
 ---
 

@@ -16,6 +16,9 @@ public class CheckPipelineTests : IDisposable
 {
     private readonly List<string> _roots = [];
 
+    private const string WithinClauseEnabled =
+        """{ "RuleSeverities": { "MLQT.Structure.WithinClause": "Error" } }""";
+
     public void Dispose()
     {
         foreach (var root in _roots)
@@ -85,7 +88,7 @@ public class CheckPipelineTests : IDisposable
     {
         var lib = Library(NewDirectory());
         Write(lib, ".mlqt/settings.json",
-            """{ "RuleSeverities": { "MLQT.Structure.SingleFilePackage": "Off", "MLQT.Structure.WithinClause": "Off" } }""");
+            """{ "RuleSeverities": { "MLQT.Structure.SingleFilePackage": "Off" } }""");
 
         var (code, _, stderr) = Run("check", lib);
 
@@ -110,11 +113,11 @@ public class CheckPipelineTests : IDisposable
     }
 
     [Fact]
-    public void AWithinClauseThatDoesNotMatchItsDirectory_FailsARunWithNoSettings()
+    public void AWithinClauseThatDoesNotMatchItsDirectory_FailsARunThatEnablesTheRule()
     {
-        // B458: on by default at Error, so a library nobody has configured is gated on it. A class
-        // other tools cannot find is not a matter of taste.
+        // B458: an Error when enabled, so a library that has opted in is gated on it.
         var lib = Library(NewDirectory(), "Lib");
+        Write(lib, ".mlqt/settings.json", WithinClauseEnabled);
         Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
         Write(lib, "Sub/X.mo", "within Lib;\nmodel X\nend X;\n");
 
@@ -126,9 +129,25 @@ public class CheckPipelineTests : IDisposable
     }
 
     [Fact]
+    public void AWithinClauseThatDoesNotMatchItsDirectory_IsNotReportedByARunWithNoSettings()
+    {
+        // The control: the rule is off by default, so a library nobody has configured is not
+        // reported on it — the same library as above, with no settings file.
+        var lib = Library(NewDirectory(), "Lib");
+        Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
+        Write(lib, "Sub/X.mo", "within Lib;\nmodel X\nend X;\n");
+
+        var (code, stdout, _) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.DoesNotContain("MLQT.Structure.WithinClause", stdout);
+    }
+
+    [Fact]
     public void ALibraryWhoseWithinClausesMatchTheirDirectories_Passes()
     {
         var lib = Library(NewDirectory(), "Lib");
+        Write(lib, ".mlqt/settings.json", WithinClauseEnabled);
         Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
         Write(lib, "Sub/X.mo", "within Lib.Sub;\nmodel X\nend X;\n");
 

@@ -32,8 +32,16 @@ public class WithinClauseAnalyzerTests
 
     private static List<Finding> Analyze(DirectedGraph graph, StyleCheckingSettings? settings = null)
     {
-        var ctx = new GraphAnalysisContext(graph, settings ?? new StyleCheckingSettings(), graph.ModelNodes.ToList());
+        var ctx = new GraphAnalysisContext(graph, settings ?? Enabled(), graph.ModelNodes.ToList());
         return GraphAnalysisRunner.Run(ctx).Where(f => f.RuleId == RuleIds.WithinClause).ToList();
+    }
+
+    /// <summary>The rule is off by default, so the tests that are about what it reports enable it.</summary>
+    private static StyleCheckingSettings Enabled()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.WithinClause, true);
+        return settings;
     }
 
     private static readonly (string, string) LibPackage =
@@ -175,14 +183,14 @@ public class WithinClauseAnalyzerTests
     // ---- configuration -------------------------------------------------------------------------
 
     [Fact]
-    public void ItIsOnByDefault_AndCanBeSwitchedOff()
+    public void ItIsOffByDefault_AndCanBeSwitchedOn()
     {
+        // B458: opt-in like most rules, at Error once enabled.
         var graph = Load(LibPackage, (At("Lib", "R.mo"), "within Lib.Q;\nmodel R\nend R;\n"));
-        var off = new StyleCheckingSettings();
-        off.SetRuleEnabled(RuleIds.WithinClause, false);
 
-        Assert.Single(Analyze(graph));
-        Assert.Empty(Analyze(graph, off));
+        Assert.False(RuleCatalog.IsEnabledByDefault(RuleIds.WithinClause));
+        Assert.Empty(Analyze(graph, new StyleCheckingSettings()));
+        Assert.Equal(RuleSeverity.Error, Assert.Single(Analyze(graph)).Severity);
     }
 
     [Fact]
@@ -198,7 +206,7 @@ public class WithinClauseAnalyzerTests
     public void OnlyTheCheckedClassesAreReported()
     {
         var graph = Load(LibPackage, (At("Lib", "R.mo"), "within Lib.Q;\nmodel R\nend R;\n"));
-        var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings(),
+        var ctx = new GraphAnalysisContext(graph, Enabled(),
             graph.ModelNodes.Where(m => m.Id != "Lib.Q.R").ToList());
 
         Assert.DoesNotContain(GraphAnalysisRunner.Run(ctx), f => f.RuleId == RuleIds.WithinClause);
