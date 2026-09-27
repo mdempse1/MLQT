@@ -13,7 +13,7 @@ namespace RevisionControl.Tests;
 ///
 /// <para>The integration tests use a working copy of a repository this run builds for itself
 /// (<see cref="SvnWorkingCopyFixture"/>, B426) and return without asserting where svn is not
-/// installed, matching <c>SvnOperationsTests</c>. CI has no svn client, so there they are no-ops.</para>
+/// installed. CI has no svn client, so there they are no-ops.</para>
 /// </summary>
 public class SvnChangedFilesSinceTests(SvnWorkingCopyFixture fixture) : IClassFixture<SvnWorkingCopyFixture>
 {

@@ -361,4 +361,11 @@ on the developer's machine are retired: the tests commit, so two runs at once mo
 other (B426), and `RepositoryServiceTests`, the last to use it, asserted nothing anywhere else (B471). `SvnWorkingCopyFixture` gives the classes CI runs a trunk working copy, or
 none where svn is not installed.
 
-The Git repositories dedicated to testing has the URL https://github.com/mdempse1/ModelicaEditorTests.git
+Git tests never clone either: `GitTestRepositoryFixture` (`RevisionControl.Tests`) builds the same
+layout with LibGit2Sharp (`main` with three commits, tags `v1.0.0`/`v2.0.0`, `feature-test`) and
+**throws when it cannot**, so a broken fixture fails every test using it. It used to catch the
+exception, and about 187 tests returned early on it having asserted nothing; `GitIntegrationTests`
+cloned https://github.com/mdempse1/ModelicaEditorTests.git for every test and did the same offline
+(B481). No test uses that repository now. A test that needs a remote clones the fixture locally.
+**A condition the fixture guarantees is asserted, never returned on.** The one skip left is
+`SvnOperationsTests`' `Assert.SkipUnless` where svn is absent - reported as skipped, not passed.

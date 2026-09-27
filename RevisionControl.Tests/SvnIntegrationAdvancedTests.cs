@@ -163,13 +163,11 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
 
         // Assert - verify SimpleModel.mo has expected content
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        if (File.Exists(simpleModelPath))
-        {
-            var content = File.ReadAllText(simpleModelPath);
-            Assert.Contains("model SimpleModel", content);
-            Assert.Contains("Real x", content);
-            Assert.Contains("Real y", content);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var content = File.ReadAllText(simpleModelPath);
+        Assert.Contains("model SimpleModel", content);
+        Assert.Contains("Real x", content);
+        Assert.Contains("Real y", content);
     }
 
     [Fact]
@@ -202,7 +200,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        if (!File.Exists(simpleModelPath)) return;
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
 
         var originalContent = File.ReadAllText(simpleModelPath);
         File.WriteAllText(simpleModelPath, "// Modified content");
@@ -292,16 +290,14 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
 
         // Assert - check for multiple Modelica files
         var modelsDir = Path.Combine(checkoutPath, "Models");
-        if (Directory.Exists(modelsDir))
-        {
-            var modelFiles = Directory.GetFiles(modelsDir, "*.mo");
-            Assert.NotEmpty(modelFiles);
+        Assert.True(Directory.Exists(modelsDir), modelsDir);
+        var modelFiles = Directory.GetFiles(modelsDir, "*.mo");
+        Assert.NotEmpty(modelFiles);
 
-            // Should have at least package.mo, SimpleModel.mo, and TestModel.mo
-            Assert.Contains(modelFiles, f => Path.GetFileName(f) == "package.mo");
-            Assert.Contains(modelFiles, f => Path.GetFileName(f) == "SimpleModel.mo");
-            Assert.Contains(modelFiles, f => Path.GetFileName(f) == "TestModel.mo");
-        }
+        // Should have at least package.mo, SimpleModel.mo, and TestModel.mo
+        Assert.Contains(modelFiles, f => Path.GetFileName(f) == "package.mo");
+        Assert.Contains(modelFiles, f => Path.GetFileName(f) == "SimpleModel.mo");
+        Assert.Contains(modelFiles, f => Path.GetFileName(f) == "TestModel.mo");
     }
 
     [Fact]
@@ -369,12 +365,10 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
 
         // Assert - verify SimpleModel.mo has within statement
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        if (File.Exists(simpleModelPath))
-        {
-            var content = File.ReadAllText(simpleModelPath);
-            Assert.Contains("within", content);
-            Assert.Contains("ModelicaEditorTest", content);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var content = File.ReadAllText(simpleModelPath);
+        Assert.Contains("within", content);
+        Assert.Contains("ModelicaEditorTest", content);
     }
 
     [Fact]
@@ -458,7 +452,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var allEntries = _svn.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 100 });
-        if (allEntries.Count < 2) return;
+        Assert.True(allEntries.Count >= 2, $"Expected at least 2 log entries, got {allEntries.Count}");
 
         // Use the Since filter - SVN implementation may not strictly filter
         // but the option should be accepted without error
@@ -483,7 +477,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var allEntries = _svn.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 100 });
-        if (allEntries.Count < 2) return;
+        Assert.True(allEntries.Count >= 2, $"Expected at least 2 log entries, got {allEntries.Count}");
 
         var midDate = allEntries[allEntries.Count / 2].Date;
         var options = new VcsLogOptions { Until = midDate, MaxEntries = 100 };
@@ -533,7 +527,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         // Arrange
         var trunkUrl = _repoUrl + "/trunk";
         var entries = _svn.GetLogEntries(trunkUrl, new VcsLogOptions { MaxEntries = 10 });
-        if (entries.Count == 0) return;
+        Assert.NotEmpty(entries);
 
         // Act
         var changedFiles = _svn.GetChangedFiles(trunkUrl, entries.First().Revision);
@@ -551,7 +545,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var entries = _svn.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 10 });
-        if (entries.Count == 0) return;
+        Assert.NotEmpty(entries);
 
         // Act
         var changedFiles = _svn.GetChangedFiles(checkoutPath, entries.First().Revision);
@@ -566,24 +560,21 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         // Arrange
         var trunkUrl = _repoUrl + "/trunk";
         var entries = _svn.GetLogEntries(trunkUrl, new VcsLogOptions { MaxEntries = 10 });
-        if (entries.Count == 0) return;
+        Assert.NotEmpty(entries);
 
-        // Find a commit with changed files
-        foreach (var entry in entries)
+        // Find a commit with changed files - every commit on trunk has some
+        var changedFiles = entries
+            .Select(entry => _svn.GetChangedFiles(trunkUrl, entry.Revision))
+            .FirstOrDefault(files => files.Count > 0);
+        Assert.NotNull(changedFiles);
+
+        // Assert - paths should not be full URLs
+        Assert.All(changedFiles, f =>
         {
-            var changedFiles = _svn.GetChangedFiles(trunkUrl, entry.Revision);
-            if (changedFiles.Count > 0)
-            {
-                // Assert - paths should not be full URLs
-                Assert.All(changedFiles, f =>
-                {
-                    Assert.False(f.Path.StartsWith("file://"));
-                    Assert.False(f.Path.StartsWith("http://"));
-                    Assert.False(f.Path.StartsWith("https://"));
-                });
-                break;
-            }
-        }
+            Assert.False(f.Path.StartsWith("file://"));
+            Assert.False(f.Path.StartsWith("http://"));
+            Assert.False(f.Path.StartsWith("https://"));
+        });
     }
 
     [Fact]
@@ -723,7 +714,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.AppendAllText(readmePath, "\n// Modified for test");
 
@@ -767,7 +758,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.Delete(readmePath);
 
@@ -825,7 +816,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var originalContent = File.ReadAllText(readmePath);
         File.WriteAllText(readmePath, "Modified content");
@@ -868,7 +859,8 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
 
         var readmePath = Path.Combine(checkoutPath, "README.txt");
         var packagePath = Path.Combine(checkoutPath, "package.mo");
-        if (!File.Exists(readmePath) || !File.Exists(packagePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
+        Assert.True(File.Exists(packagePath), packagePath);
 
         var originalReadme = File.ReadAllText(readmePath);
         var originalPackage = File.ReadAllText(packagePath);
@@ -894,7 +886,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        if (!File.Exists(simpleModelPath)) return;
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
 
         var originalContent = File.ReadAllText(simpleModelPath);
         File.WriteAllText(simpleModelPath, "// Modified");
@@ -1606,7 +1598,7 @@ public class SvnIntegrationAdvancedTests : IClassFixture<SvnTestRepository>, IDi
 
         // Get an older revision
         var entries = _svn.GetLogEntries(trunkUrl, new VcsLogOptions { MaxEntries = 10 });
-        if (entries.Count < 2) return;
+        Assert.True(entries.Count >= 2, $"Expected at least 2 log entries, got {entries.Count}");
 
         var olderRevision = entries.Last().Revision;
 
