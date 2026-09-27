@@ -13,6 +13,16 @@ namespace ModelicaGraph;
 /// a full re-analysis (B347). Every incremental path hands its affected set to dependency analysis and
 /// the style check, so widening the set here is what reaches them all.</para>
 ///
+/// <para><b>The classes a scope declares are the other half of the same lookup (B387).</b> A simple
+/// name is looked for in each enclosing scope before its imports are, so a new
+/// <c>model Voltage</c> in <c>P/package.mo</c> — or a new file <c>P/Voltage.mo</c> — captures
+/// <c>Voltage</c> in <c>P/Child.mo</c>, and removing it lets the name fall through to whatever it
+/// meant before. So a class that appears or disappears in the reloaded files also widens the set: to
+/// the classes in other files below its parent <em>whose own text mentions its name</em>. Only
+/// those can have looked it up; widening to the whole subtree, as the import case does, would
+/// re-analyse every class in a package each time a file was added to it. A class with no parent is
+/// a library of its own, which is a load rather than a reload, and widens nothing.</para>
+///
 /// <para>Use it in two steps around the reload: <see cref="Capture"/> before the old classes are
 /// removed, <see cref="DescendantsToReanalyse"/> once the new ones are in.</para>
 /// </summary>
@@ -21,15 +31,18 @@ public sealed class EnclosingImportChanges
     private readonly HashSet<string> _fileIds;
     private readonly Dictionary<string, IReadOnlyList<string>> _importsBefore;
     private readonly Dictionary<string, List<string>> _descendantsBefore;
+    private readonly HashSet<string> _classesBefore;
 
     private EnclosingImportChanges(
         HashSet<string> fileIds,
         Dictionary<string, IReadOnlyList<string>> importsBefore,
-        Dictionary<string, List<string>> descendantsBefore)
+        Dictionary<string, List<string>> descendantsBefore,
+        HashSet<string> classesBefore)
     {
         _fileIds = fileIds;
         _importsBefore = importsBefore;
         _descendantsBefore = descendantsBefore;
+        _classesBefore = classesBefore;
     }
 
     /// <summary>
@@ -44,18 +57,21 @@ public sealed class EnclosingImportChanges
         foreach (var scopeId in descendants.Keys)
             if (graph.GetNode<ModelNode>(scopeId) is { } scope)
                 imports[scopeId] = ClassImports.For(scope.Definition);
-        return new EnclosingImportChanges(files, imports, descendants);
+        return new EnclosingImportChanges(files, imports, descendants, ClassesIn(graph, files));
     }
 
     /// <summary>
     /// The classes in other files below a reloaded class whose imports differ from what
-    /// <see cref="Capture"/> recorded - including a scope that appeared or disappeared with imports.
-    /// Only classes still in the graph are returned.
+    /// <see cref="Capture"/> recorded - including a scope that appeared or disappeared with imports -
+    /// and the classes in other files below the parent of a class that appeared or disappeared in the
+    /// reloaded files, where they mention its name. Only classes still in the graph are returned.
     /// </summary>
     public IReadOnlyList<string> DescendantsToReanalyse(DirectedGraph graph)
     {
         var descendantsAfter = OutsideDescendants(graph, _fileIds);
         var result = new HashSet<string>(StringComparer.Ordinal);
+
+        AddThoseMentioningAChangedClass(graph, result);
 
         foreach (var scopeId in _descendantsBefore.Keys.Union(descendantsAfter.Keys, StringComparer.Ordinal))
         {
@@ -77,14 +93,75 @@ public sealed class EnclosingImportChanges
         return [.. result.Order(StringComparer.Ordinal)];
     }
 
+    // B387: a class that appeared or disappeared in the files changes what its simple name means in
+    // every class below its parent. Those in the files are re-analysed with them; those elsewhere are
+    // added here, where their own text mentions the name - nothing else can have looked it up.
+    private void AddThoseMentioningAChangedClass(DirectedGraph graph, HashSet<string> result)
+    {
+        var classesAfter = ClassesIn(graph, _fileIds);
+        var namesByParent = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var id in _classesBefore.Union(classesAfter, StringComparer.Ordinal))
+        {
+            if (_classesBefore.Contains(id) && classesAfter.Contains(id))
+                continue;
+
+            var dot = id.LastIndexOf('.');
+            if (dot <= 0)
+                continue;
+            if (!namesByParent.TryGetValue(id[..dot], out var names))
+                namesByParent[id[..dot]] = names = new HashSet<string>(StringComparer.Ordinal);
+            names.Add(id[(dot + 1)..]);
+        }
+        if (namesByParent.Count == 0)
+            return;
+
+        foreach (var model in graph.ModelNodes)
+        {
+            if (model.ContainingFileId is { } fileId && _fileIds.Contains(fileId))
+                continue;
+
+            var id = model.Id;
+            for (var dot = id.IndexOf('.'); dot > 0; dot = id.IndexOf('.', dot + 1))
+            {
+                if (namesByParent.TryGetValue(id[..dot], out var names)
+                    && names.Any(name => Mentions(model.Definition.ModelicaCode, name)))
+                {
+                    result.Add(id);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="name"/> occurs in <paramref name="code"/> as a whole identifier.</summary>
+    private static bool Mentions(string code, string name)
+    {
+        for (var at = code.IndexOf(name, StringComparison.Ordinal); at >= 0;
+             at = code.IndexOf(name, at + 1, StringComparison.Ordinal))
+        {
+            var end = at + name.Length;
+            if ((at == 0 || !IsIdentifierChar(code[at - 1])) && (end == code.Length || !IsIdentifierChar(code[end])))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    private static HashSet<string> ClassesIn(DirectedGraph graph, HashSet<string> fileIds)
+    {
+        var classes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fileId in fileIds)
+            foreach (var model in graph.GetModelsInFile(fileId))
+                classes.Add(model.Id);
+        return classes;
+    }
+
     // Each class in the files that encloses a class held elsewhere, with those classes. One pass over
     // the graph: a class's enclosing scopes are the prefixes of its id.
     private static Dictionary<string, List<string>> OutsideDescendants(DirectedGraph graph, HashSet<string> fileIds)
     {
-        var inFiles = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var fileId in fileIds)
-            foreach (var model in graph.GetModelsInFile(fileId))
-                inFiles.Add(model.Id);
+        var inFiles = ClassesIn(graph, fileIds);
 
         var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         if (inFiles.Count == 0)

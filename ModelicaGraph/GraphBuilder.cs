@@ -1554,7 +1554,8 @@ public static class GraphBuilder
     /// A path may climb out of <paramref name="rootPath"/> (<c>../Other/x.mo</c>); every path is
     /// resolved to a full one, so a file outside the root is still stored under its own path (B384).</param>
     /// <returns>List of model IDs that were affected (removed or added), and the classes in other
-    /// files below a class whose imports changed (see <see cref="EnclosingImportChanges"/>).</returns>
+    /// files below a class whose imports changed, or that name a class added or removed below their
+    /// parent (see <see cref="EnclosingImportChanges"/>).</returns>
     public static List<string> UpdateGraphForChangedFiles(
         DirectedGraph graph,
         string rootPath,

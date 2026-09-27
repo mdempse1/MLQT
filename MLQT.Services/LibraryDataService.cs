@@ -836,7 +836,8 @@ public class LibraryDataService : ILibraryDataService
             });
         }
 
-        // A package whose imports changed changes what names mean in its children's files too (B347).
+        // A package whose imports changed changes what names mean in its children's files too (B347),
+        // and so does a class added to or removed from it (B387).
         lock (_lock)
             affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(_combinedGraph));
 
