@@ -58,6 +58,15 @@ interop is async global functions, none meaningful headless), and `RenderProvide
 dialog/popover/snackbar providers. Getting these wrong produces confusing "component not rendering"
 failures rather than clear errors.
 
+**A `TaskCompletionSource` that product code completes must be created with
+`TaskCreationOptions.RunContinuationsAsynchronously`** when the test awaits it and then waits
+synchronously (`WaitForAssertion`, `Click`). Without it, if the product side completes it after the
+test is already awaiting — which is exactly what a busy full-suite run makes happen — the rest of the
+test runs inline on the product's thread, and its synchronous wait blocks the very code it is waiting
+for. bUnit reports the timeout as "failed (canceled)", which reads as an `OperationCanceledException`
+and is not one; it passes alone every time. B451 was this, and a `Task.Delay` before the product's
+`TrySetResult` reproduces it deterministically.
+
 `MainLayout` gets **no DOM-level tests**. Its logic was extracted in 7a-4 and is tested where it
 landed, in `MLQT.Services.Tests`.
 

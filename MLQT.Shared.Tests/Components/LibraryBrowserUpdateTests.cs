@@ -124,8 +124,12 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
         var browser = RenderBrowser();
 
         var pipelines = new MLQT.Shared.Helpers.VcsPipelineQueue(NavState);
-        var formatting = new TaskCompletionSource();
-        var pipelineStarted = new TaskCompletionSource();
+        // Both asynchronous (B451). Completed synchronously, pipelineStarted ran the rest of this test
+        // inline on the pipeline's own thread whenever the pipeline started after the await below -
+        // which under a busy full-suite run it does - so the final wait blocked the one thread that
+        // could finish the pipeline, and the button stayed disabled until the wait ran out.
+        var formatting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pipelineStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         NavState.OnVcsFilesChanged += _ => pipelines.Enqueue(async () =>
         {
             pipelineStarted.TrySetResult();
