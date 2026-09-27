@@ -121,6 +121,8 @@ public class ModelicaFileAccessPolicyTests
         !relative.Contains(".Tests/", StringComparison.Ordinal)
         && !relative.StartsWith("MLQT.Journeys/", StringComparison.Ordinal)
         && !relative.StartsWith("MLQT.TestHost/", StringComparison.Ordinal)
+        // Test code linked into more than one test project (B471's per-run SVN repository).
+        && !relative.StartsWith("TestSupport/", StringComparison.Ordinal)
         && !relative.Contains("/bin/", StringComparison.Ordinal)
         && !relative.Contains("/obj/", StringComparison.Ordinal)
         // Claude Code's agent worktrees: whole copies of the repository, each checked on its own.
