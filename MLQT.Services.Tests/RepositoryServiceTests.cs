@@ -3,6 +3,7 @@ using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 using Moq;
 using RevisionControl;
+using Git = LibGit2Sharp;
 
 namespace MLQT.Services.Tests;
 
@@ -11,13 +12,97 @@ namespace MLQT.Services.Tests;
 /// </summary>
 public class RepositoryServiceTests
 {
-    private RepositoryService CreateService()
+    private static RepositoryService CreateService(LibraryDataService? libraryDataService = null)
     {
         // Use real services for integration testing
-        var libraryDataService = new LibraryDataService();
         var settingsService = new InMemorySettingsService();
         var fileMonitoringService = new FileMonitoringService();
-        return new RepositoryService(libraryDataService, settingsService, fileMonitoringService);
+        return new RepositoryService(libraryDataService ?? new LibraryDataService(), settingsService, fileMonitoringService);
+    }
+
+    /// <summary>
+    /// A git repository under the temp directory holding exactly the files a test asks for, built
+    /// with LibGit2Sharp so it needs no git on PATH and cannot quietly come back empty.
+    ///
+    /// <para>These tests once used the developer's own MSL and Buildings checkouts at fixed paths
+    /// under <c>C:\Projects</c> and returned early without them, so they asserted nothing on CI, on
+    /// Linux or on any other machine - and the merge test merged into the real MSL checkout (B477).
+    /// None of them needs a real library, only one shaped like it.</para>
+    /// </summary>
+    private sealed class TempGitLibrary : IDisposable
+    {
+        private static readonly Git.Signature Author =
+            new("Test Author", "test@test.com", DateTimeOffset.Now);
+
+        public string Root { get; }
+
+        private TempGitLibrary(IEnumerable<(string Path, string Content)> files)
+        {
+            Root = Path.Combine(Path.GetTempPath(), "RepoServiceLib_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Root);
+            Git.Repository.Init(Root);
+
+            using var repo = new Git.Repository(Root);
+            foreach (var (relativePath, content) in files)
+                Write(relativePath, content);
+            Git.Commands.Stage(repo, "*");
+            repo.Commit("Initial commit", Author, Author, new Git.CommitOptions());
+            if (repo.Head.FriendlyName != "main")
+                repo.Branches.Rename(repo.Head, "main");
+        }
+
+        /// <summary>The MSL layout: several libraries side by side and none at the root, a nested
+        /// package inside one of them, and a hidden directory holding a <c>package.mo</c>.</summary>
+        public static TempGitLibrary MslShaped() => new(new[]
+        {
+            ("Modelica/package.mo", "package Modelica\nend Modelica;\n"),
+            ("Modelica/Blocks/package.mo", "within Modelica;\npackage Blocks\nend Blocks;\n"),
+            ("ModelicaServices/package.mo", "package ModelicaServices\nend ModelicaServices;\n"),
+            (".CI/package.mo", "package CiScripts\nend CiScripts;\n"),
+            ("README.md", "# Shaped like the Modelica Standard Library\n"),
+        });
+
+        /// <summary>The Buildings layout: one library in a subdirectory, beside files and a
+        /// directory that are not libraries.</summary>
+        public static TempGitLibrary BuildingsShaped() => new(new[]
+        {
+            ("Buildings/package.mo", "package Buildings\n  model Room\n  end Room;\nend Buildings;\n"),
+            ("bin/README.md", "Scripts, not Modelica\n"),
+            ("README.md", "# Shaped like the Buildings library\n"),
+        });
+
+        /// <summary>Commits one file on a new branch and returns to <c>main</c>, leaving the branch
+        /// something to merge.</summary>
+        public void CommitOnBranch(string branchName, string relativePath, string content)
+        {
+            using var repo = new Git.Repository(Root);
+            var main = repo.Head;
+            Git.Commands.Checkout(repo, repo.Branches.Add(branchName, repo.Head.Tip));
+            Write(relativePath, content);
+            Git.Commands.Stage(repo, "*");
+            repo.Commit($"Add {relativePath}", Author, Author, new Git.CommitOptions());
+            Git.Commands.Checkout(repo, main);
+        }
+
+        private void Write(string relativePath, string content)
+        {
+            var fullPath = Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            File.WriteAllText(fullPath, content);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                // Git makes its object files read-only, which Directory.Delete refuses on Windows.
+                foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+                    File.SetAttributes(file, FileAttributes.Normal);
+                Directory.Delete(Root, recursive: true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     #region DetectVcsType Tests
@@ -103,17 +188,10 @@ public class RepositoryServiceTests
     [Fact]
     public void DetectVcsType_WithLocalGitRepo_ReturnsGitLocal()
     {
-        // This test requires C:\Projects\ModelicaStandardLibrary to exist
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
-        var (vcsType, isLocal) = service.DetectVcsType(testPath);
+        var (vcsType, isLocal) = service.DetectVcsType(library.Root);
 
         Assert.Equal(RepositoryVcsType.Git, vcsType);
         Assert.True(isLocal);
@@ -157,67 +235,47 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_WithLocalGitRepo_AddsRepository()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
         Assert.NotNull(result.Repository);
         Assert.Equal(RepositoryVcsType.Git, result.Repository.VcsType);
-        Assert.Equal(testPath, result.Repository.LocalPath);
+        Assert.Equal(library.Root, result.Repository.LocalPath);
         Assert.Single(service.Repositories);
+        SandboxedId(result);
     }
 
     [Fact]
     public async Task AddRepositoryAsync_DiscoversLibraries()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        // A repository holding several libraries side by side, none at its root - the MSL layout.
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-        Assert.NotEmpty(result.DiscoveredLibraries);
-
-        // Should discover Modelica, ModelicaServices, ModelicaTest, etc.
-        var libraryNames = result.DiscoveredLibraries.Select(l => l.LibraryName).ToList();
-        Assert.Contains("Modelica", libraryNames);
+        SandboxedId(result);
+        var libraryNames = result.DiscoveredLibraries.Select(l => l.LibraryName).OrderBy(n => n, StringComparer.Ordinal);
+        Assert.Equal(new[] { "Modelica", "ModelicaServices" }, libraryNames);
     }
 
     [Fact]
     public async Task AddRepositoryAsync_OnlyScansImmediateSubdirectories()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        // Modelica/Blocks/package.mo is a package two levels down: part of Modelica, not a library.
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-
-        // Should NOT find deeply nested packages (only root and immediate subdirs)
-        // All discovered libraries should be at root or one level deep
+        SandboxedId(result);
+        Assert.NotEmpty(result.DiscoveredLibraries);
+        Assert.DoesNotContain(result.DiscoveredLibraries, l => l.LibraryName == "Blocks");
         foreach (var lib in result.DiscoveredLibraries)
         {
             var slashCount = lib.RelativePath.Count(c => c == '\\' || c == '/');
@@ -228,38 +286,28 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_SkipsHiddenDirectories()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        // .CI holds a package.mo, as MSL's does, and .git is always there.
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-
-        // Should NOT include .git or other hidden directories
-        var libraryNames = result.DiscoveredLibraries.Select(l => l.RelativePath).ToList();
-        Assert.DoesNotContain(".git", libraryNames);
-        Assert.DoesNotContain(".CI", libraryNames);
+        SandboxedId(result);
+        Assert.True(File.Exists(Path.Combine(library.Root, ".CI", "package.mo")));
+        var relativePaths = result.DiscoveredLibraries.Select(l => l.RelativePath).ToList();
+        Assert.NotEmpty(relativePaths);
+        Assert.DoesNotContain(".git", relativePaths);
+        Assert.DoesNotContain(".CI", relativePaths);
     }
 
     [Fact]
-    public void GetRepository_WithValidId_ReturnsRepository()
+    public async Task GetRepository_WithValidId_ReturnsRepository()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var addResult = service.AddRepositoryAsync(testPath).Result;
+        var addResult = await service.AddRepositoryAsync(library.Root);
         Assert.True(addResult.Success);
 
         var repo = service.GetRepository(SandboxedId(addResult));
@@ -279,17 +327,12 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void RemoveRepository_RemovesFromList()
+    public async Task RemoveRepository_RemovesFromList()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var addResult = service.AddRepositoryAsync(testPath).Result;
+        var addResult = await service.AddRepositoryAsync(library.Root);
         Assert.True(addResult.Success);
         Assert.Single(service.Repositories);
 
@@ -299,19 +342,16 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void ClearAllRepositories_RemovesAll()
+    public async Task ClearAllRepositories_RemovesAll()
     {
+        using var msl = TempGitLibrary.MslShaped();
+        using var buildings = TempGitLibrary.BuildingsShaped();
         var service = CreateService();
-        var testPath1 = @"C:\Projects\ModelicaStandardLibrary";
-        var testPath2 = @"C:\Projects\modelica-buildings";
 
-        if (!Directory.Exists(testPath1) || !Directory.Exists(testPath2))
-        {
-            return;
-        }
-
-        service.AddRepositoryAsync(testPath1).Wait();
-        service.AddRepositoryAsync(testPath2).Wait();
+        var first = await service.AddRepositoryAsync(msl.Root);
+        var second = await service.AddRepositoryAsync(buildings.Root);
+        SandboxedId(first);
+        SandboxedId(second);
         Assert.Equal(2, service.Repositories.Count);
 
         service.ClearAllRepositories();
@@ -326,34 +366,25 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_FiresOnRepositoriesChangedEvent()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
 
         var eventFired = false;
         service.OnRepositoriesChanged += () => eventFired = true;
 
-        await service.AddRepositoryAsync(testPath);
+        var addResult = await service.AddRepositoryAsync(library.Root);
 
+        SandboxedId(addResult);
         Assert.True(eventFired);
     }
 
     [Fact]
-    public void RemoveRepository_FiresOnRepositoriesChangedEvent()
+    public async Task RemoveRepository_FiresOnRepositoriesChangedEvent()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var addResult = service.AddRepositoryAsync(testPath).Result;
+        var addResult = await service.AddRepositoryAsync(library.Root);
 
         var eventFired = false;
         service.OnRepositoriesChanged += () => eventFired = true;
@@ -370,41 +401,31 @@ public class RepositoryServiceTests
     [Fact]
     public async Task LoadLibrariesAsync_SetsRepositoryIdOnLibrary()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
+        using var library = TempGitLibrary.BuildingsShaped();
+        var libraryDataService = new LibraryDataService();
+        var service = CreateService(libraryDataService);
+        var addResult = await service.AddRepositoryAsync(library.Root);
         Assert.True(addResult.Success);
 
         await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-        // Check that libraries were loaded with the correct repository ID
-        Assert.NotEmpty(addResult.Repository!.LibraryIds);
+        var loaded = Assert.Single(libraryDataService.Libraries);
+        Assert.Equal(addResult.Repository!.Id, loaded.RepositoryId);
     }
 
     [Fact]
     public async Task LoadLibrariesAsync_AddsLibraryIdToRepository()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
+        using var library = TempGitLibrary.BuildingsShaped();
+        var libraryDataService = new LibraryDataService();
+        var service = CreateService(libraryDataService);
+        var addResult = await service.AddRepositoryAsync(library.Root);
+        Assert.True(addResult.Success);
 
         await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-        // Check that library IDs were added
-        Assert.NotEmpty(addResult.Repository!.LibraryIds);
+        var libraryId = Assert.Single(addResult.Repository!.LibraryIds);
+        Assert.Equal(Assert.Single(libraryDataService.Libraries).Id, libraryId);
     }
 
     #endregion
@@ -414,23 +435,13 @@ public class RepositoryServiceTests
     [Fact]
     public async Task GetRepositoryForLibrary_ReturnsCorrectRepository()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
+        using var library = TempGitLibrary.BuildingsShaped();
         var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
+        var addResult = await service.AddRepositoryAsync(library.Root);
+        Assert.True(addResult.Success);
         await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-        // Get a library ID that was loaded
-        var libraryId = addResult.Repository!.LibraryIds.FirstOrDefault();
-        if (libraryId == null)
-        {
-            return; // No libraries loaded, skip test
-        }
+        var libraryId = Assert.Single(addResult.Repository!.LibraryIds);
 
         var foundRepo = service.GetRepositoryForLibrary(libraryId);
 
@@ -455,22 +466,17 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_WithBuildingsRepo_DiscoversBuildings()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
+        // One library in a subdirectory of the repository, with files beside it that are not one.
+        using var library = TempGitLibrary.BuildingsShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-        Assert.NotEmpty(result.DiscoveredLibraries);
-
-        var libraryNames = result.DiscoveredLibraries.Select(l => l.LibraryName).ToList();
-        Assert.Contains("Buildings", libraryNames);
+        SandboxedId(result);
+        var discovered = Assert.Single(result.DiscoveredLibraries);
+        Assert.Equal("Buildings", discovered.LibraryName);
+        Assert.Equal("Buildings", discovered.RelativePath);
     }
 
     #endregion
@@ -507,11 +513,8 @@ public class RepositoryServiceTests
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir);
 
-            // Skip if the path was detected as VCS (shouldn't happen for temp dir)
-            if (addResult.Repository?.VcsType != RepositoryVcsType.Local)
-            {
-                return;
-            }
+            // The temp directory is under no version control, so this is a plain local directory.
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository?.VcsType);
 
             // Act
             var result = await service.MergeBranchAsync(SandboxedId(addResult), "branches/test");
@@ -532,29 +535,32 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public async Task MergeBranchAsync_WithValidGitRepository_ReturnsResult()
+    public async Task MergeBranchAsync_WithValidGitRepository_MergesTheBranch()
     {
-        // This test requires C:\Projects\ModelicaStandardLibrary to be a Git repository
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        // This once merged "main" into the developer's own MSL checkout, without the sandbox guard
+        // (B477). It merges a branch the test made, in a repository the test made.
+        using var library = TempGitLibrary.MslShaped();
+        library.CommitOnBranch("feature", "Modelica/NewModel.mo",
+            "within Modelica;\nmodel NewModel\nend NewModel;\n");
+        Assert.False(File.Exists(Path.Combine(library.Root, "Modelica", "NewModel.mo")));
 
         var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
+        var addResult = await service.AddRepositoryAsync(library.Root);
+        Assert.True(addResult.Success);
+        Assert.Equal(RepositoryVcsType.Git, addResult.Repository!.VcsType);
+        var repositoryId = SandboxedId(addResult);
 
-        if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Git)
-        {
-            return;
-        }
+        var eventFired = false;
+        service.OnRepositoriesChanged += () => eventFired = true;
 
-        // Act
-        var result = await service.MergeBranchAsync(addResult.Repository!.Id, "main");
+        var result = await service.MergeBranchAsync(repositoryId, "feature");
 
-        // Assert - Git merge is implemented; merging the current branch returns a valid result
-        Assert.NotNull(result);
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.HasChanges);
+        Assert.False(result.HasConflicts);
+        Assert.Equal("feature", result.SourceBranch);
+        Assert.True(File.Exists(Path.Combine(library.Root, "Modelica", "NewModel.mo")));
+        Assert.True(eventFired);
     }
 
     [Fact]
