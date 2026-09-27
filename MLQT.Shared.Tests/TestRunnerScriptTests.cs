@@ -100,28 +100,76 @@ public class TestRunnerScriptTests
         }
     }
 
+    /// <summary>
+    /// Every workflow file, found rather than listed, so a new one is held to the rule below
+    /// without anybody remembering to add it.
+    /// </summary>
+    public static TheoryData<string> Workflows()
+    {
+        var data = new TheoryData<string>();
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), ".github", "workflows"), "*.yml"))
+            data.Add(Path.GetFileName(file));
+
+        Assert.True(data.Count >= 3, "found fewer workflow files than this repository has");
+        return data;
+    }
+
+    /// <summary>
+    /// The workflow lines that run <paramref name="command"/> without being the whole of their
+    /// step's <c>run:</c>. Comment lines are not commands.
+    /// </summary>
+    internal static List<string> CommandsNotAloneInTheirStep(string workflow, string text, string command) =>
+        [.. text.Split('\n')
+            .Select((line, i) => (line, number: i + 1))
+            .Where(l => !l.line.TrimStart().StartsWith('#'))
+            .Where(l => l.line.Contains($"dotnet {command} ")
+                        && !Regex.IsMatch(l.line, $@"^\s*run: dotnet {command} "))
+            .Select(l => $"{workflow}:{l.number}: {l.line.Trim()}")];
+
     [Theory]
-    [InlineData("build-and-test.yml")]
-    [InlineData("release.yml")]
-    [InlineData("nightly-webkit.yml")]
-    public void EveryTestSuiteIsAStepOfItsOwn(string workflow)
+    [MemberData(nameof(Workflows))]
+    public void EveryDotnetCommandIsAStepOfItsOwn(string workflow)
     {
         // Backlog B362. release.yml ran its seven suites as one multi-line `run:` block, and a runner's
         // pwsh does not stop at a failing native command: the step's result is the *last* command's
         // exit code. So a tag whose parser, graph or CLI tests failed still built and published the
         // installer, provided MLQT.Shared.Tests passed. One `dotnet test` per step is what
         // build-and-test.yml has always done, and a step's own exit code cannot be the wrong one.
+        //
+        // Backlog B370: build-and-test.yml had the same weakness in its builds - nine projects in one
+        // step, so a middle one that failed to compile while a stale binary of it existed did not stop
+        // the job. Mostly masked by the --no-build test steps failing on a missing assembly, which is
+        // exactly the case a stale binary defeats. Restore and publish are the same kind of step.
         var text = FileAt(".github", "workflows", workflow);
 
-        var offenders = text.Split('\n')
-            .Select((line, i) => (line, number: i + 1))
-            .Where(l => l.line.Contains("dotnet test ") && !Regex.IsMatch(l.line, @"^\s*run: dotnet test "))
-            .Select(l => $"{workflow}:{l.number}: {l.line.Trim()}")
+        var offenders = new[] { "test", "build", "restore", "publish" }
+            .SelectMany(command => CommandsNotAloneInTheirStep(workflow, text, command))
             .ToList();
 
         Assert.True(offenders.Count == 0,
-            "a dotnet test that is not the whole of its step's run: - only the last command's exit code "
-            + "decides a multi-line step:\n" + string.Join("\n", offenders));
+            "a dotnet command that is not the whole of its step's run: - only the last command's exit "
+            + "code decides a multi-line step:\n" + string.Join("\n", offenders));
+    }
+
+    [Fact]
+    public void TheStepCheckSeesACommandInsideAMultiLineStep()
+    {
+        // The check above is a pattern over text, and a pattern that stopped matching would pass every
+        // workflow trivially. This is the shape build-and-test.yml had before B370.
+        const string before = """
+                  - name: Build library projects
+                    run: |
+                      dotnet build ModelicaParser/ModelicaParser.csproj -c Release --no-restore
+                      # dotnet build in a comment is not a command
+                      dotnet build ModelicaGraph/ModelicaGraph.csproj -c Release --no-restore
+
+                  - name: Restore
+                    run: dotnet restore MLQT.slnx
+            """;
+        var text = before.Replace("\r\n", "\n");
+
+        Assert.Equal(2, CommandsNotAloneInTheirStep("x.yml", text, "build").Count);
+        Assert.Empty(CommandsNotAloneInTheirStep("x.yml", text, "restore"));
     }
 
     [Fact]

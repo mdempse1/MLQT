@@ -30,37 +30,78 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore MLQT.slnx
 
-      - name: Build library projects
-        run: |
-          dotnet build ModelicaParser/ModelicaParser.csproj -c Release --no-restore
-          dotnet build ModelicaGraph/ModelicaGraph.csproj -c Release --no-restore
-          dotnet build RevisionControl/RevisionControl.csproj -c Release --no-restore
-          dotnet build MLQT.Services/MLQT.Services.csproj -c Release --no-restore
-          dotnet build DymolaInterface/DymolaInterface.csproj -c Release --no-restore
-          dotnet build OpenModelicaInterface/OpenModelicaInterface.csproj -c Release --no-restore
-          dotnet build MLQT.McpServer/MLQT.McpServer.csproj -c Release --no-restore
-          dotnet build MLQT.Cli/MLQT.Cli.csproj -c Release --no-restore
-          dotnet build MLQT.Shared/MLQT.Shared.csproj -c Release --no-restore
+      # One project per step, never several in one multi-line `run:` (B370, B362's lesson applied to
+      # builds). This job's shell is pwsh, which does not stop at a failing native command: a
+      # multi-line step's result is the *last* command's exit code, so a middle project that failed
+      # to build while a stale binary of it existed would not have stopped the job. A step's own
+      # exit code cannot be the wrong one. TestRunnerScriptTests.EveryDotnetCommandIsAStepOfItsOwn
+      # holds every workflow to it. The builds keep the default success() condition: once one has
+      # failed there is nothing for the later ones to build against.
+      - name: Build ModelicaParser
+        run: dotnet build ModelicaParser/ModelicaParser.csproj -c Release --no-restore
 
-      - name: Build test projects
-        run: |
-          dotnet build ModelicaParser.Tests/ModelicaParser.Tests.csproj -c Release --no-restore
-          dotnet build ModelicaGraph.Tests/ModelicaGraph.Tests.csproj -c Release --no-restore
-          dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release --no-restore
-          dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release --no-restore
-          dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release --no-restore
-          dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release --no-restore
-          dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release --no-restore
-          # Both desktop hosts, plain net10.0 Photino applications since 7b-1 and 7b-2. They build
-          # here, on Linux too, and no job in this workflow installs a workload any more (7b-8).
-          dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release --no-restore
-          dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release --no-restore
-          # Built but not run, for the same reason as the SVN integration tests below: these drive a
-          # live Dymola / OpenModelica install that no runner has, and they assert on what it answers
-          # rather than self-skipping. Building them still catches the thing CI can catch - a change
-          # to the interfaces that stops them compiling, which would otherwise reach main unnoticed.
-          dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release --no-restore
-          dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release --no-restore
+      - name: Build ModelicaGraph
+        run: dotnet build ModelicaGraph/ModelicaGraph.csproj -c Release --no-restore
+
+      - name: Build RevisionControl
+        run: dotnet build RevisionControl/RevisionControl.csproj -c Release --no-restore
+
+      - name: Build MLQT.Services
+        run: dotnet build MLQT.Services/MLQT.Services.csproj -c Release --no-restore
+
+      - name: Build DymolaInterface
+        run: dotnet build DymolaInterface/DymolaInterface.csproj -c Release --no-restore
+
+      - name: Build OpenModelicaInterface
+        run: dotnet build OpenModelicaInterface/OpenModelicaInterface.csproj -c Release --no-restore
+
+      - name: Build MLQT.McpServer
+        run: dotnet build MLQT.McpServer/MLQT.McpServer.csproj -c Release --no-restore
+
+      - name: Build MLQT.Cli
+        run: dotnet build MLQT.Cli/MLQT.Cli.csproj -c Release --no-restore
+
+      - name: Build MLQT.Shared
+        run: dotnet build MLQT.Shared/MLQT.Shared.csproj -c Release --no-restore
+
+      - name: Build ModelicaParser.Tests
+        run: dotnet build ModelicaParser.Tests/ModelicaParser.Tests.csproj -c Release --no-restore
+
+      - name: Build ModelicaGraph.Tests
+        run: dotnet build ModelicaGraph.Tests/ModelicaGraph.Tests.csproj -c Release --no-restore
+
+      - name: Build RevisionControl.Tests
+        run: dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release --no-restore
+
+      - name: Build MLQT.Services.Tests
+        run: dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release --no-restore
+
+      - name: Build MLQT.McpServer.Tests
+        run: dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release --no-restore
+
+      - name: Build MLQT.Cli.Tests
+        run: dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release --no-restore
+
+      - name: Build MLQT.Shared.Tests
+        run: dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release --no-restore
+
+      # Both desktop hosts, plain net10.0 Photino applications since 7b-1 and 7b-2. They build
+      # here, on Linux too, and no job in this workflow installs a workload any more (7b-8).
+      - name: Build MLQT.McpTester
+        run: dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release --no-restore
+
+      - name: Build MLQT.Photino
+        run: dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release --no-restore
+
+      # Built but not run, for the same reason as the SVN integration tests below: these drive a
+      # live Dymola / OpenModelica install that no runner has, and they assert on what it answers
+      # rather than self-skipping. Building them still catches the thing CI can catch - a change
+      # to the interfaces that stops them compiling, which would otherwise reach main unnoticed.
+      - name: Build DymolaInterface.Tests
+        run: dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release --no-restore
+
+      - name: Build OpenModelicaInterface.Tests
+        run: dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release --no-restore
 
       # Each suite runs even if an earlier one failed, and the job still fails. Stopping at the first
       # failure means one round trip per broken suite, which is the wrong trade when six of these had
@@ -166,17 +207,36 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
-      - name: Build the test projects and everything beneath them
-        run: |
-          dotnet build ModelicaParser.Tests/ModelicaParser.Tests.csproj -c Release
-          dotnet build ModelicaGraph.Tests/ModelicaGraph.Tests.csproj -c Release
-          dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release
-          dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release
-          dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release
-          dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release
-          dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release
-          dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release
-          dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release
+      # The test projects and everything beneath them, one per step as in build-libraries (B370).
+      # This job's default shell is `bash -e`, which would stop at a failed build where pwsh does
+      # not - but that is a property of the shell, not of the step, and one rule for every job is
+      # what TestRunnerScriptTests can hold.
+      - name: Build ModelicaParser.Tests
+        run: dotnet build ModelicaParser.Tests/ModelicaParser.Tests.csproj -c Release
+
+      - name: Build ModelicaGraph.Tests
+        run: dotnet build ModelicaGraph.Tests/ModelicaGraph.Tests.csproj -c Release
+
+      - name: Build RevisionControl.Tests
+        run: dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release
+
+      - name: Build MLQT.Services.Tests
+        run: dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release
+
+      - name: Build MLQT.McpServer.Tests
+        run: dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release
+
+      - name: Build MLQT.Cli.Tests
+        run: dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release
+
+      - name: Build MLQT.Shared.Tests
+        run: dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release
+
+      - name: Build MLQT.McpTester
+        run: dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release
+
+      - name: Build MLQT.Photino
+        run: dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release
 
       # Each suite runs even if an earlier one failed, and the job still fails. Stopping at the first
       # failure means one round trip per broken suite, which is the wrong trade when six of these had
@@ -215,11 +275,16 @@ jobs:
       # Produce and run the exact artifact the release ships, against the committed fixture, so a
       # release cannot be the first time that binary is built or executed on Linux. The check's exit
       # code depends on the fixture's severities and is not what this asserts - that a report came
-      # out is.
-      - name: Publish and smoke-test the self-contained linux-x64 CLI
+      # out is. The publish is a step of its own (B370), and the smoke test runs only on a publish
+      # that succeeded, so a failed publish reads as that rather than as a missing binary.
+      - name: Publish the self-contained linux-x64 CLI
+        id: publish-cli
         if: '!cancelled()'
+        run: dotnet publish MLQT.Cli/MLQT.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -o publish/mlqt-linux-x64
+
+      - name: Smoke-test the self-contained linux-x64 CLI
+        if: "!cancelled() && steps.publish-cli.outcome == 'success'"
         run: |
-          dotnet publish MLQT.Cli/MLQT.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -o publish/mlqt-linux-x64
           chmod +x publish/mlqt-linux-x64/mlqt
           ./publish/mlqt-linux-x64/mlqt --version
           ./publish/mlqt-linux-x64/mlqt check TestFixtures/SarifSmoke/Libraries/Smoke --format json --out smoke.json || true
@@ -468,16 +533,31 @@ jobs:
       # found N-1". MLQT.Shared.Tests was missing for exactly that reason after 7a-5 added it to the
       # ratchet, and the job never ran to say so because the jobs it depends on had already failed.
       # CoverageSuitesTests holds the two lists together.
-      - name: Restore and build
-        run: |
-          dotnet restore MLQT.slnx
-          dotnet build ModelicaParser.Tests -c Release --no-restore
-          dotnet build ModelicaGraph.Tests -c Release --no-restore
-          dotnet build MLQT.Services.Tests -c Release --no-restore
-          dotnet build MLQT.Cli.Tests -c Release --no-restore
-          dotnet build MLQT.McpServer.Tests -c Release --no-restore
-          dotnet build MLQT.Shared.Tests -c Release --no-restore
-          dotnet build RevisionControl.Tests -c Release --no-restore
+      #
+      # One command per step, as in build-libraries and for the same reason (B370).
+      - name: Restore dependencies
+        run: dotnet restore MLQT.slnx
+
+      - name: Build ModelicaParser.Tests
+        run: dotnet build ModelicaParser.Tests -c Release --no-restore
+
+      - name: Build ModelicaGraph.Tests
+        run: dotnet build ModelicaGraph.Tests -c Release --no-restore
+
+      - name: Build MLQT.Services.Tests
+        run: dotnet build MLQT.Services.Tests -c Release --no-restore
+
+      - name: Build MLQT.Cli.Tests
+        run: dotnet build MLQT.Cli.Tests -c Release --no-restore
+
+      - name: Build MLQT.McpServer.Tests
+        run: dotnet build MLQT.McpServer.Tests -c Release --no-restore
+
+      - name: Build MLQT.Shared.Tests
+        run: dotnet build MLQT.Shared.Tests -c Release --no-restore
+
+      - name: Build RevisionControl.Tests
+        run: dotnet build RevisionControl.Tests -c Release --no-restore
 
       - name: Install ReportGenerator
         run: dotnet tool install -g dotnet-reportgenerator-globaltool

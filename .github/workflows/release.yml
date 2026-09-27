@@ -83,7 +83,7 @@ jobs:
       # '!cancelled()' so one failing suite does not hide the others' results; every step after
       # these keeps the default success() condition, so any failure here still stops the release.
       # Each step builds its own suite (--no-restore, not --no-build), as the single block did.
-      # TestRunnerScriptTests.EveryTestSuiteIsAStepOfItsOwn holds the shape.
+      # TestRunnerScriptTests.EveryDotnetCommandIsAStepOfItsOwn holds the shape.
       - name: Run ModelicaParser tests
         if: '!cancelled()'
         run: dotnet test ModelicaParser.Tests -c Release --no-restore
