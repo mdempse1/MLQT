@@ -272,34 +272,40 @@ if (Test-Path $BaselinePath) {
     }
 }
 
+# How much of RevisionControl's svn code is covered depends on whether an svn client is on PATH, not
+# on which tests ran - the Code Coverage job is windows-latest with none installed, and a developer's
+# machine that has one covers roughly twice as much. Recording this machine's figure for those
+# classes writes a floor CI cannot reach, and the gate then fails there on the next push.
+#
+# The header has warned about this since B266 and it happened anyway, which is the argument for doing
+# something rather than saying something: -UpdateBaseline keeps the figure already recorded for those
+# entries, and names each one. A prose warning in a help block is not read at the moment it matters.
+$svnPresent = [bool] (Get-Command svn -ErrorAction SilentlyContinue)
+$svnDependent = 'RevisionControl::RevisionControl.Svn'
+
+# Holding a figure back is only half of it (B363). The ledger is rebuilt from the classes below the
+# bar, so an accepted svn entry that reaches the bar on this machine was not held back at all - it was
+# dropped, and the next CI run, measuring it where it always was, failed with "a new class below the
+# bar". So with svn present every accepted svn entry is carried forward at its recorded figure, below
+# the bar here or not. It leaves the ledger when a CI run shows it meeting the bar, not when this
+# machine does.
+#
+# Decided once, here, because two places act on it (B372): -UpdateBaseline keeps these entries, and
+# the gate must not then tell the reader they "can be dropped". It did, for a while - the gate's list
+# of recovered classes was every accepted class meeting its bar, svn or not, so it advised exactly the
+# edit -UpdateBaseline had just been changed to refuse.
+$carriedForSvn = @(if ($svnPresent) {
+    $gated | Where-Object {
+        $_.Key.StartsWith($svnDependent) -and
+        $_.Coverage -ge $_.Bar -and
+        $previousCoverage.ContainsKey($_.Key)
+    }
+})
+
 if ($UpdateBaseline) {
-    # How much of RevisionControl's svn code is covered depends on whether an svn client is on
-    # PATH, not on which tests ran - the Code Coverage job is windows-latest with none installed,
-    # and a developer's machine that has one covers roughly twice as much. Recording this machine's
-    # figure for those classes writes a floor CI cannot reach, and the gate then fails there on the
-    # next push.
-    #
-    # The header has warned about this since B266 and it happened anyway, which is the argument for
-    # doing something rather than saying something: those entries keep the figure already recorded,
-    # and each one is named. A prose warning in a help block is not read at the moment it matters.
-    $svnPresent = [bool] (Get-Command svn -ErrorAction SilentlyContinue)
-    $svnDependent = 'RevisionControl::RevisionControl.Svn'
     $heldBack = @()
 
-    # Holding a figure back is only half of it (B363). The ledger is rebuilt from the classes below
-    # the bar, so an accepted svn entry that reaches the bar on this machine was not held back at all
-    # - it was dropped, and the next CI run, measuring it where it always was, failed with "a new
-    # class below the bar". That is the failure the hold-back exists to prevent, so with svn present
-    # every accepted svn entry is carried forward at its recorded figure, below the bar here or not.
-    # It leaves the ledger when a CI run shows it meeting the bar, not when this machine does.
-    $toRecord = @($below)
-    if ($svnPresent) {
-        $toRecord += @($gated | Where-Object {
-            $_.Key.StartsWith($svnDependent) -and
-            $_.Coverage -ge $_.Bar -and
-            $previousCoverage.ContainsKey($_.Key)
-        })
-    }
+    $toRecord = @($below) + $carriedForSvn
 
     $entries = [ordered] @{}
     foreach ($item in ($toRecord | Sort-Object Key)) {
@@ -388,7 +394,14 @@ foreach ($item in $below) {
 # said "MLQT.McpServer::Program now meets the bar" about a class the report no longer contained.
 # Recovered now means measured and meeting its bar; not measured is its own outcome, and is only
 # acceptable when the ledger says so and says why.
-$recovered = $accepted.Keys | Where-Object { $measured.Contains($_) -and $_ -notin $below.Key }
+#
+# The svn entries -UpdateBaseline carries forward are not "recovered" either, on a machine with svn:
+# they meet the bar here because this machine has a client the runner does not, and re-recording would
+# keep them. They are listed on their own, saying why (B372).
+$recovered = $accepted.Keys | Where-Object {
+    $measured.Contains($_) -and $_ -notin $below.Key -and $_ -notin $carriedForSvn.Key
+}
+$keptForSvn = $accepted.Keys | Where-Object { $_ -in $carriedForSvn.Key }
 $vanished  = $accepted.Keys | Where-Object { -not $measured.Contains($_) -and -not $excludedReasons.ContainsKey($_) }
 
 # An exclusion that has started being measured again is stale: it is now under the gate like
@@ -413,6 +426,13 @@ if ($recovered) {
     Write-Host ''
     Write-Host 'These now meet the bar and can be dropped from the baseline (-UpdateBaseline):' -ForegroundColor Green
     foreach ($key in ($recovered | Sort-Object)) { Write-Host "  $key" -ForegroundColor Green }
+}
+
+if ($keptForSvn) {
+    Write-Host ''
+    Write-Host 'These meet the bar here only because this machine has an svn client and the runner has none.' -ForegroundColor DarkGray
+    Write-Host 'They stay in the baseline - -UpdateBaseline keeps them at their recorded figure - until a CI run shows them meeting it:' -ForegroundColor DarkGray
+    foreach ($key in ($keptForSvn | Sort-Object)) { Write-Host "  $key" -ForegroundColor DarkGray }
 }
 
 if ($newDebt) {
