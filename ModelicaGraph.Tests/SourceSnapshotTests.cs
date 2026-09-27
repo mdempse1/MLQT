@@ -82,11 +82,31 @@ public class SourceSnapshotTests
     }
 
     [Fact]
+    public void TheLoadsParseErrorsAreRestored_TheyCannotBeWorkedOutAgain()
+    {
+        // B389: the setter drops them and lifts the bar, and for a class from a file that failed to
+        // parse neither can be re-derived from the class's own source.
+        var node = Node();
+        var fromLoad = new ModelicaParser.DataTypes.ParserError { Line = 40, Message = "from the file" };
+        node.Definition.ParserErrors.Add(fromLoad);
+        node.Definition.MayRecordParserErrors = false;
+
+        var snapshot = node.TakeSourceSnapshot();
+        node.Definition.ModelicaCode = "model A \"different\" end A;";
+        Assert.Empty(node.Definition.ParserErrors);   // the setter did drop them
+
+        node.RestoreSource(snapshot);
+
+        Assert.Same(fromLoad, Assert.Single(node.Definition.ParserErrors));
+        Assert.False(node.Definition.MayRecordParserErrors);
+    }
+
+    [Fact]
     public void TheSnapshotNamesEveryFieldTheSourceSetterClears()
     {
         // The guard: if ModelicaCode's setter learns to clear a third thing, the snapshot has to
         // learn it too, and this fails until it does.
-        var cleared = new[] { "ParsedCode", "Coverage", "Suppressions" };
+        var cleared = new[] { "ParsedCode", "Coverage", "Suppressions", "ParserErrors", "MayRecordParserErrors" };
         var captured = typeof(ModelNode.SourceSnapshot)
             .GetProperties()
             .Select(p => p.Name)

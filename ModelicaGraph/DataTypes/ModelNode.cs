@@ -164,7 +164,8 @@ public class ModelNode : GraphNode
     /// <para>There is a type for it because there were two hand-written versions, each capturing the
     /// source and the parse tree and neither capturing anything else — and what "anything else" means
     /// has changed under them since. Setting <see cref="ModelDefinition.ModelicaCode"/> now also drops
-    /// the coverage facts and the suppression set, and trimming a package sets
+    /// the coverage facts, the suppression set and the parse errors (and lifts the bar on recording
+    /// them), and trimming a package sets
     /// <see cref="SourceMatchesFile"/> and <see cref="ChildrenTrimmed"/>. A snapshot that names the
     /// fields is a list a reader can check; two tuples of two are not.</para>
     /// </summary>
@@ -175,7 +176,9 @@ public class ModelNode : GraphNode
         ModelicaParser.StyleRules.SuppressionSet? Suppressions,
         bool SourceMatchesFile,
         bool ChildrenTrimmed,
-        SourceElision? TrimElision);
+        SourceElision? TrimElision,
+        List<ParserError> ParserErrors,
+        bool MayRecordParserErrors);
 
     /// <summary>Captures this class's source and everything derived from it.</summary>
     public SourceSnapshot TakeSourceSnapshot() => new(
@@ -185,11 +188,13 @@ public class ModelNode : GraphNode
         Definition.Suppressions,
         SourceMatchesFile,
         ChildrenTrimmed,
-        TrimElision);
+        TrimElision,
+        Definition.ParserErrors,
+        Definition.MayRecordParserErrors);
 
     /// <summary>
     /// Puts a snapshot back, in the order the setters require: the source first, because assigning it
-    /// clears the tree and the two caches, and then the things it cleared.
+    /// clears the tree, the caches and the parse errors, and then the things it cleared.
     /// </summary>
     public void RestoreSource(SourceSnapshot snapshot)
     {
@@ -200,6 +205,10 @@ public class ModelNode : GraphNode
         SourceMatchesFile = snapshot.SourceMatchesFile;
         ChildrenTrimmed = snapshot.ChildrenTrimmed;
         TrimElision = snapshot.TrimElision;
+        // What the load found in the source being put back. It cannot be worked out again: a class
+        // from a file that failed to parse is barred from recording its own (B389).
+        Definition.ParserErrors = snapshot.ParserErrors;
+        Definition.MayRecordParserErrors = snapshot.MayRecordParserErrors;
     }
 
     /// <summary>

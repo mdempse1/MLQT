@@ -133,7 +133,19 @@ public static class PackageCodeTrimmer
 
                 // Setting ModelicaCode releases the parse tree with it — a tree read from the old
                 // source describes code that is no longer here.
+                //
+                // It also drops the class's parse errors and lifts the bar on recording its own
+                // (B389), which is right for new code and wrong for this: cutting lines out changes
+                // nothing about what the load found in the lines that are left, and lifting the bar
+                // would let this package record a second copy of an error the load gave to a class
+                // inside it. So the load's diagnosis is put back. Anything the class recorded by
+                // parsing its own source is not - its lines count from the text that was just cut,
+                // and parsing what is left records them again.
+                var loadErrors = model.Definition.ParserErrors.Where(e => !e.LineIsClassRelative).ToList();
+                var mayRecord = model.Definition.MayRecordParserErrors;
                 model.Definition.ModelicaCode = string.Join("\n", elision.Apply(lines));
+                model.Definition.ParserErrors = loadErrors;
+                model.Definition.MayRecordParserErrors = mayRecord;
                 model.TrimElision = elision;
 
                 // Still the file's own text, so a line in it still maps to a line in the file —

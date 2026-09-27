@@ -19,8 +19,9 @@ public class ModelDefinition
     /// The Modelica source code for this model.
     ///
     /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
-    /// <see cref="Coverage"/>, <see cref="Suppressions"/> and <see cref="Imports"/> all describe
-    /// code that is no longer here. The icon is marked to be rendered again rather than dropped -
+    /// <see cref="Coverage"/>, <see cref="Suppressions"/>, <see cref="Imports"/> and
+    /// <see cref="ParserErrors"/> all describe code that is no longer here, and
+    /// <see cref="MayRecordParserErrors"/> is set again so the new code can report its own. The icon is marked to be rendered again rather than dropped -
     /// see <see cref="IconSvg"/>.</para>
     ///
     /// <para>The tree is on that list, and the comment here used to say it was not — that
@@ -41,6 +42,12 @@ public class ModelDefinition
             Coverage = null;
             Suppressions = null;
             Imports = null;
+            // A diagnosis of the old source says nothing about the new one, and the rule barring a
+            // class from recording its own was the old file's (B389). Kept, they reported errors a
+            // reformatted class no longer has and hid the ones it does. PackageCodeTrimmer, which
+            // only cuts lines out, puts the load's diagnosis back itself.
+            ParserErrors = new();
+            MayRecordParserErrors = true;
             // Rendered again when the tree next asks, but not blanked meanwhile (B300).
             IconRendered = false;
         }
@@ -238,6 +245,10 @@ public class ModelDefinition
     ///
     /// <para>Left set for a class from a file that parsed cleanly: if its own stored source somehow
     /// does not parse, that is news, and it is how a class held only in memory reports at all.</para>
+    ///
+    /// <para>Set again, with <see cref="ParserErrors"/> emptied, whenever <see cref="ModelicaCode"/>
+    /// is replaced: the bar was about the file the class was loaded from, and the new code is not that
+    /// file (B389).</para>
     /// </summary>
     public bool MayRecordParserErrors { get; set; } = true;
 

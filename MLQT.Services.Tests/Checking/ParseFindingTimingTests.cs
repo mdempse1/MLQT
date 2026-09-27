@@ -51,6 +51,25 @@ public class ParseFindingTimingTests
     }
 
     [Fact]
+    public void ACheckAfterTheCodeWasReplacedInMemory_ReportsTheNewCodesErrorsNotTheOld()
+    {
+        // B389. Format All sets each class's code to what it wrote without reloading the file. The
+        // load had recorded the old file's error and barred the class from recording its own, so the
+        // check went on reporting an error the code no longer had, and none it did.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "A.mo", "model A \"a\"\n  Real x\nend A;");
+        var node = graph.GetNode<ModelNode>("A")!;
+        var old = Assert.Single(node.Definition.ParserErrors);
+
+        node.Definition.ModelicaCode = "model A \"a\"\n  Real x;\n  Real y\nend A;";
+        var findings = Check(graph).Where(f => RuleIds.IsDiagnostic(f.RuleId)).ToList();
+
+        var reported = Assert.Single(findings);
+        Assert.Equal(4, reported.LineNumber);   // the new error, below the line the old one was on
+        Assert.NotEqual(old.Line, reported.LineNumber);
+    }
+
+    [Fact]
     public void TwoChecksOfUnchangedCode_ReportTheSameParseFindings()
     {
         var graph = new DirectedGraph();

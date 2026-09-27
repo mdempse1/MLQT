@@ -494,4 +494,59 @@ public class PackageCodeTrimmerTests
         Assert.True(graph.GetNode<ModelNode>("Q.Pub")!.IsPublic);
         Assert.False(graph.GetNode<ModelNode>("Q.Prot")!.IsPublic);
     }
+
+    /// <summary>
+    /// Replacing a class's code drops its parse errors and lifts the bar on recording its own (B389).
+    /// Trimming only cuts lines out, so what the load found - with its file lines and whole-file
+    /// diagnosis - still describes the package, and the bar still has to hold: the package's text
+    /// still contains the broken class inside it, whose error the load gave to that class alone.
+    /// </summary>
+    [Fact]
+    public void TrimmingKeepsWhatTheLoadFoundAndStillBarsTheCopies()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "E.mo", """
+            package E "e"
+              replaceable model Broken "cannot be standalone"
+                Real x
+              end Broken;
+              model Plain "can be"
+              end Plain;
+            end E;
+            """);
+        var package = graph.GetNode<ModelNode>("E")!;
+        var broken = graph.GetNode<ModelNode>("E.Broken")!;
+        Assert.NotEmpty(broken.Definition.ParserErrors);   // the load gave the error to the inner class
+        Assert.False(package.Definition.MayRecordParserErrors);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+        Assert.DoesNotContain("model Plain", package.Definition.ModelicaCode);   // it was trimmed
+
+        package.Definition.EnsureParsed();
+
+        Assert.False(package.Definition.MayRecordParserErrors);
+        Assert.Empty(package.Definition.ParserErrors);   // no second copy of Broken's error
+        Assert.NotEmpty(broken.Definition.ParserErrors);
+    }
+
+    [Fact]
+    public void TrimmingKeepsAnErrorTheLoadGaveToThePackageItself()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "F.mo", """
+            package F "f"
+              model Plain "can be"
+              end Plain;
+              constant Real k = 1
+            end F;
+            """);
+        var package = graph.GetNode<ModelNode>("F")!;
+        var fromLoad = package.Definition.ParserErrors.ToList();
+        Assert.NotEmpty(fromLoad);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+        Assert.DoesNotContain("model Plain", package.Definition.ModelicaCode);
+
+        Assert.Equal(fromLoad, package.Definition.ParserErrors);
+    }
 }
