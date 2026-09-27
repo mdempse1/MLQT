@@ -385,10 +385,28 @@ lines ran to 170 characters:
       perCur=Some.Long.Package.Curve_I())}, nSta=2);
 ```
 
-Only calls are moved, and only once the array spans lines: an array still on the line it opened on
-stays there, and an array of numbers is not wrapped for length at all. A graphics annotation's
+Only calls are moved; an array of numbers is not wrapped for length at all. A graphics annotation's
 arrays keep their own layout, an element a line. Over the Modelica Standard Library and Buildings,
 63 files are written differently from before, only in line breaks and indentation.
+
+**An array of calls still on the line it opened on is wrapped the same way.** When it is in the first
+argument of a list, that argument is first moved to a line of its own, as a first argument too long
+for the opening line always is, and the array wraps from there only if it still does not fit. Its
+wrapped calls are a level in from the line the array opened on, in a list written an argument a line
+too:
+
+```modelica
+record ASHRAE_901_1975Roof = Buildings.HeatTransfer.Data.OpaqueConstructions.Generic(
+  final material={Buildings.HeatTransfer.Data.Solids.GypsumBoard(x=0.016),
+    Buildings.HeatTransfer.Data.Solids.InsulationBoard(x=0.09652),
+    Buildings.HeatTransfer.Data.Solids.Plywood(x=0.0127)}, final nLay=3) "...";
+```
+
+Earlier versions left such an array on its line, up to 600 characters long in Buildings' FLEXLAB
+constructions and over 1,000 in its IEEE 34-bus grid, and at about 200 in MSL's
+`Fluid.Examples.PumpingSystem` and `MultiBody.Frames.Orientation`. Over the Modelica Standard Library and Buildings, 57 files are written
+differently from before (9 MSL, 48 Buildings), only in line breaks and indentation, and lines over 100
+characters in them fall from 640 to 599.
 
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and

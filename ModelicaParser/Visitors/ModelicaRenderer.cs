@@ -44,6 +44,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // The line the '(' of the innermost argument list being written is on (B465) - not always the
     // line the list starts on, since a comment after the '(' ends that line first (B431).
     private int _argumentsOpeningLine;
+    // The first argument being written that VisitFirstArgument may still move to a line of its own
+    // (B464): the line it is on and where it starts in that line, so an array of calls inside it can
+    // move it before wrapping (B474). Lines is -1 when there is none.
+    private (int Lines, int Start) _movableFirstArgument = (-1, 0);
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -2149,17 +2153,71 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
         int start = _currentLine.Length;
         int lines = _code.Count;
+        var enclosing = _movableFirstArgument;
+        _movableFirstArgument = (lines, start);
         Visit(first);
+        _movableFirstArgument = enclosing;
         // The ',' that follows is on this line too.
         if (_code.Count != lines || GetCurrentLinePlainTextLength() + 1 <= _maxLineLength)
             return;
 
+        MoveToContinuationLine(start);
+    }
+
+    /// <summary>
+    /// Moves what has been written of the current line from <paramref name="start"/> on to a
+    /// continuation line of its own, a level in from the line it leaves (B464).
+    /// </summary>
+    private void MoveToContinuationLine(int start)
+    {
         var argument = _currentLine.ToString(start, _currentLine.Length - start);
         _currentLine.Length = start;
         EmitLine();
         AddIndentToCurrentLine();
         KeepInFrom(_code.Count - 1);
         _currentLine.Append(argument);
+    }
+
+    /// <summary>
+    /// Whether an array element after the first starts a line of its own: a call that does not fit
+    /// (B468), in an array that has wrapped already or is still on the line it opened on (B474).
+    /// An array still on its opening line inside a first argument that can be moved to a line of
+    /// its own (B464) moves that argument first, and opens on that line from then on. An array that
+    /// wraps from its opening line has its wrapped elements a level in, even in a list written an
+    /// argument a line, where they would otherwise be at the column of its siblings.
+    /// </summary>
+    private bool WrapsArrayElement(modelicaParser.ExpressionContext element, ref int opening, ref bool levelIn)
+    {
+        if (!WrapsCallElementForLength(element))
+            return false;
+        if (_code.Count != opening)
+            return true;
+        if (MovedFirstArgumentForArray())
+        {
+            opening = _code.Count;
+            if (!WrapsCallElementForLength(element))
+                return false;
+        }
+        levelIn = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Moves the first argument an array still on its opening line is in to a line of its own, as
+    /// VisitFirstArgument would once it was written (B464) - before the array wraps an element,
+    /// since an argument over more than one line is not moved (B474). Only the innermost such
+    /// argument, and only while it is still on the line it started on. True when it was moved.
+    /// </summary>
+    private bool MovedFirstArgumentForArray()
+    {
+        var (lines, start) = _movableFirstArgument;
+        // The start is past the end only if the line was cleared without being ended, which
+        // nothing inside an argument does; it is checked so a save cannot fail on it.
+        if (lines != _code.Count || start > _currentLine.Length)
+            return false;
+        // A line is ended by the move, so the argument can no longer be moved again.
+        MoveToContinuationLine(start);
+        return true;
     }
 
     public override object? VisitArgument([NotNull] modelicaParser.ArgumentContext context)
@@ -3725,27 +3783,34 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // element a line; anywhere else the element after a comment continues a level in.
         var runs = CommentRuns(context);
         int opening = _code.Count;
+        // Whether a wrapped element is a level in from the line the array opened on, rather than
+        // where the element before it ended (B468) - always, once the array has wrapped from the
+        // line it opened on (B474).
+        bool levelIn = !_parentUsingMultiLine;
         if (expressions != null && expressions.Length > 0)
         {
             for (int i = 0; i < expressions.Length; i++)
             {
                 bool wrapped = false;
+                int elementLine = _code.Count;
                 if (i > 0)
                 {
                     Write(",");
                     if (runs != null && runs[i].Any)
                         WriteListComments(runs[i],
                             _inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement);
-                    else if (WrapsCallElementForLength(expressions[i], opening))
+                    else if (WrapsArrayElement(expressions[i], ref opening, ref levelIn))
                     {
-                        // A call that will not fit after the element before it, which has already
-                        // taken the array over more than one line, starts a line of its own (B468):
-                        // left on the last line of the element before, each call's wrapped
-                        // arguments were a level deeper than the last one's. It is a level in from
-                        // the line the array opened on, as a wrapped argument is - or, inside a
-                        // list written an argument a line, where the element before it ended.
+                        // A call that will not fit after the element before it starts a line of its
+                        // own (B468): left on the last line of the element before, each call's
+                        // wrapped arguments were a level deeper than the last one's - and left on
+                        // the line the array opened on, the line ran on past the limit (B474). It
+                        // is a level in from the line the array opened on, as a wrapped argument
+                        // is - or, inside a list written an argument a line, where the element
+                        // before it ended, unless the array wrapped from its opening line.
                         EmitLine();
-                        if (!_parentUsingMultiLine)
+                        elementLine = _code.Count;
+                        if (levelIn)
                         {
                             _currentLineMaximumLevel = _indentLevel;
                             Indent();
@@ -3766,7 +3831,17 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (_inGraphicsAnnotationLevel > 0)
                     _inGraphicsAnnotationLevel--;
                 if (wrapped)
+                {
+                    // The last line of a wrapped element over more than one line - the ')' of a
+                    // call written an argument a line - is ended after the wrap has gone back out,
+                    // so it is kept at least at the element's own column (B474).
+                    if (elementLine < _code.Count)
+                    {
+                        var first = _code[elementLine];
+                        _currentLineMinimumIndent = Math.Max(_currentLineMinimumIndent, first.Length - first.TrimStart(' ').Length);
+                    }
                     Dedent();
+                }
             }
 
             if (context.for_indices() != null)
@@ -3783,15 +3858,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     /// <summary>
     /// Whether an array element after the first is a function call that would not fit on the
-    /// current line after a space, in an array that has already been written over more than one
-    /// line since <paramref name="opening"/> (B468). Only a call: a graphics annotation's arrays
-    /// are laid out by their own rules, and an array of numbers is not wrapped for length at all.
-    /// And only once the array spans lines: an array still on the line it opened on is left there,
-    /// so a list's first argument holding it can still be moved to a line of its own (B464).
+    /// current line after a space (B468). Only a call: a graphics annotation's arrays are laid out
+    /// by their own rules, and an array of numbers is not wrapped for length at all.
     /// </summary>
-    private bool WrapsCallElementForLength(modelicaParser.ExpressionContext element, int opening)
+    private bool WrapsCallElementForLength(modelicaParser.ExpressionContext element)
     {
-        if (_inGraphicsAnnotationLevel > 0 || _code.Count == opening)
+        if (_inGraphicsAnnotationLevel > 0)
             return false;
         IParseTree node = element;
         while (node is ParserRuleContext { ChildCount: 1 } rule && node is not modelicaParser.PrimaryContext)

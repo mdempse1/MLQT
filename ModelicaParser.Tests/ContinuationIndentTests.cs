@@ -42,6 +42,11 @@ namespace ModelicaParser.Tests;
 /// recognised as graphics, so each element's arguments were written an argument a line at the
 /// element's own column: MSL's <c>RealInput</c> had <c>fillColor=</c> under
 /// <c>graphics={Polygon(</c>.</para>
+///
+/// <para>B474 - an array of calls still on the line it opened on is wrapped as B468 wraps one that
+/// has already wrapped. Wrapping it inside a list's first argument would leave that argument over
+/// more than one line, which B464 does not move, so the argument is moved first. Buildings' FLEXLAB
+/// constructions and MSL's PumpingSystem had such arrays on one line of up to 600 characters.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -617,21 +622,77 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(ComponentGraphics));
     }
 
+    private const string ArraysWrappedFromTheirOpeningLine = """
+        model M
+          record R = Some.Package.Generic(
+            final material={Solids.Insulation(x=0.08255),
+              Solids.Plywood(x=0.0127), Solids.Gypsum(x=0.01588)},
+            final nLay=3) "South wall";
+          Some.OpenTank tank(
+            crossArea=0.2,
+            nPorts=3,
+            height=20,
+            level_start=2,
+            use_portsData=true,
+            portsData={Vessels.PortsData(diameter=0.1),
+              Vessels.PortsData(diameter=0.1),
+              Vessels.PortsData(
+                diameter=0.1,
+                height=6
+              )}
+          );
+          Some.OpenTank tank2(
+            crossArea=0.2,
+            nPorts=3,
+            height=20,
+            level_start=2,
+            use_portsData=true,
+            portsData={P(d=1), P(d=2),
+              Vessels.PortsData(
+                diameter=0.1,
+                height=6
+              )}
+          );
+          M r(a=1, n_y={f(a), f(b), f(c), f(d), f(e), f(g), f(h),
+            f(i)});
+          Some.Fixed.Rotation crankAngle2(
+            n_y={0, Math.cos(aa), Math.sin(aa)}, animation=false);
+          Some.Fixed crankAngle1(
+            n_y={0, Math.cos(crankAngleOffset),
+              Math.sin(crankAngleOffset)}, animation=false);
+
+        algorithm
+          residue := {Math.atan2(cross(R1[1, :], R1[2, :])*R2[2, :], R1[1, :]*R2[1, :]),
+            Math.atan2(R1[2, :]*R2[1, :], R1[3, :]*R2[3, :])};
+        end M;
+        """;
+
     [Fact]
-    public void AnArrayOfCallsStillOnTheLineItOpenedOnIsLeftThere()
+    public void AnArrayOfCallsStillOnTheLineItOpenedOnIsWrappedForLength()
     {
-        // Buildings' FLEXLAB constructions: wrapping the array would leave the list's first
-        // argument over more than one line, so it could no longer be moved to a line of its own
-        // (B464), and the record's first line would run past the limit instead.
+        // In order: Buildings' FLEXLAB constructions - the list's first argument is moved to a
+        // line of its own before its array wraps, since once it spans lines it could not be moved
+        // (B464) and the record's first line ran past the limit; MSL's Tanks, twice - in a list
+        // written an argument a line the wrapped elements are a level in, and so is the ')' of one
+        // written an argument a line, whether or not an element before it wrapped; an array in a
+        // later argument does not move the first; an array that fits once its argument has moved
+        // is not wrapped, and one that does not wraps from the moved line; and an array with no
+        // argument to move wraps from the statement's line (MSL MultiBody's Frames.Orientation).
+        // Each array was left on the line it opened on, up to 600 characters long (B474).
         TestHelpers.AssertClass(
             Normalise("""
-                record R = Some.Package.Generic(final material={Solids.Insulation(x=0.08255), Solids.Plywood(x=0.0127), Solids.Gypsum(x=0.01588)}, final nLay=3) "South wall";
+                model M
+                  record R = Some.Package.Generic(final material={Solids.Insulation(x=0.08255), Solids.Plywood(x=0.0127), Solids.Gypsum(x=0.01588)}, final nLay=3) "South wall";
+                  Some.OpenTank tank(crossArea=0.2, nPorts=3, height=20, level_start=2, use_portsData=true, portsData={Vessels.PortsData(diameter=0.1), Vessels.PortsData(diameter=0.1), Vessels.PortsData(diameter=0.1, height=6)});
+                  Some.OpenTank tank2(crossArea=0.2, nPorts=3, height=20, level_start=2, use_portsData=true, portsData={P(d=1), P(d=2), Vessels.PortsData(diameter=0.1, height=6)});
+                  M r(a=1, n_y={f(a),f(b),f(c),f(d),f(e),f(g),f(h),f(i)});
+                  Some.Fixed.Rotation crankAngle2(n_y={0, Math.cos(aa), Math.sin(aa)}, animation=false);
+                  Some.Fixed crankAngle1(n_y={0, Math.cos(crankAngleOffset), Math.sin(crankAngleOffset)}, animation=false);
+                algorithm
+                  residue := {Math.atan2(cross(R1[1, :], R1[2, :])*R2[2, :], R1[1, :]*R2[1, :]), Math.atan2(R1[2, :]*R2[1, :], R1[3, :]*R2[3, :])};
+                end M;
                 """),
-            expectedOutput: Normalise("""
-                record R = Some.Package.Generic(
-                  final material={Solids.Insulation(x=0.08255), Solids.Plywood(x=0.0127), Solids.Gypsum(x=0.01588)},
-                  final nLay=3) "South wall";
-                """),
+            expectedOutput: Normalise(ArraysWrappedFromTheirOpeningLine),
             maxLineLength: 60);
     }
 
@@ -665,6 +726,7 @@ public class ContinuationIndentTests
     [InlineData(RightHandSideContinued, 100)]
     [InlineData(ShortClassGraphics, 100)]
     [InlineData(ComponentGraphics, 100)]
+    [InlineData(ArraysWrappedFromTheirOpeningLine, 60)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
