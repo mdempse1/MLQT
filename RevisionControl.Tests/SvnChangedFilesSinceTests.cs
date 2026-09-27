@@ -12,14 +12,34 @@ namespace RevisionControl.Tests;
 /// this file is about — and they are the paths that need no working copy to reach.</para>
 ///
 /// <para>The integration tests use a working copy of a repository this run builds for itself
-/// (<see cref="SvnWorkingCopyFixture"/>, B426) and return without asserting where svn is not
-/// installed. CI has no svn client, so there they are no-ops.</para>
+/// (<see cref="SvnWorkingCopyFixture"/>, B426) and are skipped where svn is not installed, which
+/// includes CI (B486). The repository's history is this run's own, so what changed since a revision
+/// is known and asserted, not just that an answer came back.</para>
 /// </summary>
 public class SvnChangedFilesSinceTests(SvnWorkingCopyFixture fixture) : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn = new();
-    private readonly string _workingCopy = fixture.WorkingCopy ?? "";
-    private bool WorkingCopyAvailable => _workingCopy.Length > 0;
+
+    /// <summary>
+    /// Everything trunk holds, all of it added after r1 (which only created the layout), as paths
+    /// relative to the working copy - and the working copy's root, which svn lists as a directory
+    /// whose properties changed (<c>item="none" props="modified"</c>). A directory matches no class's
+    /// file, so the caller is unaffected by it.
+    /// </summary>
+    private static readonly string[] AddedSinceLayout =
+    [
+        ".",
+        "README.txt",
+        "package.mo",
+        "Models",
+        Path.Combine("Models", "package.mo"),
+        Path.Combine("Models", "SimpleModel.mo"),
+        Path.Combine("Models", "TestModel.mo"),
+    ];
+
+    /// <summary>The paths relative to the working copy, in order, so a difference reads as one.</summary>
+    private static IEnumerable<string> Relative(string workingCopy, IEnumerable<string> paths) =>
+        paths.Select(p => Path.GetRelativePath(workingCopy, p)).Order(StringComparer.Ordinal);
 
     [Fact]
     public void NotAWorkingCopy_ReturnsNull()
@@ -50,57 +70,64 @@ public class SvnChangedFilesSinceTests(SvnWorkingCopyFixture fixture) : IClassFi
     [Fact]
     public void AnUnusableRevision_ReturnsNull()
     {
-        if (!WorkingCopyAvailable)
-            return;
+        var workingCopy = fixture.RequireWorkingCopy();
 
         // svn rejects the revision argument itself, so there is no diff to report — as distinct from
         // a diff that came back empty.
-        Assert.Null(_svn.GetChangedFilePathsSince(_workingCopy, "not-a-revision"));
+        Assert.Null(_svn.GetChangedFilePathsSince(workingCopy, "not-a-revision"));
     }
 
     [Fact]
-    public void AgainstTheCurrentRevision_ReturnsSomethingRatherThanNull()
+    public void AgainstTheCurrentRevision_OfAnUnmodifiedWorkingCopy_ReturnsAnEmptyList()
     {
-        if (!WorkingCopyAvailable)
-            return;
+        var workingCopy = fixture.RequireWorkingCopy();
 
-        // Whatever the working copy happens to hold, the answer is a list: this is the "it worked"
-        // case, and the point is that it is distinguishable from the failures above.
-        var changed = _svn.GetChangedFilePathsSince(_workingCopy, "BASE");
+        // Nothing is modified, so nothing changed since BASE - and that answer is an empty list, the
+        // "it worked" case, distinguishable from the null of the failures above.
+        var changed = _svn.GetChangedFilePathsSince(workingCopy, "BASE");
 
         Assert.NotNull(changed);
+        Assert.Empty(changed);
     }
 
     [Fact]
-    public void ThePathsAreAbsolute()
+    public void SinceTheLayout_ReportsEverythingTrunkHolds_AsAbsolutePaths()
     {
-        if (!WorkingCopyAvailable)
-            return;
+        var workingCopy = fixture.RequireWorkingCopy();
 
         // The caller matches them against the graph's file paths, which are absolute. `svn diff
         // --summarize --xml` reports working-copy paths, and a relative one would silently match
         // nothing — the failure mode phase 3 flagged as a path-normalisation risk.
-        var changed = _svn.GetChangedFilePathsSince(_workingCopy, "1");
-        if (changed is null or { Count: 0 })
-            return;
+        var changed = _svn.GetChangedFilePathsSince(workingCopy, "1");
 
+        Assert.NotNull(changed);
         Assert.All(changed, p => Assert.True(Path.IsPathRooted(p), $"'{p}' is not absolute"));
+        Assert.Equal(AddedSinceLayout.Order(StringComparer.Ordinal), Relative(workingCopy, changed));
     }
 
     [Fact]
     public void ADeletedFileIsNotReported()
     {
-        if (!WorkingCopyAvailable)
-            return;
+        var workingCopy = fixture.RequireWorkingCopy();
 
         // A file that is gone cannot be checked, so escalating debt in it would name a class that no
-        // longer exists. Nothing here forces a deletion into the working copy; what it asserts is
-        // that every path handed back is one that can still be read.
-        var changed = _svn.GetChangedFilePathsSince(_workingCopy, "1");
-        if (changed is null or { Count: 0 })
-            return;
+        // longer exists. README.txt was added in r2, so deleting it makes svn report it as deleted
+        // since r2 - beside the files added after r2, which are reported.
+        var readme = Path.Combine(workingCopy, "README.txt");
+        Assert.True(SvnCli.Run("delete", readme).Success);
 
-        Assert.All(changed, p => Assert.True(File.Exists(p) || Directory.Exists(p),
-            $"'{p}' was reported as changed but is not on disk"));
+        try
+        {
+            var changed = _svn.GetChangedFilePathsSince(workingCopy, "2");
+
+            Assert.NotNull(changed);
+            Assert.Equal(AddedSinceLayout.Where(p => p != "README.txt").Order(StringComparer.Ordinal),
+                Relative(workingCopy, changed));
+        }
+        finally
+        {
+            Assert.True(_svn.RevertFiles(workingCopy, ["README.txt"]).Success);
+            Assert.True(File.Exists(readme), "README.txt should be restored by RevertFiles");
+        }
     }
 }

@@ -125,7 +125,7 @@ jobs:
       # need only the client - installing subversion on the runner (svn and svnadmin) would
       # make them runnable, which is the obvious next step if these ever matter here. The
       # classes that do run here take SvnWorkingCopyFixture, which is empty without svn, so
-      # their working-copy tests return early. Bundling the SlikSVN client
+      # their working-copy tests are reported as skipped (B481, B486). Bundling the SlikSVN client
       # (build/fetch-svn-tools.ps1) does not help: it supplies svn.exe, not svnadmin, and is
       # validated by the release workflow's "Verify bundled svn client" step instead.
       # run-all-tests.ps1 runs all three on a machine that has svn.

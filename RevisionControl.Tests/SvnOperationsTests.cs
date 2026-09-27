@@ -11,23 +11,22 @@ namespace RevisionControl.Tests;
 public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn;
+    private readonly SvnWorkingCopyFixture _fixture;
     private readonly string _workingCopy;
 
     public SvnOperationsTests(SvnWorkingCopyFixture fixture)
     {
         _svn = new SvnRevisionControlSystem();
+        _fixture = fixture;
         _workingCopy = fixture.WorkingCopy ?? "";
     }
 
     /// <summary>
-    /// Skips a test that needs the working copy where svn is not installed - reported as skipped,
-    /// not passed. This class runs on CI, which has no svn client (see <c>SvnTestFilterTests</c>),
-    /// so it cannot fail there; but it used to <c>return</c>, and a test that asserted nothing read
-    /// as a pass (B481). With svn installed the working copy is always there, and every condition
-    /// the repository guarantees is asserted rather than returned on.
+    /// Skips a test that needs the working copy where svn is not installed (B481); see
+    /// <see cref="SvnWorkingCopyFixture.RequireWorkingCopy"/>. With svn installed the working copy is
+    /// always there, and every condition the repository guarantees is asserted rather than returned on.
     /// </summary>
-    private void RequireWorkingCopy() =>
-        Assert.SkipUnless(_workingCopy.Length > 0, "svn is not installed, so there is no working copy to test against");
+    private void RequireWorkingCopy() => _fixture.RequireWorkingCopy();
 
     #region No-op Stub Method Tests
 
@@ -540,14 +539,10 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 
         var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions { MaxEntries = 5 });
 
-        Assert.NotNull(entries);
-        Assert.NotEmpty(entries);
-        Assert.All(entries, e =>
-        {
-            Assert.NotEmpty(e.Revision);
-            Assert.NotEmpty(e.Author);
-            Assert.NotNull(e.MessageShort);
-        });
+        // Trunk's five newest commits, newest first: r7 ("Add TestModel") down to r3.
+        Assert.Equal(["7", "6", "5", "4", "3"], entries.Select(e => e.Revision));
+        Assert.Equal("Add TestModel", entries[0].MessageShort);
+        Assert.All(entries, e => Assert.NotEmpty(e.Author));
     }
 
     [Fact]
@@ -555,7 +550,8 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
     {
         RequireWorkingCopy();
 
-        // Until 1 hour ago - should return 0 or few entries (recent commits excluded)
+        // The repository was built by this run, so every commit in it is newer than an hour ago
+        // and an Until of an hour ago leaves none.
         var pastTime = DateTimeOffset.Now.AddHours(-1);
         var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions
         {
@@ -563,8 +559,15 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
             Until = pastTime
         });
 
-        Assert.NotNull(entries);
-        // May or may not have entries depending on history, just verify it works
+        Assert.Empty(entries);
+
+        // ...and one a minute from now leaves all of them, so it is the filter that emptied it.
+        var all = _svn.GetLogEntries(_workingCopy, new VcsLogOptions
+        {
+            MaxEntries = 5,
+            Until = DateTimeOffset.Now.AddMinutes(1)
+        });
+        Assert.Equal(5, all.Count);
     }
 
     [Fact]
@@ -572,14 +575,15 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
     {
         RequireWorkingCopy();
 
-        // Get the current revision first
+        // The working copy's current revision is the last that changed trunk, "Add TestModel"
         var currentRevision = _svn.GetCurrentRevision(_workingCopy);
-        Assert.NotNull(currentRevision);
+        Assert.Equal(SvnTestRepository.TrunkLastChangedRevision.ToString(), currentRevision);
 
-        var files = _svn.GetChangedFiles(_workingCopy, currentRevision);
+        var files = _svn.GetChangedFiles(_workingCopy, currentRevision!);
 
-        // Files at the current revision may or may not exist, but shouldn't throw
-        Assert.NotNull(files);
+        var file = Assert.Single(files);
+        Assert.Equal("trunk/Models/TestModel.mo", file.Path);
+        Assert.Equal(VcsChangeType.Added, file.ChangeType);
     }
 
     [Fact]
@@ -598,8 +602,8 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
         // HEAD revision
         var content = _svn.GetFileContentAtRevision(_workingCopy, relativePath, "HEAD");
 
-        Assert.NotNull(content);
-        Assert.NotEmpty(content);
+        // Nothing has committed since the checkout, so HEAD is what is on disk
+        Assert.Equal(File.ReadAllText(allFiles[0]), content);
     }
 
     [Fact]
@@ -614,10 +618,10 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 
         var relativePath = Path.GetRelativePath(_workingCopy, allFiles[0]);
 
-        // null revision → BASE
+        // null revision → BASE, which for an unmodified file is what is on disk
         var content = _svn.GetFileContentAtRevision(_workingCopy, relativePath, null);
 
-        Assert.NotNull(content);
+        Assert.Equal(File.ReadAllText(allFiles[0]), content);
     }
 
     [Fact]
@@ -627,9 +631,11 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 
         var result = _svn.UpdateToLatest(_workingCopy);
 
+        // The checkout was taken at HEAD and nothing has committed since, so there is nothing to take.
         Assert.True(result.Success);
-        Assert.NotNull(result.OldRevision);
-        Assert.NotNull(result.NewRevision);
+        Assert.Equal(SvnTestRepository.HeadRevision.ToString(), result.OldRevision);
+        Assert.Equal(SvnTestRepository.HeadRevision.ToString(), result.NewRevision);
+        Assert.False(result.HasChanges);
     }
 
     [Fact]
@@ -687,8 +693,8 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
         // Use numeric revision (exercises the long.TryParse branch)
         var content = _svn.GetFileContentAtRevision(_workingCopy, relativePath, currentRevision);
 
-        // The file is tracked at the working copy's own revision, so there is content to read
-        Assert.NotNull(content);
+        // The file is tracked at the working copy's own revision, unmodified since
+        Assert.Equal(File.ReadAllText(allFiles[0]), content);
     }
 
     [Fact]
@@ -739,9 +745,9 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
             Since = since
         });
 
-        Assert.NotNull(entries);
-        // All returned entries should be on or after the since date
-        Assert.All(entries, e => Assert.True(e.Date >= since.AddDays(-1),
+        // Every commit in trunk's history was made by this run, so all of them are after it
+        Assert.Equal(SvnTestRepository.TrunkHistoryLength, entries.Count);
+        Assert.All(entries, e => Assert.True(e.Date >= since,
             $"Entry date {e.Date} should be >= {since}"));
     }
 
@@ -751,7 +757,7 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
         RequireWorkingCopy();
 
         var currentBranch = _svn.GetCurrentBranch(_workingCopy);
-        Assert.NotNull(currentBranch);
+        Assert.Equal("trunk", currentBranch);
 
         var entries = _svn.GetLogEntries(_workingCopy, new VcsLogOptions
         {
@@ -759,11 +765,10 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
             Branch = currentBranch
         });
 
-        Assert.NotNull(entries);
-        // Each entry's branch reflects where the change actually occurred.
-        // SVN log follows copy history, so older entries may show trunk or
-        // another branch that predates the current branch.
-        Assert.All(entries, e => Assert.NotNull(e.Branch));
+        // Each entry's branch reflects where the change actually occurred, and trunk's own history
+        // was all made on trunk.
+        Assert.Equal(5, entries.Count);
+        Assert.All(entries, e => Assert.Equal("trunk", e.Branch));
     }
 
     [Fact]
@@ -778,10 +783,10 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
         var revision = logEntries[0].Revision;
         var files = _svn.GetChangedFiles(_workingCopy, revision);
 
-        Assert.NotNull(files);
-        // The latest commit should have at least one changed file
-        Assert.NotEmpty(files);
-        Assert.All(files, f => Assert.NotEmpty(f.Path));
+        // The latest commit on trunk is "Add TestModel"
+        Assert.Equal(SvnTestRepository.TrunkLastChangedRevision.ToString(), revision);
+        var file = Assert.Single(files);
+        Assert.Equal("trunk/Models/TestModel.mo", file.Path);
     }
 
     [Fact]
@@ -852,7 +857,7 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
         var desc = _svn.GetRevisionDescription(_workingCopy, currentRevision);
 
         Assert.NotNull(desc);
-        Assert.NotEmpty(desc);
+        Assert.StartsWith("Add TestModel (by ", desc);
     }
 
     [Fact]
@@ -862,8 +867,7 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 
         var resolved = _svn.ResolveRevision(_workingCopy, "HEAD");
 
-        Assert.NotNull(resolved);
-        Assert.True(long.TryParse(resolved, out _), $"Resolved revision should be numeric, got: {resolved}");
+        Assert.Equal(SvnTestRepository.HeadRevision.ToString(), resolved);
     }
 
     [Fact]
@@ -873,9 +877,9 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
 
         var branches = _svn.GetBranches(_workingCopy, includeRemote: true);
 
-        Assert.NotNull(branches);
-        Assert.NotEmpty(branches);
+        Assert.Equal(["trunk", "branches/feature-test", "tags/v1.0", "tags/v2.0"], branches.Select(b => b.Name));
         Assert.All(branches, b => Assert.True(b.IsRemote)); // SVN branches are always "remote"
+        Assert.Equal("trunk", Assert.Single(branches, b => b.IsCurrent).Name);
     }
 
     [Fact]

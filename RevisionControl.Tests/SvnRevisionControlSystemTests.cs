@@ -3,18 +3,18 @@ namespace RevisionControl.Tests;
 /// <summary>
 /// Tests for SvnRevisionControlSystem.
 /// Mostly basic API tests; the integration region at the end uses a working copy of a repository
-/// this run builds for itself (<see cref="SvnWorkingCopyFixture"/>, B426), and returns early where
-/// svn is not installed.
+/// this run builds for itself (<see cref="SvnWorkingCopyFixture"/>, B426), and is skipped where
+/// svn is not installed (B486).
 /// </summary>
 public class SvnRevisionControlSystemTests : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn;
-    private readonly string? _workingCopy;
+    private readonly SvnWorkingCopyFixture _fixture;
 
     public SvnRevisionControlSystemTests(SvnWorkingCopyFixture fixture)
     {
         _svn = new SvnRevisionControlSystem();
-        _workingCopy = fixture.WorkingCopy;
+        _fixture = fixture;
     }
 
     [Fact]
@@ -804,8 +804,7 @@ public class SvnRevisionControlSystemTests : IClassFixture<SvnWorkingCopyFixture
     [Fact]
     public void IsValidRepository_WithRealSvnWorkingCopy_ReturnsTrue()
     {
-        if (_workingCopy is not { } testPath)
-            return;
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.IsValidRepository(testPath);
@@ -817,67 +816,57 @@ public class SvnRevisionControlSystemTests : IClassFixture<SvnWorkingCopyFixture
     [Fact]
     public void GetCurrentRevision_WithRealSvnWorkingCopy_ReturnsRevision()
     {
-        if (_workingCopy is not { } testPath)
-            return;
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetCurrentRevision(testPath);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.True(int.TryParse(result, out _), "Revision should be a numeric string");
+        // Assert - the last revision that changed trunk, not the repository's HEAD: the tags and the
+        // branch were copied from trunk afterwards without changing it
+        Assert.Equal(SvnTestRepository.TrunkLastChangedRevision.ToString(), result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithRealSvnWorkingCopy_ReturnsBranch()
     {
-        if (_workingCopy is not { } testPath)
-            return;
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetCurrentBranch(testPath);
 
-        // Assert - trunk, branches/*, or tags/*
-        Assert.NotNull(result);
-        Assert.True(result == "trunk" || result.StartsWith("branches/") || result.StartsWith("tags/"),
-            $"Branch should be trunk, branches/*, or tags/*, got: {result}");
+        // Assert - the fixture checks trunk out
+        Assert.Equal("trunk", result);
     }
 
     [Fact]
     public void GetWorkingCopyChanges_WithRealSvnWorkingCopy_ReturnsChanges()
     {
-        if (_workingCopy is not { } testPath)
-            return;
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetWorkingCopyChanges(testPath);
 
-        // Assert
-        Assert.NotNull(result);
-        // Result may be empty if no uncommitted changes, that's fine
+        // Assert - nothing in this class modifies the working copy, so it is as checked out
+        Assert.Empty(result);
     }
 
     [Fact]
     public void GetBranches_WithRealSvnWorkingCopy_ReturnsBranches()
     {
-        if (_workingCopy is not { } testPath)
-            return;
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetBranches(testPath, includeRemote: false);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        // Should at least have trunk
-        Assert.Contains(result, b => b.Name == "trunk" || b.Name.StartsWith("branches/") || b.Name.StartsWith("tags/"));
+        // Assert - trunk, then each container's entries: the one branch and the two tags
+        Assert.Equal(["trunk", "branches/feature-test", "tags/v1.0", "tags/v2.0"], result.Select(b => b.Name));
+        Assert.Equal("trunk", Assert.Single(result, b => b.IsCurrent).Name);
     }
 
     [Fact]
     public void MergeBranch_WithRealSvnWorkingCopy_AndNonExistentBranch_ReturnsFailure()
     {
-        if (_workingCopy is not { } testPath)
-            return;
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act - try to merge a non-existent branch
         var result = _svn.MergeBranch(testPath, "branches/this-branch-does-not-exist-12345");
@@ -885,6 +874,7 @@ public class SvnRevisionControlSystemTests : IClassFixture<SvnWorkingCopyFixture
         // Assert
         Assert.False(result.Success);
         Assert.NotNull(result.ErrorMessage);
+        Assert.Empty(_svn.GetWorkingCopyChanges(testPath));
     }
 
     #endregion

@@ -368,4 +368,8 @@ exception, and about 187 tests returned early on it having asserted nothing; `Gi
 cloned https://github.com/mdempse1/ModelicaEditorTests.git for every test and did the same offline
 (B481). No test uses that repository now. A test that needs a remote clones the fixture locally.
 **A condition the fixture guarantees is asserted, never returned on.** The one skip left is
-`SvnOperationsTests`' `Assert.SkipUnless` where svn is absent - reported as skipped, not passed.
+`SvnWorkingCopyFixture.RequireWorkingCopy()`, the `Assert.SkipUnless` every class on that fixture
+calls where svn is absent - reported as skipped, not passed (B481, B486). The repository is the
+run's own, so its answers are known and asserted: trunk's current revision is
+`SvnTestRepository.TrunkLastChangedRevision` (7), HEAD is `HeadRevision` (10), and a test that
+asserts only that an answer came back is asserting less than the fixture makes possible.

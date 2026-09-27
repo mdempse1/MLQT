@@ -48,6 +48,19 @@ public sealed class SvnTestRepository : IDisposable
     /// <summary><see cref="RootUrl"/> + <c>/trunk</c>.</summary>
     public string TrunkUrl => RootUrl + "/trunk";
 
+    /// <summary>
+    /// The last revision that changed trunk - "Add TestModel", which added
+    /// <c>trunk/Models/TestModel.mo</c> - and so what a trunk working copy reports as its current
+    /// revision. <see cref="Populate"/> decides it: the layout is r1, the six trunk commits r2-r7.
+    /// </summary>
+    public const long TrunkLastChangedRevision = 7;
+
+    /// <summary>The repository's HEAD once built: the two tags (r8, r9) and the branch (r10).</summary>
+    public const long HeadRevision = 10;
+
+    /// <summary>The number of revisions in trunk's history: the layout and the six trunk commits.</summary>
+    public const int TrunkHistoryLength = 7;
+
     public SvnTestRepository()
     {
         if (!ToolsAvailable)
@@ -193,9 +206,9 @@ public sealed class SvnTestRepository : IDisposable
 /// <summary>
 /// A working copy of a run's own <see cref="SvnTestRepository"/>, for the classes that run
 /// everywhere - including CI, which has no svn client. <see cref="WorkingCopy"/> is null when the
-/// tools are absent, and the tests that need it return early, as they did when they probed for the
-/// shared working copy at a fixed path. With the tools present it is always
-/// there, so on a developer's machine these tests always assert.
+/// tools are absent, and the tests that need it call <see cref="RequireWorkingCopy"/>, which reports
+/// them as skipped there. With the tools present it is always there, so on a developer's machine
+/// these tests always assert.
 /// </summary>
 public sealed class SvnWorkingCopyFixture : IDisposable
 {
@@ -211,6 +224,18 @@ public sealed class SvnWorkingCopyFixture : IDisposable
 
         _repository = new SvnTestRepository();
         WorkingCopy = _repository.CheckOut();
+    }
+
+    /// <summary>
+    /// The working copy, or the test is skipped where svn is not installed - reported as skipped,
+    /// not passed. The classes on this fixture run on CI, which has no svn client, and used to
+    /// <c>return</c> there: a test that had asserted nothing read as a pass (B481, B486). One helper
+    /// for all of them, so every class says the same thing about the same absence.
+    /// </summary>
+    public string RequireWorkingCopy()
+    {
+        Assert.SkipUnless(WorkingCopy is not null, "svn is not installed, so there is no working copy to test against");
+        return WorkingCopy!;
     }
 
     public void Dispose() => _repository?.Dispose();
