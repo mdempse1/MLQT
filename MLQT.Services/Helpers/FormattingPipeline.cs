@@ -340,7 +340,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
                             modelIdToFilePath[kvp.Key] = kvp.Value;
                         }
 
-                        if (saveResult.FailedFiles.Count > 0)
+                        if (saveResult.FailedFiles.Count > 0 || saveResult.UnplacedModelIds.Count > 0)
                             librariesToKeep.Add(library);
                     }
 
@@ -352,6 +352,21 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         onLibraryFailed?.Invoke(library.Name, new IOException(
                             $"{saveResult.FailedFiles.Count} file(s) could not be written, including " +
                             $"{saveResult.FailedFiles.First()}. No file of the library was deleted, so it may now " +
+                            "define some classes twice; see the log."));
+                        return;
+                    }
+
+                    // The last line (B441): a class of the library that is in no file the save wrote
+                    // or kept may be only in a file the sweep would take for an orphan. Nothing of the
+                    // library is deleted, whatever the reason the save could not place it.
+                    if (saveResult.UnplacedModelIds.Count > 0)
+                    {
+                        Error(nameof(FormattingPipeline),
+                            $"Library {library.Name}: {saveResult.UnplacedModelIds.Count} class(es) were written to no file " +
+                            $"({string.Join(", ", saveResult.UnplacedModelIds.Take(20))}); its original files were kept");
+                        onLibraryFailed?.Invoke(library.Name, new InvalidOperationException(
+                            $"{saveResult.UnplacedModelIds.Count} class(es) could not be placed in any file, including " +
+                            $"{saveResult.UnplacedModelIds[0]}. No file of the library was deleted, so it may now " +
                             "define some classes twice; see the log."));
                         return;
                     }

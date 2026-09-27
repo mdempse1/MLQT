@@ -142,6 +142,14 @@ public class ModelicaPackageSaver
                 untouched);
         }
 
+        // The last line (B441): every class the save was given is in a file it wrote, or the caller
+        // is told which are not, so that it deletes nothing that may be the only copy of one.
+        foreach (var model in modelsToRender)
+        {
+            if (!result.ModelIdToFilePath.ContainsKey(model.Id))
+                result.UnplacedModelIds.Add(model.Id);
+        }
+
         return result;
     }
 
@@ -582,7 +590,12 @@ public class ModelicaPackageSaver
             // Process children
             foreach (var child in children)
             {
-                if (standaloneNames.Contains(child.Definition.Name))
+                // A child already stored in a file of its own is written back there even when the
+                // layout would not give it one - its name colliding with a sibling's entry or a
+                // reserved one. It is not in this package's source, so it cannot go into package.mo,
+                // and mapping it there left its own file, the only copy of the class, to be deleted
+                // as an orphan (B441).
+                if (standaloneNames.Contains(child.Definition.Name) || StoredInAFileOfItsOwn(child, model.ContainingFileId))
                 {
                     // Recursively write standalone child
                     WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
@@ -593,7 +606,7 @@ public class ModelicaPackageSaver
                 {
                     // Non-standalone children are in package.mo — update their ModelicaCode
                     // with the rendered version so the displayed code matches what was saved
-                    UpdateNestedChildren(child, packageFile, savedModels, childrenByParent,
+                    UpdateNestedChildren(child, packageFile, model.ContainingFileId, savedModels, childrenByParent,
                         renderedCode, result);
                 }
             }
@@ -623,7 +636,7 @@ public class ModelicaPackageSaver
             {
                 foreach (var child in nestedChildren)
                 {
-                    UpdateNestedChildren(child, filePath, savedModels, childrenByParent,
+                    UpdateNestedChildren(child, filePath, model.ContainingFileId, savedModels, childrenByParent,
                         renderedCode, result);
                 }
             }
@@ -651,9 +664,12 @@ public class ModelicaPackageSaver
     /// These models are embedded in their parent's file and don't get written separately,
     /// but their in-memory ModelicaCode must reflect the formatted version.
     /// </summary>
+    /// <param name="ownerFileId">The file the class that heads <paramref name="containingFilePath"/>
+    /// was loaded from. Only a class loaded from that same file is in the text written there.</param>
     private static void UpdateNestedChildren(
         ModelNode model,
         string containingFilePath,
+        string? ownerFileId,
         HashSet<string> savedModels,
         Dictionary<string, List<ModelNode>> childrenByParent,
         ConcurrentDictionary<string, string> renderedCode,
@@ -663,7 +679,11 @@ public class ModelicaPackageSaver
 
         // Only a file that was written holds the class. Mapping it to one whose write failed told a
         // caller the class was safely on disk when it was nowhere but the file it came from (B303).
-        var written = result.WrittenFiles.Contains(containingFilePath);
+        // Nor does a file hold a class that came from another file: the text written is the owner's
+        // own source, rendered, and a class stored elsewhere was never in it (B441). Left unmapped,
+        // it is reported in UnplacedModelIds and its library loses no file.
+        var written = result.WrittenFiles.Contains(containingFilePath)
+            && !StoredInAFileOfItsOwn(model, ownerFileId);
         if (written)
             result.ModelIdToFilePath[model.Id] = containingFilePath;
         if (renderedCode.TryRemove(model.Id, out var childCode))
@@ -674,11 +694,23 @@ public class ModelicaPackageSaver
         {
             foreach (var grandchild in grandchildren)
             {
-                UpdateNestedChildren(grandchild, containingFilePath, savedModels,
+                UpdateNestedChildren(grandchild, containingFilePath, ownerFileId, savedModels,
                     childrenByParent, renderedCode, result);
             }
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="model"/> was loaded from a different file than
+    /// <paramref name="enclosingFileId"/> — its own, rather than inline in the class around it. The
+    /// question <see cref="PackageCodeTrimmer"/> asks of the same nodes. Unknown on either side (a
+    /// graph built without file nodes) reads as inline, which is what every class was taken to be
+    /// before B441.
+    /// </summary>
+    private static bool StoredInAFileOfItsOwn(ModelNode model, string? enclosingFileId)
+        => model.ContainingFileId is not null
+            && enclosingFileId is not null
+            && !string.Equals(model.ContainingFileId, enclosingFileId, StringComparison.Ordinal);
 
     /// <summary>
     /// Builds the package.order list for a package model.

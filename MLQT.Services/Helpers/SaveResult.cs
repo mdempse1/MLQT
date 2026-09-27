@@ -27,4 +27,12 @@ public class SaveResult
     /// stored in one of these files is not in <see cref="ModelIdToFilePath"/>.
     /// </summary>
     public HashSet<string> FailedFiles { get; } = new();
+
+    /// <summary>
+    /// Classes the save was asked to write and put in no file it wrote — one whose file failed, one
+    /// that could not be rendered, or one the layout found nowhere to put (B441). The files such a
+    /// class came from may be the only copy of it, so a caller must delete nothing of the library
+    /// when this is not empty. Classes left untouched in their files (B414) are never listed.
+    /// </summary>
+    public List<string> UnplacedModelIds { get; } = new();
 }

@@ -489,6 +489,133 @@ public sealed class FormattingPipelineTests : IDisposable
         Assert.Equal([package], skipped);
     }
 
+    // ============================================================================
+    // A class in a file of its own that the layout will not give one is written back there (B441)
+    // ============================================================================
+
+    /// <summary>A package directory <c>Lib</c> whose package.mo holds <paramref name="packageBody"/>.</summary>
+    private string PackageDirectory(string packageBody)
+    {
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(lib);
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib\n" + packageBody + "end Lib;\n");
+        return lib;
+    }
+
+    [Fact]
+    public async Task AClassInItsOwnFile_WhoseNameDiffersFromAnInlineSiblingsOnlyInCase_IsKept()
+    {
+        // `foo` inline and `Foo.mo` beside it would be written as foo.mo and Foo.mo - one entry on a
+        // case-insensitive filesystem - so the layout gives neither a file of its own. `foo` stays in
+        // package.mo, where it is; Foo was mapped into package.mo too, which does not hold it, and its
+        // own file - the only copy of the class - was deleted as an orphan.
+        var lib = PackageDirectory("model foo\nReal y;\nend foo;\n");
+        var own = Path.Combine(lib, "Foo.mo");
+        File.WriteAllText(own, "within Lib;\nmodel Foo\nReal x;\nequation\nx=1;\nend Foo;\n");
+        var (_, pipeline) = await RepositoryWith(lib);
+
+        var failures = new List<string>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
+
+        Assert.Empty(failures);
+
+        Assert.True(File.Exists(own));
+        Assert.Contains("model Foo", File.ReadAllText(own));
+        Assert.Contains("model foo", File.ReadAllText(Path.Combine(lib, "package.mo")));
+    }
+
+    [Fact]
+    public async Task APackageInItsOwnDirectory_WhoseNameDiffersFromAnInlineSiblingsOnlyInCase_IsKept()
+    {
+        // The same for a package: `sub` inline and the directory `Sub` are one entry, so `Sub` - its
+        // package.mo and every file below it - went with it.
+        var lib = PackageDirectory("package sub\nend sub;\n");
+        var sub = Path.Combine(lib, "Sub");
+        Directory.CreateDirectory(sub);
+        var subPackage = Path.Combine(sub, "package.mo");
+        File.WriteAllText(subPackage, "within Lib;\npackage Sub\nend Sub;\n");
+        var leaf = Path.Combine(sub, "Leaf.mo");
+        File.WriteAllText(leaf, "within Lib.Sub;\nmodel Leaf\nend Leaf;\n");
+        var (_, pipeline) = await RepositoryWith(lib);
+
+        var failures = new List<string>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
+
+        Assert.Empty(failures);
+
+        Assert.True(File.Exists(subPackage));
+        Assert.True(File.Exists(leaf));
+        Assert.Contains("package sub", File.ReadAllText(Path.Combine(lib, "package.mo")));
+    }
+
+    [Fact]
+    public async Task AClassCalledPackage_InItsOwnFile_IsKept()
+    {
+        // `Package.mo` is `package.mo` to the layout, a reserved entry. Only a case-sensitive
+        // filesystem can hold both.
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Package.mo and package.mo are one file here");
+        var lib = PackageDirectory("");
+        var own = Path.Combine(lib, "Package.mo");
+        File.WriteAllText(own, "within Lib;\nmodel Package\nReal x;\nend Package;\n");
+        var (_, pipeline) = await RepositoryWith(lib);
+
+        var failures = new List<string>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
+
+        Assert.Empty(failures);
+
+        Assert.True(File.Exists(own));
+        Assert.Contains("model Package", File.ReadAllText(own));
+    }
+
+    [Fact]
+    public async Task TwoFilesWhoseNamesDifferOnlyInCase_AreBothKept()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Foo.mo and FOO.mo are one file here");
+        var lib = PackageDirectory("");
+        var first = Path.Combine(lib, "Foo.mo");
+        var second = Path.Combine(lib, "FOO.mo");
+        File.WriteAllText(first, "within Lib;\nmodel Foo\nend Foo;\n");
+        File.WriteAllText(second, "within Lib;\nmodel FOO\nend FOO;\n");
+        var (_, pipeline) = await RepositoryWith(lib);
+
+        var failures = new List<string>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
+
+        Assert.Empty(failures);
+
+        Assert.True(File.Exists(first));
+        Assert.True(File.Exists(second));
+    }
+
+    [Fact]
+    public async Task ALibraryTheSaveCannotPlaceEveryClassOf_LosesNoFile()
+    {
+        // The last line (B441): a class that was in the library before the save and is in no file
+        // the save wrote or kept is an error, and nothing of the library is deleted. A directory whose
+        // package.mo holds a model rather than a package is written as a file, so its child in a file
+        // of its own has nowhere to go.
+        var dir = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(dir);
+        var packageMo = Path.Combine(dir, "package.mo");
+        File.WriteAllText(packageMo, "model Lib\nReal x;\nend Lib;\n");
+        var child = Path.Combine(dir, "Child.mo");
+        File.WriteAllText(child, "within Lib;\nmodel Child\nend Child;\n");
+        var (service, pipeline) = await RepositoryWith(dir);
+        Assert.Contains("Lib.Child", Assert.Single(service.Libraries).ModelIds);
+        var failures = new List<string>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, _) => failures.Add(name));
+
+        Assert.True(File.Exists(packageMo));
+        Assert.True(File.Exists(child));
+        Assert.Equal(["Lib"], failures);
+    }
+
     [Fact]
     public async Task ALibraryWithNoSyntaxErrors_ReportsNothingSkipped()
     {

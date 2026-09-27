@@ -188,6 +188,11 @@ Not every class can have a file of its own, and MLQT leaves those inline in the 
   inline — it would be written as `Package.mo`, which is the `package.mo` the directory already has —
   while a *package* called `Package` becomes the directory `Package` and does not collide.
 
+This decides only whether an **inline** class is moved out. A class that is already in a file of its
+own stays there, whatever its name collides with: it is written back to that file, not moved into
+`package.mo`. And if a full save ever cannot put a class of the library into any file it writes, it
+reports the library as not saved and deletes none of its files, so no class's only copy is removed.
+
 ### When the restructure happens
 
 Only on the **full** library save: the [Format All Files](#format-all-files-button) button, and the automatic full reformat that runs when you change a repository's formatting settings.
