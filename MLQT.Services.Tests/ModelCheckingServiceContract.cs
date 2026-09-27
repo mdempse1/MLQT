@@ -11,12 +11,17 @@ namespace MLQT.Services.Tests;
 /// promise, asserted once and run against each of them.
 /// </summary>
 /// <remarks>
-/// <para><b>Why a contract rather than two test classes (B229).</b> The two services are the same
+/// <para><b>Why a contract rather than two test classes (B229).</b> The two services were the same
 /// 420 lines twice over: the same load-then-drain-then-check sequence, the same four result shapes,
 /// the same package fan-out, the same two nested catches. This repository's recorded failure mode
 /// for exactly that arrangement is a fix applied to one tool and not to its twin — B165/B166 were
 /// that, and B170 was a load step that was right for Dymola and wrong for OpenModelica for a whole
 /// release. A behaviour written here cannot be true of one tool and untested on the other.</para>
+///
+/// <para>Since B398 the shared sequence lives once, in <c>ModelCheckingServiceBase</c>, and each
+/// service supplies only its hooks. The contract still runs against both: what differs now is each
+/// tool's hooks - how it loads, clears and reads its log, and says it has no verdict - and those are
+/// exactly where a promise could hold for one tool and not the other.</para>
 ///
 /// <para><b>Why a fake session rather than a mock.</b> Most of these promises are about a
 /// <i>buffer</i> — Dymola's log accumulates until it is cleared, omc's error string empties itself
