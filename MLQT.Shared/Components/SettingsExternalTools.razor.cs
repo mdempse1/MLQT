@@ -43,6 +43,22 @@ public partial class SettingsExternalTools : IDisposable
     /// <summary>The path to omc as the field shows it.</summary>
     internal string OmcPath => _settings.OpenModelica.OmcPath;
 
+    /// <summary>
+    /// Where Auto-detect looks: the machine's own installation, unless a test says otherwise.
+    /// </summary>
+    internal Func<string> FindInstalledOmc { get; set; } = OpenModelicaSettings.FindInstalledOmc;
+
+    /// <summary>
+    /// Auto-detect: the path becomes whatever the search finds, and blank when it finds nothing -
+    /// a path left in place after a search that could not find it would read as confirmed.
+    /// </summary>
+    internal void DetectOpenModelica()
+    {
+        _settings.OpenModelica.OmcPath = FindInstalledOmc();
+        _showOpenModelicaWarning = false;
+        StateHasChanged();
+    }
+
     private static int ToMilliseconds(int seconds) => Math.Clamp(seconds, 0, MaxTimeLimitSeconds) * 1000;
 
     protected override void OnInitialized()

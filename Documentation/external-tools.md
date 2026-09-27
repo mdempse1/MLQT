@@ -28,6 +28,11 @@ MLQT attempts to auto-detect installed tools on startup:
 
 If auto-detection succeeds, the path is pre-filled. If your tool is installed in a non-standard location, you'll need to set the path manually.
 
+For OpenModelica, a **blank** path is looked for again every time the settings are loaded, so clearing
+the field and restarting MLQT finds the installation again. The **Auto-detect** button beside the
+path runs the same search on demand, whatever the field holds: it fills in the installation it finds,
+or clears the field if it finds none.
+
 ## Dymola Configuration
 
 | Field | Description |
@@ -42,7 +47,7 @@ If the specified executable is not found, a warning message appears below the pa
 
 | Field | Description |
 |-------|-------------|
-| **Path to OpenModelica Compiler Executable** | The full path to `omc.exe` on Windows, or `omc` on Linux. Click the folder icon to browse. On Windows, choose the installation folder and MLQT takes `bin\omc.exe` inside it, or `omc.exe` directly if you chose the `bin` folder itself. On Linux, choose `omc` itself — the dialog opens in `/usr/bin`, where OpenModelica's apt packages put it. |
+| **Path to OpenModelica Compiler Executable** | The full path to `omc.exe` on Windows, or `omc` on Linux. **Auto-detect**, beside the field, searches for it — see [Auto-Detection](#auto-detection). Click the folder icon to browse. On Windows, choose the installation folder and MLQT takes `bin\omc.exe` inside it, or `omc.exe` directly if you chose the `bin` folder itself. On Linux, choose `omc` itself — the dialog opens in `/usr/bin`, where OpenModelica's apt packages put it. |
 | **Port Number** | The port used for the ZeroMQ communication channel. Default: `13027`. |
 | **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `60`. `0` means no limit. |
 

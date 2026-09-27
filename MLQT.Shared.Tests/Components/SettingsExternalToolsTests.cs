@@ -123,4 +123,35 @@ public class SettingsExternalToolsTests : MlqtComponentTestBase
 
         Assert.Equal(before, panel.Instance.OmcPath);
     }
+
+    // ---- Auto-detect ---------------------------------------------------------------------------
+
+    [Fact]
+    public void AutoDetect_FillsThePathWithWhatItFinds_WhateverWasThere()
+    {
+        var found = Path.Combine(Path.GetTempPath(), "mlqt-tests", "found", "omc");
+        var panel = RenderPanel(300_000, 60_000);
+        panel.Instance.FindInstalledOmc = () => found;
+
+        panel.Find("button[aria-label='Auto-detect OpenModelica']").Click();
+
+        Assert.Equal(found, panel.Instance.OmcPath);
+    }
+
+    [Fact]
+    public async Task AutoDetect_BlanksThePathWhenNothingIsFound()
+    {
+        // A path left in place after a search that could not find it would read as confirmed.
+        var chosen = Path.Combine(Path.GetTempPath(), "mlqt-tests", Guid.NewGuid().ToString("N"), "omc");
+        _picker.Setup(p => p.PickExecutableAsync(It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(chosen);
+        var panel = RenderPanel(300_000, 60_000);
+        await panel.InvokeAsync(() => panel.Instance.BrowseForOpenModelica(windows: false));
+        Assert.Equal(chosen, panel.Instance.OmcPath);
+        panel.Instance.FindInstalledOmc = () => "";
+
+        panel.Find("button[aria-label='Auto-detect OpenModelica']").Click();
+
+        Assert.Equal("", panel.Instance.OmcPath);
+        Assert.DoesNotContain("Could not find OpenModelica", panel.Markup);
+    }
 }

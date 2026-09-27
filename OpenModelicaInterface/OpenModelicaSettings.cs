@@ -1,9 +1,11 @@
+using System.Text.Json.Serialization;
+
 namespace OpenModelicaInterface;
 
 /// <summary>
 /// Configuration settings for OpenModelica interface.
 /// </summary>
-public class OpenModelicaSettings
+public class OpenModelicaSettings : IJsonOnDeserialized
 {
     /// <summary>
     /// Path to the OMC executable.
@@ -75,6 +77,17 @@ public class OpenModelicaSettings
     /// <see cref="FindInstalledOmc()"/>.
     /// </summary>
     public OpenModelicaSettings()
+    {
+        if (string.IsNullOrEmpty(OmcPath))
+            OmcPath = FindInstalledOmc();
+    }
+
+    /// <summary>
+    /// A blank path read from saved settings is looked for again. The constructor's search runs
+    /// before the saved values are applied, so a saved <c>""</c> overwrote whatever it found and
+    /// blanking the field turned detection off for good - though a blank path can never work.
+    /// </summary>
+    void IJsonOnDeserialized.OnDeserialized()
     {
         if (string.IsNullOrEmpty(OmcPath))
             OmcPath = FindInstalledOmc();

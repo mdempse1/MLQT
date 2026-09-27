@@ -112,4 +112,33 @@ public sealed class OpenModelicaInstallDetectionTests : IDisposable
     {
         Assert.Equal(OperatingSystem.IsWindows() ? "omc.exe" : "omc", OpenModelicaSettings.OmcExecutableName);
     }
+
+    // ---- A blank saved path is looked for again ------------------------------------------------
+    //
+    // The constructor searched, then the saved "" overwrote what it found, so blanking the field
+    // switched detection off for good.
+
+    [Fact]
+    public void ASavedBlankPathIsLookedForAgainOnLoad()
+    {
+        var installed = OpenModelicaSettings.FindInstalledOmc();
+        if (installed.Length == 0)
+            Assert.Skip("No omc on this machine, so a blank path found again cannot be told from one left blank.");
+
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<OpenModelicaSettings>("""{"OmcPath":""}""")!;
+
+        Assert.Equal(installed, loaded.OmcPath);
+    }
+
+    [Fact]
+    public void ASavedPathIsKeptOnLoad_EvenOneThatDoesNotExist()
+    {
+        // The user's choice stands; the warning under the field is what says it is missing.
+        var saved = Path.Combine(_root, "nowhere", OpenModelicaSettings.OmcExecutableName);
+        var json = System.Text.Json.JsonSerializer.Serialize(new OpenModelicaSettings(saved));
+
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<OpenModelicaSettings>(json)!;
+
+        Assert.Equal(saved, loaded.OmcPath);
+    }
 }

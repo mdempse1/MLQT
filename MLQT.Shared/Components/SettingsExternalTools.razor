@@ -42,16 +42,22 @@
 
 
     <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">OpenModelica</MudText>
-    <MudTextField @bind-Value="@_settings.OpenModelica.OmcPath"
-                    Label="Path to OpenModelica Compiler Executable"
-                    Variant="Variant.Outlined"
-                    Adornment="Adornment.End"
-                    AdornmentIcon="@Icons.Material.Filled.FolderOpen"
-                    OnAdornmentClick="@(() => BrowseForOpenModelica(OperatingSystem.IsWindows()))"
-                    Margin="Margin.Dense"
-                    Typo="Typo.body1" 
-                    ShrinkLabel="true"
-                    Class="mt-4"/>
+    <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center" Class="mt-4">
+        <MudTextField @bind-Value="@_settings.OpenModelica.OmcPath"
+                        Label="Path to OpenModelica Compiler Executable"
+                        Variant="Variant.Outlined"
+                        Adornment="Adornment.End"
+                        AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                        OnAdornmentClick="@(() => BrowseForOpenModelica(OperatingSystem.IsWindows()))"
+                        Margin="Margin.Dense"
+                        Typo="Typo.body1"
+                        ShrinkLabel="true"
+                        Class="flex-grow-1"/>
+        <MudTooltip Text="Look for OpenModelica where it is normally installed, and on PATH. Clears the path if none is found.">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary" Class="ml-2"
+                       OnClick="DetectOpenModelica" aria-label="Auto-detect OpenModelica">Auto-detect</MudButton>
+        </MudTooltip>
+    </MudStack>
     @if (_showOpenModelicaWarning) 
     {
         <MudAlert Severity="Severity.Warning">Could not find OpenModelica at @_settings.OpenModelica.OmcPath</MudAlert>
