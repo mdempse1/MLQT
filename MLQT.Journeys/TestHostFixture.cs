@@ -161,6 +161,12 @@ public sealed class TestHostFixture : IAsyncLifetime
         {
             try
             {
+                // Navigated away first, so the page unloads and Blazor tells the server the circuit
+                // is finished. Closed outright, it may not: the circuit is then kept for the
+                // disconnected-circuit retention period, and its MainLayout goes on answering the
+                // singletons' events - seen as a Format All run by the closed page's layout while
+                // the open page's was refused as overlapping it, its warning drawn nowhere.
+                await previous.GotoAsync("about:blank");
                 await previous.CloseAsync();
             }
             catch (PlaywrightException)
@@ -239,6 +245,18 @@ public sealed class TestHostFixture : IAsyncLifetime
         // And memory back to one empty project, as a first run leaves it.
         await repositories.LoadRepositorySettingsAsync();
         await ResetLibrariesAsync();
+
+        // And no VCS work still counted from the last journey - an analysis pipeline a VCS dialog
+        // started carries on after its page is closed. Format All is refused while one runs (B385),
+        // which is right for a user, who sees the buttons disabled and waits; this waits too.
+        var state = Services.GetRequiredService<MLQT.Shared.Models.AppState>();
+        var deadline = DateTime.UtcNow.AddMinutes(1);
+        while (state.IsVcsWorkInProgress)
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException("VCS work from an earlier journey is still counted after a minute");
+            await Task.Delay(100);
+        }
     }
 
     /// <summary>The formatting pipeline's door, for a journey that needs a pass held part-way.</summary>
