@@ -42,7 +42,7 @@ public class GraphBuilderTests
         GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "Beta.mo"),
             "within Lib.Sub;\nmodel Beta\nend Beta;\n");
 
-        Assert.Equal(["Alpha", "Gamma"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder);
+        Assert.Equal(["Alpha", "Gamma"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder!);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class GraphBuilderTests
         GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "package.mo"),
             "within Lib;\npackage Sub\n  model Alpha\n  end Alpha;\nend Sub;\n");
 
-        Assert.Equal(["Alpha"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder);
+        Assert.Equal(["Alpha"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder!);
     }
 
     [Fact]
