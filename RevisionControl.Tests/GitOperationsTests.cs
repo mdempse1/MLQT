@@ -2021,25 +2021,42 @@ public class GitOperationsTests : IDisposable
         r.Reset(ResetMode.Hard);
     }
 
+    /// <summary>
+    /// Merges "conflict-branch" into main with LibGit2Sharp directly, and fails the test - rather than
+    /// letting it return and pass having tested nothing - if the merge does not stop on f.mo (B434).
+    /// </summary>
+    private string MergeStoppedOnAConflict()
+    {
+        var (repo, repoPath) = CreateConflictRepo();
+        using (repo)
+        {
+            var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
+            var mergeResult = repo.Merge(repo.Branches["conflict-branch"], sig, new MergeOptions
+            {
+                FastForwardStrategy = FastForwardStrategy.NoFastForward
+            });
+
+            Assert.Equal(MergeStatus.Conflicts, mergeResult.Status);
+            Assert.NotNull(repo.Index.Conflicts["f.mo"]);
+        }
+        return repoPath;
+    }
+
+    /// <summary>f.mo is no longer in conflict, and what is staged for it is exactly what is on disk.</summary>
+    private static void AssertResolvedAs(string repoPath, string expected)
+    {
+        var filePath = Path.Combine(repoPath, "f.mo");
+        Assert.Equal(expected, File.ReadAllText(filePath).Trim());
+        using var r = new Repository(repoPath);
+        Assert.False(r.Index.Conflicts.Any());
+        var staged = r.Lookup<Blob>(r.Index["f.mo"].Id).GetContentText();
+        Assert.Equal(expected, staged.Trim());
+    }
+
     [Fact]
     public void GetConflictVersions_WithMergeConflict_ReturnsBothVersions()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        // Create the merge conflict using LibGit2Sharp directly
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            // No conflict created, skip
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         var filePath = Path.Combine(repoPath, "f.mo");
         var (ours, theirs) = _git.GetConflictVersions(repoPath, filePath);
@@ -2048,30 +2065,14 @@ public class GitOperationsTests : IDisposable
         Assert.NotNull(theirs);
 
         // Bytes as the blob stored them, decoded by the caller - see B240 and VcsFileText.
-        Assert.Contains("main version", Encoding.UTF8.GetString(ours));
-        Assert.Contains("feature version", Encoding.UTF8.GetString(theirs));
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.Equal("main version", Encoding.UTF8.GetString(ours).Trim());
+        Assert.Equal("feature version", Encoding.UTF8.GetString(theirs).Trim());
     }
 
     [Fact]
-    public void ResolveConflict_MarkResolved_WithConflictedFile_Succeeds()
+    public void ResolveConflict_MarkResolved_WithConflictedFile_StagesTheEditedFileAsItIs()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         // Write a resolved version
         var filePath = Path.Combine(repoPath, "f.mo");
@@ -2079,64 +2080,32 @@ public class GitOperationsTests : IDisposable
 
         var result = _git.ResolveConflict(repoPath, filePath, ConflictResolutionChoice.MarkResolved);
 
-        Assert.True(result.Success);
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.True(result.Success, result.ErrorMessage);
+        AssertResolvedAs(repoPath, "resolved content");
     }
 
     [Fact]
-    public void ResolveConflict_KeepMine_WithConflictedFile_Succeeds()
+    public void ResolveConflict_KeepMine_WithConflictedFile_KeepsTheCurrentBranch()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         var filePath = Path.Combine(repoPath, "f.mo");
         var result = _git.ResolveConflict(repoPath, filePath, ConflictResolutionChoice.KeepMine);
 
-        Assert.True(result.Success);
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.True(result.Success, result.ErrorMessage);
+        AssertResolvedAs(repoPath, "main version");
     }
 
     [Fact]
-    public void ResolveConflict_AcceptIncoming_WithConflictedFile_Succeeds()
+    public void ResolveConflict_AcceptIncoming_WithConflictedFile_TakesTheMergedBranch()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         var filePath = Path.Combine(repoPath, "f.mo");
         var result = _git.ResolveConflict(repoPath, filePath, ConflictResolutionChoice.AcceptIncoming);
 
-        Assert.True(result.Success);
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.True(result.Success, result.ErrorMessage);
+        AssertResolvedAs(repoPath, "feature version");
     }
 
     #endregion
