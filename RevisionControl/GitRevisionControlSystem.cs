@@ -1041,7 +1041,17 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     private static List<string> ConflictedFilePaths(Repository repo, string repositoryPath) =>
         [.. repo.RetrieveStatus(new StatusOptions())
             .Where(s => s.State == FileStatus.Conflicted)
-            .Select(s => Path.Combine(repositoryPath, s.FilePath.Replace('/', Path.DirectorySeparatorChar)))];
+            .Select(s => VcsRelativePath.ToFullPath(repositoryPath, s.FilePath))];
+
+    /// <summary>
+    /// The files a merge that stopped on conflicts has already merged: what it staged. A conflicted
+    /// file is <see cref="FileStatus.Conflicted"/> and nothing else, so it cannot match these flags.
+    /// </summary>
+    private static List<string> MergedFilePaths(Repository repo, string repositoryPath) =>
+        [.. repo.RetrieveStatus(new StatusOptions())
+            .Where(s => (s.State & (FileStatus.NewInIndex | FileStatus.ModifiedInIndex | FileStatus.DeletedFromIndex
+                | FileStatus.RenamedInIndex | FileStatus.TypeChangeInIndex)) != 0)
+            .Select(s => VcsRelativePath.ToFullPath(repositoryPath, s.FilePath))];
 
     public int CountCommitsOnNoBranch(string repositoryPath)
     {
@@ -1494,6 +1504,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             var sig = new Signature("MLQT User", "user@mlqt.local", DateTimeOffset.Now);
+            var headBefore = repo.Head.Tip;
             var mergeResult = repo.Merge(branch, sig, new MergeOptions
             {
                 FastForwardStrategy = FastForwardStrategy.Default
@@ -1512,20 +1523,18 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 case MergeStatus.NonFastForward:
                     result.Success = true;
                     result.HasChanges = true;
-                    result.ModifiedFiles = repo.RetrieveStatus(new StatusOptions())
-                        .Staged
-                        .Select(s => Path.Combine(repositoryPath, s.FilePath))
-                        .ToList();
+                    // The merge has committed, so nothing is staged: what it changed is the
+                    // difference between the commit it started from and the one it made (B480).
+                    result.ModifiedFiles = [.. repo.Diff.Compare<TreeChanges>(headBefore?.Tree, repo.Head.Tip.Tree)
+                        .Select(c => VcsRelativePath.ToFullPath(repositoryPath, c.Path))];
                     break;
 
                 case MergeStatus.Conflicts:
                     result.Success = true;
                     result.HasConflicts = true;
                     result.HasChanges = true;
-                    result.ConflictedFiles = repo.RetrieveStatus(new StatusOptions())
-                        .Where(s => s.State == FileStatus.Conflicted)
-                        .Select(s => Path.Combine(repositoryPath, s.FilePath.Replace('/', Path.DirectorySeparatorChar)))
-                        .ToList();
+                    result.ConflictedFiles = ConflictedFilePaths(repo, repositoryPath);
+                    result.ModifiedFiles = MergedFilePaths(repo, repositoryPath);
                     break;
             }
         }

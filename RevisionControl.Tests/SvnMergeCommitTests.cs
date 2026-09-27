@@ -620,4 +620,46 @@ public class SvnMergeCommitTests : IClassFixture<SvnTestRepository>, IDisposable
             client.Revert(newFilePath);
         }
     }
+
+    // ============================================================================
+    // The shape of a merge result's paths (B480)
+    // ============================================================================
+
+    /// <summary>
+    /// B480: a merge result's paths are full, in the platform's form - <c>Path.GetFullPath</c>'s -
+    /// whichever system made them. <c>GitOperationsTests.MergeBranch_WithAConflict_GivesEveryPathInFullPlatformForm</c>
+    /// holds Git to the same shape over the same merge: one file edited on both sides, one edited
+    /// only on the source. SVN adds the case Git has no word for, a file added on both sides, which
+    /// it reports as a tree conflict.
+    /// </summary>
+    [Fact]
+    public void MergeBranch_WithConflicts_GivesEveryPathInFullPlatformForm()
+    {
+        var testId = Guid.NewGuid().ToString("N")[..8];
+        var (sourceBranch, targetBranch) = CreateTestBranches(testId);
+        var conflicted = Path.Combine("Models", "SimpleModel.mo");
+        var clean = Path.Combine("Models", "TestModel.mo");
+        var addedOnBoth = Path.Combine("Models", $"Both_{testId}.mo");
+
+        var sourceCheckoutPath = CreateCheckoutPath();
+        _svn.CheckoutRevision(_repoUrl + "/" + sourceBranch, "HEAD", sourceCheckoutPath);
+        File.WriteAllText(Path.Combine(sourceCheckoutPath, conflicted), "model SimpleModel \"theirs\" end SimpleModel;\n");
+        File.WriteAllText(Path.Combine(sourceCheckoutPath, clean), "model TestModel \"merged\" end TestModel;\n");
+        File.WriteAllText(Path.Combine(sourceCheckoutPath, addedOnBoth), "model Both \"theirs\" end Both;\n");
+        Assert.True(_svn.Commit(sourceCheckoutPath, $"Source work ({testId})", [conflicted, clean, addedOnBoth]).Success);
+
+        var targetCheckoutPath = CreateCheckoutPath();
+        _svn.CheckoutRevision(_repoUrl + "/" + targetBranch, "HEAD", targetCheckoutPath);
+        File.WriteAllText(Path.Combine(targetCheckoutPath, conflicted), "model SimpleModel \"mine\" end SimpleModel;\n");
+        File.WriteAllText(Path.Combine(targetCheckoutPath, addedOnBoth), "model Both \"mine\" end Both;\n");
+        Assert.True(_svn.Commit(targetCheckoutPath, $"Target work ({testId})", [conflicted, addedOnBoth]).Success);
+        Assert.True(_svn.UpdateToLatest(targetCheckoutPath).Success);
+
+        var result = _svn.MergeBranch(targetCheckoutPath, sourceBranch);
+
+        Assert.True(result.HasConflicts, result.ErrorMessage);
+        Assert.Equal([Path.GetFullPath(Path.Combine(targetCheckoutPath, conflicted))], result.ConflictedFiles);
+        Assert.Equal([Path.GetFullPath(Path.Combine(targetCheckoutPath, addedOnBoth))], result.TreeConflictedFiles);
+        Assert.Equal([Path.GetFullPath(Path.Combine(targetCheckoutPath, clean))], result.ModifiedFiles);
+    }
 }

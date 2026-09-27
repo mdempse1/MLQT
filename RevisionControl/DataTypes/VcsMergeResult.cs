@@ -3,6 +3,12 @@ namespace RevisionControl;
 /// <summary>
 /// Result of a VCS merge operation.
 /// </summary>
+/// <remarks>
+/// <b>Every path in the three lists is full and in the platform's form</b>, from Git and SVN alike:
+/// <see cref="VcsRelativePath.ToFullPath"/>'s, so <c>C:\wc\Lib\Thing.mo</c> on Windows. That is not
+/// the shape of <see cref="VcsWorkingCopyFile.Path"/>, which is relative and forward-slashed; the two
+/// are not compared anywhere, and a consumer that needs to has to convert one (B480).
+/// </remarks>
 public class VcsMergeResult
 {
     /// <summary>
@@ -33,7 +39,8 @@ public class VcsMergeResult
     public List<string> TreeConflictedFiles { get; set; } = new();
 
     /// <summary>
-    /// List of files that were modified by the merge.
+    /// List of files that were modified by the merge - added, changed or deleted - and are not in
+    /// conflict. After a merge that stopped on conflicts, the files it did merge.
     /// </summary>
     public List<string> ModifiedFiles { get; set; } = new();
 

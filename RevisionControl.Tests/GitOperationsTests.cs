@@ -1054,7 +1054,70 @@ public class GitOperationsTests : IDisposable
 
         Assert.True(result.Success);
         Assert.True(result.HasChanges);
-        Assert.NotNull(result.ModifiedFiles);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "feature.mo"))], result.ModifiedFiles);
+    }
+
+    /// <summary>
+    /// B480: a merge result's paths are full, in the platform's form - <c>Path.GetFullPath</c>'s -
+    /// whichever system made them, and whatever the merge did to each file. Git joined the working
+    /// copy to its own forward-slashed relative path for a merged file, handing out
+    /// <c>C:\repo\Lib/Clean.mo</c> on Windows beside a conflicted <c>C:\repo\Lib\Conflict.mo</c>.
+    /// <see cref="SvnMergeCommitTests"/> holds SVN to the same shape over the same merge.
+    /// </summary>
+    [Fact]
+    public void MergeBranch_WithAConflict_GivesEveryPathInFullPlatformForm()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new()
+        {
+            ["Lib/Conflict.mo"] = "model Conflict end Conflict;",
+            ["Lib/Clean.mo"] = "model Clean end Clean;"
+        });
+        using var r = repo;
+        var mainBranch = r.Head.FriendlyName;
+
+        Commands.Checkout(r, r.CreateBranch("feature"));
+        AddCommit(r, repoPath, new()
+        {
+            ["Lib/Conflict.mo"] = "model Conflict \"theirs\" end Conflict;",
+            ["Lib/Clean.mo"] = "model Clean \"merged\" end Clean;"
+        }, "feature work");
+        Commands.Checkout(r, r.Branches[mainBranch]);
+        AddCommit(r, repoPath, new() { ["Lib/Conflict.mo"] = "model Conflict \"mine\" end Conflict;" }, "main work");
+
+        var result = _git.MergeBranch(repoPath, "feature");
+
+        Assert.True(result.HasConflicts, result.ErrorMessage);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "Lib", "Conflict.mo"))], result.ConflictedFiles);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "Lib", "Clean.mo"))], result.ModifiedFiles);
+        Assert.Empty(result.TreeConflictedFiles);
+    }
+
+    /// <summary>
+    /// B480: a merge that completes lists the files it changed. Git read them from what was staged
+    /// afterwards, and a completed merge has committed, so there was never anything staged and the
+    /// list was always empty.
+    /// </summary>
+    [Fact]
+    public void MergeBranch_NonFastForward_ListsTheFilesTheMergeChanged()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new()
+        {
+            ["Lib/Mine.mo"] = "model Mine end Mine;",
+            ["Lib/Theirs.mo"] = "model Theirs end Theirs;"
+        });
+        using var r = repo;
+        var mainBranch = r.Head.FriendlyName;
+
+        Commands.Checkout(r, r.CreateBranch("feature"));
+        AddCommit(r, repoPath, new() { ["Lib/Theirs.mo"] = "model Theirs \"merged\" end Theirs;" }, "feature work");
+        Commands.Checkout(r, r.Branches[mainBranch]);
+        AddCommit(r, repoPath, new() { ["Lib/Mine.mo"] = "model Mine \"mine\" end Mine;" }, "main work");
+
+        var result = _git.MergeBranch(repoPath, "feature");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.HasConflicts);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "Lib", "Theirs.mo"))], result.ModifiedFiles);
     }
 
     #endregion

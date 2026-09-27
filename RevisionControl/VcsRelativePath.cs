@@ -36,4 +36,19 @@ public static class VcsRelativePath
 {
     /// <summary>This path with <c>/</c> separators, whichever the VCS reported.</summary>
     public static string Canonical(string path) => path.Replace('\\', '/');
+
+    /// <summary>
+    /// A path the VCS reported relative to <paramref name="workingCopy"/>, as a full path in the
+    /// platform's form: <see cref="System.IO.Path.GetFullPath(string)"/>'s, so on Windows every
+    /// separator is <c>\</c>.
+    /// </summary>
+    /// <remarks>
+    /// The one shape <see cref="VcsMergeResult"/>'s lists are in, from both systems (B480). SVN's come
+    /// from <c>GetFullPath</c> over what <c>svn status</c> printed; Git joined the working copy to
+    /// its own forward-slashed path with <see cref="System.IO.Path.Combine(string, string)"/>, which
+    /// gives <c>C:\repo\Lib/Thing.mo</c> - a path the filesystem accepts and a string comparison
+    /// does not.
+    /// </remarks>
+    public static string ToFullPath(string workingCopy, string relativePath) =>
+        System.IO.Path.GetFullPath(System.IO.Path.Combine(workingCopy, relativePath));
 }
