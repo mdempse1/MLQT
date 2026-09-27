@@ -222,6 +222,39 @@ public class AddRepositoryLoadsItsLibraryTests : IDisposable
         Assert.True(announced > 0, "nothing announced that the set of loaded libraries had changed");
     }
 
+    [Fact]
+    public async Task TheTreeIsToldOnlyOnceTheLibraryIsRecordedOnItsRepository()
+    {
+        // B198 itself. A repository's browser rebuilds on OnTreeDataChanged and keeps the top-level
+        // classes whose library is in Repository.LibraryIds. The only announcement used to come from
+        // AddLibraryFromPathAsync, before LoadLibrariesAsync had recorded the library on the
+        // repository - so a browser that rebuilt at once showed the repository empty, and with
+        // nothing announcing again it stayed that way until a restart. Driven through a rendered
+        // browser and the dialog's own calls, one add in five came up empty.
+        var (service, libraries) = CreateService();
+        var result = await service.AddRepositoryAsync(SingleLibraryAtTopLevel(), startMonitoring: false);
+        var repository = result.Repository!;
+
+        var announcements = new List<(bool Recorded, bool Owned)>();
+        libraries.OnTreeDataChanged += () =>
+        {
+            var library = libraries.Libraries.SingleOrDefault(l => l.Name == "MyLib");
+            announcements.Add((
+                library is not null && repository.LibraryIds.Contains(library.Id),
+                library?.RepositoryId == repository.Id));
+        };
+
+        var selected = new HashSet<string>(result.DiscoveredLibraries.Select(d => d.RelativePath));
+        await service.LoadLibrariesAsync(repository.Id, selected);
+
+        Assert.NotEmpty(announcements);
+        Assert.All(announcements, a =>
+        {
+            Assert.True(a.Recorded, "the tree was told before the library was in the repository's LibraryIds");
+            Assert.True(a.Owned, "the tree was told before the library's RepositoryId was set");
+        });
+    }
+
     /// <summary>A folder with nothing in it that MLQT recognises as a library.</summary>
     private string NoLibraryAtAll()
     {

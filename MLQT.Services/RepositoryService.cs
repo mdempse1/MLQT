@@ -479,6 +479,15 @@ public class RepositoryService : IRepositoryService
         LogProcessStart("RepositoryService", $"Loading libraries from repository: {repository.Name}");
         OnRepositoryLoadStateChanged?.Invoke(repositoryId, true);
 
+        // The tree is told once, after every library is recorded on this repository (B198). Each
+        // library otherwise announces itself from AddLibraryFromPathAsync - before the loop below has
+        // set its RepositoryId or added it to LibraryIds - and a repository's browser filters the tree
+        // by exactly that membership. A browser that rebuilt on the announcement before the membership
+        // landed showed the repository empty, and nothing announced again, so a newly added repository
+        // stayed empty until a restart: one add in five, measured through the add dialog's path. The
+        // project switch and the refresh already load under a scope like this; this nests inside theirs.
+        using var treeNotifications = _libraryDataService.SuppressTreeDataChanged();
+
         try
         {
             var pathsToLoad = libraryPaths?.ToList()
