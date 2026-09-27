@@ -106,9 +106,19 @@ Both the icon merge (`IconSvgRenderer.ExtractIconWithInheritance`) and the MCP d
   scale of a primitive turned by an angle that is not a multiple of 90 is approximate. Buildings'
   `HeatRecoveryChiller` is the one use in the corpus (`IconMap(extent={{-600,600},{600,-600}})`,
   flipping its base vertically).
-- **Not done:** the components and connections a mapped base contributes - the connectors on an
-  icon, the components and connect lines on a diagram - are still placed in the derived class's
-  coordinates as the base wrote them, not mapped with its graphics.
+- **What else the base contributes goes through the same map (B436).** The arithmetic is
+  `CoordinateMap` (`ModelicaParser/Icons`): `Apply` for a primitive, `Placement` for a component's
+  placement (extent, rotation and rotation centre - a mirror reverses the extent), `Point` for a
+  connect line's points, `Then` to compose two clauses. On the MCP side
+  `DiagramGeometry.BaseMaps(libraries, node, layer)` is the one answer to where each base, by id, is
+  drawn, composed down the chain; `DiagramGeometry.Placements` maps every inherited placement with
+  it, so the connectors on an icon (`Layer.Icon`, what `ConnectorsOn` reads) and the components on a
+  diagram land where the base's graphics do, and the router - which ends lines on those same
+  components through `PortOf` (B314) - follows without knowing about maps. The image maps a base's
+  own `Line(points=...)` with the same map. Buildings' `HeatRecoveryChiller` now has `port_*2` on
+  the upper half of its icon, where `Validation.HeatRecoveryChiller`'s Dymola-drawn lines end
+  (`(±60,40)`, and `port_*1` at `(±60,-32)`). The desktop icon draws no connectors, so this is MCP
+  only.
 
 Before B394 the icon merge kept the derived class's system whenever it had an Icon annotation,
 stated or not: 52 Buildings icons (e.g. `DHC.ETS.BaseClasses.CollectorDistributor`) were drawn in

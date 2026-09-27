@@ -342,6 +342,7 @@ internal static class DiagramGeometry
         // One parse per base class rather than one per inherited component: SISO's two connectors
         // would otherwise cost two passes over the same source, and a deep chain many more.
         var byOwner = new Dictionary<string, Dictionary<string, Placement>>(StringComparer.Ordinal);
+        IReadOnlyDictionary<string, CoordinateMap>? maps = null;
 
         // A class's own diagram shows its protected components as well (B315); what it shows on its
         // icon, which its users see, is public only.
@@ -359,11 +360,68 @@ internal static class DiagramGeometry
                 byOwner[member.OwnerId] = owned;
             }
 
-            if (owned.TryGetValue(member.Element.Name, out var placement))
-                result[member.Element.Name] = placement;
+            if (!owned.TryGetValue(member.Element.Name, out var placement))
+                continue;
+
+            // Placed where the extends clause's map puts the base, with its graphics (B436): the
+            // base wrote this placement in its own coordinates.
+            maps ??= BaseMaps(libraries, node, layer);
+            result[member.Element.Name] = maps.TryGetValue(member.OwnerId, out var map) && !map.IsIdentity
+                ? Mapped(placement, map)
+                : placement;
         }
 
         return result;
+    }
+
+    private static Placement Mapped(Placement placement, CoordinateMap map)
+    {
+        var (extent, rotation, centre) = map.Placement(placement.Extent, placement.Rotation, placement.RotationCentre);
+        return new Placement(extent, rotation, centre);
+    }
+
+    /// <summary>
+    /// Where each of the class's bases, by id, is drawn on <paramref name="layer"/>: the map its
+    /// coordinates go through into the class's, composed down the extends chain from each clause's
+    /// <c>IconMap</c> / <c>DiagramMap</c> extent (MLS 3.6 §18.6.3). A base with no map is the
+    /// identity, and one reached twice keeps the first way it was reached.
+    ///
+    /// <para><b>The one answer to where a base's contents go</b> (B436). Its components' placements
+    /// are mapped with it here, which puts the connectors on an icon and the components on a diagram
+    /// where the base's graphics are drawn (B420); the connection router ends lines on those same
+    /// components, and the image maps a base's own connect lines with it.</para>
+    /// </summary>
+    internal static IReadOnlyDictionary<string, CoordinateMap> BaseMaps(
+        ILibraryDataService libraries, ModelicaGraph.DataTypes.ModelNode node, Layer layer)
+    {
+        var maps = new Dictionary<string, CoordinateMap>(StringComparer.Ordinal);
+        var keyword = layer == Layer.Diagram ? "DiagramMap" : "IconMap";
+        Walk(node, CoordinateMap.Identity, 0);
+        return maps;
+
+        void Walk(ModelicaGraph.DataTypes.ModelNode current, CoordinateMap toClass, int depth)
+        {
+            if (depth > DiagramImage.MaxInheritanceDepth)
+                return;
+
+            // Reading the annotation parses the class, so only a class that mentions a map is read.
+            var own = current.Definition.ModelicaCode?.Contains(keyword, StringComparison.Ordinal) == true
+                ? DiagramImage.LayerOf(current, layer)
+                : null;
+
+            foreach (var (written, baseNode) in ClassElementResolver.DirectBases(libraries.CombinedGraph, current))
+            {
+                if (baseNode.Id == node.Id || maps.ContainsKey(baseNode.Id))
+                    continue;
+
+                var map = own?.MapFor(written)?.Region is { } region
+                          && CoordinateMap.Into(DiagramImage.SystemOf(libraries, baseNode, layer), region) is { } into
+                    ? into.Then(toClass)
+                    : toClass;
+                maps[baseNode.Id] = map;
+                Walk(baseNode, map, depth + 1);
+            }
+        }
     }
 
     /// <summary>

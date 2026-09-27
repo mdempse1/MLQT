@@ -59,10 +59,16 @@ internal static class DiagramImage
         // One router for every connection, own and inherited, seeded with the components just built
         // for the picture: routing used to build each endpoint's component again per connection (B392).
         var router = new DiagramGeometry.Router(libraries, node.Id, code, components);
-        var connections = Connections(libraries, node.Id, router, code);
+        var connections = Connections(libraries, node.Id, router, code, CoordinateMap.Identity);
+
+        // A base's connect lines are drawn where its DiagramMap puts it, as its components are
+        // (B436): the routed ones already are, since they end on the mapped components; the route a
+        // base wrote down is in the base's coordinates and is mapped with the same map.
+        var maps = DiagramGeometry.BaseMaps(libraries, node, DiagramGeometry.Layer.Diagram);
         foreach (var baseNode in bases)
             if (baseNode.Definition.ModelicaCode is { Length: > 0 } baseCode)
-                connections.AddRange(Connections(libraries, node.Id, router, baseCode));
+                connections.AddRange(Connections(
+                    libraries, node.Id, router, baseCode, maps.GetValueOrDefault(baseNode.Id, CoordinateMap.Identity)));
         var diagramLayer = InheritedDiagram(libraries, node);
 
         if (components.Count == 0 && connections.Count == 0 && diagramLayer is not { HasGraphics: true })
@@ -338,7 +344,7 @@ internal static class DiagramImage
     private static IconData? InheritedDiagram(ILibraryDataService libraries, ModelNode node)
     {
         var graphics = DiagramGraphics(libraries, node, [node.Id], 0, out var any);
-        return any ? DiagramSystem(libraries, node, [], 0).WithGraphics(graphics) : null;
+        return any ? DiagramSystem(libraries, node).WithGraphics(graphics) : null;
     }
 
     /// <summary>
@@ -366,7 +372,7 @@ internal static class DiagramImage
                 if (map is { PrimitivesVisible: false })
                     continue;
                 graphics.AddRange(map?.Region is { } region
-                    ? GraphicsMapping.Into(inherited, DiagramSystem(libraries, baseNode, [], 0), region)
+                    ? GraphicsMapping.Into(inherited, DiagramSystem(libraries, baseNode), region)
                     : inherited);
             }
         }
@@ -376,19 +382,23 @@ internal static class DiagramImage
     }
 
     /// <summary>
-    /// A class's Diagram coordinate system by MLS 3.6 §18.6.1.1 (B394): each attribute from the
-    /// class's own <c>coordinateSystem</c> where it states it, else from the <b>first</b> base whose
-    /// extends clause leaves <c>DiagramMap</c>'s extent at the null region - that base's own resolved
-    /// system, which is the default if nothing up its chain states one - else the default.
+    /// A class's coordinate system on <paramref name="layer"/> by MLS 3.6 §18.6.1.1 (B394): each
+    /// attribute from the class's own <c>coordinateSystem</c> where it states it, else from the
+    /// <b>first</b> base whose extends clause leaves that layer's map (<c>DiagramMap</c> /
+    /// <c>IconMap</c>) at the null region - that base's own resolved system, which is the default if
+    /// nothing up its chain states one - else the default.
     ///
     /// <para>This used to be "the most derived class that states an extent", taken whole. That
     /// took the last base rather than the first where a class extends two, and let a class that
     /// states only <c>preserveAspectRatio</c> lose its base's extent.</para>
     /// </summary>
-    private static IconData DiagramSystem(
-        ILibraryDataService libraries, ModelNode node, HashSet<string> visiting, int depth)
+    internal static IconData SystemOf(ILibraryDataService libraries, ModelNode node, DiagramGeometry.Layer layer)
+        => SystemOf(libraries, node, layer, [], 0);
+
+    private static IconData SystemOf(
+        ILibraryDataService libraries, ModelNode node, DiagramGeometry.Layer layer, HashSet<string> visiting, int depth)
     {
-        var own = node.Definition.Borrow(IconExtractor.ExtractDiagramWithInheritance);
+        var own = LayerOf(node, layer);
         if (depth > MaxInheritanceDepth || !visiting.Add(node.Id))
             return IconData.ResolveCoordinateSystem(own?.Icon, null);
 
@@ -397,7 +407,7 @@ internal static class DiagramImage
         {
             if (own?.MappedExtends.Contains(written) == true)
                 continue;
-            inherited = DiagramSystem(libraries, baseNode, visiting, depth + 1);
+            inherited = SystemOf(libraries, baseNode, layer, visiting, depth + 1);
             break;
         }
 
@@ -405,8 +415,20 @@ internal static class DiagramImage
         return IconData.ResolveCoordinateSystem(own?.Icon, inherited);
     }
 
+    private static IconData DiagramSystem(ILibraryDataService libraries, ModelNode node)
+        => SystemOf(libraries, node, DiagramGeometry.Layer.Diagram);
+
+    /// <summary>
+    /// The class's own annotation for <paramref name="layer"/> - its graphics, coordinate system and
+    /// its extends clauses' maps for that layer - or null when it has none.
+    /// </summary>
+    internal static IconExtractionResult? LayerOf(ModelNode node, DiagramGeometry.Layer layer)
+        => layer == DiagramGeometry.Layer.Diagram
+            ? node.Definition.Borrow(IconExtractor.ExtractDiagramWithInheritance)
+            : node.Definition.Borrow(tree => IconExtractor.ExtractIconWithInheritance(tree));
+
     /// <summary>How far up an extends chain a coordinate system is looked for; guards a cycle.</summary>
-    private const int MaxInheritanceDepth = 32;
+    internal const int MaxInheritanceDepth = 32;
 
     private static ModelNode? Resolve(ILibraryDataService libraries, string fromId, string name)
         => TypeResolver.Resolve(libraries.CombinedGraph, fromId, name, []);
@@ -432,8 +454,11 @@ internal static class DiagramImage
     /// <param name="router">Routes against the class being drawn.</param>
     /// <param name="source">The class whose <c>connect</c> equations to read: the class itself, or
     /// one of its bases - an inherited connection names the same components the class has.</param>
+    /// <param name="map">Where <paramref name="source"/>'s coordinates go in the class being drawn:
+    /// the identity for the class itself, a base's <c>DiagramMap</c> for a mapped base (B436).</param>
     private static List<DiagramConnection> Connections(
-        ILibraryDataService libraries, string classId, DiagramGeometry.Router router, string source)
+        ILibraryDataService libraries, string classId, DiagramGeometry.Router router, string source,
+        CoordinateMap map)
     {
         var connections = new List<DiagramConnection>();
 
@@ -454,7 +479,9 @@ internal static class DiagramImage
             var annotated = FromAnnotation(source, equation);
             if (annotated is not null)
             {
-                connections.Add(annotated);
+                connections.Add(map.IsIdentity
+                    ? annotated
+                    : annotated with { Points = [.. annotated.Points.Select(p => map.Point(p))] });
                 continue;
             }
 
