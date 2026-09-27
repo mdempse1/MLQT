@@ -94,13 +94,39 @@ public static class ParserErrorReporter
                     Discriminator = error.Message,
                     Message = error.Message +
                               (error.OffendingToken is not null ? $" (token: '{error.OffendingToken}')" : ""),
-                    LineNumber = Math.Max(1, error.LineIsClassRelative ? error.Line : error.Line - classStart + 1),
+                    LineNumber = Math.Max(1, error.LineIsClassRelative ? error.Line : LoadLineInClass(model, error.Line - classStart + 1)),
                     Severity = RuleSeverity.Error
                 });
             }
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// A load-recorded error's line, already relative to the class as the file has it, in the text
+    /// the class's other findings are counted against.
+    ///
+    /// <para>For most classes the two are the same text. A package whose inline standalone children
+    /// were trimmed is checked as the file's lines with the children cut out, and keeps the load's
+    /// errors through the trim; <see cref="ClassLocation.FileLine"/> and the Code Review page both
+    /// put the cut lines back through <see cref="ModelNode.TrimElision"/>, so a line left in the
+    /// untrimmed frame had them counted twice, and an error below an inline child landed that
+    /// child's length too far down (B413). An error on lines that were cut - which the load gives to
+    /// the child, not the package - is put on the last line kept above the cut.</para>
+    /// </summary>
+    private static int LoadLineInClass(ModelNode model, int lineInUntrimmedClass)
+    {
+        if (model.TrimElision is not { } trim || lineInUntrimmedClass < 1)
+            return lineInUntrimmedClass;
+
+        for (var line = lineInUntrimmedClass; line >= 1; line--)
+        {
+            if (trim.ToDisplayLine(line) is { } kept)
+                return kept;
+        }
+
+        return 1;
     }
 
     /// <summary>

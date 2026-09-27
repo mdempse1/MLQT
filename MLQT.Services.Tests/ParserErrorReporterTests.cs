@@ -115,6 +115,61 @@ public class ParserErrorReporterTests
     }
 
     [Fact]
+    public void ALoadErrorBelowATrimmedInlineChild_IsReportedOnItsOwnFileLine()
+    {
+        // B413. The load records the error on its file line; the trimmer then cuts the inline child
+        // out of the package's stored source and keeps the load's error. Every finding on a trimmed
+        // package counts lines of the trimmed text, and ClassLocation.FileLine puts the cut lines
+        // back - so a parse error measured against the untrimmed class had them counted twice, and
+        // landed the child's length below where it is.
+        var source = ModelicaParser.Helpers.ModelicaParserHelper.NormalizeLineEndings("""
+            package P "a package"
+              model A "a child stored inline"
+                Real x;
+                Real y;
+              end A;
+              constant Real k = 1;
+              constant Real j = 2
+              constant Real m = 3;
+            end P;
+            """);
+
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "package.mo", source);
+        var package = graph.GetNode<ModelNode>("P")!;
+        var error = Assert.Single(package.Definition.ParserErrors);
+        Assert.True(error.Line >= 7);   // the precondition: the error is below the inline child
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+        Assert.NotNull(package.TrimElision);   // ...which the trim cut out
+        Assert.Same(error, Assert.Single(package.Definition.ParserErrors));
+
+        var finding = Assert.Single(ParserErrorReporter.ToFindings([package]));
+        var location = ClassLocation.ForGraph(graph)["P"];
+
+        Assert.Equal(error.Line, location.FileLine(finding.LineNumber));
+        // ...and in the text the finding is measured against, it is the same line of code.
+        var trimmedLines = package.Definition.ModelicaCode!.Split('\n');
+        var fileLines = source.Split('\n');
+        Assert.Equal(fileLines[error.Line - 1], trimmedLines[finding.LineNumber - 1]);
+    }
+
+    [Fact]
+    public void ALoadErrorOnLinesTheTrimCutOut_IsReportedWhereTheyWere()
+    {
+        // Defensive: a load error is given to the innermost class containing it, so one on a cut
+        // child's lines belongs to the child. Were one on the package all the same, it has no line
+        // in the trimmed text; it is reported on the line the cut was made after, never below it.
+        var node = NodeWith("P", new ParserError { Line = 13, Message = "inside the cut" });
+        node.StartLine = 10;
+        node.TrimElision = ModelicaParser.Helpers.SourceElision.Of([new ModelicaParser.Helpers.ElidedRange(2, 5, null)]);
+
+        var finding = Assert.Single(ParserErrorReporter.ToFindings([node]));
+
+        Assert.Equal(1, finding.LineNumber);
+    }
+
+    [Fact]
     public void Refresh_ReplacesTheParserFindingsOfTheGivenClasses_AndTouchesNothingElse()
     {
         // B390: read before and after a check, so a second read must replace the first.
