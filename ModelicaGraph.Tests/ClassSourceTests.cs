@@ -132,8 +132,12 @@ public class ClassSourceTests
     }
 
     [Fact]
-    public void TheFileIsReadAgainOnceSomethingHasRewrittenTheStoredText()
+    public void ASavedClassShowsWhatTheSaveWroteNotASliceAtItsOldOffsets()
     {
+        // B400. A save rewrites the file and stores what it wrote on the class, clearing
+        // SourceMatchesFile - and updates no offsets. This used to read the file again whenever the
+        // flag was down, which is a cut through a file the offsets no longer describe; the stored
+        // text is what the save wrote, so it is what the file says.
         var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
         System.IO.File.WriteAllText(path, File.Replace("\n", "\r\n"));
         try
@@ -142,17 +146,43 @@ public class ClassSourceTests
             GraphBuilder.LoadModelicaFile(graph, path, File);
             var model = graph.GetNode<ModelNode>("Some.Package.Second")!;
 
-            // What the trimmer and the formatter do: the stored text stops being the file's.
             model.Definition.ModelicaCode = "model Second \"rewritten\" end Second;";
             model.SourceMatchesFile = false;
 
-            Assert.Equal(
-                Lf("""
+            Assert.Equal("model Second \"rewritten\" end Second;", ClassSource.For(model, graph));
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ASaveThatShortenedTheClassAboveDoesNotShowAChunkThatStartsMidDeclaration()
+    {
+        // B400, the shape that got past B343's name check. The save shortened First by six
+        // characters, so Second's load-time offsets now start six characters into its declaration
+        // and run six past its end. The slice names Second on its first line and does not end with
+        // an `end X` to disagree with - and it is not Second.
+        var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
+        System.IO.File.WriteAllText(path, File);
+        try
+        {
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, path, File);
+            var model = graph.GetNode<ModelNode>("Some.Package.Second")!;
+
+            var written = Lf("""
                 model Second "the second"
                   Real y;
                 end Second;
-                """),
-                ClassSource.For(model, graph));
+                """);
+            System.IO.File.WriteAllText(path,
+                File.Replace("\"the first\"", "\"1st\"") + "\n// a comment after it\n");
+            model.Definition.ModelicaCode = written;
+            model.SourceMatchesFile = false;
+
+            Assert.Equal(written, ClassSource.For(model, graph));
         }
         finally
         {
@@ -212,6 +242,34 @@ public class ClassSourceTests
             Assert.NotNull(package.TrimElision);
 
             Assert.Equal(PackageWithInlineChild, ClassSource.For(package, graph));
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ATrimmedPackageThatWasSavedShowsWhatTheSaveWrote()
+    {
+        // B400: the trim's elision describes the file as it was loaded. Once a save has written the
+        // package and stored the result, neither it nor the offsets describe the file any more.
+        var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
+        System.IO.File.WriteAllText(path, PackageWithInlineChild);
+        try
+        {
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, path, PackageWithInlineChild);
+            var package = graph.GetNode<ModelNode>("P")!;
+            PackageCodeTrimmer.TrimStandaloneChildren(graph);
+            Assert.NotNull(package.TrimElision);
+
+            const string written = "package P \"a package\"\n  constant Real k = 1;\nend P;";
+            System.IO.File.WriteAllText(path, written + "\n");
+            package.Definition.ModelicaCode = written;
+            package.SourceMatchesFile = false;
+
+            Assert.Equal(written, ClassSource.For(package, graph));
         }
         finally
         {

@@ -11,8 +11,17 @@ namespace ModelicaGraph;
 /// of the file. Two things change it — the formatter after a save, which is correct because the
 /// file now says the same, and <see cref="PackageCodeTrimmer"/>, which excises a package's inline
 /// standalone children and so leaves text that is the file's own but no longer all of the class.
-/// <see cref="ModelNode.StoredSourceIsWholeClass"/> is the flag that says which, and when it is
-/// false this reads the file again and slices the class back out of it.</para>
+/// Only the second is a reason to read the file: a trimmed package whose stored text is still the
+/// file's own lines (<see cref="ModelNode.TrimElision"/> set, <see cref="ModelNode.SourceMatchesFile"/>
+/// true) is sliced back out of it, and everything else is shown as stored.</para>
+///
+/// <para><b>Never after a save</b> (B400). A save rewrites the file and stores what it wrote on the
+/// class, clearing <see cref="ModelNode.SourceMatchesFile"/>; nothing updates the offsets, so a slice
+/// taken at them is a cut through a file they no longer describe. The stored text is what was
+/// written, so it is the answer. Slicing anyway left only a check that the slice named the class on
+/// its first line between that and a chunk of some other code: a class a few characters further
+/// along after a save shortened the one above it began mid-declaration, ran into the next class,
+/// and passed.</para>
 ///
 /// <para><b>Slicing is not as obvious as the fields make it look</b>, which is why it is here and
 /// not at each call site. The offsets are into the file's text with line endings normalised, because
@@ -34,8 +43,8 @@ namespace ModelicaGraph;
 public static class ClassSource
 {
     /// <summary>
-    /// The class's source to show: the stored text while it is still the file's, otherwise the file
-    /// sliced afresh. Falls back to the stored text whenever the file cannot be read, the offsets
+    /// The class's source to show: the stored text, except for a trimmed package that has not been
+    /// saved since, whose file is sliced afresh. Falls back to the stored text whenever the file cannot be read, the offsets
     /// are not populated, or the file has changed since they were taken so that they no longer cut
     /// out the class — a class shown from slightly stale text beats a blank pane, and beats a chunk
     /// of some other code.
@@ -46,7 +55,7 @@ public static class ClassSource
         ArgumentNullException.ThrowIfNull(graph);
 
         var stored = model.Definition.ModelicaCode ?? string.Empty;
-        if (model.StoredSourceIsWholeClass)
+        if (model.TrimElision is not { } trim || !model.SourceMatchesFile)
             return stored;
 
         var path = graph.GetNode<FileNode>(model.ContainingFileId ?? "")?.FilePath;
@@ -56,7 +65,7 @@ public static class ClassSource
         try
         {
             var slice = SliceFromFile(ModelicaFileEncoding.ReadAllTextOnly(path), model.StartIndex, model.StopIndex);
-            return slice is not null && IsStillTheClass(model, slice, stored) ? slice : stored;
+            return slice is not null && IsStillTheClass(trim, slice, stored) ? slice : stored;
         }
         catch (IOException)
         {
@@ -70,41 +79,20 @@ public static class ClassSource
 
     /// <summary>
     /// Whether a slice of the file <em>as it is now</em>, taken at offsets recorded when it was
-    /// loaded, is still the class (B343).
+    /// loaded, is still the trimmed package (B343).
     ///
     /// <para>The offsets are from load time and the file is read now. After an edit outside MLQT
     /// the monitor holds the change until Refresh, and meanwhile a trimmed package was shown as an
     /// arbitrary chunk of the new file — possibly starting mid-token — and the diff compared that
-    /// chunk with HEAD. Two checks, as strong as what is known allows:</para>
-    /// <list type="bullet">
-    /// <item>A trimmed package whose stored text is still the file's own lines has an exact answer:
-    /// dropping the trimmed lines from the slice has to give back the stored text, character for
-    /// character, because that is how the stored text was made.</item>
-    /// <item>Text something rewrote cannot be compared that way — being different from the file is
-    /// why it is read — so the slice has only to name the class on its first line and, where it ends
-    /// with <c>end X</c>, to end it: a chunk from somewhere else in the file does neither.</item>
-    /// </list>
+    /// chunk with HEAD. A trimmed package whose stored text is still the file's own lines has an
+    /// exact answer: dropping the trimmed lines from the slice has to give back the stored text,
+    /// character for character, because that is how the stored text was made.</para>
     /// </summary>
-    private static bool IsStillTheClass(ModelNode model, string slice, string stored)
+    private static bool IsStillTheClass(SourceElision trim, string slice, string stored)
     {
-        if (model.TrimElision is { } trim && model.SourceMatchesFile)
-        {
-            var kept = trim.Apply(slice.Split('\n'));
-            return string.Equals(string.Join("\n", kept),
-                ModelicaParserHelper.NormalizeLineEndings(stored), StringComparison.Ordinal);
-        }
-
-        var name = System.Text.RegularExpressions.Regex.Escape(model.Definition.Name ?? "");
-        if (name.Length == 0)
-            return false;
-
-        var text = slice.TrimStart();
-        var firstLine = text.Split('\n', 2)[0];
-        if (!System.Text.RegularExpressions.Regex.IsMatch(firstLine, $@"(?<![\w.']){name}(?![\w'])"))
-            return false;
-
-        var end = System.Text.RegularExpressions.Regex.Match(text, @"\bend\s+([\w.']+)\s*;?\s*$");
-        return !end.Success || end.Groups[1].Value == model.Definition.Name;
+        var kept = trim.Apply(slice.Split('\n'));
+        return string.Equals(string.Join("\n", kept),
+            ModelicaParserHelper.NormalizeLineEndings(stored), StringComparison.Ordinal);
     }
 
     /// <summary>
