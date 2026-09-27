@@ -329,6 +329,28 @@ public class AppState
         }
     }
 
+    // ========== Startup progress (B407) ==========
+
+    /// <summary>
+    /// The step the application's startup sequence is on, or <c>null</c> when none is running.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than on the layout because a reload replaces the layout and not the run: the old
+    /// instance's startup carries on to the end on singletons (B357), and the new instance, which
+    /// skips startup (B270), had nothing to show for it. This is what it reads instead.
+    /// </remarks>
+    public string? StartupStep { get; private set; }
+
+    /// <summary>Raised whenever <see cref="StartupStep"/> changes.</summary>
+    public event Action? OnStartupProgressChanged;
+
+    /// <summary>Records the startup step now running, or <c>null</c> when the sequence has ended.</summary>
+    public void StartupProgress(string? step)
+    {
+        StartupStep = step;
+        OnStartupProgressChanged?.Invoke();
+    }
+
     // ========== Project Profiles ==========
 
     /// <summary>

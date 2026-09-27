@@ -162,4 +162,45 @@ public class StartupDialogDeferredStepTests
     {
         Assert.Contains("StartupAlreadyRan(RepositoryService.Repositories.Count)", CodeBehindSource());
     }
+
+    // ---------------------------------------------------------------- the run a reload left going
+
+    /// <summary>
+    /// B407: the instance a reload creates skips startup, while the run the old instance began goes
+    /// on to the end (B357). It shows that run's progress while there is any - and the instance that
+    /// ran startup itself does not show it a second time over its own dialog.
+    /// </summary>
+    [Fact]
+    public void AReloadedLayoutShowsTheEarlierRunsProgressUntilItEnds()
+    {
+        Assert.True(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, "Formatting modified files"));
+        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, startupStep: null));
+        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: false, "Formatting modified files"));
+    }
+
+    /// <summary>
+    /// The wiring a predicate cannot hold: the skipped run marks itself as watching, every step of
+    /// the running one is published, and only a run that published a step clears it - the skipped
+    /// run clearing it would hide the progress of the run it skipped for.
+    /// </summary>
+    [Fact]
+    public void TheStartupRunPublishesItsStepsAndOnlyItClearsThem()
+    {
+        var source = System.Text.RegularExpressions.Regex.Replace(CodeBehindSource(), @"\s+", " ");
+
+        Assert.Contains(
+            "if (StartupAlreadyRan(RepositoryService.Repositories.Count)) { _currentProjectName = RepositoryService.GetActiveProject()?.Name; _watchingEarlierStartup = true;",
+            source);
+        foreach (var step in new[]
+                 {
+                     "Loading libraries from repositories", "Formatting modified files", "Analysing dependencies",
+                     "Analysing external resources", "Setting up file system monitors",
+                 })
+        {
+            Assert.Contains($"NavState.StartupProgress(\"{step}\");", source);
+        }
+        Assert.Contains("if (reportedProgress) NavState.StartupProgress(null);", source);
+        Assert.Contains("NavState.OnStartupProgressChanged += OnStartupProgressChanged;", source);
+        Assert.Contains("NavState.OnStartupProgressChanged -= OnStartupProgressChanged;", source);
+    }
 }

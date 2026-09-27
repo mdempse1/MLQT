@@ -453,6 +453,20 @@
     </DialogContent>
 </MudDialog>
 
+@* A startup begun before the window was reloaded, and still running on the services that survived
+   it (B407). This instance skipped startup (B270), so the step is all it has to show. *@
+<MudDialog Visible="EarlierStartupVisible" Options="_nonClosableDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Loading project repositories, please wait</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4">@NavState.StartupStep</MudText>
+        </MudStack>
+    </DialogContent>
+</MudDialog>
+
 <MudDialog @bind-Visible="_fullFormatRunning" Options="_nonClosableDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">Formatting all files</MudText>

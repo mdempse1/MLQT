@@ -396,4 +396,24 @@ public class AppStateTests
         Assert.Equal("Modelica.Blocks", state.MetricsScope);
         Assert.Equal(string.Empty, new AppState().MetricsScope);
     }
+
+    // ---- startup progress (B407) -----------------------------------------------------------
+
+    [Fact]
+    public void StartupProgress_RecordsTheStepAndTellsSubscribers_AndEndsWithNull()
+    {
+        var state = new AppState();
+        var raised = new Recorder();
+        state.OnStartupProgressChanged += raised.Record;
+
+        Assert.Null(state.StartupStep);
+
+        state.StartupProgress("Formatting modified files");
+        Assert.Equal("Formatting modified files", state.StartupStep);
+        Assert.Equal(1, raised.Count);
+
+        state.StartupProgress(null);
+        Assert.Null(state.StartupStep);
+        Assert.Equal(2, raised.Count);
+    }
 }

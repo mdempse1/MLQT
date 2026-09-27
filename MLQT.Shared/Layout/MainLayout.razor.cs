@@ -58,6 +58,12 @@ public partial class MainLayout : IDisposable
     private bool _step5deferred = false;
     private bool _runningDeferredStep = false;
     private bool _showStyleCheckingCompleteMessage = false;
+    /// <summary>
+    /// Set when this instance skipped startup because an earlier one - replaced by a reload - had
+    /// already begun it (B270). That run goes on to the end (B357); this instance shows its progress
+    /// from <see cref="AppState.StartupStep"/>, which is all it has of it (B407).
+    /// </summary>
+    private bool _watchingEarlierStartup = false;
     /// <summary>Tracks files that have been formatted, keyed by path with the file's LastWriteTimeUtc at format time.</summary>
     private bool _isDarkMode = false;
     private MudTheme _myTheme = MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
@@ -101,6 +107,7 @@ public partial class MainLayout : IDisposable
         NavState.OnVcsFilesChanged += OnVcsFilesChanged;
         NavState.OnVcsModelsChanged += OnVcsModelsChanged;
         NavState.OnVcsWorkChanged += OnVcsWorkChanged;
+        NavState.OnStartupProgressChanged += OnStartupProgressChanged;
         NavState.OnProjectSwitchStarting += OnProjectSwitchStarting;
         RepositoryService.OnProjectChanged += OnProjectChanged;
         NavState.OnThemeChanged += OnThemeChangedHandler;
@@ -148,9 +155,23 @@ public partial class MainLayout : IDisposable
     /// </remarks>
     internal static bool StartupAlreadyRan(int loadedRepositoryCount) => loadedRepositoryCount > 0;
 
+    /// <summary>
+    /// Whether to show the progress of a startup begun by an earlier instance of this layout: only
+    /// in an instance that skipped startup, and only while that run is still going (B407).
+    /// </summary>
+    internal static bool ShowsEarlierStartup(bool watchingEarlierStartup, string? startupStep)
+        => watchingEarlierStartup && startupStep is not null;
+
+    private bool EarlierStartupVisible => ShowsEarlierStartup(_watchingEarlierStartup, NavState.StartupStep);
+
+    private void OnStartupProgressChanged() => _ = InvokeAsync(StateHasChanged);
+
     private async Task RunStartUpAsync()
     {
         LogProcessStart("MainLayout", "Application startup sequence");
+        // Whether this run has published a step, and so must say when it ends. The skipped run below
+        // must not: it would clear the progress of the run it skipped for.
+        var reportedProgress = false;
         try
         {
             // Configure snackbar position
@@ -163,6 +184,7 @@ public partial class MainLayout : IDisposable
             if (StartupAlreadyRan(RepositoryService.Repositories.Count))
             {
                 _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+                _watchingEarlierStartup = true;
                 await InvokeAsync(StateHasChanged);
                 Info("MainLayout",
                     "The UI was reloaded and the project is still open; skipping the startup sequence");
@@ -255,6 +277,8 @@ public partial class MainLayout : IDisposable
             _startupHadLoadWarning = false;
             _step1running = true;
             _step1color = Color.Success;
+            reportedProgress = true;
+            NavState.StartupProgress("Loading libraries from repositories");
             await InvokeAsync(StateHasChanged);
 
             // Step 1: Load saved repositories and libraries
@@ -343,6 +367,7 @@ public partial class MainLayout : IDisposable
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
             _step2color = Color.Success;
+            NavState.StartupProgress("Formatting modified files");
             LogProcessStart("MainLayout", "Rendering after load");
             await InvokeAsync(StateHasChanged);
             LogProcessEnd("MainLayout", "Rendering after load");
@@ -383,6 +408,7 @@ public partial class MainLayout : IDisposable
                 if (!shouldDefer)
                 {
                     // Steps 3 & 4: Analyze dependencies and start style checking in parallel
+                    NavState.StartupProgress("Analysing dependencies");
                     LogProcessStart("MainLayout", "Analyzing dependencies and starting style checking");
 
                     // Style checking's graph analyses need these edges, and join this same run rather
@@ -413,6 +439,7 @@ public partial class MainLayout : IDisposable
                     await InvokeAsync(StateHasChanged);
 
                     // Step 5: Analyze external resource references and start monitoring
+                    NavState.StartupProgress("Analysing external resources");
                     LogProcessStart("MainLayout", "Analyzing external resources");
                     await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
                     ExternalResourceService.StartMonitoringResources();
@@ -423,6 +450,7 @@ public partial class MainLayout : IDisposable
                 // Step 6: Start file monitoring
                 _step6running = true;
                 _step6color = Color.Success;
+                NavState.StartupProgress("Setting up file system monitors");
                 await InvokeAsync(StateHasChanged);
 
                 LogProcessEnd("MainLayout", "Application startup sequence (style checking continues in background)");
@@ -444,6 +472,9 @@ public partial class MainLayout : IDisposable
             // Re-enable system sleep now that startup analysis is complete
             // (style checking may still be running but it's not CPU-intensive enough to warrant blocking sleep)
             PowerManagementService.AllowSleep();
+
+            if (reportedProgress)
+                NavState.StartupProgress(null);
         }
         // In deferred mode, keep the dialog open to show deferred steps with Run Now buttons.
         // In normal mode, close when style checking is done (or immediately if it already finished).
@@ -1395,6 +1426,7 @@ public partial class MainLayout : IDisposable
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
         NavState.OnVcsModelsChanged -= OnVcsModelsChanged;
         NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
+        NavState.OnStartupProgressChanged -= OnStartupProgressChanged;
         NavState.OnRunDeferredDependencies -= RunDeferredDependenciesOnlyAsync;
         NavState.OnRunDeferredStyleChecking -= RunDeferredStyleCheckingFromEventAsync;
         NavState.OnRunDeferredExternalResources -= RunDeferredExternalResourcesAsync;
