@@ -166,8 +166,11 @@ building it **before** a migration rather than during one:
 - **`LibraryFixture`** builds a real repository per collection: a small Modelica package violating a
   handful of *enabled* rules, a Git working copy via LibGit2Sharp with a committed baseline and an
   uncommitted edit, and a `.mlqt/` directory. **Two commits and two branches** are what make history,
-  merge and pull-request surfaces reachable. Deliberately **no SVN fixture** — SVN integration needs a
-  live working copy and server that no runner has.
+  merge and pull-request surfaces reachable. **`LibraryFixtureVcs.Svn`** puts the same library in a
+  trunk checkout of a local `file://` repository made with `svnadmin create`, with a branch and a tag
+  beside trunk — an SVN "server" is only a directory, so no server process is needed. It needs the
+  `svn` and `svnadmin` executables, so only the documentation screenshots use it; the journeys proper
+  stay on Git, which CI runners can build without any tool installed.
 - **Traces are how a headless failure is debuggable at all.** `--trace on-first-retry`, uploaded as an
   artifact. It was asked for in the plan, not implemented, and the first defect it was turned on for
   (B154) was named by it immediately.
@@ -231,10 +234,24 @@ manual.
 
 **What stays a photograph, and why:** anything needing Dymola (`code-review-4`, and `code-review-5`
 because the Finding Details dialog only opens for a finding carrying `Details`, which a style rule does
-not produce), the six SVN ones (no server), `settings-reference-4` (that section renders only for an
-SVN repository), `git-operations-6` (the merge dialog's ready-to-merge phase needs a clean working copy,
-and MLQT only re-reads working-copy status after a VCS operation *in the application*), and anything
-showing the window frame.
+not produce), and anything showing the window frame.
+
+**What used to be and no longer is (B152):** the six SVN shots and `settings-reference-4` (that section
+renders only for an SVN repository) come from the SVN fixture, added last in the run after the Git
+repository is removed — both fixtures hold a library called `Lib`, and two in one project would be the
+same class ids twice. The SVN repository requires an issue number, so the commit dialog draws the Issue
+ID field its caption asks for. `git-operations-6`, the merge dialog's ready-to-merge phase, was
+"unreachable" because MLQT re-reads working-copy status only after a VCS operation *in the
+application* — and the dirty phase's own **Commit Changes** button is one: commit from there and the
+dialog checks again and moves on, which is the path git-operations.md describes. It is the last Git
+scene, because it commits. The generator therefore needs `svn` and `svnadmin`; it fails naming them
+rather than skipping the pictures.
+
+**The Dymola pair was looked at and left** (2026-09-27, not attempted): `code-review-4` is the
+progress dialog *part way* through a run, which on an eleven-class fixture is a race between the
+shot and the checks, run by a Dymola that has to start, take a licence and open its own window on
+the desktop first; and `code-review-5` needs a class that *fails* a Dymola check, which the fixture
+does not have and which would appear in the tree of every other picture if it did.
 
 ## Coverage
 

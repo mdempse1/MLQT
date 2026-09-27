@@ -395,11 +395,11 @@ an ordinary run never writes to the repository.
 them is wrong - and it is usually the picture, which is the point of being able to regenerate them.
 A handful cannot be produced this way at all and stay photographs: the two Dymola shots
 (`code-review-4`, and `code-review-5` because the Finding Details dialog opens only for a finding
-carrying `Details`, which a style rule never produces), the six SVN ones (no server),
-`settings-reference-4` (that section renders only for an SVN repository), `git-operations-6` (the
-merge dialog's ready-to-merge phase needs a clean working copy, and MLQT only re-reads working-copy
-status after a VCS operation *in the application*), and anything showing the window frame.
-`skill-gui-testing.md` has the detail.
+carrying `Details`, which a style rule never produces) and anything showing the window frame. **The
+SVN shots are generated** (B152): an SVN "server" is only a repository directory, so the fixture
+makes one with `svnadmin create` and checks trunk out over `file://` — which means the generator
+now needs `svn` and `svnadmin` on the machine that runs it. So is `git-operations-6`, reached by
+committing from the merge dialog's own dirty phase. `skill-gui-testing.md` has the detail.
 
 ## Planning and Design Notes
 
