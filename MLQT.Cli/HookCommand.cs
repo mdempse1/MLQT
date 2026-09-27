@@ -1,4 +1,5 @@
 using System.Text;
+using MLQT.Services;
 
 namespace MLQT.Cli;
 
@@ -55,6 +56,22 @@ internal static class HookCommand
         if (!TryResolve(options, out var library, out var hookPath, stderr))
             return ExitCodes.Error;
 
+        // A hook for something that is not a library fails every commit, and the path it was given
+        // decides which repository it lands in: the CLI test binaries' directory is inside MLQT's own
+        // working copy, so an install that fell back to the current directory wrote a hook checking
+        // `bin/Release/net10.0` into MLQT itself (B488). Asked with the discovery `mlqt check` uses,
+        // so what is refused here is exactly what the hook's check would have refused.
+        if (LibraryDiscovery.DiscoverLibraryPaths(library!).Count == 0)
+        {
+            stderr.WriteLine(
+                $"error: no Modelica library found in {library} " +
+                "(expected a package.mo, sub-package directories, or .mo files), so no hook was installed.");
+            stderr.WriteLine(
+                $"       It would have gone into the repository at {RepositoryRoot(hookPath)}. " +
+                "Give the path of the library the hook should check.");
+            return ExitCodes.Error;
+        }
+
         if (File.Exists(hookPath) && !IsOurs(hookPath) && !options.Force)
         {
             stderr.WriteLine(
@@ -68,6 +85,7 @@ internal static class HookCommand
         TryMakeExecutable(hookPath);
 
         stdout.WriteLine($"Installed pre-commit hook: {hookPath}");
+        stdout.WriteLine($"  in the repository at {RepositoryRoot(hookPath)}.");
         stdout.WriteLine($"  It checks {library} when a commit touches a .mo file,");
         stdout.WriteLine($"  and blocks the commit on findings at or above '{options.FailOn.ToString().ToLowerInvariant()}'.");
         stdout.WriteLine("  `git commit --no-verify` skips it.");
@@ -168,6 +186,19 @@ internal static class HookCommand
         library = libraryPath;
         hookPath = Path.Combine(gitDir, "hooks", "pre-commit");
         return true;
+    }
+
+    /// <summary>
+    /// The repository a hook path belongs to, for saying where an install goes: the directory
+    /// holding <c>.git</c>, or for a worktree or submodule (whose git directory lives elsewhere) the
+    /// git directory itself, which still names the repository.
+    /// </summary>
+    private static string RepositoryRoot(string hookPath)
+    {
+        var gitDir = Path.GetDirectoryName(Path.GetDirectoryName(hookPath))!;
+        return string.Equals(Path.GetFileName(gitDir), ".git", StringComparison.Ordinal)
+            ? Path.GetDirectoryName(gitDir)!
+            : gitDir;
     }
 
     /// <summary>

@@ -7,13 +7,38 @@ namespace MLQT.Cli.Tests;
 /// hook that runs it — that it lands where git looks, refuses to trample somebody else's, and blocks
 /// a commit that would introduce findings.
 /// </summary>
-public class HookCommandTests
+public sealed class HookCommandTests : IDisposable
 {
-    /// <summary>A repository with the library in a subdirectory, as a real one usually has.</summary>
-    private sealed class TempRepo(bool initGit = true, string settings = ErrorOnMissingDescription)
-        : IDisposable
+    /// <summary>
+    /// Every test here installs hooks, and the test binaries are inside MLQT's own working copy: one
+    /// install that took the current directory for its library once put a hook into MLQT itself
+    /// (B488). This fails the test that does it, and removes what it wrote.
+    /// </summary>
+    private readonly StrayHookGuard _strayHookGuard = StrayHookGuard.ForTestRun();
+
+    public void Dispose() => _strayHookGuard.Dispose();
+
+    /// <summary>
+    /// A repository with the library in a subdirectory, as a real one usually has — in a temporary
+    /// directory that is no other repository's working copy, or the constructor throws: a hook test
+    /// whose repository sits inside another cannot tell an install that landed in the wrong one.
+    /// </summary>
+    private sealed class TempRepo : IDisposable
     {
-        private readonly TempWorkspace _workspace = Build(initGit, settings);
+        private readonly TempWorkspace _workspace;
+
+        public TempRepo(bool initGit = true, string settings = ErrorOnMissingDescription)
+        {
+            _workspace = Build(initGit, settings);
+
+            if (StrayHookGuard.EnclosingWorkingCopy(_workspace.Root) is { } enclosing)
+            {
+                _workspace.Dispose();
+                throw new InvalidOperationException(
+                    $"The temporary directory {_workspace.Root} is inside the working copy {enclosing}, so a " +
+                    "hook test there could install into that repository. Point TEMP/TMPDIR somewhere else.");
+            }
+        }
 
         private static TempWorkspace Build(bool initGit, string settings)
         {
@@ -231,6 +256,83 @@ public class HookCommandTests
         Assert.Equal(2, code);
         Assert.Contains("not inside a git working copy", stderr);
         Assert.Contains("SVN runs its hooks on the server", stderr);
+    }
+
+    [Fact]
+    public void APathWithNoLibraryInItIsRefused_AndTheRefusalNamesTheRepository()
+    {
+        // B488: the CLI test binaries' directory holds no library, and an install given it wrote a
+        // hook into the repository enclosing it - MLQT's own - that failed every commit it saw.
+        using var repo = new TempRepo();
+        var notALibrary = Path.Combine(repo.Root, "bin");
+        Directory.CreateDirectory(notALibrary);
+        File.WriteAllText(Path.Combine(notALibrary, "mlqt.dll.config"), "not Modelica");
+
+        var (code, _, stderr) = Cli.Run("hook", "install", notALibrary);
+
+        Assert.Equal(2, code);
+        Assert.Contains($"no Modelica library found in {notALibrary}", stderr);
+        Assert.Contains($"repository at {repo.Root}", stderr);
+        Assert.False(File.Exists(repo.HookPath));
+    }
+
+    [Fact]
+    public void ASingleMoFileIsALibrary()
+    {
+        // The refusal uses check's discovery, so anything `mlqt check` accepts is accepted here.
+        using var repo = new TempRepo();
+
+        var (code, _, _) = Cli.Run("hook", "install", Path.Combine(repo.LibraryPath, "package.mo"));
+
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(repo.HookPath));
+    }
+
+    [Fact]
+    public void InstallSaysWhichRepositoryTheHookWentInto()
+    {
+        using var repo = new TempRepo();
+
+        var (_, stdout, _) = Cli.Run("hook", "install", repo.LibraryPath);
+
+        Assert.Contains($"Installed pre-commit hook: {repo.HookPath}", stdout);
+        Assert.Contains($"in the repository at {repo.Root}.", stdout);
+    }
+
+    // ---- the guard that keeps these tests in their own repository (B488) -----------------------
+
+    [Fact]
+    public void TheTemporaryRepositoryIsInsideNoOtherWorkingCopy()
+    {
+        using var repo = new TempRepo();
+
+        Assert.Null(StrayHookGuard.EnclosingWorkingCopy(repo.Root));
+        Assert.Equal(repo.Root, StrayHookGuard.EnclosingWorkingCopy(repo.LibraryPath));
+    }
+
+    [Fact]
+    public void AnInstallIntoAGuardedRepositoryFailsTheTest_AndIsRemoved()
+    {
+        // The guard stands in for MLQT's own repository here: a temp one is guarded, installed into,
+        // and the guard has to both notice and clean up.
+        using var repo = new TempRepo();
+        var guard = new StrayHookGuard(repo.LibraryPath);
+        Assert.Equal(0, Cli.Run("hook", "install", repo.LibraryPath).code);
+
+        Assert.ThrowsAny<Exception>(guard.Dispose);
+        Assert.False(File.Exists(repo.HookPath));
+    }
+
+    [Fact]
+    public void AHookSomebodyElseWroteIsNeverRemovedByTheGuard()
+    {
+        using var repo = new TempRepo();
+        var guard = new StrayHookGuard(repo.LibraryPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(repo.HookPath)!);
+        File.WriteAllText(repo.HookPath, "#!/bin/sh\necho mine\n");
+
+        Assert.ThrowsAny<Exception>(guard.Dispose);           // still reported...
+        Assert.True(File.Exists(repo.HookPath));              // ...but not deleted
     }
 
     [Fact]

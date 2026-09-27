@@ -843,6 +843,13 @@ is usually the whole command. The repository is located by walking up from the l
 in a subdirectory needs nothing extra, and a worktree or submodule (whose `.git` is a file) is
 followed to the directory git actually reads hooks from.
 
+**The path must hold a library.** Because the repository is found from it, the path decides where the
+hook lands as well as what it checks. `install` looks for a library there the way `mlqt check` does —
+a `package.mo`, sub-package directories, or `.mo` files — and when it finds none it installs nothing,
+exits `2`, and names the repository the hook would have gone into. A hook checking a directory with no
+library in it would fail every commit that touches a `.mo` file, in whichever repository happened to
+enclose that directory. On success it prints both the hook's path and the repository it belongs to.
+
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--fail-on off\|warning\|error` | What blocks the commit | `error` |
