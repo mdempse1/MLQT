@@ -154,33 +154,33 @@ public class DuplicateProjectNameIsRefusedTests
     }
 
     [Fact]
-    public void CreateProject_RefusesANameAlreadyTaken()
+    public async Task CreateProject_RefusesANameAlreadyTaken()
     {
         var (service, _) = CreateService();
-        service.CreateProject("Work");
+        await service.CreateProjectAsync("Work");
 
-        var ex = Assert.Throws<InvalidOperationException>(() => service.CreateProject("work"));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateProjectAsync("work"));
         Assert.Contains("Work", ex.Message);
     }
 
     [Fact]
-    public void CreateProject_StillAcceptsADistinctName()
+    public async Task CreateProject_StillAcceptsADistinctName()
     {
         var (service, _) = CreateService();
-        service.CreateProject("Work");
+        await service.CreateProjectAsync("Work");
 
-        var second = service.CreateProject("Archive");
+        var second = await service.CreateProjectAsync("Archive");
 
         Assert.Equal("Archive", second.Name);
         Assert.Equal(2, service.GetProjects().Count);
     }
 
     [Fact]
-    public void CreateProject_StoresTheTrimmedName()
+    public async Task CreateProject_StoresTheTrimmedName()
     {
         var (service, _) = CreateService();
 
-        var project = service.CreateProject("  Work  ");
+        var project = await service.CreateProjectAsync("  Work  ");
 
         Assert.Equal("Work", project.Name);
     }
@@ -217,35 +217,35 @@ public class DuplicateProjectNameIsRefusedTests
     }
 
     [Fact]
-    public void RenameProject_RefusesAnotherProjectsName()
+    public async Task RenameProject_RefusesAnotherProjectsName()
     {
         var (service, _) = CreateService();
-        var work = service.CreateProject("Work");
-        service.CreateProject("Archive");
+        var work = await service.CreateProjectAsync("Work");
+        await service.CreateProjectAsync("Archive");
 
-        Assert.Throws<InvalidOperationException>(() => service.RenameProject(work.Id, "Archive"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RenameProjectAsync(work.Id, "Archive"));
         Assert.Equal("Work", service.GetProjects().Single(p => p.Id == work.Id).Name);
     }
 
     [Fact]
-    public void RenameProject_AllowsAProjectToKeepItsOwnName()
+    public async Task RenameProject_AllowsAProjectToKeepItsOwnName()
     {
         var (service, _) = CreateService();
-        var work = service.CreateProject("Work");
+        var work = await service.CreateProjectAsync("Work");
 
-        service.RenameProject(work.Id, "Work");
+        await service.RenameProjectAsync(work.Id, "Work");
 
         Assert.Equal("Work", service.GetProjects().Single(p => p.Id == work.Id).Name);
     }
 
     [Fact]
-    public void RenameProject_AllowsAnOrdinaryRename()
+    public async Task RenameProject_AllowsAnOrdinaryRename()
     {
         var (service, _) = CreateService();
-        var work = service.CreateProject("Work");
-        service.CreateProject("Archive");
+        var work = await service.CreateProjectAsync("Work");
+        await service.CreateProjectAsync("Archive");
 
-        service.RenameProject(work.Id, "Current Work");
+        await service.RenameProjectAsync(work.Id, "Current Work");
 
         Assert.Equal("Current Work", service.GetProjects().Single(p => p.Id == work.Id).Name);
     }

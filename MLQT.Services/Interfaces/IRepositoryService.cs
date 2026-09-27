@@ -415,7 +415,8 @@ public interface IRepositoryService
     Task<ProjectProfile> CreateAndSelectProjectAsync(string name);
 
     /// <summary>
-    /// Creates a new empty project profile in the already-loaded project list.
+    /// Creates a new empty project profile in the already-loaded project list, and saves the list
+    /// before returning (B447). When the save fails the project is not kept and the exception propagates.
     /// </summary>
     /// <remarks>
     /// Requires the project list to have been loaded, and saving it writes the currently loaded
@@ -424,14 +425,16 @@ public interface IRepositoryService
     /// </remarks>
     /// <param name="name">Display name for the project.</param>
     /// <returns>The created project profile.</returns>
-    ProjectProfile CreateProject(string name);
+    Task<ProjectProfile> CreateProjectAsync(string name);
 
     /// <summary>
-    /// Renames an existing project profile.
+    /// Renames an existing project profile and saves the project list before returning (B447).
+    /// Throws when the new name is already another project's. When the save fails the old name is
+    /// kept and the exception propagates.
     /// </summary>
     /// <param name="projectId">ID of the project to rename.</param>
     /// <param name="newName">New display name.</param>
-    void RenameProject(string projectId, string newName);
+    Task RenameProjectAsync(string projectId, string newName);
 
     /// <summary>
     /// Deletes a project profile and saves the project list before returning. Cannot delete the last

@@ -846,7 +846,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         var repositories = host.Services.GetRequiredService<IRepositoryService>();
 
         if (repositories.GetActiveProject() is null)
-            repositories.CreateProject("Documentation");
+            await repositories.CreateProjectAsync("Documentation");
 
         // Two more projects, empty, so that Manage Repositories shows what getting-started.md says it
         // shows. With a single project the panel renders none of what the "Switching Between Projects"
@@ -857,11 +857,11 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         //
         // Through the service and not the New Project button, and that is the point rather than a
         // shortcut: a project created through the UI *becomes the active one*, which would unload
-        // MyLibrary and take the repository out of every screenshot after this. CreateProject only
+        // MyLibrary and take the repository out of every screenshot after this. CreateProjectAsync only
         // adds it. They are left empty because the section is about projects, not their contents, and
         // an inactive project's panel is collapsed anyway.
         foreach (var name in new[] { "Product Development", "Research" })
-            repositories.CreateProject(name);
+            await repositories.CreateProjectAsync(name);
 
         var added = await repositories.AddRepositoryAsync(_library!.RepositoryPath, name: "MyLibrary", startMonitoring: false);
         Assert.True(added.Success, added.ErrorMessage);

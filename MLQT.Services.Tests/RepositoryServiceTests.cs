@@ -2129,11 +2129,11 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void CreateProject_AddsProjectAndReturnsIt()
+    public async Task CreateProject_AddsProjectAndReturnsIt()
     {
         var service = CreateService();
 
-        var project = service.CreateProject("TestProject");
+        var project = await service.CreateProjectAsync("TestProject");
 
         Assert.NotNull(project);
         Assert.Equal("TestProject", project.Name);
@@ -2141,11 +2141,11 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void CreateProject_ProjectAppearsInGetProjects()
+    public async Task CreateProject_ProjectAppearsInGetProjects()
     {
         var service = CreateService();
 
-        service.CreateProject("Project1");
+        await service.CreateProjectAsync("Project1");
         var projects = service.GetProjects();
 
         Assert.Single(projects);
@@ -2153,24 +2153,24 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void CreateProject_MultipleProjects_AllAppear()
+    public async Task CreateProject_MultipleProjects_AllAppear()
     {
         var service = CreateService();
 
-        service.CreateProject("Project1");
-        service.CreateProject("Project2");
+        await service.CreateProjectAsync("Project1");
+        await service.CreateProjectAsync("Project2");
         var projects = service.GetProjects();
 
         Assert.Equal(2, projects.Count);
     }
 
     [Fact]
-    public void RenameProject_ChangesProjectName()
+    public async Task RenameProject_ChangesProjectName()
     {
         var service = CreateService();
-        var project = service.CreateProject("Original");
+        var project = await service.CreateProjectAsync("Original");
 
-        service.RenameProject(project.Id, "Renamed");
+        await service.RenameProjectAsync(project.Id, "Renamed");
 
         var projects = service.GetProjects();
         Assert.Single(projects);
@@ -2178,19 +2178,19 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void RenameProject_WithInvalidId_DoesNotThrow()
+    public async Task RenameProject_WithInvalidId_DoesNotThrow()
     {
         var service = CreateService();
 
         // Should not throw
-        service.RenameProject("non-existent-id", "NewName");
+        await service.RenameProjectAsync("non-existent-id", "NewName");
     }
 
     [Fact]
     public async Task DeleteProjectAsync_WithSingleProject_ReturnsFalse()
     {
         var service = CreateService();
-        var project = service.CreateProject("OnlyProject");
+        var project = await service.CreateProjectAsync("OnlyProject");
 
         var result = await service.DeleteProjectAsync(project.Id);
 
@@ -2202,8 +2202,8 @@ public class RepositoryServiceTests
     public async Task DeleteProjectAsync_WithMultipleProjects_RemovesProject()
     {
         var service = CreateService();
-        var project1 = service.CreateProject("Project1");
-        var project2 = service.CreateProject("Project2");
+        var project1 = await service.CreateProjectAsync("Project1");
+        var project2 = await service.CreateProjectAsync("Project2");
 
         var result = await service.DeleteProjectAsync(project1.Id);
 
@@ -2236,16 +2236,27 @@ public class RepositoryServiceTests
                     // Serialised when the write is asked for, as a real store does, and stored when released.
                     var snapshot = System.Text.Json.JsonSerializer.Serialize(value);
                     var gate = _gate;
+                    var landed = _landed;
                     _gate = null;
                     if (gate is not null)
                         await gate.Task;
                     await _store.SetAsync(key, System.Text.Json.JsonSerializer.Deserialize<RepositorySettingsCollection>(snapshot)!);
+                    if (gate is not null)
+                        landed.TrySetResult();
                 });
         }
 
+        private TaskCompletionSource _landed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes once the write <see cref="HoldNextWrite"/> held has been stored (B447).</summary>
+        public Task HeldWriteLanded => _landed.Task;
+
         /// <summary>Holds the next write; completing the returned source lets it land.</summary>
-        public TaskCompletionSource HoldNextWrite() =>
-            _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource HoldNextWrite()
+        {
+            _landed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
 
         public Task<RepositorySettingsCollection> SavedAsync() =>
             _store.GetAsync("Repositories", new RepositorySettingsCollection());
@@ -2264,7 +2275,7 @@ public class RepositoryServiceTests
         var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
         await service.LoadRepositorySettingsAsync();
         var active = service.GetActiveProject()!;
-        var other = service.CreateProject("Other");
+        var other = await service.CreateProjectAsync("Other");
         await service.SaveRepositorySettingsAsync();
 
         Assert.False(await service.DeleteProjectAsync(active.Id));
@@ -2289,7 +2300,7 @@ public class RepositoryServiceTests
         var settings = new HeldSettings();
         var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
         await service.LoadRepositorySettingsAsync();
-        var other = service.CreateProject("Other");
+        var other = await service.CreateProjectAsync("Other");
         await service.SaveRepositorySettingsAsync();
 
         var release = settings.HoldNextWrite();
@@ -2310,8 +2321,8 @@ public class RepositoryServiceTests
         var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
         await service.LoadRepositorySettingsAsync();
         var active = service.GetActiveProject()!;
-        var other = service.CreateProject("Other");
-        var third = service.CreateProject("Third");
+        var other = await service.CreateProjectAsync("Other");
+        var third = await service.CreateProjectAsync("Third");
         await service.SaveRepositorySettingsAsync();
 
         settings.FailWrites = new IOException("the settings file is read-only");
@@ -2326,13 +2337,148 @@ public class RepositoryServiceTests
     public async Task DeleteProjectAsync_WithInvalidId_ReturnsFalse()
     {
         var service = CreateService();
-        service.CreateProject("Project1");
-        service.CreateProject("Project2");
+        await service.CreateProjectAsync("Project1");
+        await service.CreateProjectAsync("Project2");
 
         var result = await service.DeleteProjectAsync("non-existent-id");
 
         Assert.False(result);
         Assert.Equal(2, service.GetProjects().Count);
+    }
+
+    #endregion
+
+    #region Save ordering (B447)
+
+    private static async Task<(HeldSettings Settings, RepositoryService Service, ProjectProfile Active, ProjectProfile Other)> TwoSavedProjectsAsync()
+    {
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var active = service.GetActiveProject()!;
+        var other = await service.CreateProjectAsync("Other");
+        await service.SaveRepositorySettingsAsync();
+        return (settings, service, active, other);
+    }
+
+    [Fact]
+    public async Task CreatingAProject_ThenSwitchingToIt_SavesTheNewProjectAsTheActiveOne()
+    {
+        // B447: the panel creates a project and switches to it. The create's save was not awaited
+        // and captured the old active id, so held until the switch had saved it landed last and put
+        // the previous project back as the active one (confirmed before the fix, as was each of the
+        // next two).
+        var (settings, service, active, _) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        var creating = service.CreateProjectAsync("New");
+        var switching = Task.Run(async () => await service.SwitchProjectAsync((await creating).Id));
+        await Task.WhenAny(switching, Task.Delay(200));
+        release.SetResult();
+        await switching;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        var created = Assert.Single(saved.Projects, p => p.Name == "New");
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+        Assert.NotEqual(active.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task RenamingAProject_ThenSwitching_SavesTheSwitchedToProjectAsTheActiveOne()
+    {
+        // B447: a rename's unawaited save captured the active id at the time; a switch that followed
+        // saved the new one, and the rename's save landing after it restored the old one.
+        var (settings, service, active, other) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        var renaming = service.RenameProjectAsync(active.Id, "Renamed");
+        var switching = Task.Run(() => service.SwitchProjectAsync(other.Id));
+        await Task.WhenAny(switching, Task.Delay(200));
+        release.SetResult();
+        await renaming;
+        await switching;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        Assert.Equal(other.Id, saved.ActiveProjectId);
+        Assert.Equal("Renamed", Assert.Single(saved.Projects, p => p.Id == active.Id).Name);
+    }
+
+    [Fact]
+    public async Task ASaveStartedWithoutWaiting_NeverLandsAfterALaterSave()
+    {
+        // B447: ClearAllRepositories and RemoveRepository are synchronous and still start a save they
+        // do not await, so the saves themselves are serialised: a later save waits for an earlier one
+        // and takes its contents once it has, so whichever lands last is the newest.
+        var (settings, service, _, other) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        service.ClearAllRepositories();
+        var deleting = Task.Run(() => service.DeleteProjectAsync(other.Id));
+        await Task.WhenAny(deleting, Task.Delay(200));
+        release.SetResult();
+        Assert.True(await deleting);
+        await settings.HeldWriteLanded;
+
+        Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+    }
+
+    [Fact]
+    public async Task CreateProjectAsync_And_RenameProjectAsync_ReturnOnlyOnceTheirSaveHasLanded()
+    {
+        var (settings, service, active, _) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        var creating = service.CreateProjectAsync("New");
+        Assert.False(creating.IsCompleted);
+        release.SetResult();
+        var created = await creating;
+        Assert.Contains((await settings.SavedAsync()).Projects, p => p.Id == created.Id);
+
+        release = settings.HoldNextWrite();
+        var renaming = service.RenameProjectAsync(active.Id, "Renamed");
+        Assert.False(renaming.IsCompleted);
+        release.SetResult();
+        await renaming;
+        Assert.Equal("Renamed", Assert.Single((await settings.SavedAsync()).Projects, p => p.Id == active.Id).Name);
+    }
+
+    [Fact]
+    public async Task CreateProjectAsync_WhenTheSaveFails_KeepsNoProjectAndThrows()
+    {
+        var (settings, service, active, other) = await TwoSavedProjectsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        await Assert.ThrowsAsync<IOException>(() => service.CreateProjectAsync("New"));
+
+        Assert.Equal([active.Id, other.Id], service.GetProjects().Select(p => p.Id));
+    }
+
+    [Fact]
+    public async Task RenameProjectAsync_WhenTheSaveFails_KeepsTheOldNameAndThrows()
+    {
+        var (settings, service, _, other) = await TwoSavedProjectsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        await Assert.ThrowsAsync<IOException>(() => service.RenameProjectAsync(other.Id, "Renamed"));
+
+        Assert.Equal("Other", service.GetProjects().Single(p => p.Id == other.Id).Name);
+    }
+
+    [Fact]
+    public async Task ASaveNobodyWaitsFor_ThatFails_DoesNotStopTheNextSave()
+    {
+        // The gate is released when a save throws, so one failed background save (ClearAllRepositories
+        // is logged, not thrown) cannot leave every later save waiting for ever.
+        var (settings, service, _, other) = await TwoSavedProjectsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        service.ClearAllRepositories();
+        settings.FailWrites = null;
+
+        Assert.True(await service.DeleteProjectAsync(other.Id).WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
     }
 
     #endregion
@@ -2592,8 +2738,8 @@ public class RepositoryServiceTests
         var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
 
         // Create two projects
-        var project1 = service.CreateProject("Project1");
-        var project2 = service.CreateProject("Project2");
+        var project1 = await service.CreateProjectAsync("Project1");
+        var project2 = await service.CreateProjectAsync("Project2");
 
         string? firedProjectId = null;
         service.OnProjectChanged += id => firedProjectId = id;
@@ -2655,8 +2801,8 @@ public class RepositoryServiceTests
         var settingsService = new InMemorySettingsService();
         var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
 
-        var project1 = service.CreateProject("Project1");
-        var project2 = service.CreateProject("Project2");
+        var project1 = await service.CreateProjectAsync("Project1");
+        var project2 = await service.CreateProjectAsync("Project2");
 
         await service.SwitchProjectAsync(project2.Id);
 

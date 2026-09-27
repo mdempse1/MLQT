@@ -11,8 +11,8 @@ namespace MLQT.Services.Tests;
 /// loaded the <i>previously selected</i> project, and the new project appeared to take on that
 /// project's repositories. The chain had three links and each one was silent:</para>
 /// <list type="number">
-/// <item><c>CreateProject</c> does not await its own save, so the project exists in memory before it
-/// exists on disk.</item>
+/// <item><c>CreateProject</c> did not await its own save, so the project existed in memory before it
+/// existed on disk. (<c>CreateProjectAsync</c> does since B447.)</item>
 /// <item><c>LoadRepositorySettingsAsync</c> re-reads the settings and <b>replaces</b> the in-memory
 /// project list with what it finds, so a project not yet written is simply gone.</item>
 /// <item>It then resolved the active project with
@@ -138,7 +138,7 @@ public class ProjectLoadIdentityTests
         await TwoProjectsOneWithRepositories(settings);
 
         await service.LoadRepositorySettingsAsync();
-        var created = service.CreateProject("Brand New");
+        var created = await service.CreateProjectAsync("Brand New");
         await service.SaveRepositorySettingsAsync();
 
         await service.LoadRepositorySettingsAsync(created.Id);
@@ -158,7 +158,7 @@ public class ProjectLoadIdentityTests
         await TwoProjectsOneWithRepositories(settings);
 
         await service.LoadRepositorySettingsAsync();
-        var created = service.CreateProject("Brand New");
+        var created = await service.CreateProjectAsync("Brand New");
         await service.SaveRepositorySettingsAsync();
         await service.LoadRepositorySettingsAsync(created.Id);
 

@@ -26,6 +26,10 @@ public class RepositoryService : IRepositoryService
     private readonly List<string> _loadWarnings = new();
     private string? _activeProjectId;
     private readonly object _lock = new();
+
+    // One save at a time, each taking its contents once it is its turn, so the save that lands last
+    // is always the newest (B447). See SaveRepositorySettingsAsync.
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly Dictionary<string, (List<VcsWorkingCopyFile> Changes, long Ticks)> _workingCopyCache = new();
     private readonly object _workingCopyCacheLock = new();
     private const long WorkingCopyCacheLifetimeMs = 300000; // 5 minutes — event-based invalidation handles real changes
@@ -652,8 +656,7 @@ public class RepositoryService : IRepositoryService
 
         OnRepositoriesChanged?.Invoke();
 
-        // Save settings asynchronously
-        _ = SaveRepositorySettingsAsync();
+        SaveInBackground(nameof(RemoveRepository));
     }
 
     /// <inheritdoc />
@@ -866,7 +869,29 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <remarks>
+    /// <para><b>Saves are serialised, and each takes its contents only once it is its turn (B447).</b>
+    /// A save used to capture the project list and active id when it was called and write them
+    /// whenever the store got round to it, so a save nobody awaited - creating or renaming a project,
+    /// removing a repository - could land after a later one and put an older project list or active
+    /// id back. Creating and renaming now await their save; removing a repository still does not (its
+    /// callers are synchronous), and this is what makes that safe: a later save waits behind the
+    /// earlier one and then reads the state as it is, so whichever write lands last is the newest.</para>
+    /// </remarks>
     public async Task SaveRepositorySettingsAsync()
+    {
+        await _saveGate.WaitAsync();
+        try
+        {
+            await SaveRepositorySettingsCoreAsync();
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
+    private async Task SaveRepositorySettingsCoreAsync()
     {
         var settings = new RepositorySettingsCollection();
 
@@ -1110,7 +1135,7 @@ public class RepositoryService : IRepositoryService
     /// <para><b>Why it touches no in-memory state.</b> <see cref="SaveRepositorySettingsAsync"/>
     /// writes the active project's repository list from the loaded <c>_repositories</c>. Populating
     /// <c>_projects</c> here without loading repositories would leave those two describing different
-    /// projects, and the next save — <see cref="CreateProject"/> starts one of its own — would write
+    /// projects, and the next save — <see cref="CreateProjectAsync"/> makes one of its own — would write
     /// an empty list over a project that has repositories, or one project's repositories into
     /// another. Reading the settings, appending, and writing them back is the whole operation, and it
     /// leaves nothing half-done for a later save to act on.</para>
@@ -1140,20 +1165,20 @@ public class RepositoryService : IRepositoryService
     }
 
     /// <summary>
-    /// Adds a project to the in-memory list and starts persisting it.
+    /// Adds a project to the in-memory list and saves it before returning. If the save fails the
+    /// project is taken out again and the exception propagates, so memory and the settings file
+    /// still agree.
     ///
-    /// <para><b>The save is not awaited</b>, so the project exists in memory before it exists on
-    /// disk. A caller that is about to make something re-read the settings — <c>LoadRepositorySettingsAsync</c>
-    /// replaces the in-memory project list with what it finds there — must
-    /// <see cref="SaveRepositorySettingsAsync"/> first, or the new project can be gone by the time it
-    /// is looked for.</para>
+    /// <para><b>The save is awaited (B447).</b> It used to be started and not awaited, capturing the
+    /// active id at the time; the panel then switched to the new project, and the create's save
+    /// landing after the switch's put the previous project back as the active one.</para>
     ///
     /// <para>This one requires the project list to be loaded already, and it writes the currently
     /// loaded repositories out as part of saving. Use
     /// <see cref="CreateAndSelectProjectAsync"/> where nothing has been loaded yet — at startup, in
     /// particular.</para>
     /// </summary>
-    public ProjectProfile CreateProject(string name)
+    public async Task<ProjectProfile> CreateProjectAsync(string name)
     {
         ProjectProfile project;
         lock (_lock)
@@ -1165,7 +1190,19 @@ public class RepositoryService : IRepositoryService
             project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
             _projects.Add(project);
         }
-        _ = SaveRepositorySettingsAsync();
+
+        try
+        {
+            await SaveRepositorySettingsAsync();
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                _projects.Remove(project);
+            }
+            throw;
+        }
         return project;
     }
 
@@ -1177,12 +1214,18 @@ public class RepositoryService : IRepositoryService
     /// can be made indistinguishable by renaming one of them into the other. The project being
     /// renamed is excluded from the comparison, so confirming a rename that changes nothing, or only
     /// changes case, is allowed.
+    ///
+    /// <para><b>The save is awaited (B447)</b>: started and not awaited, it carried the active id of
+    /// the moment, and landing after a following switch's save it restored the old one. If it fails
+    /// the old name is put back and the exception propagates.</para>
     /// </remarks>
-    public void RenameProject(string projectId, string newName)
+    public async Task RenameProjectAsync(string projectId, string newName)
     {
+        ProjectProfile? project;
+        string oldName;
         lock (_lock)
         {
-            var project = _projects.FirstOrDefault(p => p.Id == projectId);
+            project = _projects.FirstOrDefault(p => p.Id == projectId);
             if (project == null)
                 return;
 
@@ -1190,9 +1233,22 @@ public class RepositoryService : IRepositoryService
             if (refusal is not null)
                 throw new InvalidOperationException(refusal);
 
+            oldName = project.Name;
             project.Name = ProjectNameRules.Normalise(newName);
         }
-        _ = SaveRepositorySettingsAsync();
+
+        try
+        {
+            await SaveRepositorySettingsAsync();
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                project.Name = oldName;
+            }
+            throw;
+        }
     }
 
     /// <remarks>
@@ -1409,8 +1465,27 @@ public class RepositoryService : IRepositoryService
 
         OnRepositoriesChanged?.Invoke();
 
-        // Save settings asynchronously
-        _ = SaveRepositorySettingsAsync();
+        SaveInBackground(nameof(ClearAllRepositories));
+    }
+
+    /// <summary>
+    /// Starts a save the caller does not wait for, and logs it if it fails (B447).
+    /// </summary>
+    /// <remarks>
+    /// For <see cref="RemoveRepository"/> and <see cref="ClearAllRepositories"/> only, whose callers
+    /// are synchronous (a dialog's Cancel, a button's click) and whose effects - monitoring stopped,
+    /// libraries unloaded - cannot be undone if the save fails, so a caller could do nothing with a
+    /// failure but show it. Serialised saves (<see cref="SaveRepositorySettingsAsync"/>) are what stop
+    /// one of these landing after a later save; the log is what stops a failure disappearing into an
+    /// unobserved task.
+    /// </remarks>
+    private void SaveInBackground(string operation)
+    {
+        _ = SaveRepositorySettingsAsync().ContinueWith(
+            t => Error("RepositoryService", $"Saving the project list after {operation} failed", t.Exception!.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     /// <summary>

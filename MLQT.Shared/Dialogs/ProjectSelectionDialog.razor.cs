@@ -54,7 +54,7 @@ public partial class ProjectSelectionDialog
 
         // Add a placeholder project so it appears in the radio list.
         // Use the name as the ID — MainLayout detects this isn't a real project ID
-        // and calls CreateProject with it.
+        // and calls CreateAndSelectProjectAsync with it.
         var newProject = new ProjectProfile { Id = _selectedProject.Trim(), Name = _selectedProject.Trim() };
         _projects.Add(newProject);
         _selectedProject = newProject.Id;

@@ -165,7 +165,21 @@ public partial class SettingsRepositories : IDisposable
         if (string.IsNullOrWhiteSpace(_projectNameInput))
             return;
 
-        var newProject = RepositoryService.CreateProject(_projectNameInput.Trim());
+        // Awaited, so its save has landed before the switch below saves (B447): unawaited, the
+        // create's save could land last and put the previous project back as the active one.
+        ProjectProfile newProject;
+        try
+        {
+            newProject = await RepositoryService.CreateProjectAsync(_projectNameInput.Trim());
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(SettingsRepositories), "Creating a project failed", ex);
+            await InvokeAsync(() => Snackbar.Add($"The project could not be created: {ex.Message}", Severity.Error));
+            RefreshProjects();
+            StateHasChanged();
+            return;
+        }
         RefreshProjects();
         StateHasChanged();
 
@@ -232,7 +246,7 @@ public partial class SettingsRepositories : IDisposable
         _renameInput = project.Name;
     }
 
-    private void ConfirmRename()
+    private async Task ConfirmRename()
     {
         // The confirm button is disabled while this is non-null.
         if (RenameError is not null)
@@ -240,7 +254,16 @@ public partial class SettingsRepositories : IDisposable
 
         if (_renamingProjectId != null && !string.IsNullOrWhiteSpace(_renameInput))
         {
-            RepositoryService.RenameProject(_renamingProjectId, _renameInput.Trim());
+            // Awaited, so no later save can be overtaken by this one (B447).
+            try
+            {
+                await RepositoryService.RenameProjectAsync(_renamingProjectId, _renameInput.Trim());
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Error(nameof(SettingsRepositories), $"Renaming project {_renamingProjectId} failed", ex);
+                await InvokeAsync(() => Snackbar.Add($"The project could not be renamed: {ex.Message}", Severity.Error));
+            }
             RefreshProjects();
         }
         _renamingProjectId = null;

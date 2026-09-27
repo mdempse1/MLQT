@@ -196,6 +196,93 @@ public class SettingsRepositoriesProjectSwitchTests : MlqtComponentTestBase
         _dialogs.FindAll("button").Single(b => b.TextContent.Trim() == "Delete").Click();
     }
 
+    /// <summary>
+    /// B447 - a new project is switched to only once its save has landed, so the create's save
+    /// cannot land after the switch's and put the previous project back as the active one.
+    /// </summary>
+    [Fact]
+    public void CreatingAProject_SwitchesToItOnlyOnceItsSaveHasLanded()
+    {
+        var created = new ProjectProfile { Name = "Fresh" };
+        var saving = new TaskCompletionSource<ProjectProfile>();
+        _service.Setup(s => s.CreateProjectAsync("Fresh")).Returns(saving.Task);
+        _service.Setup(s => s.SwitchProjectAsync(created.Id, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Raises(s => s.OnProjectChanged += null, created.Id);
+        var panel = RenderPanel();
+
+        NameANewProject(panel, "Fresh");
+
+        _service.Verify(s => s.SwitchProjectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        saving.SetResult(created);
+        panel.WaitForAssertion(() =>
+            _service.Verify(s => s.SwitchProjectAsync(created.Id, It.IsAny<CancellationToken>()), Times.Once));
+    }
+
+    [Fact]
+    public void CreatingAProjectThatFailsToSave_SaysSo_AndSwitchesNothing()
+    {
+        _service.Setup(s => s.CreateProjectAsync("Fresh"))
+            .ThrowsAsync(new IOException("the settings file is read-only"));
+        var panel = RenderPanel();
+
+        NameANewProject(panel, "Fresh");
+
+        panel.WaitForAssertion(() => Assert.Single(Snackbar.ShownSnackbars));
+        var message = Snackbar.ShownSnackbars.Single();
+        Assert.Equal(Severity.Error, message.Severity);
+        Assert.Contains("could not be created", message.Message);
+        Assert.Contains("the settings file is read-only", message.Message);
+        _service.Verify(s => s.SwitchProjectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Null(NavState.StartupStep);
+    }
+
+    [Fact]
+    public void RenamingAProject_AwaitsTheService()
+    {
+        _service.Setup(s => s.RenameProjectAsync(_project.Id, "Renamed")).Returns(Task.CompletedTask);
+        var panel = RenderPanel();
+
+        RenameTheProject(panel, "Renamed");
+
+        panel.WaitForAssertion(() => _service.Verify(s => s.RenameProjectAsync(_project.Id, "Renamed"), Times.Once));
+        Assert.Empty(Snackbar.ShownSnackbars);
+    }
+
+    [Fact]
+    public void RenamingAProjectThatFailsToSave_SaysSo()
+    {
+        _service.Setup(s => s.RenameProjectAsync(_project.Id, "Renamed"))
+            .ThrowsAsync(new IOException("the settings file is read-only"));
+        var panel = RenderPanel();
+
+        RenameTheProject(panel, "Renamed");
+
+        panel.WaitForAssertion(() => Assert.Single(Snackbar.ShownSnackbars));
+        var message = Snackbar.ShownSnackbars.Single();
+        Assert.Equal(Severity.Error, message.Severity);
+        Assert.Contains("could not be renamed", message.Message);
+        Assert.Contains("the settings file is read-only", message.Message);
+    }
+
+    /// <summary>Clicks New Project, types the name, and confirms it.</summary>
+    private static void NameANewProject(IRenderedComponent<SettingsRepositories> panel, string name)
+    {
+        panel.FindAll("button").Single(b => b.TextContent.Trim() == "New Project").Click();
+        panel.WaitForAssertion(() => panel.Find("button[aria-label='Confirm new project name']"));
+        panel.Find("input").Input(name);
+        panel.Find("button[aria-label='Confirm new project name']").Click();
+    }
+
+    /// <summary>Clicks Rename on the one project, types the name, and confirms it.</summary>
+    private static void RenameTheProject(IRenderedComponent<SettingsRepositories> panel, string name)
+    {
+        panel.Find("button[aria-label='Rename project']").Click();
+        panel.WaitForAssertion(() => panel.Find("button[aria-label='Confirm rename']"));
+        panel.Find("input").Input(name);
+        panel.Find("button[aria-label='Confirm rename']").Click();
+    }
+
     /// <summary>MainLayout closes its six-step dialog for a switch that was abandoned.</summary>
     [Fact]
     public void MainLayoutClosesItsDialogForAnAbandonedSwitch()

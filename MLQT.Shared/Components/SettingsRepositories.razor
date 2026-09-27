@@ -29,6 +29,7 @@
                         </span>
                         <span @onclick:stopPropagation="true">
                             <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
+                                aria-label="Confirm rename"
                                 OnClick="ConfirmRename" Disabled="@(RenameError is not null)" />
                         </span>
                         <span @onclick:stopPropagation="true">
@@ -60,7 +61,7 @@
                             </MudTooltip>
                         }
                         <MudTooltip Text="Rename project">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => StartRenameProject(project)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" aria-label="Rename project" OnClick="() => StartRenameProject(project)" />
                         </MudTooltip>
                         @if (_projects.Count > 1 && !isActive)
                         {
@@ -149,6 +150,7 @@
                 Immediate="true" Style="max-width: 400px;"
                 Error="@(NewProjectNameError is not null)" ErrorText="@NewProjectNameError" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
+                aria-label="Confirm new project name"
                 OnClick="ConfirmProjectName" Disabled="@(NewProjectNameError is not null)" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
                 OnClick="CancelProjectName" />
