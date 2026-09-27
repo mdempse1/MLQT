@@ -2280,32 +2280,52 @@ document.head.appendChild(style);
            && finding.RuleId == RuleIds.SingleFilePackage;
 
     /// <summary>
-    /// Why a package in <paramref name="library"/> cannot be split where it is, or null when it can
-    /// (B306).
+    /// Why a package in <paramref name="library"/> cannot be split where it is, or null when it can.
     ///
-    /// <para>A library loaded from one <c>.mo</c> file has that file as its root: every path in it
-    /// is resolved against the file, and the files a split writes are a directory beside it that the
-    /// library does not contain. Splitting its top-level package deleted the file the library was
-    /// loaded from and left the graph describing it — the new files resolved to <c>../MyLib/…</c>,
-    /// the old classes were never removed, and every later edit on the page reported it could not
-    /// find the file. A library that is a single file can only hold packages in that file, so the
-    /// refusal is for all of them.</para>
-    ///
-    /// <para><b>Asked of the path, not the source type.</b> A library found in a repository has its
-    /// source type overwritten with Git or SVN whatever shape it has on disk, so
-    /// <see cref="LibrarySourceType.File"/> is only what a library opened on its own says;
-    /// <see cref="LoadedLibrary.IsSingleFile"/> is the one answer.</para>
+    /// <para><b>A library that is a single <c>.mo</c> file can be split</b> (B429). It was refused
+    /// (B306) because the split deleted the file the library was loaded from and left the library
+    /// naming it; since B417 Format All re-registers such a library as the directory it becomes, and
+    /// <see cref="SplitPackageForFinding"/> now does the same through
+    /// <see cref="LibraryExpandedBySplit"/>.</para>
     /// </summary>
-    internal static string? WhyNotSplit(LoadedLibrary library, string packageName)
-    {
-        if (library.SourceType == LibrarySourceType.Zip)
-            return $"{packageName} is in a library read from an archive, which MLQT does not write to.";
-
-        return library.IsSingleFile
-            ? $"{packageName} cannot be split here: the library is loaded from the single file "
-              + $"{Path.GetFileName(library.SourcePath)}, and splitting it would change what the library "
-              + "is loaded from. Split it outside MLQT, then open the library as a directory."
+    internal static string? WhyNotSplit(LoadedLibrary library, string packageName) =>
+        library.SourceType == LibrarySourceType.Zip
+            ? $"{packageName} is in a library read from an archive, which MLQT does not write to."
             : null;
+
+    /// <summary>
+    /// The directory <paramref name="library"/> has become, when splitting <paramref name="package"/>
+    /// expanded a library loaded from one <c>.mo</c> file into <c>MyLib/package.mo</c> and deleted
+    /// that file — or null when the library is where it was (B429).
+    ///
+    /// <para>Left naming the deleted file, the library placed no class from the new files: nothing
+    /// lies within a file, so the reload after the split, and every Refresh or VCS update after it,
+    /// put those classes in no library until the project was reloaded. Re-registered through
+    /// <see cref="IRepositoryService.RelocateLibraryAsync"/>, as Format All does (B417), the state is
+    /// the one a reload gives.</para>
+    ///
+    /// <para>Asked before the library is moved, since <see cref="LoadedLibrary.IsSingleFile"/> is
+    /// what it asks.</para>
+    /// </summary>
+    internal static string? LibraryExpandedBySplit(
+        LoadedLibrary library, ModelNode package, PackageSplitter.SplitResult result)
+    {
+        if (!result.Succeeded || !library.IsSingleFile || !string.IsNullOrEmpty(package.ParentModelName))
+            return null;
+
+        if (!result.RemovedFiles.Any(f => SamePath(f, library.SourcePath)))
+            return null;
+
+        var parent = Path.GetDirectoryName(library.SourcePath);
+        if (string.IsNullOrEmpty(parent))
+            return null;
+
+        var directory = Path.Combine(parent, package.Definition.Name);
+        var packageFile = Path.Combine(directory, "package.mo");
+        return result.WrittenFiles.Any(f => SamePath(f, packageFile)) ? directory : null;
+
+        static bool SamePath(string a, string b) =>
+            string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -2367,6 +2387,13 @@ document.head.appendChild(style);
             {
                 result = PackageSplitter.Split(
                     LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions(), settings);
+
+                // A library that was the file just deleted is the directory now, and is registered
+                // as it before the reload (B429): the reload then resolves against that directory and
+                // places the new files' classes in the library. Against the file, the deleted file
+                // came out as "." and no new class was placed in any library.
+                if (LibraryExpandedBySplit(library, package, result) is { } expandedTo)
+                    await RepositoryService.RelocateLibraryAsync(library.Id, expandedTo);
 
                 // The package's own file is always reloaded, whatever happened to it. Rendering
                 // rewrites each class's stored source as it goes, so after a split that was undone

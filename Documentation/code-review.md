@@ -220,7 +220,7 @@ package that is already a directory, with some classes inline in its `package.mo
 of their own, has only the inline ones moved; where it had no `package.order`, the one written names
 the classes that were already in their own files too, after the ones it moved. It
 asks first, since it creates a directory and deletes a file. Everything it does is an ordinary
-working-copy change, so version control can undo it. A library that is itself a single `.mo` file is the one exception: splitting it would change what the library is loaded from, so the action declines and says so - use **Format All Files** (below), which expands such a library and carries on with it as the directory, or split it outside MLQT and open the library as a directory.
+working-copy change, so version control can undo it. A library in a repository that is itself a single `.mo` file (`MyLib.mo`) is split the same way into `MyLib/`, and MLQT carries on with the library as that directory — the project records the new location, so a Refresh, a VCS update or reopening the project all find it there, just as after **Format All Files**. A library read from an archive is never written to, so the action declines there.
 
 The alternative is **Format All Files** in repository settings, which does the same restructuring to
 the whole library — the right thing when you mean it, and a commit of thousands of files when you

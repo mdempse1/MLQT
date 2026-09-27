@@ -56,7 +56,7 @@ public class CodeReviewSplitPackageTests
         Assert.False(CodeReview.CanSplitPackage(null));
     }
 
-    // ── B306: a library that is one file ──────────────────────────────────────────
+    // ── B306, B429: a library that is one file ────────────────────────────────────
 
     private static LoadedLibrary Library(LibrarySourceType type, string sourcePath) =>
         new() { SourceType = type, SourcePath = sourcePath };
@@ -65,17 +65,76 @@ public class CodeReviewSplitPackageTests
     [InlineData(LibrarySourceType.Git)]
     [InlineData(LibrarySourceType.SVN)]
     [InlineData(LibrarySourceType.File)]
-    public void ALibraryLoadedFromOneFileIsNotSplitInPlace(LibrarySourceType type)
+    public void ALibraryLoadedFromOneFileCanBeSplit(LibrarySourceType type)
     {
-        // Splitting MyLib.mo deleted the file the library was loaded from, and the graph kept
-        // resolving paths against it. Git and SVN are in the list because a library found in a
-        // repository says so whatever its shape - which is the ordinary way to have one.
+        // Refused by B306 while the split left the library naming the file it deleted; since B429
+        // the split re-registers it as the directory, as Format All does. What that does is held by
+        // CodeReviewSplitSingleFileLibraryTests.
         var path = Path.Combine(Path.GetTempPath(), "mlqt-no-such-dir", "MyLib.mo");
 
-        var refusal = CodeReview.WhyNotSplit(Library(type, path), "MyLib");
+        Assert.Null(CodeReview.WhyNotSplit(Library(type, path), "MyLib"));
+    }
 
-        Assert.NotNull(refusal);
-        Assert.Contains("MyLib.mo", refusal);
+    // ── B429: when the split moves the library ────────────────────────────────────
+
+    private static readonly string Parent = Path.Combine(Path.GetTempPath(), "mlqt-no-such-dir");
+    private static readonly string SingleFile = Path.Combine(Parent, "MyLib.mo");
+    private static readonly string Expanded = Path.Combine(Parent, "MyLib");
+
+    private static ModelicaGraph.DataTypes.ModelNode Package(string id, string? parent = null) =>
+        new(id, id.Split('.')[^1], $"package {id.Split('.')[^1]} end {id.Split('.')[^1]};")
+        {
+            ParentModelName = parent,
+        };
+
+    private static MLQT.Services.Helpers.PackageSplitter.SplitResult Expansion(params string[] removed) =>
+        new([Path.Combine(Expanded, "package.mo"), Path.Combine(Expanded, "A.mo")], removed, Error: null);
+
+    [Fact]
+    public void ASplitThatDeletedTheLibrarysFile_MovesTheLibraryToTheNewDirectory()
+    {
+        Assert.Equal(Expanded, CodeReview.LibraryExpandedBySplit(
+            Library(LibrarySourceType.Git, SingleFile), Package("MyLib"), Expansion(SingleFile)));
+    }
+
+    [Fact]
+    public void ALibraryThatIsADirectoryStaysWhereItIs()
+    {
+        // A package.mo split in place deletes nothing, and a directory library is not moved by one.
+        Assert.Null(CodeReview.LibraryExpandedBySplit(
+            Library(LibrarySourceType.Git, Parent), Package("MyLib"), Expansion()));
+    }
+
+    [Fact]
+    public void ASplitThatDidNotGoThroughMovesNothing()
+    {
+        var failed = new MLQT.Services.Helpers.PackageSplitter.SplitResult(
+            [Path.Combine(Expanded, "package.mo")], [SingleFile], "could not delete");
+
+        Assert.Null(CodeReview.LibraryExpandedBySplit(
+            Library(LibrarySourceType.Git, SingleFile), Package("MyLib"), failed));
+    }
+
+    [Fact]
+    public void ASplitThatLeftTheLibrarysFileMovesNothing()
+    {
+        Assert.Null(CodeReview.LibraryExpandedBySplit(
+            Library(LibrarySourceType.Git, SingleFile), Package("MyLib"), Expansion()));
+    }
+
+    [Fact]
+    public void ANestedPackageIsNotTheLibrary()
+    {
+        Assert.Null(CodeReview.LibraryExpandedBySplit(
+            Library(LibrarySourceType.Git, SingleFile), Package("MyLib.Sub", "MyLib"), Expansion(SingleFile)));
+    }
+
+    [Fact]
+    public void NoPackageFileWrittenWhereTheLibraryWouldBe_MovesNothing()
+    {
+        // A root class whose name is not the directory the save wrote: never guess a directory.
+        Assert.Null(CodeReview.LibraryExpandedBySplit(
+            Library(LibrarySourceType.Git, SingleFile), Package("Other"), Expansion(SingleFile)));
     }
 
     [Theory]
