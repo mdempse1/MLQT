@@ -71,6 +71,10 @@ namespace ModelicaParser.Tests;
 /// <c>,</c> but does on a line of its own starts one. Both were wrapped only where the line ran out,
 /// at a <c>+</c> or <c>-</c> mid-term: MSL's <c>PartialFriction</c> had <c>else if startBackward
 /// then sa</c> ending one line and <c>+ tau0_max/unitTorque else if ...</c> starting the next.</para>
+///
+/// <para>B489 - shapes B487 left. A call's first positional argument that does not fit after its
+/// <c>(</c> starts a line as a later one does: Buildings' gFunction ended a 116-character line with
+/// <c>timeGeometric(tSho_min,</c>.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1014,6 +1018,53 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(BranchesStartLinesInAFunction));
     }
 
+    private const string FirstPositionalArgumentsStartLines = """
+        function f
+          input Real p;
+          output Real y;
+
+        algorithm
+          tSho := Buildings.Fluid.Geothermal.Borefields.BaseClasses.HeatTransfer.ThermalResponseFactors.timeGeometric(
+            tSho_min, tSho_max, nTimSho);
+          (RDelta, R) := Buildings.Fluid.Geothermal.Borefields.BaseClasses.Boreholes.BaseClasses.Functions.multipoleThermalResistances(
+            2, 3, xPip, yPip, rBor, rPip, kFil, kSoi, RFluPip);
+          y := Modelica.Math.Matrices.solve(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb);
+          y := Some.Package.Name.fn(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+            b);
+          lambda := Modelica.Media.IdealGases.Common.Functions.thermalConductivityEstimateWithALongerName(
+            specificHeatCapacityCp(state), method=method, data=data);
+          y := Buildings.Fluid.Geothermal.Borefields.BaseClasses.HeatTransfer.ThermalResponseFactors.timeGeometric(t);
+        end f;
+        """;
+
+    [Fact]
+    public void AFirstPositionalArgumentThatDoesNotFitAfterItsParenthesisStartsALine()
+    {
+        // In order: Buildings' gFunction and multipoleThermalResistances - a call's first positional
+        // argument that does not fit after its '(', but does on a line of its own, starts one, a
+        // level in from the line the call opened on, where it was left at the end of a line already
+        // past the limit and the next argument started the line instead ('(2,' then '3, xPip, ...');
+        // one that fits after the '(' stays there, one too long for a line of its own stays after
+        // the '(' too, and so does the only argument of a call; one followed only by named
+        // arguments starts a line as one followed by positional ones does (B489).
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Real p;
+                  output Real y;
+                algorithm
+                  tSho := Buildings.Fluid.Geothermal.Borefields.BaseClasses.HeatTransfer.ThermalResponseFactors.timeGeometric(tSho_min, tSho_max, nTimSho);
+                  (RDelta, R) := Buildings.Fluid.Geothermal.Borefields.BaseClasses.Boreholes.BaseClasses.Functions.multipoleThermalResistances(2, 3, xPip, yPip, rBor, rPip, kFil, kSoi, RFluPip);
+                  y := Modelica.Math.Matrices.solve(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb);
+                  y := Some.Package.Name.fn(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, b);
+                  lambda := Modelica.Media.IdealGases.Common.Functions.thermalConductivityEstimateWithALongerName(specificHeatCapacityCp(state), method=method, data=data);
+                  y := Buildings.Fluid.Geothermal.Borefields.BaseClasses.HeatTransfer.ThermalResponseFactors.timeGeometric(t);
+                end f;
+                """),
+            expectedOutput: Normalise(FirstPositionalArgumentsStartLines));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1051,6 +1102,7 @@ public class ContinuationIndentTests
     [InlineData(BranchAndArrayTermsContinued, 100)]
     [InlineData(BranchesAndArgumentsStartLines, 100)]
     [InlineData(BranchesStartLinesInAFunction, 100)]
+    [InlineData(FirstPositionalArgumentsStartLines, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

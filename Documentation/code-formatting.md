@@ -394,6 +394,19 @@ Buildings, 321 files are written differently from before (141 MSL, 180 Buildings
 breaks and indentation - 114 only in an `assert` whose message now starts a line, 94 only in
 if-expressions; lines over 100 characters in those files go from 9,172 to 8,639.
 
+A call's first positional argument is treated the same way: one that does not fit after the `(`,
+but does on a line of its own, starts one, and the arguments after it follow it there:
+
+```modelica
+  tSho := Buildings.Fluid.Geothermal.Borefields.BaseClasses.HeatTransfer.ThermalResponseFactors.timeGeometric(
+    tSho_min, tSho_max, nTimSho);
+```
+
+Earlier versions left it after the `(`, at the end of a line already past the limit, and started the
+next line with the second argument - `multipoleThermalResistances(2,` then `3, xPip, ...`. Over the
+Modelica Standard Library and Buildings, 50 files are written differently from before (12 MSL, 38
+Buildings), only in line breaks and indentation.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

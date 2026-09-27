@@ -3778,16 +3778,22 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         var runs = CommentRuns(context);
         if (context.expression() != null)
         {
+            var funcArgs = context.function_argument();
             if (_inGraphicsAnnotationLevel > 0)
                 _inGraphicsAnnotationLevel++;
 
-            Visit(context.expression());
+            // A first argument that does not fit after the '(' starts a line of its own, as a later
+            // one that does not fit after its ',' does (B489).
+            if ((funcArgs is { Length: > 0 } || context.named_arguments() != null)
+                && WrapsPositionalArgument(context.expression()))
+                VisitWrappedPositionalArgument(context.expression());
+            else
+                Visit(context.expression());
 
             if (_inGraphicsAnnotationLevel > 0)
                 _inGraphicsAnnotationLevel--;
 
             // Visit additional function arguments
-            var funcArgs = context.function_argument();
             if (funcArgs != null)
             {
                 for (int j = 0; j < funcArgs.Length; j++)
@@ -3879,9 +3885,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// one holding a string written over several lines, and one inside a first argument that could
     /// still be moved to a line of its own (B464) or an array still on the line it opened on (B474).
     /// A graphics annotation's calls - an equation's annotation is written while it is still the
-    /// equation being written - have rules of their own.
+    /// equation being written - have rules of their own. A first positional argument that does not
+    /// fit after the '(' is asked the same (B489): Buildings' gFunction left <c>timeGeometric(tSho_min,</c>
+    /// ending a 116-character line, and multipoleThermalResistances <c>(2,</c> with <c>3, xPip, ...</c>
+    /// starting the next.
     /// </summary>
-    private bool WrapsPositionalArgument(modelicaParser.Function_argumentContext argument)
+    private bool WrapsPositionalArgument(ParserRuleContext argument)
     {
         if (_inGraphicsAnnotationLevel > 0 || _bracketDepth > 0 || _equationContinuationIndent == 0
             || argument.GetText().Contains('\n')
@@ -3905,7 +3914,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// Writes a later positional argument on a line of its own, a level in from the line the call
     /// opened on, as a wrapped array element is (B468, B487).
     /// </summary>
-    private void VisitWrappedPositionalArgument(modelicaParser.Function_argumentContext argument)
+    private void VisitWrappedPositionalArgument(ParserRuleContext argument)
     {
         EmitLine();
         int argumentLine = _code.Count;
