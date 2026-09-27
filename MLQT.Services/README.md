@@ -410,7 +410,7 @@ foreach (var file in result.WrittenFiles)
 
 | Type | Description |
 |------|-------------|
-| `ModelTreeNode` | Tree view node (Id, Name, ClassType, IconSvg, FileStatus) |
+| `ResourceTreeNode` | External Resources tree node (Name, FullPath, IsDirectory, AnnotationType, ReferencingModelIds, warning flags) |
 | `ExternalResourceReference` | Resource reference (ModelId, RawPath, ResolvedPath, ReferenceType) |
 | `ResourceWarning` | Resource warning (missing files, absolute paths) |
 
