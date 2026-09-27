@@ -300,6 +300,12 @@ public class RepositoryService : IRepositoryService
                 // changes. For a file that did not parse this is the defaults being used in its place:
                 // overwriting the user's file with them would lose whatever they meant (B310).
                 repository.SettingsOnDisk = SerializeSettings(repository.StyleSettings);
+
+                // Asked now rather than learned from a write: since B310 the save that follows does
+                // not write a file whose settings are unchanged, so an unwritable one would go
+                // unflagged - and the user unwarned - until the first change they tried to keep (B381).
+                if (!repository.IsReferenceOnly && !CanWriteSettingsFile(settingsPath, repository.Name))
+                    repository.IsSettingsReadOnly = true;
             }
             else
             {
@@ -743,6 +749,27 @@ public class RepositoryService : IRepositoryService
     /// <summary>The settings as they are compared against <see cref="Repository.SettingsOnDisk"/>.</summary>
     private static string SerializeSettings(StyleCheckingSettings? settings)
         => JsonSerializer.Serialize(settings, SettingsJsonOptions);
+
+    /// <summary>
+    /// Whether the existing settings file at <paramref name="settingsPath"/> can be written, found
+    /// by opening it for writing and closing it again - <b>nothing is written</b>, so neither its
+    /// content nor its modification time changes and a committed file is not left modified (B381).
+    /// </summary>
+    private static bool CanWriteSettingsFile(string settingsPath, string repositoryName)
+    {
+        try
+        {
+            using (new FileStream(settingsPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) { }
+            return true;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Warn("RepositoryService",
+                $"Cannot write .mlqt/settings.json for '{repositoryName}': {ex.Message}. " +
+                "Repository will use global settings.");
+            return false;
+        }
+    }
 
     /// <summary>
     /// Writes <paramref name="repo"/>'s <c>.mlqt/settings.json</c> if, and only if, its settings

@@ -501,6 +501,64 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         Assert.True(File.Exists(Path.Combine(added.Repository.LocalPath, ".mlqt", "settings.json")));
     }
 
+    /// <summary>
+    /// B381: since B310 a save does not write a settings file whose settings are unchanged, so the
+    /// failed write that used to mark an unwritable repository never happens on adding one that
+    /// already has its file. Writability is now asked on load, by opening the file for writing.
+    /// </summary>
+    [Fact]
+    public async Task AnExistingSettingsFileThatCannotBeWritten_IsFlaggedOnLoad()
+    {
+        var h = Build();
+        var path = WriteLibrary("Ours");
+        var settingsPath = Path.Combine(path, ".mlqt", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, "{}\n");
+        File.SetAttributes(settingsPath, FileAttributes.ReadOnly);
+        try
+        {
+            // Run as root on Linux, a read-only mode bit stops nobody, and there is nothing to find.
+            try
+            {
+                using (new FileStream(settingsPath, FileMode.Open, FileAccess.Write)) { }
+                Assert.Skip("The file is writable despite being read-only (running as root?).");
+            }
+            catch (UnauthorizedAccessException) { }
+
+            var added = await h.Repositories.AddRepositoryAsync(
+                path, startMonitoring: false, isReferenceOnly: false);
+
+            Assert.True(added.Repository!.IsSettingsReadOnly);
+            Assert.Contains(added.Warnings, w => w.Contains("Ours") && w.Contains("Global settings"));
+        }
+        finally
+        {
+            File.SetAttributes(settingsPath, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public async Task AnExistingWritableSettingsFile_IsNotFlagged_AndTheProbeWritesNothing()
+    {
+        // The control for the test above, and the promise that asking is not itself a write: the
+        // file is committed, so a probe that touched it would be B310 over again.
+        var h = Build();
+        var path = WriteLibrary("Ours");
+        var settingsPath = Path.Combine(path, ".mlqt", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, "{}\n");
+        var written = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(settingsPath, written);
+
+        var added = await h.Repositories.AddRepositoryAsync(
+            path, startMonitoring: false, isReferenceOnly: false);
+
+        Assert.False(added.Repository!.IsSettingsReadOnly);
+        Assert.Empty(added.Warnings);
+        Assert.Equal("{}\n", File.ReadAllText(settingsPath));
+        Assert.Equal(written, File.GetLastWriteTimeUtc(settingsPath));
+    }
+
     [Fact]
     public void AFolderThatCannotBeWrittenTo_IsOfferedAsReferenceOnly()
     {
