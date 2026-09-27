@@ -597,9 +597,9 @@ public sealed class FormattingPipelineTests : IDisposable
     {
         // The last line (B441): a class that was in the library before the save and is in no file
         // the save wrote or kept is an error, and nothing of the library is deleted. A directory whose
-        // package.mo holds a model rather than a package is the one layout known to reach it, and is
-        // now refused before anything is written (B443) - so nothing is written beside it either:
-        // a Lib.mo there defined Lib a second time.
+        // package.mo holds a model rather than a package was the first layout known to reach it, and
+        // is now refused before anything is written (B443) - so nothing is written beside it either:
+        // a Lib.mo there defined Lib a second time. The next test reaches the branch itself.
         var dir = Path.Combine(_root, "Lib");
         Directory.CreateDirectory(dir);
         var packageMo = Path.Combine(dir, "package.mo");
@@ -620,6 +620,32 @@ public sealed class FormattingPipelineTests : IDisposable
         var (failed, error) = Assert.Single(failures);
         Assert.Equal("Lib", failed);
         Assert.Contains("defines a model, not a package", error.Message);
+    }
+
+    [Theory]
+    [InlineData("replaceable package Q\nend Q;\n")]   // Q stays inline in package.mo
+    [InlineData("model Q\nend Q;\n")]                 // Q is split out into a Q.mo of its own
+    public async Task AClassInItsOwnFile_WithinAClassInlineInPackageMo_KeepsTheLibrary(string inlineQ)
+    {
+        // The pipeline's last line itself (B449). R.mo sits in Lib/ but says `within Lib.Q`, and Q is
+        // inline in Lib/package.mo. It loads as Lib.Q.R, but Q is written as text, a package.mo or a
+        // Q.mo, that never held R, so the save places R nowhere. R.mo is the only copy of it, and the
+        // sweep took it for an orphan: every file of the library is kept and the user is told.
+        var lib = PackageDirectory(inlineQ);
+        var own = Path.Combine(lib, "R.mo");
+        const string ownText = "within Lib.Q;\nmodel R\nReal x;\nend R;\n";
+        File.WriteAllText(own, ownText);
+        var (service, pipeline) = await RepositoryWith(lib);
+        Assert.Contains("Lib.Q.R", Assert.Single(service.Libraries).ModelIds);
+        var failures = new List<(string Name, Exception Error)>();
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo", (name, ex) => failures.Add((name, ex)));
+
+        Assert.Equal(ownText, File.ReadAllText(own));
+        Assert.True(File.Exists(Path.Combine(lib, "package.mo")));
+        var (failed, error) = Assert.Single(failures);
+        Assert.Equal("Lib", failed);
+        Assert.Contains("could not be placed in any file, including Lib.Q.R", error.Message);
     }
 
     [Fact]
