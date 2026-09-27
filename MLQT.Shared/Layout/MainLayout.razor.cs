@@ -1893,7 +1893,9 @@ public partial class MainLayout : IDisposable
 
             Info("MainLayout", $"Processing {changedFilePaths.Count} changed Modelica files from {pendingChanges.Count} pending changes");
 
-            // Determine root path from the first affected repository
+            // One root for every change, although they may span several working copies: it only
+            // anchors the relative paths, and the reload resolves each back to its full path, so a
+            // file in another working copy keeps its own (B384).
             var firstRepo = RepositoryService.GetRepository(pendingChanges[0].RepositoryId);
             var rootPath = firstRepo?.VcsRootPath ?? Path.GetDirectoryName(pendingChanges[0].FilePath) ?? "";
 

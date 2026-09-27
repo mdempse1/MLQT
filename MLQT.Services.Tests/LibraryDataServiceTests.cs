@@ -1151,6 +1151,40 @@ end TestPkg;
         }
     }
 
+    [Fact]
+    public async Task UpdateChangedFilesAsync_AFileInAnotherWorkingCopy_KeepsItsOwnPath()
+    {
+        // Refresh hands every pending change to the first repository's root (B384); a change in a
+        // second working copy must still be stored under its own path and in its own library.
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-two-copies-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "A", "Lib");
+        var other = Path.Combine(root, "B", "Other");
+        Directory.CreateDirectory(lib);
+        Directory.CreateDirectory(other);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+            var package = Path.Combine(other, "package.mo");
+            await File.WriteAllTextAsync(package, "package Other\nmodel M\nend M;\nend Other;\n");
+            var service = new LibraryDataService();
+            await service.AddLibraryFromDirectoryAsync(lib);
+            var otherLibrary = await service.AddLibraryFromDirectoryAsync(other);
+
+            await File.WriteAllTextAsync(package, "package Other\nmodel M\nend M;\nmodel N\nend N;\nend Other;\n");
+            await service.UpdateChangedFilesAsync([package], Path.Combine(root, "A"));
+
+            var n = service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("Other.N");
+            Assert.NotNull(n);
+            var file = service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(n.ContainingFileId!);
+            Assert.Equal(Path.GetFullPath(package), file!.FilePath);
+            Assert.Contains("Other.N", otherLibrary.ModelIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     // ============================================================================
     // RefreshDependenciesAsync - a reload takes the file's dependency edges (B290)
     // ============================================================================

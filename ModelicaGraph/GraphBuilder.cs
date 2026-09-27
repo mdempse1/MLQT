@@ -1550,7 +1550,9 @@ public static class GraphBuilder
     /// </summary>
     /// <param name="graph">The existing graph to update in-place.</param>
     /// <param name="rootPath">Root directory of the new checkout (where changed files are read from).</param>
-    /// <param name="changedRelativeFiles">Set of relative file paths that changed (from DetectChangedFiles).</param>
+    /// <param name="changedRelativeFiles">Set of relative file paths that changed (from DetectChangedFiles).
+    /// A path may climb out of <paramref name="rootPath"/> (<c>../Other/x.mo</c>); every path is
+    /// resolved to a full one, so a file outside the root is still stored under its own path (B384).</param>
     /// <returns>List of model IDs that were affected (removed or added), and the classes in other
     /// files below a class whose imports changed (see <see cref="EnclosingImportChanges"/>).</returns>
     public static List<string> UpdateGraphForChangedFiles(
@@ -1572,12 +1574,12 @@ public static class GraphBuilder
         // Before anything is removed: what the files' classes import on behalf of the classes below
         // them that live elsewhere (B347).
         var enclosingImports = EnclosingImportChanges.Capture(graph, changedMoFiles.Select(relativePath =>
-            GenerateFileId(Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)))));
+            GenerateFileId(ResolveChangedFile(rootPath, relativePath))));
 
         // Step 1: Remove models from changed/deleted .mo files
         foreach (var relativePath in changedMoFiles)
         {
-            var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var fullPath = ResolveChangedFile(rootPath, relativePath);
             var fileId = GenerateFileId(fullPath);
 
             // Collect models in this file before removing
@@ -1589,7 +1591,7 @@ public static class GraphBuilder
 
         // Step 2: Re-parse changed/added .mo files that still exist on disk
         var filesToReparse = changedMoFiles
-            .Select(f => Path.Combine(rootPath, f.Replace('/', Path.DirectorySeparatorChar)))
+            .Select(f => ResolveChangedFile(rootPath, f))
             .Where(File.Exists)
             .ToArray();
 
@@ -1604,7 +1606,7 @@ public static class GraphBuilder
         // Step 3: Update changed package.order files
         foreach (var relativePath in changedOrderFiles)
         {
-            var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var fullPath = ResolveChangedFile(rootPath, relativePath);
             if (!File.Exists(fullPath)) continue;
 
             // Find the package model by looking at the directory's package.mo
@@ -1629,6 +1631,15 @@ public static class GraphBuilder
 
         return affectedModelIds.Distinct().ToList();
     }
+
+    /// <summary>
+    /// A changed file's full path. Resolved, not merely combined: Refresh hands every pending change
+    /// to one root, and a file in another working copy arrives relative to it as <c>../Other/x.mo</c>
+    /// - combined, that became the <see cref="FileNode.FilePath"/>, which no path comparison matches
+    /// (B384).
+    /// </summary>
+    private static string ResolveChangedFile(string rootPath, string relativePath) =>
+        Path.GetFullPath(Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
     /// <summary>
     /// Generates a unique file ID from a file path.

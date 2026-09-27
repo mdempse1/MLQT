@@ -1420,6 +1420,38 @@ end Bar;";
         }
     }
 
+    [Fact]
+    public void UpdateGraphForChangedFiles_AFileOutsideTheRoot_IsStoredUnderItsOwnFullPath()
+    {
+        // Refresh passes one root for changes in several working copies, so a file in another
+        // arrives as "../B/Lib/package.mo" (B384). Its FileNode must carry the path as it is on
+        // disk, not "A\..\B\...", which no path comparison would ever match.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdOut_" + Guid.NewGuid().ToString("N"));
+        var rootA = Path.Combine(tempDir, "A");
+        var libB = Path.Combine(tempDir, "B", "Lib");
+        Directory.CreateDirectory(rootA);
+        Directory.CreateDirectory(libB);
+        try
+        {
+            var moPath = Path.Combine(libB, "package.mo");
+            File.WriteAllText(moPath, "package Lib\n  model M\n  end M;\nend Lib;");
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, moPath, File.ReadAllText(moPath));
+
+            File.WriteAllText(moPath, "package Lib\n  model M\n  end M;\n  model N\n  end N;\nend Lib;");
+            var relative = Path.GetRelativePath(rootA, moPath).Replace('\\', '/');
+            GraphBuilder.UpdateGraphForChangedFiles(graph, rootA, new HashSet<string> { relative });
+
+            var file = Assert.Single(graph.FileNodes);
+            Assert.Equal(Path.GetFullPath(moPath), file.FilePath);
+            Assert.Contains(graph.ModelNodes, m => m.Id == "Lib.N");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
     // ============================================================================
     // ResolveResourcePath — relative and absolute non-modelica:// paths
     // ============================================================================
