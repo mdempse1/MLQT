@@ -175,6 +175,8 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 
 **Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
 
+**A dialog the application opens and closes** — a progress dialog, shown while work runs — is a `ProgressDialog` (`Components/ProgressDialog.razor`), never `<MudDialog @bind-Visible="_running">`. MudBlazor opens an inline dialog asynchronously, and a flag cleared before the dialog has finished opening is written back to `true` when it does: work faster than a browser round trip left "Formatting all files" on screen for good (the B414 journey on CI). A dialog the user opens and closes with its own buttons cannot be withdrawn before it has opened, and stays a plain bound `MudDialog`.
+
 **Graph Visualization**: Interactive network graphs use the `CytoscapeGraph` component (`Components/CytoscapeGraph.razor`) backed by Cytoscape.js. It accepts generic `DiagramNode`/`DiagramEdge` parameters. See `skill-cytoscape.md` for full details.
 
 ## Key Files

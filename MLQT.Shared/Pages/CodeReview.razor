@@ -393,7 +393,7 @@
    to be started and the library opened before the first class is checked, which is several seconds
    in which both counts are zero - so this says what is happening instead of showing an empty bar,
    and the bar is indeterminate until there is something to count (B259). *@
-<MudDialog @bind-Visible="_checkProgressDialog" Options="_dialogOptions">
+<ProgressDialog Visible="_checkProgressDialog" Options="_dialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">@CheckProgressTitle(_checkingToolName, _modelsChecked, _modelsToCheck)</MudText>
     </TitleContent>
@@ -413,7 +413,7 @@
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CloseCheckProgressDialog"
             Class="px-10">Stop</MudButton>
     </DialogActions>
-</MudDialog>
+</ProgressDialog>
 
 @* What the external tool said, whatever it said (B170). Before this, a check that passed produced
    nothing at all - no window, no dialog, no finding - so the only evidence an OpenModelica check had

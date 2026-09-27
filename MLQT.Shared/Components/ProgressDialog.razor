@@ -1,0 +1,4 @@
+@* An inline dialog the application opens and closes, not the user: see the code-behind for why this
+   is not a plain <MudDialog @bind-Visible>. *@
+<MudDialog @ref="_dialog" Visible="Visible" VisibleChanged="OnDialogVisibleChanged" Options="Options"
+           TitleContent="TitleContent" DialogContent="DialogContent" DialogActions="DialogActions" />
