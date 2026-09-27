@@ -85,7 +85,7 @@ public static class DiagramSvgRenderer
         ArgumentNullException.ThrowIfNull(connections);
 
         var declared = Normalize(diagramLayer?.CoordinateExtent ?? DefaultExtent);
-        var view = Union(declared, components, connections);
+        var view = Union(declared, diagramLayer, components, connections);
 
         var viewWidth = view[2] - view[0];
         var viewHeight = view[3] - view[1];
@@ -399,10 +399,15 @@ public static class DiagramSvgRenderer
     /// <summary>The view: the declared system grown to hold everything actually drawn.</summary>
     private static double[] Union(
         double[] declared,
+        IconData? diagramLayer,
         IReadOnlyList<DiagramComponent> components,
         IReadOnlyList<DiagramConnection> connections)
     {
         var view = (double[])declared.Clone();
+
+        // The class's own diagram graphics are drawn too, and are not obliged to stay on the canvas.
+        foreach (var (x, y) in (diagramLayer?.Graphics ?? []).SelectMany(Outline))
+            Grow(view, x, y);
 
         foreach (var component in components)
             GrowBy(view, component, (x, y) => (x, y));
@@ -456,8 +461,52 @@ public static class DiagramSvgRenderer
             Grow(view, vx, vy);
         }
 
+        // And the icon's graphics, which are not confined to its coordinate system (B393): MSL puts
+        // nearly every component's %name label above it, at y = 110..150 of a -100..100 icon, so a
+        // component at the top of the canvas lost its name.
+        foreach (var (x, y) in component.Icon.Graphics.SelectMany(Outline))
+        {
+            var (vx, vy) = Inner(x, y);
+            Grow(view, vx, vy);
+        }
+
         foreach (var child in component.Children ?? [])
             GrowBy(view, child, Inner);
+    }
+
+    /// <summary>
+    /// The points that bound what a primitive draws, in the coordinates it is written in: its
+    /// extent's corners or its points, placed and turned by its own <c>origin</c> and
+    /// <c>rotation</c> as the drawing is. Nothing for one that is not drawn. A stroke's width and a
+    /// line's arrowheads are not measured - they are a millimetre or so, which the margin covers.
+    /// </summary>
+    private static IEnumerable<(double X, double Y)> Outline(GraphicsPrimitive primitive)
+    {
+        if (!primitive.Visible)
+            return [];
+
+        IEnumerable<(double X, double Y)> own = primitive switch
+        {
+            TextPrimitive { TextString.Length: 0 } => [],
+            RectanglePrimitive r => Corners(r.Extent),
+            EllipsePrimitive e => Corners(e.Extent),
+            TextPrimitive t => Corners(t.Extent),
+            BitmapPrimitive b => Corners(b.Extent),
+            LinePrimitive l => l.Points.Where(p => p.Length >= 2).Select(p => (p[0], p[1])),
+            PolygonPrimitive p => p.Points.Where(q => q.Length >= 2).Select(q => (q[0], q[1])),
+            _ => [],
+        };
+
+        var (ox, oy) = primitive.Origin is { Length: >= 2 } o ? (o[0], o[1]) : (0, 0);
+        return own.Select(p =>
+        {
+            var (x, y) = Rotate(p.X, p.Y, primitive.Rotation);
+            return (ox + x, oy + y);
+        });
+
+        static IEnumerable<(double X, double Y)> Corners(double[] e) => e.Length < 4
+            ? []
+            : [(e[0], e[1]), (e[2], e[1]), (e[0], e[3]), (e[2], e[3])];
     }
 
     private static void Grow(double[] view, double x, double y)

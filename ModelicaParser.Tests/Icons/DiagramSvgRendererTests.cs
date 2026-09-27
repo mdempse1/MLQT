@@ -171,6 +171,81 @@ public class DiagramSvgRendererTests
         Assert.Matches("viewBox=\"-20[0-9.]* ", svg);
     }
 
+    /// <summary>
+    /// A component at the top of the canvas keeps its name (B393). MSL writes nearly every icon's
+    /// <c>%name</c> label above the icon's coordinate system, at y = 110..150 of -100..100, and the
+    /// view was measured from the system and the connectors only - so the label was cut off.
+    /// </summary>
+    /// <summary>The highest y the view shows, in diagram coordinates: the viewBox is written Y-flipped.</summary>
+    private static double ViewTop(string svg)
+    {
+        var box = System.Text.RegularExpressions.Regex.Match(svg, "viewBox=\"([^ ]+) ([^ ]+) ").Groups[2].Value;
+        return -double.Parse(box, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    [Fact]
+    public void ALabelAboveAComponentAtTheTopOfTheCanvasIsInTheView()
+    {
+        // The box reaches y = 100 exactly; its label, at 0.1 scale, is at y = 101..105.
+        var top = new DiagramComponent("top", [-10, 80, 10, 100], 0, Box());
+
+        var svg = DiagramSvgRenderer.Render(null, [top], []);
+
+        Assert.Contains(CanvasOutline, svg);
+        Assert.True(ViewTop(svg) >= 105, svg);
+    }
+
+    [Fact]
+    public void AnIconGraphicIsMeasuredThroughItsOwnOriginAndRotation()
+    {
+        // A line from (0,0) to (100,0), turned a quarter and moved up by 50, reaches y = 150 of the
+        // icon, so 5 above a component whose box is at the top of the canvas. Without the rotation, or
+        // without the origin, it stays inside.
+        var icon = new IconData
+        {
+            Graphics =
+            [
+                new RectanglePrimitive { Extent = [-100, -100, 100, 100] },
+                new LinePrimitive { Points = [[0, 0], [100, 0]], Origin = [0, 50], Rotation = 90 },
+            ],
+        };
+        var top = new DiagramComponent("top", [-10, 80, 10, 100], 0, icon);
+
+        var svg = DiagramSvgRenderer.Render(null, [top], []);
+        Assert.True(ViewTop(svg) >= 105, svg);
+    }
+
+    [Fact]
+    public void AGraphicThatIsNotDrawn_IsNotMeasured()
+    {
+        var icon = new IconData
+        {
+            Graphics =
+            [
+                new RectanglePrimitive { Extent = [-100, -100, 100, 100] },
+                new RectanglePrimitive { Extent = [-100, 100, 100, 900], Visible = false },
+                new TextPrimitive { Extent = [-100, 100, 100, 900], TextString = "" },
+            ],
+        };
+
+        Assert.Contains("viewBox=\"-100 -100 200 200\"",
+            DiagramSvgRenderer.Render(null, [new DiagramComponent("c", [-10, 80, 10, 100], 0, icon)], []));
+    }
+
+    [Fact]
+    public void TheClassesOwnDiagramGraphicsOffTheCanvasAreInTheView()
+    {
+        var layer = new IconData
+        {
+            Graphics = [new TextPrimitive { Extent = [-100, 100, 100, 130], TextString = "title" }],
+        };
+
+        var svg = DiagramSvgRenderer.Render(layer, [], []);
+
+        Assert.Contains(CanvasOutline, svg);
+        Assert.True(ViewTop(svg) >= 130, svg);
+    }
+
     [Fact]
     public void AComponentTurnedOntoTheCanvasEdgeIsNotPastIt()
     {
