@@ -286,6 +286,16 @@ you wrote on one line stay on one line, and a table written entirely on one line
   parameter Real k[:, :]=[1, 2; 3, 4];
 ```
 
+The first row is no different: written on the line after the `[`, it stays there, a level in like
+the rows after it; written on the `[` line, it stays on that one:
+
+```modelica
+  Modelica.Blocks.Sources.TimeTable setPoint(table=[
+    0, 20;
+    8*3600, 21;
+    24*3600, 20]) "Set point schedule";
+```
+
 Only where the rows break is kept, not how far they are indented, and a line break *inside* a row
 (between two of its elements) is not kept — the elements of a row are written on one line. A comment
 after a row's `;` stays where it was, and the next row starts a line of its own after it.
@@ -295,7 +305,9 @@ single line that could run to thousands of characters. Over the Modelica Standar
 Buildings (8,367 files), 232 files are now written differently from before, and in every one of them
 the only difference is line breaks and indentation inside a matrix. A file an earlier version has
 already saved has lost its rows — there is nothing left in it to say where they were — so it keeps
-its one-line tables until you break them by hand; from then on they stay broken.
+its one-line tables until you break them by hand; from then on they stay broken. Keeping a first
+row below its `[` came later and changed 86 more files the same way, every one only in line breaks
+and indentation.
 
 ## Line endings and how files end
 

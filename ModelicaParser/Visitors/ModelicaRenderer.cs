@@ -473,6 +473,17 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private void IndentMatrixLine(int baseSpaces)
         => _currentLine.Insert(0, new string(' ', baseSpaces));
 
+    /// <summary>
+    /// Ends the line and starts the next a level in from the line the matrix began on, for a row
+    /// that starts a line in the source (B462, B463).
+    /// </summary>
+    private void StartMatrixRowLine(int baseSpaces)
+    {
+        EmitLine();
+        AddIndentToCurrentLine();
+        IndentMatrixLine(baseSpaces);
+    }
+
     private void AddIndentToCurrentLine()
     {
         var indent = new string(' ', IndentSpaces);
@@ -3253,7 +3264,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             // Comments after the '[', after a row's ';' and before the ']' (B431): run i
             // is what comes before row i, and the last run what comes after the last row. A data
             // table keeps the rows its author wrote (B462): a row that starts a line in the source
-            // starts one here, a level in, and rows the author ran together stay together - a
+            // starts one here, a level in - the first row too, when it is below the '[' (B463) -
+            // and rows the author ran together stay together - a
             // comment ends its line the same way. Read from the tokens, so a table written one
             // row a line keeps its rows on every save, and one written on one line stays there.
             var runs = CommentRuns(context);
@@ -3274,15 +3286,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                         Write(";");
                         if (runs == null || !runs[i].Any)
                         {
-                            if (RowStartsLine(expressionLists[i - 1], expressionLists[i]))
-                            {
-                                EmitLine();
-                                AddIndentToCurrentLine();
-                                IndentMatrixLine(baseSpaces);
-                            }
+                            if (RowStartsLine(expressionLists[i - 1].Stop, expressionLists[i]))
+                                StartMatrixRowLine(baseSpaces);
                             else
                                 Space();
                         }
+                    }
+                    else if ((runs == null || !runs[0].Any) && RowStartsLine(context.Start, expressionLists[0]))
+                    {
+                        // A first row written on the line after the '[' stays there (B463).
+                        StartMatrixRowLine(baseSpaces);
                     }
                     if (runs != null && runs[i].Any)
                     {
@@ -4000,11 +4013,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     }
 
     /// <summary>
-    /// Whether a matrix row starts a line of its own in the source (B462): on a later line than the
-    /// row before it ends on, whichever side of the ';' the break was written.
+    /// Whether a matrix row starts a line of its own in the source (B462): on a later line than
+    /// <paramref name="previous"/> ends on - the last token of the row before it, whichever side of
+    /// the ';' the break was written, or the '[' for the first row (B463).
     /// </summary>
-    private static bool RowStartsLine(ParserRuleContext previousRow, ParserRuleContext row)
-        => row.Start.Line > LastLineOf(previousRow.Stop);
+    private static bool RowStartsLine(IToken previous, ParserRuleContext row)
+        => row.Start.Line > LastLineOf(previous);
 
     /// <summary>The line a token ends on — a block comment or a string can span several.</summary>
     private static int LastLineOf(IToken token)

@@ -207,8 +207,117 @@ public class MatrixRowTests
             """));
     }
 
+    [Fact]
+    public void AFirstRowWrittenBelowTheBracketStaysThere()
+    {
+        // B463: the '[' is checked as each row's ';' is, so a first row on the next line keeps it.
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              parameter Real t[:, :]=[
+                0, 0;
+                1, 10;
+                2, 10];
+            end M;
+            """));
+    }
+
+    [Fact]
+    public void AFirstRowBelowTheBracketIsIndentedByTheRenderer()
+    {
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  parameter Real t[:, :] = [
+                            0,0; 1,10;
+                  2,10];
+                end M;
+                """),
+            expectedOutput: Normalise("""
+                model M
+                  parameter Real t[:, :]=[
+                    0, 0; 1, 10;
+                    2, 10];
+                end M;
+                """));
+    }
+
+    [Fact]
+    public void AOneRowTableBelowTheBracketStaysBelowIt()
+    {
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              parameter Real t[:, :]=[
+                0, 1, 0];
+            end M;
+            """));
+    }
+
+    [Fact]
+    public void AFirstRowBelowTheBracketInAWrappedArgumentListLinesUpWithTheOtherRows()
+    {
+        // The Buildings shape (CDL/Integers/Validation/Equal.mo): the '[' line is a continuation of
+        // an argument list wrapped for length, and every row, the first included, is a level in.
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
+                table=[
+                  0, 0;
+                  0.3, 1;
+                  1, 0]) "Time table with smoothness method of constant segments";
+            end M;
+            """));
+    }
+
+    [Fact]
+    public void AFirstRowBelowTheBracketInAnEquationKeepsItsLine()
+    {
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              Real y[2];
+              Real x[2];
+
+            equation
+              y = [
+                1, 2;
+                3, 4]*x;
+            end M;
+            """));
+    }
+
+    [Fact]
+    public void ACommentOnTheBracketsLineStillEndsItBeforeTheFirstRow()
+    {
+        // B431's comment after the '[' was already followed by the first row on a line of its own;
+        // the row is not moved a second line down.
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              parameter Real t[:, :]=[ // start
+                0, 0;
+                1, 10 // end
+              ];
+            end M;
+            """));
+    }
+
+    [Fact]
+    public void ACommentOnItsOwnLineBeforeTheFirstRowIsKept()
+    {
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              parameter Real t[:, :]=[
+                // time, value
+                0, 0;
+                1, 10];
+            end M;
+            """));
+    }
+
     public static TheoryData<string> Sources() => new()
     {
+        "model M\n  parameter Real t[:, :] = [\n0, 0;\n    1, 10];\nend M;",
+        "model M\n  parameter Real t[:, :] = [\n  0, 0; 1, 10];\nend M;",
+        "model M\n  T tab(k=1, table=[\n  0,0; // a\n      1,0]) \"d\";\nend M;",
+        "model M\n  parameter Real t[:, :] = [\n    [1, 2;\n    3, 4], [\n 5; 6]];\nend M;",
         "model M\n  parameter Real t[:, :] = [0, 0; 1, 10; 2, 10];\nend M;",
         "model M\n  parameter Real t[:, :] = [0, 0;\n    1, 10;\n    2, 10];\nend M;",
         "model M\n  parameter Real t[:, :] = [0, 0; 1, 10;\n 2, 10];\nend M;",
