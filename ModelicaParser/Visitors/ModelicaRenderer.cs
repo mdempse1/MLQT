@@ -3806,13 +3806,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             bool needsWrapForLength = !_inDocumentationAnnotation && estimatedLength > (_maxLineLength - 3);
 
             // Determine if we need to wrap
-            bool shouldWrap = (_inGraphicsAnnotationLevel > 0 && !_inSingleLineGraphicsElement) ||
-                             (_parentUsingMultiLine && !_inSingleLineGraphicsElement) ||
-                             needsWrapForLength;
+            bool anArgumentALine = (_inGraphicsAnnotationLevel > 0 || _parentUsingMultiLine) && !_inSingleLineGraphicsElement;
+            bool shouldWrap = anArgumentALine || needsWrapForLength;
 
             if (shouldWrap)
             {
-                bool needsExtraIndent = needsWrapForLength && !_parentUsingMultiLine;
+                // A list written an argument a line puts every argument at one column, so one that
+                // is also too long for its line is not given a wrapped argument's indent on top of
+                // that (B469).
+                bool needsExtraIndent = needsWrapForLength && !_parentUsingMultiLine && !anArgumentALine;
                 EmitLine();
                 if (needsExtraIndent)
                 {

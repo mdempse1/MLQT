@@ -337,6 +337,11 @@ siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:
 Over the Modelica Standard Library and Buildings, 145 files are written differently from before,
 only in indentation and only to the left.
 
+The same holds in a list written an argument a line whatever its length, such as a graphics
+element's: an argument that is also too long for its line - a long `textString=` - is at the column
+of its siblings. Earlier versions wrote it two spaces further right; 4 files of the Modelica
+Standard Library change, only in indentation and only to the left.
+
 **An array of calls that has already wrapped starts each call that would not fit on a line of its
 own**, a level in from the line the array opens on - or, inside a list written an argument a line,
 at the column the call before it ended at. Earlier versions kept each call on the last line of the

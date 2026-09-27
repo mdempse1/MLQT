@@ -21,6 +21,11 @@ namespace ModelicaParser.Tests;
 /// was written on the last line of the element before it, so B465's floor put each one's wrapped
 /// arguments a level deeper than the last one's, and those lines ran to 170 characters: Buildings'
 /// <c>DryCoil</c> had <c>sta={Stage(...), Stage(...), ...}</c> with <c>spe=</c> at 4, 6, 8 and 10.</para>
+///
+/// <para>B469 - an argument too long for its line, in a list written an argument a line anyway, is
+/// at its siblings' column. It also took a wrapped argument's indent: MSL's
+/// <c>ModelicaTest.Rotational</c> had a graphics <c>Text</c>'s <c>textString=</c> two spaces right
+/// of <c>extent=</c> and <c>textColor=</c>.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -403,6 +408,45 @@ public class ContinuationIndentTests
             maxLineLength: 60);
     }
 
+    private const string GraphicsElementWithALongArgument = """
+        model M
+
+          annotation (
+            Diagram(graphics={
+              Text(
+                extent={{-80, 100}, {80, 60}},
+                textColor={0, 0, 255},
+                textString="Since the initialization was changed some elements here are redundant (e.g. inertia4, inertia5)."
+              ),
+              Text(
+                extent={{10, 20}, {90, -30}},
+                textColor={0, 0, 255},
+                textString="These two parts are identical
+        concerning structure, parameters
+        and initialization."
+              )
+            })
+          );
+        end M;
+        """;
+
+    [Fact]
+    public void ALongArgumentInAListWrittenAnArgumentALineIsAtItsSiblingsColumn()
+    {
+        // MSL's ModelicaTest.Rotational: a graphics element is written an argument a line anyway,
+        // and a textString too long for the line also took the wrap-for-length indent, two spaces
+        // right of extent= and textColor= (B469).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  annotation (Diagram(graphics={Text(extent={{-80, 100}, {80, 60}}, textColor={0, 0, 255}, textString="Since the initialization was changed some elements here are redundant (e.g. inertia4, inertia5)."), Text(extent={{10, 20}, {90, -30}}, textColor={0, 0, 255}, textString="These two parts are identical
+                concerning structure, parameters
+                and initialization.")}));
+                end M;
+                """),
+            expectedOutput: Normalise(GraphicsElementWithALongArgument));
+    }
+
     [Fact]
     public void AnArrayOfCallsStillOnTheLineItOpenedOnIsLeftThere()
     {
@@ -446,6 +490,7 @@ public class ContinuationIndentTests
     [InlineData(ArrayOfCallsAnArgumentALine, 60)]
     [InlineData(ArrayElementsWrappedOrNot, 60)]
     [InlineData(AnnotationArraysOfCalls, 60)]
+    [InlineData(GraphicsElementWithALongArgument, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
