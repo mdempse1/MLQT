@@ -278,11 +278,13 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
             switchSw.Stop();
 
-            // 3. Run the update. --quiet suppresses per-file output so stdout doesn't fill
-            //    with one line per file on a 30000-file working copy.
+            // 3. Run the update. Not quiet: the output is how SvnCli tells an update that is
+            //    still working from one that has stalled (B297), so an update of a large working
+            //    copy that printed nothing for the idle limit was stopped as a stall (B383). One
+            //    line per file is drained as it arrives, so it cannot fill a pipe.
             updateSw.Start();
             var rev = SvnCli.NormalizeRevision(revision);
-            var update = SvnCli.RunOnWorkingCopy(checkoutPath, "update", "-r", rev, "--quiet", checkoutPath);
+            var update = SvnCli.RunOnWorkingCopy(checkoutPath, "update", "-r", rev, checkoutPath);
             updateSw.Stop();
 
             if (!update.Success)

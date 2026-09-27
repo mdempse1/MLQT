@@ -84,4 +84,38 @@ public class SvnCommandRunnerTests
         Assert.Equal(300_000, result.StdOut.Length);
         Assert.Equal(200_000, result.StdErr.Length);
     }
+
+    /// <summary>
+    /// No svn command MLQT runs is made quiet (B383).
+    /// </summary>
+    /// <remarks>
+    /// The limit above is on silence, and it can only tell a command still working from a stalled
+    /// one because svn reports each file as it goes. <c>svn update --quiet</c> of a large working
+    /// copy prints nothing until it is done, so an update that took longer than the limit was stopped
+    /// as a stall - and, since B330, cleaned up after - while it was working. Read from the source
+    /// rather than asserted on one call, because the next command made quiet "to keep the output
+    /// down" would have the same defect and no test of its own.
+    /// </remarks>
+    [Fact]
+    public void NoSvnCommandIsMadeQuiet()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "MLQT.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+
+        var sources = Directory.GetFiles(Path.Combine(dir.FullName, "RevisionControl"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                     && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .ToList();
+        Assert.Contains(sources, f => Path.GetFileName(f) == "SvnRevisionControlSystem.cs");
+
+        var quiet = sources
+            .SelectMany(f => File.ReadLines(f).Select((line, i) => (File: Path.GetFileName(f), Line: i + 1, Text: line)))
+            .Where(l => l.Text.Contains("\"--quiet\"") || l.Text.Contains("\"-q\""))
+            .Select(l => $"{l.File}:{l.Line}: {l.Text.Trim()}")
+            .ToList();
+
+        Assert.True(quiet.Count == 0, "an svn command is made quiet, so the idle limit cannot see it working:\n" + string.Join("\n", quiet));
+    }
 }
