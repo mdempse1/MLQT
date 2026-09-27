@@ -74,7 +74,10 @@ namespace ModelicaParser.Tests;
 ///
 /// <para>B489 - shapes B487 left. A call's first positional argument that does not fit after its
 /// <c>(</c> starts a line as a later one does: Buildings' gFunction ended a 116-character line with
-/// <c>timeGeometric(tSho_min,</c>.</para>
+/// <c>timeGeometric(tSho_min,</c>. A long logical expression wraps before an <c>or</c> or
+/// <c>and</c> whose operand does not fit, as an arithmetic one does before a <c>+</c>: Buildings'
+/// VerifyDifferenceThreePeriods had its if-expression's condition whole on one line and broke inside
+/// <c>abs(u1 - u2)</c> instead.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1065,6 +1068,97 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(FirstPositionalArgumentsStartLines));
     }
 
+    private const string LogicalOperatorsStartLines = """
+        model M
+          Real y;
+
+        equation
+          diff = if (time >= t0) and (time < t1) or (time >= t2) and (time < t3)
+                or (time >= t4) and (time < t5) then abs(u1 - u2)
+              else 0;
+          startForward = pre(mode) == Stuck
+            and (sa > tau0_max/unitTorque or pre(startForward) and sa > tau0/unitTorque)
+            or pre(mode) == Backward and w_relfric > w_small or initial() and (w_relfric > 0);
+          newActive = activeSteps > 0 and not Modelica.Math.BooleanVectors.anyTrue(suspend.reset)
+            and not outerState.subgraphStatePort.suspend
+            or Modelica.Math.BooleanVectors.anyTrue(resume.set) or outerState.subgraphStatePort.resume;
+          assert(IN_con.geometry == TYP.PlainFin or IN_con.geometry == TYP.LouverFin
+            or IN_con.geometry == TYP.SlitFin or IN_con.geometry == TYP.WavyFin,
+            "Unknown choice of geometry is selected");
+          fstatus[2] = if IN_con.target == TYP.UndevOne or IN_con.target == TYP.UndevBoth then if Pr > prandtlMax or Pr < prandtlMin then 1 else 0
+              else 0;
+          ok = aaaaaaaaaaaaaaaaaaaaaaa or bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
+          if (p < triple.ptriple) or (p > data.PLIMIT1) or (h < hlowerofp1(p)) or ((p < 10.0e6) and (h > hupperofp5(p))) then
+            y = 1;
+          end if;
+          connect(valIso.port_bChiWat, inlPumChiWatPri.port_a)
+            annotation (Line(
+              points={{-60, 80}, {-40, 80}},
+              color={0, 0, 0},
+              visible=have_chiWat and typArrPumPri == Buildings.Templates.Components.Types.PumpArrangement.Headered
+            ));
+        end M;
+        """;
+
+    private const string LogicalOperatorsInAFunction = """
+        function f
+          input Boolean b=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccc;
+          output Rec r;
+
+        algorithm
+          r := Some.Package.Record(
+            isOn=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccccccccccc,
+            y=1);
+          startForward := pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2) or pre(startForward) and sa > f0/unitForce and s < (smax - L/2))
+            or pre(mode) == Backward and v_relfric > v_small;
+        end f;
+        """;
+
+    [Fact]
+    public void ALongLogicalExpressionWrapsBeforeItsOrAndAnd()
+    {
+        // In order: Buildings' VerifyDifferenceThreePeriods - an if-expression's condition that does
+        // not fit wraps before the 'or' whose term does not fit, where it was never wrapped and the
+        // line broke inside 'abs(u1 - u2)'; MSL's PartialFriction - a Boolean right-hand side wraps
+        // before 'and' and 'or' the same way; StateGraph - the 'or' after a term that has wrapped
+        // starts a line, so what it joins is not read as part of the 'and' before it; Dissipation - an
+        // 'or' whose term fits after it stays; an if-expression inside another's 'then' does not wrap
+        // its condition (B487); a term too long for a line of its own stays where it is; an
+        // if-equation's condition does not wrap, since its continuation would start at the column of
+        // the equations it guards; nor does an annotation's. In a function: a declaration's binding is
+        // not wrapped; nothing inside a first argument that may still be moved to a line of its own
+        // wraps (B464); nor does anything inside parentheses, as a '+' does not (B489).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  diff = if (time >= t0) and (time < t1) or (time >= t2) and (time < t3) or (time >= t4) and (time < t5) then abs(u1 - u2) else 0;
+                  startForward = pre(mode) == Stuck and (sa > tau0_max/unitTorque or pre(startForward) and sa > tau0/unitTorque) or pre(mode) == Backward and w_relfric > w_small or initial() and (w_relfric > 0);
+                  newActive = activeSteps > 0 and not Modelica.Math.BooleanVectors.anyTrue(suspend.reset) and not outerState.subgraphStatePort.suspend or Modelica.Math.BooleanVectors.anyTrue(resume.set) or outerState.subgraphStatePort.resume;
+                  assert(IN_con.geometry == TYP.PlainFin or IN_con.geometry == TYP.LouverFin or IN_con.geometry == TYP.SlitFin or IN_con.geometry == TYP.WavyFin, "Unknown choice of geometry is selected");
+                  fstatus[2] = if IN_con.target == TYP.UndevOne or IN_con.target == TYP.UndevBoth then if Pr > prandtlMax or Pr < prandtlMin then 1 else 0 else 0;
+                  ok = aaaaaaaaaaaaaaaaaaaaaaa or bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
+                  if (p < triple.ptriple) or (p > data.PLIMIT1) or (h < hlowerofp1(p)) or ((p < 10.0e6) and (h > hupperofp5(p))) then
+                    y = 1;
+                  end if;
+                  connect(valIso.port_bChiWat, inlPumChiWatPri.port_a) annotation (Line(points={{-60, 80}, {-40, 80}}, color={0, 0, 0}, visible=have_chiWat and typArrPumPri == Buildings.Templates.Components.Types.PumpArrangement.Headered));
+                end M;
+                """),
+            expectedOutput: Normalise(LogicalOperatorsStartLines));
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Boolean b = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccc;
+                  output Rec r;
+                algorithm
+                  r := Some.Package.Record(isOn=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccccccccccc, y=1);
+                  startForward := pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2) or pre(startForward) and sa > f0/unitForce and s < (smax - L/2)) or pre(mode) == Backward and v_relfric > v_small;
+                end f;
+                """),
+            expectedOutput: Normalise(LogicalOperatorsInAFunction));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1103,6 +1197,8 @@ public class ContinuationIndentTests
     [InlineData(BranchesAndArgumentsStartLines, 100)]
     [InlineData(BranchesStartLinesInAFunction, 100)]
     [InlineData(FirstPositionalArgumentsStartLines, 100)]
+    [InlineData(LogicalOperatorsStartLines, 100)]
+    [InlineData(LogicalOperatorsInAFunction, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

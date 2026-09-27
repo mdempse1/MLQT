@@ -407,6 +407,29 @@ next line with the second argument - `multipoleThermalResistances(2,` then `3, x
 Modelica Standard Library and Buildings, 50 files are written differently from before (12 MSL, 38
 Buildings), only in line breaks and indentation.
 
+**A long logical expression wraps before an `or` or `and`**, as an arithmetic one does before a `+`
+or `-`: where what the operator joins does not fit after it, but does on a line of its own, the
+operator starts a continuation line. That covers an if-expression's condition as well as a Boolean
+right-hand side, and the `or` after a term that has wrapped starts a line too, so that what it joins
+is not read as part of the `and` before it:
+
+```modelica
+  diff = if (time >= t0) and (time < t1) or (time >= t2) and (time < t3)
+        or (time >= t4) and (time < t5) then abs(u1 - u2)
+      else 0;
+  newActive = activeSteps > 0 and not Modelica.Math.BooleanVectors.anyTrue(suspend.reset)
+    and not outerState.subgraphStatePort.suspend
+    or Modelica.Math.BooleanVectors.anyTrue(resume.set) or outerState.subgraphStatePort.resume;
+```
+
+As with a `+`, nothing inside parentheses wraps, so a long parenthesised condition stays on its line.
+Nor does the condition of an `if`, `when` or `while` equation or statement, whose continuation would
+start at the column of what it guards, nor one inside another if-expression's condition or `then`,
+nor an annotation's. Earlier versions never wrapped a logical expression: the condition above was
+left whole on one line and the line broke inside `abs(u1 - u2)`. Over the Modelica Standard Library
+and Buildings, 31 files are written differently from before (15 MSL, 16 Buildings), only in line
+breaks and indentation - most of them an `assert` condition.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

@@ -76,6 +76,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private bool _continuesBrokenChain;
     private bool _inBrokenChain;
     private bool _inIfExpression;
+    // Whether the innermost if-expression being written starts each branch on a line of its own
+    // (B489).
+    private bool _innermostIfBreaks;
     private int _equationContinuationIndent = 0;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
@@ -3169,6 +3172,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _inBrokenChain = breakBranches || enclosingBroken;
             bool enclosingIf = _inIfExpression;
             _inIfExpression = true;
+            bool enclosingBreaks = _innermostIfBreaks;
+            _innermostIfBreaks = breakBranches;
             bool enclosingNested = _inBranchOrArray;
             _inBranchOrArray = true;
             Write(Keyword("if"));
@@ -3215,6 +3220,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _inBranchOrArray = enclosingNested;
             _inBrokenChain = enclosingBroken;
             _inIfExpression = enclosingIf;
+            _innermostIfBreaks = enclosingBreaks;
         }
 
         return null;
@@ -3248,13 +3254,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         var logicalTerms = context.logical_term();
         if (logicalTerms != null)
         {
+            int termLine = _code.Count;
             for (int i = 0; i < logicalTerms.Length; i++)
             {
+                // The 'or' after a term that has wrapped starts a line, so that what it joins is not
+                // read as part of the 'and' before it (B489).
                 if (i > 0)
                 {
-                    Space();
-                    Write(Keyword("or"));
-                    Space();
+                    WriteLogicalOperator("or", logicalTerms[i], always: _code.Count != termLine);
+                    termLine = _code.Count;
                 }
                 Visit(logicalTerms[i]);
             }
@@ -3270,15 +3278,62 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             for (int i = 0; i < logicalFactors.Length; i++)
             {
                 if (i > 0)
-                {
-                    Space();
-                    Write(Keyword("and"));
-                    Space();
-                }
+                    WriteLogicalOperator("and", logicalFactors[i], always: false);
                 Visit(logicalFactors[i]);
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Writes an 'or' or 'and', starting a continuation line with it when what it joins does not fit
+    /// after it, as a '+' or '-' does (B489). A long condition or Boolean right-hand side was never
+    /// wrapped: Buildings' VerifyDifferenceThreePeriods had <c>diff = if (time &gt;= t0) and ... or
+    /// (time &gt;= t4) and (time &lt; t5) then abs(u1</c> ending a line and <c>- u2)</c> starting the
+    /// next. Only where what it joins then fits on the line it starts: one that would still run past
+    /// the limit stays where it is, as a positional argument does (B487). Not inside parentheses,
+    /// where a '+' does not wrap either, nor inside a first argument that may still be moved to a
+    /// line of its own (B464, B487), nor in an if-expression that does not start its branches on
+    /// lines of their own - one inside another's condition or 'then' (B487) - nor in an annotation,
+    /// nor in the condition of an if, when or while, whose continuation would start at the column of
+    /// the statements it guards. With <paramref name="always"/>, it starts a line wherever it may,
+    /// whether or not what it joins fits.
+    /// </summary>
+    private void WriteLogicalOperator(string op, IParseTree operand, bool always)
+    {
+        int length = op.Length + 1 + EstimatedLength(operand);
+        if (_bracketDepth == 0 && _equationContinuationIndent > 0 && _firstArgumentLine != _code.Count
+            && !_inAnnotation && (!_inIfExpression || _innermostIfBreaks) && !InControlCondition(operand)
+            && (always || GetCurrentLinePlainTextLength() + 1 + length > _maxLineLength - 3
+                && length <= _maxLineLength - 3))
+            StartContinuationLine(branchLine: false);
+        else
+            Space();
+        Write(Keyword(op));
+        Space();
+    }
+
+    /// <summary>
+    /// Whether an expression is part of the condition of an if, when or while - of the equation or
+    /// statement itself, not of an if-expression inside one - or of a for loop's range.
+    /// </summary>
+    private static bool InControlCondition(IParseTree node)
+    {
+        for (var parent = node.Parent; parent != null; parent = parent.Parent)
+        {
+            switch (parent)
+            {
+                case modelicaParser.If_equationContext or modelicaParser.Elseif_equationContext
+                    or modelicaParser.If_statementContext or modelicaParser.Elseif_statementContext
+                    or modelicaParser.When_equationContext or modelicaParser.Elsewhen_equationContext
+                    or modelicaParser.When_statementContext or modelicaParser.Elsewhen_statementContext
+                    or modelicaParser.While_statementContext or modelicaParser.For_indexContext:
+                    return true;
+                case modelicaParser.EquationContext or modelicaParser.StatementContext:
+                    return false;
+            }
+        }
+        return false;
     }
 
     public override object? VisitLogical_factor([NotNull] modelicaParser.Logical_factorContext context)
