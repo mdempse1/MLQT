@@ -1938,6 +1938,73 @@ public class GitOperationsTests : IDisposable
         Assert.False(r.Index.Conflicts.Any());
     }
 
+    /// <summary>
+    /// B433: in a merge where one side deleted a file the other edited, Keep Mine keeps the current
+    /// branch's side and Accept Incoming the merged branch's - a deletion included. Both used to
+    /// check out HEAD/MERGE_HEAD for the path, which fails when that side has no such file.
+    /// </summary>
+    [Theory]
+    [InlineData(true, ConflictResolutionChoice.KeepMine, false)]
+    [InlineData(true, ConflictResolutionChoice.AcceptIncoming, true)]
+    [InlineData(false, ConflictResolutionChoice.KeepMine, true)]
+    [InlineData(false, ConflictResolutionChoice.AcceptIncoming, false)]
+    public void ResolveConflict_InAMerge_WhereOneSideDeletedTheFile_TakesTheChosenSide(
+        bool currentBranchDeletes, ConflictResolutionChoice choice, bool fileKept)
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;", ["g.mo"] = "model G end G;" });
+        string expectedContent;
+        using (repo)
+        {
+            var main = repo.Head.FriendlyName;
+            var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
+            Commands.Checkout(repo, repo.CreateBranch("incoming"));
+            if (currentBranchDeletes)
+                AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"incoming\" end A;" }, "incoming edit");
+            else
+            {
+                File.Delete(Path.Combine(repoPath, "f.mo"));
+                Commands.Stage(repo, "f.mo");
+                repo.Commit("incoming deletes f", sig, sig);
+            }
+
+            Commands.Checkout(repo, repo.Branches[main]);
+            if (currentBranchDeletes)
+            {
+                File.Delete(Path.Combine(repoPath, "f.mo"));
+                Commands.Stage(repo, "f.mo");
+                repo.Commit("main deletes f", sig, sig);
+            }
+            else
+                AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"main\" end A;" }, "main edit");
+
+            expectedContent = currentBranchDeletes ? "model A \"incoming\" end A;" : "model A \"main\" end A;";
+        }
+        var merge = _git.MergeBranch(repoPath, "incoming");
+        Assert.True(merge.HasConflicts, merge.ErrorMessage);
+        var file = Path.Combine(repoPath, "f.mo");
+        using (var before = new Repository(repoPath))
+        {
+            var conflict = before.Index.Conflicts["f.mo"];
+            Assert.NotNull(conflict);
+            Assert.Equal(currentBranchDeletes, conflict.Ours == null);
+            Assert.Equal(!currentBranchDeletes, conflict.Theirs == null);
+        }
+        Assert.True(File.Exists(file), "the merge leaves the edited side on disk");
+
+        var result = _git.ResolveConflict(repoPath, file, choice);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(fileKept, File.Exists(file));
+        using var r = new Repository(repoPath);
+        Assert.False(r.Index.Conflicts.Any());
+        Assert.Equal(fileKept, r.Index["f.mo"] != null);
+        if (fileKept)
+        {
+            Assert.Equal(expectedContent, File.ReadAllText(file).Trim());
+            Assert.Equal(expectedContent, r.Lookup<Blob>(r.Index["f.mo"].Id).GetContentText().Trim());
+        }
+    }
+
     #endregion
 
     #region GetConflictVersions Tests
