@@ -192,6 +192,36 @@ public sealed class TestHostFixture : IAsyncLifetime
         await WaitForIdleAsync();
     }
 
+    /// <summary>
+    /// Unloads every repository and forgets every saved project, so the next page opened starts as
+    /// the application does on a first run.
+    /// </summary>
+    /// <remarks>
+    /// <para>For the journeys that add a repository, or save projects for startup to load. Both
+    /// outlive the journey in a shared host, and either is enough to change what every later page
+    /// does when it opens: a page whose startup finds saved repositories loads them, and one that
+    /// finds more than one project <b>asks the user to choose</b> - a modal nothing in another
+    /// journey will ever answer.</para>
+    ///
+    /// <para>Called at the start of a journey and again at its end, for the reason
+    /// <see cref="ResetLibrariesAsync"/> gives for the first and so that a journey that runs
+    /// before one of these, and does not know to call this, is not handed what it left.</para>
+    /// </remarks>
+    public async Task ResetRepositoriesAsync()
+    {
+        var repositories = Services.GetRequiredService<IRepositoryService>();
+        repositories.ClearAllRepositories();
+
+        // Clearing saves in the background; this save queues behind it on the same gate, so the
+        // settings are removed after both and not raced by either.
+        await repositories.SaveRepositorySettingsAsync();
+        await Services.GetRequiredService<ISettingsService>().RemoveAsync("Repositories");
+
+        // And memory back to one empty project, as a first run leaves it.
+        await repositories.LoadRepositorySettingsAsync();
+        await ResetLibrariesAsync();
+    }
+
     /// <summary>Blocks until MLQT's analysis pipeline has gone quiet. See PipelineQuiescence.</summary>
     public async Task WaitForIdleAsync()
     {

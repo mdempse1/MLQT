@@ -543,6 +543,72 @@ public sealed class LibraryFixture : IDisposable
         File.AppendAllText(Path.Combine(LibraryPath, relativePath),
                            "\n// Edited outside MLQT.\n");
 
+    /// <summary>The branch <see cref="StopARebaseOnAConflict"/> rebases.</summary>
+    public const string RebasingBranch = "feature/rebase";
+
+    /// <summary>
+    /// Leaves the working copy part-way through a rebase, stopped on a conflict in
+    /// <c>Documented.mo</c> - the state a rebase is left in when its dialog is closed at the
+    /// conflicts, or when it was started outside MLQT (B382).
+    /// </summary>
+    /// <remarks>
+    /// <para>The fixture's uncommitted edit is committed first, since git will not start a rebase
+    /// over one. Then <see cref="RebasingBranch"/> and the branch it came from each change
+    /// <c>Documented.mo</c>'s description differently, and the rebase is run the way MLQT runs one,
+    /// through <see cref="RevisionControl.GitRevisionControlSystem.Rebase"/>, which drives git
+    /// itself - so the state on disk is git's own, with its <c>rebase-merge</c> directory, and not
+    /// something LibGit2Sharp approximates.</para>
+    /// </remarks>
+    /// <returns>The branch's tip before the rebase, and the file left in conflict.</returns>
+    public (string BranchTip, string ConflictedFile) StopARebaseOnAConflict()
+    {
+        if (Vcs != LibraryFixtureVcs.Git)
+            throw new InvalidOperationException("a rebase needs the fixture's Git working copy");
+
+        string main, tip;
+        using (var repo = new Repository(RepositoryPath))
+        {
+            // The rebase commits through git.exe, which needs an identity of its own.
+            repo.Config.Set("user.name", "MLQT journeys");
+            repo.Config.Set("user.email", "journeys@mlqt.invalid");
+            var who = new Signature("MLQT journeys", "journeys@mlqt.invalid", DateTimeOffset.Now);
+
+            Commands.Stage(repo, "*");
+            repo.Commit("The fixture's edit to Modified", who, who);
+            main = repo.Head.FriendlyName;
+
+            Commands.Checkout(repo, repo.CreateBranch(RebasingBranch));
+            WriteDocumented("Described on the feature branch");
+            Commands.Stage(repo, "*");
+            tip = repo.Commit("Describe Documented on the feature branch", who, who).Sha;
+
+            Commands.Checkout(repo, repo.Branches[main]);
+            WriteDocumented("Described on the main branch");
+            Commands.Stage(repo, "*");
+            repo.Commit("Describe Documented on the main branch", who, who);
+
+            Commands.Checkout(repo, repo.Branches[RebasingBranch]);
+        }
+
+        var result = new RevisionControl.GitRevisionControlSystem().Rebase(RepositoryPath, main);
+        if (!result.HasConflicts)
+            throw new InvalidOperationException("the fixture's rebase did not stop on a conflict: " + result.ErrorMessage);
+
+        return (tip, Path.Combine(LibraryPath, "Documented.mo"));
+    }
+
+    private void WriteDocumented(string description) => Write("Documented.mo", $$"""
+        within Lib;
+        model Documented "{{description}}"
+          Real x "The state";
+          Real dx "Its rate of change";
+        equation
+          der(x) = -x;
+          dx = der(x);
+          annotation(Documentation(info="<html><p>Nothing to report here.</p></html>"));
+        end Documented;
+        """);
+
     public void Dispose()
     {
         Delete(RepositoryPath);
