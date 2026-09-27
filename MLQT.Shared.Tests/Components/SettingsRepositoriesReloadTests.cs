@@ -61,6 +61,10 @@ public class SettingsRepositoriesReloadTests : MlqtComponentTestBase
 
         panel.Find($"button[aria-label='{ReloadLabel}']").Click();
 
-        service.Verify(s => s.SwitchProjectAsync(project.Id, It.IsAny<CancellationToken>()), Times.Once);
+        // The reload goes through SwitchToProjectAsync (B435), whose awaits can let the click return
+        // before the service is asked - on a loaded CI runner it did, and a verify made straight
+        // after the click saw no call.
+        panel.WaitForAssertion(() =>
+            service.Verify(s => s.SwitchProjectAsync(project.Id, It.IsAny<CancellationToken>()), Times.Once));
     }
 }

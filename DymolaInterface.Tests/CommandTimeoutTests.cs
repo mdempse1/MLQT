@@ -139,7 +139,11 @@ public class CommandTimeoutTests
         elapsed.Stop();
 
         Assert.True(ok, $"gave up after {elapsed.Elapsed}");
-        Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(3), $"answered too early, after {elapsed.Elapsed}");
+        // The fake's delay runs on the system timer and the stopwatch on the high-resolution clock,
+        // so on Windows a 3 s delay can measure a hair short (2.99990 s on a CI runner). The point is
+        // that the answer really was waited for, well past any short client-wide cap.
+        Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(3) - TimeSpan.FromMilliseconds(50),
+            $"answered too early, after {elapsed.Elapsed}");
     }
 
     [Fact]
@@ -404,7 +408,10 @@ public class CommandTimeoutTests
         elapsed.Stop();
 
         Assert.True(dymola.IsOfflineMode());
-        Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(3), $"gave up after only {elapsed.Elapsed}");
+        // A hair of tolerance for the system timer against the stopwatch, as in
+        // Command_LongerThanAShortClientWideCapWouldAllow_Completes.
+        Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(3) - TimeSpan.FromMilliseconds(50),
+            $"gave up after only {elapsed.Elapsed}");
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"the probe took {elapsed.Elapsed}");
     }
 
