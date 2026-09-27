@@ -442,6 +442,20 @@ that it is not read as part of the last branch:
 Earlier versions wrote it after the `else` branch, on its line. Over the Modelica Standard Library
 and Buildings, 3 files are written differently from before, only in line breaks and indentation.
 
+**Whether a named argument in an equation or statement fits is judged as it will be written**,
+spaces included, as a positional argument's is, so one that does not fit starts a line rather than
+being wrapped inside:
+
+```modelica
+  z := Buildings.Utilities.Math.Functions.cubicHermiteLinearExtrapolation(x=u, x1=xd[i],
+    x2=xd[i + 1], y1=yd[i], y2=yd[i + 1], y1d=d[i], y2d=d[i + 1]);
+```
+
+Earlier versions judged it from its text without spaces, which is shorter, and wrote `x2=xd[i` at
+the end of the line and `+ 1], y1=...` at the start of the next. A declaration's modifications are
+judged as before. Over the Modelica Standard Library and Buildings, 8 files are written differently
+from before (2 MSL, 6 Buildings), only in line breaks and indentation.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

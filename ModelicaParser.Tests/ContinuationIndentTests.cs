@@ -79,7 +79,9 @@ namespace ModelicaParser.Tests;
 /// VerifyDifferenceThreePeriods had its if-expression's condition whole on one line and broke inside
 /// <c>abs(u1 - u2)</c> instead. An argument after one whose if-expression started its branches on
 /// lines of their own starts a line: MSL's Fluid.Machines wrote <c>homotopy</c>'s second argument
-/// after the first's last branch, on its line.</para>
+/// after the first's last branch, on its line. Whether a named argument in a statement fits after
+/// its <c>,</c> is judged by its length as written, as a positional argument's is: MSL's
+/// ReferenceMoistAir left <c>X=cat(1, X,</c> ending a line it did not fit.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -147,8 +149,8 @@ public class ContinuationIndentTests
           state := if size(X, 1) == nX then ThermodynamicState(p=p,
             T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X), X=X)
               else ThermodynamicState(p=p,
-                T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X), X=cat(1, X,
-                  {1 - sum(X)}));
+                T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X),
+                X=cat(1, X, {1 - sum(X)}));
         end f;
         """;
 
@@ -1172,9 +1174,10 @@ public class ContinuationIndentTests
             if checkValveHomotopy == Types.CheckValveHomotopyType.Open then N/N_nominal*flowCharacteristic(V_flow_single_init)
                 else N/N_nominal*flowCharacteristic(0) - s*unitHead);
           state := ThermodynamicState(d=density_ph(p, h, region=region),
-            T=temperature_ph(p, h, region=region), phase=if region == 0 then 0
-              else if region == 4 then 2
-              else 1,
+            phase=if region == 0 then 0
+                else if region == 4 then 2
+                else if regionnnnnnnnnnnnnnnnnnnn == 5 then 3
+                else 1,
             h=h, p=p);
           y := smooth(1, if xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > 0 then aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
               else bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,
@@ -1199,12 +1202,51 @@ public class ContinuationIndentTests
                   output State state;
                 algorithm
                   head := homotopy(if s > 0 then (N/N_nominal)^2*flowCharacteristic(V_flow_single*N_nominal/N) else (N/N_nominal)^2*flowCharacteristic(0) - s*unitHead, if checkValveHomotopy == Types.CheckValveHomotopyType.Open then N/N_nominal*flowCharacteristic(V_flow_single_init) else N/N_nominal*flowCharacteristic(0) - s*unitHead);
-                  state := ThermodynamicState(d=density_ph(p, h, region=region), T=temperature_ph(p, h, region=region), phase=if region == 0 then 0 else if region == 4 then 2 else 1, h=h, p=p);
+                  state := ThermodynamicState(d=density_ph(p, h, region=region), phase=if region == 0 then 0 else if region == 4 then 2 else if regionnnnnnnnnnnnnnnnnnnn == 5 then 3 else 1, h=h, p=p);
                   y := smooth(1, if xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > 0 then aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa else bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, x=1);
                   z := if flag then g(1, 2) else h(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, c);
                 end f;
                 """),
             expectedOutput: Normalise(ArgumentsAfterBranchesStartLines));
+    }
+
+    private const string NamedArgumentsEstimatedAsWritten = """
+        function f
+          input Real p;
+          input Real xxxxxxxxxxxx=Buildings.Utilities.Math.Functions.cubicHermite(x=u, x1=xd[i], x2=xd[i + 1],
+            y1=yd[i]);
+          output State state;
+
+        algorithm
+          state := ThermodynamicState(p=p,
+            T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X),
+            X=cat(1, X, {1 - sum(X)}));
+          z := Buildings.Utilities.Math.Functions.cubicHermiteLinearExtrapolation(x=u, x1=xd[i],
+            x2=xd[i + 1], y1=yd[i], y2=yd[i + 1], y1d=d[i], y2d=d[i + 1]);
+        end f;
+        """;
+
+    [Fact]
+    public void ANamedArgumentInAStatementIsEstimatedAsWritten()
+    {
+        // In order: MSL's ReferenceMoistAir and Buildings' cubicHermiteLinearExtrapolation - whether a
+        // named argument in a statement fits after its ',' is judged by its length as written, with
+        // its spaces, as a positional argument's is (B487), where it was judged from its text alone
+        // and left 'X=cat(1, X,' and 'x2=xd[i' ending lines they did not fit, their argument wrapped
+        // inside. A declaration's modifications are judged as they were, so 'x2=xd[i + 1],' stays
+        // (B489).
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Real p;
+                  input Real xxxxxxxxxxxx=Buildings.Utilities.Math.Functions.cubicHermite(x=u, x1=xd[i], x2=xd[i + 1], y1=yd[i]);
+                  output State state;
+                algorithm
+                  state := ThermodynamicState(p=p, T=Modelica.Media.Air.ReferenceMoistAir.Utilities.Inverses.T_phX(p, h, X), X=cat(1, X, {1 - sum(X)}));
+                  z := Buildings.Utilities.Math.Functions.cubicHermiteLinearExtrapolation(x=u, x1=xd[i], x2=xd[i + 1], y1=yd[i], y2=yd[i + 1], y1d=d[i], y2d=d[i + 1]);
+                end f;
+                """),
+            expectedOutput: Normalise(NamedArgumentsEstimatedAsWritten));
     }
 
     [Fact]
@@ -1248,6 +1290,7 @@ public class ContinuationIndentTests
     [InlineData(LogicalOperatorsStartLines, 100)]
     [InlineData(LogicalOperatorsInAFunction, 100)]
     [InlineData(ArgumentsAfterBranchesStartLines, 100)]
+    [InlineData(NamedArgumentsEstimatedAsWritten, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

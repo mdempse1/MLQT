@@ -4199,8 +4199,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             }
 
             // Check if line is too long or will be too long with next argument
-            var nextArgText = namedArgs[i].GetText() ?? "";
-            var estimatedLength = GetCurrentLinePlainTextLength() + 1 + nextArgText.Length; // +1 for space
+            // In an equation or a statement, estimated as written, with its spaces, as a positional
+            // argument is there (B487, B489): from its text alone, Media's ReferenceMoistAir kept
+            // 'X=cat(1, X, {1 - sum(X)})' on a line it did not fit, and it wrapped inside the 'cat'.
+            // Elsewhere - a declaration's modifications, a graphics annotation's calls - it is
+            // estimated as before: there it put an Icon Line's 'color=' on a line of its own.
+            int nextLength = _equationContinuationIndent > 0
+                ? EstimatedLength(namedArgs[i])
+                : namedArgs[i].GetText().Length;
+            var estimatedLength = GetCurrentLinePlainTextLength() + 1 + nextLength; // +1 for space
             bool needsWrapForLength = !_inDocumentationAnnotation && estimatedLength > (_maxLineLength - 3)
                 || afterBranches;
 
