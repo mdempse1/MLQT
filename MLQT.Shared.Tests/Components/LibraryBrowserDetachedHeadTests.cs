@@ -108,24 +108,24 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
         browser.Find($"button[aria-label='{label}']");
 
     [Fact]
-    public void OnADetachedHead_CommitIsOff_EvenWithChanges_AndCreatingABranchIsOffered()
+    public void OnADetachedHead_CommitIsOff_EvenWithChanges_AndCreatingABranchIsHighlighted()
     {
         var browser = RenderBrowser(Repo(branch: null, detachedLabel: "v2.0.0"), withChanges: true);
 
         // Revert is gated on the changes alone, so its enabling says the changes have been read.
         browser.WaitForAssertion(() => Assert.False(Button(browser, "Revert changes").HasAttribute("disabled")));
         Assert.True(Button(browser, "Commit changes").HasAttribute("disabled"));
-        Assert.NotNull(Button(browser, "Create a branch here"));
+        Assert.Contains("mud-button-filled", Button(browser, "Create new branch").ClassName);
     }
 
     [Fact]
-    public void OnABranch_CommitIsOn_AndNoBranchIsOffered()
+    public void OnABranch_CommitIsOn_AndCreatingABranchIsNotHighlighted()
     {
         // The control: the same changes on a branch leave Commit enabled.
         var browser = RenderBrowser(Repo(branch: "main", detachedLabel: null), withChanges: true);
 
         browser.WaitForAssertion(() => Assert.False(Button(browser, "Commit changes").HasAttribute("disabled")));
-        Assert.Empty(browser.FindAll("button[aria-label='Create a branch here']"));
+        Assert.DoesNotContain("mud-button-filled", Button(browser, "Create new branch").ClassName);
     }
 
     [Theory]

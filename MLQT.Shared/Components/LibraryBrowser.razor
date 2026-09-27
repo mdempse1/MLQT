@@ -124,14 +124,6 @@ else if (Repository != null)
                                 <span>Detached HEAD</span>
                             }
                         </MudText>
-                        @* The way out of the state that disables Commit, Merge, Rebase and Push,
-                           offered where the state is named (B327). *@
-                        @if (IsDetachedHead && !Repository.IsReferenceOnly)
-                        {
-                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
-                                       OnClick="ShowCreateBranchDialog" Disabled="@VcsBlocked"
-                                       aria-label="Create a branch here">Create a branch here</MudButton>
-                        }
                     }
                     <MudSpacer />
                     @if (!Repository.IsReferenceOnly)
@@ -139,8 +131,12 @@ else if (Repository != null)
                     <MudTooltip Text="Switch branch">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Medium" OnClick="ShowSwitchBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked" />
                     </MudTooltip>
-                    <MudTooltip Text="Create new branch">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.ForkRight" Size="Size.Medium" OnClick="ShowCreateBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked" />
+                    @* On a detached HEAD this is the way out of the state that disables Commit,
+                       Merge, Rebase and Push, so it is filled to draw the eye rather than repeated
+                       as a second button beside the state's name (B327). *@
+                    <MudTooltip Text="@CreateBranchTooltip">
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.ForkRight" Size="Size.Medium" OnClick="ShowCreateBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked"
+                                       Variant="@(IsDetachedHead ? Variant.Filled : Variant.Text)" aria-label="Create new branch" />
                     </MudTooltip>
                     @if (Repository.VcsType == RepositoryVcsType.SVN) 
                     {

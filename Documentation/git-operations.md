@@ -152,7 +152,7 @@ switching to a branch:
 > changes from here, create a branch afterwards.
 
 Afterwards the repository header says **Detached HEAD at v2.0.0** where it would normally name the
-branch, with a **Create a branch here** button beside it. A commit made in that state would belong
+branch, and the **Create new branch** button beside it is highlighted. A commit made in that state would belong
 to no branch and be easy to lose, so while HEAD is detached MLQT does not offer Commit, Merge,
 Rebase, Push or Create pull request: create a branch first, and they come back.
 

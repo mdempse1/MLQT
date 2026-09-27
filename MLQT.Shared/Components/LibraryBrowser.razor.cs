@@ -1156,6 +1156,12 @@ public partial class LibraryBrowser : IDisposable
     private string NeedsABranch(string tooltip) =>
         IsDetachedHead ? $"{tooltip} - needs a branch: HEAD is detached. Create a branch here first." : tooltip;
 
+    /// <summary>The Create new branch tooltip, which on a detached HEAD says why it is highlighted.</summary>
+    private string CreateBranchTooltip =>
+        IsDetachedHead
+            ? "Create a branch here - HEAD is detached, so Commit, Merge, Rebase and Push need a branch first"
+            : "Create new branch";
+
     /// <summary>
     /// Whether a VCS operation started from this browser is still running, so the others stay
     /// disabled until it finishes.
