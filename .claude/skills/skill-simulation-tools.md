@@ -74,9 +74,28 @@ var simResult = await dymola.SimulateModelAsync(
 
 ## The two checking services
 
-`DymolaCheckingService` and `OpenModelicaCheckingService` are the same shape twice: open the
+`DymolaCheckingService` and `OpenModelicaCheckingService` do the same thing with two tools: open the
 library's root file, check a class or every class in a package, and turn what the tool said into
-`ModelCheckResult`s. Two things about them are not obvious from reading either one.
+`ModelCheckResult`s. Since B398 that shape is written **once**, in
+`MLQT.Services/ModelCheckingServiceBase<TSession>`: the one-at-a-time run on the thread pool
+(`CheckRunGate`), its progress and throttle, taking the session, the package fan-out, stopping at the
+first class that timed out or whose tool went away, `CheckModelAsync`, and the check sequence itself
+(clear the log, check, read the log on success, read the error and spot the demo-licence limit on
+failure, and the failed-check result). Each service is left with only what differs, as
+`private protected` hooks:
+
+| Hook | Dymola | OpenModelica |
+|------|--------|--------------|
+| `GetSessionAsync` / `ResetSessionAsync` | its factory | its factory |
+| `LoadLibraryAsync` | `openModel`, retried once; asks `LastOutcome` and `IsGoneAsync` why it failed | `loadFile`, retried once; timeout/cancel/exit are exceptions and drop the session |
+| `ClearLogAsync` | `clearlog()` | reads `getErrorString()`, which empties it |
+| `IssueCheckAsync` → `CheckAnswer` | `false` + `LastOutcome` says why there is no verdict | the exception says why, and the session is dropped |
+| `ReadLogAsync` / `ReadLogOrNullAsync` | `getLastError()` | `getErrorString()` |
+
+`CheckAnswer` (`MLQT.Services/Helpers`) is the one place the two tools' ways of saying "no verdict"
+meet: `Checked(passed)`, `WasCancelled`, or `NoVerdict(result)` carrying the timeout or went-away
+result. **A change to what both tools do goes in the base**; a change in a service should be about
+that tool alone. Two things about them are not obvious from reading any one file.
 
 **The factories return an interface, not the session class.** `IDymolaInterfaceFactory` and
 `IOpenModelicaInterfaceFactory` hand back `IDymolaInterface` / `IOpenModelicaInterface` — each a
@@ -92,7 +111,8 @@ offers it.
 and then calls it. That was not true until B229: each path had its own copy, and the package path's
 copy neither drained the log first nor read it back on success — so a class checked on its own
 showed its warnings and the same class checked as part of its package did not, and an error could be
-reported against the class after the one that produced it. `MLQT.Services.Tests/
+reported against the class after the one that produced it; since B398 there is one copy for both
+tools as well as for both paths. `MLQT.Services.Tests/
 ModelCheckingServiceContract.cs` asserts the shared promises once and runs them against both tools;
 `ToolHarness.cs` holds the fake sessions, which model each tool's **log buffer** rather than
 returning fixed strings, because most of these promises are about which check's output a result

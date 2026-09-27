@@ -321,7 +321,10 @@ var warnings = externalResourceService.GetWarnings();
 
 ### Model Checking (IModelCheckingService)
 
-Both `DymolaCheckingService` and `OpenModelicaCheckingService` implement `IModelCheckingService`:
+Both `DymolaCheckingService` and `OpenModelicaCheckingService` implement `IModelCheckingService`,
+through `ModelCheckingServiceBase<TSession>`, which holds everything the two do the same way - the
+run, its progress and cancellation, and the check sequence. Each service supplies only its session
+factory, how it opens a library, and how its tool says a check gave no verdict (B398):
 
 ```csharp
 // Check a single model. Cancelling the token ends the check even while the tool is running it,
