@@ -2404,6 +2404,23 @@ document.head.appendChild(style);
     private IReadOnlyList<Repository> WorkingCopyOf(Repository? repository) =>
         repository is null ? [] : RepositoryService.GetRepositoriesSharingWorkingCopy(repository.Id);
 
+    /// <summary>
+    /// The banner above a class with recovered parser errors: how many, and the line of the first.
+    ///
+    /// <para><b>The line the Findings panel shows</b> (B412). It read the raw
+    /// <see cref="ParserError.Line"/>, which for an error the load recorded is the line in the
+    /// <em>file</em> - hundreds of lines from the class-relative line on the finding for a class
+    /// nested in a <c>package.mo</c>. <see cref="ParserErrorReporter.ToFindings"/> is what the row
+    /// is made from, so the banner asks it too.</para>
+    /// </summary>
+    internal static string ParserErrorBannerText(ModelNode model)
+    {
+        var findings = ParserErrorReporter.ToFindings([model]);
+        var n = findings.Count;
+        var atLine = findings.FirstOrDefault() is { LineNumber: > 0 } first ? $" (first at line {first.LineNumber})" : "";
+        return $"This model has {n} parser {(n == 1 ? "error" : "errors")}{atLine}. See the Findings panel for details.";
+    }
+
     private string? CurrentFilePathOf(ModelNode model) =>
         LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId ?? "")?.FilePath;
 

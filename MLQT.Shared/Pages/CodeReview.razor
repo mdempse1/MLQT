@@ -153,10 +153,7 @@
                 }
                 else
                 {
-                    var n = _currentModelNode.Definition.ParserErrors.Count;
-                    var first = _currentModelNode.Definition.ParserErrors.FirstOrDefault();
-                    var atLine = first != null && first.Line > 0 ? $" (first at line {first.Line})" : "";
-                    <text>This model has @n parser @(n == 1 ? "error" : "errors")@atLine. See the Findings panel for details.</text>
+                    <text>@ParserErrorBannerText(_currentModelNode)</text>
                 }
             </MudAlert>
         }
