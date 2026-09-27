@@ -21,7 +21,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
 
     private readonly string _layer;
     private readonly List<string> _extendsClasses = new();
-    private readonly HashSet<string> _mappedExtends = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ExtendsMap> _maps = new(StringComparer.Ordinal);
     private IconData? _currentIcon;
     private int _classDepth = 0;
     private string? _withinPackage;
@@ -112,7 +112,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             {
                 Icon = extractor._currentIcon,
                 ExtendsClasses = extractor._extendsClasses,
-                MappedExtends = extractor._mappedExtends,
+                ExtendsMaps = extractor._maps,
                 WithinPackage = extractor._withinPackage
             };
         }
@@ -159,24 +159,25 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             if (!string.IsNullOrEmpty(baseClassName))
             {
                 _extendsClasses.Add(baseClassName);
-                if (MapsToARegion(context.annotation()))
-                    _mappedExtends.Add(baseClassName);
+                if (MapOf(context.annotation()) is { } map)
+                    _maps[baseClassName] = map;
             }
         }
         return base.VisitExtends_clause(context);
     }
 
     /// <summary>
-    /// Whether an extends clause's <c>IconMap</c> / <c>DiagramMap</c> (whichever is this layer's)
-    /// gives an extent that is not the null region <c>{{0,0},{0,0}}</c>, its default (MLS 3.6
-    /// §18.6.3). Such a base is mapped into that region and does not lend the class its coordinate
-    /// system (§18.6.1.1).
+    /// An extends clause's <c>IconMap</c> / <c>DiagramMap</c> (whichever is this layer's), or null
+    /// when it has none or states only the defaults (MLS 3.6 §18.6.3). An extent other than the null
+    /// region <c>{{0,0},{0,0}}</c> maps the base into that region, and such a base does not lend the
+    /// class its coordinate system (§18.6.1.1); <c>primitivesVisible=false</c> hides the base's
+    /// graphics (B394, B420).
     /// </summary>
-    private bool MapsToARegion(modelicaParser.AnnotationContext? annotation)
+    private ExtendsMap? MapOf(modelicaParser.AnnotationContext? annotation)
     {
         var arguments = annotation?.class_modification()?.argument_list()?.argument();
         if (arguments is null)
-            return false;
+            return null;
 
         foreach (var arg in arguments)
         {
@@ -184,17 +185,28 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             if (map?.name()?.GetText() != _layer + "Map")
                 continue;
 
+            double[]? region = null;
+            var primitivesVisible = true;
             foreach (var inner in map.modification()?.class_modification()?.argument_list()?.argument() ?? [])
             {
-                var extent = inner.element_modification_or_replaceable()?.element_modification();
-                if (extent?.name()?.GetText() != "extent")
-                    continue;
-                var e = ParseExtent(extent.modification()?.modification_expression()?.expression()?.GetText());
-                return e[0] != e[2] || e[1] != e[3];
+                var attribute = inner.element_modification_or_replaceable()?.element_modification();
+                var value = attribute?.modification()?.modification_expression()?.expression()?.GetText();
+                switch (attribute?.name()?.GetText())
+                {
+                    case "extent":
+                        var e = ParseExtent(value);
+                        region = e[0] != e[2] || e[1] != e[3] ? e : null;
+                        break;
+                    case "primitivesVisible":
+                        primitivesVisible = value != "false";
+                        break;
+                }
             }
+
+            return region is null && primitivesVisible ? null : new ExtendsMap(region, primitivesVisible);
         }
 
-        return false;
+        return null;
     }
 
     public override object? VisitAnnotation(modelicaParser.AnnotationContext context)

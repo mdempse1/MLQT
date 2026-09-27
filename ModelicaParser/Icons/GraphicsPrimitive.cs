@@ -49,4 +49,10 @@ public abstract class GraphicsPrimitive
     /// Line thickness.
     /// </summary>
     public double LineThickness { get; set; } = 0.25;
+
+    /// <summary>
+    /// A shallow copy: arrays and lists are shared with this primitive, so a caller changing a
+    /// geometry replaces it rather than writing into it.
+    /// </summary>
+    internal GraphicsPrimitive ShallowCopy() => (GraphicsPrimitive)MemberwiseClone();
 }

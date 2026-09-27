@@ -328,8 +328,16 @@ public static class IconSvgRenderer
                     systemChosen = true;
                 }
 
-                if (baseIcon != null && baseIcon.HasGraphics)
-                    baseIcons.Add(baseIcon);
+                // What the extends clause's IconMap says (MLS 3.6 §18.6.3, B420): primitivesVisible=false
+                // hides the base's graphics - its connectors, which a diagram draws separately, stay -
+                // and an extent maps the base's coordinate system, with its graphics, into that region.
+                var map = result.MapFor(baseClassName);
+                if (baseIcon == null || !baseIcon.HasGraphics || map is { PrimitivesVisible: false })
+                    continue;
+
+                baseIcons.Add(map?.Region is { } region && baseSystem != null
+                    ? baseSystem.WithGraphics(GraphicsMapping.Into(baseIcon.Graphics, baseSystem, region))
+                    : baseIcon);
             }
         }
 

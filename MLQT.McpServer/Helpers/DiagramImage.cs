@@ -63,7 +63,7 @@ internal static class DiagramImage
         foreach (var baseNode in bases)
             if (baseNode.Definition.ModelicaCode is { Length: > 0 } baseCode)
                 connections.AddRange(Connections(libraries, node.Id, router, baseCode));
-        var diagramLayer = InheritedDiagram(libraries, bases, node);
+        var diagramLayer = InheritedDiagram(libraries, node);
 
         if (components.Count == 0 && connections.Count == 0 && diagramLayer is not { HasGraphics: true })
             return null;
@@ -319,8 +319,7 @@ internal static class DiagramImage
     /// </summary>
     private static IconData? DiagramLayerOf(ILibraryDataService libraries, ModelNode type)
     {
-        var diagram = InheritedDiagram(
-            libraries, ClassElementResolver.BaseClasses(libraries.CombinedGraph, type), type);
+        var diagram = InheritedDiagram(libraries, type);
         return diagram is { HasGraphics: true } ? diagram : null;
     }
 
@@ -329,20 +328,51 @@ internal static class DiagramImage
     /// top, in the coordinate system the specification gives the class (<see cref="DiagramSystem"/>).
     /// Null when neither the class nor any base has a Diagram annotation.
     /// </summary>
-    /// <param name="bases">The class's bases in drawing order, deepest first
-    /// (<see cref="ClassElementResolver.BaseClasses"/>).</param>
-    private static IconData? InheritedDiagram(
-        ILibraryDataService libraries, IReadOnlyList<ModelNode> bases, ModelNode node)
+    /// <remarks>
+    /// Walked clause by clause rather than over <see cref="ClassElementResolver.BaseClasses"/>,
+    /// because each extends clause's <c>DiagramMap</c> decides what its base contributes (MLS 3.6
+    /// §18.6.3, B420): <c>primitivesVisible=false</c> hides the base's graphics and an extent maps
+    /// them into a region. The order is the same - each base after its own bases, clause by clause,
+    /// a base reached twice drawn once.
+    /// </remarks>
+    private static IconData? InheritedDiagram(ILibraryDataService libraries, ModelNode node)
     {
-        var layers = bases.Append(node)
-            .Select(n => n.Definition.Borrow(IconExtractor.ExtractDiagram))
-            .OfType<IconData>()
-            .ToList();
-        if (layers.Count == 0)
-            return null;
+        var graphics = DiagramGraphics(libraries, node, [node.Id], 0, out var any);
+        return any ? DiagramSystem(libraries, node, [], 0).WithGraphics(graphics) : null;
+    }
 
-        return DiagramSystem(libraries, node, [], 0)
-            .WithGraphics([.. layers.SelectMany(l => l.Graphics)]);
+    /// <summary>
+    /// The Diagram graphics <paramref name="node"/> draws, its bases' beneath its own, in its own
+    /// coordinate system. <paramref name="any"/> says whether it or a base has a Diagram annotation.
+    /// </summary>
+    private static List<GraphicsPrimitive> DiagramGraphics(
+        ILibraryDataService libraries, ModelNode node, HashSet<string> drawn, int depth, out bool any)
+    {
+        var own = node.Definition.Borrow(IconExtractor.ExtractDiagramWithInheritance);
+        any = own?.Icon is not null;
+        var graphics = new List<GraphicsPrimitive>();
+
+        if (depth <= MaxInheritanceDepth)
+        {
+            foreach (var (written, baseNode) in ClassElementResolver.DirectBases(libraries.CombinedGraph, node))
+            {
+                if (!drawn.Add(baseNode.Id))
+                    continue;
+
+                var inherited = DiagramGraphics(libraries, baseNode, drawn, depth + 1, out var baseAny);
+                any |= baseAny;
+
+                var map = own?.MapFor(written);
+                if (map is { PrimitivesVisible: false })
+                    continue;
+                graphics.AddRange(map?.Region is { } region
+                    ? GraphicsMapping.Into(inherited, DiagramSystem(libraries, baseNode, [], 0), region)
+                    : inherited);
+            }
+        }
+
+        graphics.AddRange(own?.Icon?.Graphics ?? []);
+        return graphics;
     }
 
     /// <summary>

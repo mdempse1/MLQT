@@ -83,8 +83,32 @@ system." (B394)
 - **A base that draws nothing still lends its system.**
 - **Null region**: an extends clause with `IconMap(extent=...)` / `DiagramMap(extent=...)` other than
   `{{0,0},{0,0}}` maps its base into that region (§18.6.3) and does not lend its system.
-  `IconExtractionResult.MappedExtends` lists those clauses. The mapping itself - drawing the base's
-  contents scaled into the region - is not implemented; MSL uses no such extent.
+  `IconExtractionResult.MappedExtends` lists those clauses.
+
+### What an `IconMap` / `DiagramMap` does to the base's graphics (B420)
+
+`IconExtractionResult.ExtendsMaps` holds each clause's map as an `ExtendsMap(Region, PrimitivesVisible)`,
+for the layer extracted (`IconMap` for the icon, `DiagramMap` for the diagram); `MapFor(name)` reads one.
+Both the icon merge (`IconSvgRenderer.ExtractIconWithInheritance`) and the MCP diagram
+(`DiagramImage.InheritedDiagram`, which walks clause by clause for this) apply it:
+
+- **`primitivesVisible=false`** drops the base's graphics, its own bases' included. The base still
+  lends its coordinate system, and its components are still drawn - on a diagram they are
+  separate, and on an icon the connectors a diagram draws are `DiagramComponent.Children`, not
+  graphics. MSL has four such clauses (`Sensors.RelativeAngles`, RobotR3 `AxisType1`, and the
+  short-class connectors `ComplexInput`/`ComplexOutput`, whose base a short class definition does not
+  follow here anyway).
+- **A region** maps the base's resolved coordinate system into it through `GraphicsMapping.Into`: as a
+  component's icon goes onto its placement, a reversed region mirroring, and with the scale made
+  even and the result centred when the base preserves its aspect ratio. The primitives are rewritten
+  rather than wrapped in a transform, so every consumer of the flat list still works; a mirror turns
+  a rotation the other way and a quarter turn swaps the axes a scale applies to. Only a non-uniform
+  scale of a primitive turned by an angle that is not a multiple of 90 is approximate. Buildings'
+  `HeatRecoveryChiller` is the one use in the corpus (`IconMap(extent={{-600,600},{600,-600}})`,
+  flipping its base vertically).
+- **Not done:** the components and connections a mapped base contributes - the connectors on an
+  icon, the components and connect lines on a diagram - are still placed in the derived class's
+  coordinates as the base wrote them, not mapped with its graphics.
 
 Before B394 the icon merge kept the derived class's system whenever it had an Icon annotation,
 stated or not: 52 Buildings icons (e.g. `DHC.ETS.BaseClasses.CollectorDistributor`) were drawn in
