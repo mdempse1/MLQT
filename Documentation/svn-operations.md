@@ -309,6 +309,10 @@ The SVN history view works similarly to the Git version but with some difference
 
 Same as Git — use the date pickers to filter, and the "Load Next 50" / "Load Last 500" buttons to load more history.
 
+The history includes revisions committed to your branch since your last update. If the branch your
+working copy is on has since been deleted or renamed on the server, the history is still shown, up to
+your working copy's revision.
+
 ### Viewing Changed Files and Diffs
 
 Click on any revision row to see the changed files. Clicking a file shows **what that revision

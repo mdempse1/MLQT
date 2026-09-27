@@ -378,6 +378,50 @@ public class SvnIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// The history of a working copy whose branch has since been deleted is still there (B419),
+    /// and while the branch lives it still shows commits newer than the working copy.
+    /// </summary>
+    /// <remarks>
+    /// Unpegged, <c>svn log url -l N</c> is pegged at HEAD, where a deleted branch has nothing, so
+    /// the History dialog came back empty. Pegging at the working copy's revision always would hide
+    /// what has been committed since, which the dialog is how a user sees before updating.
+    /// </remarks>
+    [Fact]
+    public void GetLogEntries_ReadsTheHistoryOfABranchDeletedSince_AndShowsNewerCommitsWhileItLives()
+    {
+        var branchUrl = $"{_repoRoot}/branches/Gone";
+        RunSvn($"copy \"{_trunkUrl}\" \"{branchUrl}\" -m \"make a branch\"");
+        var branchDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(branchUrl, "HEAD", branchDir);
+        File.WriteAllText(Path.Combine(branchDir, "OnBranch.mo"), "model OnBranch\nend OnBranch;\n");
+        RunSvn($"add \"{Path.Combine(branchDir, "OnBranch.mo")}\"");
+        RunSvn($"commit \"{branchDir}\" -m \"on the branch\"");
+        RunSvn($"update \"{branchDir}\"");
+        var onBranch = _svn.GetCurrentRevision(branchDir)!;
+
+        // A commit to the branch the working copy has not updated to.
+        var otherDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(branchUrl, "HEAD", otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Newer.mo"), "model Newer\nend Newer;\n");
+        RunSvn($"add \"{Path.Combine(otherDir, "Newer.mo")}\"");
+        RunSvn($"commit \"{otherDir}\" -m \"newer than the working copy\"");
+        var newer = _svn.GetCurrentRevision(branchUrl)!;
+        Assert.NotEqual(onBranch, newer);
+
+        var live = _svn.GetLogEntries(branchDir, new VcsLogOptions { MaxEntries = 50 });
+        Assert.Contains(live, e => e.Revision == newer);
+        Assert.Contains(live, e => e.Revision == onBranch);
+
+        RunSvn($"delete \"{branchUrl}\" -m \"delete the branch\"");
+
+        var gone = _svn.GetLogEntries(branchDir, new VcsLogOptions { MaxEntries = 50 });
+        Assert.Contains(gone, e => e.Revision == onBranch && e.MessageShort == "on the branch");
+
+        var one = _svn.GetLogEntries(branchDir, new VcsLogOptions { Revision = onBranch });
+        Assert.Equal(onBranch, Assert.Single(one).Revision);
+    }
+
+    /// <summary>
     /// An update that fails says what svn said (B329) - here, that the server is not there - rather
     /// than "SVN update failed.", which left the user nothing to act on.
     /// </summary>

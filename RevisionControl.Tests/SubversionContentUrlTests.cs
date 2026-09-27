@@ -140,6 +140,21 @@ public class SubversionContentUrlTests
         Assert.Equal(Root + "/branches/B", SvnRevisionControlSystem.PegForChangedFiles(Root + "/branches/B", revision, workingCopyRevision));
     }
 
+    // A working copy's history, when its URL has nothing at HEAD (B419), is read from the working
+    // copy's own revision - and not at all when there is no working copy to say what that is.
+
+    [Fact]
+    public void HistoryIsReadBackFromTheWorkingCopysOwnRevision()
+    {
+        Assert.Equal(Root + "/branches/B@40", SvnRevisionControlSystem.HistoryPeg(Root + "/branches/B", 40));
+    }
+
+    [Fact]
+    public void HistoryHasNoPegWithoutAWorkingCopyRevision()
+    {
+        Assert.Null(SvnRevisionControlSystem.HistoryPeg(Root + "/branches/B", 0));
+    }
+
     [Fact]
     public void AnEmptyPathIsNoUrlAtAll()
     {

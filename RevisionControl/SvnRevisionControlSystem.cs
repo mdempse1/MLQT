@@ -550,26 +550,33 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            var url = ResolveUrl(repositoryPath);
+            var workingCopy = Directory.Exists(repositoryPath) ? GetInfo(repositoryPath) : null;
+            var url = workingCopy?.Url ?? ResolveUrl(repositoryPath);
             var currentBranch = ExtractBranchFromSvnUrl(url, branchDirectories);
 
             // -v (verbose) retrieves changed paths, needed to determine the actual branch for
             // each revision since SVN log follows copy history across branches.
-            var args = new List<string> { "log", url, "-v" };
+            XDocument? doc;
             if (!string.IsNullOrEmpty(options.Revision))
             {
-                args.Add("-r");
-                args.Add(SvnCli.NormalizeRevision(options.Revision));
-                args.Add("-l");
-                args.Add("1");
+                // One revision: looked up exactly as GetChangedFiles looks it up (B386, B419).
+                var revision = SvnCli.NormalizeRevision(options.Revision);
+                var target = workingCopy is null ? url : PegForChangedFiles(url, revision, workingCopy.Revision);
+                doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", target, "-v", "-r", revision, "-l", "1");
             }
             else
             {
-                args.Add("-l");
-                args.Add(options.MaxEntries.ToString());
+                var limit = options.MaxEntries.ToString();
+                doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", url, "-v", "-l", limit);
+
+                // Unpegged, the URL is pegged at HEAD, which is what shows commits newer than the
+                // working copy - but a branch deleted or renamed since has nothing there, and the
+                // History dialog came back empty (B419). Then the history is read back from the
+                // working copy's own revision, where its URL certainly exists.
+                if (doc?.Root == null && HistoryPeg(url, workingCopy?.Revision ?? 0) is { } pegged)
+                    doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", pegged, "-v", "-l", limit);
             }
 
-            var doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, args.ToArray());
             if (doc?.Root == null)
                 return entries;
 
@@ -822,6 +829,14 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             return workingCopyUrl;
         return Pegged(workingCopyUrl, Math.Max(asked, workingCopyRevision).ToString());
     }
+
+    /// <summary>
+    /// Where <see cref="GetLogEntries(string, VcsLogOptions?, IReadOnlyList{string}?)"/> reads a
+    /// working copy's history from when its URL has nothing at HEAD (B419): the working copy's own
+    /// revision. None when that revision is not known - there is no working copy to ask.
+    /// </summary>
+    internal static string? HistoryPeg(string workingCopyUrl, long workingCopyRevision)
+        => workingCopyRevision > 0 ? Pegged(workingCopyUrl, workingCopyRevision.ToString()) : null;
 
     /// <inheritdoc/>
     public IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
