@@ -47,11 +47,18 @@ public class SvnCommandRunnerTests
     {
         // The limit is on silence, not on running time: a checkout of a large repository runs for as
         // long as it runs, and reports each file as it goes. This one runs three times the limit.
+        //
+        // Each gap is a twelfth of the limit, not half of it. A gap is the sleep plus starting a
+        // process for it - an MSYS fork on Windows, and the first gap also starts git and its shell -
+        // and on a loaded coverage runner that start-up ate the second a 1s sleep left under a 2s
+        // limit, so the command was stopped for a silence it never kept. Silence longer than one
+        // gap is still stopped, which is what makes this a test of the limit and not of nothing.
+        const int Ticks = 36;
         var result = await RunAlias(
-            "for i in 1 2 3 4 5 6; do echo tick; sleep 1; done", idleLimit: TimeSpan.FromSeconds(2));
+            $"for i in $(seq {Ticks}); do echo tick; sleep 0.25; done", idleLimit: TimeSpan.FromSeconds(3));
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal(6, Text(result.StdOut).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.Equal(Ticks, Text(result.StdOut).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
     }
 
     [Fact]
