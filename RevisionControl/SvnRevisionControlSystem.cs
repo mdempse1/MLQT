@@ -746,10 +746,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            var url = ResolveUrl(repositoryPath);
             var rev = SvnCli.NormalizeRevision(revision);
+            var target = ChangedFilesTarget(repositoryPath, rev);
 
-            var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", url, "-r", rev, "-v", "-l", "1");
+            var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", target, "-r", rev, "-v", "-l", "1");
             var paths = doc?.Root?.Element("logentry")?.Element("paths");
             if (paths == null)
                 return changedFiles;
@@ -788,6 +788,37 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
 
         return changedFiles;
+    }
+
+    /// <summary>
+    /// What <see cref="GetChangedFiles"/> asks <c>svn log</c> about: a working copy's URL pegged
+    /// where it is known to exist (B386).
+    /// </summary>
+    /// <remarks>
+    /// Unpegged, the URL is pegged at HEAD, and a working copy whose branch has since been deleted or
+    /// renamed has nothing at its URL there - so every revision's changed files came back empty.
+    /// Pegging at the revision asked for (B328's fix for content) would be wrong here: svn follows
+    /// copy history backwards from the peg, which is how a revision from before the branch was
+    /// created is found on trunk, and the branch's URL did not exist at such a revision. So the peg
+    /// is the later of the two - the working copy's own revision, where its URL certainly exists,
+    /// or the revision asked for when that is newer.
+    /// </remarks>
+    private string ChangedFilesTarget(string repositoryPath, string normalizedRevision)
+    {
+        if (Directory.Exists(repositoryPath) && GetInfo(repositoryPath) is { } info)
+            return PegForChangedFiles(info.Url, normalizedRevision, info.Revision);
+        return ResolveUrl(repositoryPath);
+    }
+
+    /// <summary>
+    /// A working copy's URL pegged at the later of its own revision and the one asked for; left
+    /// unpegged for a keyword, which svn resolves itself.
+    /// </summary>
+    internal static string PegForChangedFiles(string workingCopyUrl, string normalizedRevision, long workingCopyRevision)
+    {
+        if (!long.TryParse(normalizedRevision, out var asked) || workingCopyRevision <= 0)
+            return workingCopyUrl;
+        return Pegged(workingCopyUrl, Math.Max(asked, workingCopyRevision).ToString());
     }
 
     /// <inheritdoc/>

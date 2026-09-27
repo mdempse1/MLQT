@@ -340,6 +340,44 @@ public class SvnIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// The files a revision changed are still found for a working copy whose branch has since been
+    /// deleted (B386), and still found for a revision from before the branch existed.
+    /// </summary>
+    /// <remarks>
+    /// Unpegged, <c>svn log url -r N</c> is pegged at HEAD, where a deleted branch has nothing, so
+    /// the lookup failed and returned nothing. Pegging at N instead would break the second case:
+    /// the branch's URL did not exist at a revision before it was copied from trunk.
+    /// </remarks>
+    [Fact]
+    public void GetChangedFiles_FindsARevisionOfABranchDeletedSince_AndOneFromBeforeIt()
+    {
+        var trunkDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", trunkDir);
+        File.WriteAllText(Path.Combine(trunkDir, "OnTrunk.mo"), "model OnTrunk\nend OnTrunk;\n");
+        RunSvn($"add \"{Path.Combine(trunkDir, "OnTrunk.mo")}\"");
+        RunSvn($"commit \"{trunkDir}\" -m \"on trunk\"");
+        var beforeBranch = _svn.GetCurrentRevision(_trunkUrl)!;
+
+        var branchUrl = $"{_repoRoot}/branches/Gone";
+        RunSvn($"copy \"{_trunkUrl}\" \"{branchUrl}\" -m \"make a branch\"");
+        var branchDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(branchUrl, "HEAD", branchDir);
+        File.WriteAllText(Path.Combine(branchDir, "OnBranch.mo"), "model OnBranch\nend OnBranch;\n");
+        RunSvn($"add \"{Path.Combine(branchDir, "OnBranch.mo")}\"");
+        RunSvn($"commit \"{branchDir}\" -m \"on the branch\"");
+        RunSvn($"update \"{branchDir}\"");
+        var onBranch = _svn.GetCurrentRevision(branchDir)!;
+
+        // Before the delete, a revision from before the branch is found through its copy history.
+        Assert.Contains(_svn.GetChangedFiles(branchDir, beforeBranch), f => f.Path == "trunk/OnTrunk.mo");
+
+        RunSvn($"delete \"{branchUrl}\" -m \"delete the branch\"");
+
+        Assert.Contains(_svn.GetChangedFiles(branchDir, onBranch), f => f.Path == "branches/Gone/OnBranch.mo");
+        Assert.Contains(_svn.GetChangedFiles(branchDir, beforeBranch), f => f.Path == "trunk/OnTrunk.mo");
+    }
+
+    /// <summary>
     /// An update that fails says what svn said (B329) - here, that the server is not there - rather
     /// than "SVN update failed.", which left the user nothing to act on.
     /// </summary>

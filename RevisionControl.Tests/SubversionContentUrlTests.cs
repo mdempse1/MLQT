@@ -115,6 +115,31 @@ public class SubversionContentUrlTests
         Assert.Equal("7", pegged[(pegged.LastIndexOf('@') + 1)..]);
     }
 
+    // The changed-files lookup for a revision (B386) pegs a working copy's URL where it certainly
+    // exists - the working copy's own revision - so a branch deleted since is still found, and at
+    // the revision asked for only when that is newer. Never at an older revision asked for: svn
+    // follows copy history backwards from the peg, and a branch did not exist before it was made.
+
+    [Fact]
+    public void AnOlderRevisionIsLookedUpFromTheWorkingCopysOwnRevision()
+    {
+        Assert.Equal(Root + "/branches/B@40", SvnRevisionControlSystem.PegForChangedFiles(Root + "/branches/B", "12", 40));
+    }
+
+    [Fact]
+    public void ANewerRevisionIsLookedUpWhereItIs()
+    {
+        Assert.Equal(Root + "/branches/B@55", SvnRevisionControlSystem.PegForChangedFiles(Root + "/branches/B", "55", 40));
+    }
+
+    [Theory]
+    [InlineData("HEAD", 40)]
+    [InlineData("12", 0)]
+    public void AKeywordOrAnUnknownWorkingCopyRevisionIsLeftToSvn(string revision, long workingCopyRevision)
+    {
+        Assert.Equal(Root + "/branches/B", SvnRevisionControlSystem.PegForChangedFiles(Root + "/branches/B", revision, workingCopyRevision));
+    }
+
     [Fact]
     public void AnEmptyPathIsNoUrlAtAll()
     {
