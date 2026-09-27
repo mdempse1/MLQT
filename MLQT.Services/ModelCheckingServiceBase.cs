@@ -66,18 +66,169 @@ public abstract class ModelCheckingServiceBase<TSession> : IModelCheckingService
     private protected abstract Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token);
 
     /// <summary>
-    /// Checks one class in a session that is already open, and is <b>the only place a check
-    /// happens</b> - <see cref="IModelCheckingService.CheckModelAsync"/> opens the library and then
-    /// calls this.
+    /// Empties the tool's log, so what is read after the next command belongs to that command.
+    /// Never throws: failing to clear is not a reason to fail the check.
     /// </summary>
+    private protected abstract Task ClearLogAsync();
+
+    /// <summary>
+    /// Asks <paramref name="session"/> to check <paramref name="modelId"/>, and says whether it gave a
+    /// verdict. Anything it throws that is not its own way of saying "no verdict" is left to the caller,
+    /// which reports it as a failed check.
+    /// </summary>
+    private protected abstract Task<CheckAnswer> IssueCheckAsync(TSession session, string modelId,
+        CancellationToken token);
+
+    /// <summary>The tool's log for the last command. May throw.</summary>
+    private protected abstract Task<string> ReadLogAsync(TSession session);
+
+    /// <summary>
+    /// The tool's log for the last command, or null when it is empty or cannot be read. Never throws:
+    /// this is asked on the success path too, and losing a clean result because the log could not be
+    /// fetched would be a worse answer than a result with no log on it.
+    /// </summary>
+    private protected abstract Task<string?> ReadLogOrNullAsync();
+
+    // ── one class ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The one failure that is not the user's model. Singled out by its text so the result can say
+    /// "buy a licence" rather than "your model is broken".
+    /// </summary>
+    private const string DemoLicenceLimit = "Error: the model is too complex for the current license";
+
+    public async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
+    {
+        var load = await LoadLibraryAsync(filePath, CancellationToken.None);
+        return (load.Success, load.ErrorMessage);
+    }
+
+    public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            Session ??= await GetSessionAsync(cancellationToken);
+
+            // The library's own package.mo, not the class's file - as for a run, and for the same
+            // reason (B170).
+            var rootFile = LibraryRootFile.For(graph, modelNode);
+            if (rootFile != null)
+            {
+                var load = await LoadLibraryAsync(rootFile, cancellationToken);
+
+                // A load the caller stopped is not a library that failed to load.
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!load.Success)
+                    return load.FailureFor(modelNode.Id, ToolName);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Error(LogSource, $"Error preparing to check model: {modelNode.Id}", ex);
+            return await FailedResultAsync(modelNode.Id, ex);
+        }
+
+        // Null is a check the caller cancelled: the token reaches the one in flight, as it does for
+        // a run (B397). Thrown rather than returned, because a result saying "Cancelled" was a
+        // failed check to anything that read it - IsModelFailure is true of it.
+        return await CheckSingleModelAsync(modelNode, cancellationToken)
+               ?? throw new OperationCanceledException(cancellationToken);
+    }
+
+    /// <summary>
+    /// Checks one class in a session that is already open, and is <b>the only place a check
+    /// happens</b> - <see cref="CheckModelAsync"/> opens the library and then calls this, and so
+    /// does every class of a run.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>It was not always the only place (B229).</b> The two paths each had their own copy
+    /// of this, and the copy the package path used had neither the clear-the-log-first step nor the
+    /// read-the-log-on-success step. So the warnings B170 exists to surface were shown when the
+    /// user checked one class and lost when they checked the package containing it, and the error
+    /// reported against a class could be the one the class before it produced. Neither is visible
+    /// from either path on its own, which is why the tests for this are a contract run against both
+    /// tools rather than a test per service - and, since B398, one copy for both tools as well.</para>
+    /// </remarks>
     /// <returns>Null when the check was cancelled - the user's decision, which is not a result.</returns>
-    private protected abstract Task<ModelCheckResult?> CheckSingleModelAsync(ModelNode modelNode,
-        CancellationToken token = default);
+    private async Task<ModelCheckResult?> CheckSingleModelAsync(ModelNode modelNode, CancellationToken token)
+    {
+        try
+        {
+            // Cleared first so that what comes back afterwards belongs to *this* check. Without it a
+            // model that checked cleanly could be shown the error from something checked before it -
+            // a wrong answer, and a worse one than no log at all.
+            await ClearLogAsync();
 
-    public abstract Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
-        CancellationToken cancellationToken = default);
+            var answer = await IssueCheckAsync(Session!, modelNode.Id, token);
+            if (answer.Cancelled)
+                return null;
+            if (answer.Instead is { } noVerdict)
+                return noVerdict;
 
-    public abstract Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath);
+            if (answer.Verdict)
+            {
+                // Checked is not the same as had nothing to say: a model that is fine and one that is
+                // fine apart from six warnings both pass, and the log is where the difference is. Read
+                // on success as well, so the result dialog can show what the tool said (B170).
+                return new ModelCheckResult
+                {
+                    ModelId = modelNode.Id,
+                    Success = true,
+                    Log = await ReadLogOrNullAsync(),
+                };
+            }
+
+            var error = await ReadLogAsync(Session!);
+            return new ModelCheckResult
+            {
+                ModelId = modelNode.Id,
+                Success = false,
+                Log = error,
+                Summary = error.Contains(DemoLicenceLimit)
+                    ? "Model too complex for demo license"
+                    : $"{ToolName} Check Failed",
+                ErrorMessage = error,
+            };
+        }
+        catch (Exception ex)
+        {
+            Error(LogSource, $"Error checking model: {modelNode.Id}", ex);
+            return await FailedResultAsync(modelNode.Id, ex);
+        }
+    }
+
+    /// <summary>
+    /// The result for a check that threw: the tool's own account of what went wrong where it can
+    /// still be asked for one, and the exception's where it cannot.
+    /// </summary>
+    private async Task<ModelCheckResult> FailedResultAsync(string modelId, Exception failure)
+    {
+        var result = new ModelCheckResult
+        {
+            ModelId = modelId,
+            Success = false,
+            Summary = $"{ToolName} Check Failed"
+        };
+
+        try
+        {
+            result.ErrorMessage = Session != null
+                ? await ReadLogAsync(Session)
+                : failure.Message;
+        }
+        catch (Exception innerEx)
+        {
+            Warn(LogSource, $"Failed to get {ToolName} error message: {innerEx.Message}");
+            result.ErrorMessage = failure.Message;
+        }
+
+        return result;
+    }
 
     // ── the run ─────────────────────────────────────────────────────────────────
 
