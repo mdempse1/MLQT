@@ -60,6 +60,11 @@ order:
 
 Launchers come first because the program started directly may not find its own libraries.
 
+When MLQT closes a Dymola it started, it ends the launcher and everything the launcher started, so a
+launcher that runs Dymola as a child rather than replacing itself with it does not leave Dymola
+running. A launcher that starts Dymola in the background and exits at once is the exception: MLQT
+cannot tell which program it left behind, so that Dymola stays open and has to be closed by hand.
+
 **This search has not yet been tried against a real Linux installation of Dymola** — the locations
 come from Dassault's installation guide and published setup guides rather than from a machine MLQT
 has run on. If it finds nothing, or finds something that will not start, type or browse to the

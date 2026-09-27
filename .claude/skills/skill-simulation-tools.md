@@ -145,6 +145,14 @@ before it is disposed, because `Dispose()` kills the process a session started. 
 sessions through a `Func<DymolaSettings, IDymolaSession>`, which is how
 `MLQT.Services.Tests/DymolaInterfaceFactoryTests` tests it without Dymola.
 
+**Killing a session's Dymola ends its whole process tree** (`Kill(entireProcessTree: true)`, B411). On
+Linux `DymolaPath` is usually a launcher script, and one that runs `bin64/dymola` as a child leaves the
+interface holding the shell, so a plain `Kill()` ended the shell and left Dymola running.
+`MLQT.Services.Tests/DymolaLauncherStopTests` holds it with a fake launcher on both platforms. Not
+covered: a launcher that backgrounds Dymola and exits - the handle then describes a dead shell,
+`OwnsProcess` is false and the child is out of any tree MLQT can reach without per-platform
+process-table walking.
+
 ### Culture invariance
 Modelica command strings always use `.` as the decimal separator and never use `,`
 as a thousands separator. When encoding scalar/array values into `name=value` commands

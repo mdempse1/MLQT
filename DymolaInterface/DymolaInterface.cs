@@ -258,7 +258,7 @@ public class DymolaInterface : IDymolaSession
         {
             if (_dymolaProcess != null && !_dymolaProcess.HasExited)
             {
-                _dymolaProcess.Kill();
+                KillStartedTree(_dymolaProcess);
                 _dymolaProcess.WaitForExit();
                 _dymolaProcess.Dispose();
                 _dymolaProcess = null;
@@ -271,6 +271,24 @@ public class DymolaInterface : IDymolaSession
             _commandLock.Release();
         }
     }
+
+    /// <summary>
+    /// Ends the Dymola this interface started and everything it started in turn (B411).
+    /// </summary>
+    /// <remarks>
+    /// <para>What <see cref="_dymolaPath"/> names is not always Dymola. On Linux detection prefers the
+    /// launcher script (<c>/usr/local/bin/dymola</c>, B395), because Dassault's guide says it sets the
+    /// environment the program needs; a script that runs <c>bin64/dymola</c> as a child rather than
+    /// <c>exec</c>-ing it leaves this interface holding the shell. A plain <c>Kill()</c> then ended the
+    /// shell and left Dymola running, with the user's work in it and the port still taken. The tree is
+    /// ended instead, which for a Dymola started directly is the same thing as before. Held by
+    /// <c>MLQT.Services.Tests/DymolaLauncherStopTests</c>.</para>
+    /// <para>What it cannot reach: a launcher that starts Dymola in the background and exits. The
+    /// shell has gone by the time this runs, so <see cref="OwnsProcess"/> is already false and on
+    /// Linux the child has been handed to init, out of any tree. Nothing short of walking the
+    /// process table per platform would find it, and no launcher is known to do that.</para>
+    /// </remarks>
+    private static void KillStartedTree(Process process) => process.Kill(entireProcessTree: true);
 
     /// <summary>
     /// True if this interface started — and therefore owns — a still-running Dymola
@@ -459,7 +477,7 @@ public class DymolaInterface : IDymolaSession
     public void Dispose()
     {
         if (_disposed) return;
-        try { _dymolaProcess?.Kill(); _dymolaProcess?.Dispose(); } catch { /* ignore */ }
+        try { if (_dymolaProcess != null) KillStartedTree(_dymolaProcess); _dymolaProcess?.Dispose(); } catch { /* ignore */ }
         _dymolaProcess = null;
         _httpClient.Dispose();
         _commandLock.Dispose();
