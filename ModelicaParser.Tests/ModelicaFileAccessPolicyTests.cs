@@ -52,7 +52,8 @@ public class ModelicaFileAccessPolicyTests
         ["MLQT.Shared/Pages/SelfTest.razor.cs"] = (2, "writes the self-test result as JSON; the StreamReader wraps a stream, not a path"),
 
         // The git hook is a shell script MLQT generates, with its own explicit encoding.
-        ["MLQT.Cli/HookCommand.cs"] = (3, "reads and writes the git pre-commit hook script"),
+        ["MLQT.Cli/HookCommand.cs"] = (2, "reads and writes the git pre-commit hook script"),
+        ["MLQT.Cli/HookLocation.cs"] = (2, "reads a worktree's .git file and its commondir, when git itself cannot be run"),
 
         // Settings, baselines and metrics: JSON, all of it, and UTF-8 by definition.
         ["MLQT.Cli/SettingsResolver.cs"] = (1, "reads .mlqt/settings.json"),
