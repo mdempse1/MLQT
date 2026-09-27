@@ -322,6 +322,19 @@ arguments a level in from its name, not at the column of the name or to the left
 
 That changed a further 94 files of the two libraries, again only in indentation.
 
+An argument's own expression, wrapped before a `+` or `-`, continues a level in from the argument
+rather than at its column:
+
+```modelica
+  state := ThermodynamicState(p=p,
+    T=(h - reference_h - (p - reference_p)*((1 - beta_const*reference_T)/reference_d))/cp_const
+      + reference_T);
+```
+
+Earlier versions wrote `+ reference_T` at the column of `T=`, and an equation's right-hand side
+continued after a wrapped `=` two spaces to the left of it. Over the Modelica Standard Library and
+Buildings, 19 files are written differently from before, only in indentation and only to the right.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

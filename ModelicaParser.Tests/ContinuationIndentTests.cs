@@ -26,6 +26,11 @@ namespace ModelicaParser.Tests;
 /// at its siblings' column. It also took a wrapped argument's indent: MSL's
 /// <c>ModelicaTest.Rotational</c> had a graphics <c>Text</c>'s <c>textString=</c> two spaces right
 /// of <c>extent=</c> and <c>textColor=</c>.</para>
+///
+/// <para>B470 - an expression wrapped before a <c>+</c> or <c>-</c> continues a level in from the
+/// level it is written at. The line was ended after the argument list it is in had gone back out,
+/// so MSL's Media package had <c>+ reference_T</c> at the column of the <c>T=</c> it
+/// continues.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -447,6 +452,37 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(GraphicsElementWithALongArgument));
     }
 
+    private const string ArgumentExpressionContinued = """
+        function f
+          input Real p;
+          input Real h;
+          output State state;
+
+        algorithm
+          state := ThermodynamicState(p=p,
+            T=(h - reference_h - (p - reference_p)*((1 - beta_const*reference_T)/reference_d))/cp_const
+              + reference_T);
+        end f;
+        """;
+
+    [Fact]
+    public void AnArgumentsExpressionContinuedOnTheNextLineIsALevelInFromTheArgument()
+    {
+        // MSL's Media package (SimpleMedium's setState_phX): '+ reference_T' continues T='s
+        // expression, and was written at T='s own column (B470).
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Real p;
+                  input Real h;
+                  output State state;
+                algorithm
+                  state := ThermodynamicState(p=p, T=(h - reference_h - (p - reference_p)*((1 - beta_const*reference_T)/reference_d))/cp_const + reference_T);
+                end f;
+                """),
+            expectedOutput: Normalise(ArgumentExpressionContinued));
+    }
+
     [Fact]
     public void AnArrayOfCallsStillOnTheLineItOpenedOnIsLeftThere()
     {
@@ -491,6 +527,7 @@ public class ContinuationIndentTests
     [InlineData(ArrayElementsWrappedOrNot, 60)]
     [InlineData(AnnotationArraysOfCalls, 60)]
     [InlineData(GraphicsElementWithALongArgument, 100)]
+    [InlineData(ArgumentExpressionContinued, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

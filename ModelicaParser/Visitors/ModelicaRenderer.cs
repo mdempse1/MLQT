@@ -3212,6 +3212,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     for (int j = 0; j < _equationContinuationIndent; j++)
                         Indent();
                     AddIndentToCurrentLine();
+                    // The line is ended after any argument list the expression is in has gone
+                    // back out, so an expression that is an argument wrapped onto a line of its
+                    // own had its continuation at the argument's column (B470). It is kept a level
+                    // in from the level the expression is written at.
+                    _currentLineMinimumIndent = (_indentLevel - _equationContinuationIndent) * IndentSpaces + IndentSpaces;
                     // Write operator without leading space (we're at start of line)
                     Write(Operator(addOps[i + addOpsOffset].GetText(), false));
                     Space(); // Add space after operator
