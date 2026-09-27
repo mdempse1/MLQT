@@ -23,6 +23,12 @@ namespace ModelicaParser.Helpers;
 /// absent: the formatter gave a function's leading <c>annotation(Inline=true)</c> to its external
 /// clause and moved <c>Library="lib"</c> to the class, changing what the function links against.
 /// Ask here by position in the tree instead.</para>
+/// <para>An annotation alone in its body (<c>model M annotation(Icon()); end M;</c>) is parsed as the
+/// leading one, because the optional leading <c>annotation ';'</c> matches before the empty element
+/// list. With nothing after it, it stands where the trailing one does, and it is reported as that
+/// (B457): taken for a leading one, an edit adding the class's first element wrote it after the
+/// annotation. Its comments are still before the element list in the tree, which is why the renderer
+/// asks for them by position.</para>
 /// </remarks>
 public static class CompositionAnnotations
 {
@@ -60,12 +66,18 @@ public static class CompositionAnnotations
 
         var sawElementList = false;
         var inExternalClause = false;
+        var anythingAfterTheLists = false;
         foreach (var child in children)
         {
             switch (child)
             {
-                case modelicaParser.Element_listContext:
+                case modelicaParser.Element_listContext list:
                     sawElementList = true;
+                    if (list.element().Length > 0)
+                        anythingAfterTheLists = true;
+                    break;
+                case modelicaParser.Equation_sectionContext or modelicaParser.Algorithm_sectionContext:
+                    anythingAfterTheLists = true;
                     break;
                 case ITerminalNode:
                     var keyword = SectionKeyword.Of(child);
@@ -73,6 +85,8 @@ public static class CompositionAnnotations
                         inExternalClause = true;
                     else if (keyword == ";")
                         inExternalClause = false;
+                    if (keyword is "external" or "public" or "protected")
+                        anythingAfterTheLists = true;
                     break;
                 case modelicaParser.AnnotationContext annotation:
                     if (inExternalClause)
@@ -84,6 +98,13 @@ public static class CompositionAnnotations
                     break;
             }
         }
+
+        // A body holding nothing but its annotation (B457): the grammar's optional leading
+        // `annotation ';'` matches before the empty element list, but with nothing after it the
+        // annotation stands where a trailing one does, and it is one - a new first element goes
+        // before it, not after.
+        if (leading is not null && trailing is null && !anythingAfterTheLists)
+            (leading, trailing) = (null, leading);
 
         return new Parts(leading, external, trailing);
     }

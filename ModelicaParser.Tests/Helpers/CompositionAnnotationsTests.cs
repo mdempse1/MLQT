@@ -79,6 +79,47 @@ public class CompositionAnnotationsTests
         Assert.Empty(parts.ClassLevel);
     }
 
+    // B457: the grammar parses an annotation alone in its body as the leading one. With nothing after
+    // it, it is the trailing one.
+    [Theory]
+    [InlineData("model M annotation(Icon()); end M;")]
+    [InlineData("model M\n  // about the icon\n  annotation(Icon());\n  // after it\nend M;")]
+    public void Of_AnAnnotationAloneInItsBody_IsTheTrailingOne(string code)
+    {
+        var parts = CompositionAnnotations.Of(Composition(code));
+
+        Assert.Null(parts.Leading);
+        Assert.Equal("(Icon())", Text(parts.Trailing));
+        Assert.Equal(["(Icon())"], parts.ClassLevel.Select(Text));
+    }
+
+    [Theory]
+    [InlineData("model M annotation(Icon()); Real x; end M;")]
+    [InlineData("model M annotation(Icon()); equation end M;")]
+    [InlineData("model M annotation(Icon()); algorithm end M;")]
+    [InlineData("model M annotation(Icon()); protected end M;")]
+    [InlineData("model M annotation(Icon()); public end M;")]
+    [InlineData("function f annotation(Icon()); external \"C\"; end f;")]
+    public void Of_AnAnnotationWithSomethingAfterIt_IsStillTheLeadingOne(string code)
+    {
+        var parts = CompositionAnnotations.Of(Composition(code));
+
+        Assert.Equal("(Icon())", Text(parts.Leading));
+        Assert.Null(parts.Trailing);
+    }
+
+    [Fact]
+    public void ClassBodyLocator_AnAnnotationAloneInItsBody_IsWhereTheFirstElementGoes()
+    {
+        const string code = "model M\n  annotation(Icon());\nend M;";
+        var layout = ClassBodyLocator.Analyze(code);
+
+        var edited = code.Insert(layout.PublicAppendOffset, "Real x;\n  ");
+
+        Assert.Equal("model M\n  Real x;\n  annotation(Icon());\nend M;", edited);
+        Assert.Equal(code.IndexOf("annotation", StringComparison.Ordinal), layout.BodyEndOffset);
+    }
+
     [Fact]
     public void Of_NoAnnotations_AndNull()
     {

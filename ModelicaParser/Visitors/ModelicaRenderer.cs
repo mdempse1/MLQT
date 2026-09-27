@@ -1013,7 +1013,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 // move with it, each on a line of its own. They go above the blank line, where
                 // a comment before a trailing annotation is written: anywhere else, the next
                 // save would read them as that and move them again.
-                if (ReferenceEquals(annotation, annotations.Leading) && context.children is { } children)
+                // Asked by position, not as Leading: an annotation alone in its body is the trailing
+                // one (B457), and its comments are still before the element list, skipped there.
+                if (context.children is { } children && IsBeforeElementList(context, children.IndexOf(annotation)))
                 {
                     Indent();
                     foreach (var comment in children.TakeWhile(c => !ReferenceEquals(c, annotation)).OfType<modelicaParser.C_commentContext>())
