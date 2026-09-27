@@ -2622,6 +2622,93 @@ public class RepositoryServiceTests
         Assert.Contains(saved.Projects, p => p.Id == second.Id);
     }
 
+    private static RepositorySettingsCollection LegacySettings(string id = "legacy") => new()
+    {
+        Repositories =
+        {
+            new RepositorySettingsEntry
+            {
+                Id = id,
+                Name = "Legacy",
+                LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b460-" + Guid.NewGuid().ToString("N"))
+            }
+        }
+    };
+
+    [Fact]
+    public async Task CreateAndSelectProjectAsync_OverALegacyFile_KeepsTheLegacyRepositoriesInAProject()
+    {
+        // B460: creating a project on the startup screen over a legacy file (no Projects, a
+        // non-empty Repositories) appended the project, so the load that followed found a project
+        // and skipped the migration, and the next save wrote a collection without Repositories.
+        var store = new InMemorySettingsService();
+        await store.SetAsync("Repositories", LegacySettings());
+        var service = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+
+        var created = await service.CreateAndSelectProjectAsync("New");
+        await service.LoadRepositorySettingsAsync(created.Id, TestContext.Current.CancellationToken);
+        await service.SaveRepositorySettingsAsync();
+
+        var saved = await store.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+        Assert.Equal(created.Id, service.GetActiveProject()?.Id);
+        var holder = Assert.Single(saved.Projects, p => p.Repositories.Any(r => r.Id == "legacy"));
+        Assert.NotEqual(created.Id, holder.Id);
+        Assert.Equal(2, saved.Projects.Count);
+        Assert.Empty(saved.Repositories);
+
+        // ...and a fresh load of the file sees both projects, with no second migration.
+        var reloaded = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+        await reloaded.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(2, reloaded.GetProjects().Count);
+        Assert.Equal(created.Id, reloaded.GetActiveProject()?.Id);
+    }
+
+    [Fact]
+    public async Task CreateAndSelectProjectAsync_NamedDefault_OverALegacyFile_KeepsBoth()
+    {
+        // The startup dialog validates against the saved projects, of which a legacy file has none,
+        // so "Default" is a name it accepts. The migrated project must not take it from the user.
+        var store = new InMemorySettingsService();
+        await store.SetAsync("Repositories", LegacySettings());
+        var service = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+
+        var created = await service.CreateAndSelectProjectAsync("Default");
+
+        var saved = await store.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal("Default", saved.Projects.Single(p => p.Id == created.Id).Name);
+        var holder = Assert.Single(saved.Projects, p => p.Id != created.Id);
+        Assert.Equal("legacy", Assert.Single(holder.Repositories).Id);
+        Assert.True(ProjectNameRules.IsAvailable(holder.Name, [created]));
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task LoadRepositorySettingsAsync_LegacyRepositoriesBesideProjects_AreMigratedOnce()
+    {
+        // A file the pre-B460 CreateAndSelectProjectAsync already wrote holds both: the projects and
+        // the stranded legacy list. The load recovers them into a project of their own, leaves the
+        // active project as it was, and a second read finds nothing more to migrate.
+        var store = new InMemorySettingsService();
+        var mine = new ProjectProfile { Name = "Mine" };
+        var stranded = LegacySettings();
+        stranded.Projects.Add(mine);
+        stranded.ActiveProjectId = mine.Id;
+        await store.SetAsync("Repositories", stranded);
+        var service = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var saved = await store.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal(mine.Id, saved.ActiveProjectId);
+        Assert.Equal(mine.Id, service.GetActiveProject()?.Id);
+        Assert.Equal(2, saved.Projects.Count);
+        Assert.Equal("legacy", Assert.Single(saved.Projects.Single(p => p.Id != mine.Id).Repositories).Id);
+        Assert.Empty(saved.Repositories);
+        Assert.Equal(2, service.GetProjects().Count);
+    }
+
     #endregion
 
     #region FindVcsRoot Tests

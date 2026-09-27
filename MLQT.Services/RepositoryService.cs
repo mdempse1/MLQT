@@ -30,7 +30,8 @@ public class RepositoryService : IRepositoryService
     // One save at a time, each taking its contents once it is its turn, so the save that lands last
     // is always the newest (B447). See SaveRepositorySettingsAsync. Every write of the settings key
     // takes it - CreateAndSelectProjectAsync and the legacy migration in LoadRepositorySettingsAsync
-    // as well (B452) - and nothing holding it may call anything that saves.
+    // as well (B452) - and nothing holding it may call anything that saves. Both of those run
+    // MigrateLegacyRepositories on what they read before writing it back (B460).
     private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     // Whether memory owns the settings key: set by the first LoadRepositorySettingsAsync, or by a
@@ -1011,20 +1012,8 @@ public class RepositoryService : IRepositoryService
         {
             settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
 
-            // Migration: if no projects defined but legacy Repositories exist, migrate them
-            if (settings.Projects.Count == 0 && settings.Repositories.Count > 0)
-            {
-                Info("RepositoryService", $"Migrating {settings.Repositories.Count} legacy repositories to Default project");
-                var defaultProject = new ProjectProfile
-                {
-                    Name = "Default",
-                    Repositories = settings.Repositories.ToList()
-                };
-                settings.Projects.Add(defaultProject);
-                settings.ActiveProjectId = defaultProject.Id;
-                settings.Repositories.Clear();
+            if (MigrateLegacyRepositories(settings))
                 await _settingsService.SetAsync(SettingsKey, settings);
-            }
         }
         finally
         {
@@ -1143,6 +1132,44 @@ public class RepositoryService : IRepositoryService
         LogProcessEnd("RepositoryService", "Loading repository settings");
     }
 
+    /// <summary>
+    /// Moves a legacy top-level <c>Repositories</c> list into a project of its own. Every read of
+    /// the settings key that may write it back goes through this (B460).
+    /// </summary>
+    /// <returns>Whether anything was migrated. The list is cleared, so a second call does nothing.</returns>
+    /// <remarks>
+    /// <para><b>Why after every read, not only when there are no projects.</b> Only the load
+    /// migrated, and only over a file with no projects. Creating a project on the startup screen
+    /// over a legacy file appended one, so the load that followed skipped the migration, and the
+    /// next save - which writes projects and never <c>Repositories</c> - lost the legacy list. A
+    /// file written that way holds both, and this recovers it too.</para>
+    ///
+    /// <para>The project is called "Default", or the first "Default N" no project uses. The active
+    /// project is set to it only when the saved active id names no project; a caller that makes
+    /// another project active sets that afterwards.</para>
+    /// </remarks>
+    private static bool MigrateLegacyRepositories(RepositorySettingsCollection settings)
+    {
+        if (settings.Repositories.Count == 0)
+            return false;
+
+        var name = "Default";
+        for (var n = 2; !ProjectNameRules.IsAvailable(name, settings.Projects); n++)
+            name = $"Default {n}";
+
+        Info("RepositoryService", $"Migrating {settings.Repositories.Count} legacy repositories to project '{name}'");
+        var migrated = new ProjectProfile
+        {
+            Name = name,
+            Repositories = settings.Repositories.ToList()
+        };
+        settings.Projects.Add(migrated);
+        if (!settings.Projects.Any(p => p.Id == settings.ActiveProjectId))
+            settings.ActiveProjectId = migrated.Id;
+        settings.Repositories.Clear();
+        return true;
+    }
+
     // ========== Project Profile Management ==========
 
     public IReadOnlyList<ProjectProfile> GetProjects()
@@ -1207,6 +1234,11 @@ public class RepositoryService : IRepositoryService
 
             project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
             settings.Projects.Add(project);
+
+            // After the new project is added, so the migrated one gets a name the user did not
+            // choose - the startup dialog validated against a legacy file's empty project list, so
+            // "Default" is a name it lets through (B460).
+            MigrateLegacyRepositories(settings);
             settings.ActiveProjectId = project.Id;
 
             await _settingsService.SetAsync(SettingsKey, settings);
