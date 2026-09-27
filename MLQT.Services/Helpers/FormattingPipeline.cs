@@ -413,19 +413,17 @@ public sealed class FormattingPipeline : IFormattingPipeline
         // not be written by the formatter if it has a malformed within-clause or mismatched
         // model name.  Deleting it would cause a "scheduled for addition, but is missing"
         // commit error.
+        // Against the VCS root, not the library, and normalised: see ScheduledForAddition (B472).
         var vcsAddedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrEmpty(filterRepositoryId))
         {
             try
             {
                 var repo = _repositories.GetRepository(filterRepositoryId);
-                if (repo?.LocalPath != null)
+                if (repo != null)
                 {
-                    foreach (var wc in _repositories.GetWorkingCopyChanges(filterRepositoryId)
-                        .Where(c => c.Status == VcsFileStatus.Added))
-                    {
-                        vcsAddedFiles.Add(Path.Combine(repo.LocalPath, wc.Path));
-                    }
+                    vcsAddedFiles = VcsChangeResolver.ScheduledForAddition(
+                        repo.VcsRootPath, _repositories.GetWorkingCopyChanges(filterRepositoryId));
                 }
             }
             catch (Exception ex)

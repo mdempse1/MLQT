@@ -1251,7 +1251,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
                 var file = new VcsWorkingCopyFile
                 {
-                    Path = Path.GetRelativePath(repositoryPath, e.Path),
+                    // Forward-slashed, as Git reports it on both platforms. GetRelativePath gives
+                    // the OS's separator, so on Windows every consumer was handed Lib\Thing.mo by
+                    // SVN and Lib/Thing.mo by Git for the same file (B472). See VcsRelativePath.
+                    Path = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, e.Path)),
                     IsStaged = false, // SVN doesn't have staging.
                     Status = e.TreeConflicted
                         ? VcsFileStatus.Conflicted
@@ -1291,7 +1294,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                     {
                         filesToAdd.Add(new VcsWorkingCopyFile
                         {
-                            Path = Path.GetRelativePath(repositoryPath, newFile),
+                            Path = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, newFile)),
                             Status = VcsFileStatus.Untracked,
                             IsStaged = false
                         });

@@ -134,6 +134,19 @@ public class BaselineStatusServiceTests : IDisposable
     }
 
     [Fact]
+    public void ModelsInFiles_MatchesAPathTheVcsReportedWithForwardSlashes()
+    {
+        // Git and SVN both report Sub/A.mo (B472), and PendingCommit joins that to the VCS root as
+        // it comes; the graph holds the platform's own form.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(_repoDir, "Sub", "A.mo"), "model A \"a\" end A;");
+
+        var models = BaselineStatusSnapshot.ModelsInFiles(graph, [Path.Combine(_repoDir, "Sub/A.mo")]);
+
+        Assert.Equal(["A"], models);
+    }
+
+    [Fact]
     public void ModelsInFiles_IgnoresPathsTheGraphDoesNotKnow()
     {
         var graph = new DirectedGraph();

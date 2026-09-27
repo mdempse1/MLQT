@@ -11,6 +11,11 @@ namespace RevisionControl;
 /// <see cref="System.IO.Path.Combine(string, string)"/> and <c>File.Exists</c> on either platform.
 /// The backslash form can only be used on one of them.</para>
 ///
+/// <para><b>Converted where the path is made, not where it is used.</b>
+/// <see cref="VcsWorkingCopyFile.Path"/> is canonical from both systems: SVN's working-copy status
+/// used to hand out the backslash form on Windows, and the SVN merge dialog listed
+/// <c>Lib\Modified.mo</c> where Git's listed <c>Lib/Modified.mo</c> (B472).</para>
+///
 /// <para><b>That is not a hypothetical.</b> <c>ChangeReview</c> canonicalised on <c>\</c> and used the
 /// result both as a tree key and as a path to read the working copy with. On Linux
 /// <c>Lib\Thing.mo</c> is a single file name that happens to contain backslashes, so

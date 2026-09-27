@@ -6,7 +6,8 @@ namespace RevisionControl;
 public class VcsWorkingCopyFile
 {
     /// <summary>
-    /// The path of the file relative to the repository root.
+    /// The path of the file relative to the repository root, with <c>/</c> separators from Git and SVN
+    /// alike, on every platform (<see cref="VcsRelativePath"/>, B472).
     /// </summary>
     public string Path { get; set; } = "";
 

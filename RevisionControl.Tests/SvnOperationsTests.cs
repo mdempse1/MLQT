@@ -708,7 +708,8 @@ public class SvnOperationsTests : IClassFixture<SvnWorkingCopyFixture>
             // The directory itself should NOT appear (it gets replaced by its file entries)
             Assert.DoesNotContain(changes, f => f.Path == testDirName || f.Path == testDirName + Path.DirectorySeparatorChar);
             // The file inside should appear as untracked
-            var relativeFilePath = Path.GetRelativePath(_workingCopy, testFilePath);
+            // Forward-slashed on every platform, as Git reports it (B472).
+            var relativeFilePath = testDirName + "/test_file.txt";
             Assert.Contains(changes, f => f.Path.Equals(relativeFilePath, StringComparison.OrdinalIgnoreCase)
                                          && f.Status == VcsFileStatus.Untracked);
         }
