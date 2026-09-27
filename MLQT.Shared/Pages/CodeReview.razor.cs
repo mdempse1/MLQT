@@ -608,6 +608,21 @@ public partial class CodeReview : IAsyncDisposable
     }
 
     /// <summary>
+    /// Takes <paramref name="modelId"/> out of the repository's <c>FormattingExcludedModels</c>, and
+    /// saves the settings <b>as an explicit Apply</b> when that changed them (B380): the button is a
+    /// user's own change to the repository's settings, so it records the default-on rules as the
+    /// Edit Repository dialog's Apply does, where a plain save would write the change without them.
+    /// When the class was not in the list nothing changed, and nothing is written - recording the
+    /// defaults then would be a modified settings file nobody asked for (B310).
+    /// </summary>
+    internal static async Task RemoveExcludedModelEntryAsync(
+        IRepositoryService repositories, Repository repository, string modelId)
+    {
+        if (repository.StyleSettings?.FormattingExcludedModels.Remove(modelId) == true)
+            await repositories.ApplyRepositorySettingsAsync(repository.Id);
+    }
+
+    /// <summary>
     /// Takes the current class out of formatting, or puts it back — by writing
     /// <c>__MLQT(format=false)</c> into its source rather than by adding its name to
     /// <c>FormattingExcludedModels</c> (B175).
@@ -664,8 +679,7 @@ public partial class CodeReview : IAsyncDisposable
                 Step("remove annotation");
 
                 // The list entry too: a class excluded before B175, or one carrying both.
-                repository.StyleSettings.FormattingExcludedModels.Remove(modelId);
-                await RepositoryService.SaveRepositorySettingsAsync();
+                await RemoveExcludedModelEntryAsync(RepositoryService, repository, modelId);
                 Step("save settings");
             }
             else
