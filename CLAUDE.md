@@ -41,7 +41,7 @@ dotnet test MLQT.Services.Tests
 dotnet test ModelicaParser.Tests
 dotnet test ModelicaGraph.Tests
 
-# Run every suite, including the two no CI job runs - see Test Cases below
+# Run every suite, including the parts of two that no CI job runs - see Test Cases below
 pwsh ./build/run-all-tests.ps1
 
 # Run the desktop application (Windows and Linux)
@@ -466,13 +466,13 @@ have added a class or moved code between them.
 ```powershell
 ./build/run-all-tests.ps1                        # all 10 suites, ~4 minutes
 ./build/run-all-tests.ps1 -Coverage              # ...with a per-assembly coverage summary
-./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # the 7 CI runs, against the current build
+./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # what CI runs, against the current build
 ./build/run-all-tests.ps1 -Configuration Debug   # Release by default, to match CI
 ```
 
 `-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
-only visible here: `DymolaInterface` and `OpenModelicaInterface`, whose suites drive a live
-simulation tool so no CI job runs them, and the ~8 points the browser journeys add to `MLQT.Shared`
+only visible here: `DymolaInterface` and `OpenModelicaInterface`, whose suites the gate does not
+measure (CI runs only their tool-free classes, and does not gate on them), and the ~8 points the browser journeys add to `MLQT.Shared`
 by exercising the real UI. Both scripts take their assembly lists from
 `build/CoverageAssemblies.ps1`, so they cannot disagree about what "our code" means.
 
@@ -481,7 +481,7 @@ It runs **every** suite, which is more than CI does and more than the coverage g
 | | Suites |
 |---|---|
 | `run-all-tests.ps1` | all 10 — the 7 below, plus `DymolaInterface.Tests`, `OpenModelicaInterface.Tests` and `MLQT.Journeys` |
-| CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform; `ui-journeys` runs the journeys on both |
+| CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform, plus the Dymola and OpenModelica suites **without their tool classes** (B399); `ui-journeys` runs the journeys on both |
 | `check-coverage.ps1` | the same 7 — the other three contribute no coverage |
 
 **The suite list is read from `MLQT.slnx`**, not written out in the script, so a test project added to
@@ -489,10 +489,17 @@ the solution is picked up without anyone remembering a list. This repository has
 same rule having two implementations often enough that a list would be a defect waiting to happen.
 
 **Three suites need something the machine may not have** and are the reason this script exists at all:
-`DymolaInterface.Tests` (a live Dymola) and `OpenModelicaInterface.Tests` (a live `omc`) run in **no**
-CI job — the workflow says why — so this is the only thing that runs them; `MLQT.Journeys` needs
-`pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once. On a machine without
-Dymola or OpenModelica, use `-CoreOnly`.
+`DymolaInterface.Tests` (a live Dymola) and `OpenModelicaInterface.Tests` (a live `omc`) run in CI
+**only without the classes that drive the tool**, so this is the only thing that runs those;
+`MLQT.Journeys` needs `pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once.
+On a machine without Dymola or OpenModelica, use `-CoreOnly`, which runs the two suites as CI does.
+
+**A class that needs a live tool says so with a trait** — `[Trait("Requires", "Dymola")]` or
+`[Trait("Requires", "OpenModelica")]` — and CI runs the rest with `--filter "Requires!=Dymola"` /
+`"Requires!=OpenModelica"` (B399). Most of the Dymola suite needs no Dymola: wire format against a
+fake handler, socket stubs, spawn environment. Each suite's `ToolTraitTests` fails when a class using
+the tool's fixture is not marked; a class that starts the tool some other way (`TimeLimitTests`) has
+to be marked by hand. `LiveToolTestFilterTests` holds the filter strings to the traits.
 
 **A fourth is partly in that position.** `RevisionControl.Tests` has three classes that need an svn
 client — `SvnIntegrationTests`, `SvnIntegrationAdvancedTests` and `SvnMergeCommitTests` — so CI

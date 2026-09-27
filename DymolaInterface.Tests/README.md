@@ -52,6 +52,19 @@ If Dymola is already running on port 8082, the fixture will connect to it instea
 dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj
 ```
 
+### Run Only the Tests That Need No Dymola
+
+The classes that drive a live Dymola carry `[Trait("Requires", "Dymola")]`; everything else - wire
+format against a fake handler, socket stubs, spawn environment, detection - runs anywhere, and CI runs
+it on both platforms (B399):
+
+```bash
+dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "Requires!=Dymola"
+```
+
+A new class that needs Dymola must carry the trait. `ToolTraitTests` fails for one that takes the
+shared fixture without it; one that starts a Dymola some other way has to be marked by hand.
+
 ### Run Specific Test Class
 
 ```bash

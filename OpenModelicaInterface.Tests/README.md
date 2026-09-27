@@ -44,6 +44,18 @@ The test suite uses a **shared OMC instance** managed by the `OpenModelicaFixtur
 dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj
 ```
 
+### Run Only the Tests That Need No omc
+
+The classes that drive a live omc carry `[Trait("Requires", "OpenModelica")]`; everything else runs
+anywhere, and CI runs it on both platforms (B399):
+
+```bash
+dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --filter "Requires!=OpenModelica"
+```
+
+A new class that needs omc must carry the trait. `ToolTraitTests` fails for one that takes the shared
+fixture without it; one that starts its own omc, as `TimeLimitTests` does, has to be marked by hand.
+
 ### Run Specific Test Class
 
 ```bash

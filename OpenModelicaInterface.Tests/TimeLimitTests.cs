@@ -16,6 +16,9 @@ namespace OpenModelicaInterface.Tests;
 /// <para><c>loadModel(Modelica)</c> is the long command: loading the whole standard library takes
 /// omc seconds, far longer than the limits set here.</para>
 /// </remarks>
+// Starts an omc of its own rather than taking the fixture, so ToolTraitTests cannot see that it needs
+// one - the trait is the only thing keeping it out of CI's tool-free run (B399).
+[Trait("Requires", "OpenModelica")]
 public class TimeLimitTests
 {
     private const string OmcPath = @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe";

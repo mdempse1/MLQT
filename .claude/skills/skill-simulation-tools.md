@@ -129,7 +129,8 @@ used to arrive there holding the window.
 **Change both tools in one piece, and use the result before calling it done.** A question answered
 for one tool and left alone for its sibling reads as agreement — that is how B170 was reported three
 times in two days, and why the time limit (B263) was built across both at once. And the live-tool
-suites run in no CI job, so the fakes prove the services' promises but not that a tool does what the
+classes run in no CI job (CI runs only the classes of those suites not marked `[Trait("Requires", ...)]`,
+B399), so the fakes prove the services' promises but not that a tool does what the
 fake says: the day after B170/B171 shipped, pressing the button found four more defects (a clean
 Dymola check reporting it had checked nothing, omc handed a class's own file instead of the library's
 `package.mo`, seconds of silence after the click, a headless `omc` outliving MLQT). Run

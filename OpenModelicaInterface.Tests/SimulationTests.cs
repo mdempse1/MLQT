@@ -7,6 +7,7 @@ namespace OpenModelicaInterface.Tests;
 /// These tests run sequentially and share a single OMC instance.
 /// </summary>
 [Collection("OpenModelica Collection")]
+[Trait("Requires", "OpenModelica")]
 public class SimulationTests
 {
     private readonly OpenModelicaFixture _fixture;

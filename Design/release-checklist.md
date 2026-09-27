@@ -13,8 +13,9 @@ push — this is only the work that needs a machine, a tool or a decision that n
 ./build/run-all-tests.ps1
 ```
 
-CI runs seven suites. This runs ten. The three it adds are the whole reason the script exists:
-`DymolaInterface.Tests` and `OpenModelicaInterface.Tests` need a live tool that no runner has, and
+CI runs seven suites whole and two in part. This runs all ten whole. What it adds is the whole reason
+the script exists: the classes of `DymolaInterface.Tests` and `OpenModelicaInterface.Tests` marked
+`[Trait("Requires", ...)]` need a live tool that no runner has, and
 `MLQT.Journeys` needs `pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once.
 
 **A failure is a failure**, including in the tool-dependent suites. There is no known exception:

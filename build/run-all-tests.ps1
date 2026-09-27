@@ -9,9 +9,10 @@
     whoever remembered they existed, which for a while was nobody: 207 Dymola tests had never run in
     any automated context.
 
-    CI is right to skip them. They drive a live Dymola or OpenModelica install that no runner has,
-    and the workflow says so. But a developer machine often *does* have one, and on a machine that
-    does, they are the only tests that cover those interfaces at all.
+    CI runs only part of them: the classes that drive a live Dymola or OpenModelica install no runner
+    has carry [Trait("Requires", ...)] and are filtered out there, and the rest - wire format, socket
+    stubs, detection - runs on both platforms (B399). But a developer machine often *does* have the
+    tools, and on a machine that does, this is the only place the rest of those suites runs.
 
     The suite list is read from MLQT.slnx rather than written out here. This repository has been
     caught repeatedly by one rule with two implementations - a test project added to the solution and
@@ -21,8 +22,10 @@
     Build configuration. Release by default, to match CI and the coverage gate.
 
 .PARAMETER CoreOnly
-    Skip the suites that need an external simulation tool, leaving what CI runs. Use this to ask
-    "would CI be green?" without the noise of tools the runner would not have either.
+    Leave out what needs an external tool, leaving what CI runs: the journeys are skipped, and the
+    Dymola and OpenModelica suites run without their classes marked [Trait("Requires", ...)] - the
+    same filter CI uses (B399). Use this to ask "would CI be green?" without the noise of tools the
+    runner would not have either.
 
 .PARAMETER SkipBuild
     Run the suites as they were last built. Much faster when iterating on one of them.
@@ -93,13 +96,18 @@ $suiteNotes = @{
         Why          = 'the SVN integration tests need an svn client'
         NeedsTooling = $false
     }
+    # CoreFilter is what -CoreOnly runs instead of skipping the suite: the classes that need the
+    # tool carry [Trait("Requires", ...)], and CI runs the rest of the suite with the same filter
+    # (B399). LiveToolTestFilterTests holds these strings to the workflow's and to the traits.
     'DymolaInterface.Tests' = @{
         Filter       = $null
+        CoreFilter   = 'Requires!=Dymola'
         Why          = 'drives a live Dymola install'
         NeedsTooling = $true
     }
     'OpenModelicaInterface.Tests' = @{
         Filter       = $null
+        CoreFilter   = 'Requires!=OpenModelica'
         Why          = 'drives a live OpenModelica (omc) install'
         NeedsTooling = $true
     }
@@ -139,12 +147,20 @@ $suites = foreach ($path in $projects) {
         Name         = $name
         Project      = $path
         Filter       = if ($note) { $note.Filter } else { $null }
+        CoreFilter   = if ($note -and $note.ContainsKey('CoreFilter')) { $note.CoreFilter } else { $null }
         Why          = if ($note) { $note.Why } else { $null }
         NeedsTooling = if ($note) { [bool]$note.NeedsTooling } else { $false }
     }
 }
 
 if ($CoreOnly) {
+    # A suite with a CoreFilter is not skipped: the part of it that needs no tool runs, as it does in
+    # CI, and only the part that drives the tool is left out (B399).
+    foreach ($s in $suites | Where-Object { $_.NeedsTooling -and $_.CoreFilter }) {
+        Write-Host "Running $($s.Name) without the classes that need the tool - $($s.Why)" -ForegroundColor DarkGray
+        $s.Filter = $s.CoreFilter
+        $s.NeedsTooling = $false
+    }
     $skipped = $suites | Where-Object NeedsTooling
     $suites = $suites | Where-Object { -not $_.NeedsTooling }
     foreach ($s in $skipped) { Write-Host "Skipping $($s.Name) - $($s.Why)" -ForegroundColor DarkGray }

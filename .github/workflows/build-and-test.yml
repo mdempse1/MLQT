@@ -93,10 +93,9 @@ jobs:
       - name: Build MLQT.Photino
         run: dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release --no-restore
 
-      # Built but not run, for the same reason as the SVN integration tests below: these drive a
-      # live Dymola / OpenModelica install that no runner has, and they assert on what it answers
-      # rather than self-skipping. Building them still catches the thing CI can catch - a change
-      # to the interfaces that stops them compiling, which would otherwise reach main unnoticed.
+      # Run in part, like RevisionControl.Tests: the classes that drive a live Dymola / OpenModelica
+      # install no runner has are excluded by trait, and everything else in the two suites runs -
+      # see "Run DymolaInterface tests" below (B399).
       - name: Build DymolaInterface.Tests
         run: dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release --no-restore
 
@@ -150,6 +149,22 @@ jobs:
       - name: Run MLQT.Shared tests
         if: '!cancelled()'
         run: dotnet test MLQT.Shared.Tests -c Release --no-build --report-trx --report-trx-filename shared.trx --results-directory ${{ github.workspace }}/TestResults
+
+      # The simulation-tool suites, without the classes that need the tool (B399). Most of the Dymola
+      # suite needs no Dymola - wire format against a fake handler, socket stubs, spawn environment,
+      # detection - and until this ran nowhere, so tests for that code went into MLQT.Services.Tests
+      # to be run at all (B331, B337). The classes that do drive a live Dymola or omc carry
+      # [Trait("Requires", ...)] and are filtered out by what they need, never by name (B266). Each
+      # suite's ToolTraitTests fails if a class using the tool's fixture is not marked, and
+      # LiveToolTestFilterTests holds these filter strings to the traits. Measured, not assumed: with
+      # these filters no dymola or omc process started, on a machine that has both installed.
+      - name: Run DymolaInterface tests (the classes needing no Dymola)
+        if: '!cancelled()'
+        run: dotnet test DymolaInterface.Tests -c Release --no-build --filter "Requires!=Dymola" --report-trx --report-trx-filename dymola.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run OpenModelicaInterface tests (the classes needing no omc)
+        if: '!cancelled()'
+        run: dotnet test OpenModelicaInterface.Tests -c Release --no-build --filter "Requires!=OpenModelica" --report-trx --report-trx-filename openmodelica.trx --results-directory ${{ github.workspace }}/TestResults
 
       # The CLI tests assert the shape we expect of a SARIF document, which cannot catch one that is
       # well-formed by our lights and rejected by a consumer's. This validates a report generated from
@@ -238,6 +253,12 @@ jobs:
       - name: Build MLQT.Photino
         run: dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release
 
+      - name: Build DymolaInterface.Tests
+        run: dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release
+
+      - name: Build OpenModelicaInterface.Tests
+        run: dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release
+
       # Each suite runs even if an earlier one failed, and the job still fails. Stopping at the first
       # failure means one round trip per broken suite, which is the wrong trade when six of these had
       # never run on Linux at all - the first run should say everything that is wrong, not the first
@@ -271,6 +292,16 @@ jobs:
       - name: Run MLQT.Shared tests
         if: '!cancelled()'
         run: dotnet test MLQT.Shared.Tests -c Release --no-build --report-trx --report-trx-filename shared-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      # Same exclusion as the Windows job (B399): the classes needing a live Dymola or omc are
+      # filtered out by trait, and the rest runs.
+      - name: Run DymolaInterface tests (the classes needing no Dymola)
+        if: '!cancelled()'
+        run: dotnet test DymolaInterface.Tests -c Release --no-build --filter "Requires!=Dymola" --report-trx --report-trx-filename dymola-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run OpenModelicaInterface tests (the classes needing no omc)
+        if: '!cancelled()'
+        run: dotnet test OpenModelicaInterface.Tests -c Release --no-build --filter "Requires!=OpenModelica" --report-trx --report-trx-filename openmodelica-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       # Produce and run the exact artifact the release ships, against the committed fixture, so a
       # release cannot be the first time that binary is built or executed on Linux. The check's exit

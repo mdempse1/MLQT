@@ -117,8 +117,18 @@ public class InterfaceFactoryTests
         // Arrange & Act
         var settings = new OpenModelicaSettings();
 
-        // Assert
-        Assert.Equal(@"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe", settings.OmcPath);
+        // Assert - OmcPath is discovered at construction, as DymolaSettings' is. It used to be
+        // asserted as C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe, which is not the
+        // default but what detection found on one machine: true only where omc 1.26.0 is installed
+        // there, so a test in a class needing no omc failed on every machine without it - Linux
+        // included - which is why it could not run in CI's tool-free step (B399). The contract is
+        // that the default is whatever detection answers, and that the answer is a real omc or none.
+        Assert.Equal(OpenModelicaSettings.FindInstalledOmc(), settings.OmcPath);
+        if (!string.IsNullOrEmpty(settings.OmcPath))
+        {
+            Assert.True(File.Exists(settings.OmcPath), $"Discovered OmcPath '{settings.OmcPath}' should exist on disk.");
+            Assert.Equal(OpenModelicaSettings.OmcExecutableName, Path.GetFileName(settings.OmcPath));
+        }
         Assert.Equal(13027, settings.PortNumber);
         Assert.False(settings.AutoLoadModelicaLibrary);
         Assert.Equal(1e-6, settings.DefaultTolerance);
