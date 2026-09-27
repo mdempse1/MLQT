@@ -234,7 +234,14 @@ manual.
 
 **What stays a photograph, and why:** anything needing Dymola (`code-review-4`, and `code-review-5`
 because the Finding Details dialog only opens for a finding carrying `Details`, which a style rule does
-not produce), and anything showing the window frame.
+not produce), `metrics-1`, and anything showing the window frame.
+
+**`metrics-1` was looked at and left** (B473): its caption is the Metrics tab *over the Modelica
+Standard Library*, and what the picture shows is what only a real library gives — coverage figures
+across thousands of classes, and a burndown drawn from snapshots saved over months. The fixture has
+eleven classes and one run; a picture of it would be a Metrics tab with a single point where the
+trend should be, which is not what metrics-dashboard.md is describing. Retake it by hand, from MSL,
+when the tab changes.
 
 **What used to be and no longer is (B152):** the six SVN shots and `settings-reference-4` (that section
 renders only for an SVN repository) come from the SVN fixture, added last in the run after the Git

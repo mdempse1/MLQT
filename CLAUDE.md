@@ -395,7 +395,10 @@ an ordinary run never writes to the repository.
 them is wrong - and it is usually the picture, which is the point of being able to regenerate them.
 A handful cannot be produced this way at all and stay photographs: the two Dymola shots
 (`code-review-4`, and `code-review-5` because the Finding Details dialog opens only for a finding
-carrying `Details`, which a style rule never produces) and anything showing the window frame. **The
+carrying `Details`, which a style rule never produces), `metrics-1` (the Metrics tab over the
+Modelica Standard Library, with a burndown built from months of snapshots — the fixture's eleven
+classes and a single run give neither the numbers nor the trend the page is about) and anything
+showing the window frame. **The
 SVN shots are generated** (B152): an SVN "server" is only a repository directory, so the fixture
 makes one with `svnadmin create` and checks trunk out over `file://` — which means the generator
 now needs `svn` and `svnadmin` on the machine that runs it. So is `git-operations-6`, reached by
