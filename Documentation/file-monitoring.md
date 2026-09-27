@@ -129,5 +129,8 @@ The file monitor is automatically paused and resumed during certain operations t
 - **During VCS operations**: Paused before the operation starts, and resumed however it ends — by the analysis pipeline once it has formatted, or straight away if the operation fails or its dialog is closed. While you resolve a merge or rebase conflict in its dialog the monitor stays paused, and closing the dialog with conflicts unresolved resumes it
 - **During formatting**: Paused before writing formatted files, resumed after all files are saved
 - **During repository settings changes**: Paused if formatting settings change, resumed after reformatting completes
+- **During edits made from Code Review**: Paused while **Split into files**, a **Suppress** or formatting-exclusion annotation, or a spelling correction writes the file and reloads it, and resumed however that ends, including when the reload fails
+
+In every case the pause covers every library checked out in the same working copy, not only the one being written to: they share one watcher, so a neighbour left watching would report the write as its own change.
 
 This ensures that MLQT's own file writes don't show up as pending external changes.

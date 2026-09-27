@@ -2318,11 +2318,14 @@ document.head.appendChild(style);
             var settings = repository.StyleSettings ?? new StyleCheckingSettings();
 
             // MLQT's own write, so the monitor is paused across it exactly as it is for a save —
-            // otherwise the new files come back as external changes to process.
-            FileMonitoringService.StopMonitoring(repository.Id);
+            // otherwise the new files come back as external changes to process. Held as a
+            // MonitorPause over every repository in the working copy (B376): pausing only this one
+            // left the watcher running for a neighbour checked out in the same tree, which then
+            // heard the split as external changes (B301), and a restart by hand is one a path
+            // nobody thought of can skip (B296).
             PackageSplitter.SplitResult result;
             IReadOnlyCollection<string> affected;
-            try
+            using (MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository)))
             {
                 result = PackageSplitter.Split(
                     LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions(), settings);
@@ -2334,12 +2337,6 @@ document.head.appendChild(style);
                 if (!string.IsNullOrEmpty(sourceFile) && !changed.Contains(sourceFile, StringComparer.OrdinalIgnoreCase))
                     changed.Add(sourceFile);
                 affected = await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
-            }
-            finally
-            {
-                FileMonitoringService.ClearPendingChanges(repository.Id);
-                if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                    FileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
             }
 
             // Whether or not the split went through, the file was reloaded and its classes are new
@@ -2397,6 +2394,15 @@ document.head.appendChild(style);
         state.ModelContentChanged(modelIds);
         state.VcsModelsChanged(repositoryId, modelIds.ToList());
     }
+
+    /// <summary>
+    /// The repositories whose monitor a write on this page holds off: every one checked out in the
+    /// same working copy as <paramref name="repository"/>, or none when the class is in no repository
+    /// (B376). The watcher is shared, so pausing only the repository being written to left a
+    /// neighbour hearing the write as its own change (B301).
+    /// </summary>
+    private IReadOnlyList<Repository> WorkingCopyOf(Repository? repository) =>
+        repository is null ? [] : RepositoryService.GetRepositoriesSharingWorkingCopy(repository.Id);
 
     private string? CurrentFilePathOf(ModelNode model) =>
         LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId ?? "")?.FilePath;
@@ -2505,37 +2511,31 @@ document.head.appendChild(style);
         var library = LibraryDataService.GetOwningLibrary(target.FileOwner.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
-        var repoId = repository?.Id;
-        var monitoredRoot = repository?.VcsRootPath;
-        bool monitorPaused = false;
 
-        try
+        // Every repository in the working copy, through a MonitorPause (B376) - see
+        // WorkingCopyOf. A reload that threw used to leave the monitor off.
+        List<string> affected;
+        using (MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository)))
         {
-            if (!string.IsNullOrEmpty(repoId))
+            try
             {
-                FileMonitoringService.StopMonitoring(repoId);
-                monitorPaused = true;
+                await ModelicaFileEncoding.WriteAllTextAsync(target.FilePath, newContent);
             }
-            await ModelicaFileEncoding.WriteAllTextAsync(target.FilePath, newContent);
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Error("CodeReview", $"Failed to write annotation to {target.FilePath}", ex);
-            Snackbar.Add($"Failed to save: {ex.Message}", MudBlazor.Severity.Error);
-            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            return false;
+            catch (Exception ex)
+            {
+                LoggingService.Error("CodeReview", $"Failed to write annotation to {target.FilePath}", ex);
+                Snackbar.Add($"Failed to save: {ex.Message}", MudBlazor.Severity.Error);
+                return false;
+            }
+
+            // Re-parse the file from disk so all model nodes are rebuilt from the saved content, and
+            // give them back the dependency edges the reload took (B290).
+            affected = await LibraryDataService.ReloadFileAsync(target.FilePath);
+            await LibraryDataService.RefreshDependenciesAsync(affected);
         }
 
-        // Re-parse the file from disk so all model nodes are rebuilt from the saved content, and give
-        // them back the dependency edges the reload took (B290).
-        var affected = await LibraryDataService.ReloadFileAsync(target.FilePath);
-        await LibraryDataService.RefreshDependenciesAsync(affected);
-        if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-        {
-            FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            FileMonitoringService.NotifyFileActivity(repoId!);
-        }
+        if (repository is not null)
+            FileMonitoringService.NotifyFileActivity(repository.Id);
 
         // The annotation goes in at the end of the class, so everything the user can see is where it
         // was — put them back there instead of at the top.
@@ -2974,61 +2974,56 @@ document.head.appendChild(style);
         }
 
         // Identify the repository (if any) so file monitoring can be paused across the write,
-        // preventing the watcher from echoing our own change back as a pending refresh.
+        // preventing the watcher from echoing our own change back as a pending refresh. Every
+        // repository in the working copy, through a MonitorPause (B376): the watcher is shared, so a
+        // neighbour left watching heard the write as its own change (B301), and a reload that threw
+        // left the monitor off for the rest of the session (B296).
         var library = LibraryDataService.GetOwningLibrary(_currentModelNode.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
-        var repoId = repository?.Id;
-        var monitoredRoot = repository?.VcsRootPath;
-        bool monitorPaused = false;
 
-        try
+        List<string> affected;
+        var reload = new System.Diagnostics.Stopwatch();
+        using (MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository)))
         {
-            if (!string.IsNullOrEmpty(repoId))
+            try
             {
-                FileMonitoringService.StopMonitoring(repoId);
-                monitorPaused = true;
+                var write = System.Diagnostics.Stopwatch.StartNew();
+                await ModelicaFileEncoding.WriteAllTextAsync(filePath, correctedCode);
+                if (write.ElapsedMilliseconds > 1000)
+                    LoggingService.Info("CodeReview",
+                        $"Writing {Path.GetFileName(filePath)} took {write.ElapsedMilliseconds} ms");
             }
-            var write = System.Diagnostics.Stopwatch.StartNew();
-            await ModelicaFileEncoding.WriteAllTextAsync(filePath, correctedCode);
-            if (write.ElapsedMilliseconds > 1000)
-                LoggingService.Info("CodeReview",
-                    $"Writing {Path.GetFileName(filePath)} took {write.ElapsedMilliseconds} ms");
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Error("CodeReview", $"Failed to write corrected file {filePath}", ex);
-            Snackbar.Add($"Failed to save correction: {ex.Message}", MudBlazor.Severity.Error);
-            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            CloseContextMenu();
-            return;
-        }
+            catch (Exception ex)
+            {
+                LoggingService.Error("CodeReview", $"Failed to write corrected file {filePath}", ex);
+                Snackbar.Add($"Failed to save correction: {ex.Message}", MudBlazor.Severity.Error);
+                CloseContextMenu();
+                return;
+            }
 
-        // Re-parse the file from disk so all model nodes for it are rebuilt from the saved content.
-        //
-        // Timed, because this is where the time goes and nothing said so. A correction in a generated
-        // file holding 4,478 classes took the better part of a minute, and the only way to find out
-        // which part was to read timestamps of unrelated debug lines either side of it. The removal
-        // half of this is much faster since the graph gained a bulk remove (7b-5); the log line is
-        // what will show whether the rest of it needs the same treatment.
-        var reload = System.Diagnostics.Stopwatch.StartNew();
-        var affected = await LibraryDataService.ReloadFileAsync(filePath);
-        // The reload took the file's dependency edges with it: without this the corrected class
-        // offered nothing to go to (B290).
-        await LibraryDataService.RefreshDependenciesAsync(affected);
-        reload.Stop();
+            // Re-parse the file from disk so all model nodes for it are rebuilt from the saved content.
+            //
+            // Timed, because this is where the time goes and nothing said so. A correction in a generated
+            // file holding 4,478 classes took the better part of a minute, and the only way to find out
+            // which part was to read timestamps of unrelated debug lines either side of it. The removal
+            // half of this is much faster since the graph gained a bulk remove (7b-5); the log line is
+            // what will show whether the rest of it needs the same treatment.
+            reload.Start();
+            affected = await LibraryDataService.ReloadFileAsync(filePath);
+            // The reload took the file's dependency edges with it: without this the corrected class
+            // offered nothing to go to (B290).
+            await LibraryDataService.RefreshDependenciesAsync(affected);
+            reload.Stop();
+        }
 
         if (reload.ElapsedMilliseconds > 1000)
             LoggingService.Info("CodeReview",
                 $"Reloading {Path.GetFileName(filePath)} after a correction took {reload.ElapsedMilliseconds} ms " +
                 $"for {affected.Count} class(es)");
 
-        if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-        {
-            FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            FileMonitoringService.NotifyFileActivity(repoId!);   // file is now genuinely modified
-        }
+        if (repository is not null)
+            FileMonitoringService.NotifyFileActivity(repository.Id);   // file is now genuinely modified
 
         // The correction changes only a word, so the offsets the user is looking at stay valid.
         await CaptureScrollForReloadAsync();
