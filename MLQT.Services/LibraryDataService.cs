@@ -564,6 +564,27 @@ public class LibraryDataService : ILibraryDataService
         RaiseTreeDataChanged();
     }
 
+    /// <inheritdoc/>
+    public bool RelocateLibrary(string libraryId, string directoryPath)
+    {
+        lock (_lock)
+        {
+            var library = _libraries.FirstOrDefault(l => l.Id == libraryId);
+            if (library is null)
+                return false;
+
+            // Under the lock, because LibraryContainingPath reads it there: it is what places a
+            // class from a new file in this library, and the old path placed none of them (B417).
+            library.SourcePath = directoryPath;
+            if (library.SourceType == LibrarySourceType.File)
+                library.SourceType = LibrarySourceType.Directory;
+        }
+
+        Info("LibraryDataService", $"Library now loaded from directory {directoryPath}");
+        OnLibrariesChanged?.Invoke();
+        return true;
+    }
+
     /// <summary>
     /// Adds a newly loaded library to the list, applying <see cref="SourceSupersedesEncrypted"/> on
     /// the way in. Every load path registers through here, so the rule cannot be missing from one.

@@ -150,6 +150,21 @@ public interface ILibraryDataService
     void RemoveLibrary(string libraryId);
 
     /// <summary>
+    /// Records that a library loaded from one <c>.mo</c> file is now the package directory
+    /// <paramref name="directoryPath"/>, as a full format that expanded it into one file per class
+    /// leaves it (B417). Its <see cref="LoadedLibrary.SourcePath"/> becomes the directory, and a
+    /// library opened on its own as a <see cref="LibrarySourceType.File"/> becomes a
+    /// <see cref="LibrarySourceType.Directory"/> — what loading that directory would have made it.
+    /// Its classes and their files are not touched: the save has already moved them.
+    /// </summary>
+    /// <remarks>
+    /// Use <see cref="IRepositoryService.RelocateLibraryAsync"/> for a library in a repository, which
+    /// also moves the repository's record of where the library is.
+    /// </remarks>
+    /// <returns>False when no such library is loaded.</returns>
+    bool RelocateLibrary(string libraryId, string directoryPath);
+
+    /// <summary>
     /// Clears all loaded libraries.
     /// </summary>
     void ClearAllLibraries();

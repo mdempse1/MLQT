@@ -197,6 +197,9 @@ public sealed class FormattingPipeline : IFormattingPipeline
         // file that still held it (B373, the B303 shape in Format All).
         var librariesToKeep = new List<LoadedLibrary>();
 
+        // Single-file libraries the save expanded into a package directory, and that directory.
+        var relocations = new List<(LoadedLibrary Library, string Directory)>();
+
         // Process libraries sequentially to limit peak memory. Each library already
         // parallelizes its parse/render phases internally (Parallel.ForEach in batches).
         // Running libraries concurrently causes nested parallelism: N libraries × M cores
@@ -330,6 +333,16 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         return;
                     }
 
+                    // A library that was one .mo file and whose root package now has a package.mo
+                    // of its own has been expanded into a directory; it is re-registered as one once
+                    // the file is gone. Only here, after a save that wrote everything (B417).
+                    if (!Directory.Exists(library.SourcePath)
+                        && ExpandedRoot(library, saveResult.ModelIdToFilePath) is { } expandedTo)
+                    {
+                        lock (allWrittenFiles)
+                            relocations.Add((library, expandedTo));
+                    }
+
                     Debug(nameof(FormattingPipeline), $"Successfully saved library: {library.Name} ({saveResult.WrittenFiles.Count} files)");
                 });
             }
@@ -404,7 +417,32 @@ public sealed class FormattingPipeline : IFormattingPipeline
         // Update FileNodes in the graph with new file paths
         FileNodeReconciler.ReassignModels(_libraryData.CombinedGraph, modelIdToFilePath);
 
+        // An expanded library's classes are in the directory now, and the file it was loaded from
+        // is gone. Left naming that file, the library placed no class from the new files: a Refresh,
+        // a Code Review reload or a VCS update of any of them added its classes to no library until
+        // the project was reloaded (B417). Re-registered as the directory a reload would find.
+        foreach (var (library, directory) in relocations)
+            await _repositories.RelocateLibraryAsync(library.Id, directory);
+
         LogProcessEnd(nameof(FormattingPipeline), "Saving all libraries with formatting");
+    }
+
+    /// <summary>
+    /// The directory a library loaded from one <c>.mo</c> file was written out as, when the save
+    /// expanded it: its root class went to a <c>package.mo</c>. Null when the root stayed a single
+    /// file, as a library whose only class is a model does.
+    /// </summary>
+    private static string? ExpandedRoot(
+        LoadedLibrary library, IReadOnlyDictionary<string, string> modelIdToFilePath)
+    {
+        foreach (var rootId in library.TopLevelModelIds)
+        {
+            if (modelIdToFilePath.TryGetValue(rootId, out var written)
+                && string.Equals(Path.GetFileName(written), "package.mo", StringComparison.OrdinalIgnoreCase))
+                return Path.GetDirectoryName(written);
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -725,6 +725,49 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> RelocateLibraryAsync(string libraryId, string directoryPath)
+    {
+        var library = _libraryDataService.Libraries.FirstOrDefault(l => l.Id == libraryId);
+        if (library is null)
+            return false;
+
+        var repository = GetRepositoryForLibrary(libraryId);
+        if (repository is not null && !string.IsNullOrEmpty(repository.LocalPath))
+        {
+            // The relative path as discovery writes it for the same directory, so a Refresh or a
+            // project reload finds the key it would have made itself: empty for the repository's own
+            // root, otherwise the path below it.
+            var root = Path.GetFullPath(repository.LocalPath).TrimEnd(Path.DirectorySeparatorChar);
+            var directory = Path.GetFullPath(directoryPath).TrimEnd(Path.DirectorySeparatorChar);
+            var relativePath = string.Equals(root, directory, StringComparison.OrdinalIgnoreCase)
+                ? ""
+                : Path.GetRelativePath(root, directory);
+
+            lock (_lock)
+            {
+                var oldKey = library.RelativePathInRepository;
+                var name = oldKey is not null && repository.DiscoveredLibraries.Remove(oldKey, out var known)
+                    ? known
+                    : library.Name;
+                repository.DiscoveredLibraries[relativePath] = name;
+                library.RelativePathInRepository = relativePath;
+            }
+
+            Info("RepositoryService",
+                $"Library '{library.Name}' in '{repository.Name}' is now the directory {relativePath}");
+        }
+
+        _libraryDataService.RelocateLibrary(libraryId, directoryPath);
+
+        // The saved project lists each repository's libraries by path; the old one names a file
+        // that is gone.
+        if (repository is not null)
+            await SaveRepositorySettingsAsync();
+
+        return true;
+    }
+
     /// <inheritdoc />
     public async Task ApplyRepositorySettingsAsync(string repositoryId)
     {

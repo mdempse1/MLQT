@@ -332,11 +332,56 @@ public sealed class FormattingPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task ALibraryWhoseSaveFailed_IsNotReRegistered()
+    {
+        // Its file is kept and still holds every class, so it is still the library (B417).
+        var original = Path.Combine(_root, "MyLib.mo");
+        File.WriteAllText(original, SingleFileLibrary);
+        var obstruction = Path.Combine(_root, "MyLib", "A.mo");
+        Directory.CreateDirectory(obstruction);
+        File.WriteAllText(Path.Combine(obstruction, "in the way"), "");
+        var (service, pipeline) = await RepositoryWith(original);
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        _repositories.Verify(r => r.RelocateLibraryAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        Assert.Equal(original, Assert.Single(service.Libraries).SourcePath);
+    }
+
+    [Fact]
+    public async Task AnExpandedLibrary_IsReRegisteredAsItsDirectory()
+    {
+        var original = Path.Combine(_root, "MyLib.mo");
+        File.WriteAllText(original, SingleFileLibrary);
+        var (service, pipeline) = await RepositoryWith(original);
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        _repositories.Verify(r => r.RelocateLibraryAsync(
+            Assert.Single(service.Libraries).Id, Path.Combine(_root, "MyLib")), Times.Once);
+    }
+
+    [Fact]
+    public async Task ASingleFileWhoseRootIsNotAPackage_StaysAFile()
+    {
+        // A library that is one model has no directory to become: the save writes it back where it was.
+        var original = Path.Combine(_root, "Solo.mo");
+        File.WriteAllText(original, "model Solo\nReal x;\nend Solo;\n");
+        var (_, pipeline) = await RepositoryWith(original);
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.True(File.Exists(original));
+        _repositories.Verify(r => r.RelocateLibraryAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ALibraryWhoseSaveCompletes_StillLosesItsOrphans()
     {
         // The other half: the protection is for a library with a failed write, not a reason to stop
-        // tidying up after one that wrote everything (B373 is still open on whether this expansion
-        // should happen at all - this holds only what the save does today).
+        // tidying up after one that wrote everything. The expansion is intended (B373, decided
+        // 2026-09-27: code-formatting.md's "One File Per Class"); SingleFileLibraryExpansionTests holds
+        // what the library is registered as afterwards (B417).
         var original = Path.Combine(_root, "MyLib.mo");
         File.WriteAllText(original, SingleFileLibrary);
         var (_, pipeline) = await RepositoryWith(original);

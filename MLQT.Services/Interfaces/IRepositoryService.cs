@@ -138,6 +138,22 @@ public interface IRepositoryService
     Repository? GetRepositoryForLibrary(string libraryId);
 
     /// <summary>
+    /// Re-registers a library that was one <c>.mo</c> file as the package directory it has become,
+    /// after a full format expanded it into one file per class and deleted the file (B417).
+    /// </summary>
+    /// <remarks>
+    /// Everything that says where the library is follows it: its
+    /// <see cref="LoadedLibrary.SourcePath"/> (through <see cref="ILibraryDataService.RelocateLibrary"/>),
+    /// its <see cref="LoadedLibrary.RelativePathInRepository"/>, and the repository's
+    /// <see cref="Repository.DiscoveredLibraries"/> entry, which is what a Refresh loads and what the
+    /// saved project records — so the state is the one a reload of the project would produce. Left
+    /// naming the deleted file, no class in the new files was placed in any library until the
+    /// project was reloaded.
+    /// </remarks>
+    /// <returns>False when no such library is loaded.</returns>
+    Task<bool> RelocateLibraryAsync(string libraryId, string directoryPath);
+
+    /// <summary>
     /// Saves repository configurations to settings: the project list, and each repository's
     /// committed <c>.mlqt/settings.json</c> <b>only where its settings changed</b> since the file was
     /// read or last written (or where there is no file yet). Called after loads, reorders and project
