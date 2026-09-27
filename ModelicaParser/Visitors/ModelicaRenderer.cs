@@ -2065,11 +2065,44 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 }
                 else
                 {
-                    Visit(arguments[i]);
+                    VisitFirstArgument(arguments[i], arguments.Length);
                 }
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Writes the first argument of a list, and moves it to a continuation line of its own, a level
+    /// in, when the list has to wrap and the argument took the opening line past the maximum length
+    /// (B464) - as each later argument that does not fit is. Only an argument written on one line
+    /// is moved: one the renderer has already broken over lines (a nested modification, a data
+    /// table) has its own layout, and nothing but the '(' may have been written since the list
+    /// opened, so a comment after the '(' keeps the line it leaves. A list inside one written an
+    /// argument a line, and a graphics annotation's lists, are laid out by their own rules rather
+    /// than wrapped for length, and are left as they were.
+    /// </summary>
+    private void VisitFirstArgument(IParseTree first, int argumentCount)
+    {
+        if (argumentCount < 2 || _parentUsingMultiLine || _inGraphicsAnnotationLevel > 0
+            || !GetCurrentLinePlainText().EndsWith('('))
+        {
+            Visit(first);
+            return;
+        }
+
+        int start = _currentLine.Length;
+        int lines = _code.Count;
+        Visit(first);
+        // The ',' that follows is on this line too.
+        if (_code.Count != lines || GetCurrentLinePlainTextLength() + 1 <= _maxLineLength)
+            return;
+
+        var argument = _currentLine.ToString(start, _currentLine.Length - start);
+        _currentLine.Length = start;
+        EmitLine();
+        AddIndentToCurrentLine();
+        _currentLine.Append(argument);
     }
 
     public override object? VisitArgument([NotNull] modelicaParser.ArgumentContext context)
@@ -3652,7 +3685,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (namedArgs == null || namedArgs.Length == 0)
             return null;
 
-        Visit(namedArgs[0]);
+        VisitFirstArgument(namedArgs[0], namedArgs.Length);
         var runs = CommentRuns(context);
 
         for (int i = 1; i < namedArgs.Length; i++)

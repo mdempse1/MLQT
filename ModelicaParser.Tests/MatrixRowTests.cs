@@ -128,12 +128,14 @@ public class MatrixRowTests
     {
         // The Buildings shape. The argument list is wrapped for length, which indents the lines it
         // writes and goes back a level before the table's last line is written; the rows must still
-        // be one level in from the argument, the last row included.
+        // be one level in from the argument, the last row included. The first argument starts the
+        // continuation too, as it would have taken the declaration's line past the limit (B464).
         TestHelpers.AssertClass(Normalise("""
             model M
-              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
-                table=[0, 0;
-                  0.3, 1;
+              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(
+                smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
+                table=[0, 0; 0.3, 1; 0.5, 0;
+                  0.7, 1;
                   1, 0]) "Time table with smoothness method of constant segments";
             end M;
             """));
@@ -198,7 +200,8 @@ public class MatrixRowTests
     {
         TestHelpers.AssertClass(Normalise("""
             model M
-              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
+              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(
+                smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
                 table=[0, 0; // a
                   0.3, 1;
                   1, 0 // end
@@ -259,10 +262,13 @@ public class MatrixRowTests
         // an argument list wrapped for length, and every row, the first included, is a level in.
         TestHelpers.AssertClass(Normalise("""
             model M
-              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
+              Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(
+                smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
                 table=[
                   0, 0;
                   0.3, 1;
+                  0.5, 0;
+                  0.7, 1;
                   1, 0]) "Time table with smoothness method of constant segments";
             end M;
             """));

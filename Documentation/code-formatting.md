@@ -272,6 +272,34 @@ format writes each top-level class to a file of its own, so accepting it would m
 without a word. Moving it into one of the classes, or above the `within` clause, is the way to keep
 it and have the file formatted.
 
+## Long argument lists
+
+**An argument list too long for its line is wrapped, an argument a continuation line.** Each
+argument that would take the line past the maximum length (100 characters, not counting the line's
+indentation) starts a new line a level in. That includes the first: where keeping it after the `(`
+would already make the line too long, the continuation starts with it, and the `(` ends the line:
+
+```modelica
+  Buildings.Controls.OBC.CDL.Reals.Sources.TimeTable timTabLin(
+    smoothness=Buildings.Controls.OBC.CDL.Types.Smoothness.ConstantSegments,
+    table=[
+      0, 0;
+      0.3, 1;
+      0.5, 0;
+      0.7, 1;
+      1, 0]) "Time table with smoothness method of constant segments";
+```
+
+Only an argument written on one line is moved this way. One the formatter itself breaks over lines —
+a nested modification written an argument a line, or a data table (below) — keeps its layout, and
+so do the lists of a graphics annotation and a list inside one already written an argument a line,
+which have layouts of their own. A comment after the `(` already ends that line.
+
+Earlier versions measured only the later arguments, so a first argument like the one above stayed
+on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
+Buildings (8,367 files), 1,017 files are written differently from before, every one only in line
+breaks and indentation.
+
 ## Matrices and data tables
 
 **A matrix keeps its rows where you wrote them.** Where a row starts a new line in the source, it
