@@ -659,13 +659,15 @@ public static class IconSvgRenderer
         var x2 = bitmap.Extent[2];
         var y2 = bitmap.Extent[3];
 
+        // The image is written inside a counter-flip, where y runs down: the extent's top edge,
+        // Modelica's larger y, is at -max(y1, y2) there. Taking min(y1, y2) placed it correctly only
+        // for an extent symmetric about y = 0, and MSL's are mostly not - EngineV6_analytic's picture
+        // at y = -39..75 was drawn at -75..39 (B391).
         var x = Math.Min(x1, x2);
-        var y = Math.Min(y1, y2);
+        var y = -Math.Max(y1, y2);
         var width = Math.Abs(x2 - x1);
         var height = Math.Abs(y2 - y1);
 
-        // Images need scale(1,-1) to counteract the parent group's Y-axis flip, exactly like text.
-        // The combined double-flip leaves image content right-side up while keeping correct position.
         var transform = GetBitmapTransformAttribute(bitmap.Origin, bitmap.Rotation);
 
         // imageSource takes priority: it is base64-encoded image data embedded directly in the annotation
@@ -687,19 +689,20 @@ public static class IconSvgRenderer
     }
 
     /// <summary>
-    /// Builds the transform attribute for a Bitmap element, always including scale(1,-1) to
-    /// counteract the parent group's Y-axis flip so the image content appears right-side up.
+    /// Builds the transform attribute for a Bitmap element: the bitmap's own origin and rotation,
+    /// then scale(1,-1) to counteract the parent group's Y-axis flip so the picture is upright.
+    ///
+    /// <para>The origin and rotation come first - outermost - so they act in the icon's coordinates
+    /// with y up, as every other primitive's do. They used to follow the counter-flip and so act in
+    /// the flipped frame, where an origin's y is negated and a rotation turns the wrong way (B391,
+    /// the same ordering B320 gave text).</para>
     /// </summary>
     private static string GetBitmapTransformAttribute(double[] origin, double rotation)
     {
-        var transforms = new List<string>();
-        // scale(1,-1) counters the parent group flip; combined double-flip = identity on content
-        transforms.Add("scale(1,-1)");
-        if (origin[0] != 0 || origin[1] != 0)
-            transforms.Add($"translate({F(origin[0])},{F(origin[1])})");
-        if (rotation != 0)
-            transforms.Add($"rotate({F(rotation)})");
-        return $" transform=\"{string.Join(" ", transforms)}\"";
+        var placement = TransformList(origin, rotation);
+        return placement.Length > 0
+            ? $" transform=\"{placement} scale(1,-1)\""
+            : " transform=\"scale(1,-1)\"";
     }
 
     /// <summary>
