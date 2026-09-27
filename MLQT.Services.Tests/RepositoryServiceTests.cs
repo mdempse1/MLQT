@@ -2481,6 +2481,85 @@ public class RepositoryServiceTests
         Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
     }
 
+    [Fact]
+    public async Task CreateAndSelectProjectAsync_WaitsForASaveQueuedBeforeIt()
+    {
+        // B452: this read-modify-write did not take the save gate, so it read the settings from
+        // under a held background save and wrote at once; the held save then landed last, with a
+        // project list that had never heard of the new project.
+        var (settings, service, _, _) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        service.ClearAllRepositories();
+        var creating = service.CreateAndSelectProjectAsync("New");
+        await Task.WhenAny(creating, Task.Delay(200, TestContext.Current.CancellationToken));
+        release.SetResult();
+        var created = await creating;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        Assert.Contains(saved.Projects, p => p.Id == created.Id);
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task LoadRepositorySettingsAsync_LegacyMigration_WaitsForASaveQueuedBeforeIt()
+    {
+        // B452: the migration wrote with SetAsync directly. A save queued before the load, held,
+        // landed after the migration's write, so the file held a different project from the one
+        // loaded into memory. With the gate the load reads what that save wrote - which has already
+        // replaced the legacy list, since a save writes only projects - and memory and file agree.
+        var settings = new HeldSettings();
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Repositories =
+            {
+                new RepositorySettingsEntry
+                {
+                    Id = "legacy",
+                    Name = "Legacy",
+                    LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b452-" + Guid.NewGuid().ToString("N")),
+                    AutoLoad = true
+                }
+            }
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        var release = settings.HoldNextWrite();
+        var saving = service.SaveRepositorySettingsAsync();
+        var loading = service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await Task.WhenAny(loading, Task.Delay(200, TestContext.Current.CancellationToken));
+        release.SetResult();
+        await saving;
+        await loading;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        Assert.Equal(service.GetProjects().Select(p => p.Id), saved.Projects.Select(p => p.Id));
+        Assert.Equal(service.GetActiveProject()!.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task LoadRepositorySettingsAsync_LegacyMigration_SavesTheMigratedProject()
+    {
+        // The migration's write, now inside the gate, still happens - and the gate is released
+        // afterwards, so a save that follows the load is not left waiting.
+        var settings = new HeldSettings();
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Repositories = { new RepositorySettingsEntry { Id = "legacy", Name = "Legacy", LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b452-" + Guid.NewGuid().ToString("N")) } }
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var saved = await settings.SavedAsync();
+        var migrated = Assert.Single(saved.Projects);
+        Assert.Equal("legacy", Assert.Single(migrated.Repositories).Id);
+        Assert.Empty(saved.Repositories);
+        await service.SaveRepositorySettingsAsync().WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
     #endregion
 
     #region FindVcsRoot Tests

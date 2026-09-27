@@ -28,7 +28,9 @@ public class RepositoryService : IRepositoryService
     private readonly object _lock = new();
 
     // One save at a time, each taking its contents once it is its turn, so the save that lands last
-    // is always the newest (B447). See SaveRepositorySettingsAsync.
+    // is always the newest (B447). See SaveRepositorySettingsAsync. Every write of the settings key
+    // takes it - CreateAndSelectProjectAsync and the legacy migration in LoadRepositorySettingsAsync
+    // as well (B452) - and nothing holding it may call anything that saves.
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly Dictionary<string, (List<VcsWorkingCopyFile> Changes, long Ticks)> _workingCopyCache = new();
     private readonly object _workingCopyCacheLock = new();
@@ -973,21 +975,35 @@ public class RepositoryService : IRepositoryService
             _loadWarnings.Clear();
         }
         RepositoryRemovedSinceProjectLoad = false;
-        var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
 
-        // Migration: if no projects defined but legacy Repositories exist, migrate them
-        if (settings.Projects.Count == 0 && settings.Repositories.Count > 0)
+        // The read and the legacy migration's write take the save gate (B452), so a save queued
+        // before this load lands before it reads, and cannot land after the migration and put the
+        // unmigrated contents back. Released before any repository is added below, because adding
+        // one saves - and so takes the gate itself.
+        RepositorySettingsCollection settings;
+        await _saveGate.WaitAsync();
+        try
         {
-            Info("RepositoryService", $"Migrating {settings.Repositories.Count} legacy repositories to Default project");
-            var defaultProject = new ProjectProfile
+            settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+
+            // Migration: if no projects defined but legacy Repositories exist, migrate them
+            if (settings.Projects.Count == 0 && settings.Repositories.Count > 0)
             {
-                Name = "Default",
-                Repositories = settings.Repositories.ToList()
-            };
-            settings.Projects.Add(defaultProject);
-            settings.ActiveProjectId = defaultProject.Id;
-            settings.Repositories.Clear();
-            await _settingsService.SetAsync(SettingsKey, settings);
+                Info("RepositoryService", $"Migrating {settings.Repositories.Count} legacy repositories to Default project");
+                var defaultProject = new ProjectProfile
+                {
+                    Name = "Default",
+                    Repositories = settings.Repositories.ToList()
+                };
+                settings.Projects.Add(defaultProject);
+                settings.ActiveProjectId = defaultProject.Id;
+                settings.Repositories.Clear();
+                await _settingsService.SetAsync(SettingsKey, settings);
+            }
+        }
+        finally
+        {
+            _saveGate.Release();
         }
 
         // If no projects at all, create a Default empty project
@@ -1145,20 +1161,32 @@ public class RepositoryService : IRepositoryService
     /// </remarks>
     public async Task<ProjectProfile> CreateAndSelectProjectAsync(string name)
     {
-        var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+        // The whole read-modify-write takes the save gate (B452): a save queued before it lands
+        // first and is read here, rather than landing afterwards with a project list that has never
+        // heard of this project. Nothing below saves, so the gate is not asked for twice.
+        ProjectProfile project;
+        await _saveGate.WaitAsync();
+        try
+        {
+            var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
 
-        // Checked against what is saved, not against the in-memory list, because this path runs
-        // before anything is loaded. The screens check first and show the reason; reaching here with
-        // a name already taken means something got past them.
-        var refusal = ProjectNameRules.Validate(name, settings.Projects);
-        if (refusal is not null)
-            throw new InvalidOperationException(refusal);
+            // Checked against what is saved, not against the in-memory list, because this path runs
+            // before anything is loaded. The screens check first and show the reason; reaching here with
+            // a name already taken means something got past them.
+            var refusal = ProjectNameRules.Validate(name, settings.Projects);
+            if (refusal is not null)
+                throw new InvalidOperationException(refusal);
 
-        var project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
-        settings.Projects.Add(project);
-        settings.ActiveProjectId = project.Id;
+            project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
+            settings.Projects.Add(project);
+            settings.ActiveProjectId = project.Id;
 
-        await _settingsService.SetAsync(SettingsKey, settings);
+            await _settingsService.SetAsync(SettingsKey, settings);
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
 
         Info("RepositoryService", $"Created project '{name}' and made it active; nothing loaded");
         return project;
