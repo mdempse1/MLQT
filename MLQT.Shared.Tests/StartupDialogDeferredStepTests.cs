@@ -185,9 +185,55 @@ public class StartupDialogDeferredStepTests
     [Fact]
     public void AReloadedLayoutShowsTheEarlierRunsProgressUntilItEnds()
     {
-        Assert.True(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, "Formatting modified files"));
-        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, startupStep: null));
-        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: false, "Formatting modified files"));
+        Assert.True(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, "Formatting modified files", ownProgressShowing: false));
+        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, startupStep: null, ownProgressShowing: false));
+        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: false, "Formatting modified files", ownProgressShowing: false));
+    }
+
+    /// <summary>
+    /// B423: a reloaded instance takes over a project switch whose <c>OnProjectChanged</c> arrives
+    /// after the reload, and runs any switch started in it later, in its own six-step dialog. The
+    /// switch publishes the same steps, so without this both dialogs were up at once.
+    /// </summary>
+    [Fact]
+    public void AReloadedLayoutRunningASwitchItselfShowsOnlyItsOwnDialog()
+    {
+        Assert.False(MainLayout.ShowsEarlierStartup(watchingEarlierStartup: true, "Analysing dependencies", ownProgressShowing: true));
+    }
+
+    /// <summary>
+    /// B423: a project switch publishes its steps as startup does, so a window reloaded during one
+    /// shows it - and, through <see cref="MainLayout.StartupAlreadyRan"/>, does not start a second
+    /// load while the switch has emptied the repository list (B422). The switch's handler clears
+    /// the step in its finally block, whatever became of the switch.
+    /// </summary>
+    [Fact]
+    public void AProjectSwitchPublishesItsStepsAndClearsThemWhenItEnds()
+    {
+        var source = System.Text.RegularExpressions.Regex.Replace(CodeBehindSource(), @"\s+", " ");
+
+        var starting = MethodBody(source, "private async void OnProjectSwitchStarting()");
+        Assert.Contains("NavState.StartupProgress(\"Loading libraries from repositories\");", starting);
+
+        var changed = MethodBody(source, "private async void OnProjectChanged(string projectId)");
+        foreach (var step in new[]
+                 {
+                     "Loading libraries from repositories", "Formatting modified files", "Analysing dependencies",
+                     "Analysing external resources", "Setting up file system monitors",
+                 })
+        {
+            Assert.Contains($"NavState.StartupProgress(\"{step}\");", changed);
+        }
+        Assert.Contains("finally { PowerManagementService.AllowSleep(); NavState.StartupProgress(null); }", changed);
+    }
+
+    /// <summary>The text from a method's signature up to the next <c>private</c> member.</summary>
+    private static string MethodBody(string whitespaceCollapsedSource, string signature)
+    {
+        var start = whitespaceCollapsedSource.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"'{signature}' was not found in MainLayout.razor.cs");
+        var end = whitespaceCollapsedSource.IndexOf(" private ", start + signature.Length, StringComparison.Ordinal);
+        return end < 0 ? whitespaceCollapsedSource[start..] : whitespaceCollapsedSource[start..end];
     }
 
     /// <summary>

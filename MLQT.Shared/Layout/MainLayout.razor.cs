@@ -154,8 +154,9 @@ public partial class MainLayout : IDisposable
     /// re-running startup is the right answer to both: there is nothing to load twice.</para>
     ///
     /// <para><b>Except while a run is still loading them</b> (B422). Startup publishes its first
-    /// step before <c>LoadRepositorySettingsAsync</c> has added a single repository, so a reload in
-    /// that window found none, and started a second load beside the first into one graph. A run in
+    /// step before <c>LoadRepositorySettingsAsync</c> has added a single repository, and a project
+    /// switch empties the list before adding the new project's back one at a time (B423), so a reload
+    /// in either window found none, and started a second load beside the first into one graph. A run in
     /// progress says so on <see cref="AppState.StartupStep"/>, which survives the reload as the
     /// repositories do.</para>
     /// </remarks>
@@ -166,10 +167,17 @@ public partial class MainLayout : IDisposable
     /// Whether to show the progress of a startup begun by an earlier instance of this layout: only
     /// in an instance that skipped startup, and only while that run is still going (B407).
     /// </summary>
-    internal static bool ShowsEarlierStartup(bool watchingEarlierStartup, string? startupStep)
-        => watchingEarlierStartup && startupStep is not null;
+    /// <remarks>
+    /// A project switch publishes its steps the same way (B423), and is the one run such an instance
+    /// can also be showing in its own six-step dialog - it takes over a switch whose
+    /// <c>OnProjectChanged</c> arrives after the reload, and it runs any switch the user starts in it
+    /// later. While its own dialog is up, that is the one shown.
+    /// </remarks>
+    internal static bool ShowsEarlierStartup(bool watchingEarlierStartup, string? startupStep, bool ownProgressShowing)
+        => watchingEarlierStartup && startupStep is not null && !ownProgressShowing;
 
-    private bool EarlierStartupVisible => ShowsEarlierStartup(_watchingEarlierStartup, NavState.StartupStep);
+    private bool EarlierStartupVisible =>
+        ShowsEarlierStartup(_watchingEarlierStartup, NavState.StartupStep, _startupProcessRunning);
 
     private void OnStartupProgressChanged()
     {
@@ -574,6 +582,10 @@ public partial class MainLayout : IDisposable
         _startupProcessRunning = true;
         _step1running = true;
         _step1color = Color.Success;
+        // Published as startup publishes its steps, so a window reloaded during the switch shows it
+        // (B423) and does not start a second load of its own (B422). Cleared by OnProjectChanged,
+        // in whichever instance is subscribed when the switch raises it.
+        NavState.StartupProgress("Loading libraries from repositories");
         await InvokeAsync(StateHasChanged);
     }
 
@@ -582,6 +594,7 @@ public partial class MainLayout : IDisposable
         PowerManagementService.PreventSleep();
         try
         {
+            NavState.StartupProgress("Loading libraries from repositories");
             LogProcessStart("MainLayout", $"Project changed to: {projectId}");
 
             // Clear style checking findings from the previous project
@@ -647,6 +660,7 @@ public partial class MainLayout : IDisposable
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
             _step2color = Color.Success;
+            NavState.StartupProgress("Formatting modified files");
             LogProcessStart("MainLayout", "Rendering after load");
             await InvokeAsync(() =>
             {
@@ -688,6 +702,7 @@ public partial class MainLayout : IDisposable
                 if (!shouldDefer)
                 {
                     // Steps 3 & 4: Analyze dependencies and start style checking
+                    NavState.StartupProgress("Analysing dependencies");
                     // Style checking's graph analyses need these edges, and join this same run rather
                     // than starting a competing one — see ILibraryDataService.EnsureDependenciesAnalyzedAsync.
                     var dependencyTask = LibraryDataService.EnsureDependenciesAnalyzedAsync(
@@ -711,6 +726,7 @@ public partial class MainLayout : IDisposable
                     await InvokeAsync(StateHasChanged);
 
                     // Step 5: Analyze external resources
+                    NavState.StartupProgress("Analysing external resources");
                     await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
                     ExternalResourceService.StartMonitoringResources();
                     _step5running = false;
@@ -719,6 +735,7 @@ public partial class MainLayout : IDisposable
                 // Step 6: Start file monitoring
                 _step6running = true;
                 _step6color = Color.Success;
+                NavState.StartupProgress("Setting up file system monitors");
                 await InvokeAsync(StateHasChanged);
                 RepositoryService.StartMonitoringAllRepositories();
                 _step6running = false;
@@ -751,6 +768,7 @@ public partial class MainLayout : IDisposable
         finally
         {
             PowerManagementService.AllowSleep();
+            NavState.StartupProgress(null);
         }
     }
 
