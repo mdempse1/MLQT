@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 using MLQT.Services.Interfaces;
 using MLQT.TestHost;
+using MLQT.TestHost.Services;
 
 namespace MLQT.Journeys;
 
@@ -221,6 +222,9 @@ public sealed class TestHostFixture : IAsyncLifetime
         await repositories.LoadRepositorySettingsAsync();
         await ResetLibrariesAsync();
     }
+
+    /// <summary>The formatting pipeline's door, for a journey that needs a pass held part-way.</summary>
+    public GatedFormattingPipeline Formatting => Services.GetRequiredService<GatedFormattingPipeline>();
 
     /// <summary>Blocks until MLQT's analysis pipeline has gone quiet. See PipelineQuiescence.</summary>
     public async Task WaitForIdleAsync()

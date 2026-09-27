@@ -1,3 +1,4 @@
+using MLQT.Services.Helpers;
 using MLQT.Services.Interfaces;
 using MLQT.Shared;
 using MLQT.TestHost.Components;
@@ -60,6 +61,14 @@ public static class TestHostFactory
         builder.Services.AddSingleton<IPowerManagementService>(sp => sp.GetRequiredService<RecordingPowerManagementService>());
 
         builder.Services.AddSingleton<PipelineQuiescence>();
+
+        // The application's formatting pipeline, unchanged, behind a door a journey can close: the
+        // hand checks for B385, B407 and B423 are about what the window shows while a formatting
+        // pass runs, and on the fixture library a pass is over before anything can look. With no
+        // gate armed every call goes straight through, so every other journey runs the real thing.
+        builder.Services.AddSingleton<FormattingPipeline>();
+        builder.Services.AddSingleton<GatedFormattingPipeline>(sp => new(sp.GetRequiredService<FormattingPipeline>()));
+        builder.Services.AddSingleton<IFormattingPipeline>(sp => sp.GetRequiredService<GatedFormattingPipeline>());
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();

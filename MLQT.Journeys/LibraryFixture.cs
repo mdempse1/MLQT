@@ -543,6 +543,21 @@ public sealed class LibraryFixture : IDisposable
         File.AppendAllText(Path.Combine(LibraryPath, relativePath),
                            "\n// Edited outside MLQT.\n");
 
+    /// <summary>
+    /// Switches the formatter on for this repository, in its <c>.mlqt/settings.json</c>, where MLQT
+    /// reads a repository's settings from when it is added.
+    /// </summary>
+    /// <remarks>
+    /// MLQT ships with formatting off, and Format All Files is disabled until it is on. Call before
+    /// adding the repository.
+    /// </remarks>
+    public void EnableFormatting()
+    {
+        var mlqt = Path.Combine(RepositoryPath, ".mlqt");
+        Directory.CreateDirectory(mlqt);
+        File.WriteAllText(Path.Combine(mlqt, "settings.json"), """{ "ApplyFormattingRules": true }""");
+    }
+
     /// <summary>The branch <see cref="StopARebaseOnAConflict"/> rebases.</summary>
     public const string RebasingBranch = "feature/rebase";
 

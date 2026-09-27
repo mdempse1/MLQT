@@ -159,6 +159,17 @@ building it **before** a migration rather than during one:
 - The pipeline is asynchronous and partly background-threaded, so "analysis has finished" needs an
   explicit signal — `PipelineQuiescence` and a `data-mlqt-state="idle|busy"` attribute, **test-host
   only**, neither leaking into the shipped hosts.
+- **"While it runs" needs a door, not a race.** A hand check about what the window shows *during*
+  a step - buttons during Format All (B385), a reload during startup (B407) - has nothing to look at
+  on the fixture library, where every step is over in milliseconds. The test host wraps the real
+  service in a gate (`GatedFormattingPipeline`, `host.Formatting.HoldAllFiles()` /
+  `HoldModifiedFiles()`) that holds the next call until the journey calls `Release()`, and
+  `WaitForArrivalAsync()` fails rather than hangs when nothing arrives. Unarmed, every call goes
+  straight through, so every other journey runs the application's own pipeline.
+- **A journey that adds a repository or saves projects takes them out again**, at its start and its
+  end, with `host.ResetRepositoriesAsync()`. A page whose startup finds saved repositories loads
+  them, and one that finds two projects opens the project chooser - a modal no other journey will
+  ever answer.
 - **Wait for the thing in the way, do not force past it.** A tab click timed out at 30s while
   Playwright reported the element "visible, enabled and stable": the click was being intercepted by a
   modal progress dialog. The fix is to wait for the dialog to go, not to force the click. It failed
