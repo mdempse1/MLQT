@@ -558,6 +558,25 @@ public sealed class LibraryFixture : IDisposable
         File.WriteAllText(Path.Combine(mlqt, "settings.json"), """{ "ApplyFormattingRules": true }""");
     }
 
+    /// <summary>
+    /// Adds <c>Broken.mo</c>, a class with a syntax error that is also laid out the way the formatter
+    /// would put right - so a formatter that ignored the error would visibly rewrite it (B414).
+    /// </summary>
+    /// <returns>The file's path.</returns>
+    public string AddAClassWithASyntaxError()
+    {
+        Write("Broken.mo", """
+            within Lib;
+                model Broken    "A class with a syntax error"
+              Real x   "The state"
+                    equation
+                der(x) =    -x;
+                end Broken;
+            """);
+        File.AppendAllText(Path.Combine(LibraryPath, "package.order"), "Broken\n");
+        return Path.Combine(LibraryPath, "Broken.mo");
+    }
+
     /// <summary>The branch <see cref="StopARebaseOnAConflict"/> rebases.</summary>
     public const string RebasingBranch = "feature/rebase";
 
