@@ -119,4 +119,62 @@ public class ReferenceOnlyToggleTests : MlqtComponentTestBase
 
         service.Verify(s => s.SetReferenceOnly("repo-1", true), Times.Once);
     }
+
+    /// <summary>
+    /// B405: the toggle takes effect at once rather than on Apply, so Cancel has to undo it - and
+    /// through the service, which is what stops or starts the watch it started or stopped.
+    /// </summary>
+    [Fact]
+    public void Cancel_UndoesTheToggle_ThroughTheService()
+    {
+        var (panel, service, repository) = RenderPanel();
+
+        panel.InvokeAsync(() =>
+        {
+            panel.Instance.OnRepoClick(repository);
+            panel.Instance.OnReferenceOnlyChanged(true);
+            panel.Instance.CancelChanges();
+        }).Wait();
+
+        Assert.False(repository.IsReferenceOnly);
+        service.Verify(s => s.SetReferenceOnly("repo-1", false), Times.Once);
+    }
+
+    [Fact]
+    public void Cancel_WithoutTouchingTheToggle_LeavesItAlone()
+    {
+        var (panel, service, repository) = RenderPanel();
+
+        panel.InvokeAsync(() =>
+        {
+            panel.Instance.OnRepoClick(repository);
+            panel.Instance.CancelChanges();
+        }).Wait();
+
+        service.Verify(s => s.SetReferenceOnly(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    private (IRenderedComponent<SettingsRepositories> Panel, Mock<IRepositoryService> Service, Repository Repository)
+        RenderPanel()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "mlqt-tests", "Vendor");
+        var repository = new Repository { Id = "repo-1", Name = "Vendor", LocalPath = path, VcsRootPath = path };
+        var project = new ProjectProfile { Name = "Default" };
+
+        var service = new Mock<IRepositoryService>();
+        service.SetupGet(s => s.Repositories).Returns([repository]);
+        service.Setup(s => s.GetProjects()).Returns([project]);
+        service.Setup(s => s.GetActiveProject()).Returns(project);
+
+        var dictionaries = new Mock<IDictionaryManagerService>();
+        dictionaries.Setup(d => d.GetAvailableDictionaries()).Returns([]);
+
+        Services.AddSingleton(service.Object);
+        Services.AddSingleton(dictionaries.Object);
+        Services.AddSingleton(new Mock<ISettingsService>().Object);
+        Services.AddSingleton(new Mock<IFilePickerService>().Object);
+        RenderProviders();
+
+        return (Render<SettingsRepositories>(), service, repository);
+    }
 }

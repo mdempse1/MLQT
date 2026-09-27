@@ -361,13 +361,20 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
-    private void CancelChanges()
+    /// <summary>
+    /// Puts back everything the dialog changed. "Reference only" too, and <b>through the service</b>
+    /// as the toggle went (B405): it takes effect at once rather than on Apply, starting or stopping
+    /// the repository's file monitoring (B354), so restoring the flag alone would leave that behind.
+    /// </summary>
+    internal void CancelChanges()
     {
         _editRepository = false;
         _selectedItem.Name = _backupItem.Name;
         _selectedItem.RemotePath = _backupItem.RemotePath;
         _selectedItem.LocalPath = _backupItem.LocalPath;
         _selectedItem.StyleSettings = _backupItem.StyleSettings;
+        if (_selectedItem.IsReferenceOnly != _backupItem.IsReferenceOnly)
+            OnReferenceOnlyChanged(_backupItem.IsReferenceOnly);
         StateHasChanged();
     }
 
