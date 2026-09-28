@@ -6,7 +6,6 @@ using MLQT.Services.Interfaces;
 using MLQT.Shared;
 using MLQT.Shared.Components;
 using MLQT.Shared.Pages;
-using OpenModelicaInterface.Interfaces;
 using Photino.Blazor;
 
 namespace MLQT.Photino;
@@ -137,38 +136,23 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             MLQT.Services.LoggingService.Error(nameof(Program), $"Unhandled: {e.ExceptionObject}");
 
-        app.Run();
+        // What exiting does to the simulation tools MLQT started: the headless omc is ended with
+        // everything it started, and Dymola - which has a window the user may still be working in -
+        // is left running (B260, B493). Hooked here to the ways out that never return from Run (the
+        // process ended from outside, an unhandled exception, a terminal's Ctrl+C or hang-up), and
+        // run after it for the ordinary one, the window closing. After Run rather than in a
+        // WindowClosing handler because the close can still be cancelled there. Whichever arrives
+        // first does the work; the others find it done.
+        var externalTools = app.Services.GetRequiredService<ExternalToolShutdown>();
+        externalTools.EndWith(AppDomain.CurrentDomain);
 
-        ShutDownOpenModelica(app.Services);
-    }
-
-    /// <summary>
-    /// Ends the OpenModelica session MLQT started, once the window has gone.
-    /// </summary>
-    /// <remarks>
-    /// <para><b>omc is headless.</b> An `omc.exe` MLQT started for a model check has no window and no
-    /// owner, so closing MLQT left it running with nothing to say what it was or that it should be
-    /// ended - it is found later in a task manager, if at all (B260).</para>
-    ///
-    /// <para><b>Dymola is deliberately left alone.</b> Its window is visible, the user may have
-    /// carried on working in the session MLQT started, and closing it from underneath them would
-    /// lose that work. The asymmetry is the point: what makes the OpenModelica process worth ending
-    /// is exactly what makes it invisible.</para>
-    ///
-    /// <para>Here rather than in a WindowClosing handler because ending the session is not something
-    /// to do while the close can still be cancelled, and not through the service provider because
-    /// disposing that disposes every singleton - including the ones still logging on the way out.
-    /// The factory's Dispose is bounded and cannot hang the exit.</para>
-    /// </remarks>
-    private static void ShutDownOpenModelica(IServiceProvider services)
-    {
         try
         {
-            (services.GetService<IOpenModelicaInterfaceFactory>() as IDisposable)?.Dispose();
+            app.Run();
         }
-        catch (Exception ex)
+        finally
         {
-            LoggingService.Warn(nameof(Program), $"Could not end the OpenModelica session: {ex.Message}");
+            externalTools.Run("the window closed");
         }
     }
 

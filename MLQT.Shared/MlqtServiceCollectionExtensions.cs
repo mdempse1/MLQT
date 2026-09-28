@@ -79,6 +79,9 @@ public static class MlqtServiceCollectionExtensions
         services.AddSingleton<OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory, OpenModelicaInterfaceFactory>();
         services.AddSingleton<DymolaCheckingService>();
         services.AddSingleton<OpenModelicaCheckingService>();
+        // What exiting does to those two tools: omc ended, Dymola left running (B493). The host
+        // hooks it to its ways out.
+        services.AddSingleton<ExternalToolShutdown>();
         services.AddScoped<BrowserService>();
 
         services.AddMudServices();

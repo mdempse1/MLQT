@@ -174,6 +174,27 @@ covered: a launcher that backgrounds Dymola and exits - the handle then describe
 `OwnsProcess` is false and the child is out of any tree MLQT can reach without per-platform
 process-table walking.
 
+### When MLQT exits: omc ended, Dymola left running (B260, B493)
+
+**The user's decision, on both platforms.** omc is headless and would run on unseen, so it is ended
+with every process it started; Dymola has a window the user may carry on working in, so it is let go
+of and never killed. "MLQT is exiting" is a **different request** from "stop this session" - for
+Dymola the second ends the tree (B411) - and each factory has a `Shutdown()` for the first only:
+OpenModelica's disposes the session (`quit()` within 5 s, a moment to exit, then
+`Kill(entireProcessTree: true)`); Dymola's only `Detach()`es the session and does not dispose it, so
+nothing on the exit path can reach `KillStartedTree`. Both refuse `GetOrCreateAsync` afterwards, so
+a check still running as MLQT exits cannot start a tool nobody will end.
+
+`MLQT.Services/ExternalToolShutdown` is the one place: `Run(why)` does the work once, and
+`EndWith(AppDomain)` hooks the ways out that never return from `app.Run()` - `ProcessExit`
+(`SIGTERM`, `Environment.Exit`), `UnhandledException` (no `finally` runs then), `SIGINT`/`SIGHUP`.
+The Photino host calls both; the TestHost's container disposes the omc factory; the MCP server
+registers neither factory. Only `SIGKILL`/End task escapes. Held by `ExternalToolShutdownTests`,
+`DymolaLauncherStopTests.ExitingMlqt_LeavesWhatItStartedRunning` (fake Dymola process),
+`OpenModelicaInterface.Tests/SessionEndTests` (fake omc process tree, tool-free) and
+`LiveSessionEndTests` (real omc). On Windows omc's own children died with it even under a plain
+`Kill()` in a live check, so the tree kill is proved by the fake process, whose child does not.
+
 ### Culture invariance
 Modelica command strings always use `.` as the decimal separator and never use `,`
 as a thousands separator. When encoding scalar/array values into `name=value` commands

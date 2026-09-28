@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using Moq;
+using OpenModelicaInterface.Interfaces;
 
 namespace MLQT.Services.Tests;
 
@@ -122,6 +124,52 @@ public sealed class DymolaLauncherStopTests : IDisposable
             Assert.True(child.WaitForExit(NeverThisLong),
                 "the launcher was stopped and the program it started is still running");
         }
+    }
+
+    /// <summary>
+    /// B493 - the other side of the two tests around it. Stopping a session ends the Dymola MLQT
+    /// started; MLQT exiting must not, because the user decided a Dymola MLQT opened stays open for
+    /// them to carry on working in. The exit path is <see cref="ExternalToolShutdown"/>, run here
+    /// over a real <see cref="DymolaInterface.DymolaInterfaceFactory"/> holding a session that owns a
+    /// running process, exactly as it would after a check.
+    /// </summary>
+    [Fact]
+    public async Task ExitingMlqt_LeavesWhatItStartedRunning()
+    {
+        // Disposed only as the test ends, after the assertions, so the tidy-up cannot be what
+        // decided them - and once let go of, disposing it no longer ends anything.
+        using var dymola = new DymolaInterface.DymolaInterface(WriteLauncher(), UnusedPort(), "127.0.0.1",
+            connectionWindow: TimeSpan.Zero);
+        var factory = new DymolaInterface.DymolaInterfaceFactory(_ => dymola);
+
+        // The factory starts the launcher, as for a check, and waits for an answer that never comes;
+        // given up on once the child is up, the session stays the factory's and owns what it started.
+        using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var start = factory.GetOrCreateAsync(giveUp.Token);
+        var waited = Stopwatch.StartNew();
+        while (!File.Exists(_pidFile))
+        {
+            Assert.True(waited.Elapsed < NeverThisLong, "the launcher's child never started");
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        }
+        _childPid = int.Parse(File.ReadAllText(_pidFile).Trim());
+        giveUp.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => start);
+        Assert.True(dymola.OwnsProcess, "the session should own the Dymola it started");
+
+        using var child = Process.GetProcessById(_childPid.Value);
+        var shutdown = new ExternalToolShutdown(new Mock<IOpenModelicaInterfaceFactory>().Object, factory);
+
+        shutdown.Run("a test");
+
+        // Let go of, not ended: the handle is dropped and the process runs on.
+        Assert.False(dymola.OwnsProcess, "the exit path should let go of the Dymola it leaves running");
+        Assert.False(child.WaitForExit(TimeSpan.FromSeconds(2)),
+            "MLQT exiting ended the Dymola it had started - that is Stop's job, never the exit's");
+
+        // And nothing started after it: a check still running as MLQT exits is refused.
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => factory.GetOrCreateAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]

@@ -343,6 +343,8 @@ public sealed class DymolaHarness : ToolHarness
         }
 
         public void UpdateSettings(DymolaSettings settings) { }
+
+        public void Shutdown() { }
     }
 }
 
@@ -390,5 +392,7 @@ public sealed class OpenModelicaHarness : ToolHarness
         }
 
         public void UpdateSettings(OpenModelicaSettings settings) { }
+
+        public void Shutdown() { }
     }
 }

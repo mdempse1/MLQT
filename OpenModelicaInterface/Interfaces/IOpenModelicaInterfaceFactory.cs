@@ -25,6 +25,14 @@ public interface IOpenModelicaInterfaceFactory
     Task ResetAsync();
 
     /// <summary>
+    /// MLQT is exiting: ends the session and the omc process behind it, with everything omc started,
+    /// and starts no other - <see cref="GetOrCreateAsync"/> refuses afterwards. Synchronous and
+    /// bounded, because it runs on the way out. omc is headless, so one left running when MLQT
+    /// closes is found later in a task manager, if at all (B260, B493). Safe to call more than once.
+    /// </summary>
+    void Shutdown();
+
+    /// <summary>
     /// Update the settings used by the OpeNModelicaInstances instances
     /// </summary>
     public void UpdateSettings(OpenModelicaSettings settings);

@@ -60,9 +60,10 @@ order:
 
 Launchers come first because the program started directly may not find its own libraries.
 
-When MLQT closes a Dymola it started, it ends the launcher and everything the launcher started, so a
+When MLQT ends a Dymola it started, it ends the launcher and everything the launcher started, so a
 launcher that runs Dymola as a child rather than replacing itself with it does not leave Dymola
-running. A launcher that starts Dymola in the background and exits at once is the exception: MLQT
+running. (MLQT closing is not one of those times: see
+[What happens to the tool when MLQT closes](#what-happens-to-the-tool-when-mlqt-closes).) A launcher that starts Dymola in the background and exits at once is the exception: MLQT
 cannot tell which program it left behind, so that Dymola stays open and has to be closed by hand.
 
 **This search has not yet been tried against a real Linux installation of Dymola** — the locations
@@ -238,13 +239,23 @@ MLQT, or give MLQT a Dymola of its own on another port (the port is set on the E
 
 ### What happens to the tool when MLQT closes
 
+The two tools are treated differently on purpose, and the same way on Windows and Linux.
+
 **The OpenModelica session ends with MLQT.** `omc` runs headless — no window, no taskbar entry — so
 one left behind would sit there indefinitely with nothing to say what it was or that it should be
-closed. MLQT ends the session it started as it exits.
+closed. MLQT ends the session it started as it exits: it asks `omc` to quit, and if `omc` is too busy
+to answer — in the middle of a check, a compilation or a simulation — it ends `omc` together with
+everything `omc` started. It does this however MLQT exits: the window closed, the process ended by
+the system (logging out, `kill`), Ctrl+C or the terminal closing when MLQT was started from one, and
+an unexpected error that takes MLQT down. The one exception is MLQT being killed outright (Task
+Manager's **End task**, `kill -9`), where nothing in MLQT gets to run; end the `omc` process
+yourself then.
 
 **Dymola is left running.** Its window is visible and you may well have carried on working in it,
-so closing it from underneath you could lose work. If you no longer want it, close it yourself; MLQT
-notices a session that has gone and starts a new one for the next check.
+so closing it from underneath you could lose work. That includes a Dymola MLQT started for a check:
+MLQT lets go of it and leaves it open. If you no longer want it, close it yourself; the next time
+MLQT runs it attaches to a Dymola still answering on the configured port, or starts a new one when
+there is none.
 
 ### Dymola vs OpenModelica Results
 

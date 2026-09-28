@@ -18,6 +18,9 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// settings object is edited in place.</summary>
     private (string Path, int Port, string Host) _instanceBuiltFor;
 
+    /// <summary>Set by <see cref="Shutdown"/>: MLQT is exiting, and no Dymola is started after it.</summary>
+    private volatile bool _shutDown;
+
     /// <summary>
     /// A factory that connects to - or starts - a real Dymola.
     /// </summary>
@@ -83,6 +86,10 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
         await _lock.WaitAsync(cancellationToken);
         try
         {
+            // A check still running as MLQT exits would otherwise start a Dymola after the session
+            // was let go of (B493).
+            ObjectDisposedException.ThrowIf(_shutDown, this);
+
             var settings = _dymolaSettings;
 
             // A session built for another path or port is not the one asked for. Only the time limit
@@ -229,5 +236,30 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
         {
             _lock.Release();
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para><b>"Stop this session" and "MLQT is exiting" are different requests</b>, and this is the
+    /// second. <see cref="DymolaInterface.StopDymolaProcessAsync"/> and disposing a session that still
+    /// owns its process end the Dymola MLQT started, with its whole process tree (B411) - right when
+    /// the user asks for it, and wrong here: the user decided that a Dymola MLQT opened stays open when
+    /// MLQT closes, so they can carry on working in it (B493). So the session is only detached - which
+    /// drops MLQT's handle on the process and nothing else - and is not disposed, which leaves nothing
+    /// on the exit path that could reach the kill even were the detach to fail.</para>
+    ///
+    /// <para>No lock: a check starting Dymola holds it for up to a minute, and the session it is
+    /// starting is already <see cref="_instance"/>, so letting go of that one is what is wanted.</para>
+    /// </remarks>
+    public void Shutdown()
+    {
+        _shutDown = true;
+
+        var session = Interlocked.Exchange(ref _instance, null);
+        if (session == null)
+            return;
+
+        Report($"MLQT is exiting; letting go of the session with {Whose(session)}, which is left running");
+        try { session.Detach(); } catch { /* nothing to let go of */ }
     }
 }

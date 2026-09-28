@@ -17,6 +17,9 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
     /// object is edited in place.</summary>
     private (string Path, int Port) _instanceBuiltFor;
 
+    /// <summary>Set by <see cref="Shutdown"/>: MLQT is exiting, and no omc is started after it.</summary>
+    private volatile bool _shutDown;
+
     public void UpdateSettings(OpenModelicaSettings settings)
     {
         _omcSettings = settings;
@@ -30,6 +33,10 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
         await _lock.WaitAsync(cancellationToken);
         try
         {
+            // A check still running as MLQT exits would otherwise start an omc after the one session
+            // was ended, and leave it behind with nothing left to end it (B493).
+            ObjectDisposedException.ThrowIf(_shutDown, this);
+
             // A session started from another omc or on another port is not the one asked for. Only the
             // time limit used to reach a running session, so B263's "the path and port set in the tab
             // never reached omc" stayed half true until the session died or MLQT restarted (B336).
@@ -58,7 +65,9 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
 
             // Create instance with settings. The two limits are the ones OpenModelicaSettings has
             // carried since it was written and nothing read until B263.
-            _instance = new OpenModelicaInterface(
+            // Held in a local as well: Shutdown may take the session from under a start that has
+            // kept the lock past its short wait, and what this returns is the one it started.
+            var created = new OpenModelicaInterface(
                 omcPath: _omcSettings.OmcPath,
                 port: _omcSettings.PortNumber
             )
@@ -66,21 +75,22 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
                 CommandTimeout = _omcSettings.CommandTimeout,
                 StartupTimeout = _omcSettings.StartupTimeout,
             };
+            _instance = created;
             _instanceBuiltFor = (_omcSettings.OmcPath, _omcSettings.PortNumber);
 
             // Start OMC process
-            if (!_instance.IsConnected)
+            if (!created.IsConnected)
             {
-                await _instance.StartAsync(cancellationToken);
+                await created.StartAsync(cancellationToken);
 
                 // Optionally load Modelica standard library
                 if (_omcSettings.AutoLoadModelicaLibrary)
                 {
-                    await _instance.LoadModelAsync("Modelica", cancellationToken: cancellationToken);
+                    await created.LoadModelAsync("Modelica", cancellationToken: cancellationToken);
                 }
             }
 
-            return _instance;
+            return created;
         }
         finally
         {
@@ -105,11 +115,40 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+        Shutdown();
 
-        _instance?.Dispose();
-        _instance = null;
-        _lock.Dispose();
+        // The lock is not disposed: Shutdown may be called again after this - the host's exit hooks
+        // can each reach it - and a check still on its way through GetOrCreateAsync must be able to
+        // take and release it and be refused. It allocates nothing needing disposal unless its wait
+        // handle is asked for, which nothing here does.
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>The lock is waited for briefly, not indefinitely: a check starting omc holds it for up
+    /// to the start-up limit, and the session it is starting is already <see cref="_instance"/>, so
+    /// ending that one is exactly what is wanted. Disposing the session sends <c>quit()</c> within
+    /// five seconds and then ends omc's process tree if it has not gone.</para>
+    /// </remarks>
+    public void Shutdown()
+    {
+        _shutDown = true;
+
+        var held = _lock.Wait(TimeSpan.FromSeconds(1));
+        try
+        {
+            Interlocked.Exchange(ref _instance, null)?.Dispose();
+        }
+        finally
+        {
+            if (held)
+                _lock.Release();
+        }
+    }
+
+    /// <summary>Holds <paramref name="session"/> as though this factory had started it - so what
+    /// <see cref="Shutdown"/> does to a session can be tested without an omc (B493).</summary>
+    internal void Adopt(OpenModelicaInterface session) => _instance = session;
 
     public async Task ResetAsync()
     {

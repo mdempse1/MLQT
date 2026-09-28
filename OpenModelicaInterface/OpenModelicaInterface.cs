@@ -40,6 +40,17 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     }
 
     /// <summary>
+    /// A session that owns <paramref name="process"/> as though it had started it, and is not
+    /// connected - so what disposing a session does to the process tree behind it can be tested
+    /// without an omc (B493).
+    /// </summary>
+    internal OpenModelicaInterface(Process process)
+        : this(string.Empty)
+    {
+        _omcProcess = process;
+    }
+
+    /// <summary>
     /// Checks if OMC is connected via ZMQ.
     /// </summary>
     public bool IsConnected => _socket != null && !_isDisposed;
@@ -104,6 +115,14 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         if (_omcProcess == null)
         {
             throw new InvalidOperationException("Failed to start OMC process");
+        }
+
+        // Disposed while starting - MLQT exiting as a check starts omc (B493). Dispose has already
+        // been through the process, so the one just started is ended here or by nobody.
+        if (_isDisposed)
+        {
+            EndProcessTree(_omcProcess);
+            throw new ObjectDisposedException(nameof(OpenModelicaInterface));
         }
 
         // Start background readers to consume stdout/stderr (prevent blocking)
@@ -340,7 +359,7 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             try
             {
                 if (!_omcProcess.HasExited)
-                    _omcProcess.Kill(entireProcessTree: true);
+                    EndProcessTree(_omcProcess);
             }
             catch
             {
@@ -350,6 +369,12 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             _omcProcess = null;
         }
     }
+
+    /// <summary>
+    /// Ends omc and everything it started. The one way this class ends omc, whether a command was
+    /// given up on or the session is being disposed because MLQT is exiting (B493).
+    /// </summary>
+    private static void EndProcessTree(Process process) => process.Kill(entireProcessTree: true);
 
     /// <summary>
     /// Parses a response and removes outer quotes if present.
@@ -674,9 +699,10 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         // `quit()` first, and the flag afterwards: ExitAsync asks IsConnected, which is false once
         // _isDisposed is set, so setting it here meant the graceful exit was never actually sent and
         // omc was always killed instead. Killed, it leaves its temporary directory behind.
+        var quitAnswered = false;
         try
         {
-            ExitAsync().Wait(TimeSpan.FromSeconds(5));
+            quitAnswered = IsConnected && ExitAsync().Wait(TimeSpan.FromSeconds(5));
         }
         catch
         {
@@ -696,18 +722,30 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             _socket?.Dispose();
             _socket = null;
 
-            if (_omcProcess != null && !_omcProcess.HasExited)
+            if (_omcProcess != null)
             {
                 try
                 {
-                    _omcProcess.Kill();
-                    _omcProcess.WaitForExit(5000);
+                    // An omc that answered quit() is on its way out and is given a moment to go by
+                    // itself - it answers before it exits, so asking HasExited at once found it still
+                    // there and killed it anyway, and the graceful exit above was graceful in name only.
+                    if (!_omcProcess.HasExited && !(quitAnswered && _omcProcess.WaitForExit(2000)))
+                    {
+                        // The whole tree (B493). omc runs what a command asks for - a compiler, a
+                        // simulation, a system() call - as children, and one busy enough not to answer
+                        // quit() is busy with exactly that. Kill() ended omc and left the child: on
+                        // Linux it is handed to init and runs on, headless, with nothing to say whose
+                        // it was.
+                        EndProcessTree(_omcProcess);
+                        _omcProcess.WaitForExit(5000);
+                    }
                 }
                 catch
                 {
-                    // Ignore
+                    // Gone already, or not ours to end.
                 }
                 _omcProcess.Dispose();
+                _omcProcess = null;
             }
         }
         finally

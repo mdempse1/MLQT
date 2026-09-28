@@ -50,6 +50,7 @@ public class MlqtServiceCollectionExtensionsTests
         { typeof(OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory), typeof(OpenModelicaInterface.OpenModelicaInterfaceFactory) },
         { typeof(DymolaCheckingService), typeof(DymolaCheckingService) },
         { typeof(OpenModelicaCheckingService), typeof(OpenModelicaCheckingService) },
+        { typeof(ExternalToolShutdown), typeof(ExternalToolShutdown) },
     };
 
     [Theory]

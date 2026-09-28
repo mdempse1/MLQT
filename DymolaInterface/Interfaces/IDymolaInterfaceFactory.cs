@@ -24,6 +24,15 @@ public interface IDymolaInterfaceFactory
     Task ResetAsync();
 
     /// <summary>
+    /// MLQT is exiting: lets go of the session <b>without ending the Dymola behind it</b>, and starts
+    /// no other - <see cref="GetOrCreateAsync"/> refuses afterwards. Dymola has a window and the user
+    /// may carry on working in the one MLQT started, so it is left running, on Windows and Linux
+    /// alike (B493) - the opposite of what OpenModelica's factory does at the same moment. Never
+    /// waits and never throws. Safe to call more than once.
+    /// </summary>
+    void Shutdown();
+
+    /// <summary>
     /// Update the settings used by the Dymola instances
     /// </summary>
     public void UpdateSettings(DymolaSettings settings);

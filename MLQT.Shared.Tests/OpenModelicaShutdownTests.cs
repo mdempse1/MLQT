@@ -17,7 +17,10 @@ namespace MLQT.Shared.Tests;
 ///
 /// <para>The shutdown itself is one line in the host, which no other test reaches: the process it
 /// ends cannot be started without OpenModelica installed. So this asks the two questions that are
-/// true regardless — that the factory can end a session, and that the host asks it to.</para>
+/// true regardless — that the factory can end a session, and that the host asks it to. What the
+/// shutdown does is held by <c>MLQT.Services.Tests/ExternalToolShutdownTests</c> (both tools, fakes
+/// and a fake Dymola process) and <c>OpenModelicaInterface.Tests/SessionEndTests</c> (a fake omc
+/// process tree, and a real omc behind the <c>Requires=OpenModelica</c> trait) - B493.</para>
 /// </summary>
 public class OpenModelicaShutdownTests
 {
@@ -68,13 +71,33 @@ public class OpenModelicaShutdownTests
         var source = HostSource();
 
         var run = source.IndexOf("app.Run();", StringComparison.Ordinal);
-        // The call, not the method: "ShutDownOpenModelica(" alone matches the declaration below
-        // it, so deleting the call left this green - found by deleting it.
-        var shutdown = source.IndexOf("ShutDownOpenModelica(app.Services)", StringComparison.Ordinal);
+        // The calls, not a method name: "ShutDownOpenModelica(" alone matched the declaration below
+        // the call it was meant to find, so deleting the call left this green - found by deleting it.
+        var shutdown = source.IndexOf("externalTools.Run(", StringComparison.Ordinal);
+        var finallyBlock = source.LastIndexOf("finally", shutdown < 0 ? 0 : shutdown, StringComparison.Ordinal);
 
         Assert.True(run >= 0, "the host no longer runs the application");
         Assert.True(shutdown > run,
             "MLQT.Photino/Program.cs must end the OpenModelica session after app.Run() returns");
+        Assert.True(finallyBlock > run,
+            "the session must be ended in a finally after app.Run(), so a Run that throws still ends it");
+    }
+
+    /// <summary>
+    /// B493: the ways out that never return from <c>app.Run()</c> - the process ended from outside,
+    /// an unhandled exception - left omc running until the host hooked them. Hooked before the run
+    /// starts, or a failure while it runs is not covered.
+    /// </summary>
+    [Fact]
+    public void TheHostHooksTheOtherWaysOut_BeforeItRuns()
+    {
+        var source = HostSource();
+
+        var run = source.IndexOf("app.Run();", StringComparison.Ordinal);
+        var hook = source.IndexOf("externalTools.EndWith(AppDomain.CurrentDomain)", StringComparison.Ordinal);
+
+        Assert.True(hook >= 0, "MLQT.Photino/Program.cs no longer hooks the process's other ways out");
+        Assert.True(hook < run, "the exit hooks must be in place before app.Run()");
     }
 
     /// <summary>
