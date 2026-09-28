@@ -83,7 +83,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // Whether the condition of an if, when or while equation or statement is being written (B491):
     // its continuation lines are a level further in, past the column of what it guards.
     private bool _inControlCondition;
-    // The line the '(' of the innermost parentheses being wrapped inside is on (B491), or -1.
+    // What follows the first 'and' or 'or' of the condition being written when all before it is a
+    // lone Boolean name (B494): the operator before it does not start a line.
+    private IParseTree? _operandAfterFlag;
+    // The line the '('of the innermost parentheses being wrapped inside is on (B491), or -1.
     private int _parenthesesLine = -1;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
@@ -2785,10 +2788,53 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         bool enclosingCondition = _inControlCondition;
         _equationContinuationIndent = 1;
         _inControlCondition = true;
-        Visit(condition);
+        VisitCondition(condition);
         _equationContinuationIndent = enclosingIndent;
         _inControlCondition = enclosingCondition;
     }
+
+    /// <summary>
+    /// Writes a condition - of an if-expression, or of an if, when or while - whose first 'and' or
+    /// 'or' does not start a line when all before it is a lone Boolean name (B494). Wrapped there,
+    /// the line held nothing of the condition but its flag: MSL's CombiTable1Ds ended one line with
+    /// <c>if tableOnFile</c> and started the next with <c>and fileName &lt;&gt; "NoName" ...</c>.
+    /// The flag stays with what it is joined to, and the condition wraps at a later 'and' or 'or'
+    /// if it has one; one of two operands is kept whole, as it was before B489.
+    /// </summary>
+    private void VisitCondition(IParseTree condition)
+    {
+        var enclosing = _operandAfterFlag;
+        _operandAfterFlag = OperandAfterFlag(condition) ?? enclosing;
+        Visit(condition);
+        _operandAfterFlag = enclosing;
+    }
+
+    /// <summary>
+    /// What follows a condition's first 'and' or 'or' when all before it is a lone Boolean name,
+    /// possibly negated - <c>initDelay</c>, <c>not have_chiWat</c>, <c>cfg.have_hrc</c> - or null.
+    /// Null for an 'or' whose right-hand side is an 'and' of several.
+    /// </summary>
+    private static IParseTree? OperandAfterFlag(IParseTree condition)
+    {
+        if (condition is not modelicaParser.ExpressionContext { } expression
+            || expression.simple_expression() is not { } simple || simple.logical_expression().Length != 1)
+            return null;
+        var terms = simple.logical_expression(0).logical_term();
+        var factors = terms[0].logical_factor();
+        if (!IsFlag(factors[0]))
+            return null;
+        if (factors.Length > 1)
+            return factors[1];
+        // Not an 'or' before an 'and': kept on the flag's line, the 'and' would wrap instead and read
+        // as joining the 'or' (B489).
+        return terms.Length > 1 && terms[1].logical_factor().Length == 1 ? terms[1] : null;
+    }
+
+    private static bool IsFlag(modelicaParser.Logical_factorContext factor)
+        => factor.relation() is { } relation && relation.arithmetic_expression().Length == 1
+           && relation.arithmetic_expression(0) is { } arithmetic && arithmetic.add_op().Length == 0
+           && arithmetic.term() is [{ } term] && term.factor() is [{ } single]
+           && single.primary() is [{ ChildCount: 1 } primary] && primary.component_reference() != null;
 
     public override object? VisitIf_equation([NotNull] modelicaParser.If_equationContext context)
     {
@@ -3216,7 +3262,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Write(Keyword("if"));
             Space();
             if (expressions != null && expressions.Length > 0)
-                Visit(expressions[0]);
+                VisitCondition(expressions[0]);
             Space();
             Write(Keyword("then"));
             Space();
@@ -3235,7 +3281,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     Space();
                     var elseifExpressions = elseif.expression();
                     if (elseifExpressions != null && elseifExpressions.Length > 0)
-                        Visit(elseifExpressions[0]);
+                        VisitCondition(elseifExpressions[0]);
                     Space();
                     Write(Keyword("then"));
                     Space();
@@ -3333,14 +3379,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// line of its own (B464, B487), nor in an if-expression that does not start its branches on
     /// lines of their own - one inside another's condition or 'then' (B487) - nor in an annotation,
     /// nor in a for loop's range. The condition of an if, when or while wraps too, a level past the
-    /// column of what it guards (B491). With <paramref name="always"/>, it starts a line wherever it
-    /// may, whether or not what it joins fits.
+    /// column of what it guards (B491). Nor after a condition's first operand when that is a lone
+    /// Boolean name (B494). With <paramref name="always"/>, it starts a line wherever it may, whether
+    /// or not what it joins fits.
     /// </summary>
     private void WriteLogicalOperator(string op, IParseTree operand, bool always)
     {
         int length = op.Length + 1 + EstimatedLength(operand);
         if (_bracketDepth == 0 && _equationContinuationIndent > 0 && _firstArgumentLine != _code.Count
             && !_inAnnotation && (!_inIfExpression || _innermostIfBreaks) && !InForRange(operand)
+            && operand != _operandAfterFlag
             && (always || GetCurrentLinePlainTextLength() + 1 + length > _maxLineLength - 3
                 && length <= _maxLineLength - 3))
             StartContinuationLine(branchLine: false);

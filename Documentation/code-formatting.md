@@ -430,6 +430,28 @@ left whole on one line and the line broke inside `abs(u1 - u2)`. Over the Modeli
 and Buildings, 31 files are written differently from before (15 MSL, 16 Buildings), only in line
 breaks and indentation - most of them an `assert` condition.
 
+**A condition does not wrap straight after a lone flag.** Where a condition's first operand is just
+a Boolean name - `tableOnFile`, `not have_chiWat` - the `and` or `or` after it stays on its line, so
+the line does not end with nothing of the condition but `if tableOnFile`. The condition wraps at its
+next `and` or `or` instead, or, with only two operands, is kept whole:
+
+```modelica
+    if tableOnFile then if isCsvExt then "Values" else tableName else "NoName", if tableOnFile and fileName <> "NoName"
+        and not Modelica.Utilities.Strings.isEmpty(fileName) then fileName
+      else "NoName",
+  final parameter Modelica.Units.SI.Time t_in_start=if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(
+```
+
+Earlier versions wrote `if tableOnFile` at the end of one line and `and fileName <> "NoName" and ...`
+at the start of the next (MSL's `Blocks.Tables.CombiTable1Ds`), and `t_in_start=if initDelay` above
+`and (abs(m_flow_start) > ...)` (Buildings' `PlugFlowTransportDelay`). Keeping the condition whole
+can leave its line past the limit; a long binding moving to a line of its own after its `=` would
+bring most of these back under it, and is a separate question. An `or` whose right-hand side is an
+`and` of several still starts a line after the flag, so that the `and` is not read as joining the
+`or`. Over the Modelica Standard Library and Buildings, 7 files are written differently from before
+(2 MSL, 5 Buildings), only in line breaks and indentation; lines over 100 characters in them go from
+371 to 376.
+
 **The argument after an if-expression that has broken its branches starts a line of its own**, so
 that it is not read as part of the last branch:
 

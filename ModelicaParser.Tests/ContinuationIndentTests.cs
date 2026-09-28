@@ -93,6 +93,10 @@ namespace ModelicaParser.Tests;
 /// wrapped at an operator. An expression in parentheses too long for a line of its own wraps inside
 /// them, a level in from the line its <c>(</c> is on, where nothing inside parentheses wrapped: MSL's
 /// MassWithStopAndFriction had a 300-character <c>else (if ... )</c>.</para>
+///
+/// <para>B494 - shapes B491 left. A condition does not wrap after a first operand that is a lone
+/// Boolean name: MSL's CombiTable1Ds ended a line with <c>if tableOnFile</c> and started the next
+/// with <c>and fileName &lt;&gt; "NoName" ...</c>.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1483,6 +1487,64 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(ParenthesesWrappedInside));
     }
 
+    private const string FlagsKeptWithTheirConditions = """
+        model M
+          parameter Modelica.Blocks.Types.ExternalCombiTimeTable tableID=Modelica.Blocks.Types.ExternalCombiTimeTable(
+            if tableOnFile then if isCsvExt then "Values" else tableName else "NoName", if tableOnFile and fileName <> "NoName"
+                and not Modelica.Utilities.Strings.isEmpty(fileName) then fileName
+              else "NoName",
+            table, startTime/timeScale) "External table object";
+          final parameter Boolean have_senVHeaWatPri=cfg.have_heaWat and (if cfg.have_hrc or not have_senVHeaWatSec
+                or cfg.typDis == Buildings.Templates.Plants.HeatPumps.Types.Distribution.Variable1Only then true
+              else have_senVHeaWatPri_select) "Set to true for plants with primary HW flow sensor";
+          final parameter Integer n=if have_pumChiWatPriDed
+                or have_chiWat and typArrPumPri == Buildings.Templates.Components.Types.PumpArrangement.Headered then nPumChiWatPri_select
+              else 0;
+          final parameter Modelica.Units.SI.Time t_in_start=if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(
+            length/m_flow_start*(rho*dh^2/4*Modelica.Constants.pi), 0)
+              else 0 "Initial value of input time at inlet";
+          Real y;
+
+        equation
+          if useSomethingQuiteLong and aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then
+            y = 1;
+          end if;
+          z = if zerTim == Buildings.Utilities.Time.Types.ZeroTime.NY2027
+                or zerTim == Buildings.Utilities.Time.Types.ZeroTime.Custom then 1
+              elseif useSomethingQuiteLong and aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then 2
+              else 3;
+        end M;
+        """;
+
+    [Fact]
+    public void AConditionDoesNotWrapAfterALoneFlag()
+    {
+        // In order: MSL's CombiTable1Ds - a condition whose first operand is a lone Boolean name
+        // does not wrap after it, but at its next 'and', where it ended a line with 'if tableOnFile';
+        // Buildings' heat pump PartialController - the same at a later 'or', 'not' or a dotted name
+        // being a flag too; an 'or' whose right-hand side is an 'and' of several still wraps after
+        // the flag, as the 'and' would otherwise read as joining the 'or' (B489); Buildings'
+        // PlugFlowTransportDelay - a condition of two operands is kept whole, where it ended a line
+        // with 'if initDelay'; an if-equation's condition the same; one whose first operand is a
+        // comparison wraps after it, as before, and an elseif's condition keeps its flag (B494).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  parameter Modelica.Blocks.Types.ExternalCombiTimeTable tableID=Modelica.Blocks.Types.ExternalCombiTimeTable(if tableOnFile then if isCsvExt then "Values" else tableName else "NoName", if tableOnFile and fileName <> "NoName" and not Modelica.Utilities.Strings.isEmpty(fileName) then fileName else "NoName", table, startTime/timeScale) "External table object";
+                  final parameter Boolean have_senVHeaWatPri=cfg.have_heaWat and (if cfg.have_hrc or not have_senVHeaWatSec or cfg.typDis == Buildings.Templates.Plants.HeatPumps.Types.Distribution.Variable1Only then true else have_senVHeaWatPri_select) "Set to true for plants with primary HW flow sensor";
+                  final parameter Integer n=if have_pumChiWatPriDed or have_chiWat and typArrPumPri == Buildings.Templates.Components.Types.PumpArrangement.Headered then nPumChiWatPri_select else 0;
+                  final parameter Modelica.Units.SI.Time t_in_start=if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(length/m_flow_start*(rho*dh^2/4*Modelica.Constants.pi), 0) else 0 "Initial value of input time at inlet";
+                  Real y;
+                equation
+                  if useSomethingQuiteLong and aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then
+                    y = 1;
+                  end if;
+                  z = if zerTim == Buildings.Utilities.Time.Types.ZeroTime.NY2027 or zerTim == Buildings.Utilities.Time.Types.ZeroTime.Custom then 1 elseif useSomethingQuiteLong and aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then 2 else 3;
+                end M;
+                """),
+            expectedOutput: Normalise(FlagsKeptWithTheirConditions));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1529,6 +1591,7 @@ public class ContinuationIndentTests
     [InlineData(ControlConditionsWrapped, 100)]
     [InlineData(DeclarationBindingsWrapped, 100)]
     [InlineData(ParenthesesWrappedInside, 100)]
+    [InlineData(FlagsKeptWithTheirConditions, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
