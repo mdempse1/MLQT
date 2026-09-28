@@ -2000,8 +2000,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             // characters. Only the binding of the declaration itself, not a modification's.
             int enclosingIndent = _equationContinuationIndent;
             if (context.Parent?.Parent is modelicaParser.DeclarationContext)
+            {
                 _equationContinuationIndent = 1;
-            Visit(context.expression());
+                VisitBinding(context.expression());
+            }
+            else
+                Visit(context.expression());
             _equationContinuationIndent = enclosingIndent;
         }
         else if (context.GetText() == "break")
@@ -2009,6 +2013,105 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Write(Keyword("break"));
         }
         return null;
+    }
+
+    /// <summary>
+    /// Writes a component's binding after its <c>=</c>, moving it whole to a continuation line of its
+    /// own, a level in, when written there its first line would end past the maximum length (B494).
+    /// A binding was only ever wrapped where it started, so a declaration with a long type kept a
+    /// first line far past the limit: Buildings' Templates heat pump had
+    /// <c>cpSou_default=if typ == ...AirToWater then ...cpAir</c> at 152 characters, since an
+    /// if-expression can break only at its branches. The binding is written in place first, and
+    /// written again on a line of its own only if that first line is too long - so a binding that
+    /// wraps before a <c>+</c> within the limit (B491) stays where it starts, and its continuation
+    /// lines are where they were. Not when the line up to its <c>=</c> is 20 characters or fewer -
+    /// the length an equation's left-hand side must pass before it wraps at its <c>=</c> - where
+    /// moving gains too little to be worth a line (MSL's Dissipation has <c>SI.Length h=if ...</c>);
+    /// nor when that line is past the limit already: the modification before the binding is what is
+    /// too long, and moving the binding would leave that line as long, to start one of its own with
+    /// as little as a <c>1</c>.
+    /// </summary>
+    private void VisitBinding(modelicaParser.ExpressionContext binding)
+    {
+        int line = _code.Count;
+        int before = GetCurrentLinePlainTextLength();
+        if (before <= MinimumMovedBindingPrefix || before > _maxLineLength)
+        {
+            Visit(binding);
+            return;
+        }
+        var mark = new RendererMark(this);
+        Visit(binding);
+        var firstLine = _code.Count > line ? PlainText(_code[line]).TrimStart() : GetCurrentLinePlainText().TrimStart();
+        if (firstLine.Length <= _maxLineLength)
+            return;
+        mark.Restore(this);
+        EmitLine();
+        // Written a level in, as a statement starting that line would be, so that what wraps
+        // inside it is placed from that line: kept at the declaration's level, an argument list's
+        // lines moved in with it and an if-expression's 'else' inside one did not, and read as
+        // another argument. The line is kept there if it is ended at the declaration's level.
+        Indent();
+        _currentLineMinimumIndent = _indentLevel * IndentSpaces;
+        Visit(binding);
+        Dedent();
+    }
+
+    /// <summary>
+    /// The length the line up to a binding's <c>=</c> must pass for the binding to be moved to a
+    /// line of its own (B494), as an equation's left-hand side must before it wraps at its <c>=</c>.
+    /// </summary>
+    private const int MinimumMovedBindingPrefix = 20;
+
+    /// <summary>
+    /// What writing an expression can change that the visitors do not restore themselves: the lines
+    /// written, the line being written, and what EmitLine carries to the next line - so an
+    /// expression can be written once to see where its lines end, and written again (B494).
+    /// </summary>
+    private sealed class RendererMark
+    {
+        private readonly int _lines;
+        private readonly int _from;
+        private readonly List<string> _changeable;
+        private readonly string _currentLine;
+        private readonly HashSet<int> _noPostIndentLines;
+        private readonly (int Start, int End, int Level)? _pendingMatrixLines;
+        private readonly int _currentLineMinimumIndent;
+        private readonly int _currentLineMaximumLevel;
+        private readonly bool _suppressNextIndentation;
+        private readonly bool _continuesBrokenChain;
+        private readonly int _indentLevel;
+
+        public RendererMark(ModelicaRenderer renderer)
+        {
+            _lines = renderer._code.Count;
+            // Lines already written change only when a pending matrix's lines are moved back.
+            _from = Math.Min(renderer._pendingMatrixLines?.Start ?? _lines, _lines);
+            _changeable = renderer._code.GetRange(_from, _lines - _from);
+            _currentLine = renderer._currentLine.ToString();
+            _noPostIndentLines = new HashSet<int>(renderer._noPostIndentLines);
+            _pendingMatrixLines = renderer._pendingMatrixLines;
+            _currentLineMinimumIndent = renderer._currentLineMinimumIndent;
+            _currentLineMaximumLevel = renderer._currentLineMaximumLevel;
+            _suppressNextIndentation = renderer._suppressNextIndentation;
+            _continuesBrokenChain = renderer._continuesBrokenChain;
+            _indentLevel = renderer._indentLevel;
+        }
+
+        public void Restore(ModelicaRenderer renderer)
+        {
+            renderer._code.RemoveRange(_from, renderer._code.Count - _from);
+            renderer._code.AddRange(_changeable);
+            renderer._currentLine.Clear().Append(_currentLine);
+            renderer._noPostIndentLines.Clear();
+            renderer._noPostIndentLines.UnionWith(_noPostIndentLines);
+            renderer._pendingMatrixLines = _pendingMatrixLines;
+            renderer._currentLineMinimumIndent = _currentLineMinimumIndent;
+            renderer._currentLineMaximumLevel = _currentLineMaximumLevel;
+            renderer._suppressNextIndentation = _suppressNextIndentation;
+            renderer._continuesBrokenChain = _continuesBrokenChain;
+            renderer._indentLevel = _indentLevel;
+        }
     }
 
     public override object? VisitClass_modification([NotNull] modelicaParser.Class_modificationContext context)

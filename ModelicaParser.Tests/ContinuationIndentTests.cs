@@ -98,7 +98,9 @@ namespace ModelicaParser.Tests;
 /// Boolean name: MSL's CombiTable1Ds ended a line with <c>if tableOnFile</c> and started the next
 /// with <c>and fileName &lt;&gt; "NoName" ...</c>. The links of a polynomial in nested form are
 /// wrapped at one column, one a line, where each stepped a level further in: MSL's IF97
-/// <c>hlowerofp1</c> was a staircase eleven levels deep.</para>
+/// <c>hlowerofp1</c> was a staircase eleven levels deep. A component's binding whose first line
+/// would end past the limit starts a line of its own after its <c>=</c>, a level in: Buildings'
+/// Templates heat pump had <c>cpSou_default=if ... then ...</c> at 152 characters.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -844,8 +846,9 @@ public class ContinuationIndentTests
           parameter Real[3] cL=
             {(Modelica.Math.log(k0) - b - a)/yL^2, (-b*yL - 2*Modelica.Math.log(k0) + 2*b + 2*a)/yL,
               Modelica.Math.log(k0)} "Polynomial coefficients";
-          parameter String filNam[2]={Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos"),
-            Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos")};
+          parameter String filNam[2]=
+            {Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos"),
+              Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos")};
           parameter Real x[3]={ // comment
             Some.Long.Package.Function.name(aaaaaaaaaaaaaaaaaaaaaaaaa,
               bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), Other.fn(ccccccccccccccccc),
@@ -861,7 +864,8 @@ public class ContinuationIndentTests
         // line; wrapping only the later elements left 'cables={LowVoltageCables.PvcAl120(),' at
         // 109 characters. The array moves to a line of its own after the '=' (B484) - as
         // Buildings' PartialDamperExponential 'cL=' does - but not when what it has written would
-        // not fit there either: a string that long cannot be helped by moving it. Nor when a
+        // not fit there either: a string that long cannot be helped by moving it, though as a
+        // component's binding whose first line is past the limit it is moved whole (B494). Nor when a
         // comment after the '{' has ended the line the array opened on - where, in a component's
         // binding, a call's positional argument that does not fit starts a line (B487, B491).
         TestHelpers.AssertClass(
@@ -1422,6 +1426,59 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(DeclarationBindingsWrapped));
     }
 
+    private const string LongBindingsMoved = """
+        model M
+          parameter Modelica.Units.SI.SpecificHeatCapacity cpSou_default=
+            if typ == Buildings.Templates.Components.Types.HeatPump.AirToWater then Buildings.Utilities.Psychrometrics.Constants.cpAir
+                else Buildings.Utilities.Psychrometrics.Constants.cpWatLiq
+            "Source fluid default specific heat capacity";
+          parameter Modelica.Units.SI.SpecificHeatCapacity cpHea_default=
+            MediumHea.specificHeatCapacityCp(MediumHea.setState_pTX(MediumHea.p_default, MediumHea.T_default,
+              MediumHea.X_default)) "Specific heat capacity";
+          final parameter Buildings.Controls.OBC.ASHRAE.G36.Types.Title24ClimateZone tit24CliZon=
+            datAll.tit24CliZon "California Title 24 climate zone";
+          parameter SI.Voltage ViNominal=VaNominal
+            - Machines.Thermal.convertResistance(Ra, TaRef, alpha20a, TaNominal)*IaNominal
+            - Machines.Losses.DCMachines.brushVoltageDrop(brushParameters, IaNominal) "Voltage";
+          SI.Length h=if IN_con.geometry == TYP.RectangularFin then IN_con.D_h*(1 + IN_con.alpha)/(2*IN_con.alpha)
+              else IN_con.b;
+          final parameter Integer nSenDpHeaWatRem(final min=if typCtl == Buildings.Templates.Plants.HeatPumps.Types.Controller.OpenLoop then 1 else 0)=1
+            "Number of sensors";
+          Real x(start=Buildings.Templates.Components.Types.HeatPump.AirToWater + Buildings.Templates.Components.Types.HeatPump.AirToWater);
+        end M;
+        """;
+
+    [Fact]
+    public void ABindingWhoseFirstLineWouldPassTheLimitStartsALineOfItsOwn()
+    {
+        // In order: Buildings' Templates heat pump - an if-expression can break only at its
+        // branches, so 'cpSou_default=if ... then ...cpAir' ended its first line at 152 characters;
+        // the binding moves whole to a line of its own a level in, laid out from there as a
+        // statement starting that line would be - its 'else' two levels past the 'if', as an
+        // equation's is past its start. Buildings' StorageTankWithExternalHeatExchanger - a call's
+        // arguments then wrap from there. (In AConditionDoesNotWrapAfterALoneFlag, MSL's
+        // CombiTable1Ds: an 'else' inside an argument moves in with the argument, where kept at
+        // the declaration's level it came to the argument's column.) Buildings' G36VAVMultiZone - a short binding moves too, when with it the line would
+        // pass the limit. MSL's DcPermanentMagnetData - a binding that wraps before a '-' within the
+        // limit stays where it starts (B491). MSL's Dissipation - not after 20 characters or fewer,
+        // as an equation's left-hand side does not wrap at its '='. Buildings' heat pump
+        // PartialController - not when the line is past the limit before the '='. A modification's
+        // value is not moved (B494).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  parameter Modelica.Units.SI.SpecificHeatCapacity cpSou_default=if typ == Buildings.Templates.Components.Types.HeatPump.AirToWater then Buildings.Utilities.Psychrometrics.Constants.cpAir else Buildings.Utilities.Psychrometrics.Constants.cpWatLiq "Source fluid default specific heat capacity";
+                  parameter Modelica.Units.SI.SpecificHeatCapacity cpHea_default=MediumHea.specificHeatCapacityCp(MediumHea.setState_pTX(MediumHea.p_default, MediumHea.T_default, MediumHea.X_default)) "Specific heat capacity";
+                  final parameter Buildings.Controls.OBC.ASHRAE.G36.Types.Title24ClimateZone tit24CliZon=datAll.tit24CliZon "California Title 24 climate zone";
+                  parameter SI.Voltage ViNominal=VaNominal - Machines.Thermal.convertResistance(Ra, TaRef, alpha20a, TaNominal)*IaNominal - Machines.Losses.DCMachines.brushVoltageDrop(brushParameters, IaNominal) "Voltage";
+                  SI.Length h=if IN_con.geometry == TYP.RectangularFin then IN_con.D_h*(1 + IN_con.alpha)/(2*IN_con.alpha) else IN_con.b;
+                  final parameter Integer nSenDpHeaWatRem(final min=if typCtl == Buildings.Templates.Plants.HeatPumps.Types.Controller.OpenLoop then 1 else 0)=1 "Number of sensors";
+                  Real x(start=Buildings.Templates.Components.Types.HeatPump.AirToWater + Buildings.Templates.Components.Types.HeatPump.AirToWater);
+                end M;
+                """),
+            expectedOutput: Normalise(LongBindingsMoved));
+    }
+
     private const string ParenthesesWrappedInside = """
         model M
           Real y;
@@ -1582,20 +1639,23 @@ public class ContinuationIndentTests
 
     private const string FlagsKeptWithTheirConditions = """
         model M
-          parameter Modelica.Blocks.Types.ExternalCombiTimeTable tableID=Modelica.Blocks.Types.ExternalCombiTimeTable(
-            if tableOnFile then if isCsvExt then "Values" else tableName else "NoName", if tableOnFile and fileName <> "NoName"
-                and not Modelica.Utilities.Strings.isEmpty(fileName) then fileName
-              else "NoName",
-            table, startTime/timeScale) "External table object";
-          final parameter Boolean have_senVHeaWatPri=cfg.have_heaWat and (if cfg.have_hrc or not have_senVHeaWatSec
-                or cfg.typDis == Buildings.Templates.Plants.HeatPumps.Types.Distribution.Variable1Only then true
-              else have_senVHeaWatPri_select) "Set to true for plants with primary HW flow sensor";
+          parameter Modelica.Blocks.Types.ExternalCombiTimeTable tableID=
+            Modelica.Blocks.Types.ExternalCombiTimeTable(
+              if tableOnFile then if isCsvExt then "Values" else tableName else "NoName", if tableOnFile and fileName <> "NoName"
+                  and not Modelica.Utilities.Strings.isEmpty(fileName) then fileName
+                else "NoName",
+              table, startTime/timeScale) "External table object";
+          final parameter Boolean have_senVHeaWatPri=
+            cfg.have_heaWat and (if cfg.have_hrc or not have_senVHeaWatSec
+                  or cfg.typDis == Buildings.Templates.Plants.HeatPumps.Types.Distribution.Variable1Only then true
+                else have_senVHeaWatPri_select) "Set to true for plants with primary HW flow sensor";
           final parameter Integer n=if have_pumChiWatPriDed
                 or have_chiWat and typArrPumPri == Buildings.Templates.Components.Types.PumpArrangement.Headered then nPumChiWatPri_select
               else 0;
-          final parameter Modelica.Units.SI.Time t_in_start=if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(
-            length/m_flow_start*(rho*dh^2/4*Modelica.Constants.pi), 0)
-              else 0 "Initial value of input time at inlet";
+          final parameter Modelica.Units.SI.Time t_in_start=
+            if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(
+              length/m_flow_start*(rho*dh^2/4*Modelica.Constants.pi), 0)
+                else 0 "Initial value of input time at inlet";
           Real y;
 
         equation
@@ -1620,6 +1680,8 @@ public class ContinuationIndentTests
         // PlugFlowTransportDelay - a condition of two operands is kept whole, where it ended a line
         // with 'if initDelay'; an if-equation's condition the same; one whose first operand is a
         // comparison wraps after it, as before, and an elseif's condition keeps its flag (B494).
+        // Three of the bindings start a line of their own, their first lines being past the limit
+        // on the declaration's; 'n=' does not, its first line ending within it (B494).
         TestHelpers.AssertClass(
             Normalise("""
                 model M
@@ -1686,6 +1748,7 @@ public class ContinuationIndentTests
     [InlineData(ParenthesesWrappedInside, 100)]
     [InlineData(FlagsKeptWithTheirConditions, 100)]
     [InlineData(NestedChainsFlat, 100)]
+    [InlineData(LongBindingsMoved, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

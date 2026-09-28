@@ -439,14 +439,15 @@ next `and` or `or` instead, or, with only two operands, is kept whole:
     if tableOnFile then if isCsvExt then "Values" else tableName else "NoName", if tableOnFile and fileName <> "NoName"
         and not Modelica.Utilities.Strings.isEmpty(fileName) then fileName
       else "NoName",
-  final parameter Modelica.Units.SI.Time t_in_start=if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(
+  final parameter Modelica.Units.SI.Time t_in_start=
+    if initDelay and (abs(m_flow_start) > 1E-10*m_flow_nominal) then min(
 ```
 
 Earlier versions wrote `if tableOnFile` at the end of one line and `and fileName <> "NoName" and ...`
 at the start of the next (MSL's `Blocks.Tables.CombiTable1Ds`), and `t_in_start=if initDelay` above
 `and (abs(m_flow_start) > ...)` (Buildings' `PlugFlowTransportDelay`). Keeping the condition whole
-can leave its line past the limit; a long binding moving to a line of its own after its `=` would
-bring most of these back under it, and is a separate question. An `or` whose right-hand side is an
+can leave its line past the limit; a binding whose first line would do so starts a line of its own
+after its `=` (below), as `t_in_start` does. An `or` whose right-hand side is an
 `and` of several still starts a line after the flag, so that the `and` is not read as joining the
 `or`. Over the Modelica Standard Library and Buildings, 7 files are written differently from before
 (2 MSL, 5 Buildings), only in line breaks and indentation; lines over 100 characters in them go from
@@ -531,6 +532,34 @@ after the component's own `=`: a modification's value - `x(start=...)` - is laid
 Over the Modelica Standard Library and Buildings, 371 files are written differently from before (93
 MSL, 278 Buildings), only in line breaks and indentation; lines over 100 characters in them go from
 9,263 to 8,816.
+
+**A binding whose first line would pass the limit starts a line of its own** after the `=`, a level
+in, and wraps from there as above; its description follows its last line:
+
+```modelica
+  parameter Modelica.Units.SI.SpecificHeatCapacity cpSou_default=
+    if typ == Buildings.Templates.Components.Types.HeatPump.AirToWater then Buildings.Utilities.Psychrometrics.Constants.cpAir
+        else Buildings.Utilities.Psychrometrics.Constants.cpWatLiq
+    "Source fluid default specific heat capacity"
+  parameter Modelica.Units.SI.SpecificHeatCapacity cpHea_default=
+    MediumHea.specificHeatCapacityCp(MediumHea.setState_pTX(MediumHea.p_default, MediumHea.T_default,
+      MediumHea.X_default)) "Specific heat capacity of heating medium at default medium state";
+```
+
+The binding is judged by where its first line would end on the declaration's line: one that wraps
+within the limit there - `ViNominal=VaNominal` above - stays. One that is moved is laid out from its
+new line as a statement starting that line would be, so an `else` is two levels past its `if`, as
+in an equation, and whatever wraps inside an argument list moves in with the arguments. A short binding is moved too when it would take the line past the limit
+(`tit24CliZon=` / `datAll.tit24CliZon "California Title 24 climate zone"`), but not when the line
+is 20 characters or fewer up to the `=` - `SI.Length h=`, where moving gains too little, as an
+equation's left-hand side of that length does not wrap at its `=` - nor when the line is past the
+limit before the `=`: there the modification is what is too long. A modification's value -
+`x(start=...)` - is not moved. Moving cannot shorten what cannot break: `cpSou_default`'s
+`if ... then ...cpAir` above is still 118 characters. Earlier versions kept every binding on the
+declaration's line, so `cpSou_default=if ...` was 152 characters (Buildings'
+`Templates.Components.Data.HeatPump`). Over the Modelica Standard Library and Buildings, 686 files
+are written differently from before (129 MSL, 557 Buildings), only in line breaks and indentation;
+lines over 100 characters in them go from 12,603 to 11,268.
 
 **An expression in parentheses too long for a line of its own wraps inside them**, as it would
 outside them, with its continuation lines a level in from the line the `(` is on. A parenthesised
