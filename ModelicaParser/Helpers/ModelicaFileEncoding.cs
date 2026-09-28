@@ -96,11 +96,12 @@ public static class ModelicaFileEncoding
     /// <inheritdoc cref="WriteAllText"/>
     public static async Task WriteAllTextAsync(string path, string text, Encoding? encoding = null)
     {
+        text = ForFile(path, text);
         await File.WriteAllTextAsync(path, text, encoding ?? EncodingToWrite(path, text));
     }
 
     /// <summary>
-    /// Writes text to a file.
+    /// Writes text to a file, ending it with a newline (<see cref="EnsureFinalNewline"/>).
     ///
     /// <para>When <paramref name="encoding"/> is null the existing file's encoding is preserved, so
     /// a round trip through MLQT does not silently rewrite a library in a different encoding from
@@ -109,8 +110,168 @@ public static class ModelicaFileEncoding
     /// </summary>
     public static void WriteAllText(string path, string text, Encoding? encoding = null)
     {
+        text = ForFile(path, text);
         File.WriteAllText(path, text, encoding ?? EncodingToWrite(path, text));
     }
+
+    /// <summary>
+    /// How an existing file is written — its encoding and its line ending — so a file made from its
+    /// text can be written the same way.
+    /// </summary>
+    /// <param name="Encoding">The file's encoding, as <see cref="DetectExisting"/> reads it.</param>
+    /// <param name="Newline">The line ending the file mostly uses; a line feed when it has none.</param>
+    public sealed record FileStyle(Encoding Encoding, string Newline);
+
+    /// <summary>
+    /// The encoding and line ending of <paramref name="path"/>, or null when there is no such file.
+    /// </summary>
+    public static FileStyle? StyleOf(string path) =>
+        File.Exists(path) ? new FileStyle(DetectExisting(path), ExistingNewline(path) ?? "\n") : null;
+
+    /// <summary>
+    /// <see cref="WriteAllText"/>, except that a file which does not exist yet is written in
+    /// <paramref name="newFileStyle"/> instead of as UTF-8 with the renderer's line feeds.
+    ///
+    /// <para><b>For a file made out of another one</b> (B308). A file that exists keeps its own
+    /// encoding and line endings, which is the rule this class is for; one that does not has nothing
+    /// on disk to follow, and splitting a Windows-1252 CRLF package into files wrote UTF-8 LF files
+    /// beside the CRLF ones it came from. The file the text came from is the answer to follow.</para>
+    /// </summary>
+    public static void WriteAllTextLike(string path, string text, FileStyle? newFileStyle)
+    {
+        if (newFileStyle is null || File.Exists(path))
+        {
+            WriteAllText(path, text);
+            return;
+        }
+
+        text = WithNewline(EnsureFinalNewline(NormalizeToLf(text)), newFileStyle.Newline);
+        File.WriteAllText(path, text, newFileStyle.Encoding);
+    }
+
+    /// <summary><see cref="WriteAllLines"/>, with a new file written as <see cref="WriteAllTextLike"/> writes one.</summary>
+    public static void WriteAllLinesLike(string path, IEnumerable<string> lines, FileStyle? newFileStyle) =>
+        WriteAllTextLike(path, string.Join('\n', lines), newFileStyle);
+
+    /// <summary>
+    /// <paramref name="text"/> as this file should hold it: ended with a newline, and written with
+    /// the line endings the file already uses.
+    ///
+    /// <para><b>Line endings are the same question as the encoding</b>, and were being answered the
+    /// wrong way for the same reason. <c>ModelicaRenderer</c> joins its output with a line feed, so
+    /// every save path wrote LF whatever the file was — and on a Windows checkout, where git hands
+    /// you CRLF, that is a change to every line of every file. With <c>core.autocrlf=true</c> the
+    /// command line shows nothing, because git cleans CRLF back to LF before comparing, while
+    /// LibGit2Sharp compares the bytes and reports the whole library as modified. Thousands of files
+    /// with nothing to review in any of them (B251).</para>
+    ///
+    /// <para>A file that does not exist yet keeps what it was given, which is LF from the renderer.
+    /// Inventing an answer from <c>Environment.NewLine</c> would make the same repository come out
+    /// differently on Windows and on Linux, which is how <c>package.order</c> behaved.</para>
+    /// </summary>
+    public static string ForFile(string path, string text) =>
+        WithNewline(
+            EnsureFinalNewline(NormalizeToLf(text)),
+            ExistingNewline(path) ?? DominantNewline(text));
+
+    /// <summary>The line ending <paramref name="path"/> already uses, or null when it has none.</summary>
+    /// <remarks>
+    /// The majority wins on a mixed file — a merge, or an editor that appended in the other style.
+    /// There is no right answer for one of those, and leaving it mixed keeps a file that every tool
+    /// touching it will disagree about.
+    /// </remarks>
+    private static string? ExistingNewline(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+                return null;
+
+            var crlf = 0;
+            var lf = 0;
+            var previous = -1;
+
+            // Latin-1 for anything without a byte-order mark, which cannot fail and keeps CR and LF
+            // where they are in UTF-8 and every single-byte encoding. A file WITH a mark is decoded
+            // as the mark says - StreamReader's default - and that is what makes a UTF-16 file's
+            // CRLF count as CRLF rather than as a line feed after a zero byte (B311).
+            using var reader = new StreamReader(path, Encoding.Latin1, detectEncodingFromByteOrderMarks: true);
+            int current;
+            while ((current = reader.Read()) >= 0)
+            {
+                if (current == '\n')
+                {
+                    if (previous == '\r') crlf++;
+                    else lf++;
+                }
+                previous = current;
+            }
+
+            if (crlf == 0 && lf == 0)
+                return null;
+
+            return crlf >= lf ? "\r\n" : "\n";
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The line ending <paramref name="text"/> mostly uses — what a file that does not exist yet is
+    /// written with, since there is nothing on disk to follow.
+    ///
+    /// <para>Text from the renderer is LF and a new file gets LF, the same on every platform. Text
+    /// written through verbatim — a class excluded from formatting, whose source is copied rather
+    /// than rebuilt — keeps whatever it came with, which is the point of excluding it.</para>
+    /// </summary>
+    private static string DominantNewline(string text)
+    {
+        var crlf = 0;
+        var lf = 0;
+        for (var i = 0; i < text.Length; i++)
+            if (text[i] == '\n')
+            {
+                if (i > 0 && text[i - 1] == '\r') crlf++;
+                else lf++;
+            }
+
+        return crlf > lf ? "\r\n" : "\n";
+    }
+
+    private static string NormalizeToLf(string text) =>
+        text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private static string WithNewline(string lfText, string? newline) =>
+        newline is null or "\n" ? lfText : lfText.Replace("\n", newline);
+
+    /// <summary>
+    /// <paramref name="text"/> ending in a newline — **the one answer to how a file MLQT writes
+    /// ends**, applied by every write here and callable by anything that needs to know what would
+    /// be written before writing it.
+    ///
+    /// <para>It is here rather than in a formatter because the question is about files, not about
+    /// formatting, and because the alternative has been tried: the incremental formatter appended
+    /// <c>"\n"</c> from the initial commit and the full library save did not, so which of the two
+    /// last touched a file decided how it ended. Nobody noticed until a user ran <b>Format All
+    /// Files</b> over a library the incremental path had formatted and every file in it came back
+    /// modified with nothing changed in any of them (B236). <c>package.order</c> was already
+    /// terminated, because <see cref="WriteAllLines"/> mirrors <c>File.WriteAllLines</c> — so a
+    /// single save left the two kinds of file in a package ending differently.</para>
+    ///
+    /// <para>Empty stays empty: a <c>package.order</c> for a package with no children is written as
+    /// nothing, and a file holding one newline is not nothing. Text that already ends in a newline
+    /// is returned unchanged rather than trimmed to one, because trailing blank lines someone put
+    /// in a file by hand are not this function's business to remove — the renderer's output never
+    /// has any.</para>
+    /// </summary>
+    public static string EnsureFinalNewline(string text) =>
+        text.Length == 0 || text[^1] == '\n' ? text : text + "\n";
 
     /// <summary>
     /// The encoding to write <paramref name="text"/> to <paramref name="path"/> with, preserving
@@ -159,20 +320,24 @@ public static class ModelicaFileEncoding
     }
 
     /// <summary>
-    /// Writes lines to a file, joined with the platform's newline, preserving the existing file's
-    /// encoding unless one is given. Mirrors <c>File.WriteAllLines</c>, which appends a trailing
-    /// newline.
+    /// Writes lines to a file, through <see cref="WriteAllText"/> — so the file keeps its encoding
+    /// and its line endings, and ends with a newline.
+    ///
+    /// <para><b>Not <c>File.WriteAllLines</c>, which joins with <see cref="Environment.NewLine"/>.</b>
+    /// That wrote the same <c>package.order</c> as CRLF on Windows and LF on Linux, so a repository
+    /// shared between the two churned on whichever machine touched it last — the platform deciding
+    /// what a committed file looks like, which is exactly what this class exists to stop (B251).</para>
     /// </summary>
     public static void WriteAllLines(string path, IEnumerable<string> lines, Encoding? encoding = null)
     {
-        File.WriteAllLines(path, lines, encoding ?? DetectExisting(path));
+        WriteAllText(path, string.Join('\n', lines), encoding);
     }
 
     /// <inheritdoc cref="WriteAllLines"/>
     public static async Task WriteAllLinesAsync(
         string path, IEnumerable<string> lines, Encoding? encoding = null)
     {
-        await File.WriteAllLinesAsync(path, lines, encoding ?? DetectExisting(path));
+        await WriteAllTextAsync(path, string.Join('\n', lines), encoding);
     }
 
     /// <summary>

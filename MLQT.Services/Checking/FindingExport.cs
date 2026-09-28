@@ -37,7 +37,8 @@ public static class FindingExport
     /// </summary>
     /// <remarks>
     /// A library loaded from a single <c>.mo</c> file is rooted at the directory containing it, which
-    /// is what the CLI does when it is pointed at a file rather than a package.
+    /// is what the CLI does when it is pointed at a file rather than a package — including one found
+    /// in a repository, whose source type says Git or SVN (<see cref="LoadedLibrary.RootDirectory"/>, B428).
     /// </remarks>
     public static Dictionary<string, string> LibraryRootsByModel(IEnumerable<LoadedLibrary> libraries)
     {
@@ -45,9 +46,7 @@ public static class FindingExport
 
         foreach (var library in libraries)
         {
-            var root = library.SourceType == LibrarySourceType.File
-                ? Path.GetDirectoryName(library.SourcePath) ?? library.SourcePath
-                : library.SourcePath;
+            var root = library.RootDirectory;
 
             if (string.IsNullOrEmpty(root))
                 continue;

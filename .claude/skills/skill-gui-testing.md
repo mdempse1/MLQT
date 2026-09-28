@@ -37,6 +37,18 @@ A test belongs in 1b only if there is no behaviour without a render tree. The on
   dialog closes with**: `MudDialog.Close` goes to a cascaded instance that a directly rendered
   component does not have, so every Close and Cancel in one is a silent no-op.
 - **Two-way binding** round-trips through a parent.
+- **The Code Review page's click paths** — select a class, switch to the diff, move on while it
+  loads. `CodeReviewTestBase` (B377) supplies all fifteen of the page's services over a real
+  `DirectedGraph` and one Git repository: `LoadFile` puts Modelica text in the graph, `SetHead` says
+  what a file held at HEAD and marks it modified, and `HoldHeadReads`/`ReleaseHeadRead` hold HEAD
+  reads at a gate so a test decides which of two loads lands first. Two things it had to learn:
+  bUnit's one-second default wait is shorter than the first parse in a cold process (use
+  `Eventually`, which waits `Patience`), and bUnit re-checks a wait only when something renders, so
+  anything that happens on a pool thread and renders nothing — a read arriving at the gate, a load
+  the user overtook — is waited for by polling (`WaitForHeldReads`) or by a counter the page bumps on
+  the dispatcher (`CodeReview.DiffLoadsFinished`). Also: `RenderCount` on the page counts every
+  descendant's renders, several hundred per selection, so it is no signal that the page itself did
+  anything.
 - **`CytoscapeGraph` interop sequence** — assert the calls and payloads with
   `JSInterop.VerifyInvoke("cytoscapeGraph.init")`. Whether Cytoscape actually *draws* is Layer 3.
 
@@ -45,6 +57,15 @@ MudBlazor services with `CheckForPopoverProvider = false`, `JSRuntimeMode.Loose`
 interop is async global functions, none meaningful headless), and `RenderProviders()` for the
 dialog/popover/snackbar providers. Getting these wrong produces confusing "component not rendering"
 failures rather than clear errors.
+
+**A `TaskCompletionSource` that product code completes must be created with
+`TaskCreationOptions.RunContinuationsAsynchronously`** when the test awaits it and then waits
+synchronously (`WaitForAssertion`, `Click`). Without it, if the product side completes it after the
+test is already awaiting — which is exactly what a busy full-suite run makes happen — the rest of the
+test runs inline on the product's thread, and its synchronous wait blocks the very code it is waiting
+for. bUnit reports the timeout as "failed (canceled)", which reads as an `OperationCanceledException`
+and is not one; it passes alone every time. B451 was this, and a `Task.Delay` before the product's
+`TrySetResult` reproduces it deterministically.
 
 `MainLayout` gets **no DOM-level tests**. Its logic was extracted in 7a-4 and is tested where it
 landed, in `MLQT.Services.Tests`.
@@ -75,6 +96,10 @@ Concretely, and each of these was real:
 - **A shell heredoc turned a test literal into a two-line string** and into a literal backspace in a
   regex, and both tests still passed. A heredoc is not a safe way to write source containing
   backslashes, and the failure is silent exactly where the result still compiles (B115, B124).
+
+- **MudTooltip text is not in the rendered markup.** A B200 test asserted on `"Switch branch"` and
+  passed with the buttons present *and* absent; only the positive control caught it. Find a MudBlazor
+  button by its **icon path constant** (`LibraryBrowserReferenceOnlyTests` does).
 
 **Always write the positive control beside the guard**, so the guard cannot be the reason nothing ran.
 For an exclusion test: assert the fixture still reports *without* the exclusion, or the pair rots into
@@ -134,6 +159,18 @@ building it **before** a migration rather than during one:
 - The pipeline is asynchronous and partly background-threaded, so "analysis has finished" needs an
   explicit signal — `PipelineQuiescence` and a `data-mlqt-state="idle|busy"` attribute, **test-host
   only**, neither leaking into the shipped hosts.
+- **"While it runs" needs a door, not a race.** A hand check about what the window shows *during*
+  a step - buttons during Format All (B385), a reload during startup (B407) - has nothing to look at
+  on the fixture library, where every step is over in milliseconds. The test host wraps the real
+  service in a gate (`GatedFormattingPipeline`, `host.Formatting.HoldAllFiles()` /
+  `HoldModifiedFiles()`; `GatedSettingsService`, `host.Settings.HoldWrite(predicate)`, for a project
+  switch's step 1, which ends with a settings write) that holds the next call until the journey calls `Release()`, and
+  `WaitForArrivalAsync()` fails rather than hangs when nothing arrives. Unarmed, every call goes
+  straight through, so every other journey runs the application's own pipeline.
+- **A journey that adds a repository or saves projects takes them out again**, at its start and its
+  end, with `host.ResetRepositoriesAsync()`. A page whose startup finds saved repositories loads
+  them, and one that finds two projects opens the project chooser - a modal no other journey will
+  ever answer.
 - **Wait for the thing in the way, do not force past it.** A tab click timed out at 30s while
   Playwright reported the element "visible, enabled and stable": the click was being intercepted by a
   modal progress dialog. The fix is to wait for the dialog to go, not to force the click. It failed
@@ -141,22 +178,56 @@ building it **before** a migration rather than during one:
 - **`LibraryFixture`** builds a real repository per collection: a small Modelica package violating a
   handful of *enabled* rules, a Git working copy via LibGit2Sharp with a committed baseline and an
   uncommitted edit, and a `.mlqt/` directory. **Two commits and two branches** are what make history,
-  merge and pull-request surfaces reachable. Deliberately **no SVN fixture** — SVN integration needs a
-  live working copy and server that no runner has.
+  merge and pull-request surfaces reachable. **`LibraryFixtureVcs.Svn`** puts the same library in a
+  trunk checkout of a local `file://` repository made with `svnadmin create`, with a branch and a tag
+  beside trunk — an SVN "server" is only a directory, so no server process is needed. It needs the
+  `svn` and `svnadmin` executables, so only the documentation screenshots use it; the journeys proper
+  stay on Git, which CI runners can build without any tool installed.
 - **Traces are how a headless failure is debuggable at all.** `--trace on-first-retry`, uploaded as an
   artifact. It was asked for in the plan, not implemented, and the first defect it was turned on for
-  (B154) was named by it immediately.
+  (B154) was named by it immediately. **A trace cannot say why a connection failed**, only that it
+  did: for that the traced Chromium run also writes `chromium-netlog.json` into the same directory
+  (the OS error under a `net::ERR_CONNECTION_*`), and the host logs Kestrel's connection events at
+  Debug (was the connection ever accepted?). Both were added after run 36398522354 lost one
+  navigation to `ERR_CONNECTION_FAILED` between two good requests and neither log could say where.
 - **An unrecognised `MLQT_JOURNEY_BROWSER` throws rather than falling back**, because a typo that
   silently reverts to Chromium produces a green run that tested nothing.
+- **The journeys share one host, and `AppState` is a singleton across all of them.** Every fixture
+  library is called `Lib`, so every journey produces the same class ids, and every page left open is
+  a live circuit reacting to the next journey's events. That is why a class would not open once
+  other journeys had run (B237). A journey that opens a class calls `ResetLibrariesAsync` first, and
+  `NewPageAsync` closes the page it handed out last — see `TestHostFixture`. The desktop host has
+  one circuit, so none of this is reachable in the product; do not "fix" it there.
+- **When a journey fails, ask what it is looking at before changing what it is looking at.**
+  MainLayout's splitter is on every page and nests around a page's own, so a `.First` locator dragged
+  the outer one and reported the inner one broken (B186). A probe that printed the DOM settled in one
+  run what two rounds of guessing had not. A layout that looks right in a screenshot can still not
+  work — drive it.
 
 ### Playwright's platform gap
 
 Playwright ships no browser build for Ubuntu 26.04. `install` refuses outright; the newest platform it
 knows is `ubuntu24.04-x64`. With `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` Chromium runs and
 all journeys pass, but **WebKit will not launch** — its build links `libicu74` and `libvpx9`, and 26.04
-ships `libicu78` and no `libvpx9`. So the WebKit rehearsal is a CI job by necessity, on
-`ubuntu-latest`. `run-all-tests.ps1` applies the override and `TestRunnerScriptTests` holds the
-string-not-version half of it (B135).
+ships `libicu78` and no `libvpx9`. So the WebKit rehearsal is a CI job by necessity.
+`run-all-tests.ps1` applies the override and `TestRunnerScriptTests` holds the string-not-version
+half of it (B135).
+
+**Every CI job is pinned to `ubuntu-24.04`, not `ubuntu-latest` (B256).** The floating label
+migrated to Ubuntu 26 on 19 October 2026, which would have taken the WebKit rehearsal with it and
+left the Linux GUI rehearsed nowhere — the override keeps Chromium and cannot bring WebKit back.
+Six jobs across the three workflows, and `WorkflowPlatformParityTests.NoJobRunsOnTheFloatingUbuntuLabel`
+refuses a new one that goes back to the label. **The pin is not a fix**: revisit it when Playwright
+ships a 26.04 browser, or by April 2029 when 24.04 leaves standard support, whichever comes first.
+
+The `.deb` is unaffected either way, and that is worth knowing rather than re-deriving: its
+`Depends:` is hand-written and unversioned (`package-deb.sh` refuses `dpkg-shlibdeps` precisely so
+the package is not pinned to its build host), nothing in the payload is compiled there — managed
+assemblies, Microsoft's downloaded runtime pack, and a prebuilt `Photino.Native.so` — and the
+archive is `-Zxz` rather than the host default. The floor is `libwebkit2gtk-4.1-0` + GTK3, which is
+Ubuntu 22.04 and Debian 12, wherever it is built. What a newer builder would cost is not the
+package but **the proof**: the release job extracts what it just built and runs the 16 `/selftest`
+probes against it, and that needs a WebKitGTK that launches.
 
 ## Documentation screenshots are generated, not taken
 
@@ -179,10 +250,31 @@ manual.
 
 **What stays a photograph, and why:** anything needing Dymola (`code-review-4`, and `code-review-5`
 because the Finding Details dialog only opens for a finding carrying `Details`, which a style rule does
-not produce), the six SVN ones (no server), `settings-reference-4` (that section renders only for an
-SVN repository), `git-operations-6` (the merge dialog's ready-to-merge phase needs a clean working copy,
-and MLQT only re-reads working-copy status after a VCS operation *in the application*), and anything
-showing the window frame.
+not produce), `metrics-1`, and anything showing the window frame.
+
+**`metrics-1` was looked at and left** (B473): its caption is the Metrics tab *over the Modelica
+Standard Library*, and what the picture shows is what only a real library gives — coverage figures
+across thousands of classes, and a burndown drawn from snapshots saved over months. The fixture has
+eleven classes and one run; a picture of it would be a Metrics tab with a single point where the
+trend should be, which is not what metrics-dashboard.md is describing. Retake it by hand, from MSL,
+when the tab changes.
+
+**What used to be and no longer is (B152):** the six SVN shots and `settings-reference-4` (that section
+renders only for an SVN repository) come from the SVN fixture, added last in the run after the Git
+repository is removed — both fixtures hold a library called `Lib`, and two in one project would be the
+same class ids twice. The SVN repository requires an issue number, so the commit dialog draws the Issue
+ID field its caption asks for. `git-operations-6`, the merge dialog's ready-to-merge phase, was
+"unreachable" because MLQT re-reads working-copy status only after a VCS operation *in the
+application* — and the dirty phase's own **Commit Changes** button is one: commit from there and the
+dialog checks again and moves on, which is the path git-operations.md describes. It is the last Git
+scene, because it commits. The generator therefore needs `svn` and `svnadmin`; it fails naming them
+rather than skipping the pictures.
+
+**The Dymola pair was looked at and left** (2026-09-27, not attempted): `code-review-4` is the
+progress dialog *part way* through a run, which on an eleven-class fixture is a race between the
+shot and the checks, run by a Dymola that has to start, take a licence and open its own window on
+the desktop first; and `code-review-5` needs a class that *fails* a Dymola check, which the fixture
+does not have and which would appear in the tree of every other picture if it did.
 
 ## Coverage
 

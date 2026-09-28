@@ -18,6 +18,8 @@ public static class GraphAnalysisRunner
     public static readonly IReadOnlyList<IGraphAnalyzer> BuiltIn = new IGraphAnalyzer[]
     {
         new PackageOrderAnalyzer(),
+        new SingleFilePackageAnalyzer(),
+        new WithinClauseAnalyzer(),
         new UsesHygieneAnalyzer(),
         new UnusedClassAnalyzer(),
         new ShadowingAnalyzer(),

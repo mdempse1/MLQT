@@ -51,7 +51,10 @@ public class ExtendsClausesAtTop : VisitorWithModelNameTracking
         else if (context.extends_clause() != null)
         {
             _foundExtends = true;
-            if (_foundOtherElement.Peek())
+            // A record's extends clause stays where it stands among its fields, because that is
+            // where its inherited fields go in the constructor's inputs - and the formatter leaves it
+            // there, so reporting it would ask for a fix the formatter refuses to make (B378).
+            if (_foundOtherElement.Peek() && !InARecord(context))
             {
                 AddFinding(context.Start.Line,
                     "This class does not have its extends clauses at the top of the class",
@@ -67,4 +70,8 @@ public class ExtendsClausesAtTop : VisitorWithModelNameTracking
         }
         return base.VisitElement(context);
     }
+
+    private static bool InARecord(modelicaParser.ElementContext element) =>
+        element.Parent?.Parent is modelicaParser.CompositionContext composition
+        && Helpers.DeclarationKinds.KeepsSourceOrder(composition);
 }

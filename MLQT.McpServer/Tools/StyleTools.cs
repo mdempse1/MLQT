@@ -100,7 +100,7 @@ public sealed class StyleTools
 
         repo!.StyleSettings ??= new StyleCheckingSettings();
         settings.ApplyTo(repo.StyleSettings);
-        await _repositories.SaveRepositorySettingsAsync();
+        await _repositories.ApplyRepositorySettingsAsync(repo.Id);
 
         var persisted = !repo.IsSettingsReadOnly;
         return new SetStyleSettingsResult(
@@ -128,7 +128,9 @@ public sealed class StyleTools
         // the words reports a term the team has accepted as a misspelling; see spell_check, which
         // answers this the same way.
         var repository = SingleRepository();
-        var effective = settings?.ToSettings() ?? repository?.StyleSettings ?? new StyleCheckingSettings();
+        // All-off with neither, as the description says - which a blank settings object is not once a
+        // rule is on by default (B322).
+        var effective = settings?.ToSettings() ?? repository?.StyleSettings ?? StyleCheckingSettings.NothingEnabled();
         var context = StyleCheckContext.BuildStateless(
             effective, _customDictionary, _dictionaryManager, repository?.LocalPath);
         var findings = StyleCheckRunner.RunStateless(source, effective, context);
@@ -420,16 +422,10 @@ public sealed class StyleTools
     }
 
     private StyleCheckingSettings RepoSettingsForClass(string classId)
-    {
-        var library = _libraries.Libraries.FirstOrDefault(l => l.ModelIds.Contains(classId));
-        return library is not null ? RepoSettingsForLibrary(library) : new StyleCheckingSettings();
-    }
+        => RepositorySettings.ForClass(_libraries, _repositories, classId) ?? new StyleCheckingSettings();
 
     private StyleCheckingSettings RepoSettingsForLibrary(LoadedLibrary library)
-    {
-        var repo = library.RepositoryId is { } rid ? _repositories.GetRepository(rid) : null;
-        return repo?.StyleSettings ?? new StyleCheckingSettings();
-    }
+        => RepositorySettings.ForLibrary(_repositories, library) ?? new StyleCheckingSettings();
 
     /// <summary>
     /// The one loaded repository, or null when there is not exactly one — the scope a stateless
@@ -473,7 +469,7 @@ public sealed class StyleTools
         var file = _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId);
         return string.IsNullOrEmpty(file?.FilePath)
             ? null
-            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile);
+            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile, node.TrimElision);
     }
 
     private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> findings, int modelsChecked)

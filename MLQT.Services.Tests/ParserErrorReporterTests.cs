@@ -84,6 +84,115 @@ public class ParserErrorReporterTests
     }
 
     [Fact]
+    public void AnErrorRecordedByParsingTheClassOnItsOwn_KeepsItsLineInTheClass()
+    {
+        // B388. A class nested far down a package.mo, whose stored source nothing has parsed yet: the
+        // semicolon missing after `x` is found on the class's fourth line when its own source is
+        // parsed. That line is already relative to the class, and subtracting the class's start line
+        // from it again put the error on line 1, the declaration.
+        var node = new ModelNode("Lib.Late", "Late",
+            "model Late \"d\"\n  Real a;\n  Real x\n  Real y;\nend Late;") { StartLine = 300 };
+
+        node.Definition.EnsureParsed();
+
+        var error = Assert.Single(node.Definition.ParserErrors);
+        Assert.True(error.Line > 1);   // the precondition: an error below the declaration
+        Assert.Equal(error.Line, Assert.Single(ParserErrorReporter.ToFindings([node])).LineNumber);
+    }
+
+    [Fact]
+    public void AClassRelativeErrorAndAFileLineError_AreEachReportedWithinTheClass()
+    {
+        // The flag, not the class, decides: the same class can be read either way.
+        var fileLine = NodeWith("Lib.A", new ParserError { Line = 120, Message = "from the load" });
+        fileLine.StartLine = 118;
+        var classLine = NodeWith("Lib.B", new ParserError { Line = 3, Message = "own parse", LineIsClassRelative = true });
+        classLine.StartLine = 118;
+
+        var findings = ParserErrorReporter.ToFindings([fileLine, classLine]);
+
+        Assert.All(findings, f => Assert.Equal(3, f.LineNumber));
+    }
+
+    [Fact]
+    public void ALoadErrorBelowATrimmedInlineChild_IsReportedOnItsOwnFileLine()
+    {
+        // B413. The load records the error on its file line; the trimmer then cuts the inline child
+        // out of the package's stored source and keeps the load's error. Every finding on a trimmed
+        // package counts lines of the trimmed text, and ClassLocation.FileLine puts the cut lines
+        // back - so a parse error measured against the untrimmed class had them counted twice, and
+        // landed the child's length below where it is.
+        var source = ModelicaParser.Helpers.ModelicaParserHelper.NormalizeLineEndings("""
+            package P "a package"
+              model A "a child stored inline"
+                Real x;
+                Real y;
+              end A;
+              constant Real k = 1;
+              constant Real j = 2
+              constant Real m = 3;
+            end P;
+            """);
+
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "package.mo", source);
+        var package = graph.GetNode<ModelNode>("P")!;
+        var error = Assert.Single(package.Definition.ParserErrors);
+        Assert.True(error.Line >= 7);   // the precondition: the error is below the inline child
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+        Assert.NotNull(package.TrimElision);   // ...which the trim cut out
+        Assert.Same(error, Assert.Single(package.Definition.ParserErrors));
+
+        var finding = Assert.Single(ParserErrorReporter.ToFindings([package]));
+        var location = ClassLocation.ForGraph(graph)["P"];
+
+        Assert.Equal(error.Line, location.FileLine(finding.LineNumber));
+        // ...and in the text the finding is measured against, it is the same line of code.
+        var trimmedLines = package.Definition.ModelicaCode!.Split('\n');
+        var fileLines = source.Split('\n');
+        Assert.Equal(fileLines[error.Line - 1], trimmedLines[finding.LineNumber - 1]);
+    }
+
+    [Fact]
+    public void ALoadErrorOnLinesTheTrimCutOut_IsReportedWhereTheyWere()
+    {
+        // Defensive: a load error is given to the innermost class containing it, so one on a cut
+        // child's lines belongs to the child. Were one on the package all the same, it has no line
+        // in the trimmed text; it is reported on the line the cut was made after, never below it.
+        var node = NodeWith("P", new ParserError { Line = 13, Message = "inside the cut" });
+        node.StartLine = 10;
+        node.TrimElision = ModelicaParser.Helpers.SourceElision.Of([new ModelicaParser.Helpers.ElidedRange(2, 5, null)]);
+
+        var finding = Assert.Single(ParserErrorReporter.ToFindings([node]));
+
+        Assert.Equal(1, finding.LineNumber);
+    }
+
+    [Fact]
+    public void Refresh_ReplacesTheParserFindingsOfTheGivenClasses_AndTouchesNothingElse()
+    {
+        // B390: read before and after a check, so a second read must replace the first.
+        var store = new MLQT.Services.CodeReviewService();
+        var a = NodeWith("Lib.A", new ParserError { Line = 3, Message = "current" });
+        store.AddLogMessages([
+            new LogMessage("Lib.A", "Error", 9, "Parser error", "stale") { Source = ParserErrorReporter.SourceName },
+            new LogMessage("Lib.A", "Style warning", 1, "style", "kept") { Source = LogMessage.StyleCheckingSource },
+            new LogMessage("Lib.B", "Error", 2, "Parser error", "not asked about") { Source = ParserErrorReporter.SourceName }
+        ]);
+
+        ParserErrorReporter.Refresh(store, [a]);
+        ParserErrorReporter.Refresh(store, [a]);   // and again: no second copy
+
+        var details = store.LogMessages.Select(m => m.Details).OrderBy(d => d).ToList();
+        Assert.Equal(3, details.Count);
+        Assert.Contains("current", details);
+        Assert.Contains("kept", details);
+        Assert.Contains("not asked about", details);
+        Assert.DoesNotContain("stale", details);
+    }
+
+    [Fact]
     public void FatalParseFailure_IsDistinguishedFromARecoveredError()
     {
         var node = NodeWith("Lib.A", new ParserError

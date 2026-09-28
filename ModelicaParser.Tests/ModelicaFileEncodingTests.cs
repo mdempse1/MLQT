@@ -368,6 +368,139 @@ public class ModelicaFileEncodingTests : IDisposable
 
     #endregion
 
+    #region What the mutation audit found unguarded (B228)
+
+    /// <summary>
+    /// Overwriting a file that carries a byte-order mark with <b>pure ASCII</b> keeps the mark.
+    /// </summary>
+    /// <remarks>
+    /// <para>The case the fast path in <c>EncodingToWrite</c> exists for, and the one nothing
+    /// covered. ASCII encodes identically under UTF-8 and Latin-1, so that path skips reading the
+    /// file back — but it still has to look at the first three bytes, because <b>a byte-order mark
+    /// is the one thing ASCII cannot tell you</b>. Inverting its <c>!File.Exists</c> guard makes an
+    /// existing file take the new-file answer and the mark is silently dropped: a change to a file
+    /// MLQT was asked to preserve, invisible in the text and visible to every byte-comparing tool.</para>
+    ///
+    /// <para>The round-trip theory above does not reach it twice over — it passes the encoding it
+    /// read back in explicitly, and its text is not ASCII.</para>
+    /// </remarks>
+    [Fact]
+    public void WritingPureAscii_OverAFileWithAByteOrderMark_KeepsTheMark()
+    {
+        const string ascii = "package P \"plain\"\nend P;\n";
+        var path = Write("marked.mo", Utf8WithBom(ascii));
+
+        ModelicaFileEncoding.WriteAllText(path, ascii);
+
+        Assert.Equal(Utf8WithBom(ascii), File.ReadAllBytes(path));
+    }
+
+    /// <summary>
+    /// The control for the one above: the same write to a file with no mark does not invent one.
+    /// </summary>
+    [Fact]
+    public void WritingPureAscii_OverAFileWithoutAMark_DoesNotAddOne()
+    {
+        const string ascii = "package P \"plain\"\nend P;\n";
+        var path = Write("unmarked.mo", Utf8NoBom(ascii));
+
+        ModelicaFileEncoding.WriteAllText(path, ascii);
+
+        Assert.Equal(Utf8NoBom(ascii), File.ReadAllBytes(path));
+    }
+
+    /// <summary>
+    /// An explicit encoding is honoured by the synchronous write, as it already was by the
+    /// asynchronous one.
+    /// </summary>
+    /// <remarks>
+    /// Both take <c>encoding ?? EncodingToWrite(...)</c> and only the async half was tested, so the
+    /// synchronous <c>encoding ??</c> could be dropped with nothing objecting — every caller that
+    /// names an encoding would have got the file's own instead. That is the direction that
+    /// corrupts: a caller naming one is usually converting the file on purpose.
+    /// </remarks>
+    [Fact]
+    public void AnExplicitEncoding_IsUsedInsteadOfTheFilesOwn_Synchronously()
+    {
+        var path = Write("converted-sync.mo", Latin1(Text));
+
+        ModelicaFileEncoding.WriteAllText(path, Text, new UTF8Encoding(false));
+
+        Assert.Equal(Utf8NoBom(Text), File.ReadAllBytes(path));
+    }
+
+    #endregion
+
+    #region ForFile — the line endings half of the same promise
+
+    /// <summary>
+    /// <see cref="ModelicaFileEncoding.ForFile"/> gives text the line endings the file already has.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The promise here is B251's</b>: the renderer joins its output with a line feed, so
+    /// without this a CRLF library comes back rewritten line for line — invisible to `git diff`,
+    /// which normalises the endings away, and reported by LibGit2Sharp as every file modified with
+    /// nothing changed in any of them. Every write goes through <c>ForFile</c>, so the encoding
+    /// tests above already reached the <c>??</c> itself; what they never reached was
+    /// <c>DominantNewline</c>, whose counting loop had <b>no coverage at all</b> — its comparison,
+    /// its increments and its <c>crlf &gt; lf</c> answer could each be changed with nothing
+    /// objecting. Stating the property directly, for a file of each kind and for one that does not
+    /// exist yet, is what reaches it.</para>
+    /// </remarks>
+    [Theory]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    public void ForFile_GivesTextTheEndingsTheFileAlreadyUses(string existing)
+    {
+        var path = Write("endings.mo", Utf8NoBom($"package P{existing}end P;{existing}"));
+
+        // What the renderer produces: line feeds, whatever the file on disk uses.
+        var rendered = ModelicaFileEncoding.ForFile(path, "package P\nend P;\n");
+
+        Assert.Equal($"package P{existing}end P;{existing}", rendered);
+    }
+
+    /// <summary>
+    /// B311: a UTF-16 file's endings are read as UTF-16. In UTF-16 a CRLF is <c>0D 00 0A 00</c>, so
+    /// counted byte by byte every line feed follows a zero and a CRLF file reads as LF — B251 for the
+    /// one encoding <see cref="ModelicaFileEncoding.DetectFromBytes"/> recognises only by its mark.
+    /// The review expected this to fail and it did not: the reader that counts them is asked for
+    /// Latin-1 but, like every <c>StreamReader</c> not told otherwise, believes a byte-order mark
+    /// first. That is incidental, which is why it is held here.
+    /// </summary>
+    [Theory]
+    [InlineData("utf-16le")]
+    [InlineData("utf-16be")]
+    public void ForFile_ReadsTheEndingsOfAUtf16File(string encodingName)
+    {
+        var encoding = Encoding.GetEncoding(encodingName);
+        var path = Write("endings16.mo", encoding.GetPreamble()
+            .Concat(encoding.GetBytes("package P\r\nend P;\r\n")).ToArray());
+
+        var rendered = ModelicaFileEncoding.ForFile(path, "package P\nend P;\n");
+
+        Assert.Equal("package P\r\nend P;\r\n", rendered);
+    }
+
+    /// <summary>
+    /// A file that does not exist yet keeps what the text was given, rather than an answer invented
+    /// from <c>Environment.NewLine</c> — which would make one repository come out differently on
+    /// Windows and on Linux.
+    /// </summary>
+    [Theory]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    public void ForFile_ANewFileKeepsTheEndingsTheTextAlreadyHas(string given)
+    {
+        var path = Path.Combine(_root, "not-there-yet.mo");
+
+        var rendered = ModelicaFileEncoding.ForFile(path, $"package P{given}end P;{given}");
+
+        Assert.Equal($"package P{given}end P;{given}", rendered);
+    }
+
+    #endregion
+
     #region Files with nothing in them
 
     [Fact]
@@ -392,6 +525,82 @@ public class ModelicaFileEncodingTests : IDisposable
         Assert.Equal("package P\nend P;\n", ModelicaFileEncoding.ReadAllTextOnly(path));
         Assert.Equal(ModelicaFileEncoding.Default.CodePage,
             ModelicaFileEncoding.DetectExisting(path).CodePage);
+    }
+
+    #endregion
+
+    #region A new file written like an existing one (B308)
+
+    [Fact]
+    public void StyleOf_ReadsTheEncodingAndTheLineEnding()
+    {
+        var path = Write("latin1-crlf.mo", Latin1(Text.Replace("\n", "\r\n")));
+
+        var style = ModelicaFileEncoding.StyleOf(path)!;
+
+        Assert.Equal(Encoding.Latin1.CodePage, style.Encoding.CodePage);
+        Assert.Equal("\r\n", style.Newline);
+    }
+
+    [Fact]
+    public void StyleOf_AFileWithNoLineEndingsIsLineFeed()
+    {
+        var style = ModelicaFileEncoding.StyleOf(Write("one-line.mo", Utf8NoBom("package P end P;")))!;
+
+        Assert.Equal("\n", style.Newline);
+    }
+
+    [Fact]
+    public void StyleOf_NoFileIsNoStyle()
+    {
+        Assert.Null(ModelicaFileEncoding.StyleOf(Path.Combine(_root, "never-written.mo")));
+    }
+
+    [Fact]
+    public void WriteAllTextLike_ANewFileTakesTheStyleItWasGiven()
+    {
+        // The renderer's text is LF and UTF-8 would be the default; the file it came from was
+        // neither, and the new one should match that file rather than the default.
+        var style = new ModelicaFileEncoding.FileStyle(Encoding.Latin1, "\r\n");
+        var path = Path.Combine(_root, "split-child.mo");
+
+        ModelicaFileEncoding.WriteAllTextLike(path, Text, style);
+
+        Assert.Equal(Latin1(Text.Replace("\n", "\r\n")), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void WriteAllTextLike_AnExistingFileKeepsItsOwnStyle()
+    {
+        // The rule the rest of this class is for: a file that exists is written back as it was,
+        // whatever style a caller offers for new ones.
+        var path = Write("existing.mo", Utf8NoBom("package Q\nend Q;\n"));
+
+        ModelicaFileEncoding.WriteAllTextLike(path, Text,
+            new ModelicaFileEncoding.FileStyle(Encoding.Latin1, "\r\n"));
+
+        Assert.Equal(Utf8NoBom(Text), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void WriteAllTextLike_WithNoStyleIsWriteAllText()
+    {
+        var path = Path.Combine(_root, "plain.mo");
+
+        ModelicaFileEncoding.WriteAllTextLike(path, "package P\nend P;", null);
+
+        Assert.Equal(Utf8NoBom("package P\nend P;\n"), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void WriteAllLinesLike_EndsEachLineInTheStyle()
+    {
+        var path = Path.Combine(_root, "package.order");
+
+        ModelicaFileEncoding.WriteAllLinesLike(path, ["A", "B"],
+            new ModelicaFileEncoding.FileStyle(ModelicaFileEncoding.Default, "\r\n"));
+
+        Assert.Equal("A\r\nB\r\n", File.ReadAllText(path));
     }
 
     #endregion

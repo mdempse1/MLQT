@@ -103,6 +103,28 @@ public class CoverageSuitesTests
     }
 
     [Fact]
+    public void TheSvnEntriesUpdateBaselineKeepsAreNotCalledDroppableByTheGate()
+    {
+        // Backlog B372. With an svn client on PATH, -UpdateBaseline carries every accepted
+        // RevisionControl.Svn* entry forward even when it meets the bar here (B363), because the
+        // runner has no client and measures it where it always was. The gate's "these now meet the bar
+        // and can be dropped" list was every accepted class meeting its bar, so on the same machine it
+        // named SvnCli as droppable - advising the edit -UpdateBaseline had just been made to refuse.
+        //
+        // One decision, two users: both have to read the same set, not each work it out. Asserted on
+        // the script's text because this suite cannot depend on a PowerShell being installed (B135);
+        // the reproduction against collected coverage is in the commit that made the change.
+        var script = Normalised(Path.Combine(RepositoryRoot(), "build", "check-coverage.ps1"));
+
+        Assert.Contains("$carriedForSvn = @(if ($svnPresent)", script);
+        Assert.Contains("$toRecord = @($below) + $carriedForSvn", script);
+
+        var recovered = Regex.Match(script, @"\$recovered = (?<body>.*?)\n\}", RegexOptions.Singleline);
+        Assert.True(recovered.Success, "could not find how check-coverage.ps1 decides what is recovered");
+        Assert.Contains("$_ -notin $carriedForSvn.Key", recovered.Groups["body"].Value);
+    }
+
+    [Fact]
     public void TheSuiteListHasNoDuplicates()
     {
         var suites = SuitesInTheScript();

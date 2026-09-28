@@ -127,7 +127,12 @@ icon_sizes="16 24 32 48 256 512"
 # below that no version constraint helps because the ABI is simply not there. libgtk-3-0 and
 # libglib2.0-0 are the pre-t64 names, which the t64 packages on 24.04 and later still Provide — so
 # these names are the ones that resolve on both sides of that transition.
-depends="libwebkit2gtk-4.1-0, libjavascriptcoregtk-4.1-0, libgtk-3-0, libglib2.0-0, libnotify4, libstdc++6, libgcc-s1, libc6"
+#
+# libfontconfig1 is libnotify4's lesson applied before it costs anything. The MCP server rasterises a
+# diagram through SkiaSharp, whose Linux native library links fontconfig; GTK3 pulls it in through
+# pango on every desktop, so nothing here would ever have found it missing - and the server also runs
+# headless, where nothing else in this list is guaranteed to have been installed for its own reasons.
+depends="libwebkit2gtk-4.1-0, libjavascriptcoregtk-4.1-0, libgtk-3-0, libglib2.0-0, libnotify4, libfontconfig1, libstdc++6, libgcc-s1, libc6"
 
 # ---- lay the tree out ------------------------------------------------------------------------------
 

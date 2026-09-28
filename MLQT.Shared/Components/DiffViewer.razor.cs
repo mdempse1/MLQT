@@ -69,13 +69,25 @@ public partial class DiffViewer : IAsyncDisposable
     /// </summary>
     private const long MaxLcsCells = 50_000_000;
 
+    /// <summary>
+    /// The most rows the viewer will lay out and render (B410).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A limit on cells is not a limit on rows.</b> The LCS bound is on the product of the
+    /// two lengths, so a ten-line class against a 157,852-line file passes it at 1.9M cells of 50M
+    /// - and every line of the file then becomes a removed row. Side by side rendered all of them;
+    /// the page said "Comparing…" and then Blazor's unhandled-error banner, with nothing in the log.
+    /// The largest diff the cell limit was sized for, two ~7,000-line files, is at most 14,000 rows,
+    /// so this takes away nothing that used to work.</para>
+    /// </remarks>
+    internal const int MaxRows = 20_000;
+
     private List<DiffLine> _unifiedLines = new();
     private List<DiffLine> _leftLines = new();
     private List<DiffLine> _rightLines = new();
     private int _addedCount = 0;
     private int _removedCount = 0;
     private bool _isModelicaFile = false;
-    private int _maxLineNumberDigits = 3;
     private string? _errorMessage;
 
     private ElementReference _leftPaneRef;
@@ -96,26 +108,141 @@ public partial class DiffViewer : IAsyncDisposable
         InvokeAsync(StateHasChanged);
     }
 
-    protected override void OnParametersSet()
+    /// <summary>
+    /// Builds the diff when — and only when — what it is a diff <em>of</em> has changed (B341).
+    ///
+    /// <para>This ran the whole thing on every parameter set: an O(m·n) LCS and a full parse of each
+    /// side for the colouring, on the dispatcher. The Code Review page re-renders for every findings
+    /// batch, baseline change and progress update, so during a background check each of those cost
+    /// two parses of an unchanged class. Now the expensive half is <see cref="Prepare"/>, keyed on
+    /// the two texts and whether they are Modelica, and run on the pool; the view mode and context
+    /// only re-lay-out what it produced, which is linear and stays here.</para>
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
     {
         _isModelicaFile = !string.IsNullOrEmpty(FileName) &&
             (FileName.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) ||
              FileName.EndsWith(".mos", StringComparison.OrdinalIgnoreCase));
 
-        ComputeDiff();
+        var original = OriginalContent;
+        var modified = ModifiedContent;
+        var isModelica = _isModelicaFile;
+
+        if (DescribesTheSameContent(_prepared, original, modified, isModelica))
+        {
+            // Back to what is already prepared: whatever was on its way is for content no longer
+            // asked for, and must not land over this.
+            if (_preparing is not null)
+            {
+                _preparing = null;
+                _prepareGeneration++;
+            }
+        }
+        else
+        {
+            // Already on its way: the call that started it will lay it out when it lands.
+            if (_preparing is { } inFlight && DescribesTheSameContent(inFlight, original, modified, isModelica))
+                return;
+
+            var generation = ++_prepareGeneration;
+            _preparing = new PreparedDiff(original, modified, isModelica, [], [], [], null);
+            Preparations++;
+
+            var prepared = await Task.Run(() => Prepare(original, modified, isModelica));
+
+            // Superseded while it ran - by different content, which will lay itself out.
+            if (generation != _prepareGeneration)
+                return;
+
+            _preparing = null;
+            _prepared = prepared;
+        }
+
+        LayOut();
     }
+
+    /// <summary>Whether <paramref name="diff"/> was prepared from exactly these inputs.</summary>
+    private static bool DescribesTheSameContent(PreparedDiff? diff, string? original, string? modified, bool isModelica) =>
+        diff is not null
+        && diff.IsModelica == isModelica
+        && string.Equals(diff.Original, original, StringComparison.Ordinal)
+        && string.Equals(diff.Modified, modified, StringComparison.Ordinal);
+
+    /// <summary>
+    /// How many times the diff has been prepared, for a test to hold the memoisation to.
+    /// </summary>
+    internal int Preparations { get; private set; }
+
+    /// <summary>Whether the diff for the current content is still being prepared.</summary>
+    internal bool IsPreparing => _preparing is not null;
+
+    /// <summary>
+    /// Whether the two scrollable panes are on screen — which is not the same question as whether
+    /// the view mode asks for them.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The markup and <see cref="OnAfterRenderAsync"/> have to agree about this, and they
+    /// did not.</b> A file too big for the diff, or one with nothing in either version, renders a
+    /// message instead of the panes — so <c>@ref</c> never runs and both references stay default.
+    /// A default <see cref="ElementReference"/> still serialises to an object, so it arrives in
+    /// JavaScript as something truthy that is not an element, past the <c>if (!leftEl)</c> guard
+    /// there, and <c>leftEl.addEventListener is not a function</c> comes back out of
+    /// <c>OnAfterRenderAsync</c> as an unhandled exception. That is the whole of the red "An
+    /// unhandled error has occurred" banner a user got for opening a large FMU model in diff mode.</para>
+    ///
+    /// <para>Both the markup's last branch and the interop call now ask this one property, so the
+    /// two cannot come apart again.</para>
+    /// </remarks>
+    internal bool ShowsPanes =>
+        !IsPreparing
+        && string.IsNullOrEmpty(_errorMessage)
+        && !(string.IsNullOrEmpty(OriginalContent) && string.IsNullOrEmpty(ModifiedContent))
+        && ViewMode is DiffViewMode.SideBySide or DiffViewMode.SideBySideFull;
+
+    /// <summary>
+    /// How many after-render passes have finished that began with the diff already prepared — so a
+    /// test can wait for the interop decision about the content it gave, rather than asserting
+    /// before it has been made (B401).
+    /// </summary>
+    /// <remarks>
+    /// A render notification reaches a test before <see cref="OnAfterRenderAsync"/> runs, and a
+    /// finished after-render renders nothing, so neither a wait on the markup nor one on
+    /// <see cref="IsPreparing"/> can see it. Asserting "no interop call" at that point passes
+    /// whether or not the call was about to be made. Written on the dispatcher, read from the test's
+    /// thread, hence the interlocked access.
+    /// </remarks>
+    internal int SettledAfterRenders => Volatile.Read(ref _settledAfterRenders);
+    private int _settledAfterRenders;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (ViewMode == DiffViewMode.SideBySide || ViewMode == DiffViewMode.SideBySideFull)
+        var settled = !IsPreparing;
+
+        // Wiring the panes together is a convenience. Losing the window is not, and an exception out
+        // of OnAfterRenderAsync takes the whole app down with a banner whose only offer is Reload.
+        try
         {
-            await JS.InvokeVoidAsync("diffViewer.initSyncScroll", _leftPaneRef, _rightPaneRef);
-            _scrollSyncActive = true;
+            if (ShowsPanes)
+            {
+                await JS.InvokeVoidAsync("diffViewer.initSyncScroll", _leftPaneRef, _rightPaneRef);
+                _scrollSyncActive = true;
+            }
+            else if (_scrollSyncActive)
+            {
+                await JS.InvokeVoidAsync("diffViewer.dispose");
+                _scrollSyncActive = false;
+            }
         }
-        else if (_scrollSyncActive)
+        catch (JSException ex)
         {
-            await JS.InvokeVoidAsync("diffViewer.dispose");
+            // The panes still scroll; they just stop following each other.
+            LoggingService.Warn("DiffViewer", $"Could not synchronise the diff panes' scrolling: {ex.Message}");
             _scrollSyncActive = false;
+        }
+        finally
+        {
+            if (settled)
+                Interlocked.Increment(ref _settledAfterRenders);
         }
     }
 
@@ -130,7 +257,7 @@ public partial class DiffViewer : IAsyncDisposable
     {
         ViewMode = mode;
         ViewModeChanged.InvokeAsync(mode);
-        ComputeDiff();
+        LayOut();
     }
 
     private string GetContainerStyle()
@@ -140,6 +267,8 @@ public partial class DiffViewer : IAsyncDisposable
 
     private string GetDiffSummary()
     {
+        if (IsPreparing)
+            return "";
         if (_addedCount == 0 && _removedCount == 0)
             return "No changes";
 
@@ -151,57 +280,152 @@ public partial class DiffViewer : IAsyncDisposable
         return string.Join(" / ", parts) + " lines";
     }
 
-    private void ComputeDiff()
+    /// <summary>
+    /// Each line as it will be shown: Modelica coloured by the same classifier the code viewer uses,
+    /// anything else left as it is.
+    ///
+    /// <para>This is what closes B178. The diff used to colour its own panes with a keyword regex
+    /// while the single-file viewer was coloured from the parse tree, so the same code was coloured
+    /// two ways in two panes of the same page and only one of them followed the user's chosen
+    /// scheme. The two highlighters could not be merged while one of them rebuilt the text —
+    /// a diff hunk is not parseable — but now that the classifier emits the source in place, both
+    /// panes can be the same one.</para>
+    ///
+    /// <para>Falls back to the plain lines <b>HTML-encoded</b> whenever the classifier does not
+    /// return exactly one markup line per source line. It cannot, by construction: the emitter
+    /// round-trips the source and so preserves its line count. But the diff indexes these two arrays
+    /// in step, and being wrong about that would mean showing one line's colouring on another line's
+    /// text — worse than showing no colouring at all. The encoding is done here because for a
+    /// Modelica file nothing downstream encodes: the classifier's own output is already safe outside
+    /// its tags, and encoding it a second time would turn a stray <c>&amp;</c> into
+    /// <c>&amp;amp;</c> on screen.</para>
+    /// </summary>
+    internal static string[] DisplayLines(string? content, string[] plainLines, bool isModelicaFile)
     {
-        _unifiedLines.Clear();
-        _leftLines.Clear();
-        _rightLines.Clear();
-        _addedCount = 0;
-        _removedCount = 0;
-        _errorMessage = null;
+        if (!isModelicaFile)
+            return plainLines;
 
-        var originalLines = (OriginalContent ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
-        var modifiedLines = (ModifiedContent ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        if (!string.IsNullOrEmpty(content))
+        {
+            try
+            {
+                var markup = ModelicaTokenClassifier.Highlight(content);
+                if (markup.Count == plainLines.Length)
+                    return [.. markup];
+            }
+            catch
+            {
+                // Fall through to the plain, encoded lines.
+            }
+        }
 
-        int width = Math.Max(3, Math.Max(originalLines.Length, modifiedLines.Length));
-        _maxLineNumberDigits = width.ToString().Length;
+        return [.. plainLines.Select(l => System.Web.HttpUtility.HtmlEncode(l) ?? "")];
+    }
+
+    /// <summary>
+    /// The expensive, mode-independent half of a diff: the edit script, and each side's lines as
+    /// finished HTML. Carries the inputs it was made from, so it can say whether it is still the
+    /// answer.
+    /// </summary>
+    internal sealed record PreparedDiff(
+        string? Original, string? Modified, bool IsModelica,
+        string[] OriginalHtml, string[] ModifiedHtml, List<DiffOp> Ops, string? Error);
+
+    private PreparedDiff? _prepared;
+    private PreparedDiff? _preparing;
+    private int _prepareGeneration;
+    private (PreparedDiff Diff, DiffViewMode Mode, int Context)? _laidOut;
+
+    /// <summary>
+    /// Diffs the two texts and colours both sides. Static and pure, because it runs on the pool
+    /// (B341): everything it needs is passed in and everything it makes is returned.
+    /// </summary>
+    internal static PreparedDiff Prepare(string? original, string? modified, bool isModelica)
+    {
+        var originalLines = (original ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        var modifiedLines = (modified ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
 
         // Check if the file is too large for the O(m*n) LCS algorithm
         long lcsCells = (long)(originalLines.Length + 1) * (modifiedLines.Length + 1);
         if (lcsCells > MaxLcsCells)
         {
             var maxLines = Math.Max(originalLines.Length, modifiedLines.Length);
-            _errorMessage = $"File is too large for detailed diff comparison ({maxLines:N0} lines). " +
-                "Try viewing a smaller section of the file, or compare using an external diff tool.";
-            return;
+            return new PreparedDiff(original, modified, isModelica, [], [], [],
+                $"File is too large for detailed diff comparison ({maxLines:N0} lines). " +
+                "Try viewing a smaller section of the file, or compare using an external diff tool.");
         }
 
         try
         {
-            // Compute LCS-based diff
-            var diffResult = ComputeLcsDiff(originalLines, modifiedLines);
+            // The diff is computed on the plain text and only then dressed up: comparing markup
+            // would diff the colouring as well as the code, and a line that merely changed category
+            // would read as a change.
+            var ops = ComputeLcsDiff(originalLines, modifiedLines);
 
-            if (ViewMode == DiffViewMode.SideBySideFull)
-            {
-                ComputeFullSideBySide(originalLines, modifiedLines, diffResult);
-            }
-            else if (ViewMode == DiffViewMode.SideBySide)
-            {
-                ComputeSideBySideWithContext(originalLines, modifiedLines, diffResult);
-            }
-            else
-            {
-                ComputeUnifiedWithContext(originalLines, modifiedLines, diffResult);
-            }
+            var originalHtml = DisplayLines(original, originalLines, isModelica)
+                .Select(l => ParseContent(l, isModelica)).ToArray();
+            var modifiedHtml = DisplayLines(modified, modifiedLines, isModelica)
+                .Select(l => ParseContent(l, isModelica)).ToArray();
+
+            return new PreparedDiff(original, modified, isModelica, originalHtml, modifiedHtml, ops, null);
         }
         catch (OutOfMemoryException)
+        {
+            return new PreparedDiff(original, modified, isModelica, [], [], [],
+                $"Not enough memory to compute diff for this file " +
+                $"({originalLines.Length:N0} / {modifiedLines.Length:N0} lines). " +
+                "Try viewing a smaller section, or compare using an external diff tool.");
+        }
+        catch (Exception ex)
+        {
+            // Off the dispatcher now, so an exception here would leave the viewer saying
+            // "Comparing…" for ever rather than taking the page down; say what happened instead.
+            LoggingService.Error("DiffViewer", "Could not compute the diff", ex);
+            return new PreparedDiff(original, modified, isModelica, [], [], [],
+                $"Could not compute the diff: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Lays the prepared diff out for the current view mode — linear in its length, and skipped when
+    /// neither the diff, the mode nor the context has changed since the last time.
+    /// </summary>
+    private void LayOut()
+    {
+        if (_prepared is not { } diff)
+            return;
+        if (_laidOut is { } last && ReferenceEquals(last.Diff, diff)
+            && last.Mode == ViewMode && last.Context == ContextLines)
+            return;
+        _laidOut = (diff, ViewMode, ContextLines);
+
+        _unifiedLines.Clear();
+        _leftLines.Clear();
+        _rightLines.Clear();
+        _addedCount = 0;
+        _removedCount = 0;
+        _errorMessage = diff.Error;
+        if (diff.Error is not null)
+            return;
+
+        if (ViewMode == DiffViewMode.SideBySideFull)
+            ComputeFullSideBySide(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
+        else if (ViewMode == DiffViewMode.SideBySide)
+            ComputeSideBySideWithContext(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
+        else
+            ComputeUnifiedWithContext(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
+
+        // Counted after laying out, which is linear and cheap, rather than guessed from the edit
+        // script: with context, a long script can still be a short diff. The counts stay, so the
+        // summary still says how big the change is.
+        var rows = Math.Max(_unifiedLines.Count, _leftLines.Count);
+        if (rows > MaxRows)
         {
             _unifiedLines.Clear();
             _leftLines.Clear();
             _rightLines.Clear();
-            _errorMessage = $"Not enough memory to compute diff for this file " +
-                $"({originalLines.Length:N0} / {modifiedLines.Length:N0} lines). " +
-                "Try viewing a smaller section, or compare using an external diff tool.";
+            _errorMessage = $"This diff is {rows:N0} rows long, too many to show here (the limit is {MaxRows:N0}). " +
+                "Compare the file using an external diff tool.";
         }
     }
 
@@ -503,7 +727,14 @@ public partial class DiffViewer : IAsyncDisposable
         };
     }
 
-    private string ParseContent(string content)
+    /// <summary>
+    /// A laid-out line's HTML. The file's own lines were turned into HTML when the diff was
+    /// prepared; what is left is the layout's own filler — an empty cell, or the <c>...</c> between
+    /// hunks.
+    /// </summary>
+    private static string Html(string content) => string.IsNullOrEmpty(content) ? "&nbsp;" : content;
+
+    private static string ParseContent(string content, bool isModelicaFile)
     {
         if (string.IsNullOrEmpty(content))
             return "&nbsp;";
@@ -515,15 +746,13 @@ public partial class DiffViewer : IAsyncDisposable
             leadingSpaces++;
         }
 
-        // Apply Modelica syntax highlighting (includes HTML encoding) or plain encoding
-        if (_isModelicaFile)
-        {
-            content = ApplyModelicaSyntaxHighlighting(content);
-        }
-        else if (!content.Contains("<span"))
-        {
-            content = System.Web.HttpUtility.HtmlEncode(content);
-        }
+        // A Modelica line is already HTML (see ApplyModelicaSyntaxHighlighting); any other file's
+        // line is the file's own text and is always encoded. It was skipped for a line containing
+        // "<span", a guess at "already highlighted" left over from the old highlighter - which let a
+        // text file's own markup through as markup (B403).
+        content = isModelicaFile
+            ? ApplyModelicaSyntaxHighlighting(content)
+            : System.Web.HttpUtility.HtmlEncode(content);
 
         // Preserve leading spaces as non-breaking spaces
         if (leadingSpaces > 0)
@@ -538,117 +767,31 @@ public partial class DiffViewer : IAsyncDisposable
         return content;
     }
 
-    private static readonly string[] _modelicaKeywords = new[]
-    {
-        "algorithm", "and", "annotation", "block", "break", "class", "connect",
-        "connector", "constant", "constrainedby", "der", "discrete", "each",
-        "else", "elseif", "elsewhen", "encapsulated", "end", "enumeration",
-        "equation", "expandable", "extends", "external", "false", "final",
-        "flow", "for", "function", "if", "import", "impure", "in", "initial",
-        "inner", "input", "loop", "model", "not", "operator", "or", "outer",
-        "output", "package", "parameter", "partial", "protected", "public",
-        "pure", "record", "redeclare", "replaceable", "return", "stream",
-        "then", "true", "type", "when", "while", "within"
-    };
-
-    private static readonly System.Text.RegularExpressions.Regex _modelicaKeywordRegex =
-        new(@"\b(" + string.Join("|", _modelicaKeywords) + @")\b",
+    private static readonly System.Text.RegularExpressions.Regex _tagRegex =
+        new(@"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
             System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    private static readonly System.Text.RegularExpressions.Regex _modelicaNumberRegex =
-        new(@"\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private string ApplyModelicaSyntaxHighlighting(string line)
-    {
-        // Check if line contains pre-rendered markup tags (from ModelicaRenderer)
-        if (line.Contains("<KEYWORD>"))
-        {
-            return System.Text.RegularExpressions.Regex.Replace(
-                line,
-                @"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
-                match =>
-                {
-                    var tagType = match.Groups[1].Value.ToLower();
-                    var content = match.Groups[2].Value;
-                    content = System.Web.HttpUtility.HtmlEncode(content);
-                    return $"<span class=\"code-{tagType}\">{content}</span>";
-                }
-            );
-        }
-
-        // Raw Modelica text — tokenize into comments, strings, and code segments,
-        // then HTML-encode and highlight each appropriately.
-        return HighlightRawModelica(line);
-    }
-
     /// <summary>
-    /// Tokenizes a raw Modelica line into string literals, line comments, and code segments,
-    /// then applies HTML encoding and syntax highlighting to each token.
+    /// Turns the classifier's tags into the <c>code-*</c> spans the stylesheet colours, which is the
+    /// same conversion <c>CodeViewer</c> makes — so the diff and the single-file view now follow one
+    /// scheme (B178).
+    ///
+    /// <para><b>Only what is inside a tag is encoded here</b>; everything outside one, and so a line
+    /// with no tags at all, is passed through as it is (B403). It is already HTML by the time it
+    /// arrives: <see cref="ModelicaTokenClassifier"/> encodes whatever it leaves untagged, and the
+    /// fallback in <see cref="DisplayLines"/> encodes its plain lines. Encoding it again would show
+    /// the user <c>&amp;amp;</c>. A file that is not Modelica never comes here - <c>ParseContent</c>
+    /// encodes it instead - and the <c>...</c> between hunks is layout, added after this runs.</para>
+    ///
+    /// <para>This replaced a second highlighter — a keyword-list regex over the raw line, with its
+    /// own palette — which coloured the same code differently from the pane beside it and ignored the
+    /// user's chosen preset entirely.</para>
     /// </summary>
-    private static string HighlightRawModelica(string line)
-    {
-        var sb = new System.Text.StringBuilder();
-        int i = 0;
-        int codeStart = 0;
-
-        while (i < line.Length)
-        {
-            // Check for line comment
-            if (i + 1 < line.Length && line[i] == '/' && line[i + 1] == '/')
-            {
-                // Flush preceding code segment
-                if (i > codeStart)
-                    sb.Append(HighlightCodeSegment(line.Substring(codeStart, i - codeStart)));
-
-                var comment = line.Substring(i);
-                sb.Append($"<span class=\"code-comment\">{System.Web.HttpUtility.HtmlEncode(comment)}</span>");
-                return sb.ToString(); // Comment runs to end of line
-            }
-
-            // Check for string literal
-            if (line[i] == '"')
-            {
-                // Flush preceding code segment
-                if (i > codeStart)
-                    sb.Append(HighlightCodeSegment(line.Substring(codeStart, i - codeStart)));
-
-                int stringEnd = i + 1;
-                while (stringEnd < line.Length)
-                {
-                    if (line[stringEnd] == '\\') { stringEnd += 2; continue; }
-                    if (line[stringEnd] == '"') { stringEnd++; break; }
-                    stringEnd++;
-                }
-                var str = line.Substring(i, stringEnd - i);
-                sb.Append($"<span class=\"code-string\">{System.Web.HttpUtility.HtmlEncode(str)}</span>");
-                i = stringEnd;
-                codeStart = i;
-                continue;
-            }
-
-            i++;
-        }
-
-        // Flush remaining code segment
-        if (codeStart < line.Length)
-            sb.Append(HighlightCodeSegment(line.Substring(codeStart)));
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// HTML-encodes a code segment and highlights keywords and numbers.
-    /// </summary>
-    private static string HighlightCodeSegment(string segment)
-    {
-        var encoded = System.Web.HttpUtility.HtmlEncode(segment);
-        encoded = _modelicaKeywordRegex.Replace(encoded,
-            m => $"<span class=\"code-keyword\">{m.Value}</span>");
-        encoded = _modelicaNumberRegex.Replace(encoded,
-            m => $"<span class=\"code-number\">{m.Value}</span>");
-        return encoded;
-    }
+    internal static string ApplyModelicaSyntaxHighlighting(string line) =>
+        _tagRegex.Replace(line, match =>
+            $"<span class=\"code-{match.Groups[1].Value.ToLower()}\">"
+            + System.Web.HttpUtility.HtmlEncode(match.Groups[2].Value)
+            + "</span>");
 
     private class DiffLine
     {

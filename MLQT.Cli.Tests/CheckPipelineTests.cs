@@ -16,6 +16,9 @@ public class CheckPipelineTests : IDisposable
 {
     private readonly List<string> _roots = [];
 
+    private const string WithinClauseEnabled =
+        """{ "RuleSeverities": { "MLQT.Structure.WithinClause": "Error" } }""";
+
     public void Dispose()
     {
         foreach (var root in _roots)
@@ -84,12 +87,88 @@ public class CheckPipelineTests : IDisposable
     public void ARunWithNoRulesEnabled_SaysSoRatherThanReportingACleanLibrary()
     {
         var lib = Library(NewDirectory());
-        Write(lib, ".mlqt/settings.json", "{ }");
+        Write(lib, ".mlqt/settings.json",
+            """{ "RuleSeverities": { "MLQT.Structure.SingleFilePackage": "Off" } }""");
 
         var (code, _, stderr) = Run("check", lib);
 
         Assert.Equal(ExitCodes.Ok, code);
         Assert.Contains("no style rules are enabled", stderr);
+    }
+
+    [Fact]
+    public void ARunWithOnlyTheDefaultRules_SaysThatToo()
+    {
+        // An empty settings file no longer means an empty run: one rule is on without being asked
+        // for. One rule's worth of findings reads like a clean bill of health, so the note has to
+        // distinguish "nothing runs" from "almost nothing runs".
+        var lib = Library(NewDirectory());
+        Write(lib, ".mlqt/settings.json", "{ }");
+
+        var (code, _, stderr) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.Contains("only the rules that are on by default", stderr);
+        Assert.DoesNotContain("no style rules are enabled", stderr);
+    }
+
+    [Fact]
+    public void AWithinClauseThatDoesNotMatchItsDirectory_FailsARunThatEnablesTheRule()
+    {
+        // B458: an Error when enabled, so a library that has opted in is gated on it.
+        var lib = Library(NewDirectory(), "Lib");
+        Write(lib, ".mlqt/settings.json", WithinClauseEnabled);
+        Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
+        Write(lib, "Sub/X.mo", "within Lib;\nmodel X\nend X;\n");
+
+        var (code, stdout, _) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.GateFailed, code);
+        Assert.Contains("MLQT.Structure.WithinClause", stdout);
+        Assert.Contains("within Lib.Sub;", stdout);
+    }
+
+    [Fact]
+    public void AWithinClauseThatDoesNotMatchItsDirectory_IsNotReportedByARunWithNoSettings()
+    {
+        // The control: the rule is off by default, so a library nobody has configured is not
+        // reported on it — the same library as above, with no settings file.
+        var lib = Library(NewDirectory(), "Lib");
+        Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
+        Write(lib, "Sub/X.mo", "within Lib;\nmodel X\nend X;\n");
+
+        var (code, stdout, _) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.DoesNotContain("MLQT.Structure.WithinClause", stdout);
+    }
+
+    [Fact]
+    public void ALibraryWhoseWithinClausesMatchTheirDirectories_Passes()
+    {
+        var lib = Library(NewDirectory(), "Lib");
+        Write(lib, ".mlqt/settings.json", WithinClauseEnabled);
+        Write(lib, "Sub/package.mo", "within Lib;\npackage Sub\nend Sub;\n");
+        Write(lib, "Sub/X.mo", "within Lib.Sub;\nmodel X\nend X;\n");
+
+        var (code, stdout, _) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.DoesNotContain("MLQT.Structure.WithinClause", stdout);
+    }
+
+    [Fact]
+    public void ARunWithRulesOfItsOwn_SaysNothingAboutDefaults()
+    {
+        // The control: a configured library must not be told its report is thin.
+        var lib = Library(NewDirectory());
+        Write(lib, ".mlqt/settings.json",
+            """{ "RuleSeverities": { "MLQT.Doc.ClassDescription": "Warning" } }""");
+
+        var (_, _, stderr) = Run("check", lib);
+
+        Assert.DoesNotContain("only the rules that are on by default", stderr);
+        Assert.DoesNotContain("no style rules are enabled", stderr);
     }
 
     [Fact]
@@ -177,6 +256,23 @@ public class CheckPipelineTests : IDisposable
         Assert.Equal(ExitCodes.Ok, code);
         Assert.DoesNotContain("ships no usable documentation", stderr);
         Assert.Contains("Commercial", stderr);
+    }
+
+    [Fact]
+    public void AnEncryptedDependencyOfTheLibraryBeingChecked_IsNotUsedAndNotMisreported()
+    {
+        // B268: a tool's library folder on --dependency usually holds the encrypted build of the very
+        // library being checked. The source wins, so the encrypted copy contributes nothing - and it
+        // must not be named as loaded, nor warned about as shipping no documentation, both of which
+        // an empty library looks like.
+        var lib = Library(NewDirectory("Commercial"), "Commercial");
+        var encrypted = EncryptedLibrary("Commercial", "2.1", withHelp: true);
+
+        var (code, _, stderr) = Run("check", lib, "--dependency", encrypted);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.DoesNotContain("ships no usable documentation", stderr);
+        Assert.DoesNotContain("for reference resolution", stderr);
     }
 
     [Fact]

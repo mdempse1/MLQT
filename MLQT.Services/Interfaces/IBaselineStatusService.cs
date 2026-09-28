@@ -33,8 +33,17 @@ public interface IBaselineStatusService
     /// </summary>
     BaselineStatusSnapshot Snapshot { get; }
 
-    /// <summary>Reloads the baselines and re-reads which files are pending commit.</summary>
+    /// <summary>Reloads the baselines and re-reads which files are pending commit, on the calling
+    /// thread. It asks every repository for its working-copy status, so never call it from the UI —
+    /// use <see cref="RefreshAsync"/>.</summary>
     void Refresh();
+
+    /// <summary>
+    /// Queues a <see cref="Refresh"/> on the thread pool. Runs never overlap, and requests made while
+    /// one is running are folded into a single run after it. The returned task completes once a run
+    /// that started after this request has finished; <see cref="OnChanged"/> says whether it moved.
+    /// </summary>
+    Task RefreshAsync();
 
     /// <summary>Raised after <see cref="Refresh"/> changes anything a view is showing.</summary>
     event Action? OnChanged;

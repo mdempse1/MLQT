@@ -3,7 +3,7 @@ using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser;
 using ModelicaParser.Helpers;
-using ModelicaParser.Visitors;
+using ModelicaParser.DataTypes;
 using static MLQT.Services.LoggingService;
 
 namespace MLQT.Services.Helpers;
@@ -41,11 +41,19 @@ public static class IncrementalFormatter
     /// that should not have been.
     /// </remarks>
     /// <param name="fileExists">Injected so the selection can be exercised without files on disk.</param>
+    /// <param name="neverWritten">
+    /// Whether a class must never be written, by its id - a class of a reference-only library
+    /// (<see cref="MLQT.Services.Checking.ReferenceOnlyScope.OwnedByReference"/>). A file holding one
+    /// is not touched. Asked here, of each class, because the files arrive by path and the settings
+    /// they arrive with are the caller's guess at whose they are: a vendor library checked out inside
+    /// a maintained repository's folder arrives as the outer repository's change (B421).
+    /// </param>
     public static List<FileToFormat> SelectFilesToFormat(
         DirectedGraph graph,
         IEnumerable<string> changedFilePaths,
         StyleCheckingSettings settings,
-        Func<string, bool> fileExists)
+        Func<string, bool> fileExists,
+        Func<string, bool>? neverWritten = null)
     {
         var selected = new List<FileToFormat>();
         if (!settings.ApplyFormattingRules)
@@ -83,11 +91,13 @@ public static class IncrementalFormatter
                 continue;
             }
 
-            // The owner is the topmost class stored in the file: it has no parent, or its parent
-            // lives in another file. Only its within clause describes the file.
-            var owner = modelNodes.FirstOrDefault(m =>
-                string.IsNullOrEmpty(m.ParentModelName)
-                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId);
+            if (neverWritten is not null && modelNodes.Any(m => neverWritten(m.Id)))
+            {
+                Debug(nameof(IncrementalFormatter), $"Skipping {filePath}: it belongs to a reference-only library");
+                continue;
+            }
+
+            var owner = FileOwner(graph, fileId, modelNodes);
             if (owner is null)
                 continue;
 
@@ -98,23 +108,39 @@ public static class IncrementalFormatter
     }
 
     /// <summary>
+    /// The topmost class stored in a file: it has no parent, or its parent lives in another file.
+    /// Only its within clause describes the file. Null when no class in the file qualifies.
+    /// </summary>
+    public static ModelNode? FileOwner(DirectedGraph graph, string fileId, IEnumerable<ModelNode> modelsInFile)
+        => modelsInFile.FirstOrDefault(m =>
+            string.IsNullOrEmpty(m.ParentModelName)
+            || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId);
+
+    /// <summary>
     /// Reformats and rewrites the changed files, and brings each class's stored source up to date.
     /// </summary>
+    /// <param name="neverWritten">See <see cref="SelectFilesToFormat"/>.</param>
     /// <returns>Each file written, with the write time recorded against it.</returns>
     public static async Task<IReadOnlyDictionary<string, DateTime>> FormatAndWriteAsync(
         DirectedGraph graph,
         IEnumerable<string> changedFilePaths,
-        StyleCheckingSettings settings)
+        StyleCheckingSettings settings,
+        Func<string, bool>? neverWritten = null)
     {
         var written = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
-        var filesToProcess = SelectFilesToFormat(graph, changedFilePaths, settings, File.Exists);
+        var filesToProcess = SelectFilesToFormat(graph, changedFilePaths, settings, File.Exists, neverWritten);
         if (filesToProcess.Count == 0)
             return written;
 
         // Captured once: the parallel body below must not read settings that another thread may edit.
         var formatting = settings.ToFormattingOptions();
-        var formattedFiles = new ConcurrentDictionary<string, string>();
+        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text)>();
+
+        // The same lookup the checker is given, for the same reason: the order written here and the
+        // order MLQT.Style.DeclarationOrder asks for have to be one answer. Built only when the
+        // layout asks for it — resolving a type is not free.
+        var isSimpleType = formatting.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null;
 
         await Task.Run(() => Parallel.ForEach(filesToProcess, fileEntry =>
         {
@@ -130,38 +156,24 @@ public static class IncrementalFormatter
                 var fileSource = ModelicaFileEncoding.ReadAllTextOnly(fileEntry.FilePath);
 
                 var formatted = ModelicaPackageSaver.RenderFileSource(
-                    fileSource, fileEntry.Owner.ParentModelName, formatting, out var parserErrors);
+                    fileSource, fileEntry.Owner.ParentModelName, formatting, out var parserErrors,
+                    rootClassId: fileEntry.Owner.Id, isSimpleType: isSimpleType);
 
                 // Reformatting invalid Modelica produces unreliable output, and this overwrites the
                 // file in place. Leave a file we cannot parse exactly as the user left it — the style
-                // check reports the syntax error, which is the actionable result.
+                // check reports the syntax error, which is the actionable result. Format All asks the
+                // same question of the same parse (ModelicaPackageSaver.SyntaxErrorsInFile, B414).
                 if (parserErrors.Count > 0)
                 {
                     Warn(nameof(IncrementalFormatter),
-                        $"Not formatting {fileEntry.FilePath}: {parserErrors.Count} syntax error(s), "
-                        + $"first at line {parserErrors[0].Line}: {parserErrors[0].Message}");
+                        $"Not formatting {fileEntry.FilePath}: {ModelicaPackageSaver.DescribeSyntaxErrors(parserErrors)}");
                     return;
                 }
 
-                formattedFiles[fileEntry.FilePath] = formatted.TrimEnd() + "\n";
-
-                // Bring each class's stored code up to date with what is about to be written, so style
-                // checking and the code viewer see the formatted source without waiting for a reload.
-                // Stored without a within clause, which is the representation the rest of the graph
-                // expects — keeping one would shift every finding's line number by one.
-                foreach (var modelNode in fileEntry.Models)
-                {
-                    var modelTree = ModelicaParserHelper.Parse(modelNode.Definition.ModelicaCode);
-                    var visitor = new ModelicaRenderer(
-                        renderForCodeEditor: false,
-                        showAnnotations: true,
-                        excludeClassDefinitions: false,
-                        tokenStream: null,
-                        classNamesToExclude: null,
-                        formatting: formatting);
-                    visitor.Visit(modelTree);
-                    modelNode.Definition.ModelicaCode = WithinClause.Strip(string.Join("\n", visitor.Code));
-                }
+                // How the file ends is ModelicaFileEncoding.EnsureFinalNewline's answer, applied by
+                // the write below. This path used to append "\n" itself, which is how it and the
+                // full library save came to disagree (B236).
+                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted);
             }
             catch (Exception ex)
             {
@@ -171,7 +183,7 @@ public static class IncrementalFormatter
 
         // Written one at a time: these are the user's files, and a partial parallel write is worse
         // than a slow one.
-        foreach (var (filePath, content) in formattedFiles)
+        foreach (var (filePath, (entry, content)) in formattedFiles)
         {
             try
             {
@@ -182,9 +194,79 @@ public static class IncrementalFormatter
             catch (Exception ex)
             {
                 Warn(nameof(IncrementalFormatter), $"Failed to save formatted file {filePath}: {ex.Message}");
+                continue;
             }
+
+            // Only once the file holds it: a file that could not be written is still on disk as it
+            // was, and so are its classes (B374's rule, on this path).
+            RefreshClassesFromWrittenFile(graph, entry, content);
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// Brings every class in a file just written up to date with it, the way a fresh load of that
+    /// file would: its stored source is the verbatim slice of the written text, and its lines and
+    /// offsets are where that text has it (B444).
+    /// </summary>
+    /// <remarks>
+    /// <para>This used to re-render each class's stored code on its own and store that, leaving
+    /// <see cref="ModelNode.StartLine"/>, the offsets and <see cref="ModelNode.TrimElision"/> where
+    /// the load had found them while <see cref="ModelNode.SourceMatchesFile"/> still said the text
+    /// was the file's. A class below one the format had lengthened was mapped - in Findings, SARIF
+    /// and every CLI report, through <c>ClassLocation</c> - to a line of the file as it used to be,
+    /// and a trimmed package's findings through an elision of the old text. Taking the classes from
+    /// the written text keeps the exact mapping, rather than giving it up the way a re-rendered class
+    /// has to, because here the whole file was written and is known.</para>
+    ///
+    /// <para>A package that had been trimmed is trimmed again from its new source, so it stays the
+    /// representation every surface checks (<see cref="PackageCodeTrimmer"/>).</para>
+    /// </remarks>
+    private static void RefreshClassesFromWrittenFile(DirectedGraph graph, FileToFormat entry, string content)
+    {
+        List<ModelInfo> extracted;
+        try
+        {
+            (extracted, _) = ModelicaParserHelper.ExtractModelsWithErrors(
+                ModelicaParserHelper.NormalizeLineEndings(content));
+        }
+        catch (Exception ex)
+        {
+            Warn(nameof(IncrementalFormatter), $"Could not re-read the classes of {entry.FilePath}: {ex.Message}");
+            extracted = new();
+        }
+
+        var byId = new Dictionary<string, ModelInfo>(StringComparer.Ordinal);
+        foreach (var info in extracted)
+            byId.TryAdd(GraphBuilder.GenerateModelId(info.ParentModelName, info.Name), info);
+
+        var retrim = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var model in entry.Models)
+        {
+            if (!byId.TryGetValue(model.Id, out var info))
+            {
+                // Not expected - the file was rendered from a parse that found it - but if the text
+                // no longer has the class where the load did, no line in it can be trusted to map.
+                Warn(nameof(IncrementalFormatter), $"{model.Id} not found in the formatted {entry.FilePath}");
+                model.SourceMatchesFile = false;
+                continue;
+            }
+
+            if (model.ChildrenTrimmed)
+                retrim.Add(model.Id);
+
+            model.Definition.ModelicaCode = info.SourceCode;
+            model.StartLine = info.StartLine;
+            model.StopLine = info.StopLine;
+            model.StartIndex = info.StartIndex;
+            model.StopIndex = info.StopIndex;
+            model.TrimElision = null;
+            model.ChildrenTrimmed = false;
+            model.SourceMatchesFile = true;
+        }
+
+        if (retrim.Count > 0)
+            PackageCodeTrimmer.TrimStandaloneChildren(graph, retrim);
     }
 }

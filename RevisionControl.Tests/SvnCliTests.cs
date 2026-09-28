@@ -106,6 +106,90 @@ public class SvnCliTests
         Assert.DoesNotContain("  path not found  ", ex.Message); // stderr is trimmed in the message
     }
 
+    // B329: svn's own message is the one that says what to do, and update, switch and
+    // create-branch used to replace it with a bare "failed".
+
+    [Fact]
+    public void FailureMessage_IsSvnsOwnMessage_Trimmed()
+    {
+        var result = new SvnCli.Result
+        {
+            ExitCode = 1, StdOut = "",
+            StdErr = "  svn: E155004: Run 'svn cleanup' to remove locks (type 'svn help cleanup' for details)\r\n",
+        };
+
+        Assert.Equal("svn: E155004: Run 'svn cleanup' to remove locks (type 'svn help cleanup' for details)",
+            result.FailureMessage("SVN update failed."));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  \r\n")]
+    public void FailureMessage_WithNothingFromSvn_IsTheFallback(string stderr)
+    {
+        var result = new SvnCli.Result { ExitCode = 1, StdOut = "", StdErr = stderr };
+
+        Assert.Equal("SVN update failed.", result.FailureMessage("SVN update failed."));
+    }
+
+    // B330: a stalled svn is killed, which leaves the working copy locked (E155004) for every
+    // command after it. A command on a working copy that had to be stopped is followed by
+    // `svn cleanup`, and the message says what happened - or what the user must do.
+
+    private const string WorkingCopy = @"C:\wc\Lib";
+
+    private static SvnCli.Result Stopped() => new()
+    {
+        ExitCode = -1, StdOut = "", Stopped = true,
+        StdErr = "svn produced no output for 10 minutes and was stopped.",
+    };
+
+    [Fact]
+    public void RunOnWorkingCopy_AfterAStop_CleansTheWorkingCopyUp()
+    {
+        var calls = new List<string[]>();
+        var result = SvnCli.RunOnWorkingCopy(args =>
+        {
+            calls.Add(args);
+            return args[0] == "cleanup"
+                ? new SvnCli.Result { ExitCode = 0, StdOut = "", StdErr = "" }
+                : Stopped();
+        }, WorkingCopy, ["update", "-r", "HEAD", WorkingCopy]);
+
+        Assert.Equal(["cleanup", WorkingCopy], calls[1]);
+        Assert.False(result.Success);
+        Assert.True(result.Stopped);
+        Assert.Contains("was stopped", result.StdErr);
+        Assert.Contains("released with 'svn cleanup'", result.FailureMessage("SVN update failed."));
+    }
+
+    [Fact]
+    public void RunOnWorkingCopy_WhenTheCleanupFailsToo_TellsTheUserWhatToRun()
+    {
+        var result = SvnCli.RunOnWorkingCopy(args => args[0] == "cleanup"
+                ? new SvnCli.Result { ExitCode = 1, StdOut = "", StdErr = "svn: E155037: Previous operation has not finished" }
+                : Stopped(),
+            WorkingCopy, ["switch", "^/branches/x", WorkingCopy]);
+
+        var message = result.FailureMessage("SVN switch failed.");
+        Assert.Contains($"Run 'svn cleanup' on {WorkingCopy}", message);
+        Assert.Contains("E155037", message);
+    }
+
+    [Fact]
+    public void RunOnWorkingCopy_WithoutAStop_RunsNothingElse()
+    {
+        // A failure svn reported itself has already released its lock; cleaning up after it would
+        // only cost time, and after a success it would be absurd.
+        var calls = 0;
+        var failed = new SvnCli.Result { ExitCode = 1, StdOut = "", StdErr = "svn: E170013: Unable to connect" };
+
+        var result = SvnCli.RunOnWorkingCopy(_ => { calls++; return failed; }, WorkingCopy, ["update", WorkingCopy]);
+
+        Assert.Equal(1, calls);
+        Assert.Same(failed, result);
+    }
+
     // ─── SvnCliException ─────────────────────────────────────────────────────
 
     [Fact]

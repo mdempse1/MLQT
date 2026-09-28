@@ -1,36 +1,34 @@
-using MLQT.Services.DataTypes;
-using MLQT.Services.Interfaces;
-using ModelicaGraph;
-using ModelicaGraph.DataTypes;
 using DymolaInterface.Interfaces;
 using static MLQT.Services.LoggingService;
 using DymolaInterface;
+using MLQT.Services.Helpers;
 
 namespace MLQT.Services;
 
 /// <summary>
-/// Service for checking Modelica models using Dymola.
-/// Handles background processing, progress reporting, and cancellation.
+/// Service for checking Modelica models using Dymola. The run, its progress and cancellation, and
+/// the shape of a check are <see cref="ModelCheckingServiceBase{TSession}"/>'s; this is what Dymola
+/// does differently.
 /// </summary>
-public class DymolaCheckingService : IModelCheckingService
+/// <remarks>
+/// Dymola answers <c>false</c> or <c>null</c> whatever went wrong, so <see cref="IDymolaInterface.LastOutcome"/>
+/// is asked why - and it cannot be interrupted, so a command that ran out of time leaves it busy, and
+/// its log must not be read then (B263).
+/// </remarks>
+public class DymolaCheckingService : ModelCheckingServiceBase<IDymolaInterface>
 {
     private readonly IDymolaInterfaceFactory _dymolaFactory;
-    private DymolaInterface.DymolaInterface? _dymola;
-    private CancellationTokenSource? _cancellationTokenSource;
-    private bool _isRunning;
-    private ModelCheckProgress _currentProgress = new();
 
-    // Throttling for UI updates
-    private DateTime _lastProgressUpdate = DateTime.MinValue;
-    private readonly TimeSpan _progressUpdateInterval = TimeSpan.FromMilliseconds(500);
+    public override string ToolName => "Dymola";
 
-    public event Action<ModelCheckProgress>? OnProgressChanged;
-    public event Action<ModelCheckResult>? OnModelChecked;
-    public event Action<ModelCheckProgress>? OnCheckingComplete;
+    /// <summary>
+    /// What a timed-out command leaves Dymola doing — the part of the message that differs from omc.
+    /// </summary>
+    private const string StillBusy =
+        "Dymola cannot be interrupted, so it is still working on it and will not answer anything else until it has finished.";
 
-    public bool IsRunning => _isRunning;
-    public ModelCheckProgress CurrentProgress => _currentProgress;
-    public string ToolName => "Dymola";
+    /// <summary>The time limit the factory is applying, kept here to say it in a message.</summary>
+    private TimeSpan _commandTimeout = TimeSpan.FromMinutes(5);
 
     public DymolaCheckingService(IDymolaInterfaceFactory dymolaFactory)
     {
@@ -39,317 +37,147 @@ public class DymolaCheckingService : IModelCheckingService
 
     public void UpdateSettings(DymolaSettings settings)
     {
+        _commandTimeout = settings.CommandTimeout;
         _dymolaFactory.UpdateSettings(settings);
     }
 
-    public async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
+    private protected override Task<IDymolaInterface> GetSessionAsync(CancellationToken token) =>
+        _dymolaFactory.GetOrCreateAsync(token);
+
+    private protected override Task ResetSessionAsync() => _dymolaFactory.ResetAsync();
+
+    private protected override async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
     {
         try
         {
-            _dymola = await _dymolaFactory.GetOrCreateAsync();
+            Session = await _dymolaFactory.GetOrCreateAsync(token);
 
-            var isOpen = await _dymola.OpenModelAsync(filePath, false, false);
+            var isOpen = await Session.OpenModelAsync(filePath, false, false, cancellationToken: token);
+            if (!isOpen && Interrupted(filePath) is { } interrupted)
+                return interrupted;
+
             if (!isOpen)
             {
                 if (File.Exists(filePath))
                 {
-                    // File exists so maybe Dymola already had a version open
-                    await _dymola.ClearAsync();
-                    isOpen = await _dymola.OpenModelAsync(filePath, false, false);
+                    // File exists so maybe Dymola already had a version open. The log is cleared too, so
+                    // what Dymola says about the retry is about the retry.
+                    await Session.ClearAsync();
+                    await ClearLogAsync();
+                    isOpen = await Session.OpenModelAsync(filePath, false, false, cancellationToken: token);
+                    if (!isOpen && Interrupted(filePath) is { } interruptedAgain)
+                        return interruptedAgain;
+
+                    if (!isOpen && await IsGoneAsync())
+                        return LibraryLoad.Gone(
+                            $"Dymola stopped answering while opening {Path.GetFileName(filePath)} - its window " +
+                            "was closed, or its process has exited. The next check starts a new session.");
+
                     if (!isOpen)
                     {
-                        return (false, "Could not get Dymola to open the file for this Modelica model");
+                        return LibraryLoad.Failed(LibraryLoad.WouldNotOpen(ToolName, await ReadLogOrNullAsync()));
                     }
                 }
                 else
                 {
-                    return (false, $"File not found: {filePath}");
+                    return LibraryLoad.Failed($"File not found: {filePath}");
                 }
             }
 
-            return (true, null);
+            return LibraryLoad.Loaded;
         }
         catch (Exception ex)
         {
-            Error("DymolaCheckingService", "Error connecting to Dymola", ex);
-            return (false, $"Error connecting to Dymola: {ex.Message}");
+            Error(LogSource, "Error connecting to Dymola", ex);
+            return LibraryLoad.Failed($"Error connecting to Dymola: {ex.Message}");
         }
     }
 
-    public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph)
+    /// <summary>
+    /// Why an open that did not succeed was not a refusal, or null when it was one: Dymola never
+    /// answered, or the user cancelled. Asked before retrying, because a retry after a timeout waits
+    /// out the whole limit again against a Dymola still busy with the first attempt.
+    /// </summary>
+    private LibraryLoad? Interrupted(string filePath) => Session?.LastOutcome switch
     {
-        var result = new ModelCheckResult
-        {
-            ModelId = modelNode.Id
-        };
+        CommandOutcome.Cancelled => LibraryLoad.Failed("Cancelled"),
+        CommandOutcome.TimedOut => LibraryLoad.RanOutOfTime(
+            ToolTimeLimit.LoadTimedOut(ToolName, filePath, _commandTimeout, StillBusy)),
+        _ => null,
+    };
 
-        try
-        {
-            if (_dymola == null)
-            {
-                _dymola = await _dymolaFactory.GetOrCreateAsync();
-            }
-
-            // Ensure library is loaded
-            var fileNode = modelNode.ContainingFileId != null ? graph.GetNode<FileNode>(modelNode.ContainingFileId) : null;
-            if (fileNode != null)
-            {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(fileNode.FilePath);
-                if (!loadSuccess)
-                {
-                    result.Success = false;
-                    result.Summary = "Failed to load library";
-                    result.ErrorMessage = loadError;
-                    return result;
-                }
-            }
-
-            var checkResult = await _dymola.CheckModelAsync(modelNode.Id, false, false);
-            if (checkResult)
-            {
-                result.Success = true;
-            }
-            else
-            {
-                var error = await _dymola.GetLastErrorAsync();
-                result.Success = false;
-
-                if (error.Contains("Error: the model is too complex for the current license"))
-                {
-                    result.Summary = "Model too complex for demo license";
-                }
-                else
-                {
-                    result.Summary = "Dymola Check Failed";
-                }
-                result.ErrorMessage = error;
-            }
-        }
-        catch (Exception ex)
-        {
-            Error("DymolaCheckingService", $"Error checking model: {modelNode.Id}", ex);
-            result.Success = false;
-            result.Summary = "Dymola Check Failed";
-            try
-            {
-                result.ErrorMessage = _dymola != null
-                    ? await _dymola.GetLastErrorAsync()
-                    : ex.Message;
-            }
-            catch (Exception innerEx)
-            {
-                Warn("DymolaCheckingService", $"Failed to get Dymola error message: {innerEx.Message}");
-                result.ErrorMessage = ex.Message;
-            }
-        }
-
-        return result;
-    }
-
-    public Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default)
-    {
-        if (_isRunning)
-        {
-            return Task.CompletedTask;
-        }
-
-        _isRunning = true;
-        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var token = _cancellationTokenSource.Token;
-
-        // Run on a background thread to keep UI responsive
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await RunCheckingAsync(modelNode, graph, token);
-            }
-            finally
-            {
-                _isRunning = false;
-                _cancellationTokenSource?.Dispose();
-                _cancellationTokenSource = null;
-            }
-        }, token);
-
-        // Return immediately so UI remains responsive
-        return Task.CompletedTask;
-    }
-
-    private async Task RunCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken token)
+    /// <summary>
+    /// Empties Dymola's log, which otherwise accumulates, so the next read belongs to the command
+    /// that follows it. Never throws: failing to clear is not a reason to fail the check.
+    /// </summary>
+    private protected override async Task ClearLogAsync()
     {
         try
         {
-            _dymola = await _dymolaFactory.GetOrCreateAsync();
-
-            // Ensure library is loaded
-            var fileNode = modelNode.ContainingFileId != null ? graph.GetNode<FileNode>(modelNode.ContainingFileId) : null;
-            if (fileNode != null)
-            {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(fileNode.FilePath);
-                if (!loadSuccess)
-                {
-                    var errorResult = new ModelCheckResult
-                    {
-                        ModelId = modelNode.Id,
-                        Success = false,
-                        Summary = "Failed to load library",
-                        ErrorMessage = loadError
-                    };
-                    OnModelChecked?.Invoke(errorResult);
-
-                    _currentProgress = new ModelCheckProgress
-                    {
-                        TotalModels = 0,
-                        ModelsChecked = 0,
-                        IsComplete = true,
-                        WasCancelled = false
-                    };
-                    OnCheckingComplete?.Invoke(_currentProgress);
-                    return;
-                }
-            }
-
-            // Determine models to check
-            List<ModelNode> modelsToCheck;
-            if (modelNode.ClassType == "package")
-            {
-                modelsToCheck = graph.ModelNodes
-                    .Where(m => m.Id.StartsWith(modelNode.Id + ".") &&
-                                m.ClassType != "package")
-                    .ToList();
-            }
-            else
-            {
-                modelsToCheck = new List<ModelNode> { modelNode };
-            }
-
-            _currentProgress = new ModelCheckProgress
-            {
-                TotalModels = modelsToCheck.Count,
-                ModelsChecked = 0,
-                IsComplete = false,
-                WasCancelled = false
-            };
-
-            // Always fire initial progress
-            _lastProgressUpdate = DateTime.UtcNow;
-            OnProgressChanged?.Invoke(_currentProgress);
-
-            foreach (var model in modelsToCheck)
-            {
-                if (token.IsCancellationRequested)
-                {
-                    _currentProgress.WasCancelled = true;
-                    _currentProgress.IsComplete = true;
-                    OnCheckingComplete?.Invoke(_currentProgress);
-                    return;
-                }
-
-                _currentProgress.CurrentModel = model.Id;
-
-                // Throttle progress updates to avoid overwhelming the UI
-                FireThrottledProgressUpdate();
-
-                var result = await CheckSingleModelAsync(model);
-
-                // Only fire OnModelChecked for failures to reduce UI updates
-                if (!result.Success)
-                {
-                    OnModelChecked?.Invoke(result);
-                }
-
-                _currentProgress.ModelsChecked++;
-
-                // Throttle progress updates
-                FireThrottledProgressUpdate();
-            }
-
-            // Always fire final progress update
-            _currentProgress.IsComplete = true;
-            OnProgressChanged?.Invoke(_currentProgress);
-            OnCheckingComplete?.Invoke(_currentProgress);
+            if (Session is not null)
+                await Session.ClearLogAsync();
         }
         catch (Exception ex)
         {
-            // Handle unexpected errors
-            Error("DymolaCheckingService", "Unexpected error during model checking", ex);
-            _currentProgress.IsComplete = true;
-            _currentProgress.WasCancelled = false;
-            OnCheckingComplete?.Invoke(_currentProgress);
+            Debug(LogSource, $"Could not clear Dymola's log: {ex.Message}");
         }
     }
 
-    private void FireThrottledProgressUpdate()
+    private protected override async Task<CheckAnswer> IssueCheckAsync(IDymolaInterface session, string modelId,
+        CancellationToken token)
     {
-        var now = DateTime.UtcNow;
-        if (now - _lastProgressUpdate >= _progressUpdateInterval)
+        if (await session.CheckModelAsync(modelId, false, false, cancellationToken: token))
+            return CheckAnswer.Checked(true);
+
+        // False is the model's verdict only if Dymola gave it. A check that ran out of time or was
+        // cancelled answered nothing - and asking for the log then would wait out the limit again,
+        // against a Dymola still busy with the check (B263).
+        switch (session.LastOutcome)
         {
-            _lastProgressUpdate = now;
-            OnProgressChanged?.Invoke(_currentProgress);
+            case CommandOutcome.Cancelled:
+                return CheckAnswer.WasCancelled;
+            case CommandOutcome.TimedOut:
+                return CheckAnswer.NoVerdict(
+                    ToolTimeLimit.CheckTimedOut(ToolName, modelId, _commandTimeout, StillBusy));
+
+            // Not an answer either, and possibly no Dymola at all: a closed window gives Failed,
+            // because nothing marks a session offline partway through. Asked rather than
+            // assumed, since Failed also covers Dymola reporting an error about this one command.
+            case CommandOutcome.Offline or CommandOutcome.Failed when await IsGoneAsync():
+                return CheckAnswer.NoVerdict(UnavailableTool.WentAway(ToolName, modelId));
         }
+
+        return CheckAnswer.Checked(false);
     }
 
-    private async Task<ModelCheckResult> CheckSingleModelAsync(ModelNode modelNode)
-    {
-        var result = new ModelCheckResult
-        {
-            ModelId = modelNode.Id
-        };
+    /// <summary>Dymola's <c>getLastError()</c>: what it said about the last command.</summary>
+    private protected override Task<string> ReadLogAsync(IDymolaInterface session) => session.GetLastErrorAsync();
 
+    private protected override async Task<string?> ReadLogOrNullAsync()
+    {
         try
         {
-            var checkResult = await _dymola!.CheckModelAsync(modelNode.Id, false, false);
-            if (checkResult)
-            {
-                result.Success = true;
-            }
-            else
-            {
-                var error = await _dymola.GetLastErrorAsync();
-                result.Success = false;
-
-                if (error.Contains("Error: the model is too complex for the current license"))
-                {
-                    result.Summary = "Model too complex for demo license";
-                }
-                else
-                {
-                    result.Summary = "Dymola Check Failed";
-                }
-                result.ErrorMessage = error;
-            }
+            var log = Session is null ? null : await Session.GetLastErrorAsync();
+            return string.IsNullOrWhiteSpace(log) ? null : log;
         }
         catch (Exception ex)
         {
-            Error("DymolaCheckingService", $"Error checking single model: {modelNode.Id}", ex);
-            result.Success = false;
-            result.Summary = "Dymola Check Failed";
-            try
-            {
-                result.ErrorMessage = _dymola != null
-                    ? await _dymola.GetLastErrorAsync()
-                    : ex.Message;
-            }
-            catch (Exception innerEx)
-            {
-                Warn("DymolaCheckingService", $"Failed to get Dymola error message: {innerEx.Message}");
-                result.ErrorMessage = ex.Message;
-            }
+            Debug(LogSource, $"Could not read Dymola's log: {ex.Message}");
+            return null;
         }
-
-        return result;
     }
 
-    public void StopChecking()
+    /// <summary>Whether the session has gone - not busy, not starting: nothing there. Never throws.</summary>
+    private async Task<bool> IsGoneAsync()
     {
-        _cancellationTokenSource?.Cancel();
-    }
-
-    public async Task ResetAsync()
-    {
-        StopChecking();
-        _dymola = null;
-        await _dymolaFactory.ResetAsync();
+        try
+        {
+            return Session is not null && await Session.GetSessionStateAsync() == DymolaSessionState.Gone;
+        }
+        catch (Exception ex)
+        {
+            Debug(LogSource, $"Could not ask whether Dymola is still there: {ex.Message}");
+            return false;
+        }
     }
 }

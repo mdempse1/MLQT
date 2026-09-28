@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using Xunit;
@@ -162,33 +161,39 @@ public class GraphNodeRemovalTests
     [Fact]
     public void RemovingManyCostsAboutTheSameAsRemovingOne()
     {
-        // A ratio, not a stopwatch bound. The house rule against timing assertions is about their
-        // flakiness on a slow or loaded runner, and a ratio between two operations measured back to
-        // back in the same process carries none of that: both halves slow down together.
+        // Counted, not timed (B461). What makes removal expensive is the pass over every node's edge
+        // set, and the whole point of RemoveNodes is to take that pass once however many nodes go.
+        // This used to compare two stopwatch readings - a ratio, so it survived a slow runner, but not
+        // a loaded one, which is the shape that made the parser's timed growth tests fail one full
+        // parallel run in three (B459). The graph counts its passes, so the answer here is exact.
         //
-        // What it pins is the whole point of RemoveNodes. Reimplemented as a loop over RemoveNode -
-        // which is what every caller used to do, and the obvious "simplification" - the two halves do
-        // identical work and the ratio collapses to 1. Measured at these sizes the real ratio is
-        // upwards of 100x, so the bar is set at 10x and is nowhere near either outcome.
-        const int Nodes = 20_000, Removing = 2_000;
+        // Reimplemented as a loop over RemoveNode - which is what every caller used to do, and the
+        // obvious "simplification" - the bulk removal makes one pass per node, as the loop below does,
+        // and this fails.
+        const int Nodes = 200, Removing = 50;
         var ids = Enumerable.Range(0, Removing).Select(i => $"m{i}").ToList();
 
-        // Warm up, so the first measurement is not paying for JIT.
-        Graph(200).RemoveNodes(Enumerable.Range(0, 20).Select(i => $"m{i}"));
-
         var perNode = Graph(Nodes);
-        var oneAtATime = Stopwatch.StartNew();
+        var before = perNode.EdgeSetScans;
         foreach (var id in ids)
             perNode.RemoveNode(id);
-        oneAtATime.Stop();
+        Assert.Equal(Removing, perNode.EdgeSetScans - before);
 
         var bulk = Graph(Nodes);
-        var allAtOnce = Stopwatch.StartNew();
-        bulk.RemoveNodes(ids);
-        allAtOnce.Stop();
+        before = bulk.EdgeSetScans;
+        Assert.Equal(Removing, bulk.RemoveNodes(ids));
+        Assert.Equal(1, bulk.EdgeSetScans - before);
+    }
 
-        Assert.True(allAtOnce.Elapsed * 10 < oneAtATime.Elapsed,
-            $"removing {Removing} nodes together took {allAtOnce.ElapsedMilliseconds} ms against " +
-            $"{oneAtATime.ElapsedMilliseconds} ms one at a time; it should not scale with how many are removed");
+    [Fact]
+    public void RemovingOneNodeTogetherIsStillOnePass()
+    {
+        // The single-node branch of RemoveNodes, which keeps the cheap Remove, is a pass too.
+        var graph = Graph(20);
+        var before = graph.EdgeSetScans;
+
+        graph.RemoveNodes(["m3"]);
+
+        Assert.Equal(1, graph.EdgeSetScans - before);
     }
 }

@@ -1,5 +1,6 @@
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Tools;
+using ModelicaParser.Helpers;
 
 namespace MLQT.McpServer.Tests;
 
@@ -19,6 +20,15 @@ public class DocumentationToolsTests
           model C
             Real x;
           end C;
+          function D
+            input Real x;
+          external "C" g(x) annotation (Library="lib");
+            annotation (Documentation(info="<html>d</html>"));
+          end D;
+          function E
+            input Real x;
+          external "C" g(x) annotation (Library="lib");
+          end E;
         end P;
         """;
 
@@ -49,6 +59,38 @@ public class DocumentationToolsTests
         var (tools, _) = Load(host);
         ToolAssert.Ok<StructureEditResult>(await tools.SetClassDescription("P.C", "C is documented"));
         Assert.Contains("model C \"C is documented\"", Source(host, "P.C"));
+    }
+
+    [Fact]
+    public async Task SetDescriptions_KeepCommentsBeforeTheDescription()
+    {
+        // B409: a comment before a description is part of the string_comment in the tree, so
+        // replacing from the rule's start instead of the first STRING deleted the comment.
+        const string source = """
+            within;
+            package P "p"
+              model D
+                // why D exists
+                "old desc"
+                Real m // why m
+                  "old m";
+              end D;
+            end P;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = source.Replace("\r\n", "\n") });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new DocumentationTools(host.Libraries, host.Resources, host.Session);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.SetClassDescription("P.D", "new desc"));
+        ToolAssert.Ok<StructureEditResult>(await tools.SetComponentDescription("P.D", "m", "new m"));
+
+        var src = Source(host, "P.D");
+        Assert.Contains("// why D exists", src);
+        Assert.Contains("// why m", src);
+        Assert.Contains("\"new desc\"", src);
+        Assert.Contains("\"new m\"", src);
+        Assert.DoesNotContain("old", src);
     }
 
     [Fact]
@@ -108,5 +150,40 @@ public class DocumentationToolsTests
         using var host = new TestHost();
         var (tools, _) = Load(host);
         Assert.IsType<ToolError>(await tools.SetClassDocumentation("P.C"));
+    }
+
+    // B446: the external clause's annotation is the composition's first when the class has no
+    // leading one, and is not where the class's Documentation lives.
+    [Fact]
+    public async Task SetClassDocumentation_ReplacesTheClasses_NotTheExternalClauses()
+    {
+        using var host = new TestHost();
+        var (tools, _) = Load(host);
+        ToolAssert.Ok<StructureEditResult>(await tools.SetClassDocumentation("P.D", info: "<html>new</html>"));
+
+        var (external, classAnnotation) = Annotations(Source(host, "P.D"));
+        Assert.Equal("(Library=\"lib\")", external);
+        Assert.Contains("<html>new</html>", classAnnotation);
+        Assert.DoesNotContain("<html>d</html>", classAnnotation);
+    }
+
+    [Fact]
+    public async Task SetClassDocumentation_AddsAClassAnnotation_RatherThanWritingIntoTheExternalClauses()
+    {
+        using var host = new TestHost();
+        var (tools, _) = Load(host);
+        ToolAssert.Ok<StructureEditResult>(await tools.SetClassDocumentation("P.E", info: "<html>new</html>"));
+
+        var (external, classAnnotation) = Annotations(Source(host, "P.E"));
+        Assert.Equal("(Library=\"lib\")", external);
+        Assert.Contains("<html>new</html>", classAnnotation);
+    }
+
+    private static (string? External, string? Class) Annotations(string code)
+    {
+        var composition = ModelicaParserHelper.Parse(code)!
+            .class_definition()[0].class_specifier().long_class_specifier().composition();
+        var parts = CompositionAnnotations.Of(composition);
+        return (parts.External?.class_modification().GetText(), parts.Class?.class_modification().GetText());
     }
 }

@@ -4,25 +4,22 @@ namespace RevisionControl.Tests;
 
 /// <summary>
 /// Advanced integration tests for GitRevisionControlSystem using actual repository content.
-/// Repository: https://github.com/mdempse1/ModelicaEditorTests.git
 ///
 /// These tests verify operations with real Modelica files and multiple commits/tags.
-/// Uses IClassFixture to share a single repository clone across all tests.
+/// Uses IClassFixture to share one repository, built locally by <see cref="GitTestRepositoryFixture"/>,
+/// across all tests. The fixture throws when it cannot build it, and every condition it guarantees is
+/// asserted rather than returned on, so a test here cannot pass having asserted nothing (B481).
 /// </summary>
 public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixture>, IDisposable
 {
     private readonly GitRevisionControlSystem _git;
     private readonly string _clonePath;
-    private readonly bool _repositoryAvailable;
-    private readonly string? _cloneError;
     private readonly List<string> _tempPaths = new();
 
     public GitIntegrationAdvancedTests(GitTestRepositoryFixture fixture)
     {
         _git = new GitRevisionControlSystem();
         _clonePath = fixture.ClonePath;
-        _repositoryAvailable = fixture.RepositoryAvailable;
-        _cloneError = fixture.CloneError;
     }
 
     public void Dispose()
@@ -109,8 +106,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_WithTag_v1_ChecksOutCorrectContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -122,20 +117,16 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Verify v1.0.0 content - should NOT have 'z' variable
         var simpleModelPath = Path.Combine(outputPath, "Models", "SimpleModel.mo");
-        if (File.Exists(simpleModelPath))
-        {
-            var content = File.ReadAllText(simpleModelPath);
-            Assert.DoesNotContain("Real z", content);
-            Assert.Contains("Real x", content);
-            Assert.Contains("Real y", content);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var content = File.ReadAllText(simpleModelPath);
+        Assert.DoesNotContain("Real z", content);
+        Assert.Contains("Real x", content);
+        Assert.Contains("Real y", content);
     }
 
     [Fact]
     public void CheckoutRevision_WithTag_v2_ChecksOutCorrectContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -147,19 +138,15 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Verify v2.0.0 content - SHOULD have 'z' variable
         var simpleModelPath = Path.Combine(outputPath, "Models", "SimpleModel.mo");
-        if (File.Exists(simpleModelPath))
-        {
-            var content = File.ReadAllText(simpleModelPath);
-            Assert.Contains("Real z", content);
-            Assert.Contains("New variable", content);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var content = File.ReadAllText(simpleModelPath);
+        Assert.Contains("Real z", content);
+        Assert.Contains("New variable", content);
     }
 
     [Fact]
     public void CheckoutRevision_BetweenTags_ContentChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var v1Path = CreateTempPath();
         var v2Path = CreateTempPath();
@@ -172,22 +159,19 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         var v1SimpleModel = Path.Combine(v1Path, "Models", "SimpleModel.mo");
         var v2SimpleModel = Path.Combine(v2Path, "Models", "SimpleModel.mo");
 
-        if (File.Exists(v1SimpleModel) && File.Exists(v2SimpleModel))
-        {
-            var v1Content = File.ReadAllText(v1SimpleModel);
-            var v2Content = File.ReadAllText(v2SimpleModel);
+        Assert.True(File.Exists(v1SimpleModel), v1SimpleModel);
+        Assert.True(File.Exists(v2SimpleModel), v2SimpleModel);
+        var v1Content = File.ReadAllText(v1SimpleModel);
+        var v2Content = File.ReadAllText(v2SimpleModel);
 
-            Assert.NotEqual(v1Content, v2Content);
-            Assert.DoesNotContain("Real z", v1Content);
-            Assert.Contains("Real z", v2Content);
-        }
+        Assert.NotEqual(v1Content, v2Content);
+        Assert.DoesNotContain("Real z", v1Content);
+        Assert.Contains("Real z", v2Content);
     }
 
     [Fact]
     public void UpdateExistingCheckout_BetweenVersions_UpdatesFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
 
@@ -195,34 +179,23 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.UpdateExistingCheckout(checkoutPath, _clonePath, "v1.0.0");
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        string? v1Content = null;
-        if (File.Exists(simpleModelPath))
-        {
-            v1Content = File.ReadAllText(simpleModelPath);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var v1Content = File.ReadAllText(simpleModelPath);
 
         // Update to v2.0.0
         _git.UpdateExistingCheckout(checkoutPath, _clonePath, "v2.0.0");
 
-        string? v2Content = null;
-        if (File.Exists(simpleModelPath))
-        {
-            v2Content = File.ReadAllText(simpleModelPath);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var v2Content = File.ReadAllText(simpleModelPath);
 
         // Assert
-        if (v1Content != null && v2Content != null)
-        {
-            Assert.NotEqual(v1Content, v2Content);
-            Assert.Contains("Real z", v2Content);
-        }
+        Assert.NotEqual(v1Content, v2Content);
+        Assert.Contains("Real z", v2Content);
     }
 
     [Fact]
     public void CheckoutRevision_VerifiesDirectoryStructure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -240,8 +213,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_VerifiesModelicaFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -257,8 +228,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithTag_ReturnsCommitHash()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var v1Hash = _git.ResolveRevision(_clonePath, "v1.0.0");
         var v2Hash = _git.ResolveRevision(_clonePath, "v2.0.0");
@@ -274,8 +243,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetRevisionDescription_ForTags_ReturnsDescription()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var v1Hash = _git.ResolveRevision(_clonePath, "v1.0.0");
         var v2Hash = _git.ResolveRevision(_clonePath, "v2.0.0");
@@ -294,29 +261,23 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_WithBranch_ChecksOutBranchContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
         // Act - checkout feature-test branch if it exists
         var branchSha = _git.ResolveRevision(_clonePath, "feature-test");
 
-        if (branchSha != null)
-        {
-            var result = _git.CheckoutRevision(_clonePath, "feature-test", outputPath);
+        Assert.NotNull(branchSha);
+        var result = _git.CheckoutRevision(_clonePath, "feature-test", outputPath);
 
-            // Assert
-            Assert.True(result);
-            Assert.True(Directory.Exists(outputPath));
-        }
+        // Assert
+        Assert.True(result);
+        Assert.True(Directory.Exists(outputPath));
     }
 
     [Fact]
     public void CleanWorkspace_AfterModifyingModelicaFile_RevertsChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -324,10 +285,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
 
-        if (!File.Exists(simpleModelPath))
-        {
-            return; // Skip if file doesn't exist
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
 
         var originalContent = File.ReadAllText(simpleModelPath);
         File.WriteAllText(simpleModelPath, "// Modified content");
@@ -344,8 +302,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_MultipleModelicaFiles_ChecksOutAll()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -354,22 +310,18 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Assert - check for multiple Modelica files
         var modelsDir = Path.Combine(outputPath, "Models");
-        if (Directory.Exists(modelsDir))
-        {
-            var modelFiles = Directory.GetFiles(modelsDir, "*.mo");
-            Assert.NotEmpty(modelFiles);
+        Assert.True(Directory.Exists(modelsDir), modelsDir);
+        var modelFiles = Directory.GetFiles(modelsDir, "*.mo");
+        Assert.NotEmpty(modelFiles);
 
-            // Should have at least package.mo and SimpleModel.mo
-            Assert.Contains(modelFiles, f => Path.GetFileName(f) == "package.mo");
-            Assert.Contains(modelFiles, f => Path.GetFileName(f) == "SimpleModel.mo");
-        }
+        // Should have at least package.mo and SimpleModel.mo
+        Assert.Contains(modelFiles, f => Path.GetFileName(f) == "package.mo");
+        Assert.Contains(modelFiles, f => Path.GetFileName(f) == "SimpleModel.mo");
     }
 
     [Fact]
     public void UpdateExistingCheckout_ToOlderCommit_UpdatesCorrectly()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var v2Hash = _git.ResolveRevision(_clonePath, "v2.0.0");
@@ -381,18 +333,14 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Assert - should now have v1 content
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        if (File.Exists(simpleModelPath))
-        {
-            var content = File.ReadAllText(simpleModelPath);
-            Assert.DoesNotContain("Real z", content);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var content = File.ReadAllText(simpleModelPath);
+        Assert.DoesNotContain("Real z", content);
     }
 
     [Fact]
     public void CheckoutRevision_WithShortHash_Works()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var fullHash = _git.GetCurrentRevision(_clonePath);
         var shortHash = fullHash!.Substring(0, 7);
@@ -409,8 +357,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithShortHash_ReturnsFullHash()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var fullHash = _git.GetCurrentRevision(_clonePath);
         var shortHash = fullHash!.Substring(0, 7);
@@ -425,8 +371,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_PreservesFilePermissions()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -451,8 +395,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithDefaultOptions_ReturnsLogEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var entries = _git.GetLogEntries(_clonePath);
 
@@ -470,8 +412,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithMaxEntries_RespectsLimit()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var options = new VcsLogOptions { MaxEntries = 2 };
 
@@ -485,11 +425,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithSinceDate_FiltersOldCommits()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - get all entries first to find a date to filter by
         var allEntries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 100 });
-        if (allEntries.Count < 2) return;
+        Assert.True(allEntries.Count >= 2, $"Expected at least 2 log entries, got {allEntries.Count}");
 
         // Use a date that's between some commits
         var midDate = allEntries[allEntries.Count / 2].Date;
@@ -505,11 +443,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithUntilDate_FiltersNewCommits()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - get all entries first to find a date to filter by
         var allEntries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 100 });
-        if (allEntries.Count < 2) return;
+        Assert.True(allEntries.Count >= 2, $"Expected at least 2 log entries, got {allEntries.Count}");
 
         // Use a date that's between some commits
         var midDate = allEntries[allEntries.Count / 2].Date;
@@ -525,8 +461,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_DefaultPastWeek_ReturnsRecentEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var options = VcsLogOptions.DefaultPastWeek();
 
@@ -542,8 +476,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_ReturnsShortRevision()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var entries = _git.GetLogEntries(_clonePath);
 
@@ -558,8 +490,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_ReturnsAuthorEmail()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var entries = _git.GetLogEntries(_clonePath);
 
@@ -573,8 +503,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_ReturnsMessageShort()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var entries = _git.GetLogEntries(_clonePath);
 
@@ -605,11 +533,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_ForCommit_ReturnsChangedFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - get a commit that has changes
         var entries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 10 });
-        if (entries.Count == 0) return;
+        Assert.NotEmpty(entries);
 
         // Act
         var changedFiles = _git.GetChangedFiles(_clonePath, entries.First().Revision);
@@ -621,11 +547,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_ForTagCommit_ReturnsChangedFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var v2Hash = _git.ResolveRevision(_clonePath, "v2.0.0");
-        if (v2Hash == null) return;
+        Assert.NotNull(v2Hash);
 
         // Act
         var changedFiles = _git.GetChangedFiles(_clonePath, v2Hash);
@@ -633,21 +557,17 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         // Assert - v2 added the 'z' variable, so SimpleModel.mo should be modified
         Assert.NotEmpty(changedFiles);
         var simpleModelChange = changedFiles.FirstOrDefault(f => f.Path.Contains("SimpleModel"));
-        if (simpleModelChange != null)
-        {
-            Assert.Equal(VcsChangeType.Modified, simpleModelChange.ChangeType);
-        }
+        Assert.NotNull(simpleModelChange);
+        Assert.Equal(VcsChangeType.Modified, simpleModelChange.ChangeType);
     }
 
     [Fact]
     public void GetChangedFiles_WithAddedFiles_ReturnsAddedChangeType()
     {
-        if (!_repositoryAvailable) return;
-
         // Find the initial (root) commit that has no parents
         using var repo = new Repository(_clonePath);
         var rootCommit = repo.Commits.FirstOrDefault(c => !c.Parents.Any());
-        if (rootCommit == null) return;
+        Assert.NotNull(rootCommit);
 
         // Get changed files for the root commit
         var changedFiles = _git.GetChangedFiles(_clonePath, rootCommit.Sha);
@@ -660,8 +580,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_InvalidRevision_ReturnsEmptyList()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var changedFiles = _git.GetChangedFiles(_clonePath, "invalid_revision_12345");
 
@@ -672,11 +590,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_ReturnsRelativePaths()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var entries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 10 });
-        if (entries.Count == 0) return;
+        Assert.NotEmpty(entries);
 
         // Act
         var changedFiles = _git.GetChangedFiles(_clonePath, entries.First().Revision);
@@ -695,8 +611,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExistingFile_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", "main");
 
@@ -708,28 +622,23 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_AtTag_ReturnsVersionSpecificContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - get content at v1.0.0 and v2.0.0
         var v1Content = _git.GetFileContentAtRevision(_clonePath, "Models/SimpleModel.mo", "v1.0.0");
         var v2Content = _git.GetFileContentAtRevision(_clonePath, "Models/SimpleModel.mo", "v2.0.0");
 
         // Assert
-        if (v1Content != null && v2Content != null)
-        {
-            Assert.DoesNotContain("Real z", v1Content);
-            Assert.Contains("Real z", v2Content);
-        }
+        Assert.NotNull(v1Content);
+        Assert.NotNull(v2Content);
+        Assert.DoesNotContain("Real z", v1Content);
+        Assert.Contains("Real z", v2Content);
     }
 
     [Fact]
     public void GetFileContentAtRevision_WithCommitHash_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var hash = _git.GetCurrentRevision(_clonePath);
-        if (hash == null) return;
+        Assert.NotNull(hash);
 
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "package.mo", hash);
@@ -742,11 +651,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_WithShortHash_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var fullHash = _git.GetCurrentRevision(_clonePath);
-        if (fullHash == null) return;
+        Assert.NotNull(fullHash);
         var shortHash = fullHash.Substring(0, 7);
 
         // Act
@@ -759,8 +666,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_NonExistentFile_ReturnsNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "NonExistent.mo", "main");
 
@@ -771,8 +676,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_InvalidRevision_ReturnsNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", "invalid_revision");
 
@@ -783,8 +686,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_WithNullRevision_ReturnsHeadContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", null);
 
@@ -795,8 +696,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_NestedFile_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "Models/SimpleModel.mo", "main");
 
@@ -808,8 +707,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_WithForwardSlashPath_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - explicitly use forward slashes
         var content = _git.GetFileContentAtRevision(_clonePath, "Models/SimpleModel.mo", "main");
 
@@ -820,8 +717,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_WithBackslashPath_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - use backslashes (should be normalized internally)
         var content = _git.GetFileContentAtRevision(_clonePath, "Models\\SimpleModel.mo", "main");
 
@@ -836,8 +731,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_CleanWorkingCopy_ReturnsEmptyList()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - ensure clean workspace
         _git.CleanWorkspace(_clonePath);
 
@@ -851,13 +744,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithModifiedFile_ReturnsModifiedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.AppendAllText(readmePath, "\n// Modified for test");
 
@@ -874,8 +765,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithUntrackedFile_ReturnsUntrackedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -895,13 +784,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithDeletedFile_ReturnsDeletedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.Delete(readmePath);
 
@@ -928,8 +815,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ReturnsRelativePaths()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -953,13 +838,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_ModifiedFile_RevertsChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var originalContent = File.ReadAllText(readmePath);
         File.WriteAllText(readmePath, "Modified content");
@@ -976,8 +859,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_UntrackedFile_DeletesFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -995,14 +876,13 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_MultipleFiles_RevertsAll()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
         var packagePath = Path.Combine(checkoutPath, "package.mo");
-        if (!File.Exists(readmePath) || !File.Exists(packagePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
+        Assert.True(File.Exists(packagePath), packagePath);
 
         var originalReadme = File.ReadAllText(readmePath);
         var originalPackage = File.ReadAllText(packagePath);
@@ -1022,8 +902,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_NonExistentFile_Succeeds()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1037,13 +915,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_NestedFile_RevertsCorrectly()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var simpleModelPath = Path.Combine(checkoutPath, "Models", "SimpleModel.mo");
-        if (!File.Exists(simpleModelPath)) return;
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
 
         var originalContent = File.ReadAllText(simpleModelPath);
         File.WriteAllText(simpleModelPath, "// Modified");
@@ -1064,8 +940,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateToLatest_LocalRepoWithoutRemote_ReturnsError()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - local repo has no origin remote
         var result = _git.UpdateToLatest(_clonePath);
 
@@ -1091,8 +965,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_LocalOnly_ReturnsLocalBranches()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath, includeRemote: false);
 
@@ -1104,8 +976,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_IncludeRemote_ReturnsAllBranches()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath, includeRemote: true);
 
@@ -1119,8 +989,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_HasCurrentBranch()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath);
 
@@ -1132,8 +1000,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_BranchHasName()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath);
 
@@ -1158,8 +1024,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_NewBranch_CreatesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         var branchName = "test-branch-" + Guid.NewGuid().ToString().Substring(0, 8);
@@ -1176,8 +1040,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_WithSwitch_SwitchesToNewBranch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         var branchName = "test-switch-" + Guid.NewGuid().ToString().Substring(0, 8);
@@ -1194,8 +1056,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_ExistingBranchName_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         var branchName = "duplicate-branch-" + Guid.NewGuid().ToString().Substring(0, 8);
@@ -1211,8 +1071,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_ExistingBranch_SwitchesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         var branchName = "switch-test-" + Guid.NewGuid().ToString().Substring(0, 8);
@@ -1230,8 +1088,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_NonExistentBranch_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1245,8 +1101,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_ToMainBranch_SwitchesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         var branchName = "temp-branch-" + Guid.NewGuid().ToString().Substring(0, 8);
@@ -1268,8 +1122,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_WithChanges_CreatesCommit()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - copy the repo instead of using UpdateExistingCheckout (which needs remote)
         var checkoutPath = CopyTestRepository();
 
@@ -1294,8 +1146,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_AllFiles_CommitsEverything()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1317,8 +1167,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_NoChanges_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         _git.CleanWorkspace(checkoutPath);
@@ -1333,8 +1181,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_SpecificFiles_OnlyCommitsThoseFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1357,8 +1203,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_ModifiedFile_CommitsModification()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1366,7 +1210,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.CreateBranch(checkoutPath, branchName, switchToBranch: true);
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.AppendAllText(readmePath, "\n// Test modification");
 
@@ -1395,8 +1239,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_MultipleNewFiles_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1428,8 +1270,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_NestedDirectories_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1452,8 +1292,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_MixedNewAndModifiedFiles_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1462,7 +1300,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Modify an existing file
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
         File.AppendAllText(readmePath, "\n// Mixed commit modification " + Guid.NewGuid());
 
         // Add a new file
@@ -1481,8 +1319,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_ReturnsValidRevisionNumber()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1506,8 +1342,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_FileInExistingDirectory_ReturnsSuccess()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1533,8 +1367,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_SpecificFileUnchanged_ReturnsFailure()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         _git.CleanWorkspace(checkoutPath);
@@ -1553,8 +1385,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithStagedNewFile_ReturnsAddedStagedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1584,8 +1414,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithStagedModifiedFile_ReturnsStagedModifiedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1593,7 +1421,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.CreateBranch(checkoutPath, branchName, switchToBranch: true);
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.AppendAllText(readmePath, "\nStaged modification");
 
@@ -1616,8 +1444,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithStagedDeletedFile_ReturnsStagedDeletedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1625,7 +1451,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.CreateBranch(checkoutPath, branchName, switchToBranch: true);
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         using (var repo = new Repository(checkoutPath))
         {
@@ -1646,8 +1472,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithStagedAndWorkdirModified_ReturnsBothStates()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1655,7 +1479,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.CreateBranch(checkoutPath, branchName, switchToBranch: true);
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         // Stage first modification
         File.AppendAllText(readmePath, "\nFirst modification");
@@ -1684,8 +1508,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithBranchFilter_ReturnsEntriesFromThatBranch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1710,8 +1532,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithNonExistentBranch_ReturnsEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var options = new VcsLogOptions { Branch = "non-existent-branch-xyz", MaxEntries = 10 };
 
@@ -1725,11 +1545,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithDateRangeFilter_ReturnsFilteredEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var allEntries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 100 });
-        if (allEntries.Count < 3) return;
+        Assert.True(allEntries.Count >= 3, $"Expected at least 3 log entries, got {allEntries.Count}");
 
         // Set date range to exclude first and last commits
         var oldest = allEntries.Last().Date;
@@ -1756,8 +1574,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CleanWorkspace_WithNestedUntrackedDirectory_RemovesEntireDirectory()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1778,8 +1594,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CleanWorkspace_WithMixedTrackedAndUntrackedInSameDir_OnlyRemovesUntracked()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1808,13 +1622,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CleanWorkspace_WithModifiedAndUntrackedFiles_RevertsAndRemoves()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var originalContent = File.ReadAllText(readmePath);
         File.WriteAllText(readmePath, "Modified content");
@@ -1838,8 +1650,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateToLatest_DetachedHead_ReturnsError()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create a checkout in detached HEAD state
         var checkoutPath = CopyTestRepository();
 
@@ -1871,8 +1681,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateToLatest_NoOriginRemote_ReturnsError()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create a local repo without origin
         var localRepoPath = CreateTempPath();
         Repository.Init(localRepoPath);
@@ -1901,8 +1709,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_StagedNewFile_UnstagesAndDeletes()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -1925,13 +1731,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_StagedModifiedFile_RevertsToHead()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var originalContent = File.ReadAllText(readmePath);
         File.WriteAllText(readmePath, "Modified");
@@ -1957,38 +1761,24 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_ToRemoteBranch_CreatesLocalTrackingBranch()
     {
-        if (!_repositoryAvailable) return;
+        // Arrange - a clone, so feature-test exists only as origin/feature-test. This test used
+        // to take a copy of the fixture, which has no remote at all, and return when it found no
+        // remote branch - so it had never run against the local fixture (B481).
+        var checkoutPath = CreateTempPath();
+        Repository.Clone(_clonePath, checkoutPath);
 
-        // Arrange
-        var checkoutPath = CopyTestRepository();
-
-        // Check if there's a feature-test branch on remote
         var branches = _git.GetBranches(checkoutPath, includeRemote: true);
-        var remoteBranch = branches.FirstOrDefault(b => b.IsRemote && b.Name.Contains("feature"));
-
-        if (remoteBranch == null) return; // Skip if no remote feature branch
-
-        var localBranchName = remoteBranch.Name.Replace("origin/", "");
-
-        // First remove local branch if it exists
-        using (var repo = new Repository(checkoutPath))
-        {
-            var existingLocal = repo.Branches[localBranchName];
-            if (existingLocal != null && !existingLocal.IsRemote)
-            {
-                repo.Branches.Remove(existingLocal);
-            }
-        }
+        Assert.Contains(branches, b => b.IsRemote && b.Name == "origin/feature-test");
+        Assert.DoesNotContain(branches, b => !b.IsRemote && b.Name == "feature-test");
 
         // Act
-        var result = _git.SwitchBranch(checkoutPath, localBranchName);
+        var result = _git.SwitchBranch(checkoutPath, "feature-test");
 
         // Assert
-        if (result.Success)
-        {
-            var currentBranch = _git.GetCurrentBranch(checkoutPath);
-            Assert.Equal(localBranchName, currentBranch);
-        }
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("feature-test", _git.GetCurrentBranch(checkoutPath));
+        using var repo = new Repository(checkoutPath);
+        Assert.Equal("refs/remotes/origin/feature-test", repo.Branches["feature-test"].TrackedBranch?.CanonicalName);
     }
 
     // ============================================================================
@@ -1998,8 +1788,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_WithDeletedFile_CommitsDeletion()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2030,8 +1818,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_WithEmptyMessage_StillCommits()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2054,8 +1840,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_WithHEADString_ReturnsHeadContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", "HEAD");
 
@@ -2067,8 +1851,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_DirectoryPath_ReturnsNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - try to get content of a directory, not a file
         var content = _git.GetFileContentAtRevision(_clonePath, "Models", "main");
 
@@ -2079,8 +1861,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_EmptyRevision_ReturnsHeadContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", "");
 
@@ -2109,8 +1889,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void IsValidRepository_WithClonedRepo_ReturnsTrue()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var result = _git.IsValidRepository(_clonePath);
 
@@ -2167,8 +1945,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithTag_ResolvesToCommit()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var resolved = _git.ResolveRevision(_clonePath, "v1.0.0");
 
@@ -2197,8 +1973,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetRevisionDescription_ValidCommit_ContainsAuthorAndDate()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var hash = _git.GetCurrentRevision(_clonePath);
 
@@ -2231,8 +2005,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_InvalidRevision_ReturnsFalse()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -2267,8 +2039,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_InvalidRevision_ReturnsFalse()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
 
@@ -2282,8 +2052,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_UpdatesRemoteUrlIfChanged()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - first checkout
         var checkoutPath = CopyTestRepository();
 
@@ -2301,8 +2069,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_WithLastCommit_ReturnsCommitInfo()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath, includeRemote: true);
 
@@ -2317,8 +2083,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_DetachedHead_NoBranchIsCurrent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2359,8 +2123,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_WithoutSwitch_StaysOnCurrentBranch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2401,8 +2163,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetCurrentBranch_AfterSwitching_ReturnsNewBranch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2423,8 +2183,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithBranchName_ResolvesToCommit()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - resolve main branch
         var resolved = _git.ResolveRevision(_clonePath, "main");
 
@@ -2436,8 +2194,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithHEAD_ResolvesToCommit()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var resolved = _git.ResolveRevision(_clonePath, "HEAD");
         var current = _git.GetCurrentRevision(_clonePath);
@@ -2450,13 +2206,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithParentRef_ResolvesToParentCommit()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - get the parent of HEAD directly
         using var repo = new Repository(_clonePath);
         var headCommit = repo.Head.Tip;
         var parentCommit = headCommit.Parents.FirstOrDefault();
-        if (parentCommit == null) return; // Skip if no parent
+        Assert.NotNull(parentCommit);
 
         // Act - resolve HEAD~1 (parent of HEAD)
         var resolved = _git.ResolveRevision(_clonePath, "HEAD~1");
@@ -2469,8 +2223,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void ResolveRevision_WithInvalidRef_ReturnsNull()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var resolved = _git.ResolveRevision(_clonePath, "completely-invalid-ref-xyz-123456");
 
@@ -2485,8 +2237,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_NonExistentDirectory_CreatesAndCheckouts()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         // Don't create the directory - let UpdateExistingCheckout create it
@@ -2504,8 +2254,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_EmptyDirectory_InitializesAndCheckouts()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create empty directory (not a git repo)
         var checkoutPath = CreateTempPath();
         Directory.CreateDirectory(checkoutPath);
@@ -2521,14 +2269,12 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_WithLocalChanges_DiscardsChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         // Make local changes
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var originalContent = File.ReadAllText(readmePath);
         File.WriteAllText(readmePath, "Local changes that should be discarded");
@@ -2549,8 +2295,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_LocalRepository_UpdatesToRevision()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create a checkout
         var checkoutPath = CopyTestRepository();
 
@@ -2588,8 +2332,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_WithRenamedFile_ReturnsRenamedTypeAndOldPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create a repo with a renamed file
         var checkoutPath = CopyTestRepository();
 
@@ -2609,7 +2351,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         }
 
         var renameResult = _git.Commit(checkoutPath, "Rename file", null);
-        if (!renameResult.Success) return;
+        Assert.True(renameResult.Success, renameResult.ErrorMessage);
 
         // Act - get changed files for the rename commit
         var changedFiles = _git.GetChangedFiles(checkoutPath, renameResult.NewRevision!);
@@ -2617,18 +2359,14 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         // Assert
         Assert.NotEmpty(changedFiles);
         var renamedFile = changedFiles.FirstOrDefault(f => f.ChangeType == VcsChangeType.Renamed);
-        if (renamedFile != null)
-        {
-            Assert.Equal("RenamedFile.txt", renamedFile.Path);
-            Assert.Equal("OriginalName.txt", renamedFile.OldPath);
-        }
+        Assert.NotNull(renamedFile);
+        Assert.Equal("RenamedFile.txt", renamedFile.Path);
+        Assert.Equal("OriginalName.txt", renamedFile.OldPath);
     }
 
     [Fact]
     public void GetChangedFiles_WithCopiedFile_ReturnsCopiedType()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2647,7 +2385,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Act - get changed files (note: Git may or may not detect as copy depending on similarity)
         var entries = _git.GetLogEntries(checkoutPath, new VcsLogOptions { MaxEntries = 1 });
-        if (entries.Count == 0) return;
+        Assert.NotEmpty(entries);
 
         var changedFiles = _git.GetChangedFiles(checkoutPath, entries[0].Revision);
 
@@ -2660,8 +2398,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_WithDeletedFile_ReturnsDeletedType()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2680,7 +2416,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
             Commands.Stage(repo, "ToDelete.txt");
         }
         var deleteResult = _git.Commit(checkoutPath, "Delete file", null);
-        if (!deleteResult.Success) return;
+        Assert.True(deleteResult.Success, deleteResult.ErrorMessage);
 
         // Act
         var changedFiles = _git.GetChangedFiles(checkoutPath, deleteResult.NewRevision!);
@@ -2699,8 +2435,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_WithRenamedFile_ReturnsRenamedStatus()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2728,36 +2462,28 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         Assert.NotEmpty(changes);
         // Should have a renamed file entry
         var renamedFile = changes.FirstOrDefault(c => c.Status == VcsFileStatus.Renamed);
-        if (renamedFile != null)
-        {
-            Assert.True(renamedFile.IsStaged);
-        }
+        Assert.NotNull(renamedFile);
+        Assert.True(renamedFile.IsStaged);
     }
 
     [Fact]
     public void GetWorkingCopyChanges_MultipleChangeTypes_ReturnsAllChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         // Modify a tracked file
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (File.Exists(readmePath))
-        {
-            File.AppendAllText(readmePath, "\n// Modified");
-        }
+        Assert.True(File.Exists(readmePath), readmePath);
+        File.AppendAllText(readmePath, "\n// Modified");
 
         // Add an untracked file
         File.WriteAllText(Path.Combine(checkoutPath, "Untracked.txt"), "New");
 
         // Delete a tracked file
         var packageMoPath = Path.Combine(checkoutPath, "package.mo");
-        if (File.Exists(packageMoPath))
-        {
-            File.Delete(packageMoPath);
-        }
+        Assert.True(File.Exists(packageMoPath), packageMoPath);
+        File.Delete(packageMoPath);
 
         // Act
         var changes = _git.GetWorkingCopyChanges(checkoutPath);
@@ -2770,14 +2496,14 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         var hasUntracked = changes.Any(c => c.Status == VcsFileStatus.Untracked);
         var hasDeleted = changes.Any(c => c.Status == VcsFileStatus.Deleted);
 
-        Assert.True(hasModified || hasUntracked || hasDeleted);
+        Assert.True(hasModified, "README.md should be reported modified");
+        Assert.True(hasUntracked, "Untracked.txt should be reported untracked");
+        Assert.True(hasDeleted, "package.mo should be reported deleted");
     }
 
     [Fact]
     public void GetWorkingCopyChanges_StagedAndUnstagedModifications_HandlesBothStates()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2794,10 +2520,8 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Modify an existing file without staging (ModifiedInWorkdir)
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (File.Exists(readmePath))
-        {
-            File.AppendAllText(readmePath, "\nUnstaged modification");
-        }
+        Assert.True(File.Exists(readmePath), readmePath);
+        File.AppendAllText(readmePath, "\nUnstaged modification");
 
         // Act
         var changes = _git.GetWorkingCopyChanges(checkoutPath);
@@ -2811,11 +2535,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         Assert.Equal(VcsFileStatus.Added, stagedNewFile.Status);
 
         var unstagedModified = changes.FirstOrDefault(c => c.Path.Contains("README"));
-        if (unstagedModified != null)
-        {
-            Assert.False(unstagedModified.IsStaged);
-            Assert.Equal(VcsFileStatus.Modified, unstagedModified.Status);
-        }
+        Assert.NotNull(unstagedModified);
+        Assert.False(unstagedModified.IsStaged);
+        Assert.Equal(VcsFileStatus.Modified, unstagedModified.Status);
     }
 
     // ============================================================================
@@ -2864,8 +2586,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CleanWorkspace_MultipleUntrackedFilesInSameDirectory_RemovesAll()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -2910,8 +2630,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_EnsuresMinimumEntriesWithSinceFilter()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - set since to a future date, which would normally return 0 entries
         // but the implementation ensures at least minEntriesFromSinceFilter
         var options = new VcsLogOptions
@@ -2930,8 +2648,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithShortMaxEntries_RespectsLimit()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var options = new VcsLogOptions { MaxEntries = 1 };
 
@@ -2945,8 +2661,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithUntilInFuture_ReturnsAllEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var options = new VcsLogOptions
         {
@@ -2982,8 +2696,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_EmptyFileList_Succeeds()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var result = _git.RevertFiles(_clonePath, Array.Empty<string>());
 
@@ -2994,13 +2706,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_DeletedTrackedFile_RestoresFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var originalContent = File.ReadAllText(readmePath);
         File.Delete(readmePath);
@@ -3036,8 +2746,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_FileInSubdirectory_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var content = _git.GetFileContentAtRevision(_clonePath, "Models/package.mo", "main");
 
@@ -3048,11 +2756,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_WithParentRevision_ReturnsContent()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var entries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 2 });
-        if (entries.Count < 2) return;
+        Assert.True(entries.Count >= 2, $"Expected at least 2 log entries, got {entries.Count}");
 
         // Act - use HEAD~1
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", "HEAD~1");
@@ -3082,8 +2788,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_WithMultipleLocalBranches_ReturnsAll()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3105,8 +2809,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_WithNestedDirectories_ChecksOutAllFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -3125,8 +2827,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CheckoutRevision_VerifiesFileContents()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -3135,11 +2835,9 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Assert - verify actual content
         var simpleModelPath = Path.Combine(outputPath, "Models", "SimpleModel.mo");
-        if (File.Exists(simpleModelPath))
-        {
-            var content = File.ReadAllText(simpleModelPath);
-            Assert.Contains("model", content);
-        }
+        Assert.True(File.Exists(simpleModelPath), simpleModelPath);
+        var content = File.ReadAllText(simpleModelPath);
+        Assert.Contains("model", content);
     }
 
     // ============================================================================
@@ -3177,8 +2875,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_WithWildcard_StagesAllChanges()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3203,8 +2899,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_ModifiedTrackedFile_StagesAndCommits()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3212,7 +2906,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.CreateBranch(checkoutPath, branchName, switchToBranch: true);
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.AppendAllText(readmePath, "\nModified " + Guid.NewGuid());
 
@@ -3257,8 +2951,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void UpdateExistingCheckout_NewEmptyRepo_SkipsCleanAndSucceeds()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - create a path that doesn't exist yet
         var checkoutPath = CreateTempPath();
 
@@ -3277,8 +2969,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_NonExistentBranch_FallsBackToDefault()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var options = new VcsLogOptions
         {
@@ -3300,8 +2990,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ModifiedInBothIndexAndWorkdir_ShowsModified()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3309,7 +2997,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         _git.CreateBranch(checkoutPath, branchName, switchToBranch: true);
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         // First modification and stage it
         File.WriteAllText(readmePath, "First modification");
@@ -3337,8 +3025,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_LocalBranchMatchingRemote_SwitchesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3379,8 +3065,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_ExercisesMainCodePath_ReturnsPopulatedEntries()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - exercise the main code path
         var entries = _git.GetLogEntries(_clonePath, new VcsLogOptions { MaxEntries = 50 });
 
@@ -3402,8 +3086,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_WithBranchFilter_ExercisesBranchLookup()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3425,8 +3107,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetLogEntries_ExercisesDateFilterPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange - date filter that should include all entries
         var options = new VcsLogOptions
         {
@@ -3449,8 +3129,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ExercisesNewInIndexPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3477,8 +3155,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ExercisesModifiedInIndexPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3487,7 +3163,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
 
         // Modify and stage an existing file
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         File.AppendAllText(readmePath, "\nModified and staged");
         using (var repo = new Repository(checkoutPath))
@@ -3508,8 +3184,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ExercisesDeletedFromIndexPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3535,14 +3209,12 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ExercisesModifiedInWorkdirPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         // Modify without staging
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
         File.AppendAllText(readmePath, "\nUnstaged modification");
 
         // Act
@@ -3558,14 +3230,12 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ExercisesDeletedFromWorkdirPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         // Delete without staging
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
         File.Delete(readmePath);
 
         // Act
@@ -3581,8 +3251,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetWorkingCopyChanges_ExercisesNewInWorkdirPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3606,8 +3274,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetChangedFiles_ExercisesAllChangeTypes()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3621,19 +3287,15 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         // Modify it
         File.WriteAllText(Path.Combine(checkoutPath, "ToChange.txt"), "modified");
         var modResult = _git.Commit(checkoutPath, "Modify file", new[] { "ToChange.txt" });
-        if (modResult.Success)
-        {
-            var changedFiles = _git.GetChangedFiles(checkoutPath, modResult.NewRevision!);
-            Assert.NotEmpty(changedFiles);
-            Assert.Contains(changedFiles, f => f.ChangeType == VcsChangeType.Modified);
-        }
+        Assert.True(modResult.Success, modResult.ErrorMessage);
+        var changedFiles = _git.GetChangedFiles(checkoutPath, modResult.NewRevision!);
+        Assert.NotEmpty(changedFiles);
+        Assert.Contains(changedFiles, f => f.ChangeType == VcsChangeType.Modified);
     }
 
     [Fact]
     public void GetChangedFiles_ExercisesAddedChangeType()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3644,22 +3306,18 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         File.WriteAllText(Path.Combine(checkoutPath, "NewlyAdded.txt"), "new content");
         var result = _git.Commit(checkoutPath, "Add new file", new[] { "NewlyAdded.txt" });
 
-        if (result.Success)
-        {
-            // Act
-            var changedFiles = _git.GetChangedFiles(checkoutPath, result.NewRevision!);
+        Assert.True(result.Success, result.ErrorMessage);
+        // Act
+        var changedFiles = _git.GetChangedFiles(checkoutPath, result.NewRevision!);
 
-            // Assert
-            Assert.NotEmpty(changedFiles);
-            Assert.Contains(changedFiles, f => f.ChangeType == VcsChangeType.Added);
-        }
+        // Assert
+        Assert.NotEmpty(changedFiles);
+        Assert.Contains(changedFiles, f => f.ChangeType == VcsChangeType.Added);
     }
 
     [Fact]
     public void GetChangedFiles_ExercisesDeletedChangeType()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3678,15 +3336,13 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         }
         var result = _git.Commit(checkoutPath, "Delete file", null);
 
-        if (result.Success)
-        {
-            // Act
-            var changedFiles = _git.GetChangedFiles(checkoutPath, result.NewRevision!);
+        Assert.True(result.Success, result.ErrorMessage);
+        // Act
+        var changedFiles = _git.GetChangedFiles(checkoutPath, result.NewRevision!);
 
-            // Assert
-            Assert.NotEmpty(changedFiles);
-            Assert.Contains(changedFiles, f => f.ChangeType == VcsChangeType.Deleted);
-        }
+        // Assert
+        Assert.NotEmpty(changedFiles);
+        Assert.Contains(changedFiles, f => f.ChangeType == VcsChangeType.Deleted);
     }
 
     // ============================================================================
@@ -3696,8 +3352,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_ExercisesStagingSpecificFiles()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3718,8 +3372,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_ExercisesStagingAllWithWildcard()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3739,8 +3391,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void Commit_ExercisesNoStagedChangesPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
         _git.CleanWorkspace(checkoutPath);
@@ -3760,13 +3410,11 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_ExercisesCheckoutPathForTrackedFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
         var readmePath = Path.Combine(checkoutPath, "README.md");
-        if (!File.Exists(readmePath)) return;
+        Assert.True(File.Exists(readmePath), readmePath);
 
         var original = File.ReadAllText(readmePath);
         File.WriteAllText(readmePath, "Modified");
@@ -3782,8 +3430,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_ExercisesDeletePathForNewFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3801,8 +3447,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void RevertFiles_ExercisesUnstagePathForStagedFile()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3829,8 +3473,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_ExercisesLocalBranchPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3848,8 +3490,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_ExercisesRemoteBranchTrackingPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3870,8 +3510,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void SwitchBranch_ExercisesNonExistentBranchPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -3890,8 +3528,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesHeadDefaultPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - null revision defaults to HEAD
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", null);
 
@@ -3903,8 +3539,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesHEADStringPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - explicit "HEAD" revision
         var content = _git.GetFileContentAtRevision(_clonePath, "README.md", "HEAD");
 
@@ -3915,8 +3549,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesCommitLookupPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var hash = _git.GetCurrentRevision(_clonePath);
 
@@ -3930,8 +3562,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesTreeEntryLookupPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - nested file exercises tree traversal
         var content = _git.GetFileContentAtRevision(_clonePath, "Models/SimpleModel.mo", "main");
 
@@ -3943,8 +3573,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesPathNormalization()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - use backslash path (should be normalized)
         var content = _git.GetFileContentAtRevision(_clonePath, "Models\\package.mo", "main");
 
@@ -3955,8 +3583,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesNonBlobPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - try to get content of a directory (should return null)
         var content = _git.GetFileContentAtRevision(_clonePath, "Models", "main");
 
@@ -3967,8 +3593,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetFileContentAtRevision_ExercisesMissingFilePath()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - non-existent file
         var content = _git.GetFileContentAtRevision(_clonePath, "DoesNotExist.xyz", "main");
 
@@ -3983,8 +3607,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_ExercisesLocalBranchEnumeration()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -4004,8 +3626,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_WithIncludeRemote_ReturnsAllBranches()
     {
-        if (!_repositoryAvailable) return;
-
         // Act - include remote branches (even if none exist)
         var branches = _git.GetBranches(_clonePath, includeRemote: true);
 
@@ -4021,8 +3641,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_ExercisesCurrentBranchDetection()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath);
 
@@ -4034,18 +3652,15 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void GetBranches_ExercisesLastCommitRetrieval()
     {
-        if (!_repositoryAvailable) return;
-
         // Act
         var branches = _git.GetBranches(_clonePath);
 
         // Assert - branches should have last commit info
+        Assert.NotEmpty(branches);
         Assert.All(branches, b =>
         {
-            if (b.LastCommit != null)
-            {
-                Assert.Equal(40, b.LastCommit.Length);
-            }
+            Assert.NotNull(b.LastCommit);
+            Assert.Equal(40, b.LastCommit.Length);
         });
     }
 
@@ -4056,8 +3671,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_ExercisesCreationWithSwitch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -4074,8 +3687,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_ExercisesCreationWithoutSwitch()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -4093,8 +3704,6 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void CreateBranch_ExercisesDuplicateBranchPath()
     {
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CopyTestRepository();
 
@@ -4116,8 +3725,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
     [Fact]
     public void DiagnosticTest_RepositoryIsAvailable()
     {
-        // This test MUST pass - if it fails, the fixture isn't working
-        Assert.True(_repositoryAvailable, $"Repository should be available. ClonePath: {_clonePath}. Error: {_cloneError ?? "none"}");
+        // The fixture throws when it cannot build its repository (B481), so reaching here means it did
         Assert.True(Directory.Exists(_clonePath), $"Clone path should exist: {_clonePath}");
         Assert.True(Repository.IsValid(_clonePath), $"Clone path should be a valid Git repo: {_clonePath}");
     }

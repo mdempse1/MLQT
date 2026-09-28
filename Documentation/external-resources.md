@@ -43,7 +43,7 @@ MLQT resolves extracted resource paths to absolute file system locations using t
 | **Relative paths** | Resolved relative to the directory containing the Modelica source file |
 | **Absolute paths** | Used as-is, but flagged as non-portable |
 | **Library names** | Searched across platform directories (`win32`, `win64`, `linux64`, `darwin64`, etc.) and compiler variants (`vs2022`, `gcc`, `clang`, etc.), with common library prefixes and extensions |
-| **`#include` directives** | Header filenames are searched in the annotated IncludeDirectory, or the default `Resources/Include` subdirectory |
+| **`#include` directives** | Header filenames are searched in the annotated IncludeDirectory, or the default `Resources/Include` subdirectory. A header the compiler supplies rather than the library is not tracked when it is not found there — `#include <stdio.h>` is not a missing file. Angle brackets are what say so, following C's own rule that `<name>` is on the compiler's search path and `"name"` is the project's own; a short list of standard header names covers libraries that write `#include "math.h"`. A bracketed header that *is* present under `Resources/Include` is still tracked, since `IncludeDirectory` works like a `-I` path |
 
 ## Layout
 
@@ -51,6 +51,8 @@ The External Resources view is split into two panels:
 
 - **Left panel** — A directory tree showing all referenced resources organized by their file system location
 - **Right panel** — Details about the selected resource, including which models reference it
+
+If the loaded libraries hold more models than the **Defer analysis threshold** (see [ui-customization.md](ui-customization.md#startup-analysis)), MLQT defers this analysis at startup, and the view instead says that external resource analysis has not been run yet and offers **Run External Resource Analysis Now**.
 
 ## File Type Filters
 
@@ -63,22 +65,22 @@ At the top of the view, a row of filter chips lets you control which types of fi
 | **Libs** | `.lib`, `.dll`, `.a`, `.so` | On |
 | **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.svg`, `.ico`, `.tiff`, `.webp` | Off |
 | **Documentation** | `.pdf`, `.html`, `.htm`, `.doc`, `.docx`, `.md` | Off |
-| **All** | Everything else not covered above | Off |
+| **All** | Every file, whatever its type — including extensions none of the other chips list. Selecting it shows everything, whichever other chips are selected | Off |
 
-Hover over any filter chip to see the exact file extensions it covers.
+Hover over any other filter chip to see the exact file extensions it covers.
 
 Only files matching at least one active filter are shown. Directories that contain no matching files are automatically hidden.
 
 ## Warning Filters
 
-Next to the file type filters, a separate set of **Warning** filter chips lets you quickly find resources with problems. Each chip shows the count of affected resources.
+Next to the file type filters, a separate set of **Warning** filter chips lets you quickly find resources with problems. Each chip shows how many resources it will show — a resource is counted once however many models reference it.
 
 | Filter | What It Shows |
 |--------|---------------|
 | **Missing** | Resources where the file or directory does not exist on disk. This includes resolved paths that point to non-existent files and unresolved `modelica://` URIs that could not be mapped to a path at all. |
 | **Absolute Paths** | Resources referenced using non-portable absolute paths (e.g., `C:\Data\file.mat`) instead of `modelica://` URIs. These will break when the library is used on a different machine. |
 
-When a warning filter is active, only resources matching the selected warning type(s) are shown in the tree. The file type filters still apply, so you can combine them — for example, select "Missing" and "Data Files" to see only missing data files.
+When a warning filter is active it decides on its own what is shown, and the file type filters are set aside: selecting "Missing" shows everything that is missing, whatever kind of file it is. That is deliberate — the file type filters cover only data, C code and libraries by default, so combining the two used to hide missing images, documents and anything with an unusual extension while the chip went on counting them.
 
 When no warning filters are selected, all resources are shown (subject to file type filters).
 
@@ -149,7 +151,7 @@ Warnings in the External Resources view help identify potential problems:
 | **File not found** | The referenced file does not exist at the resolved path | Check if the file was deleted, moved, or never committed to the repository |
 | **Directory not found** | An annotated directory (Include, Library, or Source) does not exist | The external function annotations may reference a directory that needs to be created or populated |
 | **Could not resolve path** | A `modelica://` URI could not be mapped to a file on disk | Check for typos in the URI, or ensure the referenced library is loaded |
-| **Absolute path reference** | The resource is referenced using an absolute path rather than a `modelica://` URI | Absolute paths break portability — consider converting to a `modelica://` URI |
+| **Absolute path is not portable: <path>** | The resource is referenced using an absolute path rather than a `modelica://` URI | Absolute paths break portability — consider converting to a `modelica://` URI |
 
 ## Practical Use Cases
 

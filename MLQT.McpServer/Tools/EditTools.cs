@@ -101,7 +101,7 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, oldClassCode, newSource);
         }
 
-        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText);
 
         if (preview)
             return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: false, 0, fileContent);
@@ -284,7 +284,7 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
 
-        var fileContent = WithinClause.Ensure(newOwnerCode, ctx.FileOwner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, ctx.FileOwner.ParentModelName, ctx.FileOwner.FileText);
 
         var (_, errs) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errs.Count > 0)
@@ -353,7 +353,7 @@ public sealed class EditTools
             var classCode = node.Definition.ModelicaCode ?? string.Empty;
             if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
                 return new ToolError("Could not uniquely locate the class within its file (cached source may be stale). Reload the library and retry.");
-            var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
+            var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName, ctx.FileOwner.FileText);
             var (_, errs) = ModelicaParserHelper.ParseWithErrors(content);
             if (errs.Count > 0)
                 return new ToolError($"Removing the class would make '{ctx.FilePath}' unparseable ({DescribeErrors(errs)}). Nothing was deleted.");
@@ -411,8 +411,7 @@ public sealed class EditTools
         var oldLeaf = node.Name;
         if (string.Equals(newParentId, node.ParentModelName, StringComparison.Ordinal))
             return new ToolError($"'{classId}' is already a child of '{newParentId}'.");
-        if (string.Equals(newParentId, classId, StringComparison.Ordinal) ||
-            newParentId.StartsWith(classId + ".", StringComparison.Ordinal))
+        if (ModelicaName.IsInSubtree(newParentId, classId))
             return new ToolError("A class cannot be moved into itself or one of its own descendants.");
 
         var newId = $"{newParentId}.{oldLeaf}";
@@ -433,7 +432,7 @@ public sealed class EditTools
 
         // Old -> new id map for the class and all its descendants (their ids all change with the move).
         var descendants = _libraries.GetAllModels().Select(m => m.Id)
-            .Where(id => id == classId || id.StartsWith(classId + ".", StringComparison.Ordinal))
+            .Where(id => ModelicaName.IsInSubtree(id, classId))
             .ToList();
         var targetSet = new HashSet<string>(descendants, StringComparer.Ordinal);
         string MapId(string oldId) => newId + oldId[classId.Length..];
@@ -502,6 +501,8 @@ public sealed class EditTools
         //    place it under the new parent.
         var moved = _libraries.GetModelById(classId) ?? node;
         var classCode = moved.Definition.ModelicaCode ?? string.Empty;
+        // Its file's header goes with it if it headed one (B445); a nested class has none.
+        var fileText = srcCtx.FileOwner.Id == classId ? moved.FileText : null;
         var srcCtx2 = ModelFilePersistence.ResolveFileOwner(_libraries, classId) ?? srcCtx;
 
         var removeResult = await RemoveClassStorageAsync(moved, srcCtx2);
@@ -510,7 +511,7 @@ public sealed class EditTools
         touched.AddRange((List<string>)removeResult);
 
         var tgtCtx2 = ModelFilePersistence.ResolveFileOwner(_libraries, newParentId) ?? tgtCtx;
-        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2);
+        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2, fileText);
         if (addResult is ToolError addErr)
             return addErr;
         touched.AddRange((List<string>)addResult);
@@ -736,9 +737,8 @@ public sealed class EditTools
         if (!m.Success)
             return text;
         var name = m.Groups[1].Value;
-        if (name != oldPrefix && !name.StartsWith(oldPrefix + ".", StringComparison.Ordinal))
+        if (ModelicaName.ReRoot(name, oldPrefix, newPrefix) is not { } replacement)
             return text;
-        var replacement = newPrefix + name[oldPrefix.Length..];
         var g = m.Groups[1];
         return text[..g.Index] + replacement + text[(g.Index + name.Length)..];
     }
@@ -814,7 +814,7 @@ public sealed class EditTools
     // The class and every descendant (its whole subtree).
     private List<string> Descendants(string classId) => _libraries.GetAllModels()
         .Select(m => m.Id)
-        .Where(id => id == classId || id.StartsWith(classId + ".", StringComparison.Ordinal))
+        .Where(id => ModelicaName.IsInSubtree(id, classId))
         .ToList();
 
     // Distinct source files that hold the subtree's models.
@@ -860,7 +860,7 @@ public sealed class EditTools
         var classCode = node.Definition.ModelicaCode ?? string.Empty;
         if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
             return new ToolError("Could not uniquely locate the class within its source file to move it.");
-        var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
+        var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName, ctx.FileOwner.FileText);
         await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, content);
         if (string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
             RemoveFromPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, node.Name);
@@ -870,7 +870,8 @@ public sealed class EditTools
     // Places 'classCode' under newParentId (standalone file if the parent is a directory package and the
     // class allows it, else nested in the parent's package.mo). Returns affected model ids or a ToolError.
     private async Task<object> AddClassStorageAsync(
-        string newParentId, string leaf, string classCode, ModelFilePersistence.FileOwnerContext tgtCtx)
+        string newParentId, string leaf, string classCode, ModelFilePersistence.FileOwnerContext tgtCtx,
+        FileLevelText? fileText = null)
     {
         var parentIsDirectoryPackage = tgtCtx.FileOwner.Id == newParentId &&
             string.Equals(Path.GetFileName(tgtCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase);
@@ -882,14 +883,16 @@ public sealed class EditTools
             var newFilePath = Path.Combine(dir, leaf + ".mo");
             // The move destination decides the clause, so replace whatever the class arrived with.
             await ModelicaFileEncoding.WriteAllTextAsync(
-                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId) + "\n");
+                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n");
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
 
         var parentNode = _libraries.GetModelById(newParentId)!;
         var parentCode = parentNode.Definition.ModelicaCode ?? string.Empty;
-        var inserted = InsertNestedClass(parentCode, parentNode.Name, classCode);
+        // Into a file another class heads, which has a header of its own: the moved class's goes
+        // with it, directly above it (B445).
+        var inserted = InsertNestedClass(parentCode, parentNode.Name, fileText?.AroundNested(classCode) ?? classCode);
         if (inserted is null)
             return new ToolError($"Could not find the end of destination '{newParentId}' to insert into.");
 
@@ -905,7 +908,7 @@ public sealed class EditTools
                 return new ToolError("Could not uniquely locate the destination within its file.");
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
-        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName));
+        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);
@@ -949,7 +952,8 @@ public sealed class EditTools
                 "rewrites only the exact identifier tokens that refer to this class (the declaration plus " +
                 "qualified/relative/imported uses) — NOT textual name matches, so a same-named unrelated " +
                 "class is never touched. A whole directory package can be renamed too: its folder is renamed, " +
-                "its subtree's ids re-qualified, and package.order updated. Each changed file is re-parsed; " +
+                "its subtree's ids re-qualified, and package.order updated; a class stored in a file of its " +
+                "own name has that file renamed with it (and its package.order entry). Each changed file is re-parsed; " +
                 "if any would no longer parse, nothing is written. Set preview=true to see the planned " +
                 "per-file changes first. Note: deep member accesses like Pkg.OldName.someConstant are not " +
                 "rewritten (consistent with dependency analysis) — review those.")]
@@ -986,6 +990,26 @@ public sealed class EditTools
         if (dirCtx is not null && dirCtx.FileOwner.Id == classId &&
             string.Equals(Path.GetFileName(dirCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
             return await RenameDirectoryPackageAsync(classId, newId, oldLeaf, newName, dirCtx, preview);
+
+        // A class stored in a file of its own name has to take the file with it, and a directory
+        // package lists its children by name in package.order (MLS 13.4), so both follow the rename
+        // (B456). A file that was never named after its class keeps its name; a library's own file
+        // is where the library was loaded from, so it is not renamed either.
+        var ownFile = dirCtx is not null && dirCtx.FileOwner.Id == classId && !string.IsNullOrEmpty(parent) &&
+                      string.Equals(Path.GetFileNameWithoutExtension(dirCtx.FilePath), oldLeaf, StringComparison.Ordinal)
+            ? dirCtx.FilePath
+            : null;
+        var renamedFile = ownFile is null ? null : Path.Combine(Path.GetDirectoryName(ownFile)!, newName + ".mo");
+        if (renamedFile is not null && File.Exists(renamedFile) &&
+            !string.Equals(renamedFile, ownFile, StringComparison.OrdinalIgnoreCase))
+            return new ToolError($"A file '{renamedFile}' already exists, so '{Path.GetFileName(ownFile)}' cannot be " +
+                                 "renamed with its class. Choose a different name. Nothing was changed.");
+        var orderDirectory = dirCtx is null ? null
+            : dirCtx.FileOwner.Id == classId && !string.IsNullOrEmpty(parent) ? Path.GetDirectoryName(dirCtx.FilePath)
+            : dirCtx.FileOwner.Id == parent &&
+              string.Equals(Path.GetFileName(dirCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetDirectoryName(dirCtx.FilePath)
+                : null;
 
         var graph = _libraries.CombinedGraph;
 
@@ -1049,6 +1073,8 @@ public sealed class EditTools
         var note = $"Precise rename of the declaration and resolved references. Deep member accesses " +
                    $"(e.g. Pkg.{oldLeaf}.someMember) are not rewritten — consistent with dependency " +
                    "analysis; review those and verify with a model checker.";
+        if (renamedFile is not null)
+            note = $"The file '{Path.GetFileName(ownFile)}' is renamed to '{Path.GetFileName(renamedFile)}' with its class. " + note;
 
         if (preview)
         {
@@ -1060,15 +1086,25 @@ public sealed class EditTools
         if (FileWritability.PreflightWritable(planned.Select(p => p.path), $"rename '{classId}'") is { } readOnly)
             return readOnly;
 
+        // Moved before it is written, so the write keeps the file's own encoding and line endings.
+        if (renamedFile is not null)
+            File.Move(ownFile!, renamedFile);
+        string WrittenTo(string path) =>
+            renamedFile is not null && string.Equals(path, ownFile, StringComparison.OrdinalIgnoreCase) ? renamedFile : path;
+
         var affected = new List<string>();
         foreach (var (path, newContent, _) in planned)
         {
-            await ModelicaFileEncoding.WriteAllTextAsync(path, newContent);
-            affected.AddRange(await _libraries.ReloadFileAsync(path));
+            await ModelicaFileEncoding.WriteAllTextAsync(WrittenTo(path), newContent);
+            if (!string.Equals(WrittenTo(path), path, StringComparison.Ordinal))
+                affected.AddRange(await _libraries.ReloadFileAsync(path)); // gone -> its old ids are removed
+            affected.AddRange(await _libraries.ReloadFileAsync(WrittenTo(path)));
         }
+        if (orderDirectory is not null)
+            RenameInPackageOrder(orderDirectory, oldLeaf, newName);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
 
-        var changes = planned.Select(p => new RenameFileChange(p.path, p.count, null)).ToList();
+        var changes = planned.Select(p => new RenameFileChange(WrittenTo(p.path), p.count, null)).ToList();
         return new RenameClassResult(classId, newId, PreviewOnly: false, Changed: true,
             planned.Count, total, changes, note);
     }

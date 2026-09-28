@@ -1,6 +1,7 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
+using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
 
@@ -72,10 +73,12 @@ public static class ParserErrorReporter
             if (model?.Definition?.ParserErrors is not { Count: > 0 } errors)
                 continue;
 
-            // The parser reads whole files, so its line is the file's. Findings carry class-relative
-            // lines (see Finding.LineNumber), and for a class nested in a package.mo the two are
-            // hundreds of lines apart — which is how a parse error came to point at an unrelated line
-            // of the class the app was showing.
+            // The load parses whole files, so an error it recorded is on the file's line. Findings
+            // carry class-relative lines (see Finding.LineNumber), and for a class nested in a
+            // package.mo the two are hundreds of lines apart — which is how a parse error came to
+            // point at an unrelated line of the class the app was showing. An error recorded later,
+            // by parsing the class's own source, is already relative to the class and is taken as it
+            // is: subtracting the start line again put it on line 1 (B388).
             var classStart = model.StartLine > 0 ? model.StartLine : 1;
 
             foreach (var error in errors)
@@ -91,13 +94,63 @@ public static class ParserErrorReporter
                     Discriminator = error.Message,
                     Message = error.Message +
                               (error.OffendingToken is not null ? $" (token: '{error.OffendingToken}')" : ""),
-                    LineNumber = Math.Max(1, error.Line - classStart + 1),
+                    LineNumber = Math.Max(1, error.LineIsClassRelative ? error.Line : LoadLineInClass(model, error.Line - classStart + 1)),
                     Severity = RuleSeverity.Error
                 });
             }
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// A load-recorded error's line, already relative to the class as the file has it, in the text
+    /// the class's other findings are counted against.
+    ///
+    /// <para>For most classes the two are the same text. A package whose inline standalone children
+    /// were trimmed is checked as the file's lines with the children cut out, and keeps the load's
+    /// errors through the trim; <see cref="ClassLocation.FileLine"/> and the Code Review page both
+    /// put the cut lines back through <see cref="ModelNode.TrimElision"/>, so a line left in the
+    /// untrimmed frame had them counted twice, and an error below an inline child landed that
+    /// child's length too far down (B413). An error on lines that were cut - which the load gives to
+    /// the child, not the package - is put on the last line kept above the cut.</para>
+    /// </summary>
+    private static int LoadLineInClass(ModelNode model, int lineInUntrimmedClass)
+    {
+        if (model.TrimElision is not { } trim || lineInUntrimmedClass < 1)
+            return lineInUntrimmedClass;
+
+        for (var line = lineInUntrimmedClass; line >= 1; line--)
+        {
+            if (trim.ToDisplayLine(line) is { } kept)
+                return kept;
+        }
+
+        return 1;
+    }
+
+    /// <summary>
+    /// Puts the parser findings for <paramref name="models"/> on <paramref name="store"/> as the
+    /// classes have them now, replacing whatever parser findings it held for them - so reading
+    /// again neither duplicates an error nor keeps one the class no longer has.
+    ///
+    /// <para><b>Read after anything that parses, not only after a load.</b> A class nothing has
+    /// parsed yet records its errors when something first does, and for the app that is the style
+    /// check. Read only before the check, such an error reached the list when something unrelated
+    /// happened to read again, while the tree badge - which asks the class - showed it at once
+    /// (B390, the ordering B352 fixed in <see cref="LibraryCheckSession"/>).</para>
+    /// </summary>
+    public static void Refresh(ICodeReviewService store, IReadOnlyCollection<ModelNode> models)
+    {
+        if (models.Count == 0)
+            return;
+
+        var ids = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+        store.RemoveLogMessagesByPredicate(m => m.Source == SourceName && ids.Contains(m.ModelName));
+
+        var messages = ToLogMessages(models);
+        if (messages.Count > 0)
+            store.AddLogMessages(messages);
     }
 
     /// <summary>Counts parser errors by kind, for a load-time summary notification.</summary>

@@ -40,8 +40,8 @@ public class LogMessage
     /// <summary>
     /// A finding from the style rules or the whole-graph analyses.
     ///
-    /// <para>A constant because this is a load-bearing string contract — the phase 1 note lists it as
-    /// one — and it was written out as a literal in nine places across six files: the one that
+    /// <para>A constant because this is a load-bearing string contract, and it was written out as a
+    /// literal in nine places across six files: the one that
     /// produces it and five that filter on it, including the two that decide what the Metrics tab
     /// counts and what the Code Review list clears. A typo in a consumer filters nothing and looks
     /// exactly like "there were no findings". <c>Parser</c> already had a constant; this did

@@ -95,12 +95,17 @@ public static class VcsConflictRules
         states.Count > 0 && states.Values.All(s => s == ConflictFileState.Resolved);
 
     /// <summary>
-    /// A conflicted file's path as the user recognises it: relative to the working copy.
+    /// A conflicted file's path as the user recognises it: relative to the working copy, and
+    /// forward-slashed as every other relative VCS path is (<see cref="VcsRelativePath"/>).
     /// </summary>
     /// <remarks>
-    /// Falls back to the full path rather than throwing. A path that cannot be related to the
+    /// <para>A merge result's paths are full and in the platform's form, from both systems
+    /// (<see cref="VcsMergeResult"/>, B480), so on Windows this used to show <c>Lib\Thing.mo</c> in
+    /// the conflict list below a dirty-file list showing <c>Lib/Other.mo</c>.</para>
+    ///
+    /// <para>Falls back to the full path rather than throwing. A path that cannot be related to the
     /// working copy at all is still worth showing — an absolute path in the list is odd, an
-    /// exception mid-merge is a great deal worse.
+    /// exception mid-merge is a great deal worse.</para>
     /// </remarks>
     public static string RelativeTo(string? localPath, string filePath)
     {
@@ -109,7 +114,7 @@ public static class VcsConflictRules
 
         try
         {
-            return Path.GetRelativePath(localPath, filePath);
+            return VcsRelativePath.Canonical(Path.GetRelativePath(localPath, filePath));
         }
         catch
         {

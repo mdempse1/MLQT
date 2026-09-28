@@ -1155,6 +1155,50 @@ end Derived;";
         Assert.Contains("font-family=\"Arial\"", result);
     }
 
+    /// <summary>
+    /// A Text's origin and rotation place it, as they place every other primitive (B320). They were
+    /// computed and dropped, leaving only the counter-flip: 43 MSL texts use <c>origin=</c> - the
+    /// <c>SpringDamper</c> label in <c>PID_Controller</c> among them - and each sat at the icon's
+    /// centre, and a rotated label lay flat, in the library tree's icons as well as the diagrams.
+    /// </summary>
+    [Fact]
+    public void RenderToSvg_TextWithOriginAndRotation_IsPlacedAndTurnedBeforeItIsRighted()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new TextPrimitive
+        {
+            Extent = [-40, -10, 40, 10],
+            Origin = [60, -20],
+            Rotation = 90,
+            TextString = "turned",
+        });
+
+        var result = IconSvgRenderer.RenderToSvg(icon);
+
+        // Outermost, so they act in the icon's coordinates; the counter-flip only rights the letters.
+        Assert.Contains("transform=\"translate(60,-20) rotate(90) scale(1,-1)\">turned<", result);
+    }
+
+    [Fact]
+    public void RenderPrimitives_MirroredTextWithAnOrigin_KeepsBothTheOriginAndTheCounterMirror()
+    {
+        var text = new TextPrimitive { Extent = [-40, -10, 40, 10], Origin = [5, 0], TextString = "m" };
+
+        var result = IconSvgRenderer.RenderPrimitives(
+            [text], null, new IconSvgRenderer.GraphicsContext { MirrorX = true });
+
+        Assert.Contains("transform=\"translate(5,0) scale(-1,-1)\"", result);
+    }
+
+    [Fact]
+    public void RenderToSvg_TextWithNoOriginOrRotation_IsOnlyRighted()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new TextPrimitive { Extent = [-40, -10, 40, 10], TextString = "plain" });
+
+        Assert.Contains("transform=\"scale(1,-1)\">plain<", IconSvgRenderer.RenderToSvg(icon));
+    }
+
     [Fact]
     public void RenderToSvg_PrimitiveWithRotationAndOrigin_ContainsTransform()
     {
@@ -1338,6 +1382,102 @@ end SimpleModel;
         var result = IconSvgRenderer.RenderToSvg(icon);
         Assert.NotNull(result);
         Assert.Contains("rotate(", result);
+    }
+
+    /// <summary>
+    /// Where a Bitmap lands, in the icon's own coordinates (y up): the image's top-left and
+    /// bottom-right corners taken through its transform list. The picture's top-left is its first
+    /// pixel, so it must land on the extent's top-left - Modelica's smaller x and larger y.
+    /// </summary>
+    private static ((double X, double Y) TopLeft, (double X, double Y) BottomRight) PlacedBitmap(string svg)
+    {
+        var image = System.Text.RegularExpressions.Regex.Match(svg,
+            "<image x=\"([^\"]+)\" y=\"([^\"]+)\" width=\"([^\"]+)\" height=\"([^\"]+)\"[^>]* transform=\"([^\"]+)\"");
+        Assert.True(image.Success, svg);
+        double N(int group) => double.Parse(image.Groups[group].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var (x, y, w, h) = (N(1), N(2), N(3), N(4));
+
+        // SVG applies a transform list right to left to the element's coordinates.
+        var steps = System.Text.RegularExpressions.Regex.Matches(image.Groups[5].Value, @"(\w+)\(([^)]*)\)")
+            .Select(m => (Name: m.Groups[1].Value,
+                Args: m.Groups[2].Value.Split(',', ' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(a => double.Parse(a, System.Globalization.CultureInfo.InvariantCulture)).ToArray()))
+            .Reverse().ToList();
+
+        (double X, double Y) Map(double px, double py)
+        {
+            foreach (var (name, args) in steps)
+            {
+                switch (name)
+                {
+                    case "scale": (px, py) = (px * args[0], py * args[1]); break;
+                    case "translate": (px, py) = (px + args[0], py + args[1]); break;
+                    case "rotate":
+                        var r = args[0] * Math.PI / 180;
+                        (px, py) = (px * Math.Cos(r) - py * Math.Sin(r), px * Math.Sin(r) + py * Math.Cos(r));
+                        break;
+                    default: throw new InvalidOperationException(name);
+                }
+            }
+            return (Math.Round(px, 6), Math.Round(py, 6));
+        }
+
+        return (Map(x, y), Map(x + w, y + h));
+    }
+
+    /// <summary>
+    /// A Bitmap's extent is where the picture is, whichever side of y = 0 it sits (B391). The image
+    /// was written at y = min(y1, y2) inside the counter-flip, which mirrors it about y = 0: right
+    /// only for a symmetric extent, and MSL's are mostly not - <c>EngineV6_analytic</c>'s picture at
+    /// y = -39..75 was drawn at -75..39.
+    /// </summary>
+    [Fact]
+    public void RenderToSvg_BitmapWithAnAsymmetricExtent_IsDrawnWhereItsExtentIs()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new BitmapPrimitive { Extent = [-97, -39, 99, 75], ImageSource = "iVBORtest" });
+
+        var (topLeft, bottomRight) = PlacedBitmap(IconSvgRenderer.RenderToSvg(icon)!);
+
+        Assert.Equal((-97.0, 75.0), topLeft);
+        Assert.Equal((99.0, -39.0), bottomRight);
+    }
+
+    /// <summary>
+    /// A Bitmap's origin and rotation act in the icon's coordinates, y up, as every other
+    /// primitive's do (B391, B320's ordering). Emitted after the counter-flip they acted in the
+    /// flipped frame: the origin's y was negated and the rotation turned clockwise.
+    /// </summary>
+    [Fact]
+    public void RenderToSvg_BitmapWithOriginAndRotation_IsPlacedAndTurnedInTheIconsCoordinates()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new BitmapPrimitive
+        {
+            Extent = [0, 0, 40, 20],
+            Origin = [10, 30],
+            Rotation = 90,
+            ImageSource = "iVBORtest",
+        });
+
+        var (topLeft, bottomRight) = PlacedBitmap(IconSvgRenderer.RenderToSvg(icon)!);
+
+        // Counter-clockwise by 90 degrees about the origin: (x, y) -> (-y, x), then moved by (10, 30).
+        // The extent's top-left (0, 20) goes to (-20, 0) + origin; its bottom-right (40, 0) to (0, 40).
+        Assert.Equal((-10.0, 30.0), topLeft);
+        Assert.Equal((10.0, 70.0), bottomRight);
+    }
+
+    [Fact]
+    public void RenderToSvg_BitmapWithAnOriginOnly_IsMovedUpWhenTheOriginIsAbove()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new BitmapPrimitive { Extent = [-10, -10, 10, 10], Origin = [0, 50], ImageSource = "iVBORtest" });
+
+        var (topLeft, bottomRight) = PlacedBitmap(IconSvgRenderer.RenderToSvg(icon)!);
+
+        Assert.Equal((-10.0, 60.0), topLeft);
+        Assert.Equal((10.0, 40.0), bottomRight);
     }
 
     #endregion

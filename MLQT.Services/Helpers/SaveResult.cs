@@ -19,4 +19,29 @@ public class SaveResult
     /// Set of all directories created during the save operation.
     /// </summary>
     public HashSet<string> CreatedDirectories { get; } = new();
+
+    /// <summary>
+    /// Files the save tried to write and could not. Each failure is logged and the save carries on,
+    /// so a caller about to act on the result — deleting the file the classes came from, say — has
+    /// to ask this rather than assume that returning means everything was written (B303). A class
+    /// stored in one of these files is not in <see cref="ModelIdToFilePath"/>.
+    /// </summary>
+    public HashSet<string> FailedFiles { get; } = new();
+
+    /// <summary>
+    /// Classes the save was asked to write and put in no file it wrote — one whose file failed, one
+    /// that could not be rendered, or one the layout found nowhere to put (B441). The files such a
+    /// class came from may be the only copy of it, so a caller must delete nothing of the library
+    /// when this is not empty. Classes left untouched in their files (B414) are never listed.
+    /// </summary>
+    public List<string> UnplacedModelIds { get; } = new();
+
+    /// <summary>
+    /// Classes defined by a directory's <c>package.mo</c> that are not packages — <c>model Lib</c> in
+    /// <c>Lib/package.mo</c>. The save writes only a package as a directory, so it would write such a
+    /// class as <c>Lib.mo</c> beside the directory it came from and have nowhere to put the classes in
+    /// that directory. When this is not empty the save refused before writing anything (B443):
+    /// <see cref="WrittenFiles"/> is empty and a caller must keep every file of the library.
+    /// </summary>
+    public List<string> NonPackageDirectoryIds { get; } = new();
 }

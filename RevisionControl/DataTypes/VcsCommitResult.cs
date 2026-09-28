@@ -29,6 +29,8 @@ public class VcsCommitResult
     /// Files that were excluded from this commit because they are new (unversioned) files inside a
     /// directory that was itself added via SVN merge. SVN does not allow adding new files to such
     /// directories in the same transaction. These files must be committed in a separate commit.
+    /// Relative to the working copy and forward-slashed, as <see cref="VcsWorkingCopyFile.Path"/> is
+    /// (B478), so they can be passed straight back to <c>Commit</c>.
     /// </summary>
     public List<string> SkippedFiles { get; set; } = new();
 }

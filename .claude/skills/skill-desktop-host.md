@@ -54,6 +54,44 @@ to stdout, and a Blazor render batch is one of those — base64, tens of kilobyt
 written synchronously on the thread producing the update. That was the shape of the "Photino feels
 slower than MAUI" report (B121).
 
+**A native dialog is never opened from inside WebView2's callback (B283).** A click reaches a
+component through WebView2's `WebMessageReceived`, and Photino.Blazor handles the message *inline* on
+that callback's stack (its `SynchronousTaskScheduler` runs a task where it is queued). A picker opened
+straight from a click therefore ran the dialog's nested message loop inside WebView2's event handler;
+anything Blazor rendered while the user browsed reached `SendWebMessage` re-entrantly, and WebView2
+runtime 153 stops the process on that — `0x80000003` in `EmbeddedBrowserWebView.dll`, and **nothing in
+MLQT's log**, because no managed code ever saw it. The only evidence is the Windows Application event
+log. `PhotinoFilePickerService.OnTheMessageLoopAsync` opens every dialog by handing it to
+`PhotinoWindow.Invoke` from a pool thread, so it runs from the top of the message loop once the
+callback has returned; `NativeDialogPolicyTests` holds every dialog call in both Photino apps to it. Not
+`await Task.Yield()`, which goes wherever the current synchronization context sends it — with none, a
+native dialog would open on a pool thread.
+
+**`InvokeAsync` from a pool thread waits for the UI thread.** Photino.Blazor's
+`PhotinoSynchronizationContext` is a copy of ASP.NET's renderer context with one change:
+`ExecuteSynchronously` hands the work to `PhotinoWindow.Invoke`, which on Windows is a synchronous
+`SendMessage`. So a component's `InvokeAsync` called from a background thread — and every queued
+continuation — **parks that pool thread until the UI thread runs it**. Under Blazor Server the same
+call returns at once. Two consequences worth designing around: anything synchronous and slow on the
+UI thread starves the thread pool too (it grows by about a thread a second, which is what the gaps
+look like in the log), and a lock held while raising an event whose handler calls `InvokeAsync` is a
+deadlock waiting for the UI thread to want that lock. B293 was 55 working-copy status scans behind
+one that was running on the UI thread. The corollary B299 found: wrapping a handler's work in
+`InvokeAsync` makes it thread-safe but does **not** free whoever raised the event — the raiser still
+waits for the work, inline or through `SendMessage` — so work that is slow as well goes to `Task.Run`
+first and only its result is applied through `InvokeAsync`.
+
+**Never marshal each unit of background work onto the UI thread.** On Windows the window's message
+pump is the thread Blazor renders on, so a queue of `InvokeAsync` work items shows up as a window
+that will not drag or take focus long after the work itself has finished — a Claytex check of 21,673
+classes, queued one work item per class with findings, left the window ignoring clicks for 72 seconds
+after the workers had completed (B190). A store that is thread-safe (`CodeReviewService` locks its
+list) is called directly from the worker, and it raises a **coalesced** change notification — the
+first change at once, anything within 250 ms folded into one trailing notification, and the trailing
+one always sent — so only the listening component marshals its render. A throttle that drops the
+trailing edge swaps a stutter for a view that is quietly wrong. A notification can then arrive after
+its component is disposed, so subscribers catch `ObjectDisposedException` around their `InvokeAsync`.
+
 **Webview chrome settings go in before `Run`.** `SetContextMenuEnabled(false)` and
 `SetDevToolsEnabled(...)` turn off the engine's own right-click menu and its **Inspect** entry, which
 were on in both release builds. Reading them *during* `RegisterWindowCreatedHandler` segfaults the
@@ -204,6 +242,11 @@ file dialog opening, and that settings survive an upgrade.
 
 ## Platform facts worth not rediscovering
 
+- **The host runs server GC**, as the CLI and MCP server do (B281). A style check allocates parse trees from
+  every core, and under the default workstation collector a Claytex check spent most of its time with every
+  thread suspended for collections. `HostGarbageCollectionTests` holds the setting. It was measured in the CLI;
+  if the desktop app ever shows memory or responsiveness trouble over a long session, this is the first
+  setting to question, and `System.GC.ConserveMemory` / `GCHeapCount` the first knobs before turning it off.
 - **`libnotify4` is a required Linux dependency** and nothing else pulls it in. `Photino.Native.so`
   lists it among its `NEEDED` entries and `libwebkit2gtk-4.1-0` does not depend on it. Take the
   install list from `objdump -p`, not from what seemed necessary. This puts the floor at

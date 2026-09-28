@@ -7,7 +7,11 @@
         <MudText Typo="Typo.h6">Switch Branch</MudText>
     </TitleContent>
     <DialogContent>
-        <MudStack Spacing="3" Style="min-width: 400px;">
+        @* A width of its own, so the dialog does not resize as its contents change. It used to
+           be a min-width only, and MudDialog sizes to content: selecting a tag added the
+           paragraph about detached HEAD and the dialog jumped to the width of the screen
+           under the click that caused it. max-width keeps it honest on a narrow window. *@
+        <MudStack Spacing="3" Style="width: 460px; max-width: 100%;">
             @if (_hasChanges)
             {
                 <MudAlert Severity="Severity.Warning" Dense="true">
@@ -15,14 +19,40 @@
                 </MudAlert>
             }
 
-            <MudText Typo="Typo.body1">Select a branch to switch to:</MudText>
+            @* Git leaves these to the reflog with nothing said, and they are found - if at all - by
+               someone who knows to look there (B327). *@
+            @if (_commitsOnNoBranch > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mlqt-orphaned-commits">
+                    @(_commitsOnNoBranch == 1 ? "1 commit" : $"{_commitsOnNoBranch} commits") on this
+                    detached HEAD @(_commitsOnNoBranch == 1 ? "is" : "are") on no branch, and will be
+                    left behind by switching. Cancel and create a branch here to keep
+                    @(_commitsOnNoBranch == 1 ? "it" : "them").
+                </MudAlert>
+            }
+
+            <MudText Typo="Typo.body1">Select a branch or tag to switch to:</MudText>
 
             <BranchSelector RepositoryId="@RepositoryId"
                             @bind-SelectedBranch="_selectedBranch"
+                            @bind-SelectedIsTag="_selectedIsTag"
                             ExcludeCurrentBranch="true"
                             IncludeRemoteBranches="true"
                             MinHeight="300px"
                             MaxHeight="400px" />
+
+            @* Said before the switch, not after it. A tag is a place in history, not a branch: git
+               leaves HEAD detached there, and a commit made in that state belongs to nothing and is
+               easy to lose. Other clients warn about it and MLQT offered no tags at all (B193). *@
+            @if (_selectedIsTag)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <strong>@_selectedBranch</strong> is a tag. Switching to it puts the repository at
+                    that exact revision with no branch checked out (a detached HEAD), which is what
+                    you want for looking at a released version. To make changes from here, create a
+                    branch afterwards.
+                </MudAlert>
+            }
 
             @if (_isSwitching && !string.IsNullOrEmpty(_statusMessage))
             {

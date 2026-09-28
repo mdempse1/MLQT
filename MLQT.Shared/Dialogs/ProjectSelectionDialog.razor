@@ -20,9 +20,10 @@
         {
             <MudTextField @bind-Value="_selectedProject" Label="Create a new project"
                 Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.body1"
-                Immediate="true" Style="max-width: 400px;" />
+                Immediate="true" Style="max-width: 400px;"
+                Error="@(NewProjectNameError is not null)" ErrorText="@NewProjectNameError" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
-                OnClick="ConfirmProjectName" Disabled="@(string.IsNullOrWhiteSpace(_selectedProject))" />
+                OnClick="ConfirmProjectName" Disabled="@(NewProjectNameError is not null)" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
                 OnClick="()=>{_showNewProjectControls=false; _selectedProject=string.Empty;}" />
         }

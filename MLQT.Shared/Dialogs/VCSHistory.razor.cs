@@ -438,15 +438,32 @@ public partial class VCSHistory
             return;
 
         _confirmingCheckout = false;
+
+        // Not while another VCS operation, or the analysis pipeline one started, is running: the
+        // checkout rewrites the working copy that pipeline is formatting (B326).
+        if (NavState.IsVcsWorkInProgress)
+        {
+            _checkoutResultSuccess = false;
+            _checkoutResultMessage = "Another version-control operation, or the analysis after it, is still running. " +
+                                     "Check out again once it has finished.";
+            return;
+        }
+
         _isCheckingOut = true;
         StateHasChanged();
 
+        // Counted as VCS work until the checkout and reload are done; the pipeline it fires takes
+        // over from there (see VcsPipelineQueue).
+        using var work = NavState.BeginVcsWork();
+
+        // Paused for the checkout and the reload after it, and handed to the analysis pipeline only
+        // once that has worked. A reload that threw used to leave the monitor off for the session:
+        // the only restart was on the path where the checkout itself failed (B296).
+        // Every repository in the working copy: the checkout moves all of them (B301).
+        var workingCopy = RepositoryService.GetRepositoriesSharingWorkingCopy(_repository.Id);
+        using var pause = MonitorPause.Begin(FileMonitoringService, workingCopy);
         try
         {
-            // Pause file monitoring before checkout to prevent the large number of file-change
-            // events from locking up the UI. The analysis handler will restart monitoring.
-            FileMonitoringService.StopMonitoring(_repository.Id);
-
             var result = await RepositoryService.CheckoutRevisionAsync(_repository.Id, _selectedEntry.Revision);
             _checkoutResultSuccess = result.Success;
             _checkoutResultMessage = result.Success
@@ -457,19 +474,22 @@ public partial class VCSHistory
             {
                 // Reload _repository info and library data from the newly checked-out files
                 _repository = RepositoryService.GetRepository(_repository.Id);
-                await RepositoryService.RefreshRepositoryAsync(_repository!.Id);
+                foreach (var each in workingCopy)
+                    await RepositoryService.RefreshRepositoryAsync(each.Id);
                 await LoadLogEntriesAsync();
 
                 // Trigger background analysis (formatting + dependencies + style + resources).
                 // Handler will restart monitoring once formatting is complete.
-                NavState.VcsFilesChanged(_repository.Id);
+                pause.HandOver();
+                foreach (var each in workingCopy)
+                    NavState.VcsFilesChanged(each.Id);
             }
-            else
-            {
-                // Checkout failed — restart monitor so future edits are still tracked
-                if (!string.IsNullOrEmpty(_repository.VcsRootPath))
-                    FileMonitoringService.StartMonitoring(_repository.Id, _repository.VcsRootPath);
-            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(VCSHistory), $"Checking out revision {_selectedEntry.Revision} failed", ex);
+            _checkoutResultSuccess = false;
+            _checkoutResultMessage = $"Checkout failed: {ex.Message}";
         }
         finally
         {

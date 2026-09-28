@@ -1,3 +1,4 @@
+using ModelicaGraph;
 using MLQT.Services.DataTypes;
 using RevisionControl;
 
@@ -150,8 +151,9 @@ public static class VcsChangeResolver
 
         foreach (var change in changes.Where(c => c.Status != VcsFileStatus.Deleted))
         {
-            var fullPath = Path.Combine(vcsRootPath, change.Path);
-            if (fullPath.StartsWith(localPath, StringComparison.OrdinalIgnoreCase)
+            var fullPath = OnDisk(vcsRootPath, change.Path);
+            // Separator-aware: wc/Lib does not contain wc/LibExtra, whose files are not ours (B323).
+            if (PathContainment.IsWithin(fullPath, localPath)
                 && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
                 && fileExists(fullPath))
             {
@@ -161,4 +163,36 @@ public static class VcsChangeResolver
 
         return paths;
     }
+
+    /// <summary>
+    /// The files a VCS status report says are scheduled for addition, as full paths in the
+    /// platform's own form - the form a path read from the graph or the disk has, so the two can be
+    /// compared as strings.
+    /// </summary>
+    /// <remarks>
+    /// What a full-library save must not delete: a file a merge added that the formatter did not
+    /// write is still owed to the commit. The paths are relative to the <em>VCS root</em>, and
+    /// forward-slashed from Git and SVN alike (B472); joined to the library path, or joined without
+    /// normalising, they named no file the save had read and protected nothing.
+    /// </remarks>
+    public static HashSet<string> ScheduledForAddition(
+        string vcsRootPath, IEnumerable<VcsWorkingCopyFile> changes)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(vcsRootPath))
+            return paths;
+
+        foreach (var change in changes.Where(c => c.Status == VcsFileStatus.Added))
+            paths.Add(OnDisk(vcsRootPath, change.Path));
+
+        return paths;
+    }
+
+    /// <summary>
+    /// A VCS-relative path as a full path in the platform's form. A VCS reports <c>/</c> on every
+    /// platform, and <c>C:\wc\Lib/Thing.mo</c> is the same file as <c>C:\wc\Lib\Thing.mo</c> to the
+    /// filesystem but not to a set of strings.
+    /// </summary>
+    private static string OnDisk(string vcsRootPath, string relativePath) =>
+        Path.GetFullPath(Path.Combine(vcsRootPath, relativePath));
 }

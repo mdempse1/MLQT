@@ -185,11 +185,11 @@ public class SourceBeatsEncryptedTests : IDisposable
             await service.AddLibraryFromPathAsync(encrypted);
         }
 
+        // Since WP15 (B268) the encrypted copy of a library whose source is loaded is retired whole,
+        // package file included, so the package cannot claim anything: it is not in the graph at all.
         var graph = service.CombinedGraph;
-        var moe = graph.FileNodes.Single(f => f.FilePath.EndsWith(".moe", StringComparison.OrdinalIgnoreCase));
-
-        Assert.DoesNotContain(graph.GetModelsInFile(moe.Id), m => !m.IsExternalStub);
-        Assert.DoesNotContain(NestedClass, moe.ContainedModelIds);
+        Assert.DoesNotContain(graph.FileNodes, f => f.FilePath.EndsWith(".moe", StringComparison.OrdinalIgnoreCase));
+        Assert.False(service.GetModelById(NestedClass)!.IsExternalStub);
     }
 
     [Fact]
@@ -241,14 +241,17 @@ public class SourceBeatsEncryptedTests : IDisposable
         // problem. Reporting "ships no usable documentation" for a library whose help files read
         // perfectly well sent people looking through a vendor's install for a fault that was not
         // there.
+        //
+        // Since B268 the documentation of an encrypted library whose source is loaded is not read at
+        // all, so the documentation count can no longer tell the two apart. SupersededBy does: it says
+        // where the source is, which is what a caller reporting on the library needs to say.
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteSource());
+        var source = WriteSource();
+        await service.AddLibraryFromPathAsync(source);
         var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted());
 
         Assert.Empty(encrypted.ModelIds);                    // nothing recovered, because nothing was needed
-        Assert.NotNull(encrypted.DocumentedClassCount);
-        Assert.True(encrypted.DocumentedClassCount > 0,      // the documentation was read fine
-            "the vendor's documentation described no classes");
+        Assert.Equal(source, encrypted.SupersededBy);        // ...and that is why
     }
 
     [Fact]

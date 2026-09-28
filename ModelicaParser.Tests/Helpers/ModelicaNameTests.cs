@@ -49,6 +49,60 @@ public class ModelicaNameTests
         Assert.Equal(".Ramp", ModelicaName.RootLibraryOf(".Ramp"));
     }
 
+    // ---- subtree membership (B274) ------------------------------------------------
+
+    /// <summary>
+    /// The case the whole helper exists for: a namesake shares a prefix and is not inside.
+    /// </summary>
+    [Theory]
+    [InlineData("Root.Src", "Root.Src", true)]              // itself
+    [InlineData("Root.Src.Widget", "Root.Src", true)]       // a child
+    [InlineData("Root.Src.A.B", "Root.Src", true)]          // a grandchild
+    [InlineData("Root.SrcExtra", "Root.Src", false)]        // a namesake
+    [InlineData("Root.SrcExtra.Keeper", "Root.Src", false)] // inside a namesake
+    [InlineData("Root", "Root.Src", false)]                 // its parent
+    [InlineData("Other.Src", "Root.Src", false)]
+    [InlineData("", "Root.Src", false)]
+    public void IsInSubtreeIsDecidedByTheSeparator(string id, string root, bool inside)
+    {
+        Assert.Equal(inside, ModelicaName.IsInSubtree(id, root));
+    }
+
+    /// <summary>
+    /// The strict form excludes the root itself and agrees with the other everywhere else, which is
+    /// the only difference between them worth stating.
+    /// </summary>
+    [Theory]
+    [InlineData("Root.Src", "Root.Src", false)]
+    [InlineData("Root.Src.Widget", "Root.Src", true)]
+    [InlineData("Root.SrcExtra", "Root.Src", false)]
+    public void IsStrictlyInsideExcludesTheRoot(string id, string root, bool inside)
+    {
+        Assert.Equal(inside, ModelicaName.IsStrictlyInside(id, root));
+    }
+
+    [Theory]
+    [InlineData("Root.Src", "Root.Src", "Dst.Src", "Dst.Src")]
+    [InlineData("Root.Src.Widget", "Root.Src", "Dst.Src", "Dst.Src.Widget")]
+    [InlineData("Root.Src.A.B", "Root.Src", "Dst.Src", "Dst.Src.A.B")]
+    public void ReRootRewritesOnlyThePrefix(string id, string oldRoot, string newRoot, string expected)
+    {
+        Assert.Equal(expected, ModelicaName.ReRoot(id, oldRoot, newRoot));
+    }
+
+    /// <summary>
+    /// Null rather than a wrong answer: a name outside the subtree has no re-rooted form, and
+    /// returning one is how a namesake's id gets rewritten by a move it had nothing to do with.
+    /// </summary>
+    [Theory]
+    [InlineData("Root.SrcExtra", "Root.Src")]
+    [InlineData("Root.SrcExtra.Keeper", "Root.Src")]
+    [InlineData("Other.Thing", "Root.Src")]
+    public void ReRootRefusesANameThatIsNotInTheSubtree(string id, string oldRoot)
+    {
+        Assert.Null(ModelicaName.ReRoot(id, oldRoot, "Dst.Src"));
+    }
+
     [Fact]
     public void TheThreePartsReassemble()
     {

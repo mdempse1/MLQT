@@ -12,7 +12,7 @@ In repository view, libraries are grouped under their parent repository. Each re
 
 This is the default view and is the one you'll use most often, as it provides access to all version control operations.
 
-![Screenshot: The left panel in repository view. The repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, and the Modelica package tree below that.](Images/code-review-1.png)
+![Screenshot: The left panel in repository view. The repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, then the row of change-filter chips, and the Modelica package tree below that.](Images/code-review-1.png)
 
 ### Library View
 
@@ -37,6 +37,10 @@ The tree mirrors the Modelica package structure:
 
 **Single click** on any node to select it. The selected model's code appears in the Code Review tab, and its name is shown in the "Current class" text field above the tab bar.
 
+Opening a class from somewhere else — a finding, the used-classes menu, Back or Forward — expands
+the tree down to it and selects it, so you can see where it sits. A class you clicked in the tree
+yourself is left as it is.
+
 ### Multi-Selection Mode
 
 When you switch to the Dependencies tab, the tree automatically enters multi-selection mode:
@@ -50,22 +54,64 @@ When working with Git or SVN repositories, the tree shows the VCS status of each
 
 ### Status Chips
 
-Models whose files have uncommitted changes display a small colored chip next to their name:
+Models whose files have uncommitted changes display a small colored chip next to their name. Hover over any chip to see what it means.
 
 | Chip | Color | Meaning |
 |------|-------|---------|
-| **A** | Green | **Added** — A new file that has been added to version control |
-| **M** | Orange | **Modified** — An existing file that has been changed |
+| **A** | Green | **Added** — A new file added to version control, or a new class inside a changed file |
+| **M** | Orange | **Modified** — This class changed in a way that can affect simulation |
+| **C** | Blue | **Cosmetic** — This class changed, but only its layout, comments, documentation or graphics |
 | **D** | Orange | **Deleted** — A file that has been deleted |
 | **R** | Orange | **Renamed** — A file that has been renamed |
 | **N** | Green | **Untracked** — A new file not yet added to version control |
 | **!** | Red | **Conflicted** — A file with merge conflicts that need resolution |
 
-![Screenshot: The tree with VCS status on it - an orange "M" chip beside the modified class, and the orange dot on the package above it that says a change is somewhere inside.](Images/library-browser-2.png)
+![Screenshot: The tree with VCS status on it - a "C" chip beside the changed class, because the change to it is a re-layout and nothing else, and a dot in the same colour on the package above it, saying a cosmetic change is somewhere inside.](Images/library-browser-2.png)
+
+### What Kind of Change It Is
+
+**M** and **C** are about the class, not the file it lives in. Every other chip is about the file: a deleted file is deleted for every class in it, and an untracked one is untracked for all of them. "Modified" is the one that is not, because a `package.mo` holding three hundred classes changes when any one of them is edited, and the other two hundred and ninety-nine are untouched.
+
+So MLQT compares **the class as it is now against the class as it was committed** — the parsed classes, not the text — and marks each one with what it found:
+
+- **M (orange)** — something a translator reads is different: an equation, a declaration, a modification, or an annotation that changes how the model is built. This is the one to review.
+- **C (blue)** — the class changed, but nothing a translator reads did. Reformatting, a re-worded description, a rewritten `Documentation`, a component dragged across the diagram, an icon redrawn.
+- **no chip** — the class's file changed, but this class did not. Its own text is identical to the committed version.
+
+**Annotations are not ignored wholesale.** Several of them change what is simulated, and a change to one of those is an **M** however graphical the rest of the annotation is. `Evaluate`, `Inline`, `LateInline`, `smoothOrder`, `GenerateEvents`, `derivative`, `inverse`, `HideResult`, `Protection`, `experiment`, `uses`, `version` and the external-function annotations (`Include`, `Library`, `IncludeDirectory`, `LibraryDirectory`, `SourceDirectory`) are all treated as significant, and so is **any annotation MLQT does not recognise**, including a vendor's. Only a known list — the drawing, documentation and dialog annotations — is treated as graphical.
+
+**When MLQT cannot tell**, the chip stays a plain orange **M** and its tooltip says so. That happens when the committed version of the file cannot be read or does not parse, when the file is conflicted, and in a repository that is not under version control.
+
+### Showing Only What Changed
+
+Above the tree, a row of chips appears whenever the repository has uncommitted changes. Each one carries the number of classes behind it, so you can see there is nothing cosmetic here without selecting anything:
+
+| Chip | Shows |
+|------|-------|
+| **All** | The ordinary tree, everything in it |
+| **Changed** | Every class with an uncommitted change of its own |
+| **Simulation** | The changes worth reading: everything except the ones MLQT is confident are graphical. A class it could not classify is in here |
+| **Cosmetic** | The changes MLQT vouches for as layout, wording or graphics — and *only* those |
+
+A class is one or the other, never both. If you changed an equation **and** moved the component on the diagram, the class is a simulation change: it appears under **Changed** and **Simulation**, and not under **Cosmetic**. That is what makes **Cosmetic** useful — it is the list you can pass over, so a class with a changed equation hiding among the redrawn icons would defeat it.
+
+**It is still the tree.** Selecting a chip prunes it to the classes that match and the packages that contain them, rather than flattening it into a list — so a change keeps the context of where it lives, and two changes in the same package are visibly in the same package. It stays open exactly as far as you had it open, and no further: a filter is a question, not a rearrangement. A class is a leaf there whatever it holds in the full tree, because the children it has are ones the filter did not select.
+
+Click a class to open it, exactly as in the unfiltered tree. Click **All** — or the selected chip again — to go back; the full tree returns expanded as you left it, including anything you opened while the filter was on.
+
+![Screenshot: The row of filter chips above the tree - All, Changed, Simulation and Cosmetic - each of the last three carrying the number of classes behind it in brackets.](Images/library-browser-6.png)
+
+**None of this appears for a repository marked [Reference only](settings-reference.md#reference-only-repositories).** MLQT never formats, checks, commits or writes to one, so there is nothing for a change marker to be about — and because a reference repository is not watched for file changes either, anything shown would only ever be refreshed by loading the project.
 
 ### Descendant Change Indicator
 
-Parent packages that contain modified files (but are not themselves directly modified) show a small **orange dot** next to their name. This lets you quickly spot which branches of the tree contain changes without expanding every node.
+Parent packages that contain modified files (but are not themselves directly modified) show a small **dot** next to their name. This lets you quickly spot which branches of the tree contain changes without expanding every node.
+
+The dot is coloured by the strongest change under it: **orange** when something below it can affect simulation, **blue** when everything below it is graphical. A package whose file changed but whose own text did not gets the dot rather than a chip.
+
+### Parser Error Indicator
+
+A class with parser errors shows an error icon beside its name — **orange** for recoverable syntax errors, **red** when the file could not be parsed at all. Packages containing such a class show the same icon, so you can find it without expanding everything. Hover over the icon for the error count; the errors themselves are in the Code Review findings table.
 
 ## Repository Header (Repository View Only)
 
@@ -75,6 +121,7 @@ In repository view, each repository has a header section that shows key informat
 
 - **VCS icon** — GitHub icon for Git, storage icon for SVN, folder icon for local directories
 - **Repository name** — The display name you gave the repository
+- **Reference only** chip — Shown beside the name of a repository marked [Reference only](settings-reference.md#reference-only-repositories). The branch, update, commit and revert buttons are hidden for such a repository, because MLQT never writes to it
 - **Browse history** — Opens the [VCS History](git-operations.md#browsing-history) dialog
 
 For Git and SVN repositories, when expanded:

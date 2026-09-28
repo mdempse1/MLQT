@@ -4,8 +4,11 @@ using Antlr4.Runtime;
 using DymolaInterface;
 using OpenModelicaInterface;
 using RevisionControl;
+using ModelicaGraph;
+using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Visitors;
 
 namespace MLQT.Shared.Pages;
 
@@ -31,26 +34,64 @@ public partial class CodeReview : IAsyncDisposable
     private bool _showAnnotations = true;
     private bool _showHighlighted = true;
     private List<string>? _highlightedCode = null;
-    private string _modelicaCode { get; set; } = "";
-    private int _lines = 10;
+
+    /// <summary>
+    /// What the viewer is hiding, so a finding's line in the class can be turned into the line it is
+    /// showing at. <see cref="SourceElision.None"/> whenever nothing is hidden, which is the common
+    /// case for a model.
+    /// </summary>
+    private SourceElision _elision = SourceElision.None;
+
     private ModelNode? _currentModelNode = null;
     private int _modelsToCheck = 0;
     private int _modelsChecked = 0;
     private bool _checkProgressDialog = false;
     private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
     private string _checkingModel = "";
-    private string _checkingToolName = "";
+
+    /// <summary>
+    /// What the tool is doing before it starts counting classes - starting, opening the library -
+    /// or null once it is checking them (B259).
+    /// </summary>
+    private string? _checkStatus;
+
+    /// <summary>
+    /// The one external-tool check at a time, and only its events (B335). Null until the page has
+    /// initialised.
+    /// </summary>
+    private ExternalCheckSession? _externalChecks;
+    private string _checkingToolName => _externalChecks?.ToolName ?? "";
+
+    /// <summary>Both check buttons are disabled while either tool is still running.</summary>
+    private bool ExternalCheckRunning => _externalChecks?.IsAnyRunning ?? false;
     private bool _findingDetailsVisible = false;
     private LogMessage? _currentFinding = null;
     private string _searchString = "";
     private bool FindingsScopeAllModels = false;
 
     /// <summary>
+    /// The rule the findings list is narrowed to, or null for all of them (B187). Held here rather
+    /// than smuggled into the search box, which is the mistake the class scope made.
+    /// </summary>
+    private string? _ruleFilter;
+
+    /// <summary>What the user is searching the <em>code</em> for, and where they are in it (B176).</summary>
+    private string _codeSearch = "";
+
+    /// <summary>
+    /// The display lines carrying a match, in order. Recomputed when the term or the class changes,
+    /// because it indexes into what is on screen.
+    /// </summary>
+    private List<int> _codeMatches = [];
+
+    /// <summary>Which of <see cref="_codeMatches"/> the user is on, zero-based.</summary>
+    private int _codeMatchIndex;
+
+    /// <summary>
     /// Narrows the findings list to what this working copy has changed — new findings, plus standing
     /// debt in a file waiting to be committed. Off by default so nothing is hidden until asked for.
     /// </summary>
     private bool ShowChangesOnly = false;
-    private CancellationTokenSource? _checkCancellationTokenSource;
     private IReadOnlyList<string>? _suggestions = null;
     private HashSet<string>? _misspelledWords = null;
     private DotNetObjectReference<CodeReview>? _spellCheckRef;
@@ -78,6 +119,16 @@ public partial class CodeReview : IAsyncDisposable
     // Consumed once the selected model's content has rendered (see OnAfterRenderAsync).
     private string? _pendingScrollWord;
 
+    /// <summary>
+    /// The line in the class a clicked finding is about, waiting for that class to be on screen.
+    /// Mapped through <see cref="_elision"/> at the last moment rather than when it is armed,
+    /// because the class may not be the one currently shown and the map is the new one's.
+    /// </summary>
+    private int? _pendingScrollLine;
+
+    /// <summary>The class <see cref="_pendingScrollLine"/> and <see cref="_pendingScrollWord"/> were armed for.</summary>
+    private string? _pendingScrollModelId;
+
     // Set when the correction context menu opens with a provisional position. On the next after-render
     // OnAfterRenderAsync re-measures the now-rendered menu and clamps it within the viewport, writing
     // the result back into _contextMenuX/_contextMenuY so .NET stays the source of truth (later
@@ -86,8 +137,126 @@ public partial class CodeReview : IAsyncDisposable
 
     // Code rendering state
     private bool _isLoadingCode = false;
-    private record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
-    private readonly Dictionary<RenderCacheKey, List<string>> _renderCache = new();
+    internal record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
+
+    /// <summary>The lines on screen and what was hidden to produce them — one without the other
+    /// cannot answer which line of the class a displayed line is.</summary>
+    internal record ShownClass(List<string> Lines, SourceElision Elision);
+
+    private readonly Dictionary<RenderCacheKey, ShownClass> _renderCache = new();
+
+    /// <summary>
+    /// Which render of the class was asked for last. Each background render carries the number it
+    /// was started with and lands only if it is still this one - so a slow render for a class the
+    /// user has left, or for this class with annotations the other way round, cannot overwrite the
+    /// one asked for since (B345). Checking the model id alone let a Hide render, which parses
+    /// twice, land after the Show the user clicked while it ran.
+    /// </summary>
+    private int _renderGeneration;
+
+    /// <summary>
+    /// Whether what is on screen is the lexer's first paint of a large class (B185) rather than
+    /// the class as it will stay: not yet coloured from the tree, and with nothing hidden, because
+    /// hiding needs the tree too.
+    /// </summary>
+    private bool _showingQuickPaint;
+
+    /// <summary>
+    /// Whether the class on screen is laid out as it will stay, so a pending scroll can be aimed
+    /// at it. Not while the spinner is up, and <b>not over the lexer's first paint</b> (B342): its
+    /// lines are the unelided class, so a finding's line mapped through its empty elision scrolled
+    /// to the wrong place, and the page then swapped the elided text in underneath.
+    /// </summary>
+    internal bool ReadyForPendingScrolls =>
+        PendingScrollsCanLand(_isLoadingCode, _showingQuickPaint, _isDiffMode, _highlightedCode);
+
+    /// <summary>
+    /// The rule behind <see cref="ReadyForPendingScrolls"/>: no spinner, no first paint, a class on
+    /// screen — <b>and not in diff mode</b> (B346): the single view is not rendered there, so a
+    /// scroll aimed at <c>.code-viewer</c> found nothing and the finding's line was consumed and
+    /// lost. It is held instead, and lands when the user switches back.
+    /// </summary>
+    internal static bool PendingScrollsCanLand(
+        bool isLoading, bool showingQuickPaint, bool isDiffMode, IReadOnlyList<string>? lines) =>
+        !isLoading && !showingQuickPaint && !isDiffMode && lines is { Count: > 0 };
+
+    /// <summary>
+    /// Whether the find-in-code box works: there is a class on screen to search, and it is the
+    /// single view. The diff is a different document — its lines are numbered and laid out by the
+    /// diff — so the box used to count matches in text that was not on screen and scroll a viewer
+    /// that was not rendered (B346).
+    /// </summary>
+    internal static bool CodeSearchAvailable(bool isDiffMode, IReadOnlyList<string>? lines) =>
+        !isDiffMode && lines is { Count: > 0 };
+
+    /// <summary>Starts a render of the current class, and returns its number.</summary>
+    internal int BeginRender() => ++_renderGeneration;
+
+    /// <summary>
+    /// Puts a class on screen as it will stay, and re-finds the search against it, because the
+    /// match list is line numbers into what is shown.
+    /// </summary>
+    private void ApplyShown(ShownClass shown)
+    {
+        _highlightedCode = shown.Lines;
+        _elision = shown.Elision;
+        _isLoadingCode = false;
+        _showingQuickPaint = false;
+        RecomputeCodeMatches();
+    }
+
+    /// <summary>
+    /// Shows the lexer's first paint for render <paramref name="generation"/>, unless a later
+    /// render has been asked for or the parse got here first. The search is re-found against it -
+    /// the count otherwise went on describing the previous class (B342) - but pending scrolls wait
+    /// for the render that follows; see <see cref="ReadyForPendingScrolls"/>.
+    /// </summary>
+    internal bool TryApplyQuickPaint(int generation, ShownClass quick)
+    {
+        if (generation != _renderGeneration || !_isLoadingCode)
+            return false;
+
+        _highlightedCode = quick.Lines;
+        _elision = quick.Elision;
+
+        // Clearing this is the point of the exercise: while it is set the page shows a spinner in
+        // place of the viewer, so painting the lines without it would change nothing the user can
+        // see.
+        _isLoadingCode = false;
+        _showingQuickPaint = true;
+        RecomputeCodeMatches();
+        return true;
+    }
+
+    /// <summary>
+    /// Keeps render <paramref name="generation"/> for next time, and shows it if it is still the
+    /// render asked for last (B345).
+    /// </summary>
+    internal bool TryApplyRender(int generation, RenderCacheKey key, ShownClass shown)
+    {
+        _renderCache[key] = shown;
+        if (generation != _renderGeneration)
+            return false;
+
+        ApplyShown(shown);
+        return true;
+    }
+
+    /// <summary>The lines on screen.</summary>
+    internal IReadOnlyList<string>? DisplayedLines => _highlightedCode;
+
+    /// <summary>What the code is being searched for.</summary>
+    internal string CodeSearch
+    {
+        get => _codeSearch;
+        set => _codeSearch = value;
+    }
+
+    /// <summary>How many lines on screen hold what the code is being searched for.</summary>
+    internal int CodeMatchCount => _codeMatches.Count;
+
+    /// <summary>Marks the class as loading, as a cache miss does before it starts a render.</summary>
+    internal void BeginLoading() => _isLoadingCode = true;
 
     // Diff view state
     private bool _isDiffMode = false;
@@ -95,11 +264,27 @@ public partial class CodeReview : IAsyncDisposable
     private VcsFileStatus? _currentModelFileStatus;
     private string? _originalModelCode;
     private string? _modifiedModelCode;
+
+    /// <summary>
+    /// Why the diff of the class shown cannot be drawn, or null. Set with <see cref="_originalModelCode"/>
+    /// by the load that sets it, so it is only read while that is set (B410).
+    /// </summary>
+    private string? _diffUnavailable;
     private bool _isLoadingDiff;
+
+    /// <summary>The class the latest diff load is for — the one whose finishing clears the spinner.</summary>
+    private ModelNode? _diffLoadNode;
+
+    /// <summary>
+    /// How many diff loads have come back to the dispatcher, whether or not what they found was still
+    /// wanted - so a test can wait for a load the user overtook, which renders nothing of its own.
+    /// </summary>
+    internal int DiffLoadsFinished { get; private set; }
     private DiffViewMode _diffViewMode = DiffViewMode.Unified;
     private string? _currentRepositoryId;
     private string? _currentRelativeFilePath;
     private bool _isExcludedFromFormatting;
+    private bool _togglingExclusion;
 
     //Tool logos
     const string _dymolaLogo = @"<svg width=""24"" height=""24"" viewBox=""0 0 24 24"">
@@ -118,11 +303,7 @@ public partial class CodeReview : IAsyncDisposable
     private void CloseCheckProgressDialog()
     {
         _checkProgressDialog = false;
-        _checkCancellationTokenSource?.Cancel();
-
-        // Also call StopChecking directly on services to ensure immediate cancellation
-        DymolaCheckingService.StopChecking();
-        OpenModelicaCheckingService.StopChecking();
+        _externalChecks?.Stop();
     }
 
     private void CloseFindingDialog() => _findingDetailsVisible = false;
@@ -140,13 +321,11 @@ public partial class CodeReview : IAsyncDisposable
         // always-mounted layout), so they are captured even when this page isn't open. This page just
         // reacts to OnLogMessagesChanged to refresh.
 
-        // Subscribe to model checking service events
-        DymolaCheckingService.OnProgressChanged += OnCheckProgressChanged;
-        DymolaCheckingService.OnModelChecked += OnModelChecked;
-        DymolaCheckingService.OnCheckingComplete += OnCheckingComplete;
-        OpenModelicaCheckingService.OnProgressChanged += OnCheckProgressChanged;
-        OpenModelicaCheckingService.OnModelChecked += OnModelChecked;
-        OpenModelicaCheckingService.OnCheckingComplete += OnCheckingComplete;
+        // Both tools' events, through the one session that knows whose run is current (B335).
+        _externalChecks = new ExternalCheckSession(DymolaCheckingService, OpenModelicaCheckingService);
+        _externalChecks.ProgressChanged += OnCheckProgressChanged;
+        _externalChecks.ModelChecked += OnModelChecked;
+        _externalChecks.Completed += OnCheckingComplete;
 
         base.OnInitialized();
     }
@@ -157,8 +336,10 @@ public partial class CodeReview : IAsyncDisposable
         await ApplySyntaxHighlightingStyles();
 
         // Pick up the current baselines and pending changes when the tab opens. The service keeps
-        // itself current after that, from library loads and file activity.
-        BaselineStatus.Refresh();
+        // itself current after that, from library loads and file activity. Queued, not run here: it
+        // is a working-copy scan of every repository, and this is the UI thread (B293). The tab
+        // re-renders when OnChanged says the answer moved.
+        _ = BaselineStatus.RefreshAsync();
     }
 
     private async void OnBaselineStatusChanged() => await InvokeAsync(StateHasChanged);
@@ -181,10 +362,30 @@ public partial class CodeReview : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The findings list changed. Raised on whichever thread changed it — a check's workers deliver
+    /// findings directly now — so everything this touches has to happen on the dispatcher, not just
+    /// the render: <c>RecomputeMisspelledWords</c> writes component state and used to run on the
+    /// caller (B190).
+    /// </summary>
     private async void OnLogMessagesChanged()
     {
-        RecomputeMisspelledWords();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                RecomputeMisspelledWords();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page was torn down between the change being announced and this reaching the
+            // dispatcher. That window opened when findings started arriving on a worker's thread
+            // rather than the dispatcher's, and the event can now outrun a tab switch. There is
+            // nothing to render and nothing to report; the unsubscribe in Dispose is what normally
+            // prevents this, and it cannot close the gap entirely.
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -208,7 +409,7 @@ public partial class CodeReview : IAsyncDisposable
         // Any render of the old content that fires between capture and the re-render keeps the same
         // reference and is correctly skipped. (Catching the transient loading spinner instead is
         // unreliable: for small files the spinner render coalesces away before OnAfterRender runs.)
-        if (_pendingScroll is { } scroll && !_isLoadingCode && _highlightedCode is { Count: > 0 }
+        if (_pendingScroll is { } scroll && ReadyForPendingScrolls
             && !ReferenceEquals(_highlightedCode, _scrollBaselineCode))
         {
             _pendingScroll = null;
@@ -227,7 +428,7 @@ public partial class CodeReview : IAsyncDisposable
         // word into view once the (possibly newly selected) model's content has rendered. The JS
         // helper retries across frames, so it tolerates the highlight spans appearing slightly
         // after the code lines (RecomputeMisspelledWords runs just after the render).
-        if (_pendingScrollWord is { Length: > 0 } word && !_isLoadingCode && _highlightedCode is { Count: > 0 })
+        if (_pendingScrollWord is { Length: > 0 } word && ReadyForPendingScrolls)
         {
             _pendingScrollWord = null;
             try
@@ -237,6 +438,27 @@ public partial class CodeReview : IAsyncDisposable
             catch (Exception)
             {
                 // View may have been torn down; ignore.
+            }
+        }
+
+        // After clicking any other finding, scroll the line it is about into view. This is only
+        // possible now that the viewer shows the class itself: a finding's line is counted against
+        // the class's own source, and until B215 the page showed a reformatted copy of it that was
+        // 17-24% longer, so the number pointed at whatever happened to be there (B182, B183).
+        if (_pendingScrollLine is { } pending && ReadyForPendingScrolls)
+        {
+            _pendingScrollLine = null;
+            var displayLine = DisplayLineOfFinding(pending, _currentModelNode, _elision);
+            if (displayLine is { } target)
+            {
+                try
+                {
+                    await JSRuntime.InvokeVoidAsync("spellCheck.scrollLineIntoView", ".code-viewer", target);
+                }
+                catch (Exception)
+                {
+                    // View may have been torn down; ignore.
+                }
             }
         }
 
@@ -275,7 +497,11 @@ public partial class CodeReview : IAsyncDisposable
             _settings.Dymola = await SettingsService.GetAsync("Dymola", new DymolaSettings());
             _settings.OpenModelica = await SettingsService.GetAsync("OpenModelica", new OpenModelicaSettings());
 
-            DymolaCheckingService.UpdateSettings(_settings.Dymola);            
+            // Both tools, which it was not: only Dymola's settings reached its service, so the path,
+            // port - and now the time limit - a user set for OpenModelica were never applied, and omc
+            // ran on its defaults whatever the settings tab said (B263).
+            DymolaCheckingService.UpdateSettings(_settings.Dymola);
+            OpenModelicaCheckingService.UpdateSettings(_settings.OpenModelica);
         }
         catch (Exception ex)
         {
@@ -303,15 +529,14 @@ public partial class CodeReview : IAsyncDisposable
         CodeReviewService.OnLogMessagesChanged -= OnLogMessagesChanged;
         BaselineStatus.OnChanged -= OnBaselineStatusChanged;
 
-        // Unsubscribe from model checking service events
-        DymolaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
-        DymolaCheckingService.OnModelChecked -= OnModelChecked;
-        DymolaCheckingService.OnCheckingComplete -= OnCheckingComplete;
-        OpenModelicaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
-        OpenModelicaCheckingService.OnModelChecked -= OnModelChecked;
-        OpenModelicaCheckingService.OnCheckingComplete -= OnCheckingComplete;
-
-        _checkCancellationTokenSource?.Dispose();
+        // The session unsubscribes from both tools' events as it is disposed.
+        if (_externalChecks != null)
+        {
+            _externalChecks.ProgressChanged -= OnCheckProgressChanged;
+            _externalChecks.ModelChecked -= OnModelChecked;
+            _externalChecks.Completed -= OnCheckingComplete;
+            _externalChecks.Dispose();
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -383,68 +608,245 @@ public partial class CodeReview : IAsyncDisposable
             await ApplyCorrection(_customCorrection);
     }
 
-    private async Task ToggleAnnotations()
+    /// <summary>
+    /// Shows or hides annotations in the single view. <b>The diff is not touched</b>: since B285 it
+    /// always shows everything, so it has nothing to reload — and it used to reload twice, once
+    /// here and once from the VCS check the re-show starts (B346).
+    /// </summary>
+    private void ToggleAnnotations()
     {
         _showAnnotations = !_showAnnotations;
-        OnModelSelected();
-
-        // If in diff mode, force reload with new annotation settings
-        if (_isDiffMode)
-        {
-            _originalModelCode = null;
-            await LoadModelDiffAsync();
-        }
+        ShowCurrentModel(keepDiff: true);
     }
 
+    /// <summary>
+    /// Takes <paramref name="modelId"/> out of the repository's <c>FormattingExcludedModels</c>, and
+    /// saves the settings <b>as an explicit Apply</b> when that changed them (B380): the button is a
+    /// user's own change to the repository's settings, so it records the default-on rules as the
+    /// Edit Repository dialog's Apply does, where a plain save would write the change without them.
+    /// When the class was not in the list nothing changed, and nothing is written - recording the
+    /// defaults then would be a modified settings file nobody asked for (B310).
+    /// </summary>
+    internal static async Task RemoveExcludedModelEntryAsync(
+        IRepositoryService repositories, Repository repository, string modelId)
+    {
+        if (repository.StyleSettings?.FormattingExcludedModels.Remove(modelId) == true)
+            await repositories.ApplyRepositorySettingsAsync(repository.Id);
+    }
+
+    /// <summary>
+    /// Takes the current class out of formatting, or puts it back — by writing
+    /// <c>__MLQT(format=false)</c> into its source rather than by adding its name to
+    /// <c>FormattingExcludedModels</c> (B175).
+    ///
+    /// <para><b>Why the annotation.</b> The name list does not survive the class being renamed or
+    /// moved: the entry stays behind naming nothing, the class comes back under the formatter, and
+    /// the next save reorders code somebody had deliberately left alone. The annotation travels with
+    /// the class, is committed with it, and is the mechanism the documentation already steers people
+    /// to. Both are honoured everywhere (B39, B65), so this changes which one the button writes and
+    /// nothing about what reads it.</para>
+    ///
+    /// <para><b>Re-including clears both.</b> A class excluded by an earlier MLQT is in the name
+    /// list and has no annotation, so the button would otherwise be unable to undo its own past
+    /// behaviour.</para>
+    /// </summary>
     private async Task ToggleFormattingExclusionAsync()
     {
-        if (_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))
+        if (_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId) || _togglingExclusion)
             return;
 
         var repository = RepositoryService.GetRepository(_currentRepositoryId);
         if (repository?.StyleSettings == null)
             return;
 
+        var target = ResolveClassSourceTarget(_currentModelNode.Id);
+        if (target is null)
+            return;
+
         var modelId = _currentModelNode.Id;
-        var excluded = repository.StyleSettings.FormattingExcludedModels;
+        _togglingExclusion = true;
 
-        if (_isExcludedFromFormatting)
+        // Timed per step, because the first attempt at explaining why this button took ten
+        // seconds was a guess. The log already carries the write and the reload, and they were
+        // under a millisecond; what was missing was everything after them (B253).
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = 0L;
+        void Step(string what)
         {
-            // Re-include the model
-            excluded.Remove(modelId);
-            _isExcludedFromFormatting = false;
+            LoggingService.Debug("CodeReview",
+                $"  exclusion {what}: {sw.ElapsedMilliseconds - last}ms (total {sw.ElapsedMilliseconds}ms)");
+            last = sw.ElapsedMilliseconds;
         }
-        else
+
+        // Why the file was left as it is, when the formatting already applied to it could not be
+        // taken back without taking something else with it (B302).
+        string? leftAlone = null;
+
+        try
         {
-            // Exclude the model
-            if (!excluded.Contains(modelId))
-                excluded.Add(modelId);
-            _isExcludedFromFormatting = true;
-
-            // If the file is modified in VCS, revert it to discard formatting changes
-            if (_isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath))
+            if (_isExcludedFromFormatting)
             {
-                await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
+                if (!await WriteFormattingOptOutAsync(target, add: false))
+                    return;
+                Step("remove annotation");
 
-                // Reload the file to pick up the reverted content
-                var fileId = _currentModelNode.ContainingFileId ?? "";
-                var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(fileId);
-                if (fileNode != null)
+                // The list entry too: a class excluded before B175, or one carrying both.
+                await RemoveExcludedModelEntryAsync(RepositoryService, repository, modelId);
+                Step("save settings");
+            }
+            else
+            {
+                // Reverting comes first. It discards the formatting the class has already had
+                // applied, which is the point of the button — and doing it afterwards would discard
+                // the annotation along with it.
+                //
+                // Only when formatting is all the revert would take back (B302). A revert restores
+                // the committed file whatever made it differ: it deleted a file never committed, and
+                // discarded hand edits to every other class in a modified one.
+                var decision = _isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath)
+                    ? await DecideFormattingRevertAsync(target, repository)
+                    : null;
+                Step("decide revert");
+
+                if (decision is { Revert: false })
+                    leftAlone = decision.Reason;
+
+                if (decision is { Revert: true })
                 {
-                    await LibraryDataService.ReloadFileAsync(fileNode.FilePath);
-                    // Re-fetch the model node since it may have been replaced
+                    VcsOperationResult reverted;
+                    using (MonitorPause.Begin(FileMonitoringService,
+                               RepositoryService.GetRepositoriesSharingWorkingCopy(_currentRepositoryId)))
+                    {
+                        reverted = await RepositoryService.RevertFilesAsync(
+                            _currentRepositoryId, [_currentRelativeFilePath!]);
+                    }
+                    Step("revert");
+
+                    if (!reverted.Success)
+                    {
+                        Snackbar.Add(
+                            $"The class was not excluded: reverting its file failed ({reverted.ErrorMessage}).",
+                            MudBlazor.Severity.Error);
+                        return;
+                    }
+
+                    await LibraryDataService.RefreshDependenciesAsync(
+                        await LibraryDataService.ReloadFileAsync(target.FilePath));
+                    Step("reload after revert");
                     _currentModelNode = LibraryDataService.CombinedGraph.GetNode<ModelNode>(modelId);
+
+                    // The reverted file is what the annotation has to be spliced into.
+                    target = ResolveClassSourceTarget(modelId);
+                    if (target is null)
+                        return;
                 }
 
-                // Refresh VCS status
-                CheckModelVcsStatus();
-
-                // Re-render
-                OnModelSelected();
+                if (!await WriteFormattingOptOutAsync(target, add: true))
+                    return;
+                Step("write annotation");
             }
+
+            // Re-fetched because saving the file reloads it, which replaces the node.
+            var reloaded = LibraryDataService.GetModelById(modelId) ?? target.Node;
+            _currentModelNode = reloaded;
+            _isExcludedFromFormatting = FormattingExclusion.Excludes(reloaded, repository.StyleSettings);
+            Step("re-read exclusion state");
+
+            // Not CheckModelVcsStatus() directly: it asks the VCS for the whole working copy, and
+            // the write above has just invalidated the cached answer — so on a library the size of
+            // MSL it is a scan of thousands of files, and calling it here ran that on the UI thread.
+            // The button took about ten seconds to come back on a 172-line file, of which the write
+            // and the reload were under a millisecond (B253).
+            //
+            // OnModelSelected runs the same check in the background, as every other path on this
+            // page does, and updates the toolbar when it finishes. The exclusion state is already
+            // set above, so the button itself flips immediately.
+            OnModelSelected();
+
+            Step("re-render kicked off");
+
+            Snackbar.Add(
+                _isExcludedFromFormatting
+                    ? "This class is now excluded from formatting, recorded in its own source so it survives a rename."
+                    : "This class is back under the formatter.",
+                MudBlazor.Severity.Success);
+
+            if (_isExcludedFromFormatting && leftAlone is not null)
+                Snackbar.Add(
+                    $"{Path.GetFileName(target.FilePath)} was not reverted: {leftAlone}. Formatting "
+                    + "already applied to the class stays until you undo it.",
+                    MudBlazor.Severity.Info);
+        }
+        finally
+        {
+            _togglingExclusion = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// Whether reverting the class's file would take back formatting and nothing else —
+    /// <see cref="FormattingRevert"/>'s answer, given the file's status, its committed text and its
+    /// text on disk. Off the UI thread, because it reads the committed version from the VCS and
+    /// renders it.
+    /// </summary>
+    private async Task<FormattingRevert.Decision> DecideFormattingRevertAsync(
+        ClassSourceTarget target, Repository repository)
+    {
+        var workingCopy = await ReadTargetFileAsync(target);
+        if (workingCopy is null)
+            return FormattingRevert.Decision.No("the file could not be read");
+
+        var status = _currentModelFileStatus;
+        var repositoryId = _currentRepositoryId!;
+        var relativePath = _currentRelativeFilePath!;
+        var settings = repository.StyleSettings ?? new StyleCheckingSettings();
+        var graph = LibraryDataService.CombinedGraph;
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                // Only a modified file has a committed version worth fetching.
+                var committed = status == VcsFileStatus.Modified
+                    ? RepositoryService.GetFileContentAtRevision(repositoryId, relativePath)
+                    : null;
+                return FormattingRevert.Decide(
+                    status, committed, workingCopy, target.FileOwner.ParentModelName, settings,
+                    rootClassId: target.FileOwner.Id,
+                    isSimpleType: settings.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null);
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("CodeReview", $"Could not compare {relativePath} with its committed version: {ex.Message}");
+                return FormattingRevert.Decision.No("its committed version could not be read");
+            }
+        });
+    }
+
+    /// <summary>Adds or removes the class's <c>format=false</c> directive and saves the file.</summary>
+    private async Task<bool> WriteFormattingOptOutAsync(ClassSourceTarget target, bool add)
+    {
+        var fileContent = await ReadTargetFileAsync(target);
+        if (fileContent is null)
+            return false;
+
+        var written = add
+            ? MlqtSuppressionWriter.TryAddFormattingOptOutToFile(
+                fileContent, target.ClassPath, out var newContent, out var error)
+            : MlqtSuppressionWriter.TryRemoveFormattingOptOutFromFile(
+                fileContent, target.ClassPath, out newContent, out error);
+
+        if (!written)
+        {
+            Snackbar.Add($"Could not change the formatting exclusion: {error}", MudBlazor.Severity.Error);
+            return false;
         }
 
-        await RepositoryService.SaveRepositorySettingsAsync();
+        // Nothing to write when the class already said what was asked of it — which is the ordinary
+        // case for re-including a class that was only ever in the name list.
+        return string.Equals(newContent, fileContent, StringComparison.Ordinal)
+            || await SaveAnnotatedFileAsync(target, newContent);
     }
 
     #region Diff View Methods
@@ -474,9 +876,12 @@ public partial class CodeReview : IAsyncDisposable
         if (fileNode == null)
             return;
 
-        // Find the library and repository for this model
-        var library = LibraryDataService.Libraries
-            .FirstOrDefault(l => l.ModelIds.Contains(_currentModelNode.Id));
+        // Find the library and repository for this model. GetOwningLibrary, not a search of every
+        // library's ModelIds: a class checked out as source and also shipped in a tool's library
+        // folder is claimed by both entries, and the first of them is whichever load happened to
+        // finish first. Picking the vendor's read-only copy left this deciding the user's own
+        // class was not under version control, and disabling all three diff views for it.
+        var library = LibraryDataService.GetOwningLibrary(_currentModelNode.Id);
         if (library == null || string.IsNullOrEmpty(library.RepositoryId))
             return;
 
@@ -485,7 +890,10 @@ public partial class CodeReview : IAsyncDisposable
             return;
 
         _currentRepositoryId = repository.Id;
-        _isExcludedFromFormatting = repository.StyleSettings?.IsModelExcludedFromFormatting(_currentModelNode.Id) ?? false;
+        // FormattingExclusion, not the name list alone: a class carrying __MLQT(format=false)
+        // is excluded and the toggle has to show it that way, or the button offers to exclude a
+        // class that already is.
+        _isExcludedFromFormatting = FormattingExclusion.Excludes(_currentModelNode, repository.StyleSettings);
 
         // Compute the path relative to VcsRootPath — this matches what GetWorkingCopyChanges
         // returns (paths are always relative to VcsRootPath, not LocalPath).
@@ -546,80 +954,154 @@ public partial class CodeReview : IAsyncDisposable
         _isLoadingDiff = true;
         StateHasChanged();
 
+        // Everything the load reads is taken now, on the dispatcher (B344). The task used to read
+        // _currentModelNode as it ran, so switching class mid-load diffed the new class's name
+        // against the old class's file - and wrote the old class's HEAD into _originalModelCode
+        // after the switch had cleared it, so the next SetViewMode found it set and did not reload.
+        var node = _currentModelNode;
+        _diffLoadNode = node;
+        var repositoryId = _currentRepositoryId;
+        var relativePath = _currentRelativeFilePath;
+        var graph = LibraryDataService.CombinedGraph;
+
+        string original;
+        string modified;
+        string? cannotCompare = null;
         try
         {
-            await Task.Run(() =>
+            string? head;
+            (head, modified) = await Task.Run(() =>
             {
-                // Get the file content at HEAD
-                var headFileContent = RepositoryService.GetFileContentAtRevision(
-                    _currentRepositoryId, _currentRelativeFilePath, "HEAD");
-
-                // Extract the raw original model code from HEAD
-                if (!string.IsNullOrEmpty(headFileContent))
-                {
-                    try
-                    {
-                        // Parse the HEAD file and find the specific model by name
-                        var headModels = ModelicaParserHelper.ExtractModels(headFileContent);
-                        var matchingModel = headModels.FirstOrDefault(m =>
-                            m.Name == _currentModelNode.Definition.Name);
-
-                        if (matchingModel != null)
-                        {
-                            var prefix = matchingModel.ElementPrefix;
-                            _originalModelCode = string.IsNullOrEmpty(prefix)
-                                ? matchingModel.SourceCode
-                                : prefix + " " + matchingModel.SourceCode;
-                        }
-                        else
-                        {
-                            _originalModelCode = headFileContent;
-                        }
-                    }
-                    catch
-                    {
-                        // HEAD version may not parse correctly
-                        _originalModelCode = headFileContent;
-                    }
-                }
-                else
-                {
-                    // File doesn't exist at HEAD (new file)
-                    _originalModelCode = "";
-                }
-
-                // Use the raw source code for the current working copy version
-                var currentCode = _currentModelNode.Definition.ModelicaCode;
-                var currentPrefix = _currentModelNode.ElementPrefix;
-                _modifiedModelCode = string.IsNullOrEmpty(currentPrefix)
-                    ? currentCode
-                    : currentPrefix + " " + currentCode;
+                var headFileContent = RepositoryService.GetFileContentAtRevision(repositoryId, relativePath, "HEAD");
+                return (HeadSideOf(headFileContent, node), WorkingCopyText(node, graph));
             });
+
+            // Not the whole file in its place (B410): that is not a diff of the class, and for a
+            // large file it was every line of it as a removed row.
+            original = head ?? "";
+            if (head is null)
+                cannotCompare = HeadSideMissingMessage(node, relativePath);
         }
         catch (Exception ex)
         {
-            _originalModelCode = $"Error loading HEAD version: {ex.Message}";
-            _modifiedModelCode = _currentModelNode?.Definition.ModelicaCode ?? "";
+            original = "";
+            modified = node.Definition.ModelicaCode ?? "";
+            cannotCompare = $"The HEAD version of {relativePath} could not be loaded: {ex.Message}";
         }
-        finally
+
+        await InvokeAsync(() =>
         {
-            _isLoadingDiff = false;
-            await InvokeAsync(StateHasChanged);
+            DiffLoadsFinished++;
+
+            // The spinner belongs to the latest load, whichever class that is for.
+            if (ReferenceEquals(_diffLoadNode, node))
+            {
+                _diffLoadNode = null;
+                _isLoadingDiff = false;
+            }
+
+            // The user has moved on: this is the diff of a class no longer shown, and it must not
+            // be taken for the one that is.
+            if (ReferenceEquals(_currentModelNode, node))
+            {
+                _originalModelCode = original;
+                _modifiedModelCode = modified;
+                _diffUnavailable = cannotCompare;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>
+    /// The HEAD side of a class diff: <paramref name="node"/> as it was in its file at HEAD.
+    ///
+    /// <para><b>Matched by full name within the file</b> (B344). It was matched on the short name,
+    /// so in a file with several nested classes of one name — MSL's <c>Media/package.mo</c> has a
+    /// <c>setState_pTX</c> in each medium — the diff was against whichever came first. Only when
+    /// the full name is not there (the class was moved or renamed since) does a short name stand
+    /// in, and then only if it is unambiguous.</para>
+    ///
+    /// <para>Empty when the file is not at HEAD, which is a new file. <b>Null when the class cannot
+    /// be found in it</b>, or the file does not parse (B410). It used to be the whole HEAD file, meant
+    /// as "the user still sees what HEAD had" - but a ten-line class diffed against a 157,852-line
+    /// file is every line of the file as a removed row, which is not what HEAD had for the class,
+    /// and rendering it took the page down.</para>
+    /// </summary>
+    internal static string? HeadSideOf(string? headFileContent, ModelNode node)
+    {
+        if (string.IsNullOrEmpty(headFileContent))
+            return "";
+
+        try
+        {
+            var headModels = ModelicaParserHelper.ExtractModels(headFileContent);
+            var match = headModels.FirstOrDefault(m =>
+                string.Equals(GraphBuilder.GenerateModelId(m.ParentModelName, m.Name), node.Id, StringComparison.Ordinal));
+
+            if (match is null)
+            {
+                var sameName = headModels.Where(m => m.Name == node.Definition.Name).Take(2).ToList();
+                match = sameName.Count == 1 ? sameName[0] : null;
+            }
+
+            if (match is null)
+                return null;
+
+            return string.IsNullOrEmpty(match.ElementPrefix)
+                ? match.SourceCode
+                : match.ElementPrefix + " " + match.SourceCode;
+        }
+        catch
+        {
+            // HEAD version may not parse correctly, and then the class is not found in it either.
+            return null;
         }
     }
 
+    /// <summary>What the diff says instead of a diff, when the class is not in its file at HEAD (B410).</summary>
+    internal static string HeadSideMissingMessage(ModelNode node, string? relativePath) =>
+        $"{node.Id} could not be found in {relativePath} at HEAD, so there is nothing to compare it with. " +
+        "It may have been renamed or moved since the last commit, or the committed file may not parse.";
+
     #endregion
 
-    private async void OnModelSelected()
+    private void OnModelSelected() => ShowCurrentModel(keepDiff: false);
+
+    /// <summary>
+    /// Shows the selected class. <paramref name="keepDiff"/> is for a change that alters only how
+    /// the single view is drawn, and leaves a loaded diff where it is; everything else — a new
+    /// class, or new content in this one — throws it away to be loaded again.
+    /// </summary>
+    private async void ShowCurrentModel(bool keepDiff)
     {
+        // Whatever render is still on its way was asked for before this one, and must not land
+        // over it - whether it is for another class or for this class with annotations the other
+        // way round (B345).
+        var generation = BeginRender();
+
         if (string.IsNullOrEmpty(NavState.ModelID))
             return;
 
+        // A scroll armed by a finding is for that finding's class, and is held while the diff is
+        // showing (B346) - so it has to be dropped when the user goes somewhere else instead, or
+        // switching back to the single view would scroll some other class to its line.
+        if (!string.Equals(_pendingScrollModelId, NavState.ModelID, StringComparison.Ordinal))
+        {
+            _pendingScrollLine = null;
+            _pendingScrollWord = null;
+            _pendingScrollModelId = null;
+        }
+
         var totalSw = System.Diagnostics.Stopwatch.StartNew();
 
-        _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
-        _originalModelCode = null;
-        _modifiedModelCode = null;
+        var node = LibraryDataService.GetModelById(NavState.ModelID);
+        if (!keepDiff || !ReferenceEquals(node, _currentModelNode))
+        {
+            _originalModelCode = null;
+            _modifiedModelCode = null;
+        }
+        _currentModelNode = node;
 
         if (_currentModelNode == null)
             return;
@@ -628,26 +1110,16 @@ public partial class CodeReview : IAsyncDisposable
         bool excludeClassDefs = _currentModelNode.ClassType == "package";
         var cacheKey = new RenderCacheKey(selectedModelId, _showAnnotations, _showHighlighted, excludeClassDefs);
 
-        // When a model has parser errors, skip ModelicaRenderer entirely — rendering a
-        // partial/invalid parse tree produces misleading or truncated output. Show the raw
-        // source from Definition.ModelicaCode so the user sees exactly what's in the file,
-        // unmodified, with no syntax highlighting. Placeholder nodes (whole-file failures)
-        // benefit from this the most — they carry the full file as ModelicaCode.
-        if (_currentModelNode.HasParserErrors)
-        {
-            ShowRawSource(selectedModelId);
-            return;
-        }
+        // A model with parser errors needs no special case any more. ModelicaTokenClassifier colours
+        // what the lexer recovered and copies the rest through, so a class that does not parse is
+        // shown exactly and in colour, where it used to be shown in no colour at all.
 
         if (_renderCache.TryGetValue(cacheKey, out var cachedCode))
         {
             // Cache hit — set code and render immediately BEFORE any await.
             // Any await would yield to the Blazor sync context which is blocked
             // by MainLayout/LibraryBrowser re-rendering 27K tree nodes.
-            _highlightedCode = cachedCode;
-            _lines = Math.Max(10, cachedCode.Count);
-            _modelicaCode = string.Join("\n", cachedCode);
-            _isLoadingCode = false;
+            ApplyShown(cachedCode);
 
             LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
 
@@ -687,15 +1159,13 @@ public partial class CodeReview : IAsyncDisposable
             LoggingService.Debug("CodeReview",
                 $"Rendering {selectedModelId}: {codeLength} chars, ParsedCode cached={hadParsedCode}, classType={_currentModelNode.ClassType}");
 
-            _isLoadingCode = true;
+            BeginLoading();
             StateHasChanged();
 
             var modelNode = _currentModelNode;
             var showHighlighted = _showHighlighted;
             var showAnnotations = _showAnnotations;
-            // Rendering follows the rules of the repository the class belongs to, the same ones the
-            // formatter would apply on save. There is no app-wide copy of these to fall back on.
-            var formatting = StyleSettingsForModel(modelNode.Id)?.ToFormattingOptions() ?? FormattingOptions.None;
+            var graph = LibraryDataService.CombinedGraph;
 
             // Render parse/format on a background thread. Display the code as soon as this
             // completes — crucially, do NOT gate code display on the VCS status check.
@@ -704,44 +1174,46 @@ public partial class CodeReview : IAsyncDisposable
             // a stalled VCS call left the loading spinner spinning forever even though the
             // rendered code was ready in milliseconds. The VCS check now runs independently
             // (mirroring the cache-hit path) and only updates the modified/diff indicator.
-            var renderTask = Task.Run(() =>
+            // A class big enough that a stall would be noticed is painted from the lexer first, so
+            // it appears at once instead of after however long the parse takes — which for a class
+            // carrying a run of comments inside an equation section is quadratic, and was measured
+            // at 69 seconds for 4,000 of them (B185, and B235 for the cause). The tree's colouring
+            // replaces it when the parse lands.
+            if ((modelNode.Definition.ModelicaCode?.Length ?? 0) > PaintBeforeParsingAbove)
             {
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var (parseTree, errors) =
-                    ModelicaParserHelper.ParseWithErrors(modelNode.Definition.ModelicaCode ?? "");
-                modelNode.Definition.ParsedCode = parseTree;
-                var parseDuration = sw.ElapsedMilliseconds;
+                _ = Task.Run(() => FirstPaint(modelNode, graph, showHighlighted, showAnnotations, excludeClassDefs))
+                    .ContinueWith(async quick =>
+                    {
+                        // Null when the paint would show something the class is about to hide (B402).
+                        if (!quick.IsCompletedSuccessfully || quick.Result is null)
+                            return;
 
-                sw.Restart();
-                var visitor = new ModelicaRenderer(
-                    renderForCodeEditor: showHighlighted,
-                    showAnnotations: showAnnotations,
-                    excludeClassDefinitions: excludeClassDefs,
-                    formatting: formatting);
-                visitor.VisitStored_definition(parseTree);
-                var renderDuration = sw.ElapsedMilliseconds;
+                        await InvokeAsync(() =>
+                        {
+                            // Dropped if a later render was asked for, or if the parse beat it here.
+                            if (!TryApplyQuickPaint(generation, quick.Result))
+                                return;
 
-                return (visitor.Code, visitor.Code.Count, parseDuration, renderDuration);
-            });
+                            LoggingService.Debug("CodeReview",
+                                $"  First paint from the lexer: {quick.Result.Lines.Count} lines");
+                            StateHasChanged();
+                        });
+                    }, TaskScheduler.Default);
+            }
+
+            var renderTask = Task.Run(() => Show(modelNode, graph, showHighlighted, showAnnotations, excludeClassDefs));
 
             _ = renderTask.ContinueWith(async _ =>
             {
                 LoggingService.Debug("CodeReview",
                     $"  ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
 
-                if (NavState.ModelID != selectedModelId)
-                    return;
-
                 try
                 {
-                    var (code, lineCount, parseMs, renderMs) = renderTask.Result;
-
-                    // If the model has an element prefix (redeclare, replaceable, etc.),
-                    // prepend it to the class definition line (skipping any within clause)
-                    PrependElementPrefix(code, modelNode.ElementPrefix, showHighlighted);
+                    var shown = renderTask.Result;
 
                     LoggingService.Debug("CodeReview",
-                        $"  Parse: {parseMs}ms, Render: {renderMs}ms, Lines: {lineCount}");
+                        $"  Lines: {shown.Lines.Count}, hidden ranges: {shown.Elision.Ranges.Count}");
 
                     var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
                     await InvokeAsync(() =>
@@ -749,13 +1221,10 @@ public partial class CodeReview : IAsyncDisposable
                         LoggingService.Debug("CodeReview",
                             $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
 
-                        _highlightedCode = code;
-                        _lines = Math.Max(10, lineCount);
-                        _modelicaCode = string.Join("\n", code);
-                        _isLoadingCode = false;
-
-                        // Store in cache for future clicks
-                        _renderCache[cacheKey] = code;
+                        // Cached whether or not it is still wanted - it is right for its key - but
+                        // shown only if no later render has been asked for since (B345).
+                        if (!TryApplyRender(generation, cacheKey, shown))
+                            return;
 
                         OnFindingsScopeChanged(FindingsScopeAllModels);
                         StateHasChanged();
@@ -771,9 +1240,12 @@ public partial class CodeReview : IAsyncDisposable
                         $"Failed to render {selectedModelId}", ex);
                     await InvokeAsync(() =>
                     {
-                        if (NavState.ModelID == selectedModelId)
+                        if (generation == _renderGeneration)
                         {
+                            // Whatever is on screen - the lexer's paint, or nothing - is now all
+                            // there will be, so anything waiting for the class may have it.
                             _isLoadingCode = false;
+                            _showingQuickPaint = false;
                             StateHasChanged();
                         }
                     });
@@ -799,76 +1271,195 @@ public partial class CodeReview : IAsyncDisposable
     }
 
     /// <summary>
-    /// Loads the full original contents of the file that contains the given model, so that
-    /// models whose extraction was truncated by a parse failure still show the whole file
-    /// to the user rather than just the successfully-extracted prefix. Returns <c>null</c>
-    /// if the containing file can't be located on disk — the caller will then fall back to
-    /// <c>Definition.ModelicaCode</c>, which for placeholder nodes is already the full file.
+    /// The line of the viewer a finding at <paramref name="findingLine"/> of <paramref name="model"/>
+    /// is showing at, or null when that line is hidden with nothing in its place.
+    ///
+    /// <para><b>Two maps, not one.</b> A trimmed package is checked as its trimmed text — the file's
+    /// own lines with its inline standalone children cut out — so its findings count lines of that,
+    /// while the viewer shows the class as the file has it (<see cref="ClassSource"/>). The line goes
+    /// back through <see cref="ModelNode.TrimElision"/> to the class's own line first, as
+    /// <c>ClassLocation</c> does for the CLI's reports, and only then through what the viewer hid.
+    /// With only the second map, every finding below an inline child landed that child's length too
+    /// far down (B339).</para>
     /// </summary>
-    private string? LoadOriginalFileContents(ModelNode? model)
+    internal static int? DisplayLineOfFinding(int findingLine, ModelNode? model, SourceElision viewElision)
     {
-        if (model == null || string.IsNullOrEmpty(model.ContainingFileId))
-            return null;
-
-        var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId);
-        if (fileNode == null || string.IsNullOrEmpty(fileNode.FilePath) || !File.Exists(fileNode.FilePath))
-            return null;
-
-        try
-        {
-            return ModelicaFileEncoding.ReadAllTextOnly(fileNode.FilePath);
-        }
-        catch
-        {
-            return null;
-        }
+        var sourceLine = model?.TrimElision is { } trim ? trim.ToSourceLine(findingLine) : findingLine;
+        return viewElision.ToDisplayLine(sourceLine);
     }
 
     /// <summary>
-    /// Displays the raw, unrendered source of the current model. Used when the model has
-    /// parser errors — running ModelicaRenderer on a broken parse tree yields misleading
-    /// output, so we show the file contents verbatim instead. For non-placeholder models
-    /// the file is read fresh from disk so the user sees the *entire* original file,
-    /// not just the sub-range that the extractor managed to pull out before it failed.
-    /// Each line is HTML-encoded so that any <c>&lt;</c> or <c>&gt;</c> characters in the
-    /// source don't get mistaken for CodeViewer markup tags; no syntax highlighting is applied.
+    /// The working-copy side of the class diff: the class as it is on disk now, to compare against
+    /// the same class at HEAD.
+    ///
+    /// <para>This used to be <c>Definition.ModelicaCode</c> directly, which is the same text for
+    /// most classes and <b>a different document</b> for two populations: a package whose inline
+    /// standalone children the trimmer removed, and any class the formatter rewrote since it was
+    /// read. For those, the diff compared a rewrite against the file and reported changes the user
+    /// had not made — a trimmed package showed every standalone child as deleted (B217). Both sides
+    /// now come from the file.</para>
     /// </summary>
-    private void ShowRawSource(string selectedModelId)
+    internal static string WorkingCopyText(ModelNode model, DirectedGraph graph)
     {
-        var raw = LoadOriginalFileContents(_currentModelNode)
-            ?? _currentModelNode?.Definition.ModelicaCode
-            ?? string.Empty;
-        var normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
-        var lines = normalized.Split('\n')
-            .Select(l => System.Web.HttpUtility.HtmlEncode(l) ?? string.Empty)
-            .ToList();
-
-        _highlightedCode = lines;
-        _lines = Math.Max(10, lines.Count);
-        _modelicaCode = normalized;
-        _isLoadingCode = false;
-
-        // Deliberately do NOT populate _renderCache — raw content isn't tied to the
-        // render-option cache key and we don't want it served to a later cache hit if the
-        // model is ever cleared of errors (e.g. after a reload/fix).
-
-        OnFindingsScopeChanged(FindingsScopeAllModels);
-        StateHasChanged();
-
-        // Run VCS check in the background so the diff toggle reflects working-copy state.
-        _ = Task.Run(() => CheckModelVcsStatus()).ContinueWith(async _ =>
-        {
-            if (NavState.ModelID != selectedModelId)
-                return;
-            await InvokeAsync(async () =>
-            {
-                if (!_isModelModified)
-                    _isDiffMode = false;
-                await SetViewMode(_isDiffMode, _diffViewMode);
-                StateHasChanged();
-            });
-        }, TaskScheduler.Default);
+        var code = ClassSource.For(model, graph);
+        return string.IsNullOrEmpty(model.ElementPrefix) ? code : model.ElementPrefix + " " + code;
     }
+
+    /// <summary>
+    /// The size of a class above which it is painted from the lexer first and the parse is allowed
+    /// to catch up (B185).
+    ///
+    /// <para><b>Measured, and it is not what the backlog guessed.</b> Neither the highlighting nor
+    /// the reformat is what made a large class take minutes — B215 removed the reformat, lexing is
+    /// 11–79 ms and classifying 20–148 ms at every size tried. It is the <b>parse</b>, and the
+    /// trigger is a specific shape rather than size: a run of comment lines inside an
+    /// <c>equation</c> section is quadratic. 500 of them parse in 1.5 s, 1,000 in 4.4 s, 2,000 in
+    /// 17 s and 4,000 in 69 s, at only 323 KB — four times the work for twice the text, which
+    /// extrapolates to the five minutes reported. The input is legal Modelica and parses without a
+    /// single error, so this is the parser's prediction rather than its error recovery, and it costs
+    /// the checker and the CLI as much as it costs this page. That is <b>B235</b>, and it is the
+    /// real fix.</para>
+    ///
+    /// <para>This threshold is therefore not a prediction of slowness and must not be read as one:
+    /// 4,000 <em>annotated</em> declarations are 554 KB and parse in 367 ms, while the 69-second
+    /// case is a third of that size. It is a judgement about when a stall would be <em>noticed</em>.
+    /// Below it the parse is over before anyone could see a spinner; above it the lexer paints the
+    /// class at once and the tree's colouring — which differs only in telling a type or a call from
+    /// a plain identifier — arrives when it arrives. 64 KB leaves all but 52 classes in the Modelica
+    /// Standard Library and 13 in Buildings on the direct path.</para>
+    /// </summary>
+    internal const int PaintBeforeParsingAbove = 64 * 1024;
+
+    /// <summary>
+    /// The class as the viewer shows it: <b>the user's own text</b>, coloured in place, with
+    /// whatever is hidden taken out by whole lines and a map back to where those lines were.
+    ///
+    /// <para>This replaced a pass through <c>ModelicaRenderer</c>. The renderer rebuilds the text in
+    /// order to colour it, so for a repository that has not accepted MLQT's formatting roughly 95%
+    /// of what was on screen was not where the user's editor puts it, and the document was 17–24%
+    /// longer than their file — which is why a finding's line number never matched it (B182). The
+    /// colouring never needed the rewrite: it comes from the parse tree, and
+    /// <see cref="ModelicaTokenClassifier"/> reads the same tree without touching the text.</para>
+    ///
+    /// <para><b>There is deliberately no "formatted" mode</b>, and the rendered path was deleted
+    /// rather than left behind a toggle (decided 2026-09-18). With Apply Formatting on, the file
+    /// already <em>is</em> the renderer's output — a library MLQT has formatted renders 400 of 400
+    /// files byte-identical — so such a mode would only say something new to a user about to turn
+    /// formatting on. That question is "what will this do to my files?", and a preview answering it
+    /// belongs beside <em>Format All Files</em> in repository settings, not here. Findings are not
+    /// shown against a preview, so it would need no line map. The visible cost was accepted
+    /// knowingly: the file's own long lines, tabs and trailing whitespace are shown as they are.</para>
+    ///
+    /// <para>With <paramref name="parse"/> false the categories come from the token stream alone:
+    /// the text is identical and only the tree's knowledge is missing, so an identifier is not yet
+    /// known to be a type or a call and nothing can be hidden. That is the first paint of a class
+    /// big enough for the parse to be worth not waiting for.</para>
+    ///
+    /// <para>Static, and everything it needs is passed in, because it runs on a background thread
+    /// and must not read component state that the UI thread is changing underneath it.</para>
+    /// </summary>
+    internal static ShownClass Show(
+        ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations,
+        bool hideClassDefinitions, bool parse = true, (string Source, BufferedTokenStream Stream)? lexed = null)
+    {
+        // The stored text while it is still the file's, otherwise the file sliced again — for a
+        // package whose inline children the trimmer removed. A caller that has already read and
+        // lexed it for the first paint passes both, rather than have the file read twice.
+        var source = lexed?.Source ?? ClassSource.For(model, graph);
+
+        modelicaParser.Stored_definitionContext? tree = null;
+        BufferedTokenStream stream;
+        if (parse)
+            (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
+        else
+            stream = lexed?.Stream ?? ModelicaTokenClassifier.TokensOnly(source);
+
+        // Annotations come out of the text before it is coloured, because the ones that matter share
+        // a line with code and cannot be taken out by dropping whole lines (B233). Line numbers
+        // survive it, so the elision below still maps a finding to where it lives in the file — what
+        // ran across lines is joined onto its first and the rest come back as lines to drop.
+        //
+        // The cost is one more parse when annotations are hidden. Colouring is driven by the tree,
+        // and the tree has to describe the text on screen or the two disagree about where a token
+        // begins — which is the whole of what ModelicaTokenClassifier guarantees.
+        var annotationElision = SourceElision.None;
+        if (!showAnnotations && tree is not null)
+        {
+            (source, annotationElision) = ElisionFinder.WithoutAnnotations(tree, source);
+            (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
+        }
+
+        var lines = showHighlighted
+            ? ModelicaTokenClassifier.Highlight(tree, stream, source)
+            : ModelicaTokenClassifier.Plain(source);
+
+        // Both hiding operations are the same one, and a package that hides its nested classes has
+        // already hidden the annotations inside them — Merge is what keeps those from colliding.
+        var elision = SourceElision.Merge(
+            hideClassDefinitions ? ElisionFinder.NestedClasses(tree, source, ClassMarker(showHighlighted)) : null,
+            annotationElision);
+
+        var display = elision.Apply(lines);
+
+        // The class slice excludes `replaceable` / `redeclare`, which sit before it in the file.
+        PrependElementPrefix(display, model.ElementPrefix, showHighlighted);
+
+        return new ShownClass(display, elision);
+    }
+
+    /// <summary>
+    /// The lexer's first paint of a large class (B185), or null when it would show something the
+    /// parse is about to hide (B402).
+    ///
+    /// <para>Hiding needs the tree, and the first paint exists because the tree may be a long time
+    /// coming - so a package's nested classes, and every annotation when they are hidden, were drawn
+    /// in full and then collapsed out from under the reader when the parse landed: the class jumped,
+    /// and whatever line they had started reading moved. A spinner until the parse is the better of
+    /// the two there. The case B185 was for is untouched: a model with annotations shown hides
+    /// nothing, so it still paints at once.</para>
+    ///
+    /// <para><b>Asked cheaply, and erring towards the spinner.</b> Nested classes are asked of the
+    /// graph - a class stored in the same file whose parent is this one is a nested class definition
+    /// in this source - and annotations of the lexer, which the paint runs anyway. A nested class
+    /// sharing a line with code is not hidden, and is still counted here; that costs a spinner, where
+    /// the other mistake would cost the jump.</para>
+    /// </summary>
+    internal static ShownClass? FirstPaint(
+        ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations, bool hideClassDefinitions)
+    {
+        if (hideClassDefinitions && HasNestedClassInItsSource(model, graph))
+            return null;
+
+        var source = ClassSource.For(model, graph);
+        var stream = ModelicaTokenClassifier.TokensOnly(source);
+        if (!showAnnotations && stream.GetTokens().Any(t => t.Text == "annotation"))
+            return null;
+
+        return Show(model, graph, showHighlighted, showAnnotations, hideClassDefinitions, parse: false,
+            lexed: (source, stream));
+    }
+
+    private static bool HasNestedClassInItsSource(ModelNode model, DirectedGraph graph) =>
+        !string.IsNullOrEmpty(model.ContainingFileId)
+        && graph.GetModelsInFile(model.ContainingFileId)
+            .Any(m => string.Equals(m.ParentModelName, model.Id, StringComparison.Ordinal));
+
+    /// <summary>
+    /// What stands in for a hidden nested class: its declaration, so the package still reads as a
+    /// list of what it contains rather than as a hole.
+    /// </summary>
+    private static Func<string, string?> ClassMarker(bool showHighlighted) => name => showHighlighted
+        ? $"  <COMMENT>// {name} …</COMMENT>"
+        : $"  // {name} …";
+
+    // Nothing stands in for a hidden annotation any more. There used to be a `// annotation …`
+    // marker, so the reader could see that something was hidden rather than silently reading a
+    // class missing parts — but it cost a line per annotation and was noisier than the thing it
+    // hid, which is what the user said when asking for B233. The toolbar's Bookmark button is
+    // filled while annotations are hidden, and that is the signal.
+    //
+    // A hidden nested class still leaves one, and that is not the same decision: it carries the
+    // class's *name*, so the package still reads as a list of what it contains.
 
     /// <summary>
     /// Formats element prefix keywords (e.g., "redeclare", "inner replaceable") as a
@@ -915,6 +1506,7 @@ public partial class CodeReview : IAsyncDisposable
             _modelsToCheck = progress.TotalModels;
             _modelsChecked = progress.ModelsChecked;
             _checkingModel = progress.CurrentModel;
+            _checkStatus = progress.Status;
             StateHasChanged();
         });
     }
@@ -923,7 +1515,14 @@ public partial class CodeReview : IAsyncDisposable
     {
         await InvokeAsync(() =>
         {
-            if (!result.Success)
+            // Kept whatever the outcome - by the session, in CheckResults - so the dialog at the end
+            // can report what the tool said about every class rather than only the failures (B170).
+
+            // Only a verdict on the model is a finding. A check that ran out of time, or a tool that
+            // would not start or went away, says nothing about the class - and filed as an Error
+            // against it, it sent the user to their code for what was a setting or a closed window
+            // (B333). Those are in the result dialog instead, which says what happened.
+            if (result.IsModelFailure)
             {
                 var finding = new LogMessage(
                     result.ModelId,
@@ -942,55 +1541,147 @@ public partial class CodeReview : IAsyncDisposable
         await InvokeAsync(() =>
         {
             _checkProgressDialog = false;
-            _checkCancellationTokenSource?.Dispose();
-            _checkCancellationTokenSource = null;
+
+            // Say what happened, always. A check that passed used to produce nothing at all: no
+            // window, no dialog, no finding — so the only evidence an OpenModelica check had run was
+            // that the button had been pressed, and the only evidence for Dymola was that Dymola's
+            // own window appeared. That also made the answer depend on a vendor window being
+            // visible, which is not something MLQT controls (B170).
+            _checkResultDialog = true;
             StateHasChanged();
         });
     }
 
+    /// <summary>What the tool said about each class, for the dialog that reports it.</summary>
+    private IReadOnlyList<ModelCheckResult> _checkResults => _externalChecks?.Results ?? [];
+
+    private bool _checkResultDialog;
+    private bool _checkWasCancelled => _externalChecks?.WasCancelled ?? false;
+
+    /// <summary>The classes the tool found a problem with - not the ones it ran out of time on.</summary>
+    private IEnumerable<ModelCheckResult> FailedChecks => _checkResults.Where(r => r.IsModelFailure);
+
+    /// <summary>
+    /// What stopped the run before it reached every class: a timeout, or a tool that was not there.
+    /// Both end a run at once, so there is at most one.
+    /// </summary>
+    private ModelCheckResult? CheckEndedBy => EndedBy(_checkResults);
+
+    internal static ModelCheckResult? EndedBy(IEnumerable<ModelCheckResult> results) =>
+        results.LastOrDefault(r => r.TimedOut || r.ToolUnavailable);
+
+    /// <summary>
+    /// The results worth listing under the headline: every failure, and any clean check the tool
+    /// still had something to say about.
+    ///
+    /// <para>A package of two hundred classes that all passed silently has nothing to list, and the
+    /// sentence above is the whole answer. One that passed with warnings has the warnings, which is
+    /// what <c>checkModel</c> returning true hides.</para>
+    /// </summary>
+    private IEnumerable<ModelCheckResult> ReportedChecks =>
+        _checkResults.Where(r => !r.Success || !string.IsNullOrWhiteSpace(r.Log));
+
+    private int PassedCheckCount => _checkResults.Count(r => r.Success);
+
+    /// <summary>
+    /// The progress dialog's title: the tool, and the count once there is one.
+    /// </summary>
+    /// <remarks>
+    /// Both counts are zero until the tool has started and the library is open, so the old
+    /// wording announced "0 checked out of 0" for the several seconds a user is most likely to
+    /// be wondering whether anything is happening. A single class is not counted either: one of
+    /// one is a progress bar with nothing to say, and the class is named in the dialog anyway.
+    /// </remarks>
+    internal static string CheckProgressTitle(string tool, int checkedCount, int total) =>
+        total <= 1 ? $"{tool} check" : $"{tool} check - {checkedCount} of {total} classes checked";
+
+    /// <summary>
+    /// The headline: what was checked and how it went, in one sentence a user can act on.
+    /// </summary>
+    /// <param name="endedBy">The result that stopped the run early - a timeout, or a tool that was not
+    /// there - which is counted in neither <paramref name="passed"/> nor <paramref name="failed"/>:
+    /// it is not a verdict on the class (B333).</param>
+    internal static string CheckOutcomeSummary(string tool, int passed, int failed, bool cancelled,
+        ModelCheckResult? endedBy = null)
+    {
+        static string Classes(int n) => n == 1 ? "1 class" : $"{n} classes";
+
+        var checkedCount = passed + failed;
+        var problems = failed == 0 ? "" : $" ({failed} with problems)";
+        if (cancelled)
+            return $"{tool} check stopped after {Classes(checkedCount)}.";
+
+        // A run that stopped short must never read like one that finished: before these, a timeout
+        // read as "reported a problem with it" and a tool that would not start as "checked nothing"
+        // in a success-coloured alert (B332, B333).
+        if (endedBy is { ToolUnavailable: true })
+            return checkedCount == 0
+                ? $"{tool} was not available, so nothing was checked."
+                : $"{tool} stopped answering after {Classes(checkedCount)}{problems}, so the rest were not checked.";
+        if (endedBy is { TimedOut: true })
+            return checkedCount == 0
+                ? $"{tool} ran out of time on {endedBy.ModelId}, so the check stopped there."
+                : $"{tool} checked {Classes(checkedCount)}{problems}, then ran out of time on {endedBy.ModelId} and stopped there.";
+
+        if (checkedCount == 0)
+            return $"{tool} checked nothing.";
+        if (failed == 0)
+            return $"{tool} checked {Classes(checkedCount)} with no problems reported.";
+        if (passed == 0)
+            return $"{tool} reported a problem with {(failed == 1 ? "it" : $"all {failed}")}.";
+        return $"{tool} reported problems with {failed} of {Classes(checkedCount)}.";
+    }
+
+    /// <summary>
+    /// The headline's colour. Success only for a run that reached every class and found nothing -
+    /// a run the user stopped is Info, and one with a problem or cut short by the tool is a Warning.
+    /// </summary>
+    internal static Severity CheckOutcomeSeverity(int failed, bool cancelled, ModelCheckResult? endedBy)
+    {
+        if (failed > 0 || endedBy != null)
+            return Severity.Warning;
+        return cancelled ? Severity.Info : Severity.Success;
+    }
+
     #endregion
 
-    private void CheckInDymola()
+    private void CheckInDymola() => StartExternalCheck(DymolaCheckingService);
+
+    private void CheckInOpenModelica() => StartExternalCheck(OpenModelicaCheckingService);
+
+    /// <summary>
+    /// Starts <paramref name="service"/> on the current class, unless a check by either tool is still
+    /// running - the buttons are disabled then too, and a click that got through anyway must not
+    /// open a dialog for a run the service is going to refuse (B335).
+    /// </summary>
+    private void StartExternalCheck(IModelCheckingService service)
     {
-        if (_currentModelNode == null)
+        if (_currentModelNode == null || _externalChecks == null)
             return;
 
-        _checkingToolName = DymolaCheckingService.ToolName;
-        _checkCancellationTokenSource = new CancellationTokenSource();
-
-        // Show progress dialog for packages
-        if (_currentModelNode.ClassType == "package")
-        {
-            _checkProgressDialog = true;
-        }
-
-        // StartCheckingAsync runs on background thread and returns immediately
-        _ = DymolaCheckingService.StartCheckingAsync(
-            _currentModelNode,
-            LibraryDataService.CombinedGraph,
-            _checkCancellationTokenSource.Token);
+        // Shown for one class as well as for a package. Nothing happens for several seconds
+        // after the button is pressed - the tool has to start and the library has to be opened -
+        // and for a single class there was nothing at all on screen during it. That is worse for
+        // OpenModelica, which has no window of its own to appear, so the only evidence the check
+        // was running was that the button had been pressed (B259).
+        _modelsToCheck = 0;
+        _modelsChecked = 0;
+        _checkingModel = "";
+        _checkStatus = null;
+        _checkProgressDialog = _externalChecks.TryStart(service, _currentModelNode, LibraryDataService.CombinedGraph);
     }
 
-    private void CheckInOpenModelica()
-    {
-        if (_currentModelNode == null)
-            return;
-
-        _checkingToolName = OpenModelicaCheckingService.ToolName;
-        _checkCancellationTokenSource = new CancellationTokenSource();
-
-        // Show progress dialog for packages
-        if (_currentModelNode.ClassType == "package")
-        {
-            _checkProgressDialog = true;
-        }
-
-        // StartCheckingAsync runs on background thread and returns immediately
-        _ = OpenModelicaCheckingService.StartCheckingAsync(
-            _currentModelNode,
-            LibraryDataService.CombinedGraph,
-            _checkCancellationTokenSource.Token);
-    }
+    /// <summary>
+    /// The findings in a stable order: by class, then by line within it, then by rule. The check
+    /// runs in parallel and its list comes back in completion order, so without this the same
+    /// library reviewed twice showed the same findings in two different orders and a user could not
+    /// pick up where they left off (B183).
+    /// </summary>
+    private IEnumerable<LogMessage> OrderedFindings =>
+        CodeReviewService.LogMessages
+            .OrderBy(m => m.ModelName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.LineNumber)
+            .ThenBy(m => m.RuleId, StringComparer.Ordinal);
 
     private void RowClickEvent(TableRowClickEventArgs<LogMessage> args)
     {
@@ -1008,6 +1699,13 @@ public partial class CodeReview : IAsyncDisposable
         {
             _findingDetailsVisible = true;
         }
+
+        // Every other finding scrolls to the line it names. A finding that carries no line (a
+        // whole-class one, say) leaves this alone rather than scrolling to the top, because the
+        // class declaration is already where the viewer opens.
+        if (_pendingScrollWord is null && _currentFinding.LineNumber > 0)
+            _pendingScrollLine = _currentFinding.LineNumber;
+        _pendingScrollModelId = _currentFinding.ModelName;
 
         NavState.ChangeModelID(_currentFinding.ModelName);
     }
@@ -1141,14 +1839,249 @@ document.head.appendChild(style);
         if (ShowChangesOnly && !BaselineStatus.Snapshot.IsChangedFromBaseline(element))
             return false;
 
-        return FilterFunc(element, _searchString + (FindingsScopeAllModels ? " " + NavState.ModelID : ""));
+        return Matches(
+            element,
+            _searchString,
+            onlyModelId: FindingsScopeAllModels && NavState.ModelID.Length > 0 ? NavState.ModelID : null,
+            ruleId: _ruleFilter);
     }
+
+    /// <summary>
+    /// Whether a finding survives the three things the user can narrow by: the class, the rule, and
+    /// the words in the search box.
+    ///
+    /// <para><b>The terms are AND, not OR</b> (B187). Typing two things into one box means "both",
+    /// which is what anyone doing it expects and what makes a second word useful — under OR each
+    /// word could only ever widen the result, so the box got less precise the more you told it. Each
+    /// term still matches across any field, so a partial class name and a keyword work together.</para>
+    ///
+    /// <para><b>The class scope is a parameter, not a word in the search string.</b> It used to be
+    /// appended to it (<c>_searchString + " " + NavState.ModelID</c>) and then stripped back out
+    /// inside the filter, which is why AND could not simply be swapped in: with the scope smuggled
+    /// through as a term, requiring every term to match would have excluded every finding whose text
+    /// did not also contain the class name — which is all of them.</para>
+    /// </summary>
+    internal static bool Matches(LogMessage finding, string? search, string? onlyModelId, string? ruleId)
+    {
+        if (!string.IsNullOrEmpty(onlyModelId) && finding.ModelName != onlyModelId)
+            return false;
+
+        if (!string.IsNullOrEmpty(ruleId) && finding.RuleId != ruleId)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(search))
+            return true;
+
+        foreach (var term in search.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!MatchesAnyField(finding, term))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>One term against every field the list shows, case-insensitively.</summary>
+    private static bool MatchesAnyField(LogMessage finding, string term) =>
+        Contains(finding.ModelName, term)
+        || Contains(finding.Summary, term)
+        || Contains(finding.Details, term)
+        || Contains(finding.Severity, term)
+        || Contains(finding.RuleId, term);
+
+    private static bool Contains(string? field, string term) =>
+        !string.IsNullOrEmpty(field) && field.Contains(term, StringComparison.OrdinalIgnoreCase);
 
     private void OnChangesOnlyChanged(bool value)
     {
         ShowChangesOnly = value;
         StateHasChanged();
     }
+
+    /// <summary>
+    /// The rules the current findings actually use, with their catalogue titles, for the rule filter
+    /// to offer.
+    ///
+    /// <para>Built from the findings rather than from <c>RuleCatalog</c> so the list is what is in
+    /// front of the user: offering all forty-odd rules, most of which produced nothing here, makes
+    /// the control something to search rather than something to pick from. A rule the catalogue does
+    /// not know — an external tool's output — falls back to its id.</para>
+    /// </summary>
+    private IEnumerable<(string Id, string Title)> RulesInFindings => RulesIn(CodeReviewService.LogMessages);
+
+    /// <summary>
+    /// The same, over a given set of findings, so it can be tested.
+    ///
+    /// <para><b>No list to maintain, which is the point.</b> A rule added to MLQT appears here the
+    /// first time it produces a finding, with the title the catalogue gives it — there is no
+    /// registration step to forget. What a test can still hold is that the title comes from the
+    /// catalogue at all: drop that lookup and the filter goes on working while offering
+    /// <c>MLQT.Structure.SingleFilePackage</c> where it used to say "Packages are stored as
+    /// directories", and nothing would fail.</para>
+    /// </summary>
+    internal static IEnumerable<(string Id, string Title)> RulesIn(IEnumerable<LogMessage> findings) =>
+        findings
+            .Select(m => m.RuleId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.Ordinal)
+            .Select(id => (Id: id!, Title: RuleCatalog.BuiltIn.TryGetValue(id!, out var def) ? def.Title : id!))
+            .OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase);
+
+    private void OnRuleFilterChanged(string? ruleId)
+    {
+        _ruleFilter = string.IsNullOrEmpty(ruleId) ? null : ruleId;
+        StateHasChanged();
+    }
+
+    #region Going into a class this one uses (B197)
+
+    /// <summary>
+    /// The classes <paramref name="modelId"/> uses, in name order, for the "go to" menu.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Empty until dependency analysis has run</b>, and that is a real state rather than a
+    /// guard: the edges are what this reads, they are built by that pass, and for a large repository
+    /// the pass is deferred until the user asks for it. <c>DirectedGraph.DependenciesAnalyzed</c> is
+    /// the one way to ask — a model happening to have no edges is not the same answer, and the menu
+    /// has to say "not analysed yet" rather than "uses nothing".</para>
+    ///
+    /// <para>A class does not lead to itself: a self-reference is possible in the graph and is not
+    /// somewhere to navigate to.</para>
+    /// </remarks>
+    internal static IReadOnlyList<ModelNode> UsedClassesOf(DirectedGraph graph, string? modelId)
+    {
+        if (graph is null || string.IsNullOrEmpty(modelId) || !graph.DependenciesAnalyzed)
+            return [];
+
+        return [.. graph.GetUsedModels(modelId)
+            .Where(m => m is not null && m.Id != modelId)
+            .DistinctBy(m => m.Id, StringComparer.Ordinal)
+            .OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private IReadOnlyList<ModelNode> UsedClasses =>
+        UsedClassesOf(LibraryDataService.CombinedGraph, _currentModelNode?.Id);
+
+    private string UsedClassesTooltip =>
+        !LibraryDataService.CombinedGraph.DependenciesAnalyzed
+            ? "Run dependency analysis to see what this class uses"
+            : UsedClasses.Count == 0
+                ? "This class uses nothing else"
+                : "Go to a class this one uses — the back arrow beside this returns";
+
+    /// <summary>
+    /// Names the class the back button would return to, so the user knows before pressing it. A
+    /// plain "Back" says nothing after three or four moves, which is when it is actually wanted.
+    /// </summary>
+    private string BackTooltip =>
+        NavState.Back.Count == 0 ? "Back" : $"Back to {NavState.Back[0]}";
+
+    private void GoBack() => NavState.GoBack();
+
+    private void GoForward() => NavState.GoForward();
+
+    /// <summary>
+    /// Opens a class this one uses. Goes through <c>ChangeModelID</c> like every other way of
+    /// selecting a class, so it is recorded in the history and the back arrow returns here (B197).
+    /// </summary>
+    private void GoToUsedClass(string modelId) => NavState.ChangeModelID(modelId);
+
+    #endregion
+
+    #region Searching the code (B176)
+
+    /// <summary>
+    /// The 1-based display lines containing <paramref name="term"/>, searched over the code the way
+    /// the user reads it — tags stripped, entities decoded.
+    ///
+    /// <para>Searching the markup instead would find <c>KEYWORD</c> in every line and miss
+    /// <c>&lt;html&gt;</c> in a documentation string, which is written <c>&amp;lt;html&amp;gt;</c>
+    /// there. It is also why a match spanning two tokens is found here even though
+    /// <c>CodeViewer</c> cannot tint it: this reads the line, not its spans.</para>
+    /// </summary>
+    internal static List<int> FindMatchingLines(IReadOnlyList<string>? displayLines, string? term)
+    {
+        if (displayLines is null || string.IsNullOrWhiteSpace(term))
+            return [];
+
+        var matches = new List<int>();
+        for (var i = 0; i < displayLines.Count; i++)
+        {
+            if (CodeViewer.VisibleText(displayLines[i]).Contains(term, StringComparison.OrdinalIgnoreCase))
+                matches.Add(i + 1);
+        }
+
+        return matches;
+    }
+
+    /// <summary>
+    /// Re-finds the matches against whatever is now on screen. Called whenever the displayed lines
+    /// change — a different class, the annotations toggled — because the match list is line numbers
+    /// into that list, and stale ones would scroll to whatever happens to be at them now.
+    /// </summary>
+    private void RecomputeCodeMatches()
+    {
+        _codeMatches = FindMatchingLines(_highlightedCode, _codeSearch);
+        _codeMatchIndex = 0;
+    }
+
+    private async Task OnCodeSearchChanged(string value)
+    {
+        _codeSearch = value ?? "";
+        _codeMatches = FindMatchingLines(_highlightedCode, _codeSearch);
+        _codeMatchIndex = 0;
+
+        // Jump to the first hit as the user types, so the box is useful before they reach for the
+        // next button at all.
+        if (_codeMatches.Count > 0)
+            await ScrollToCurrentMatchAsync();
+    }
+
+    private async Task StepCodeMatch(int by)
+    {
+        if (_codeMatches.Count == 0)
+            return;
+
+        // Wraps in both directions: the alternative is a button that stops working at the ends,
+        // which reads as broken rather than as finished.
+        _codeMatchIndex = (_codeMatchIndex + by + _codeMatches.Count) % _codeMatches.Count;
+        await ScrollToCurrentMatchAsync();
+    }
+
+    private async Task ScrollToCurrentMatchAsync()
+    {
+        // The viewer this scrolls is not rendered in diff mode (B346).
+        if (_isDiffMode || _codeMatches.Count == 0)
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync(
+                "spellCheck.scrollLineIntoView", ".code-viewer", _codeMatches[_codeMatchIndex]);
+        }
+        catch (Exception)
+        {
+            // View may have been torn down; ignore.
+        }
+    }
+
+    /// <summary>
+    /// What to show beside the find-in-code box: which match of how many, or that there are none.
+    ///
+    /// <para><b>Empty is a state, not a missing value.</b> The element that shows this is always
+    /// rendered and sizes to its content, so an empty string is what keeps the arrows against the
+    /// field when nothing has been searched for (B248). It used to hold 84px open regardless.</para>
+    /// </summary>
+    private string CodeSearchStatus =>
+        _isDiffMode ? "" : CodeSearchStatusText(_codeSearch, _codeMatches.Count, _codeMatchIndex);
+
+    /// <inheritdoc cref="CodeSearchStatus"/>
+    internal static string CodeSearchStatusText(string search, int matchCount, int matchIndex) =>
+        search.Length == 0
+            ? ""
+            : matchCount == 0 ? "no matches" : $"{matchIndex + 1} of {matchCount}";
+
+    #endregion
 
     private bool _exporting;
 
@@ -1235,15 +2168,72 @@ document.head.appendChild(style);
         get
         {
             var all = CodeReviewService.LogMessages;
-            if (!BaselineStatus.HasBaseline)
-                return $"{all.Count} Findings to review";
 
-            var snapshot = BaselineStatus.Snapshot;
-            var changed = all.Count(snapshot.IsChangedFromBaseline);
-            return ShowChangesOnly
-                ? $"{changed} changed of {all.Count} findings"
-                : $"{all.Count} Findings to review ({changed} changed vs baseline)";
+            // The same predicate the table filters by, so the number in the heading is the number of
+            // rows and cannot drift from it (B247).
+            //
+            // **Only walked when something is actually narrowing the list.** This runs on every
+            // render, and a check re-renders this page for each batch of findings it produces, so an
+            // unconditional pass over tens of thousands of findings is a cost paid thousands of
+            // times for a number that has not moved (B190). With no filter set the answer is the
+            // count itself.
+            var filtered = ShowChangesOnly
+                || _searchString.Length > 0
+                || _ruleFilter is { Length: > 0 }
+                || (FindingsScopeAllModels && NavState.ModelID.Length > 0);
+
+            var shown = filtered ? all.Count(FilterFunc1) : all.Count;
+
+            return FindingsHeadingText(
+                shown,
+                all.Count,
+                BaselineStatus.HasBaseline ? all.Count(BaselineStatus.Snapshot.IsChangedFromBaseline) : null,
+                ShowChangesOnly);
         }
+    }
+
+    /// <summary>
+    /// What the findings table is showing, and out of how many when those differ.
+    ///
+    /// <para>B247: four things narrow that list — the class scope, the rule, the search box and the
+    /// baseline toggle — and the heading counted none of them. It reported the whole ledger however
+    /// much of it was on screen, so <b>a filter that matched nothing and a filter that matched three
+    /// looked the same</b>: a table with rows scrolled out of sight and a number above it that had
+    /// not moved.</para>
+    ///
+    /// <para>Pure, and separate from the component, because the interesting part is which of six
+    /// wordings applies. Counting is the easy half.</para>
+    /// </summary>
+    /// <param name="shown">Findings surviving every filter — the row count.</param>
+    /// <param name="total">Findings held, before any of them.</param>
+    /// <param name="changed">
+    /// Findings this working copy changed, or null when no repository has a baseline. Reported
+    /// alongside rather than as the total, because it is a property of the findings rather than
+    /// something the user switched on — except when they did, which is <paramref name="showChangesOnly"/>.
+    /// </param>
+    /// <param name="showChangesOnly">Whether the baseline toggle is the reason some are hidden.</param>
+    internal static string FindingsHeadingText(int shown, int total, int? changed, bool showChangesOnly)
+    {
+        if (changed is not { } changedCount)
+        {
+            return shown == total
+                ? $"{total} Findings to review"
+                : $"{shown} of {total} findings";
+        }
+
+        if (showChangesOnly)
+        {
+            // The toggle's own count is the honest denominator here: with it on, the findings it
+            // left are what the other filters then narrowed, and saying "of {total}" would credit
+            // the search box with hiding everything the toggle did.
+            return shown == changedCount
+                ? $"{changedCount} changed of {total} findings"
+                : $"{shown} of {changedCount} changed findings";
+        }
+
+        return shown == total
+            ? $"{total} Findings to review ({changedCount} changed vs baseline)"
+            : $"{shown} of {total} findings ({changedCount} changed vs baseline)";
     }
 
     private string ChangesOnlyTooltip => BaselineStatus.HasBaseline
@@ -1265,43 +2255,6 @@ document.head.appendChild(style);
         _ => Color.Default
     };
 
-    private bool FilterFunc(LogMessage element, string searchString)
-    {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-
-        if (FindingsScopeAllModels && NavState.ModelID.Length > 0) {
-            if (element.ModelName == NavState.ModelID) {
-                //Remove the model name from the search string before continuing
-                searchString = searchString.Replace(NavState.ModelID,"").Trim();
-                if (searchString.Length > 0) {
-                    var strings = searchString.ToLower().Split(' ');
-                    if (element.Summary.Length > 0 && strings.Any(element.Summary.ToLower().Contains))
-                        return true;
-                    if (element.Details.Length > 0 && strings.Any(element.Details.ToLower().Contains))
-                        return true;
-                    if (element.Severity.Length > 0 && strings.Any(element.Severity.ToLower().Contains))
-                        return true;
-                    return false;
-                }
-                return true;
-            }
-        }
-        else {
-            var strings = searchString.Split(' ');
-            if (strings.Any(element.ModelName.Contains))
-                return true;
-
-            var stringsLowerCase = searchString.ToLower().Split(' ');
-            if (element.Summary.Length > 0 && stringsLowerCase.Any(element.Summary.ToLower().Contains))
-                return true;
-            if (element.Details.Length > 0 && stringsLowerCase.Any(element.Details.ToLower().Contains))
-                return true;
-            if (element.Severity.Length > 0 && stringsLowerCase.Any(element.Severity.ToLower().Contains))
-                return true;
-        }
-        return false;
-    }
 
     private void ResolveFinding()
     {
@@ -1312,6 +2265,229 @@ document.head.appendChild(style);
     }
 
     private bool _suppressing;
+    private bool _splitting;
+
+    /// <summary>
+    /// A finding whose fix is to restructure the package it names (B242).
+    ///
+    /// <para>Offered from the findings list because that is where the user meets the problem. The
+    /// alternative MLQT had was <b>Format All Files</b>, which restructures the whole repository —
+    /// thousands of files rewritten to correct the one package that arrived from another tool this
+    /// morning.</para>
+    /// </summary>
+    internal static bool CanSplitPackage(LogMessage? finding)
+        => finding is { Source: LogMessage.StyleCheckingSource }
+           && finding.RuleId == RuleIds.SingleFilePackage;
+
+    /// <summary>
+    /// Why a package in <paramref name="library"/> cannot be split where it is, or null when it can.
+    ///
+    /// <para><b>A library that is a single <c>.mo</c> file can be split</b> (B429). It was refused
+    /// (B306) because the split deleted the file the library was loaded from and left the library
+    /// naming it; since B417 Format All re-registers such a library as the directory it becomes, and
+    /// <see cref="SplitPackageForFinding"/> now does the same through
+    /// <see cref="LibraryExpandedBySplit"/>.</para>
+    /// </summary>
+    internal static string? WhyNotSplit(LoadedLibrary library, string packageName) =>
+        library.SourceType == LibrarySourceType.Zip
+            ? $"{packageName} is in a library read from an archive, which MLQT does not write to."
+            : null;
+
+    /// <summary>
+    /// The directory <paramref name="library"/> has become, when splitting <paramref name="package"/>
+    /// expanded a library loaded from one <c>.mo</c> file into <c>MyLib/package.mo</c> and deleted
+    /// that file — or null when the library is where it was (B429).
+    ///
+    /// <para>Left naming the deleted file, the library placed no class from the new files: nothing
+    /// lies within a file, so the reload after the split, and every Refresh or VCS update after it,
+    /// put those classes in no library until the project was reloaded. Re-registered through
+    /// <see cref="IRepositoryService.RelocateLibraryAsync"/>, as Format All does (B417), the state is
+    /// the one a reload gives.</para>
+    ///
+    /// <para>Asked before the library is moved, since <see cref="LoadedLibrary.IsSingleFile"/> is
+    /// what it asks.</para>
+    /// </summary>
+    internal static string? LibraryExpandedBySplit(
+        LoadedLibrary library, ModelNode package, PackageSplitter.SplitResult result)
+    {
+        if (!result.Succeeded || !library.IsSingleFile || !string.IsNullOrEmpty(package.ParentModelName))
+            return null;
+
+        if (!result.RemovedFiles.Any(f => SamePath(f, library.SourcePath)))
+            return null;
+
+        var parent = Path.GetDirectoryName(library.SourcePath);
+        if (string.IsNullOrEmpty(parent))
+            return null;
+
+        var directory = Path.Combine(parent, package.Definition.Name);
+        var packageFile = Path.Combine(directory, "package.mo");
+        return result.WrittenFiles.Any(f => SamePath(f, packageFile)) ? directory : null;
+
+        static bool SamePath(string a, string b) =>
+            string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Writes the package this finding names as a directory with a file per class, and reloads the
+    /// files that changed.
+    /// </summary>
+    private async Task SplitPackageForFinding(LogMessage? finding)
+    {
+        if (!CanSplitPackage(finding) || _splitting)
+            return;
+
+        var package = LibraryDataService.GetModelById(finding!.ModelName);
+        if (package is null)
+        {
+            Snackbar.Add("Cannot locate that package any more; refresh and try again.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        var library = LibraryDataService.GetOwningLibrary(package.Id);
+        var repository = string.IsNullOrEmpty(library?.RepositoryId)
+            ? null : RepositoryService.GetRepository(library.RepositoryId);
+        if (repository is null || library is null)
+        {
+            Snackbar.Add("That package is not in a repository MLQT can write to.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        if (WhyNotSplit(library, package.Definition.Name) is { } refusal)
+        {
+            Snackbar.Add(refusal, MudBlazor.Severity.Warning);
+            return;
+        }
+
+        // It creates a directory and deletes a file, so it asks first. Everything it does is
+        // recoverable from version control, but not by pressing the button again.
+        var sourceFile = CurrentFilePathOf(package);
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Split into files",
+            $"Write {package.Definition.Name} as a directory with one file per class, and delete "
+            + $"{Path.GetFileName(sourceFile ?? "the single file")}?",
+            yesText: "Split", cancelText: "Cancel");
+        if (confirmed != true)
+            return;
+
+        _splitting = true;
+        try
+        {
+            var settings = repository.StyleSettings ?? new StyleCheckingSettings();
+
+            // MLQT's own write, so the monitor is paused across it exactly as it is for a save —
+            // otherwise the new files come back as external changes to process. Held as a
+            // MonitorPause over every repository in the working copy (B376): pausing only this one
+            // left the watcher running for a neighbour checked out in the same tree, which then
+            // heard the split as external changes (B301), and a restart by hand is one a path
+            // nobody thought of can skip (B296).
+            PackageSplitter.SplitResult result;
+            IReadOnlyCollection<string> affected;
+            using (MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository)))
+            {
+                result = PackageSplitter.Split(
+                    LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions(), settings);
+
+                // A library that was the file just deleted is the directory now, and is registered
+                // as it before the reload (B429): the reload then resolves against that directory and
+                // places the new files' classes in the library. Against the file, the deleted file
+                // came out as "." and no new class was placed in any library.
+                if (LibraryExpandedBySplit(library, package, result) is { } expandedTo)
+                    await RepositoryService.RelocateLibraryAsync(library.Id, expandedTo);
+
+                // The package's own file is always reloaded, whatever happened to it. Rendering
+                // rewrites each class's stored source as it goes, so after a split that was undone
+                // the graph holds text that is no longer what is on disk (B303).
+                var changed = result.WrittenFiles.Concat(result.RemovedFiles).ToList();
+                if (!string.IsNullOrEmpty(sourceFile) && !changed.Contains(sourceFile, StringComparer.OrdinalIgnoreCase))
+                    changed.Add(sourceFile);
+                affected = await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
+            }
+
+            // Whether or not the split went through, the file was reloaded and its classes are new
+            // nodes, so they are announced either way.
+            AnnounceReloadedModels(NavState, FileMonitoringService, repository.Id, affected);
+
+            if (!result.Succeeded)
+            {
+                Snackbar.Add(result.Error!, MudBlazor.Severity.Error);
+                return;
+            }
+
+            // The finding described the old arrangement, so it goes with it. A re-check would not
+            // raise it again — which is the test this is held to.
+            CodeReviewService.RemoveLogMessagesByPredicate(
+                m => m.RuleId == RuleIds.SingleFilePackage
+                     && string.Equals(m.ModelName, package.Id, StringComparison.Ordinal));
+
+            OnModelSelected();
+            Snackbar.Add(
+                $"{package.Definition.Name} is now a directory with {result.WrittenFiles.Count} file(s).",
+                MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Failed to split {package.Id}", ex);
+            Snackbar.Add($"Could not split the package: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _splitting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// Tells the rest of the application that MLQT rewrote these classes' files itself, with the
+    /// monitor paused so nothing else noticed (B307) — the same three things a save on this page
+    /// says.
+    ///
+    /// <para><b>The classes the reload touched, not the library.</b> Split into files announced
+    /// every class in the library, so the layout dropped every finding in it and re-ran dependency
+    /// analysis and style checking over all of it — minutes on a library the size of MSL, for one
+    /// package moved. File activity is what the library browser's VCS status and the baseline listen
+    /// to for new and deleted files, and a content change is what makes this page drop its cached
+    /// render of a class that is no longer where it was.</para>
+    /// </summary>
+    internal static void AnnounceReloadedModels(
+        AppState state, IFileMonitoringService monitor, string repositoryId, IReadOnlyCollection<string> modelIds)
+    {
+        monitor.NotifyFileActivity(repositoryId);
+        if (modelIds.Count == 0)
+            return;
+
+        state.ModelContentChanged(modelIds);
+        state.VcsModelsChanged(repositoryId, modelIds.ToList());
+    }
+
+    /// <summary>
+    /// The repositories whose monitor a write on this page holds off: every one checked out in the
+    /// same working copy as <paramref name="repository"/>, or none when the class is in no repository
+    /// (B376). The watcher is shared, so pausing only the repository being written to left a
+    /// neighbour hearing the write as its own change (B301).
+    /// </summary>
+    private IReadOnlyList<Repository> WorkingCopyOf(Repository? repository) =>
+        repository is null ? [] : RepositoryService.GetRepositoriesSharingWorkingCopy(repository.Id);
+
+    /// <summary>
+    /// The banner above a class with recovered parser errors: how many, and the line of the first.
+    ///
+    /// <para><b>The line the Findings panel shows</b> (B412). It read the raw
+    /// <see cref="ParserError.Line"/>, which for an error the load recorded is the line in the
+    /// <em>file</em> - hundreds of lines from the class-relative line on the finding for a class
+    /// nested in a <c>package.mo</c>. <see cref="ParserErrorReporter.ToFindings"/> is what the row
+    /// is made from, so the banner asks it too.</para>
+    /// </summary>
+    internal static string ParserErrorBannerText(ModelNode model)
+    {
+        var findings = ParserErrorReporter.ToFindings([model]);
+        var n = findings.Count;
+        var atLine = findings.FirstOrDefault() is { LineNumber: > 0 } first ? $" (first at line {first.LineNumber})" : "";
+        return $"This model has {n} parser {(n == 1 ? "error" : "errors")}{atLine}. See the Findings panel for details.";
+    }
+
+    private string? CurrentFilePathOf(ModelNode model) =>
+        LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId ?? "")?.FilePath;
 
     // A style finding that carries a rule id can be waived in source with a __MLQT annotation.
     // Spelling findings are excluded — a blanket waiver of the spelling rule would silence every
@@ -1360,7 +2536,7 @@ document.head.appendChild(style);
         }
 
         var fileOwner = graph.GetModelsInFile(fileId!)
-            .Where(m => targetNode.Id == m.Id || targetNode.Id.StartsWith(m.Id + ".", StringComparison.Ordinal))
+            .Where(m => ModelicaName.IsInSubtree(targetNode.Id, m.Id))
             .OrderBy(m => m.Id.Length)
             .FirstOrDefault() ?? targetNode;
 
@@ -1414,38 +2590,34 @@ document.head.appendChild(style);
             return false;
         }
 
-        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(target.FileOwner.Id));
+        var library = LibraryDataService.GetOwningLibrary(target.FileOwner.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
-        var repoId = repository?.Id;
-        var monitoredRoot = repository?.VcsRootPath;
-        bool monitorPaused = false;
 
-        try
+        // Every repository in the working copy, through a MonitorPause (B376) - see
+        // WorkingCopyOf. A reload that threw used to leave the monitor off.
+        List<string> affected;
+        using (MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository)))
         {
-            if (!string.IsNullOrEmpty(repoId))
+            try
             {
-                FileMonitoringService.StopMonitoring(repoId);
-                monitorPaused = true;
+                await ModelicaFileEncoding.WriteAllTextAsync(target.FilePath, newContent);
             }
-            await ModelicaFileEncoding.WriteAllTextAsync(target.FilePath, newContent);
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Error("CodeReview", $"Failed to write annotation to {target.FilePath}", ex);
-            Snackbar.Add($"Failed to save: {ex.Message}", MudBlazor.Severity.Error);
-            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            return false;
+            catch (Exception ex)
+            {
+                LoggingService.Error("CodeReview", $"Failed to write annotation to {target.FilePath}", ex);
+                Snackbar.Add($"Failed to save: {ex.Message}", MudBlazor.Severity.Error);
+                return false;
+            }
+
+            // Re-parse the file from disk so all model nodes are rebuilt from the saved content, and
+            // give them back the dependency edges the reload took (B290).
+            affected = await LibraryDataService.ReloadFileAsync(target.FilePath);
+            await LibraryDataService.RefreshDependenciesAsync(affected);
         }
 
-        // Re-parse the file from disk so all model nodes are rebuilt from the saved content.
-        var affected = await LibraryDataService.ReloadFileAsync(target.FilePath);
-        if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-        {
-            FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            FileMonitoringService.NotifyFileActivity(repoId!);
-        }
+        if (repository is not null)
+            FileMonitoringService.NotifyFileActivity(repository.Id);
 
         // The annotation goes in at the end of the class, so everything the user can see is where it
         // was — put them back there instead of at the top.
@@ -1512,6 +2684,13 @@ document.head.appendChild(style);
     }
 
     /// <summary>
+    /// How long the scroll position is worth waiting for. Remembering where the user was looking is
+    /// a courtesy; making them wait for it is not, and this call has been measured taking eleven
+    /// seconds while the file write it follows took under a millisecond (B253). Past this, the
+    /// re-render lands at the top and the edit completes.
+    /// </summary>
+    private static readonly TimeSpan ScrollCaptureBudget = TimeSpan.FromMilliseconds(250);
+    /// <summary>
     /// Remembers where the user is looking, so the re-render that follows an edit to the open file
     /// puts them back rather than at the top of the class.
     ///
@@ -1524,18 +2703,31 @@ document.head.appendChild(style);
     /// moving what is above it: a correction swaps one word, and an <c>__MLQT</c> annotation is
     /// written at the end of the class.</para>
     /// </summary>
+
     private async Task CaptureScrollForReloadAsync()
     {
+        var timer = new CancellationTokenSource(ScrollCaptureBudget);
+        var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var offsets = await JSRuntime.InvokeAsync<double[]>("spellCheck.getScroll", ".code-viewer");
+            var offsets = await JSRuntime.InvokeAsync<double[]>(
+                "spellCheck.getScroll", timer.Token, ".code-viewer");
             _pendingScroll = offsets is { Length: >= 2 } ? (offsets[0], offsets[1]) : null;
             _scrollBaselineCode = _highlightedCode;
         }
         catch (Exception)
         {
-            // No view to read (not rendered yet, or torn down) — land wherever the re-render lands.
+            // No view to read (not rendered yet, or torn down), or it did not answer in time — land
+            // wherever the re-render lands.
             _pendingScroll = null;
+        }
+        finally
+        {
+            timer.Dispose();
+            if (started.ElapsedMilliseconds > 50)
+                LoggingService.Debug("CodeReview",
+                    $"  scroll capture took {started.ElapsedMilliseconds}ms"
+                    + (_pendingScroll is null ? " and gave up" : ""));
         }
     }
 
@@ -1864,58 +3056,56 @@ document.head.appendChild(style);
         }
 
         // Identify the repository (if any) so file monitoring can be paused across the write,
-        // preventing the watcher from echoing our own change back as a pending refresh.
-        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(_currentModelNode.Id));
+        // preventing the watcher from echoing our own change back as a pending refresh. Every
+        // repository in the working copy, through a MonitorPause (B376): the watcher is shared, so a
+        // neighbour left watching heard the write as its own change (B301), and a reload that threw
+        // left the monitor off for the rest of the session (B296).
+        var library = LibraryDataService.GetOwningLibrary(_currentModelNode.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
-        var repoId = repository?.Id;
-        var monitoredRoot = repository?.VcsRootPath;
-        bool monitorPaused = false;
 
-        try
+        List<string> affected;
+        var reload = new System.Diagnostics.Stopwatch();
+        using (MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository)))
         {
-            if (!string.IsNullOrEmpty(repoId))
+            try
             {
-                FileMonitoringService.StopMonitoring(repoId);
-                monitorPaused = true;
+                var write = System.Diagnostics.Stopwatch.StartNew();
+                await ModelicaFileEncoding.WriteAllTextAsync(filePath, correctedCode);
+                if (write.ElapsedMilliseconds > 1000)
+                    LoggingService.Info("CodeReview",
+                        $"Writing {Path.GetFileName(filePath)} took {write.ElapsedMilliseconds} ms");
             }
-            var write = System.Diagnostics.Stopwatch.StartNew();
-            await ModelicaFileEncoding.WriteAllTextAsync(filePath, correctedCode);
-            if (write.ElapsedMilliseconds > 1000)
-                LoggingService.Info("CodeReview",
-                    $"Writing {Path.GetFileName(filePath)} took {write.ElapsedMilliseconds} ms");
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Error("CodeReview", $"Failed to write corrected file {filePath}", ex);
-            Snackbar.Add($"Failed to save correction: {ex.Message}", MudBlazor.Severity.Error);
-            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            CloseContextMenu();
-            return;
-        }
+            catch (Exception ex)
+            {
+                LoggingService.Error("CodeReview", $"Failed to write corrected file {filePath}", ex);
+                Snackbar.Add($"Failed to save correction: {ex.Message}", MudBlazor.Severity.Error);
+                CloseContextMenu();
+                return;
+            }
 
-        // Re-parse the file from disk so all model nodes for it are rebuilt from the saved content.
-        //
-        // Timed, because this is where the time goes and nothing said so. A correction in a generated
-        // file holding 4,478 classes took the better part of a minute, and the only way to find out
-        // which part was to read timestamps of unrelated debug lines either side of it. The removal
-        // half of this is much faster since the graph gained a bulk remove (7b-5); the log line is
-        // what will show whether the rest of it needs the same treatment.
-        var reload = System.Diagnostics.Stopwatch.StartNew();
-        var affected = await LibraryDataService.ReloadFileAsync(filePath);
-        reload.Stop();
+            // Re-parse the file from disk so all model nodes for it are rebuilt from the saved content.
+            //
+            // Timed, because this is where the time goes and nothing said so. A correction in a generated
+            // file holding 4,478 classes took the better part of a minute, and the only way to find out
+            // which part was to read timestamps of unrelated debug lines either side of it. The removal
+            // half of this is much faster since the graph gained a bulk remove (7b-5); the log line is
+            // what will show whether the rest of it needs the same treatment.
+            reload.Start();
+            affected = await LibraryDataService.ReloadFileAsync(filePath);
+            // The reload took the file's dependency edges with it: without this the corrected class
+            // offered nothing to go to (B290).
+            await LibraryDataService.RefreshDependenciesAsync(affected);
+            reload.Stop();
+        }
 
         if (reload.ElapsedMilliseconds > 1000)
             LoggingService.Info("CodeReview",
                 $"Reloading {Path.GetFileName(filePath)} after a correction took {reload.ElapsedMilliseconds} ms " +
                 $"for {affected.Count} class(es)");
 
-        if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-        {
-            FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-            FileMonitoringService.NotifyFileActivity(repoId!);   // file is now genuinely modified
-        }
+        if (repository is not null)
+            FileMonitoringService.NotifyFileActivity(repository.Id);   // file is now genuinely modified
 
         // The correction changes only a word, so the offsets the user is looking at stay valid.
         await CaptureScrollForReloadAsync();

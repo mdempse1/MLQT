@@ -9,61 +9,132 @@
 @using ModelicaParser.SpellChecking
 @using ModelicaParser.StyleRules
 
-<MudPaper Elevation="0" Class="mt-1">
+<MudPaper Elevation="0" Class="mt-1 mlqt-page-fill">
     <MudStack Row="false" Style="gap:0px !important;">
         <MudStack Row="true">
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="View just this version" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.Article" Color="Color.Primary" Size="Size.Medium" 
+                    <MudIconButton Icon="@Icons.Material.Filled.Article" Color="Color.Primary" Size="Size.Small" 
                                 Variant="@(!_isDiffMode ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(false, _diffViewMode))"  />
                 </MudTooltip>
                 <MudTooltip Text="Side-by-side diff with HEAD version" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.Compare" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                    <MudIconButton Icon="@Icons.Material.Filled.Compare" Color="Color.Primary" Size="Size.Small" Disabled="@(!_isModelModified)"
                                 Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.SideBySide ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(true, DiffViewMode.SideBySide))"  />
                 </MudTooltip>
                 <MudTooltip Text="Unified diff with HEAD version" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.Difference" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                    <MudIconButton Icon="@Icons.Material.Filled.Difference" Color="Color.Primary" Size="Size.Small" Disabled="@(!_isModelModified)"
                                 Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.Unified ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(true, DiffViewMode.Unified))"  />
                 </MudTooltip>
                 <MudTooltip Text="View both versions" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.VerticalSplit" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                    <MudIconButton Icon="@Icons.Material.Filled.VerticalSplit" Color="Color.Primary" Size="Size.Small" Disabled="@(!_isModelModified)"
                                 Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.SideBySideFull ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(true, DiffViewMode.SideBySideFull))"  />
                 </MudTooltip>
             </MudButtonGroup>
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="Show/Hide Annotations" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Variant="@(_showAnnotations ? Variant.Filled : Variant.Outlined)"
-                                OnClick="ToggleAnnotations" Size="Size.Medium" />
+                                OnClick="ToggleAnnotations" Size="Size.Small" />
                 </MudTooltip>
                 <MudTooltip Text="@(_isExcludedFromFormatting ? "Include in auto-formatting" : "Exclude from auto-formatting")" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.FormatClear" Color="@(_isExcludedFromFormatting ? Color.Warning : Color.Primary)"
                                 Variant="@(_isExcludedFromFormatting ? Variant.Filled : Variant.Outlined)"
-                                OnClick="ToggleFormattingExclusionAsync" Size="Size.Medium"
+                                OnClick="ToggleFormattingExclusionAsync" Size="Size.Small"
                                 Disabled="@(_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))" />
                 </MudTooltip>
             </MudButtonGroup>
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="Run Style Checking on ALL classes" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Primary" Variant="Variant.Outlined" 
-                                OnClick="RunStyleCheckingAsync" Size="Size.Medium" />
+                                OnClick="RunStyleCheckingAsync" Size="Size.Small" />
                 </MudTooltip>
                 @if (!string.IsNullOrEmpty(_settings.Dymola.DymolaPath)) {
                     <MudTooltip Text="Check this class using Dymola" Arrow="true" Placement="Placement.Bottom">
-                        <MudIconButton Icon="@_dymolaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
-                                    OnClick="CheckInDymola" Size="Size.Medium" />
+                        <MudIconButton Icon="@_dymolaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled="@(string.IsNullOrEmpty(NavState.ModelID) || ExternalCheckRunning)"
+                                    OnClick="CheckInDymola" Size="Size.Small" />
                     </MudTooltip>
                 }
                 @if (!string.IsNullOrEmpty(_settings.OpenModelica.OmcPath)) {
                     <MudTooltip Text="Check this class using OpenModelica" Arrow="true" Placement="Placement.Bottom">
-                        <MudIconButton Icon="@_openModelicaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
-                                    OnClick="CheckInOpenModelica" Size="Size.Medium" />
+                        <MudIconButton Icon="@_openModelicaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled="@(string.IsNullOrEmpty(NavState.ModelID) || ExternalCheckRunning)"
+                                    OnClick="CheckInOpenModelica" Size="Size.Small" />
                     </MudTooltip>
                 }    
             </MudButtonGroup>
+            @* One navigation control, not three (B249). Into a class this one uses, and back out of
+               it — the arrows sit here rather than beside the class name so that the button's
+               tooltip names something the user can see, which is what was asked for.
+
+               **They are on this page only**, which B197 had decided against on purpose: every tab
+               moves the selection and the history is one history, so on Dependencies, External
+               Resources, Metrics and Settings there is now no way back. That is the cost of the
+               grouping and it was chosen knowingly; if it bites, the other direction is to move
+               this menu up beside the class name instead of bringing the arrows down. *@
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
+                <MudTooltip Text="@BackTooltip" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Primary" Size="Size.Small"
+                                Disabled="@(!NavState.CanGoBack)" OnClick="GoBack" Variant="Variant.Outlined"
+                                aria-label="Back to the previous class" />
+                </MudTooltip>
+                <MudTooltip Text="Forward" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Primary" Size="Size.Small"
+                                Disabled="@(!NavState.CanGoForward)" OnClick="GoForward"  Variant="Variant.Outlined"
+                                aria-label="Forward" />
+                </MudTooltip>
+                <MudTooltip Text="@UsedClassesTooltip" Arrow="true" Placement="Placement.Bottom">
+                    <MudMenu Icon="@Icons.Material.Filled.CallMade" Color="Color.Primary" Size="Size.Small"
+                             Variant="Variant.Outlined" Dense="true" MaxHeight="400"
+                             Disabled="@(UsedClasses.Count == 0)" aria-label="Go to a class this one uses">
+                        @foreach (var used in UsedClasses)
+                        {
+                            <MudMenuItem OnClick="@(() => GoToUsedClass(used.Id))"><MudText Typo="Typo.body1">@used.Id</MudText></MudMenuItem>
+                        }
+                    </MudMenu>
+                </MudTooltip>
+            </MudButtonGroup>
+            <MudSpacer />
+            @* Searching the class on screen (B176). Locating a parameter in a long class meant
+               scrolling and reading; this finds it, counts the hits and steps through them. The
+               buttons wrap at both ends, so the last match steps to the first rather than stopping.
+
+               One control, read as one (B248). The field, its count and its arrows sit in a stack
+               of their own with no gap, because they were being read as three separate controls
+               scattered along the toolbar. **The count was what separated them**: `min-width: 84px`
+               held that space open whether or not there was a count to put in it, so the usual
+               state of the toolbar — nothing searched for — was a 220px box, 84px of nothing, and
+               a pair of arrows. It now takes the room it needs when it has something to say. *@
+            @* No AlignItems here on purpose. Centring the children stops them stretching, and the
+               row's buttons are sized by stretching to it — so the two arrows came out 22px against
+               27px everywhere else, which is the defect B249 is about reintroduced by the fix for
+               B248. The caption centres itself. *@
+            <MudStack Row="true" Spacing="0" Class="mlqt-code-search">
+                <MudTextField T="string" Value="@_codeSearch" ValueChanged="OnCodeSearchChanged"
+                    Immediate="true" Placeholder="Find in code" Adornment="Adornment.Start"
+                    AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
+                    Class="mt-0" Style="max-width: 220px;" Typo="Typo.body1"
+                    Disabled="@(!CodeSearchAvailable(_isDiffMode, _highlightedCode))" />
+                @* Always rendered, and sized by what is in it. `min-width: 84px` held that space
+                   open whether or not there was a count to put in it, which is what separated the
+                   field from its arrows. An empty element takes no width, and app.css gives it
+                   margins only when it is not empty — so there is no condition here to get wrong
+                   and nothing to re-render when the count appears. *@
+                <MudText Typo="Typo.caption" Class="align-self-center mlqt-match-count">@CodeSearchStatus</MudText>
+                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
+                    <MudTooltip Text="Previous match" Arrow="true" Placement="Placement.Bottom">
+                        <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Color="Color.Primary"
+                            Size="Size.Small" Disabled="@(_isDiffMode || _codeMatches.Count == 0)" Variant="Variant.Outlined"
+                            OnClick="@(() => StepCodeMatch(-1))" aria-label="Previous match" />
+                    </MudTooltip>
+                    <MudTooltip Text="Next match" Arrow="true" Placement="Placement.Bottom">
+                        <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Color="Color.Primary"
+                            Size="Size.Small" Disabled="@(_isDiffMode || _codeMatches.Count == 0)" Variant="Variant.Outlined"
+                            OnClick="@(() => StepCodeMatch(1))" aria-label="Next match" />
+                    </MudTooltip>
+                </MudButtonGroup>
+            </MudStack>
         </MudStack>
         @* A recovered class explains itself in the comment at the top of its own source. An alert
            here as well cost the page enough vertical space to push the findings table below the fold,
@@ -82,15 +153,27 @@
                 }
                 else
                 {
-                    var n = _currentModelNode.Definition.ParserErrors.Count;
-                    var first = _currentModelNode.Definition.ParserErrors.FirstOrDefault();
-                    var atLine = first != null && first.Line > 0 ? $" (first at line {first.Line})" : "";
-                    <text>This model has @n parser @(n == 1 ? "error" : "errors")@atLine. See the Findings panel for details.</text>
+                    <text>@ParserErrorBannerText(_currentModelNode)</text>
                 }
             </MudAlert>
         }
-        @* Height calculation: 221 px for table, 185px for other stuff*@
-        <MudPaper Elevation="1" Style="height: calc(100vh - 405px); display: flex; flex-direction: column;" Class="mt-1 mb-2">
+        @* The viewer and the findings share the space, and the user decides how (B186). It used to
+           be two fixed heights — 221 px for the table and 405 px subtracted from the viewport, the
+           second being the first plus 185 px for everything above — so the table showed five rows
+           whatever the screen, its pager sat on the bottom edge, and the rest of a long finding was
+           simply unreachable. Same control as the one splitting the tree from the tabs in
+           MainLayout, turned the other way. *@
+        @* Whatever is left after the toolbar and, when there is one, the alert above it. It used to
+           be `calc(100vh - 185px)` — 185 being a hand-count of the app bar, the pane margins, the
+           current-class box, the tab header and this page's own toolbar, which came to within 12px
+           of the truth. An alert is 34px, so a class with a syntax error scrolled the whole page
+           (B250). `min-height: 0` is in app.css and is what lets this be shorter than the viewer
+           inside it. *@
+        <MudExSplitPanel ColumnLayout="false" SplitterSize="4" SplitterColor="Color.Primary"
+                         Class="mt-1 mb-2 mlqt-fill-splitter">
+            <Left>
+                <MudExSplitPanelItem MinSize="120" Style="height: 65%; min-height: 120px; box-shadow: none;">
+        <MudPaper Elevation="1" Style="height: 100%; display: flex; flex-direction: column;">
         @if (_isDiffMode)
         {
             @if (_isLoadingDiff)
@@ -98,6 +181,11 @@
                 <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
                     <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                 </div>
+            }
+            else if (_diffUnavailable is not null && _originalModelCode is not null)
+            {
+                @* Said, rather than diffed against something else (B410). *@
+                <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Class="ma-2 mlqt-diff-unavailable">@_diffUnavailable</MudAlert>
             }
             else
             {
@@ -121,13 +209,35 @@
         }
         else
         {
-                <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords" Height="100%" />
+                <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords"
+                            SearchTerm="@_codeSearch" Height="100%" />
         }
         </MudPaper>
-        <MudPaper Elevation="2" Height="221px" Style="overflow-y: auto; position: relative;">
-            <MudTable T="LogMessage" Items="@CodeReviewService.LogMessages" Hover="true" Breakpoint="Breakpoint.Sm"
-                Dense="true" FixedHeader="true" OnRowClick="RowClickEvent"
-                FixedFooter="true" Filter="new Func<LogMessage,bool>(FilterFunc1)">
+                </MudExSplitPanelItem>
+            </Left>
+            <Right>
+                <MudExSplitPanelItem MinSize="120" Style="height: 35%; min-height: 120px; box-shadow: none;">
+        @* mlqt-findings-pane is a handle for ResizablePanesJourney, which has to measure this pane
+           to show that dragging the splitter changes it. MudBlazor's own classes are the wrong thing
+           to measure against — they move with the library and say nothing about our layout. *@
+        <MudPaper Elevation="2" Class="mlqt-findings-pane" Style="height: 100%; position: relative;">
+            @* Ordered here rather than bound straight to the service's list, which arrives in
+               whatever order the parallel check produced — so the same library reviewed twice
+               presented the same findings in two different orders (B183). By class, then by line
+               within it, then by rule, which is the order a reader works through a class in. *@
+            @* Virtualised and scrolled rather than paged, which is the other half of B186: a pager
+               shows a fixed number of rows however much room the table has, so resizing the pane
+               only moved which rows were cut off. Scrolling makes every finding reachable at any
+               size, and virtualising keeps that affordable — a real library produces tens of
+               thousands of them (26,557 for the Modelica Standard Library). *@
+            @* No Height here on purpose: app.css gives this pane a flex column, so the rows take
+               whatever is left after the toolbar. A height of `calc(100% - 48px)` assumed the
+               toolbar was 48 px, which stopped being true as soon as it wrapped — and the overflow
+               then appeared on the pane instead, scrolling the heading and the search box away
+               along with the rows. *@
+            <MudTable T="LogMessage" Items="@OrderedFindings" Hover="true" Breakpoint="Breakpoint.Sm"
+                Dense="true" FixedHeader="true" OnRowClick="RowClickEvent" Virtualize="true"
+                Filter="new Func<LogMessage,bool>(FilterFunc1)">
                 <ToolBarContent>
                     <MudText Typo="Typo.body1">@FindingsHeading</MudText>
                     <MudSpacer />
@@ -142,9 +252,23 @@
                             Color="Color.Default" Disabled="_exporting" OnClick="ExportFindingsAsync"
                             aria-label="Export all findings" />
                     </MudTooltip>
-                    <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
-                        AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
-                        Typo="Typo.body1"></MudTextField>
+                    @* Narrowing to a rule, which the search box could not do: a rule's words are not
+                       in the finding's text, and typing its id was a term that widened the list
+                       rather than narrowing it (B187). Only the rules the current findings use are
+                       offered — see RulesInFindings. *@
+                    <MudSelect T="string" Value="@_ruleFilter" ValueChanged="OnRuleFilterChanged"
+                        Placeholder="All rules" Dense="true" Margin="Margin.Dense" Clearable="true"
+                        Class="mt-0 ml-4" Style="max-width: 260px;" Typo="Typo.body1">
+                        @foreach (var rule in RulesInFindings)
+                        {
+                            <MudSelectItem T="string" Value="@rule.Id">@rule.Title</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTooltip Text="Every word must match, so a second word narrows the list rather than widening it">
+                        <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
+                            AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
+                            Typo="Typo.body1"></MudTextField>
+                    </MudTooltip>
                 </ToolBarContent>
                 <HeaderContent>
                     <MudTh>Model</MudTh>
@@ -178,9 +302,22 @@
                         </MudTd>
                     }
                     <MudTd DataLabel="" Style="text-align: center; vertical-align:top;" Class="compact-table">
+                        @if (CanSplitPackage(context))
+                        {
+                            @* The fix for this finding, where the user meets it. The alternative was
+                               Format All Files, which restructures the whole repository to correct
+                               one package. *@
+                            <div @onclick:stopPropagation="true" style="display:inline-block;">
+                                <MudTooltip Text="Split this package into a directory with one file per class">
+                                    <MudIconButton Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small"
+                                        Color="Color.Default" Disabled="_splitting"
+                                        OnClick="@(() => SplitPackageForFinding(context))" aria-label="Split this package into files" />
+                                </MudTooltip>
+                            </div>
+                        }
                         @if (CanSuppressRule(context))
                         {
-                            <div @onclick:stopPropagation="true">
+                            <div @onclick:stopPropagation="true" style="display:inline-block;">
                                 <MudTooltip Text="Suppress this rule here (writes a __MLQT annotation into the source)">
                                     <MudIconButton Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small"
                                         Color="Color.Default" Disabled="_suppressing"
@@ -190,11 +327,11 @@
                         }
                     </MudTd>
                 </RowTemplate>
-                <PagerContent>
-                    <MudTablePager HideRowsPerPage="true" PageSizeOptions="new int[] { 5, 10, 25, 50, int.MaxValue }" />
-                </PagerContent>
             </MudTable>
         </MudPaper>
+                </MudExSplitPanelItem>
+            </Right>
+        </MudExSplitPanel>
     </MudStack>
 </MudPaper>
 
@@ -252,18 +389,82 @@
     </div>
 }
 
-<MudDialog @bind-Visible="_checkProgressDialog" Options="_dialogOptions">
+@* Open from the moment the button is pressed, for one class as much as for a package. The tool has
+   to be started and the library opened before the first class is checked, which is several seconds
+   in which both counts are zero - so this says what is happening instead of showing an empty bar,
+   and the bar is indeterminate until there is something to count (B259). *@
+<ProgressDialog Visible="_checkProgressDialog" Options="_dialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@_checkingToolName Check Progress - @_modelsChecked checked out of @_modelsToCheck</MudText>
+        <MudText Typo="Typo.h6">@CheckProgressTitle(_checkingToolName, _modelsChecked, _modelsToCheck)</MudText>
     </TitleContent>
     <DialogContent>
-        <MudProgressLinear Indeterminate="false" Min=0 Max=@_modelsToCheck Value=@_modelsChecked />
-        <MudText Class="mt-2" Typo="Typo.body1">Checking model:</MudText>
-        <MudText Class="mt-0" Typo="Typo.body1">@_checkingModel</MudText>
+        <MudProgressLinear Indeterminate="@(_modelsToCheck <= 1)" Min=0 Max=@_modelsToCheck Value=@_modelsChecked />
+        @if (!string.IsNullOrWhiteSpace(_checkStatus))
+        {
+            <MudText Class="mt-2" Typo="Typo.body1">@_checkStatus</MudText>
+        }
+        else
+        {
+            <MudText Class="mt-2" Typo="Typo.body1">Checking model:</MudText>
+            <MudText Class="mt-0" Typo="Typo.body1">@_checkingModel</MudText>
+        }
     </DialogContent>
     <DialogActions>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CloseCheckProgressDialog"
             Class="px-10">Stop</MudButton>
+    </DialogActions>
+</ProgressDialog>
+
+@* What the external tool said, whatever it said (B170). Before this, a check that passed produced
+   nothing at all - no window, no dialog, no finding - so the only evidence an OpenModelica check had
+   run was that the button had been pressed, and the only evidence for Dymola was that Dymola's own
+   window happened to appear. That made the answer depend on a vendor window MLQT does not control. *@
+<MudDialog @bind-Visible="_checkResultDialog">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@_checkingToolName check</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudAlert Severity="@CheckOutcomeSeverity(FailedChecks.Count(), _checkWasCancelled, CheckEndedBy)" Dense="true">
+            @CheckOutcomeSummary(_checkingToolName, PassedCheckCount, FailedChecks.Count(), _checkWasCancelled, CheckEndedBy)
+        </MudAlert>
+
+        @* The tool's own words, not a paraphrase. A summary that says "check failed" sends the user
+           to the tool to find out why; the message is the whole value of running it.
+
+           Shown for a clean check as well, when there is something to show: `checkModel` returns
+           true for a model that is fine and for one that is fine apart from six warnings, and the
+           tool's log is where the difference is. *@
+        @if (ReportedChecks.Any())
+        {
+            <MudPaper Elevation="0" MaxHeight="320px" Style="overflow-y: auto;" Class="mt-2">
+                @foreach (var check in ReportedChecks)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">@check.ModelId</MudText>
+                    @if (!string.IsNullOrWhiteSpace(check.Summary))
+                    {
+                        <MudText Typo="Typo.body1">@check.Summary</MudText>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(check.Log))
+                    {
+                        <MudText Typo="Typo.body2" Class="pre-wrap">@check.Log</MudText>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(check.ErrorMessage))
+                    {
+                        <MudText Typo="Typo.body2" Class="pre-wrap">@check.ErrorMessage</MudText>
+                    }
+                }
+            </MudPaper>
+            @if (FailedChecks.Any())
+            {
+                <MudText Typo="Typo.caption" Class="mt-2">
+                    Each failure is also in the findings table, so it is still there after this closes.
+                </MudText>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => _checkResultDialog = false)" Class="px-10">Close</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -288,6 +489,12 @@
                     <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(!CanAddToDictionary)"
                         OnClick="AddToDictionary" Class="px-10">Add to Dictionary</MudButton>
                 </MudTooltip>
+            }
+            @if (CanSplitPackage(_currentFinding))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@(() => SplitPackageForFinding(_currentFinding))"
+                           Disabled="_splitting" StartIcon="@Icons.Material.Filled.CallSplit" Class="px-10">Split into files
+                </MudButton>
             }
             @if (CanSuppressRule(_currentFinding))
             {

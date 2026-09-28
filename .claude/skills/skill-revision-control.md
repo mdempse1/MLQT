@@ -10,6 +10,15 @@ The RevisionControl project is a standalone, reusable library for integrating wi
 - Enable comparing different revisions of a Modelica library from version control
 - Provide a reusable component for Git and SVN operations
 
+**It has no project references, deliberately** — it is the one assembly that knows nothing about
+Modelica. So file content at a revision, and a conflict's two sides, come back as **bytes**
+(`GetFileBytesAtRevision`, `GetConflictVersions`), and MLQT decodes them in
+`MLQT.Services.Helpers.VcsFileText` through the same `ModelicaFileEncoding` funnel it uses on disk
+(B240). A version control system stores bytes and what they mean is the caller's question; decoding
+inside this assembly (`File.ReadAllText` on SVN's sidecars, `Blob.GetContentText()` in Git) showed a
+Windows-1252 library's accented characters as replacement characters. Do not add a member that
+returns a file's content as a string.
+
 ## Key Interface
 
 ```csharp
@@ -47,6 +56,7 @@ public interface IRevisionControlSystem
     VcsOperationResult Rebase(string repositoryPath, string targetBranch);
     VcsOperationResult ContinueRebase(string repositoryPath);
     VcsOperationResult AbortRebase(string repositoryPath);
+    VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath);  // a rebase left stopped (B382)
 
     // Push operations
     VcsOperationResult ForcePush(string repositoryPath);
@@ -131,6 +141,48 @@ string? revNum = svn.ResolveRevision("http://svn.example.com/repo/trunk", "HEAD"
 // Checkout a specific SVN revision
 bool success = svn.CheckoutRevision("http://svn.example.com/repo/trunk", "100", @"C:\Temp\svn_checkout");
 ```
+
+**Two path spaces reach the SVN layer, and nothing about a path says which it is in.** `svn log`
+reports repository-root-relative paths (`trunk/Modelica/Foo.mo`); everything that works from the
+checkout uses paths relative to the working copy. A repository registered at a library *inside* the
+checkout has a `LocalPath` (the library) that differs from its `VcsRootPath` (the checkout), so
+converting between the two by stripping a prefix and testing against the wrong root fails every time.
+`GetFileBytesAtRevision` does not guess: when the working copy cannot answer it asks the server —
+the repository root first, then the working copy's own URL (`ContentUrlCandidates`), pegged at the
+revision asked for — which also covers a revision newer than the working copy and a file deleted
+since (B265). `svn cat` is the only command read through `SvnCli.RunForBytes`, because it writes a
+file whose encoding is the file's own; every other command's output is text svn generated itself,
+which is UTF-8 (B264).
+
+### Commands that stall, and what a stopped one leaves behind
+
+An svn command MLQT runs is stopped when it has been silent for its limit: 10 minutes for anything
+that writes the working copy (`SvnCli.IdleTimeout`), 2 minutes for history walks
+(`HistoryIdleTimeout`), 30 seconds for small queries (`QueryIdleTimeout`). A git command is stopped
+when it has run for `GitCommandTimeout` (15 minutes) in all. Three things follow, and each has cost
+a defect:
+
+- **The svn limit watches output, so never make an svn command quiet.** `svn update --quiet` on a
+  large working copy prints nothing and looked exactly like a stalled server (B383).
+  `SvnCommandRunnerTests.NoSvnCommandIsMadeQuiet` reads RevisionControl's source for it. **For the
+  same reason, the output is read on threads of its own, not with `ReadAsync` on the pool.** On a busy
+  pool the reads queue behind other work, output sits unread in the pipe, and a command that is still
+  writing looks silent. `SvnCommandRunnerStarvationTests` fills a capped pool to hold that.
+- **A stop is a kill, and a killed command leaves its lock.** Git leaves `.git/index.lock` (a killed
+  `update-index --refresh` is enough), and every later operation fails with "File exists". svn leaves
+  the working copy locked (E155004). `RunGitCommand` removes only the `*.lock` files written since the
+  command started (`RemoveLocksLeftBehind`), because an older one may belong to another git that is
+  still working. Every svn command that writes the working copy goes through `SvnCli.RunOnWorkingCopy`,
+  which follows a stopped command with `svn cleanup`. A new writing command must use it too (B330).
+- **Report svn's own words.** A failure message is `SvnCli.Result.FailureMessage(fallback)`: stderr
+  when there is any, the fallback only when there is none. Authentication errors and "run 'svn cleanup'"
+  reach the user only this way (B329).
+
+Where a changed-files lookup pegs its URL is a trade-off (`PegForChangedFiles`, B386). Unpegged, the
+URL is pegged at HEAD, and a working copy whose branch has since been deleted or renamed has nothing
+at its URL there. Pegged at the revision asked for, svn cannot follow copy history back to a revision
+from before the branch existed. So the URL is pegged at the later of the working copy's revision and
+the one asked for.
 
 ### Supported SVN Revision Formats
 - Revision numbers (e.g., 123)
@@ -230,6 +282,11 @@ if (!result.Success && result.Message.Contains("conflict"))
     var abortResult = git.AbortRebase(repoPath);
 }
 
+// A rebase stopped on conflicts stays stopped after the dialog closes, with HEAD detached. This is
+// how anything opened later finds it - the branch being rebased and the files still in conflict
+// (empty once resolved, which is when Continue is offered). The rebase dialog opens on it (B382).
+var stopped = git.GetRebaseInProgress(repoPath);
+
 // Force push after successful rebase
 var pushResult = git.ForcePush(repoPath);
 ```
@@ -249,16 +306,22 @@ string? prUrl = git.GetPullRequestUrl(repoPath);
 
 ```csharp
 // Get conflict versions for a specific file
-var versions = git.GetConflictVersions(repoPath, "path/to/file.mo");
-if (versions != null)
-{
-    string baseContent = versions.Base;     // Common ancestor
-    string oursContent = versions.Ours;     // Current branch
-    string theirsContent = versions.Theirs; // Incoming branch
-}
+var (ours, theirs) = git.GetConflictVersions(repoPath, fullPathToFile);  // bytes (B240)
+// ours   = the user's own branch - what KeepMine keeps
+// theirs = the other branch      - what AcceptIncoming takes
+
+git.ResolveConflict(repoPath, fullPathToFile, ConflictResolutionChoice.KeepMine);
 ```
 
 Git reads conflict entries from the index; SVN reads `.mine` / `.r{n}` sidecar files.
+
+**"Mine" is the user's branch in a rebase too, which is the reverse of git (B418).** A rebase
+replays the user's commits onto the other branch, so HEAD (index stage 2, git's "ours") is the
+branch being rebased onto and the replayed commit is stage 3 (git's "theirs"), and there is no
+`MERGE_HEAD`. During a rebase `ResolveConflict` takes Keep Mine / Accept Incoming from those index
+stages, and `GetConflictVersions` swaps the pair, so both the buttons and the diff mean the same
+thing in a merge and a rebase. Checking out `MERGE_HEAD`/`HEAD` as a merge does made Accept
+Incoming fail and Keep Mine discard the user's change.
 
 ## Configurable SVN Branch Directories
 
@@ -332,6 +395,23 @@ dotnet test RevisionControl.Tests
 
 Tests create temporary Git/SVN repositories and clean them up automatically using `IDisposable`.
 
-The SVN repositories dedicated to testing has the URL file:///C:/Projects/SVN/ModelicaEditorTest
+SVN tests never use a fixed repository: `SvnTestRepository` (`TestSupport/`, linked into
+`RevisionControl.Tests` and `MLQT.Services.Tests`) builds one per run with `svnadmin create`
+(trunk with a small `ModelicaEditorTest` library, tags `v1.0`/`v2.0`, `branches/feature-test`) and
+deletes it on disposal. The shared repository and working copy the tests once kept at a fixed path
+on the developer's machine are retired: the tests commit, so two runs at once moved HEAD under each
+other (B426), and `RepositoryServiceTests`, the last to use it, asserted nothing anywhere else (B471). `SvnWorkingCopyFixture` gives the classes CI runs a trunk working copy, or
+none where svn is not installed.
 
-The Git repositories dedicated to testing has the URL https://github.com/mdempse1/ModelicaEditorTests.git
+Git tests never clone either: `GitTestRepositoryFixture` (`RevisionControl.Tests`) builds the same
+layout with LibGit2Sharp (`main` with three commits, tags `v1.0.0`/`v2.0.0`, `feature-test`) and
+**throws when it cannot**, so a broken fixture fails every test using it. It used to catch the
+exception, and about 187 tests returned early on it having asserted nothing; `GitIntegrationTests`
+cloned https://github.com/mdempse1/ModelicaEditorTests.git for every test and did the same offline
+(B481). No test uses that repository now. A test that needs a remote clones the fixture locally.
+**A condition the fixture guarantees is asserted, never returned on.** The one skip left is
+`SvnWorkingCopyFixture.RequireWorkingCopy()`, the `Assert.SkipUnless` every class on that fixture
+calls where svn is absent - reported as skipped, not passed (B481, B486). The repository is the
+run's own, so its answers are known and asserted: trunk's current revision is
+`SvnTestRepository.TrunkLastChangedRevision` (7), HEAD is `HeadRevision` (10), and a test that
+asserts only that an answer came back is asserting less than the fixture makes possible.

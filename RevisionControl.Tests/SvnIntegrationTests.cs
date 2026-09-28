@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 
 namespace RevisionControl.Tests;
 
@@ -257,6 +259,223 @@ public class SvnIntegrationTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A Windows-1252 file comes back out of a revision as the bytes that went in (B264).
+    /// </summary>
+    /// <remarks>
+    /// <c>svn cat</c> used to be read through <c>StandardOutputEncoding = UTF8</c>, so an accented
+    /// library's characters were replacement characters before MLQT saw them - on both sides of a
+    /// diff of itself, since both sides come from here.
+    /// </remarks>
+    [Fact]
+    public void GetFileBytesAtRevision_KeepsAWindows1252FilesBytes()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var latin1 = System.Text.CodePagesEncodingProvider.Instance.GetEncoding(1252)!;
+        const string accented = "model Café \"Température de l'eau\"\nend Café;\n";
+
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        var file = Path.Combine(workingDir, "Accented.mo");
+        var stored = latin1.GetBytes(accented);
+        File.WriteAllBytes(file, stored);
+        RunSvn($"add \"{file}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add an accented file\"");
+
+        // Every route to the content, because they are separate code paths and only one of them is
+        // the one the history diff takes. "HEAD" reads the working copy's BASE; a revision number
+        // reads it pegged; and with the file gone from disk it is fetched from the server by URL.
+        // The server's HEAD, not the working copy's: the commit above went through the svn CLI, so
+        // the working copy is left at a mixed revision and its own number predates the file.
+        var revision = _svn.GetCurrentRevision(_trunkUrl);
+        Assert.NotNull(revision);
+
+        var atBase = _svn.GetFileBytesAtRevision(workingDir, "Accented.mo", "HEAD");
+        var atRevision = _svn.GetFileBytesAtRevision(workingDir, "Accented.mo", revision);
+
+        File.Delete(file);
+        var fromServer = _svn.GetFileBytesAtRevision(workingDir, "Accented.mo", revision);
+
+        Assert.Equal(stored, atBase);
+        Assert.Equal(stored, atRevision);
+        Assert.Equal(stored, fromServer);
+        Assert.Equal(accented, latin1.GetString(atRevision!));
+
+        // What they used to return, and why it was wrong.
+        Assert.Contains('�', System.Text.Encoding.UTF8.GetString(atRevision!));
+    }
+
+    /// <summary>
+    /// A file deleted since the revision being looked at can still be shown at that revision
+    /// (B328) - the case B265's server fallback was said to cover and did not.
+    /// </summary>
+    /// <remarks>
+    /// The path is repository-root-relative, as <c>svn log</c> reports it and the history view
+    /// passes it back, and the working copy is up to date - so the file is gone from disk and from
+    /// HEAD, and the only route to it is the server, pegged at the revision it existed in. Unpegged,
+    /// the URL is pegged at HEAD, where nothing is at that path.
+    /// </remarks>
+    [Fact]
+    public void GetFileBytesAtRevision_FindsAFileDeletedSince()
+    {
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        var file = Path.Combine(workingDir, "Gone.mo");
+        var content = "model Gone\nend Gone;\n"u8.ToArray();
+        File.WriteAllBytes(file, content);
+        RunSvn($"add \"{file}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add a file\"");
+        var existed = _svn.GetCurrentRevision(_trunkUrl);
+        Assert.NotNull(existed);
+
+        RunSvn($"delete \"{_trunkUrl}/Gone.mo\" -m \"delete it\"");
+        RunSvn($"update \"{workingDir}\"");
+        Assert.False(File.Exists(file));
+
+        var bytes = _svn.GetFileBytesAtRevision(workingDir, "trunk/Gone.mo", existed);
+
+        Assert.Equal(content, bytes);
+    }
+
+    /// <summary>
+    /// The files a revision changed are still found for a working copy whose branch has since been
+    /// deleted (B386), and still found for a revision from before the branch existed.
+    /// </summary>
+    /// <remarks>
+    /// Unpegged, <c>svn log url -r N</c> is pegged at HEAD, where a deleted branch has nothing, so
+    /// the lookup failed and returned nothing. Pegging at N instead would break the second case:
+    /// the branch's URL did not exist at a revision before it was copied from trunk.
+    /// </remarks>
+    [Fact]
+    public void GetChangedFiles_FindsARevisionOfABranchDeletedSince_AndOneFromBeforeIt()
+    {
+        var trunkDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", trunkDir);
+        File.WriteAllText(Path.Combine(trunkDir, "OnTrunk.mo"), "model OnTrunk\nend OnTrunk;\n");
+        RunSvn($"add \"{Path.Combine(trunkDir, "OnTrunk.mo")}\"");
+        RunSvn($"commit \"{trunkDir}\" -m \"on trunk\"");
+        var beforeBranch = _svn.GetCurrentRevision(_trunkUrl)!;
+
+        var branchUrl = $"{_repoRoot}/branches/Gone";
+        RunSvn($"copy \"{_trunkUrl}\" \"{branchUrl}\" -m \"make a branch\"");
+        var branchDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(branchUrl, "HEAD", branchDir);
+        File.WriteAllText(Path.Combine(branchDir, "OnBranch.mo"), "model OnBranch\nend OnBranch;\n");
+        RunSvn($"add \"{Path.Combine(branchDir, "OnBranch.mo")}\"");
+        RunSvn($"commit \"{branchDir}\" -m \"on the branch\"");
+        RunSvn($"update \"{branchDir}\"");
+        var onBranch = _svn.GetCurrentRevision(branchDir)!;
+
+        // Before the delete, a revision from before the branch is found through its copy history.
+        Assert.Contains(_svn.GetChangedFiles(branchDir, beforeBranch), f => f.Path == "trunk/OnTrunk.mo");
+
+        RunSvn($"delete \"{branchUrl}\" -m \"delete the branch\"");
+
+        Assert.Contains(_svn.GetChangedFiles(branchDir, onBranch), f => f.Path == "branches/Gone/OnBranch.mo");
+        Assert.Contains(_svn.GetChangedFiles(branchDir, beforeBranch), f => f.Path == "trunk/OnTrunk.mo");
+    }
+
+    /// <summary>
+    /// The history of a working copy whose branch has since been deleted is still there (B419),
+    /// and while the branch lives it still shows commits newer than the working copy.
+    /// </summary>
+    /// <remarks>
+    /// Unpegged, <c>svn log url -l N</c> is pegged at HEAD, where a deleted branch has nothing, so
+    /// the History dialog came back empty. Pegging at the working copy's revision always would hide
+    /// what has been committed since, which the dialog is how a user sees before updating.
+    /// </remarks>
+    [Fact]
+    public void GetLogEntries_ReadsTheHistoryOfABranchDeletedSince_AndShowsNewerCommitsWhileItLives()
+    {
+        var branchUrl = $"{_repoRoot}/branches/Gone";
+        RunSvn($"copy \"{_trunkUrl}\" \"{branchUrl}\" -m \"make a branch\"");
+        var branchDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(branchUrl, "HEAD", branchDir);
+        File.WriteAllText(Path.Combine(branchDir, "OnBranch.mo"), "model OnBranch\nend OnBranch;\n");
+        RunSvn($"add \"{Path.Combine(branchDir, "OnBranch.mo")}\"");
+        RunSvn($"commit \"{branchDir}\" -m \"on the branch\"");
+        RunSvn($"update \"{branchDir}\"");
+        var onBranch = _svn.GetCurrentRevision(branchDir)!;
+
+        // A commit to the branch the working copy has not updated to.
+        var otherDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(branchUrl, "HEAD", otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Newer.mo"), "model Newer\nend Newer;\n");
+        RunSvn($"add \"{Path.Combine(otherDir, "Newer.mo")}\"");
+        RunSvn($"commit \"{otherDir}\" -m \"newer than the working copy\"");
+        var newer = _svn.GetCurrentRevision(branchUrl)!;
+        Assert.NotEqual(onBranch, newer);
+
+        var live = _svn.GetLogEntries(branchDir, new VcsLogOptions { MaxEntries = 50 });
+        Assert.Contains(live, e => e.Revision == newer);
+        Assert.Contains(live, e => e.Revision == onBranch);
+
+        RunSvn($"delete \"{branchUrl}\" -m \"delete the branch\"");
+
+        var gone = _svn.GetLogEntries(branchDir, new VcsLogOptions { MaxEntries = 50 });
+        Assert.Contains(gone, e => e.Revision == onBranch && e.MessageShort == "on the branch");
+
+        var one = _svn.GetLogEntries(branchDir, new VcsLogOptions { Revision = onBranch });
+        Assert.Equal(onBranch, Assert.Single(one).Revision);
+    }
+
+    /// <summary>
+    /// An update that fails says what svn said (B329) - here, that the server is not there - rather
+    /// than "SVN update failed.", which left the user nothing to act on.
+    /// </summary>
+    [Fact]
+    public void UpdateToLatest_WhenSvnRefuses_ReportsSvnsOwnMessage()
+    {
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        // The repository goes away; the working copy still knows its URL.
+        var moved = _repoDir + "_moved";
+        Directory.Move(_repoDir, moved);
+        try
+        {
+            var result = _svn.UpdateToLatest(workingDir);
+
+            Assert.False(result.Success);
+            Assert.NotEqual("SVN update failed.", result.ErrorMessage);
+            Assert.Contains("svn: E", result.ErrorMessage);
+        }
+        finally
+        {
+            Directory.Move(moved, _repoDir);
+        }
+    }
+
+    /// <summary>
+    /// Committing a file that already matches the repository says so, rather than reporting a
+    /// failure for a command that succeeded (B266).
+    /// </summary>
+    /// <remarks>
+    /// This is the message a real diagnosis ran into: a test failed with "SVN commit failed", the
+    /// svn command underneath it had returned success, and there was therefore no error anywhere to
+    /// find. What had happened was that the file was already committed, byte for byte.
+    /// </remarks>
+    [Fact]
+    public void Commit_WithNothingToCommit_SaysNothingWasCommitted()
+    {
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        var file = Path.Combine(workingDir, "unchanged.txt");
+        File.WriteAllText(file, "the same content");
+        RunSvn($"add \"{file}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add unchanged.txt\"");
+
+        // Same content, so svn has nothing to send.
+        var result = _svn.Commit(workingDir, "commit it again", ["unchanged.txt"]);
+
+        Assert.False(result.Success);
+        Assert.Contains("Nothing was committed", result.ErrorMessage);
+        Assert.DoesNotContain("failed", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void UpdateRevisionInPlace_AdvancesContentInPlace()
     {
@@ -468,6 +687,87 @@ public class SvnIntegrationTests : IDisposable
     {
         var result = _svn.GetCurrentBranch(_repoRoot);
         Assert.Null(result);
+    }
+
+    #endregion
+
+    #region A server that stops answering (B330)
+
+    /// <summary>
+    /// A read-only question of a server that accepts the connection and never answers is stopped
+    /// at the limit it was given, not at the update's ten minutes - by each of the three ways a
+    /// question is asked. After an update a stalled server stopped, the revision description asked
+    /// for next waited out a second ten minutes behind a progress bar.
+    /// </summary>
+    [Theory]
+    [InlineData("text")]
+    [InlineData("xml")]
+    [InlineData("bytes")]
+    public void AQueryOfAServerThatNeverAnswers_IsStoppedAtItsOwnLimit(string how)
+    {
+        using var server = new SilentServer();
+        var url = $"svn://127.0.0.1:{server.Port}/repo";
+        var limit = TimeSpan.FromSeconds(2);
+
+        var clock = Stopwatch.StartNew();
+        switch (how)
+        {
+            case "text":
+                var text = SvnCli.Run(["log", url, "-r", "1", "-l", "1"], stdinText: null, limit);
+                Assert.True(text.Stopped, "svn was not stopped for going silent");
+                Assert.False(text.Success);
+                break;
+            case "xml":
+                Assert.Null(SvnCli.RunXml(limit, "log", url, "-r", "1", "-l", "1"));
+                break;
+            case "bytes":
+                Assert.False(SvnCli.RunForBytes(limit, "cat", url + "/file.mo").Success);
+                break;
+        }
+        clock.Stop();
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"took {clock.Elapsed}");
+    }
+
+    /// <summary>
+    /// The three limits keep their order: a small question gives up first, a history walk - which a
+    /// server may search silently for a while - later, and a command that writes the working copy
+    /// last.
+    /// </summary>
+    [Fact]
+    public void TheQueryLimits_AreShorterThanTheWritingOne_AndInOrder()
+    {
+        Assert.True(SvnCli.QueryIdleTimeout <= TimeSpan.FromMinutes(1));
+        Assert.True(SvnCli.QueryIdleTimeout < SvnCli.HistoryIdleTimeout);
+        Assert.True(SvnCli.HistoryIdleTimeout < SvnCli.IdleTimeout);
+    }
+
+    /// <summary>A server that accepts every connection and says nothing, for as long as it lives.</summary>
+    private sealed class SilentServer : IDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        private readonly List<TcpClient> _held = [];
+
+        public SilentServer()
+        {
+            _listener.Start();
+            _ = Task.Run(async () =>
+            {
+                try { while (true) { var client = await _listener.AcceptTcpClientAsync(); lock (_held) _held.Add(client); } }
+                catch (ObjectDisposedException) { }
+                catch (SocketException) { }
+            });
+        }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public void Dispose()
+        {
+            _listener.Stop();
+            lock (_held)
+                foreach (var client in _held)
+                    client.Dispose();
+        }
     }
 
     #endregion

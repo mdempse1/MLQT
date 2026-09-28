@@ -12,8 +12,8 @@ library will have many findings; nobody fixes them all at once. So you:
 2. **Fail** on findings that are *not* in the baseline — only genuinely new findings fail CI.
 3. Optionally **escalate** pre-existing findings in models a change touched (the "boy-scout rule").
 
-Parse errors are reported separately from all of this and always fail — see
-[Parse errors always fail](#parse-errors-always-fail).
+Parse errors, and classes MLQT could not check, are reported separately from all of this and always
+fail — see [Parse errors always fail](#parse-errors-always-fail).
 
 Findings are classified as **new** (fail), **accepted debt** (tolerated), or **touched debt**
 (in a model the change modified). Identity is a reformat-stable fingerprint, so reformatting a model
@@ -79,10 +79,12 @@ repo is a single library or several side by side. A single `<root>/.mlqt/setting
 mlqt check /path/to/MyLibrary
 ```
 
-Out of the box **no style rules are enabled**, so you'll see `note: no style rules are enabled`.
-Enable rules next.
+Out of the box only the rules that are **on by default** run — currently just
+`MLQT.Structure.SingleFilePackage` — so you'll see `note: only the rules that are on by default are
+enabled; nothing else has been configured for this library. See settings-reference.md to choose the
+rules you want.` Enable rules next.
 
-One thing is reported even with no rules configured: a **parse error**. If a file has a syntax error
+One more thing is reported even with no rules configured: a **parse error**. If a file has a syntax error
 you will see it on this very first run, and the command will exit `1`. That is deliberate — see
 [Parse errors always fail](#parse-errors-always-fail).
 
@@ -102,7 +104,7 @@ it is the shared configuration for everyone and for CI.
   "ImportStatementsFirst": true,
   "OneOfEachSection": true,
 
-  // Optional: make specific rules hard errors (default is Warning).
+  // Optional: make specific rules hard errors (most rules default to Warning).
   "RuleSeverities": {
     "MLQT.Doc.ClassDescription": "Error"
   }
@@ -132,7 +134,8 @@ every report):
 | `ValidateModelReferences` | `MLQT.Reference.ModelReferences` | `modelica://` model references resolve |
 
 Severities in `RuleSeverities` are `Off`, `Info`, `Warning`, or `Error`; the map wins over the
-booleans. Enabled rules default to `Warning`.
+booleans. Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`,
+`MLQT.Unused.PublicClass` is `Info`).
 
 **Leave out the libraries you don't want judged.** A repository usually holds test-case and example
 libraries next to the ones under development. List them and they are loaded but never reported on —
@@ -194,8 +197,9 @@ note: 3415 finding(s) share an entry with another. …
 
 An entry is rule + class + element + detail with no line number, so a rule firing twice on the same
 element of the same class is one entry covering two findings — and a check still reports and accepts
-both. Severity is irrelevant to what gets recorded; only
-[parse diagnostics](#parse-errors-always-fail) are excluded. See
+both. Severity is irrelevant to what gets recorded; only the
+[diagnostics](#parse-errors-always-fail) (the two parse diagnostics and `MLQT.Check.Failed`) are
+excluded. See
 [cli.md → Entries vs findings](cli.md#entries-vs-findings).
 
 ---
@@ -417,7 +421,8 @@ baseline you have just set up:
 mlqt hook install ./MyLibrary --fail-on warning --baseline .mlqt/baseline.json
 ```
 
-The hook skips any commit that stages no `.mo` file, so it costs nothing on the others. It blocks a
+The hook skips any commit that stages no added, copied or modified `.mo` file, so it costs nothing on
+the others — a commit that only deletes `.mo` files skips the check too. It blocks a
 commit whose findings reach `--fail-on`, and also one where the check could not run at all — a check
 that did not run has approved nothing. `git commit --no-verify` bypasses it, deliberately: a hook that
 cannot be got past is a hook that gets deleted. Full options in
@@ -458,7 +463,8 @@ can also **add**:
 - **Never run `update --force` from CI.** That turns the gate off one commit at a time. CI should only
   ever *read* the baseline.
 - **When you change which rules are enabled**, the next check warns that the baseline was generated
-  with a different rule set, and names what changed. Findings from a newly enabled rule are reported
+  with a different configuration (`warning: the baseline was generated with a different
+  configuration`), and names what changed. Findings from a newly enabled rule are reported
   as new until you accept them with `update --force` (or fix them). See
   [cli.md](cli.md#rule-drift).
 
@@ -475,9 +481,21 @@ mlqt check <library-path> [--baseline <path>] [--changed-from <ref>]
                           [--out <file>] [--fail-on off|warning|error] [--no-color]
                           [--no-suppress] [--dependency <path>]
                           [--metrics] [--metrics-out <path>] [--metrics-force]
+                          [--min-coverage <spec>] [--coverage-ratchet]
+                          [--report <fmt>:<file>] [--sarif-base <path>]
+                          [--sarif-include-accepted] [--allow-version-mismatch] [--timings]
+        # --min-coverage: fail below a percentage, overall or per dimension (repeatable)
+        # --coverage-ratchet: fail when any dimension is below the last recorded snapshot
+        # --report: also write another format to a file from the same run (repeatable)
+        # --sarif-base: directory SARIF paths are written relative to (e.g. the repository root)
+        # --sarif-include-accepted: keep accepted debt in SARIF output
+        # --allow-version-mismatch: continue despite a dependency version mismatch
+        # --timings: print where the run's time went to stderr
+        # full descriptions: cli.md
 
 mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>]
-                                                 [--dependency <path>] [--force]
+                                                 [--dependency <path>] [--allow-version-mismatch]
+                                                 [--force]
         # --force: create = overwrite an existing file; update = accept new findings as debt
         # --dependency: repeatable; must match between baseline and check
 
@@ -488,14 +506,15 @@ mlqt hook install|uninstall|status [<library-path>] [--fail-on off|warning|error
         # --force: replace or delete a pre-commit hook mlqt did not write
 ```
 
-`--config` defaults to `<library-path>/.mlqt/settings.json`; `--baseline` for the `baseline` commands
+`--config` defaults to the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the
+working-copy root (built-in defaults if there is none); `--baseline` for the `baseline` commands
 defaults to `<library-path>/.mlqt/baseline.json`. A **relative** `--config`/`--baseline` value is
 resolved against the library/repository path (not the current directory), so
 `--baseline .mlqt/baseline.json` finds `<repo>/.mlqt/baseline.json` from any working directory;
 absolute paths are used as-is — the same applies to `--metrics-out`.
 
-The `baseline` file records the time, revision and branch it was generated at (`version: 2`); a
-version-1 file written before that still loads.
+The `baseline` file records the time, revision and branch it was generated at, and the rule set,
+exclusions and dependencies it was taken with (`version: 3`); older files still load.
 
 ---
 
@@ -560,12 +579,13 @@ ground — the trend follows the mainline instead of gaining a point per PR.
 
 ## Parse errors always fail
 
-Two findings sit outside the ratchet entirely:
+Three findings — the diagnostics — sit outside the ratchet entirely:
 
 | Rule id | Meaning |
 |---------|---------|
 | `MLQT.Parse.SyntaxError` | The file has a syntax error. The parser recovered, so the class still loaded — but part of it was misread. |
 | `MLQT.Parse.Failure` | The file could not be parsed at all. No classes were extracted from it and nothing in it was checked. |
+| `MLQT.Check.Failed` | Checking the class threw, so its findings are missing from the results — see [cli.md](cli.md#mlqtcheckfailed). |
 
 They are **always reported** (no setting enables or disables them), **always errors** (so they fail
 even the default `--fail-on error`), **cannot be suppressed** with a `__MLQT` annotation, and are
@@ -653,14 +673,14 @@ error: coverage gate: Class description 75% is below the required 80%
   their own files, so a line inside it is no longer the file's line. Rather than point confidently at
   the wrong line, such a finding is reported at the package's own declaration. Findings about the
   classes themselves — the overwhelming majority — carry exact file lines.
-- **Dependencies aren't loaded** — see `ValidateModelReferences` above.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| `note: no style rules are enabled` | No rules on in `.mlqt/settings.json` (or no settings file). Enable rules (§3). |
-| Lots of `MLQT.Reference.ModelReferences` findings | Dependencies (MSL, etc.) aren't loaded, so external `modelica://` refs look broken. Turn `ValidateModelReferences` off for now. |
+| `note: only the rules that are on by default are enabled; …` | No settings file, or one that enables nothing beyond the defaults. Enable rules (§3). |
+| `note: no style rules are enabled; no findings will be produced.` | Every rule, including the ones on by default, has been turned off in `.mlqt/settings.json`. Enable rules (§3). |
+| Lots of `MLQT.Reference.ModelReferences` findings | The libraries it uses (MSL, etc.) aren't loaded, so external `modelica://` refs look broken. Pass `--dependency <path to the library it uses, e.g. MSL>`. |
 | Spelling flags valid domain terms | Build a custom dictionary — see [spell-checking.md](spell-checking.md). |
 | `error: '<path>' is not inside a Git or SVN working copy` | `--changed-from` needs to run inside the VCS working copy. |
 | `error: could not resolve revision '<ref>'` | Git: the ref doesn't exist locally (wrong branch name, or only `origin/<ref>`) — try `origin/main`, `master`, `HEAD~1`. SVN: `--changed-from` must be a revision number or keyword (`BASE`/`HEAD`/`PREV`), **not a branch name**. |
@@ -673,4 +693,4 @@ error: coverage gate: Class description 75% is below the required 80%
 | A baselined check accepts *more* findings than the baseline holds | Also expected, and the same cause: classification is per finding, so several findings can match one entry. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | `error: dependency version mismatch` | The `--dependency` checkout is not the version the library's `uses(...)` declares. Point it at the right version, update the annotation, or pass `--allow-version-mismatch` if the difference is deliberate. |
-| Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |
+| Gate passes but you expected a failure | Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`, `MLQT.Unused.PublicClass` is `Info`), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

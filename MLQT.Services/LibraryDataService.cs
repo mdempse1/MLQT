@@ -75,6 +75,19 @@ public class LibraryDataService : ILibraryDataService
 
     private void RaiseTreeDataChanged()
     {
+        // Dropped whether or not the announcement is suppressed: a bulk load is exactly when the
+        // answer goes stale, and the one announcement at the end of it must not be served a set
+        // built before the libraries arrived.
+        lock (_descendantParserErrorsLock)
+        {
+            _descendantParserErrors = null;
+            _descendantParserErrorsGeneration++;
+        }
+
+        // Every rendered icon too: an icon is drawn from base classes that may be in the library
+        // that just arrived or left, or in the class just reloaded (B349).
+        Interlocked.Increment(ref _iconGeneration);
+
         if (Volatile.Read(ref _treeNotificationDepth) == 0)
             OnTreeDataChanged?.Invoke();
     }
@@ -91,11 +104,10 @@ public class LibraryDataService : ILibraryDataService
     {
         return Libraries.Select(lib =>
         {
-            // A file-backed library resolves modelica:// URIs relative to its containing directory.
-            var rootPath = lib.SourceType == LibrarySourceType.File
-                ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
-                : lib.SourcePath;
-            return new LibraryInfo(lib.Name, rootPath);
+            // A single-file library resolves modelica:// URIs relative to its containing directory,
+            // whatever its source type says (B428).
+            return new LibraryInfo(lib.Name, lib.RootDirectory,
+                isEncrypted: lib.SourceType == LibrarySourceType.EncryptedDirectory);
         }).ToList();
     }
 
@@ -115,9 +127,14 @@ public class LibraryDataService : ILibraryDataService
             if (_dependencyAnalysisTask is { IsCompleted: false })
                 return _dependencyAnalysisTask;
 
-            var libraryInfos = GetLibraryInfos();
-            _dependencyAnalysisTask = Task.Run(() =>
-                GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph, libraryInfos, progressLog));
+            _dependencyAnalysisTask = Task.Run(async () =>
+            {
+                // Again if a library arrived while it ran: that run did not see the new classes, so it
+                // leaves the graph unmarked (B352), and a caller awaiting this would otherwise go on
+                // with no edges for them. Bounded, because a stream of loads is not a reason to spin.
+                for (var attempt = 0; attempt < 3 && !_combinedGraph.DependenciesAnalyzed; attempt++)
+                    await GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph, GetLibraryInfos(), progressLog);
+            });
             return _dependencyAnalysisTask;
         }
     }
@@ -153,10 +170,7 @@ public class LibraryDataService : ILibraryDataService
             // re-analyse before it can trust the graph.
             _combinedGraph.InvalidateDependencyAnalysis();
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
@@ -204,10 +218,7 @@ public class LibraryDataService : ILibraryDataService
             // re-analyse before it can trust the graph.
             _combinedGraph.InvalidateDependencyAnalysis();
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
@@ -265,6 +276,23 @@ public class LibraryDataService : ILibraryDataService
 
             library.Name = detected.Name;
 
+            // Readable source for this library is already loaded, so it would be retired the moment it
+            // registered. Asked before the documentation is read rather than after, so a library whose
+            // source is checked out costs a directory probe instead of a pass over its help HTML and a
+            // graph full of stubs built only to be taken out again. RepositoryService asks the same
+            // question earlier still, from discovery; this is for every caller that comes straight
+            // here - the CLI's dependencies, the MCP server's load_library, the Reference Libraries
+            // setting. A source that arrives while this is loading is still caught by Register.
+            if (ReadableSourceLoadedFor(library.Name) is { } source)
+            {
+                library.SupersededBy = source;
+                Info("LibraryDataService",
+                    $"Encrypted library '{library.Name}' at {directoryPath} is not used: readable source for " +
+                    $"it is loaded from {source}");
+                LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+                return library;
+            }
+
             if (!detected.HasDocumentation)
             {
                 // Nothing shipped that describes the library. Loading zero classes is the honest
@@ -276,10 +304,7 @@ public class LibraryDataService : ILibraryDataService
                     $"Encrypted library '{detected.Name}' ships no documentation; its classes cannot be recovered");
                 library.DocumentedClassCount = 0;
 
-                lock (_lock)
-                {
-                    _libraries.Add(library);
-                }
+                Register(library);
 
                 OnLibrariesChanged?.Invoke();
                 RaiseTreeDataChanged();
@@ -313,13 +338,16 @@ public class LibraryDataService : ILibraryDataService
             // re-analyse before it can trust the graph.
             _combinedGraph.InvalidateDependencyAnalysis();
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            var registered = Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
+
+            if (!registered)
+            {
+                LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+                return library;
+            }
 
             Info("LibraryDataService",
                 $"Loaded encrypted library '{library.Name}' {detected.Version} with {library.ModelIds.Count} " +
@@ -469,7 +497,7 @@ public class LibraryDataService : ILibraryDataService
 
         try
         {
-            await Task.Run(async () =>
+            await Task.Run(() =>
             {
                 // Load directly into the combined graph
                 // Note: Using lock here since Parallel.ForEach may cause race conditions
@@ -481,9 +509,14 @@ public class LibraryDataService : ILibraryDataService
                     modelIds.AddRange(GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, content));
                 }
 
-                await GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph);
                 BuildLibraryIndex(library, _combinedGraph, modelIds);
             });
+
+            // Invalidated like every other load, rather than analysed here. The full analysis this ran
+            // went around EnsureDependenciesAnalyzedAsync's gate, so it could race a run already in
+            // flight over the same edges, and it passed no library roots, so modelica:// references
+            // resolved differently from every other run (B352, and B166's third cause).
+            _combinedGraph.InvalidateDependencyAnalysis();
 
             // Set name from first top-level model if available
             if (library.TopLevelModelIds.Count > 0)
@@ -496,10 +529,7 @@ public class LibraryDataService : ILibraryDataService
                 }
             }
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
@@ -523,16 +553,133 @@ public class LibraryDataService : ILibraryDataService
             var library = _libraries.FirstOrDefault(l => l.Id == libraryId);
             if (library != null)
             {
-                // Remove all models belonging to this library from the combined graph, in one pass
-                // over its edges - a whole library is the largest removal there is.
-                _combinedGraph.RemoveNodes(library.ModelIds);
-
+                RemoveSuppliedNodes(library);
                 _libraries.Remove(library);
             }
         }
 
         OnLibrariesChanged?.Invoke();
         RaiseTreeDataChanged();
+    }
+
+    /// <inheritdoc/>
+    public bool RelocateLibrary(string libraryId, string directoryPath)
+    {
+        lock (_lock)
+        {
+            var library = _libraries.FirstOrDefault(l => l.Id == libraryId);
+            if (library is null)
+                return false;
+
+            // Under the lock, because LibraryContainingPath reads it there: it is what places a
+            // class from a new file in this library, and the old path placed none of them (B417).
+            library.SourcePath = directoryPath;
+            if (library.SourceType == LibrarySourceType.File)
+                library.SourceType = LibrarySourceType.Directory;
+        }
+
+        Info("LibraryDataService", $"Library now loaded from directory {directoryPath}");
+        OnLibrariesChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// Adds a newly loaded library to the list, applying <see cref="SourceSupersedesEncrypted"/> on
+    /// the way in. Every load path registers through here, so the rule cannot be missing from one.
+    /// </summary>
+    /// <returns>False when the library itself was superseded and is not registered: an encrypted
+    /// build arriving after readable source for it. Its classes are gone from the graph and its index
+    /// is emptied, so a caller that counts or keeps it sees a library that contributes nothing.</returns>
+    /// <remarks>
+    /// The check and the add are one step under the lock. Two parallel loads of the same library —
+    /// the ordinary shape of a project that holds a checkout and a tool's library folder — therefore
+    /// cannot both miss each other: whichever registers second sees the first.
+    /// </remarks>
+    private bool Register(LoadedLibrary library)
+    {
+        List<(LoadedLibrary Library, int Removed)> retired = [];
+        bool registered;
+
+        lock (_lock)
+        {
+            foreach (var superseded in SourceSupersedesEncrypted.Retires(library, _libraries))
+            {
+                var removed = RemoveSuppliedNodes(superseded);
+                _libraries.Remove(superseded);
+                superseded.ModelIds = [];
+                superseded.TopLevelModelIds = [];
+                superseded.ChildrenByParent = new();
+                superseded.SupersededBy = ReferenceEquals(superseded, library)
+                    ? _libraries.First(l => l.SourceType != LibrarySourceType.EncryptedDirectory
+                                            && SourceSupersedesEncrypted.SameLibrary(l.Name, library.Name)).SourcePath
+                    : library.SourcePath;
+                retired.Add((superseded, removed));
+            }
+
+            registered = !retired.Any(r => ReferenceEquals(r.Library, library));
+            if (registered)
+                _libraries.Add(library);
+        }
+
+        foreach (var (superseded, removed) in retired)
+        {
+            Info("LibraryDataService",
+                $"Encrypted library '{superseded.Name}' at {superseded.SourcePath} is not used: readable " +
+                $"source for it is loaded from {superseded.SupersededBy}" +
+                (removed > 0 ? $"; {removed} documented class(es) the source does not have were removed" : ""));
+        }
+
+        return registered;
+    }
+
+    /// <summary>Where readable source for the named library is loaded from, or null.</summary>
+    private string? ReadableSourceLoadedFor(string name)
+    {
+        lock (_lock)
+        {
+            return SourceSupersedesEncrypted.ReadableSourceFor(name, _libraries
+                .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
+                .Select(l => (l.Name, l.SourcePath)));
+        }
+    }
+
+    /// <summary>
+    /// Takes out of the graph the nodes this library actually supplies, and nothing else.
+    /// </summary>
+    /// <returns>How many class nodes were removed.</returns>
+    /// <remarks>
+    /// <para><b>Not every id in <see cref="LoadedLibrary.ModelIds"/>.</b> An encrypted library that
+    /// was loaded before readable source for it lists ids whose node is now the source's, and
+    /// removing by the list deleted the user's own classes from the graph along with the vendor's.
+    /// A library supplies stubs if it is encrypted and readable classes otherwise, which is the same
+    /// question <see cref="Owns"/> answers for the tree.</para>
+    ///
+    /// <para>An encrypted library's <c>package.moe</c> file node goes with it. It holds nothing once
+    /// the stubs are gone, and a file node for a vendor's encrypted package left in the graph is one
+    /// more path that every write has to remember not to take at face value.</para>
+    /// </remarks>
+    private int RemoveSuppliedNodes(LoadedLibrary library)
+    {
+        var supplied = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in library.ModelIds)
+        {
+            if (_combinedGraph.GetNode<ModelNode>(id) is { } node && Owns(library, node))
+                supplied.Add(id);
+        }
+
+        // One pass over the graph's edges - a whole library is the largest removal there is.
+        _combinedGraph.RemoveNodes(supplied);
+
+        if (library.SourceType == LibrarySourceType.EncryptedDirectory && !string.IsNullOrEmpty(library.SourcePath))
+        {
+            // The same path the loader gave the stub builder, so the same id. Removed whatever its
+            // ContainedModelIds says: RemoveNodes does not update a file's list, and nothing else is
+            // in this file - source that replaced a stub was detached from it as it arrived.
+            _combinedGraph.RemoveNode(GraphBuilder.GenerateFileId(
+                Path.Combine(library.SourcePath, EncryptedLibraryDetector.EncryptedPackageFileName)));
+        }
+
+        return supplied.Count;
     }
 
     /// <inheritdoc/>
@@ -610,6 +757,17 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public async Task RefreshDependenciesAsync(IReadOnlyCollection<string> modelIds)
+    {
+        if (modelIds.Count == 0 || !_combinedGraph.DependenciesAnalyzed)
+            return;
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            _combinedGraph, modelIds.ToHashSet(StringComparer.Ordinal), GetLibraryInfos());
+        _combinedGraph.ReconcileDependencyEdges();
+    }
+
+    /// <inheritdoc/>
     public async Task<List<string>> ReloadFileAsync(string filePath)
     {
         var affectedModelIds = new List<string>();
@@ -630,17 +788,9 @@ public class LibraryDataService : ILibraryDataService
             var fileNode = _combinedGraph.GetNode<FileNode>(fileId);
             if (fileNode != null)
             {
-                var modelsInFile = _combinedGraph.GetModelsInFile(fileId);
-                foreach (var model in modelsInFile)
+                foreach (var model in _combinedGraph.GetModelsInFile(fileId))
                 {
-                    foreach (var lib in _libraries)
-                    {
-                        if (lib.ModelIds.Contains(model.Id))
-                        {
-                            library = lib;
-                            break;
-                        }
-                    }
+                    library = LibraryOwnership.Owner(_libraries, model.Id, GetModelById);
                     if (library != null) break;
                 }
             }
@@ -650,18 +800,13 @@ public class LibraryDataService : ILibraryDataService
         if (library == null)
         {
             lock (_lock)
-            {
-                foreach (var lib in _libraries)
-                {
-                    if (!string.IsNullOrEmpty(lib.SourcePath) &&
-                        filePath.StartsWith(lib.SourcePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        library = lib;
-                        break;
-                    }
-                }
-            }
+                library = LibraryContainingPath(filePath);
         }
+
+        // Before the old classes go: what they import on behalf of classes below them in other files.
+        EnclosingImportChanges enclosingImports;
+        lock (_lock)
+            enclosingImports = EnclosingImportChanges.Capture(_combinedGraph, [fileId]);
 
         // Remove old models from this file
         var removedIds = RemoveModelsFromFile(filePath);
@@ -710,6 +855,11 @@ public class LibraryDataService : ILibraryDataService
             });
         }
 
+        // A package whose imports changed changes what names mean in its children's files too (B347),
+        // and so does a class added to or removed from it (B387).
+        lock (_lock)
+            affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(_combinedGraph));
+
         RaiseTreeDataChanged();
 
         // Each class once. A file whose classes are unchanged contributes every id twice — once as
@@ -718,6 +868,29 @@ public class LibraryDataService : ILibraryDataService
         // already-checked guard before either sets it, and the class's findings are then reported
         // twice.
         return affectedModelIds.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// The loaded library whose source a file lies in, by path — for a file the graph has no classes
+    /// from yet, so no class can say. Asked with <see cref="PathContainment.IsWithin"/>, not a bare
+    /// <c>StartsWith</c>: <c>…/Lib</c> is a prefix of <c>…/LibExtra/New.mo</c>, and the prefix test
+    /// gave a new class in <c>LibExtra</c> to <c>Lib</c> whenever <c>Lib</c> was loaded first
+    /// (B323 follow-up). The nearest root wins, so a library nested inside another gets its own
+    /// files. Callers hold <c>_lock</c>.
+    /// </summary>
+    private LoadedLibrary? LibraryContainingPath(string filePath)
+    {
+        LoadedLibrary? nearest = null;
+        foreach (var lib in _libraries)
+        {
+            if (string.IsNullOrEmpty(lib.SourcePath) || !PathContainment.IsWithin(filePath, lib.SourcePath))
+                continue;
+
+            if (nearest is null || lib.SourcePath.Length > nearest.SourcePath.Length)
+                nearest = lib;
+        }
+
+        return nearest;
     }
 
     /// <inheritdoc/>
@@ -777,17 +950,7 @@ public class LibraryDataService : ILibraryDataService
                 {
                     var fileNode = _combinedGraph.GetNode<FileNode>(model.ContainingFileId);
                     if (fileNode != null)
-                    {
-                        foreach (var lib in _libraries)
-                        {
-                            if (!string.IsNullOrEmpty(lib.SourcePath) &&
-                                fileNode.FilePath.StartsWith(lib.SourcePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                library = lib;
-                                break;
-                            }
-                        }
-                    }
+                        library = LibraryContainingPath(fileNode.FilePath);
                 }
 
                 if (library == null) continue;
@@ -817,11 +980,10 @@ public class LibraryDataService : ILibraryDataService
     /// Whether this library is the one whose copy of <paramref name="node"/> is actually in the
     /// graph.
     ///
-    /// <para>The same library can be loaded twice — a tool's library folder ships the encrypted
-    /// build of a library the user also has checked out as source, and both are perfectly ordinary
-    /// repositories in the same project. Only one copy of each class survives in the graph (source
-    /// wins), but both <see cref="LoadedLibrary"/> entries still list the same ids, so "which
-    /// library does this class belong to" has two answers and only one of them is right.</para>
+    /// <para>A library supplies stubs if it is encrypted and readable classes otherwise. Since B268 an
+    /// encrypted build is never registered beside source for the same library, so this rarely has two
+    /// candidates to choose between; it is what <see cref="RemoveSuppliedNodes"/> asks so that removing
+    /// a library cannot take another library's classes with it, whatever the index says.</para>
     /// </summary>
     private static bool Owns(LoadedLibrary library, ModelNode node) =>
         node.IsExternalStub == (library.SourceType == LibrarySourceType.EncryptedDirectory);
@@ -834,7 +996,9 @@ public class LibraryDataService : ILibraryDataService
             lock (_lock)
             {
                 // Distinct ids that are actually in the graph. Both halves earn their place: the set
-                // is what stops a class listed by two libraries being counted twice, and the graph
+                // is what stops a class listed by two libraries being counted twice (two readable
+                // checkouts of one library, now that an encrypted build never sits beside its source),
+                // and the graph
                 // lookup is what stops an id a library still lists after its node has gone being
                 // counted at all.
                 //
@@ -852,45 +1016,82 @@ public class LibraryDataService : ILibraryDataService
         }
     }
 
-    /// <inheritdoc/>
-    public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
+    /// <summary>
+    /// The classes a tree shows at its root, ready to display.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Actually asynchronous, which the name had been promising without keeping.</b> It
+    /// returned a completed task, so a caller awaiting it ran the whole thing on its own thread —
+    /// and the caller is a Blazor component, whose thread the desktop host also uses for its window
+    /// message pump. Preparing a class for display renders its icon, which resolves and parses its
+    /// base classes, so the first refresh after a load spent about a second there: measured at
+    /// 1,477ms of a 1,522ms tree refresh, and still around 1,040ms once the icons were cached and
+    /// only rendered once (B258).</para>
+    ///
+    /// <para><b>And the preparing happens outside the lock.</b> Deciding which library owns a class
+    /// needs it; rendering that class's icon does not, and holding it through work that reaches into
+    /// the graph and parses other classes is what made an unrelated caller's
+    /// <see cref="GetAllModels"/> wait 872ms.</para>
+    /// </remarks>
+    public async Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
     {
-        // Keyed by model id, because two libraries claiming the same top-level class are claiming
-        // the *same node object*. Adding it once per claiming library put the library in the tree
-        // twice, and — since preparing it for display stamps the library id onto the shared node —
-        // both copies ended up attributed to whichever library was processed last. That is why a
-        // library appeared twice under one repository and not at all under the other, and why which
-        // repository it landed in varied from one library to the next.
-        var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
-
-        lock (_lock)
+        // One preparer at a time. Every open tree asks for *all* top-level classes and filters to
+        // its own repository afterwards, so four repositories meant four passes over the same
+        // hundred-odd libraries — and because they run at the same moment, none of them finds the
+        // icons the others are rendering. Measured: four trees finishing on the same millisecond,
+        // each reporting ~1,420ms (B258). Queued instead, the first pass does the work and the rest
+        // find it done, which is the same wall clock for a quarter of the effort.
+        await _preparingTopLevel.WaitAsync();
+        try
         {
-            foreach (var library in _libraries)
+            return await Task.Run(() =>
             {
-                foreach (var modelId in library.TopLevelModelIds)
+                // Keyed by model id, because two libraries claiming the same top-level class are
+                // claiming the *same node object*. Adding it once per claiming library put the
+                // library in the tree twice, and — since preparing it for display stamps the
+                // library id onto the shared node — both copies ended up attributed to whichever
+                // library was processed last. The case that produced it, a tool's encrypted build
+                // beside the user's checkout, no longer loads both (B268); two readable checkouts of
+                // one library in different repositories still would.
+                var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
+
+                lock (_lock)
                 {
-                    var model = _combinedGraph.GetNode<ModelNode>(modelId);
-                    if (model == null)
-                        continue;
+                    foreach (var library in _libraries)
+                    {
+                        foreach (var modelId in library.TopLevelModelIds)
+                        {
+                            var model = _combinedGraph.GetNode<ModelNode>(modelId);
+                            if (model == null)
+                                continue;
 
-                    // First claim wins unless a later library is the one that actually owns the node.
-                    if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
-                        continue;
+                            // First claim wins unless a later library is the one that actually owns the node.
+                            if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
+                                continue;
 
-                    byModelId[modelId] = (model, library);
+                            byModelId[modelId] = (model, library);
+                        }
+                    }
                 }
-            }
 
-            var items = new List<ModelNode>(byModelId.Count);
-            foreach (var (node, library) in byModelId.Values)
-            {
-                PrepareModelForDisplay(node, library);
-                items.Add(node);
-            }
+                    var items = new List<ModelNode>(byModelId.Count);
+                    foreach (var (node, library) in byModelId.Values)
+                    {
+                        PrepareModelForDisplay(node, library);
+                        items.Add(node);
+                    }
 
-            return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            return (IReadOnlyList<ModelNode>)items;
+            });
+        }
+        finally
+        {
+            _preparingTopLevel.Release();
         }
     }
+
+    // See GetTopLevelModelsAsync: concurrent trees would otherwise each render the same icons.
+    private readonly SemaphoreSlim _preparingTopLevel = new(1, 1);
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<ModelNode>> GetChildModelsAsync(ModelNode? parentNode)
@@ -900,45 +1101,51 @@ public class LibraryDataService : ILibraryDataService
             return GetTopLevelModelsAsync();
         }
 
-        var items = new List<ModelNode>();
-
-        lock (_lock)
+        // Off the caller's thread for the same reason as GetTopLevelModelsAsync: expanding a node
+        // prepares each child for display, which renders its icon the first time (B258). A package
+        // of two hundred classes would otherwise render two hundred icons on the dispatcher while
+        // the user waits for the node to open.
+        return Task.Run<IReadOnlyList<ModelNode>>(() =>
         {
-            var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
-            if (parentModel == null)
-                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            List<ModelNode> children;
+            LoadedLibrary owner;
 
-            // The library for this parent is the one that owns it, not merely the first that claims
-            // it. Both copies of a doubly-loaded library list the same parent, but their child lists
-            // differ: the encrypted one knows only what its documentation named, the source one knows
-            // what is actually there. Taking the first claimant meant expanding a package could show
-            // the wrong set of children entirely.
-            var candidates = _libraries.Where(l => l.ModelIds.Contains(parentModel.Id)).ToList();
-            var library = candidates.FirstOrDefault(l => Owns(l, parentModel)) ?? candidates.FirstOrDefault();
-            if (library == null)
-                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
-
-            if (library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
+            lock (_lock)
             {
-                var childModels = childIds
-                    .Where(id => library.ModelIds.Contains(id))
-                    .Select(id => _combinedGraph.GetNode<ModelNode>(id))
-                    .Where(m => m != null)
-                    .Cast<ModelNode>()
-                    .ToList();
+                var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
+                if (parentModel == null)
+                    return [];
 
-                // Sort by package.order if available
-                childModels = SortByPackageOrder(childModels, parentModel);
+                // The library for this parent is the one that owns it, not merely the first that
+                // claims it: two copies of a library list the same parent with different children, and
+                // taking the first claimant meant expanding a package could show the wrong set. Since
+                // B268 an encrypted build is not loaded beside its source, so the claimants are two
+                // readable copies when there are two at all.
+                var library = LibraryOwnership.Owner(_libraries, parentModel.Id, _ => parentModel);
+                if (library == null)
+                    return [];
 
-                foreach (var child in childModels)
-                {
-                    PrepareModelForDisplay(child, library);
-                    items.Add(child);
-                }
+                if (!library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
+                    return [];
+
+                children = SortByPackageOrder(
+                    childIds
+                        .Where(id => library.ModelIds.Contains(id))
+                        .Select(id => _combinedGraph.GetNode<ModelNode>(id))
+                        .Where(m => m != null)
+                        .Cast<ModelNode>()
+                        .ToList(),
+                    parentModel);
+                owner = library;
             }
-        }
 
-        return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            // Outside the lock: rendering an icon reaches into the graph and parses other classes,
+            // and holding the service's lock through that is what made an unrelated caller wait.
+            foreach (var child in children)
+                PrepareModelForDisplay(child, owner);
+
+            return children;
+        });
     }
 
     /// <inheritdoc/>
@@ -964,6 +1171,18 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public LoadedLibrary? GetOwningLibrary(string modelId)
+    {
+        LoadedLibrary[] snapshot;
+        lock (_lock)
+        {
+            snapshot = _libraries.ToArray();
+        }
+
+        return LibraryOwnership.Owner(snapshot, modelId, GetModelById);
+    }
+
+    /// <inheritdoc/>
     public IEnumerable<ModelNode> GetAllModels()
     {
         lock (_lock)
@@ -971,6 +1190,64 @@ public class LibraryDataService : ILibraryDataService
             var allModelIds = _libraries.SelectMany(l => l.ModelIds).ToHashSet();
             return _combinedGraph.ModelNodes.Where(m => allModelIds.Contains(m.Id)).ToList();
         }
+    }
+
+    private IReadOnlySet<string>? _descendantParserErrors;
+
+    /// <summary>
+    /// Counts the invalidations of <see cref="_descendantParserErrors"/>, so a set built from a
+    /// snapshot that a library change has since overtaken is returned to its caller but not kept
+    /// (B356).
+    /// </summary>
+    private int _descendantParserErrorsGeneration;
+    private readonly object _descendantParserErrorsLock = new();
+
+    /// <summary>Counts the changes that can make a rendered icon stale (B349).</summary>
+    private int _iconGeneration;
+
+    /// <summary>A test's way in between the snapshot and the assignment.</summary>
+    internal Action? AfterParserErrorSnapshot { get; set; }
+
+    /// <inheritdoc/>
+    public IReadOnlySet<string> ModelsWithDescendantParserErrors()
+    {
+        if (Volatile.Read(ref _descendantParserErrors) is { } cached)
+            return cached;
+
+        var generation = Volatile.Read(ref _descendantParserErrorsGeneration);
+        var models = GetAllModels();
+        AfterParserErrorSnapshot?.Invoke();
+
+        var descendants = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var model in models)
+        {
+            if (!model.HasParserErrors)
+                continue;
+
+            // Every package above it, so the warning is visible from the root without expanding.
+            // Climbed by containment rather than by splitting the id: a quoted identifier carries
+            // dots of its own, and the split named packages that do not exist (B356, as B189 and
+            // B191 found for the reveal and the change markers).
+            var seen = new HashSet<string>(StringComparer.Ordinal) { model.Id };
+            var parentId = model.ParentModelName;
+            while (!string.IsNullOrEmpty(parentId) && seen.Add(parentId))
+            {
+                descendants.Add(parentId);
+                parentId = GetModelById(parentId)?.ParentModelName;
+            }
+        }
+
+        // Kept only if no library arrived or left while it was being built. A bulk load drops the
+        // cache per library and announces once at the end, and a set built from a snapshot taken
+        // before the last library landed would otherwise be served to every tree for that one
+        // announcement - and kept until the next.
+        lock (_descendantParserErrorsLock)
+        {
+            if (_descendantParserErrorsGeneration == generation)
+                _descendantParserErrors = descendants;
+        }
+
+        return descendants;
     }
 
     /// <summary>
@@ -1043,6 +1320,30 @@ public class LibraryDataService : ILibraryDataService
     /// </summary>
     private void PrepareModelForDisplay(ModelNode model, LoadedLibrary library)
     {
+        // Rendered once per class, not once per tree refresh. Extracting an icon resolves the
+        // class's base classes and parses them to do it, and the tree is rebuilt on every change to
+        // it — so this ran on the dispatcher, for every top-level class, every time. Measured on a
+        // real project: 1,477ms of a 1,522ms refresh, repeatedly, which is the startup stutter
+        // (B258). The answer is kept on the definition and discarded with the rest of the derived
+        // state when the class's code changes.
+        //
+        // Kept against a generation as well as the class's own code (B349): the render resolves
+        // base classes, often in other libraries, so a library arriving or leaving or any class being
+        // reloaded can change the answer. Only the classes a tree actually shows are rendered again.
+        var generation = Volatile.Read(ref _iconGeneration);
+        var definition = model.Definition;
+        if (definition.IconRendered && definition.IconGeneration == generation)
+        {
+            model.LibraryId = library.Id;
+            return;
+        }
+
+        // **The flag is set after the render, not before.** Two trees can prepare the same class at
+        // once now that this runs outside the lock, and claiming it first would let the second see
+        // "already rendered" with the SVG still null — a class silently missing its icon until
+        // something rebuilt the tree again. Rendering it twice costs a little and is always right.
+        string? iconSvg = null;
+
         // Try to extract Modelica Icon annotation and render as SVG (with inheritance support)
         try
         {
@@ -1053,15 +1354,18 @@ public class LibraryDataService : ILibraryDataService
             var dotIdx = model.Id.LastIndexOf('.');
             var initialPackageContext = dotIdx > 0 ? model.Id[..dotIdx] : null;
 
-            model.IconSvg = model.Definition.ParsedCode != null
+            // Read once: a concurrent release can null the tree between a check and a second read
+            // (B291's shape), and the render then throws.
+            var parsed = definition.ParsedCode;
+            iconSvg = parsed != null
                 ? IconSvgRenderer.ExtractAndRenderIconWithInheritance(
-                    model.Definition.ParsedCode,
+                    parsed,
                     baseClassName => ResolveBaseClass(baseClassName, model),
                     size: 20,
                     fileNameResolver: fileName => ResolveImageFileName(fileName, library),
                     initialPackageContext: initialPackageContext)
                 : IconSvgRenderer.ExtractAndRenderIconWithInheritance(
-                    model.Definition.ModelicaCode,
+                    definition.ModelicaCode,
                     baseClassName => ResolveBaseClass(baseClassName, model),
                     size: 20,
                     fileNameResolver: fileName => ResolveImageFileName(fileName, library),
@@ -1069,10 +1373,16 @@ public class LibraryDataService : ILibraryDataService
         }
         catch (Exception ex)
         {
-            // Icon extraction failed, will use default icon
+            // Not remembered as "no icon" (B349): a render that threw has no answer, and the next
+            // refresh tries again. Whatever was drawn before stays on screen meanwhile.
             Debug("LibraryDataService", $"Icon extraction failed for model {model.Id}: {ex.Message}");
+            model.LibraryId = library.Id;
+            return;
         }
 
+        model.IconSvg = iconSvg;
+        definition.IconGeneration = generation;
+        definition.IconRendered = true;
         model.LibraryId = library.Id;
     }
 
@@ -1130,13 +1440,11 @@ public class LibraryDataService : ILibraryDataService
 
             if (matchingLibrary == null) return null;
 
-            // File-type libraries use a .mo file path; all other types (Directory, Git, SVN)
-        // have SourcePath pointing directly to the library root directory.
-        var rootDir = matchingLibrary.SourceType == LibrarySourceType.File
-                ? Path.GetDirectoryName(matchingLibrary.SourcePath)
-                : matchingLibrary.SourcePath;
+            // A single-file library, including one found in a repository, is rooted at the
+            // directory holding its file (B428).
+            var rootDir = matchingLibrary.RootDirectory;
 
-            if (rootDir == null) return null;
+            if (string.IsNullOrEmpty(rootDir)) return null;
 
             absolutePath = Path.Combine(rootDir, resourceRelativePath);
         }

@@ -28,6 +28,24 @@ internal static class SvnCli
         public bool Success => ExitCode == 0;
 
         /// <summary>
+        /// Whether svn was stopped for going silent (B297) rather than finishing. A stopped svn was
+        /// killed, and a command that writes to a working copy leaves it locked (B330).
+        /// </summary>
+        public bool Stopped { get; init; }
+
+        /// <summary>
+        /// What to tell the user about a failure: svn's own message when it gave one, otherwise
+        /// <paramref name="fallback"/>.
+        /// </summary>
+        /// <remarks>
+        /// svn's message is the one that says what to do - an authentication failure, an
+        /// unreachable server, "run 'svn cleanup'" (E155004) - and update, switch and create-branch
+        /// used to replace it with a bare "failed", so none of that reached the user (B329).
+        /// </remarks>
+        public string FailureMessage(string fallback) =>
+            string.IsNullOrWhiteSpace(StdErr) ? fallback : StdErr.Trim();
+
+        /// <summary>
         /// Throws an <see cref="SvnCliException"/> when the command failed. Returns this
         /// result otherwise so calls can be chained: <c>SvnCli.Run(...).EnsureSuccess()</c>.
         /// </summary>
@@ -37,6 +55,15 @@ internal static class SvnCli
                 throw new SvnCliException(operation, ExitCode, StdErr);
             return this;
         }
+    }
+
+    /// <summary>Result of an svn invocation whose output is a file rather than text (B264).</summary>
+    internal sealed class BytesResult
+    {
+        public required int ExitCode { get; init; }
+        public required byte[] StdOut { get; init; }
+        public required string StdErr { get; init; }
+        public bool Success => ExitCode == 0;
     }
 
     /// <summary>
@@ -58,6 +85,68 @@ internal static class SvnCli
     }
 
     /// <summary>
+    /// How long svn may go without writing anything before it is taken to have stalled and is
+    /// stopped (B297).
+    /// </summary>
+    /// <remarks>
+    /// Silence, not running time. A checkout or update of a large repository can legitimately take
+    /// longer than any fixed limit, but svn reports each file as it goes, so a command that is still
+    /// working is a command that is still writing. What this catches is a server that accepted the
+    /// connection and then stopped answering - which used to block update, commit, switch or merge,
+    /// and the dialog waiting on it, for good.
+    /// </remarks>
+    internal static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// The silence allowed a small read-only question of the server - one revision's log entry, a
+    /// directory listing, one file's content, <c>svn info</c> - where <see cref="IdleTimeout"/> is
+    /// sized for an update that may be busy for minutes.
+    /// </summary>
+    /// <remarks>
+    /// A server that stalls an update stalls the question that follows it too, and after an update
+    /// MLQT asks for the new revision's description before it reloads the libraries. Under the
+    /// update's limit that was a second ten minutes of a progress bar with nothing to say why, after
+    /// the update had already been stopped and reported (B330). An answer this small either comes
+    /// in seconds or is not coming.
+    /// </remarks>
+    internal static readonly TimeSpan QueryIdleTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The silence allowed a read-only question that walks history - the history log, where a branch
+    /// was copied from, what changed since a revision, which revisions a merge would bring.
+    /// </summary>
+    /// <remarks>
+    /// Longer than <see cref="QueryIdleTimeout"/> because a server filtering a long history by path
+    /// can search for a while between the entries it sends, and on a repository with tens of
+    /// thousands of revisions that silence is legitimate. Far shorter than
+    /// <see cref="IdleTimeout"/> because nothing is being written: a dialog waiting on it should not
+    /// sit for ten minutes against a server that has stopped answering.
+    /// </remarks>
+    internal static readonly TimeSpan HistoryIdleTimeout = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Runs svn and returns standard output as the bytes svn wrote, not as text.
+    /// </summary>
+    /// <remarks>
+    /// <para>For <c>svn cat</c>, and for nothing else. Every other command writes text svn generates
+    /// itself - XML, status codes, revision numbers - which is UTF-8 by definition, so decoding it is
+    /// right. <c>cat</c> writes a <b>file</b>, and its encoding is the file's own business: a
+    /// Windows-1252 Modelica library decoded as UTF-8 comes back with replacement characters where
+    /// its accented characters were, and by then the bytes are gone (B264).</para>
+    ///
+    /// <para>stderr is still text, because svn wrote it.</para>
+    /// </remarks>
+    internal static BytesResult RunForBytes(params string[] args) => RunForBytes(IdleTimeout, args);
+
+    /// <summary><see cref="RunForBytes(string[])"/>, stopping svn once it has been silent for
+    /// <paramref name="idleLimit"/>.</summary>
+    internal static BytesResult RunForBytes(TimeSpan idleLimit, params string[] args)
+    {
+        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText: null, idleLimit);
+        return new BytesResult { ExitCode = raw.ExitCode, StdOut = raw.StdOut, StdErr = raw.StdErr };
+    }
+
+    /// <summary>
     /// Runs <c>svn &lt;args...&gt; --non-interactive</c> and returns its exit code and
     /// captured output. Never throws on a non-zero exit code (inspect <see cref="Result.Success"/>);
     /// it only throws if no svn executable can be found or the process cannot be started.
@@ -67,25 +156,94 @@ internal static class SvnCli
     /// <summary>
     /// Runs svn with an explicit argument list and, optionally, text piped to stdin.
     /// </summary>
-    internal static Result Run(IEnumerable<string> args, string? stdinText = null)
-    {
-        var exe = RequireSvn();
+    internal static Result Run(IEnumerable<string> args, string? stdinText = null) =>
+        Run(args, stdinText, IdleTimeout);
 
+    /// <summary>
+    /// Runs svn, stopping it once it has been silent for <paramref name="idleLimit"/>.
+    /// </summary>
+    internal static Result Run(IEnumerable<string> args, string? stdinText, TimeSpan idleLimit)
+    {
+        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText, idleLimit);
+        return new Result { ExitCode = raw.ExitCode, StdOut = Decode(raw.StdOut), StdErr = raw.StdErr, Stopped = raw.Stopped };
+    }
+
+    /// <summary>
+    /// Runs a command that writes to <paramref name="workingCopy"/>, and if it had to be stopped,
+    /// releases the lock it left there (B330).
+    /// </summary>
+    /// <remarks>
+    /// <para>A stalled svn is killed (B297), and a kill gives svn no chance to release the working
+    /// copy's lock or finish its work queue. Every later command on it then fails with E155004 -
+    /// "run 'svn cleanup'" - and nothing in MLQT said so, or ran it. <c>svn cleanup</c> is local,
+    /// so it does not wait on the server that stalled.</para>
+    ///
+    /// <para>Where the cleanup fails too, the message says what the user has to do.</para>
+    /// </remarks>
+    internal static Result RunOnWorkingCopy(string workingCopy, params string[] args) =>
+        RunOnWorkingCopy(Run, workingCopy, args);
+
+    /// <summary><see cref="RunOnWorkingCopy(string, string[])"/> with the runner given, so a test can
+    /// stall a command without a server that stalls.</summary>
+    internal static Result RunOnWorkingCopy(Func<string[], Result> run, string workingCopy, string[] args)
+    {
+        var result = run(args);
+        if (!result.Stopped)
+            return result;
+
+        var cleanup = run(["cleanup", workingCopy]);
+        var said = cleanup.Success
+            ? "The lock it left on the working copy was released with 'svn cleanup'."
+            : $"It left the working copy locked, and 'svn cleanup' could not release it " +
+              $"({cleanup.FailureMessage("no reason given")}). Run 'svn cleanup' on {workingCopy} " +
+              "(TortoiseSVN: Clean up) before trying again.";
+        RevisionControlLogger.Info($"svn {args.FirstOrDefault()} on {workingCopy} was stopped; {said}");
+
+        return new Result
+        {
+            ExitCode = result.ExitCode,
+            StdOut = result.StdOut,
+            StdErr = $"{result.StdErr.TrimEnd()}{Environment.NewLine}{said}",
+            Stopped = true,
+        };
+    }
+
+    // Global option; svn accepts it after positional arguments. Appending keeps the caller's
+    // argument list focused on the subcommand and its operands.
+    private static IEnumerable<string> WithNonInteractive(IEnumerable<string> args) =>
+        args.Append("--non-interactive");
+
+    /// <summary>What <see cref="Execute"/> captured: stdout as bytes, for the caller to decode or not.</summary>
+    internal sealed record RawResult(int ExitCode, byte[] StdOut, string StdErr, bool Stopped = false);
+
+    /// <summary>
+    /// Runs a command to completion, and never waits on something that will not come (B297).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Both streams are read at once</b>, or output larger than the pipe buffer deadlocks -
+    /// <c>svn log</c> over thousands of revisions, <c>svn status</c> on a big working copy, a large
+    /// file from <c>svn cat</c>. Read as bytes, so <c>cat</c> can keep them (B264) and so every read
+    /// counts as a sign of life.</para>
+    ///
+    /// <para><b>Stdin is always redirected and closed</b>, after <paramref name="stdinText"/> if
+    /// there is any. It used to be inherited whenever nothing was piped in.</para>
+    ///
+    /// <para><b>A command silent for <paramref name="idleLimit"/> is stopped</b>, with everything it
+    /// started, and reported as a failure that says so. Takes the executable rather than finding svn
+    /// itself so a test can drive it with something that stalls on purpose.</para>
+    /// </remarks>
+    internal static RawResult Execute(string exe, IEnumerable<string> args, string? stdinText, TimeSpan idleLimit)
+    {
         var psi = new ProcessStartInfo(exe)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = stdinText != null,
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (var a in args)
             psi.ArgumentList.Add(a);
-        // Global option; svn accepts it after positional arguments. Appending keeps the
-        // caller's argument list focused on the subcommand and its operands.
-        psi.ArgumentList.Add("--non-interactive");
 
         Process process;
         try
@@ -100,23 +258,86 @@ internal static class SvnCli
 
         using (process)
         {
-            // Read both streams concurrently to avoid a pipe-buffer deadlock on large output
-            // (e.g. `svn log` over thousands of revisions, or `svn status` on a big wc).
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
+            long lastActivity = Environment.TickCount64;
+            void Touched() => Interlocked.Exchange(ref lastActivity, Environment.TickCount64);
 
-            if (stdinText != null)
+            using var stdout = new MemoryStream();
+            using var stderr = new MemoryStream();
+            var stdoutTask = DrainOnItsOwnThread(process.StandardOutput.BaseStream, stdout, Touched);
+            var stderrTask = DrainOnItsOwnThread(process.StandardError.BaseStream, stderr, Touched);
+
+            try
             {
-                process.StandardInput.Write(stdinText);
+                if (stdinText != null)
+                    process.StandardInput.Write(stdinText);
                 process.StandardInput.Close();
             }
+            catch (IOException)
+            {
+                // It exited without reading its input; the exit code says what happened.
+            }
 
+            while (!process.WaitForExit(250))
+            {
+                if (Environment.TickCount64 - Interlocked.Read(ref lastActivity) < idleLimit.TotalMilliseconds)
+                    continue;
+
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // It finished between the check and the kill.
+                }
+
+                // Bounded: a descendant that escaped the kill can hold the pipes open.
+                Task.WaitAll([stdoutTask, stderrTask], TimeSpan.FromSeconds(5));
+                var said = stderrTask.IsCompleted ? Encoding.UTF8.GetString(stderr.ToArray()).Trim() : "";
+                var message = $"svn produced no output for {idleLimit.TotalMinutes:0.##} minutes and was stopped.";
+                return new RawResult(-1,
+                    stdoutTask.IsCompleted ? stdout.ToArray() : [],
+                    string.IsNullOrEmpty(said) ? message : $"{message}{Environment.NewLine}{said}",
+                    Stopped: true);
+            }
+
+            // The overload without a limit also waits for the redirected streams to be drained.
             process.WaitForExit();
-            var stdout = stdoutTask.GetAwaiter().GetResult();
-            var stderr = stderrTask.GetAwaiter().GetResult();
-
-            return new Result { ExitCode = process.ExitCode, StdOut = stdout, StdErr = stderr };
+            stdoutTask.GetAwaiter().GetResult();
+            stderrTask.GetAwaiter().GetResult();
+            return new RawResult(process.ExitCode, stdout.ToArray(), Encoding.UTF8.GetString(stderr.ToArray()));
         }
+    }
+
+    /// <summary>
+    /// Reads a stream to its end on a thread of its own, recording each read as a sign of life.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>ReadAsync</c> on the thread pool. There, each read's continuation queues behind
+    /// whatever else the pool is doing, so on a busy machine the output sat unread in the pipe and
+    /// the idle clock was never reset. A command that wrote every quarter of a second was stopped as
+    /// silent, and its last line, drained after the kill, had been written 0.28s before. That
+    /// happened on a 4-core CI runner with other test classes blocking pool threads. How recently a
+    /// command spoke has to be measured by something that is never kept waiting.
+    /// </remarks>
+    private static Task DrainOnItsOwnThread(Stream source, MemoryStream into, Action onRead) =>
+        Task.Factory.StartNew(() =>
+        {
+            var buffer = new byte[16 * 1024];
+            int read;
+            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                into.Write(buffer, 0, read);
+                onRead();
+            }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+    // UTF-8, with a byte order mark taken as one rather than kept as a character - which is what
+    // reading StandardOutput through its reader used to do.
+    private static string Decode(byte[] bytes)
+    {
+        var text = Encoding.UTF8.GetString(bytes);
+        return text.Length > 0 && text[0] == (char)0xFEFF ? text[1..] : text;
     }
 
     /// <summary>
@@ -124,10 +345,14 @@ internal static class SvnCli
     /// <see cref="XDocument"/>. Returns null when the command fails (the caller decides
     /// whether that is an error or an expected "doesn't exist" outcome).
     /// </summary>
-    internal static XDocument? RunXml(params string[] args)
+    internal static XDocument? RunXml(params string[] args) => RunXml(IdleTimeout, args);
+
+    /// <summary><see cref="RunXml(string[])"/>, stopping svn once it has been silent for
+    /// <paramref name="idleLimit"/>.</summary>
+    internal static XDocument? RunXml(TimeSpan idleLimit, params string[] args)
     {
         var withXml = new List<string>(args) { "--xml" };
-        var result = Run(withXml);
+        var result = Run(withXml, stdinText: null, idleLimit);
         if (!result.Success || string.IsNullOrWhiteSpace(result.StdOut))
             return null;
         try

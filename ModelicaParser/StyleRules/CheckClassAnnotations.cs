@@ -1,4 +1,5 @@
 using Antlr4.Runtime.Misc;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.StyleRules;
 
@@ -41,9 +42,10 @@ public class CheckClassAnnotations : VisitorWithModelNameTracking
         bool hasDocRevisions = false;
         bool hasIcon = false;
 
-        // Check all annotations in the composition (class-level and external)
-        var annotations = context.annotation();
-        foreach (var annotation in annotations)
+        // The class's own annotations, leading and trailing. Not the external clause's: that one
+        // describes what the function links against, and Documentation or an Icon written there is
+        // not the class's (B446).
+        foreach (var annotation in CompositionAnnotations.ClassLevel(context))
         {
             CheckAnnotation(annotation, ref hasDocInfo, ref hasDocRevisions, ref hasIcon);
         }

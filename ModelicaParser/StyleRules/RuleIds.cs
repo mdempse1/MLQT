@@ -14,6 +14,8 @@ public static class RuleIds
     public const string InitialEqAlgoFirst = "MLQT.Style.InitialEqAlgoFirst";
     public const string InitialEqAlgoLast = "MLQT.Style.InitialEqAlgoLast";
     public const string OneOfEachSection = "MLQT.Style.OneOfEachSection";
+    public const string ComponentsBeforeClasses = "MLQT.Style.ComponentsBeforeClasses";
+    public const string DeclarationOrder = "MLQT.Style.DeclarationOrder";
     public const string DontMixEquationAndAlgorithm = "MLQT.Style.DontMixEquationAndAlgorithm";
     public const string DontMixConnections = "MLQT.Style.DontMixConnections";
     public const string ClassDescription = "MLQT.Doc.ClassDescription";
@@ -31,8 +33,10 @@ public static class RuleIds
     public const string MissingUnit = "MLQT.Units.MissingUnit";
     public const string UnusedImport = "MLQT.Unused.Import";
     public const string PackageOrder = "MLQT.Structure.PackageOrder";
+    public const string SingleFilePackage = "MLQT.Structure.SingleFilePackage";
     public const string UsesUndeclared = "MLQT.Structure.UsesUndeclared";
     public const string UsesDeclaredUnused = "MLQT.Structure.UsesDeclaredUnused";
+    public const string WithinClause = "MLQT.Structure.WithinClause";
     public const string UnusedClass = "MLQT.Unused.Class";
     public const string UnusedPublicClass = "MLQT.Unused.PublicClass";
     public const string ShadowingInheritedMember = "MLQT.Shadowing.InheritedMember";

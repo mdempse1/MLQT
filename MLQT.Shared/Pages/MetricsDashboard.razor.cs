@@ -1,4 +1,5 @@
 using ModelicaGraph.Analysis;
+using ModelicaParser.Helpers;
 using RevisionControl;
 using ModelicaParser.StyleRules;
 
@@ -67,8 +68,7 @@ public partial class MetricsDashboard : IDisposable
         // this report covers (e.g. after switching project, or after its repository was marked
         // reference only).
         _scope = NavState.MetricsScope;
-        if (!string.IsNullOrEmpty(_scope) && !ReportableModels()
-                .Any(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)))
+        if (!string.IsNullOrEmpty(_scope) && !ReportableModels().Any(m => InScope(m.Id, _scope)))
         {
             _scope = "";
             NavState.MetricsScope = "";
@@ -110,28 +110,60 @@ public partial class MetricsDashboard : IDisposable
     private bool AnalysisComplete => NavState.HasDependencyAnalysisRun && NavState.HasStyleCheckingRun;
 
     // Findings arrive asynchronously from the background analysis; recount when they change.
-    private void OnFindingsChanged()
+    // Raised on whoever changed the findings, which since B190 is a check's worker thread rather
+    // than the dispatcher — so the recount goes inside, with the render it feeds.
+    private async void OnFindingsChanged()
     {
-        RecountFindings();
-        InvokeAsync(StateHasChanged);
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                RecountFindings();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // Torn down between the announcement and this reaching the dispatcher — see the same
+            // guard on CodeReview.
+        }
     }
 
     // Style checking reports completion (done == true) once every repository has been checked.
-    private void OnStyleCheckProgress(bool done)
+    // Raised on a checker's thread, so everything it changes is changed on the dispatcher (B299).
+    private void OnStyleCheckProgress(bool done) => OnTheDispatcher(() =>
     {
         if (done && AnalysisComplete)
             _analysisRunning = false;
         RecountFindings();
-        InvokeAsync(StateHasChanged);
-    }
+        StateHasChanged();
+    });
 
     // Each deferred step (dependency analysis, style checking) reports completion here.
-    private void OnDeferredAnalysisCompleted()
+    private void OnDeferredAnalysisCompleted() => OnTheDispatcher(() =>
     {
         if (AnalysisComplete)
             _analysisRunning = false;
         RecountFindings();
-        InvokeAsync(StateHasChanged);
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// Runs a handler's work on the renderer's dispatcher rather than on whichever thread raised the
+    /// event (B299). The fields it changes are the ones a render is reading, and the desktop host's
+    /// dispatcher is its window's message loop, so this is also the only thread they may be changed on.
+    /// </summary>
+    private async void OnTheDispatcher(Action work)
+    {
+        try
+        {
+            await InvokeAsync(work);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Torn down between the announcement and this reaching the dispatcher — see the same
+            // guard on CodeReview.
+        }
     }
 
     // Count active (unsuppressed) style/analysis findings whose model falls within the current scope.
@@ -182,8 +214,7 @@ public partial class MetricsDashboard : IDisposable
     /// and must not cover <c>Modelica.BlocksExtra</c>, which a bare <c>StartsWith(scope)</c> would.
     /// </remarks>
     internal static bool InScope(string modelId, string scope)
-        => string.IsNullOrEmpty(scope) || modelId == scope
-           || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
+        => string.IsNullOrEmpty(scope) || ModelicaName.IsInSubtree(modelId, scope);
 
     // Ensure the full analysis has run so the finding count is complete: dependency analysis (for the
     // graph-based rules) plus style checking. Kicks off whatever is missing; findings then stream in and
@@ -214,24 +245,62 @@ public partial class MetricsDashboard : IDisposable
     // library's shared trend appears without reopening the tab, and drop a measured result that now
     // describes a library set that is gone. (The metrics cache is keyed on LibrarySignature(), so it
     // invalidates itself; only this instance's displayed figures need clearing.)
-    private void OnLibrariesChanged()
+    //
+    // Read on the pool, applied on the dispatcher (B299). This is raised by whoever loaded or removed
+    // a library - a load's pool thread, or the dispatcher when a reload is awaited from the UI - and
+    // it used to do everything where it was raised: clear the figures a render was reading, from
+    // another thread, and read every history file on the thread that was loading libraries, or
+    // holding the window. A reload raises it for each library, so each reply carries a number and
+    // only the latest one is applied: reads finish in any order, and an older one finishing last
+    // would put the history from before the reload back on screen.
+    private async void OnLibrariesChanged()
     {
-        // A remembered scope from the previous project may not exist any more, and a repository
-        // marked reference only since takes its packages out of this report.
-        if (!string.IsNullOrEmpty(_scope) && !ReportableModels().Any(m => m.Id == _scope))
+        var generation = Interlocked.Increment(ref _librariesGeneration);
+        var scope = _scope;
+
+        try
         {
-            _scope = string.Empty;
-            NavState.MetricsScope = string.Empty;
+            var (history, scopeGone) = await Task.Run(() =>
+            {
+                // A remembered scope from the previous project may not exist any more, and a
+                // repository marked reference only since takes its packages out of this report.
+                var gone = !string.IsNullOrEmpty(scope) && !ReportableModels().Any(m => m.Id == scope);
+                return (LoadAllHistory(), gone);
+            });
+
+            await InvokeAsync(() =>
+            {
+                if (generation != Volatile.Read(ref _librariesGeneration))
+                    return;
+
+                if (scopeGone && _scope == scope)
+                {
+                    _scope = string.Empty;
+                    NavState.MetricsScope = string.Empty;
+                }
+
+                _metrics = null;
+                _summary = new();
+                _findings = null;
+
+                _history = history;
+                RebuildTrend();
+                StateHasChanged();
+            });
         }
-
-        _metrics = null;
-        _summary = new();
-        _findings = null;
-
-        _history = LoadAllHistory();
-        RebuildTrend();
-        InvokeAsync(StateHasChanged);
+        catch (ObjectDisposedException)
+        {
+            // Torn down between the announcement and this reaching the dispatcher.
+        }
+        catch (Exception ex)
+        {
+            // An async void handler that throws takes the application with it.
+            LoggingService.Error(nameof(MetricsDashboard), "Reloading the metrics history failed", ex);
+        }
     }
+
+    // Numbers each OnLibrariesChanged, so only the latest one's read is applied.
+    private int _librariesGeneration;
 
     // Packages the user can scope to (matched against what they type). Only packages from
     // <see cref="ReportableModels"/> — scoping to a reference-only library would measure nothing, so
@@ -408,7 +477,8 @@ public partial class MetricsDashboard : IDisposable
     /// </summary>
     private Repository? OwningRepository(string scope)
     {
-        var repositoryId = MetricsStorage.OwningRepositoryId(scope, LibraryDataService.Libraries);
+        var repositoryId = MetricsStorage.OwningRepositoryId(
+            scope, LibraryDataService.Libraries, LibraryDataService.GetOwningLibrary);
 
         return repositoryId is null
             ? null
@@ -488,9 +558,7 @@ public partial class MetricsDashboard : IDisposable
         RecountFindings();
 
         var all = ReportableModels();
-        var models = string.IsNullOrEmpty(_scope)
-            ? all
-            : all.Where(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)).ToList();
+        var models = all.Where(m => InScope(m.Id, _scope)).ToList();
         _modelCount = models.Count;
         _loading = true;
         StateHasChanged();
@@ -537,8 +605,7 @@ public partial class MetricsDashboard : IDisposable
             var settingsFor = StyleSettingsLookup();
             _summary = await Task.Run(() => children.Select(pkg =>
             {
-                var models = all.Where(m => m.Id == pkg
-                    || m.Id.StartsWith(pkg + ".", System.StringComparison.Ordinal)).ToList();
+                var models = all.Where(m => InScope(m.Id, pkg)).ToList();
                 return (pkg, MetricsCalculator.Compute(graph, models, settingsFor));
             }).ToList());
             // The union, not the first row's: sub-packages can sit in repositories with different
@@ -582,7 +649,7 @@ public partial class MetricsDashboard : IDisposable
         }
         IEnumerable<string> children = parent.Length == 0
             ? packages.Where(id => !id.Contains('.'))
-            : packages.Where(id => id.StartsWith(parent + ".", System.StringComparison.Ordinal)
+            : packages.Where(id => ModelicaName.IsStrictlyInside(id, parent)
                                    && id.IndexOf('.', parent.Length + 1) < 0);
         return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
     }

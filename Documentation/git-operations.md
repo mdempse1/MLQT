@@ -66,6 +66,8 @@ Pulls the latest changes from the remote repository into your local working copy
 
 Opens the **Commit Changes** dialog where you can review modified files, select which ones to include, and write a commit message.
 
+Before the dialog opens, MLQT formats the repository's changed files ("Applying code formatting to changed files..."), so what you commit already follows the formatting rules.
+
 ![Screenshot: The Commit Changes dialog - the changed files as a tree with a checkbox each and their status chips, the diff panel beside it, the commit message field below, and the "Commit (2 files)" button at the bottom.](Images/git-operations-1.png)
 
 ### Dialog Fields
@@ -75,10 +77,10 @@ Opens the **Commit Changes** dialog where you can review modified files, select 
 | **Commit message** | Required. A description of what you changed and why. |
 | **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). The issue or ticket number associated with this change. |
 
-### Finding Number Handling
+### Issue Number Handling
 
 If the repository setting **Require an issue number as part of the commit message** is enabled:
-- An additional text field appears for the finding ID
+- An additional **Issue ID** field appears
 - You cannot commit without entering an issue number
 - The issue number is automatically prepended or appended to your commit message depending on the **Issue number position** setting
 
@@ -133,10 +135,35 @@ Opens the **Switch Branch** dialog to check out a different branch.
 
 ### Branch Selector
 
-The dialog shows all available branches:
+The dialog shows all available branches **and tags**:
 - **Local branches** — Branches that exist on your machine
-- **Remote branches** — Branches on the remote that you haven't checked out locally (shown with the remote prefix, e.g., `origin/feature-xyz`)
-- The current branch is excluded from the list
+- **Remote branches** — Branches on the remote that you haven't checked out locally (shown with the remote prefix, e.g., `origin/feature-xyz`) and marked with a **Remote** chip
+- **Tags** — Grouped under a `tags` folder and marked with a **Tag** chip
+- The current branch is marked with a **Current** chip and cannot be selected
+
+### Switching to a Tag
+
+Select a tag to check out that exact released version — the same thing TortoiseGit and other clients
+offer. The dialog says what will happen before you press Switch, because it is not quite the same as
+switching to a branch:
+
+> `v2.0.0` is a tag. Switching to it puts the repository at that exact revision with no branch
+> checked out (a detached HEAD), which is what you want for looking at a released version. To make
+> changes from here, create a branch afterwards.
+
+Afterwards the repository header says **Detached HEAD at v2.0.0** where it would normally name the
+branch, and the **Create new branch** button beside it is highlighted. A commit made in that state would belong
+to no branch and be easy to lose, so while HEAD is detached MLQT does not offer Commit, Merge,
+Rebase, Push or Create pull request: create a branch first, and they come back. (A rebase that
+stopped part-way also detaches HEAD; there the way out is to continue or abort it — see
+[A rebase left in progress](#a-rebase-left-in-progress).)
+
+If commits made on a detached HEAD by another tool are held by no branch or tag, the Switch Branch
+dialog says how many before you switch away from them — Git itself would leave them behind without a
+word. Cancel and create a branch there to keep them.
+
+SVN repositories have always been able to do this: an SVN tag is a directory, so it appears under
+`tags/` like any other path and switching to it is an ordinary switch with no detached state.
 
 ### Uncommitted Changes Warning
 
@@ -149,7 +176,7 @@ You can still proceed, but consider committing or reverting your changes first t
 ### After Switching
 
 - MLQT reloads all libraries from the new branch
-- The analysis pipeline runs on all files (formatting, dependencies, style checking)
+- Any files that VCS reports as changed are formatted (if "Apply formatting rules" is enabled), then dependency analysis and style checking run on affected files. If nothing is reported as changed, the whole repository is re-analysed without formatting
 - The repository header updates to show the new branch name and commit
 
 ---
@@ -209,10 +236,11 @@ If the merge produces conflicts, the dialog shows a list of conflicted files wit
 |--------|-------------|
 | **Accept Incoming** | Use the version from the branch being merged in |
 | **Keep Mine** | Keep your current branch's version |
-| **Edit Externally** | Open the file in your default editor to manually resolve |
-| **View Conflict** | Opens a side-by-side diff showing "Ours (current branch)" vs "Theirs (incoming)" |
+| **Edit Externally** | Marks the file as being resolved outside MLQT — it does not open an editor. The file's full path is shown with a **Mark as Resolved** button; edit the file in your own editor, then click **Mark as Resolved** |
 
-A progress indicator shows how many conflicts have been resolved (e.g., "2 of 5 resolved"). Once all conflicts are resolved, click **Commit Merge** to create the merge commit.
+Click a conflicted file's name to open a side-by-side diff showing "Ours (current branch)" vs "Theirs (incoming)".
+
+A progress indicator shows how many conflicts have been resolved (e.g., "2 of 5 conflict(s) resolved."). Once all conflicts are resolved, click **Commit Merge** to create the merge commit.
 
 **Phase 5: Push prompt**
 After a successful merge, the dialog offers to push the result:
@@ -243,9 +271,14 @@ MLQT replays your commits one at a time onto the target branch.
 
 **Phase 4: Conflict resolution** (if needed)
 Conflicts may arise at any commit during the replay. The dialog shows:
-- The list of conflicted files with the same resolution options as merge
+- The list of conflicted files with the same resolution options as merge, and the same meaning:
+  **Keep Mine** keeps your branch's version — the change from your commit being replayed — and
+  **Accept Incoming** takes the version on the branch you are rebasing onto. In the conflict diff,
+  "Ours (current branch)" is likewise your branch's version. (Git itself names the two sides the
+  other way round during a rebase, calling the branch being rebased onto "ours"; MLQT does not
+  follow it there, so the buttons mean the same thing in a merge and a rebase.)
 - An **Abort Rebase** button (red) to cancel the entire rebase and return to the original state
-- A **Continue Rebase** button to proceed to the next commit after resolving conflicts
+- A **Continue Rebase** button to proceed to the next commit after resolving conflicts — the commit keeps its original message; there is no editor to change it in
 
 **Phase 5: Push prompt**
 After a successful rebase, the dialog shows an important warning:
@@ -253,6 +286,18 @@ After a successful rebase, the dialog shows an important warning:
 > "Because rebase rewrites history, a force push is required if this branch was previously pushed."
 
 Click **Force Push** to push the rebased branch, or **Skip** to handle it later.
+
+### A rebase left in progress
+
+If you close the dialog while there are still conflicts, the rebase stays stopped where it was — as
+it does in any Git client — until it is continued or aborted. HEAD is detached until then, so Commit,
+Merge and Push are off, and the repository header says **Rebase of feature in progress** instead of
+naming a branch. The **More actions** button and the **Rebase** button inside it are highlighted.
+
+Click **Rebase** to open the dialog on that rebase rather than on a new one. It lists the files still
+in conflict, with the same resolution options, and offers **Continue Rebase** once every one of them
+is resolved (straight away, if you resolved them in another tool) and **Abort Rebase** to put the
+branch back as it was before the rebase started. This also finds a rebase started outside MLQT.
 
 ### When to Use Rebase vs Merge
 
@@ -310,6 +355,18 @@ The dialog includes a branch selector where you choose the **base branch** — t
 
 ---
 
+## A Git Command That Stops Answering
+
+MLQT stops a git command that runs far longer than it should — a fetch, push or rebase after 15
+minutes, a status refresh after 2 — and reports that it did. Git writes a `.lock` file beside anything it is changing, and a
+stopped command gets no chance to remove it, so every later commit, switch or refresh would fail with
+"Unable to create '.git/index.lock': File exists". MLQT removes the lock files the stopped command
+left and says which. It never removes one that was there before the command started, because that
+one may belong to another git program that is still working. If it could not remove a lock, the
+message names the file to delete by hand, once no other git program is running, before you try again.
+
+---
+
 ## Browsing History
 
 **Button:** List icon in the repository header (top right, visible for all VCS repositories)
@@ -349,27 +406,35 @@ The history loads incrementally for performance:
 
 Click on any commit row to see a popover showing:
 - The list of **changed files** in that commit, each with an icon indicating the change type (Added, Modified, Deleted, Renamed, Copied)
-- A **Diff** button next to each file to open a side-by-side diff comparing the file at that revision with the current working copy
+- Click a file in the list to open a diff of **what that commit changed**: the commit's parent on the left, the commit itself on the right
+
+A file the commit added has an empty left-hand side, and one it deleted has an empty right-hand
+side. For a merge commit, the comparison is against its **first parent** — the branch the merge
+was made on — so the lines the merge brought in are not reported as though the merge had written
+them. The very first commit in a repository has nothing before it, so the whole file reads as
+added.
 
 ![Screenshot: The VCS History dialog with a commit row clicked, showing the changed-files popover beside it. Each file carries a status icon - a green plus for added, an orange pencil for modified - and clicking one opens the diff.](Images/git-operations-9.png)
 
 ### Checking Out a Revision
 
-From the changed files popover, you can click **Checkout** to switch to that specific revision (detached HEAD state). A confirmation dialog warns:
+From the changed files popover, click the download-arrow icon button (tooltip "Checkout this revision") to switch to that specific revision (detached HEAD state). A confirmation appears in the popover:
 
 > "Checkout revision [hash]? Any uncommitted changes will be lost."
 
+Click **Checkout** to go ahead, or **Cancel**.
+
 After checkout:
 - MLQT reloads all libraries from the checked-out revision
-- The repository header shows "Detached HEAD" instead of a branch name
-- The full analysis pipeline runs on all files
+- The repository header shows "Detached HEAD" instead of a branch name, and the actions that need a branch are off until you create one (see above)
+- Any files that VCS reports as changed are formatted (if "Apply formatting rules" is enabled), then dependency analysis and style checking run on affected files. If nothing is reported as changed, the whole repository is re-analysed without formatting
 
 ### Viewing File Diffs
 
-Clicking on any changed file opens the **Revision Diff** dialog, which shows a side-by-side comparison:
-- **Left side**: The file content at the selected revision
-- **Right side**: The current working copy content
-- For **added** files: the left side is the file as that revision added it. An added file has content at the revision that added it, so there is still a comparison to make — if it has changed since, the difference is what you see
-- For **deleted** files: the right side is empty, because the file is no longer in the working copy
+Clicking on any changed file opens the **Revision Diff** dialog, which shows what that commit changed in the file:
+- **Left side**: The file content at the previous revision
+- **Right side**: The file content at the selected revision
+- For **added** files: the left side is empty, because the file did not exist before that revision
+- For **deleted** files: the right side is empty, because the revision removed the file
 
-![Screenshot: The Revision Diff dialog, titled with the file and the short revision id it is comparing against. Unified, side-by-side and full-file views are offered, the line count of the change is shown, and added and removed lines are marked.](Images/git-operations-10.png)
+![Screenshot: The Revision Diff dialog, titled "Diff: <file> @ <revision>" with the short id of the revision being examined, which is compared against the revision before it. Unified, side-by-side and full-file views are offered, the line count of the change is shown, and added and removed lines are marked.](Images/git-operations-10.png)

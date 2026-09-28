@@ -147,6 +147,7 @@ var settings = new StyleCheckingSettings
     ImportStatementsFirst = true,
     OneOfEachSection = true,
     ComponentsBeforeClasses = true,
+    DeclarationOrder = true,
     ClassHasDescription = true,
     ParameterHasDescription = true,
     SpellCheckLanguages = ["en_US"],
@@ -226,7 +227,8 @@ serialized in their own right; the file is the map plus the entries below.
 | `NamingConvention` | `NamingConventionSettings` | Per-element-kind naming styles and the exception names. |
 | `SpellCheckLanguages` | `List<string>` | Dictionary language codes; defaults to `["en_US", "en_GB"]`. |
 | `SvnBranchDirectories` | `List<string>` | SVN branch directory names; defaults to `["trunk", "branches", "tags"]`. |
-| `ApplyFormattingRules` / `ComponentsBeforeClasses` | `bool` | Formatter flags, not check rules — consumed by `ModelicaRenderer`, absent from the severity map. |
+| `ApplyFormattingRules` | `bool` | A formatter flag, not a check rule — consumed by `ModelicaRenderer`, absent from the severity map. |
+| `ComponentsBeforeClasses` / `DeclarationOrder` | `bool` | Facades over rule ids (B181, B252): each is both a rule the checker reports and a layout `ModelicaRenderer` writes, so they resolve through the severity map like any other rule and `ToFormattingOptions` reads them back out. |
 | `CommitRequiresIssueNumber` / `IssueNumberAtEnd` | `bool` | Commit-message policy for this repository. |
 
 The methods matter more than the fields:

@@ -72,11 +72,40 @@ public interface IRepositoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Moves a repository within the project's ordering, by <paramref name="delta"/> places.
+    /// </summary>
+    /// <remarks>
+    /// <para>The list order <i>is</i> the order everything shows repositories in — the library
+    /// browser renders <see cref="Repositories"/> straight through, and
+    /// <see cref="SaveRepositorySettingsAsync"/> writes the active project's entries from it. So a
+    /// move here is the whole feature, and nothing else needs a sort key (B188).</para>
+    ///
+    /// <para>Out of range is a refusal, not a clamp: the caller's buttons are disabled at the ends,
+    /// and a silent no-op that reports success is indistinguishable from a move that happened.</para>
+    /// </remarks>
+    /// <param name="repositoryId">The repository to move.</param>
+    /// <param name="delta">Places to move it — negative towards the top of the list.</param>
+    /// <returns>True when the repository moved; false when it is unknown, or the move would leave the list.</returns>
+    bool MoveRepository(string repositoryId, int delta);
+
+    /// <summary>
     /// Removes a repository and optionally its loaded libraries.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>
     /// <param name="unloadLibraries">Whether to unload associated libraries.</param>
     void RemoveRepository(string repositoryId, bool unloadLibraries = true);
+
+    /// <summary>
+    /// Whether a repository has been removed, with its libraries, since the active project was last
+    /// loaded — and so whether reloading it could give a different answer.
+    /// </summary>
+    /// <remarks>
+    /// A library that was standing in for another is not replaced when it goes: an encrypted build
+    /// left unloaded because the removed repository held its source stays unloaded (B268). Reloading
+    /// the project is what brings it back, so the settings tab offers <b>Load project</b> for the
+    /// active project while this is true, and the load clears it.
+    /// </remarks>
+    bool RepositoryRemovedSinceProjectLoad { get; }
 
     /// <summary>
     /// Refreshes a repository (re-discover libraries).
@@ -91,14 +120,53 @@ public interface IRepositoryService
     Repository? GetRepository(string repositoryId);
 
     /// <summary>
+    /// The repository and every other one checked out in the same working copy - the same VCS root -
+    /// in that order. Just the repository itself when it has no working copy, and empty when there
+    /// is no such repository.
+    /// </summary>
+    /// <remarks>
+    /// Two libraries checked out in one Git or SVN tree are two repositories, and every VCS operation
+    /// acts on the tree: an update, a switch, a merge rewrites both. What follows an operation - the
+    /// file monitor held off, the libraries reloaded, the analysis run - has to reach all of them,
+    /// not only the one whose button was pressed (B301).
+    /// </remarks>
+    IReadOnlyList<Repository> GetRepositoriesSharingWorkingCopy(string repositoryId);
+
+    /// <summary>
     /// Gets the repository that contains a specific library.
     /// </summary>
     Repository? GetRepositoryForLibrary(string libraryId);
 
     /// <summary>
-    /// Saves repository configurations to settings.
+    /// Re-registers a library that was one <c>.mo</c> file as the package directory it has become,
+    /// after a full format expanded it into one file per class and deleted the file (B417).
+    /// </summary>
+    /// <remarks>
+    /// Everything that says where the library is follows it: its
+    /// <see cref="LoadedLibrary.SourcePath"/> (through <see cref="ILibraryDataService.RelocateLibrary"/>),
+    /// its <see cref="LoadedLibrary.RelativePathInRepository"/>, and the repository's
+    /// <see cref="Repository.DiscoveredLibraries"/> entry, which is what a Refresh loads and what the
+    /// saved project records — so the state is the one a reload of the project would produce. Left
+    /// naming the deleted file, no class in the new files was placed in any library until the
+    /// project was reloaded.
+    /// </remarks>
+    /// <returns>False when no such library is loaded.</returns>
+    Task<bool> RelocateLibraryAsync(string libraryId, string directoryPath);
+
+    /// <summary>
+    /// Saves repository configurations to settings: the project list, and each repository's
+    /// committed <c>.mlqt/settings.json</c> <b>only where its settings changed</b> since the file was
+    /// read or last written (or where there is no file yet). Called after loads, reorders and project
+    /// switches, none of which may leave a modified file in a repository (B310).
     /// </summary>
     Task SaveRepositorySettingsAsync();
+
+    /// <summary>
+    /// The user applied <paramref name="repositoryId"/>'s settings: records the default-on rules in
+    /// them explicitly (B244), then saves as <see cref="SaveRepositorySettingsAsync"/> does. The one
+    /// path that adds anything to a committed settings file the user did not set themselves.
+    /// </summary>
+    Task ApplyRepositorySettingsAsync(string repositoryId);
 
     /// <summary>
     /// Loads repositories from saved settings and auto-loads if configured.
@@ -117,6 +185,17 @@ public interface IRepositoryService
     /// Should be called after startup is complete to avoid monitoring during initial file saves.
     /// </summary>
     void StartMonitoringAllRepositories();
+
+    /// <summary>
+    /// Marks a repository reference only, or not, and makes the rest of the session agree (B354).
+    /// </summary>
+    /// <remarks>
+    /// A reference-only repository is not watched and has no working-copy status shown for it, so
+    /// the flag alone is not the change: this starts or stops its file monitoring with it, discards
+    /// its cached status, and raises <see cref="OnRepositoriesChanged"/> so a browser showing it asks
+    /// again. It does not save; Apply in the settings dialog does that.
+    /// </remarks>
+    void SetReferenceOnly(string repositoryId, bool isReferenceOnly);
 
     /// <summary>
     /// Event fired when repositories change (added, removed, updated).
@@ -230,6 +309,35 @@ public interface IRepositoryService
     string? GetFileContentAtRevision(string repositoryId, string filePath, string? revision = null);
 
     /// <summary>
+    /// The revision immediately before <paramref name="revision"/>, for showing what a commit
+    /// changed rather than how it differs from the working copy.
+    /// </summary>
+    /// <remarks>
+    /// Git and SVN answer this differently and neither is arithmetic a caller should do for itself;
+    /// see <c>IRevisionControlSystem.GetPreviousRevision</c>. Null means there is nothing before it -
+    /// the first commit, or a repository under no version control at all - and a caller diffing
+    /// against it should read that as empty rather than as a failure.
+    /// </remarks>
+    /// <param name="repositoryId">The repository ID.</param>
+    /// <param name="revision">The revision whose predecessor is wanted.</param>
+    /// <returns>The predecessor's revision identifier, or null if there is none.</returns>
+    string? GetPreviousRevision(string repositoryId, string revision);
+
+    /// <summary>
+    /// How many commits a switch away from this repository's detached HEAD would leave on no
+    /// branch - zero on a branch, and always for SVN. Asked before a switch so the user is warned
+    /// rather than left to find them in the reflog (B327).
+    /// </summary>
+    int CountCommitsOnNoBranch(string repositoryId);
+
+    /// <summary>
+    /// The rebase this repository's working copy is part-way through, or null - asked when the
+    /// rebase dialog opens, so one left stopped can be continued or aborted from it (B382). Also
+    /// updates <see cref="Repository.RebaseInProgress"/>. Always null for SVN.
+    /// </summary>
+    Task<VcsRebaseInProgress?> GetRebaseInProgressAsync(string repositoryId);
+
+    /// <summary>
     /// Merges changes from a source branch into the current working copy.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>
@@ -293,28 +401,55 @@ public interface IRepositoryService
     ProjectProfile? GetActiveProject();
 
     /// <summary>
-    /// Creates a new empty project profile.
+    /// Creates a new empty project profile, makes it the active one, and persists both — without
+    /// loading any repository or library, and without changing any in-memory state.
     /// </summary>
+    /// <remarks>
+    /// For the startup path, where nothing has been loaded yet and nothing should be: obtaining the
+    /// project list through <see cref="LoadRepositorySettingsAsync"/> in order to append to it also
+    /// opens the previously active project's repositories, which is B192. The caller loads the new
+    /// project afterwards with <c>LoadRepositorySettingsAsync(project.Id)</c>.
+    /// </remarks>
     /// <param name="name">Display name for the project.</param>
     /// <returns>The created project profile.</returns>
-    ProjectProfile CreateProject(string name);
+    Task<ProjectProfile> CreateAndSelectProjectAsync(string name);
 
     /// <summary>
-    /// Renames an existing project profile.
+    /// Creates a new empty project profile in the already-loaded project list, and saves the list
+    /// before returning (B447). When the save fails the project is not kept and the exception propagates.
+    /// </summary>
+    /// <remarks>
+    /// Requires the project list to have been loaded, and saving it writes the currently loaded
+    /// repositories out as the active project's. Use <see cref="CreateAndSelectProjectAsync"/> when
+    /// nothing has been loaded yet.
+    /// </remarks>
+    /// <param name="name">Display name for the project.</param>
+    /// <returns>The created project profile.</returns>
+    Task<ProjectProfile> CreateProjectAsync(string name);
+
+    /// <summary>
+    /// Renames an existing project profile and saves the project list before returning (B447).
+    /// Throws when the new name is already another project's. When the save fails the old name is
+    /// kept and the exception propagates.
     /// </summary>
     /// <param name="projectId">ID of the project to rename.</param>
     /// <param name="newName">New display name.</param>
-    void RenameProject(string projectId, string newName);
+    Task RenameProjectAsync(string projectId, string newName);
 
     /// <summary>
-    /// Deletes a project profile. Cannot delete the last remaining project.
+    /// Deletes a project profile and saves the project list before returning. Cannot delete the last
+    /// remaining project, nor the active one - switch to another first - so the saved active id always
+    /// names a project (B442). When the save fails the project is kept and the exception propagates.
     /// </summary>
     /// <param name="projectId">ID of the project to delete.</param>
-    /// <returns>True if deleted, false if it was the last project.</returns>
-    bool DeleteProject(string projectId);
+    /// <returns>True if deleted; false if it was the last project, the active one, or not found.</returns>
+    Task<bool> DeleteProjectAsync(string projectId);
 
     /// <summary>
     /// Switches to a different project profile: unloads current repos, loads the target project's repos.
+    /// A project that does not exist changes nothing - the current project stays open and active -
+    /// and <see cref="OnProjectChanged"/> is not raised, which is how a caller learns the switch did
+    /// not happen (B440).
     /// </summary>
     /// <param name="projectId">ID of the project to switch to.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

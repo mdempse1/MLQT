@@ -1,4 +1,6 @@
 using System.IO;
+using MLQT.Shared.Helpers;
+using ModelicaParser.Comparison;
 using RevisionControl;
 
 namespace MLQT.Shared.Components;
@@ -8,6 +10,7 @@ public partial class LibraryBrowser : IDisposable
     [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
+    [Inject] private IModelChangeClassifier ModelChangeClassifier { get; set; } = null!;
     [Inject] private AppState NavState { get; set; } = null!;
     [Inject] private IDialogService DialogService { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
@@ -62,17 +65,29 @@ public partial class LibraryBrowser : IDisposable
     private Dictionary<string, VcsFileStatus> _modelVcsStatus = new();
 
     /// <summary>
-    /// Set of model IDs whose descendants have VCS changes.
-    /// Used to show a generic change indicator on parent packages.
+    /// What kind of change each model in a changed file carries (B191), by model ID. A model that is
+    /// absent was never classified — a repository outside version control, or one whose committed
+    /// version could not be read — which is a different thing from
+    /// <see cref="ClassChangeKind.Unchanged"/>, and the marker says so.
     /// </summary>
-    private HashSet<string> _modelsWithDescendantChanges = new();
+    private IReadOnlyDictionary<string, ClassChangeKind> _modelChangeKinds =
+        new Dictionary<string, ClassChangeKind>();
+
+    /// <summary>
+    /// The strongest change kind anywhere below each model ID, so a package can say what is waiting
+    /// under it without being expanded. <see cref="ClassChangeKind.Unknown"/> is the entry for a
+    /// descendant that changed in a way nothing could classify.
+    /// </summary>
+    private Dictionary<string, ClassChangeKind> _descendantChangeKinds = new();
 
     /// <summary>
     /// Set of model IDs whose descendants have recorded parser errors. Used to bubble the
     /// error indicator up parent packages so the user can navigate down to find the problem
     /// model without having to expand every branch.
     /// </summary>
-    private HashSet<string> _modelsWithDescendantParserErrors = new();
+    // Shared with every other tree — the set is a property of the project, not of this repository,
+    // and the service works it out once (B258).
+    private IReadOnlySet<string> _modelsWithDescendantParserErrors = new HashSet<string>();
 
     //Menu icons - https://www.svgrepo.com/vectors/git
     const string _rebaseIcon = @"<svg width=""24"" height=""24"" viewBox=""0 -960 960 960"" fill=""currentColor"">
@@ -91,8 +106,10 @@ public partial class LibraryBrowser : IDisposable
         NavState.OnEnableMultiSelect += OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged += OnExternalSelectedModelsChanged;
         NavState.OnVcsFilesChanged += OnVcsFilesChangedHandler;
+        NavState.OnVcsWorkChanged += OnVcsWorkChanged;
         LibraryDataService.OnTreeDataChanged += OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged += OnRepositoryLoadStateChanged;
+        RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
         FileMonitoringService.OnRepositoryFileActivity += OnRepositoryFileActivity;
         base.OnInitialized();
     }
@@ -109,105 +126,415 @@ public partial class LibraryBrowser : IDisposable
         _isInitialized = true;
         _lastLibraryOnly = LibraryOnly;
         _lastRepositoryId = repoId;
+        _lastReferenceOnly = Repository?.IsReferenceOnly ?? false;
 
         await CheckForUncommittedChangesAsync();
         await RefreshTreeItems();
     }
 
     /// <summary>
-    /// Checks if the repository has uncommitted changes, updates the _hasUncommittedChanges field,
-    /// and builds the model-to-VCS-status mapping for tree annotations.
+    /// Whether <see cref="Repository"/> was reference only when its status was last asked for.
     /// </summary>
-    private async Task CheckForUncommittedChangesAsync()
+    private bool _lastReferenceOnly;
+
+    /// <summary>
+    /// A repository ticked or unticked "Reference only" has had its status withheld or needs it back,
+    /// and the flag is changed on the same object, so no parameter says so (B354). Without this,
+    /// unticking it left Commit and Revert disabled and no markers until something unrelated
+    /// refreshed.
+    /// </summary>
+    private void OnRepositoriesChanged()
     {
-        if (Repository == null || Repository.VcsType == RepositoryVcsType.Local)
-        {
-            _hasUncommittedChanges = false;
-            _modelVcsStatus.Clear();
-            _modelsWithDescendantChanges.Clear();
+        if (Repository is not { } repository || repository.IsReferenceOnly == _lastReferenceOnly)
             return;
-        }
 
-        var repoId = Repository.Id;
-        var vcsRootPath = Repository.VcsRootPath;
-        var graph = LibraryDataService.CombinedGraph;
-
-        // Build VCS status mapping on background thread to avoid blocking UI
-        // when the working copy cache has expired and SVN status must be queried
-        var (hasChanges, modelStatus, descendantChanges) = await Task.Run(() =>
+        _lastReferenceOnly = repository.IsReferenceOnly;
+        _ = InvokeAsync(async () =>
         {
-            var changes = RepositoryService.GetWorkingCopyChanges(repoId);
-            var status = new Dictionary<string, VcsFileStatus>();
-            var descendants = new HashSet<string>();
-
-            if (changes != null && changes.Count > 0)
-            {
-                foreach (var change in changes)
-                {
-                    if (!change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    // change.Path is relative to VcsRootPath; normalize separators
-                    // so Path.Combine works correctly on Windows with Git's forward slashes.
-                    var nativePath = change.Path.Replace('/', Path.DirectorySeparatorChar);
-                    var absolutePath = Path.Combine(vcsRootPath, nativePath);
-                    var fileId = GraphBuilder.GenerateFileId(absolutePath);
-                    var modelsInFile = graph.GetModelsInFile(fileId);
-
-                    foreach (var model in modelsInFile)
-                    {
-                        status[model.Id] = change.Status;
-                    }
-                }
-
-                foreach (var modelId in status.Keys)
-                {
-                    var lastDot = modelId.LastIndexOf('.');
-                    while (lastDot > 0)
-                    {
-                        var parentId = modelId.Substring(0, lastDot);
-                        descendants.Add(parentId);
-                        lastDot = parentId.LastIndexOf('.');
-                    }
-                }
-            }
-
-            return (changes?.Count > 0, status, descendants);
+            await CheckForUncommittedChangesAsync();
+            StateHasChanged();
         });
-
-        _hasUncommittedChanges = hasChanges;
-        _modelVcsStatus = modelStatus;
-        _modelsWithDescendantChanges = descendantChanges;
     }
 
     /// <summary>
-    /// Annotates tree items with VCS file status and descendant change markers
-    /// from the cached mappings.
-    /// ModelNode instances are shared/cached in the graph, so stale flags from a previous
-    /// annotation pass are explicitly cleared before re-annotating.
+    /// Checks if the repository has uncommitted changes, updates the _hasUncommittedChanges field,
+    /// and builds the model-to-VCS-status and model-to-change-kind mappings for tree annotations.
     /// </summary>
-    /// <param name="items">The tree items to annotate.</param>
-    private void AnnotateVcsStatus(IEnumerable<TreeItemData<ModelNode>> items)
+    /// <remarks>
+    /// <para><b>Not for a reference-only repository.</b> Nothing in MLQT writes to one — no
+    /// formatting, no checking, no commit and no revert — so there is nothing for a change marker
+    /// or the change filter to be about. Worse than useless, in fact: a reference repository is not
+    /// file-monitored either, so anything shown here would only ever be refreshed by loading the
+    /// project, and a stale marker is worse than none. Skipping it also takes the working-copy
+    /// query and the per-file committed-version reads off the startup path for every vendor
+    /// checkout in a project.</para>
+    /// </remarks>
+    private async Task CheckForUncommittedChangesAsync()
     {
-        foreach (var item in items)
+        // Numbered, so an answer that comes back after a newer question - or after this browser was
+        // given another repository - is dropped rather than written over the current one (B353).
+        var generation = ++_statusGeneration;
+
+        if (Repository == null || Repository.VcsType == RepositoryVcsType.Local || Repository.IsReferenceOnly)
         {
-            if (item.Value == null)
+            _hasUncommittedChanges = false;
+            _modelVcsStatus.Clear();
+            _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
+            _descendantChangeKinds.Clear();
+            _filteredDescendantKinds.Clear();
+            _changeFilter = ChangeFilter.None;
+            _filteredTreeItems = new List<TreeItemData<ModelNode>>();
+            return;
+        }
+
+        var repository = Repository;
+        var repoId = repository.Id;
+        var vcsRootPath = repository.VcsRootPath;
+        var graph = LibraryDataService.CombinedGraph;
+
+        // Build VCS status mapping on background thread to avoid blocking UI
+        // when the working copy cache has expired and SVN status must be queried.
+        // Classifying the changes belongs on the same thread for the same reason, and more so: it
+        // reads each changed file's committed version out of the repository and parses it.
+        var (hasChanges, modelStatus, kinds, descendants) = await Task.Run(() =>
+        {
+            var changes = RepositoryService.GetWorkingCopyChanges(repoId);
+            var status = new Dictionary<string, VcsFileStatus>();
+
+            if (changes == null || changes.Count == 0)
+                return (false, status, EmptyKinds, new Dictionary<string, ClassChangeKind>());
+
+            foreach (var change in changes)
+            {
+                if (!change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // change.Path is relative to VcsRootPath; normalize separators
+                // so Path.Combine works correctly on Windows with Git's forward slashes.
+                var nativePath = change.Path.Replace('/', Path.DirectorySeparatorChar);
+                var absolutePath = Path.Combine(vcsRootPath, nativePath);
+                var fileId = GraphBuilder.GenerateFileId(absolutePath);
+                var modelsInFile = graph.GetModelsInFile(fileId);
+
+                foreach (var model in modelsInFile)
+                {
+                    status[model.Id] = change.Status;
+                }
+            }
+
+            var changeKinds = ModelChangeClassifier.Classify(repository, changes);
+            return (true, status, changeKinds,
+                DescendantKinds(status.Keys, changeKinds, LibraryDataService.GetModelById));
+        });
+
+        if (generation != _statusGeneration || Repository?.Id != repoId)
+            return;
+
+        _hasUncommittedChanges = hasChanges;
+        _modelVcsStatus = modelStatus;
+        _modelChangeKinds = kinds;
+        _descendantChangeKinds = descendants;
+
+        // A filter with nothing left to filter is withdrawn along with its control, or committing
+        // while "Affects simulation" is selected leaves the tree hidden behind an empty list and no
+        // visible way back to it. The same applies above, where a repository just marked reference
+        // only takes its changes - and its filter - out of the browser mid-session.
+        if (!hasChanges)
+            _changeFilter = ChangeFilter.None;
+
+        RefreshFilteredTree();
+    }
+
+    /// <summary>Counts status questions, so only the latest one's answer is applied (B353).</summary>
+    private int _statusGeneration;
+
+    private static readonly IReadOnlyDictionary<string, ClassChangeKind> EmptyKinds =
+        new Dictionary<string, ClassChangeKind>();
+
+    /// <summary>
+    /// The strongest change kind anywhere below each ancestor of a changed model.
+    /// </summary>
+    /// <remarks>
+    /// <para>Keeps the highest kind seen at each package — which is what
+    /// <see cref="ClassChangeKind"/>'s ordering is for. A package with one reformatted class and one
+    /// changed equation under it reports the equation, because that is the one the user has to go
+    /// and look at.</para>
+    ///
+    /// <para><b>Climbed through <see cref="AncestorChain"/></b>, so containment is what decides
+    /// which package a change belongs to. This used to split the dotted id, which is the mistake
+    /// B189 already recorded once: a quoted identifier carries dots of its own, so the split
+    /// attributed the change to packages that do not exist and the real one got nothing.</para>
+    ///
+    /// <para>Driven by the VCS status rather than by the kinds, so a repository whose changes could
+    /// not be classified still bubbles a marker up its packages — which is what MLQT did for
+    /// everything before B191, and is still the right answer when nothing better is known.</para>
+    /// </remarks>
+    internal static Dictionary<string, ClassChangeKind> DescendantKinds(
+        IEnumerable<string> modelIds,
+        IReadOnlyDictionary<string, ClassChangeKind> kinds,
+        Func<string, ModelNode?> lookup)
+    {
+        var descendants = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
+
+        foreach (var modelId in modelIds)
+        {
+            // A class that is in a changed file but was not itself changed contributes nothing to
+            // its ancestors - otherwise every package above a modified package.mo would claim a
+            // change that is not there.
+            var kind = kinds.TryGetValue(modelId, out var known) ? known : ClassChangeKind.Unknown;
+            if (kind == ClassChangeKind.Unchanged)
                 continue;
 
-            // Reset first — the same ModelNode instance may have been annotated previously
-            item.Value.FileStatus = null;
-            item.Value.HasDescendantChanges = false;
-
-            if (_modelVcsStatus.TryGetValue(item.Value.Id, out var status))
+            foreach (var parentId in AncestorChain(modelId, lookup))
             {
-                item.Value.FileStatus = status;
-            }
-
-            if (_modelsWithDescendantChanges.Contains(item.Value.Id))
-            {
-                item.Value.HasDescendantChanges = true;
+                if (!descendants.TryGetValue(parentId, out var existing) || kind > existing)
+                    descendants[parentId] = kind;
             }
         }
+
+        return descendants;
+    }
+
+    /// <summary>
+    /// Which of a repository's models the browser shows (B191).
+    /// </summary>
+    internal enum ChangeFilter
+    {
+        /// <summary>The ordinary tree, everything in it.</summary>
+        None,
+
+        /// <summary>Every class with an uncommitted change of its own.</summary>
+        Changed,
+
+        /// <summary>
+        /// The changes a reviewer has to read. Anything not <i>known</i> to be harmless is in here,
+        /// including a class MLQT could not compare — leaving those out would be a filter that hides
+        /// exactly what it was asked to find.
+        /// </summary>
+        AffectsSimulation,
+
+        /// <summary>Changes MLQT is prepared to vouch for as layout, wording or graphics.</summary>
+        Cosmetic,
+    }
+
+    private ChangeFilter _changeFilter = ChangeFilter.None;
+
+    /// <summary>The filter the chips currently apply, for a test to read.</summary>
+    internal ChangeFilter ActiveChangeFilter => _changeFilter;
+
+    /// <summary>
+    /// The tree the browser is showing: the whole library, or only what the filter selects.
+    /// </summary>
+    /// <remarks>
+    /// Rebuilt when the filter or the working copy changes rather than per render, because
+    /// <c>MudTreeView</c> is handed these objects and re-creating them under it on every render is
+    /// how a tree loses its expansion state.
+    /// </remarks>
+    private List<TreeItemData<ModelNode>> _filteredTreeItems = new();
+
+    /// <summary>
+    /// The descendant rollup over the classes the filter selected, rather than over every change.
+    /// </summary>
+    /// <remarks>
+    /// A package in the Cosmetic view would otherwise carry the orange dot it earns from a
+    /// simulation change the filter has just excluded — true of the repository, and a contradiction
+    /// of the view the user is looking through.
+    /// </remarks>
+    private Dictionary<string, ClassChangeKind> _filteredDescendantKinds = new();
+
+    /// <summary>The rollup that matches what is on screen.</summary>
+    private IReadOnlyDictionary<string, ClassChangeKind> ActiveDescendantKinds =>
+        _changeFilter == ChangeFilter.None ? _descendantChangeKinds : _filteredDescendantKinds;
+
+    internal List<TreeItemData<ModelNode>> ActiveTreeItems =>
+        _changeFilter == ChangeFilter.None ? TreeItems : _filteredTreeItems;
+
+    /// <summary>
+    /// The lazy loader, but only for the unfiltered tree.
+    /// </summary>
+    /// <remarks>
+    /// A filtered tree is built whole and already carries its children, so asking the server for
+    /// them again would replace a pruned package's children with all of them.
+    /// </remarks>
+    internal Func<ModelNode?, Task<IReadOnlyCollection<TreeItemData<ModelNode>>>>? ActiveServerData =>
+        _changeFilter == ChangeFilter.None ? LoadServerData : null;
+
+    /// <summary>The kind recorded for a model, or Unknown where the question was never asked.</summary>
+    private ClassChangeKind KindOf(string modelId) =>
+        _modelChangeKinds.TryGetValue(modelId, out var kind) ? kind : ClassChangeKind.Unknown;
+
+    /// <summary>
+    /// How many classes a filter would show. Displayed on its chip, so the user can see there is
+    /// nothing under "Cosmetic only" without selecting it and reading an empty tree.
+    /// </summary>
+    internal int CountFor(ChangeFilter filter)
+    {
+        if (filter == ChangeFilter.None)
+            return 0;
+
+        var count = 0;
+        foreach (var modelId in _modelVcsStatus.Keys)
+        {
+            if (Selects(filter, KindOf(modelId)))
+                count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>The classes the current filter selects.</summary>
+    /// <remarks>
+    /// Driven by the VCS status map, so a class is a candidate because its file changed and the
+    /// filter then decides on the kind. A class in a changed file that was not itself touched is
+    /// never selected by any of them.
+    /// </remarks>
+    internal IReadOnlyList<ModelNode> FilteredModels()
+    {
+        if (_changeFilter == ChangeFilter.None)
+            return [];
+
+        var graph = LibraryDataService.CombinedGraph;
+        var matches = new List<ModelNode>();
+
+        foreach (var modelId in _modelVcsStatus.Keys)
+        {
+            if (!Selects(_changeFilter, KindOf(modelId)))
+                continue;
+
+            if (graph.GetNode<ModelNode>(modelId) is { } model)
+                matches.Add(model);
+        }
+
+        return matches;
+    }
+
+    /// <summary>Whether a filter wants a class of this kind.</summary>
+    internal static bool Selects(ChangeFilter filter, ClassChangeKind kind) => filter switch
+    {
+        ChangeFilter.Changed => kind != ClassChangeKind.Unchanged,
+        ChangeFilter.AffectsSimulation => kind is not (ClassChangeKind.Unchanged or ClassChangeKind.Cosmetic),
+        ChangeFilter.Cosmetic => kind == ClassChangeKind.Cosmetic,
+        _ => false,
+    };
+
+    /// <summary>
+    /// The tree pruned to <paramref name="matches"/> and the packages that contain them.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Built whole, not lazily.</b> The ordinary tree fetches a node's children when it is
+    /// expanded, which cannot answer "show me only the changed classes" — finding out which packages
+    /// have one would mean expanding all of them. A filtered tree is small by construction (it is
+    /// the uncommitted changes), so it is cheaper to build the whole thing.</para>
+    ///
+    /// <para><b>It opens exactly as far as the user had the tree open</b>, from
+    /// <paramref name="expanded"/>. Opening every node instead would mean that applying a filter,
+    /// and then clearing it, left the tree spread out in a way the user never asked for — the two
+    /// views share one expansion record, so anything this opens is opened in the full tree too.</para>
+    ///
+    /// <para>Ancestors come from <see cref="AncestorChain"/>, so the packages shown are the ones
+    /// that really contain the class. An ancestor the lookup cannot resolve is skipped and its
+    /// child attaches to the nearest one that resolved, which keeps a malformed graph showing the
+    /// changes rather than nothing.</para>
+    /// </remarks>
+    /// <param name="matches">The classes the filter selected.</param>
+    /// <param name="lookup">Finds a model by id — how the containing packages are reached.</param>
+    /// <param name="expanded">The ids the user has open, which this neither adds to nor ignores.</param>
+    internal static List<TreeItemData<ModelNode>> BuildFilteredTree(
+        IEnumerable<ModelNode> matches, Func<string, ModelNode?> lookup, IReadOnlySet<string> expanded)
+    {
+        var built = new Dictionary<string, TreeItemData<ModelNode>>(StringComparer.Ordinal);
+
+        // Children is an IReadOnlyCollection on the item, so each node's is gathered here and
+        // assigned once at the end rather than appended to in place.
+        var children = new Dictionary<string, List<ITreeItemData<ModelNode>>>(StringComparer.Ordinal);
+        var roots = new List<ITreeItemData<ModelNode>>();
+
+        foreach (var match in matches)
+        {
+            TreeItemData<ModelNode>? parent = null;
+
+            foreach (var id in AncestorChain(match.Id, lookup).Append(match.Id))
+            {
+                if (built.TryGetValue(id, out var existing))
+                {
+                    parent = existing;
+                    continue;
+                }
+
+                var model = id == match.Id ? match : lookup(id);
+                if (model is null)
+                    continue;
+
+                var item = new TreeItemData<ModelNode>
+                {
+                    Value = model,
+                    Icon = IconForClassType(model.ClassType),
+                    Expanded = expanded.Contains(id),
+                };
+
+                built[id] = item;
+                children[id] = [];
+                (parent is null ? roots : children[parent.Value!.Id]).Add(item);
+                parent = item;
+            }
+        }
+
+        foreach (var (id, item) in built)
+        {
+            var own = children[id];
+            own.Sort(ByName);
+
+            // Expandable governs the arrow. Only a package that kept a child gets one; a class
+            // whose own children the filter did not select must not offer to open into nothing.
+            item.Expandable = own.Count > 0;
+            item.Children = own;
+        }
+
+        roots.Sort(ByName);
+        return roots.Cast<TreeItemData<ModelNode>>().ToList();
+    }
+
+    private static readonly Comparison<ITreeItemData<ModelNode>> ByName =
+        (left, right) => string.Compare(left.Value?.Name, right.Value?.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Rebuilds the filtered tree from the current filter and the current set of changes.
+    /// </summary>
+    private void RefreshFilteredTree()
+    {
+        if (_changeFilter == ChangeFilter.None)
+        {
+            _filteredTreeItems = new List<TreeItemData<ModelNode>>();
+            _filteredDescendantKinds = new Dictionary<string, ClassChangeKind>();
+            return;
+        }
+
+        var matches = FilteredModels();
+        _filteredTreeItems = BuildFilteredTree(matches, LibraryDataService.GetModelById, _expandedNodeIds);
+        _filteredDescendantKinds = DescendantKinds(
+            matches.Select(m => m.Id), _modelChangeKinds, LibraryDataService.GetModelById);
+    }
+
+    internal void OnChangeFilterChanged(ChangeFilter filter)
+    {
+        _changeFilter = filter;
+        RefreshFilteredTree();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// What to draw beside a model in the tree — the one decision, asked by both tree templates.
+    /// </summary>
+    internal ChangeMarker MarkerFor(ModelNode? model)
+    {
+        if (model?.Id is not { } id)
+            return ChangeMarker.None;
+
+        var status = _modelVcsStatus.TryGetValue(id, out var fileStatus) ? fileStatus : (VcsFileStatus?)null;
+        var kind = _modelChangeKinds.TryGetValue(id, out var own) ? own : ClassChangeKind.Unknown;
+        var descendants = ActiveDescendantKinds.TryGetValue(id, out var below) ? below : ClassChangeKind.Unchanged;
+
+        return ChangeMarker.For(status, kind, descendants);
     }
 
     public void Dispose()
@@ -216,15 +543,17 @@ public partial class LibraryBrowser : IDisposable
         NavState.OnEnableMultiSelect -= OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged -= OnExternalSelectedModelsChanged;
         NavState.OnVcsFilesChanged -= OnVcsFilesChangedHandler;
+        NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
         LibraryDataService.OnTreeDataChanged -= OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged -= OnRepositoryLoadStateChanged;
+        RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
         FileMonitoringService.OnRepositoryFileActivity -= OnRepositoryFileActivity;
     }
 
     /// <summary>
     /// Fired after a VCS operation (merge+commit, update, revert, switch) completes and
-    /// the analysis pipeline runs. Re-checks uncommitted changes so that any stale
-    /// HasDescendantChanges indicators (e.g. set during pre-commit phase) are cleared.
+    /// the analysis pipeline runs. Re-checks uncommitted changes so that any stale change markers
+    /// (e.g. from before a commit) are cleared.
     /// </summary>
     private async void OnVcsFilesChangedHandler(string repositoryId)
     {
@@ -234,8 +563,7 @@ public partial class LibraryBrowser : IDisposable
             // Rebuild the VCS status mapping from the current working copy state.
             // After a successful commit this will be empty, clearing stale annotations.
             await CheckForUncommittedChangesAsync();
-            // Refresh top-level tree items to get fresh ModelNode objects (HasDescendantChanges=false)
-            // and re-annotate them from the now-updated status mapping.
+            // Refresh the top-level tree items, which draw their markers from the updated mapping.
             await RefreshTreeItems();
             StateHasChanged();
         });
@@ -282,9 +610,6 @@ public partial class LibraryBrowser : IDisposable
         {
             items = allItems.ToList();
         }
-
-        // Annotate items with VCS status indicators
-        AnnotateVcsStatus(items);
 
         // Restore expansion state for the loaded items
         RestoreExpansionState(items);
@@ -350,12 +675,25 @@ public partial class LibraryBrowser : IDisposable
     }
 
     /// <summary>
-    /// Refreshes the top-level tree items from the LibraryDataService.
-    /// Preserves the expansion state of previously expanded nodes.
+    /// Refreshes the top-level tree items from the LibraryDataService, preserving the expansion
+    /// state of previously expanded nodes — and times each step.
+    ///
+    /// <para><b>The timing is here because reading did not settle it.</b> Startup stutter was
+    /// reported against this path and three plausible causes turned out to be already fixed — the
+    /// bulk-load notifications are suppressed to one, the working-copy query is off-thread, and the
+    /// tree itself is only top-level. Everything below runs on the dispatcher, which is also the
+    /// desktop host's window message pump, so what is wanted is the one that costs tens of
+    /// milliseconds and not a fourth guess. B253 was found this way: time the steps and let the next
+    /// run say which.</para>
     /// </summary>
     private async Task RefreshTreeItems()
     {
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        var step = System.Diagnostics.Stopwatch.StartNew();
+
         var allItems = ToTreeItems(await LibraryDataService.GetTopLevelModelsAsync());
+        var topLevelMs = step.ElapsedMilliseconds;
+        step.Restart();
 
         if (Repository != null)
         {
@@ -370,17 +708,37 @@ public partial class LibraryBrowser : IDisposable
             TreeItems = allItems.OrderBy(item => item.Value?.Name).ToList();
         }
 
-        // Annotate items with VCS status indicators
-        AnnotateVcsStatus(TreeItems);
+        var filterMs = step.ElapsedMilliseconds;
+        step.Restart();
 
         // Compute which parent packages contain descendants with parser errors so the
         // warning icon bubbles up the tree and the user can find the problem model.
         RefreshDescendantParserErrors();
+        var parserErrorsMs = step.ElapsedMilliseconds;
+        step.Restart();
 
         // Restore expansion state for previously expanded nodes, materialising their children so the
         // rebuilt tree renders a consistent expanded state (icon + children) rather than an "expanded"
         // node with null children that MudTreeView won't auto-load after a programmatic rebuild.
         await RestoreExpansionStateAsync(TreeItems);
+        var expansionMs = step.ElapsedMilliseconds;
+
+        // Only when it is worth reading. A tree refresh that costs nothing happens constantly.
+        //
+        // **"top level" is no longer time on this thread**, and the distinction matters because a
+        // number here used to mean a blocked window. `GetTopLevelModelsAsync` runs on the pool now
+        // and queues behind any other tree doing the same, so this figure is wall clock — waiting
+        // included — while the dispatcher is free. Every other step is still measured here, on the
+        // dispatcher, and those are the ones to worry about (B258).
+        if (total.ElapsedMilliseconds >= 50)
+        {
+            var onThisThread = filterMs + parserErrorsMs + expansionMs;
+            LoggingService.Debug(nameof(LibraryBrowser),
+                $"Tree refresh for '{Repository?.Name ?? "all"}' took {total.ElapsedMilliseconds}ms "
+                + $"({onThisThread}ms of it on the UI thread: filter {filterMs}ms, "
+                + $"parser errors {parserErrorsMs}ms, expansion {expansionMs}ms; "
+                + $"top level {topLevelMs}ms awaited off it)");
+        }
     }
 
     /// <summary>
@@ -389,23 +747,7 @@ public partial class LibraryBrowser : IDisposable
     /// with "<packageId>." has parser errors.
     /// </summary>
     private void RefreshDescendantParserErrors()
-    {
-        var descendants = new HashSet<string>();
-        foreach (var model in LibraryDataService.GetAllModels())
-        {
-            if (!model.HasParserErrors)
-                continue;
-
-            var lastDot = model.Id.LastIndexOf('.');
-            while (lastDot > 0)
-            {
-                var parentId = model.Id.Substring(0, lastDot);
-                descendants.Add(parentId);
-                lastDot = parentId.LastIndexOf('.');
-            }
-        }
-        _modelsWithDescendantParserErrors = descendants;
-    }
+        => _modelsWithDescendantParserErrors = LibraryDataService.ModelsWithDescendantParserErrors();
 
     /// <summary>
     /// Builds the hover tooltip for a tree node's parser-error indicator.
@@ -472,10 +814,11 @@ public partial class LibraryBrowser : IDisposable
     }
 
     /// <summary>
-    /// Called when a tree node's expansion state changes.
-    /// Tracks expanded nodes so the state can be preserved during refresh.
+    /// Called when a tree node's expansion state changes. <c>_expandedNodeIds</c> is the one record
+    /// of it, so the state survives a refresh and the filtered tree opens to the same places the
+    /// full one does (B191).
     /// </summary>
-    private void OnNodeExpandedChanged(ITreeItemData<ModelNode> node, bool expanded)
+    internal void OnNodeExpandedChanged(ITreeItemData<ModelNode> node, bool expanded)
     {
         node.Expanded = expanded;
 
@@ -532,7 +875,18 @@ public partial class LibraryBrowser : IDisposable
     private void OnModelSelected(ModelNode? selectedNode)
     {
         _currentModelName = selectedNode?.Id ?? string.Empty;
-        NavState.ChangeModelID(_currentModelName);
+
+        // Flagged across the call because ChangeModelID raises OnChangeModel synchronously, and the
+        // handler would otherwise reveal a class the user has this moment clicked on.
+        _selectingFromTree = true;
+        try
+        {
+            NavState.ChangeModelID(_currentModelName);
+        }
+        finally
+        {
+            _selectingFromTree = false;
+        }
     }
 
     private void OnModelsSelected(IReadOnlyCollection<ModelNode> selectedNodes)
@@ -557,28 +911,113 @@ public partial class LibraryBrowser : IDisposable
     private async void OnModelChanged()
     {
         _currentModelName = NavState.ModelID;
+
+        // Opened from somewhere else — a finding, a dependency, the navigation stack — so show where
+        // it is (B189). A class opened this way used to appear in the viewer while the tree stayed
+        // wherever it was, which left nothing to say what had just been opened or what it sits in.
+        if (!_selectingFromTree)
+            await RevealAsync(NavState.ModelID);
+
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task RefreshRepository()
+    /// <summary>
+    /// Set while this browser is the thing that changed the selection, so the reveal does not fight
+    /// the click that caused it: a user who has just collapsed a package and clicked a class
+    /// elsewhere should not have it expanded again underneath them.
+    /// </summary>
+    private bool _selectingFromTree;
+
+    /// <summary>
+    /// The ids that have to be open for <paramref name="modelId"/> to be visible, outermost first
+    /// and not including the class itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>Walked through <c>ParentModelName</c> rather than by splitting the dotted name, because
+    /// containment is what the tree nests by and the two are not always the same thing — a class
+    /// reached through a library alias, or one whose name carries dots of its own (a quoted
+    /// identifier), would give a chain of packages that do not exist.</para>
+    ///
+    /// <para>Stops at a name the lookup does not know, and guards against a cycle: a malformed graph
+    /// should leave the tree unrevealed, not spin.</para>
+    /// </remarks>
+    internal static List<string> AncestorChain(string? modelId, Func<string, ModelNode?> lookup)
+    {
+        var chain = new List<string>();
+        if (string.IsNullOrEmpty(modelId))
+            return chain;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var current = lookup(modelId);
+
+        while (current is not null
+               && !string.IsNullOrEmpty(current.ParentModelName)
+               && seen.Add(current.Id))
+        {
+            chain.Add(current.ParentModelName!);
+            current = lookup(current.ParentModelName!);
+        }
+
+        chain.Reverse();
+        return chain;
+    }
+
+    /// <summary>
+    /// Opens the packages above <paramref name="modelId"/> and selects it, if it is in this tree.
+    /// </summary>
+    /// <remarks>
+    /// Several browsers are rendered in repository mode, one per repository, and a class belongs to
+    /// one of them — so this returns without touching anything when the chain does not start at one
+    /// of this tree's own roots. Otherwise every repository's tree would expand for every class.
+    /// </remarks>
+    private async Task RevealAsync(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId) || TreeItems.Count == 0)
+            return;
+
+        var chain = AncestorChain(modelId, LibraryDataService.GetModelById);
+        var rootId = chain.Count > 0 ? chain[0] : modelId;
+
+        if (!TreeItems.Any(item => item.Value?.Id == rootId))
+            return;
+
+        foreach (var id in chain)
+            _expandedNodeIds.Add(id);
+
+        // The same walk a rebuild uses, and for the same reason: a node marked expanded whose
+        // children have never been fetched renders open and empty.
+        await RestoreExpansionStateAsync(TreeItems);
+
+        // Under a change filter the view is the filtered tree, whose items were opened when it was
+        // built - so it is built again from the expansion record just updated, or the reveal opens
+        // the tree the user is not looking at (B358).
+        RefreshFilteredTree();
+
+        var model = LibraryDataService.GetModelById(modelId);
+        if (model is not null)
+            _selectedNodes = [model];
+    }
+
+    private Task RefreshRepository() => RunVcsOperationAsync(async () =>
     {
         if (Repository == null)
             return;
 
+        var repository = Repository;
+
         _isLoading = true;
         StateHasChanged();
 
+        // Pause file monitoring before the VCS update to prevent the flood of file-change events
+        // from locking up the UI. Handed to the analysis pipeline, which restarts it after
+        // formatting, or started again here if the update never gets that far (B294).
+        using var pause = MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository));
         try
         {
-            // Pause file monitoring before the VCS update to prevent the flood of file-change
-            // events from locking up the UI. The analysis handler (OnVcsFilesChanged) will
-            // restart monitoring after formatting is applied.
-            FileMonitoringService.StopMonitoring(Repository.Id);
-
             // Update the repository from the remote if it's a VCS repository
-            if (Repository.VcsType != RepositoryVcsType.Local)
+            if (repository.VcsType != RepositoryVcsType.Local)
             {
-                var updateResult = await RepositoryService.UpdateRepositoryAsync(Repository.Id);
+                var updateResult = await RepositoryService.UpdateRepositoryAsync(repository.Id);
                 if (!updateResult.Success && !string.IsNullOrEmpty(updateResult.ErrorMessage))
                 {
                     Snackbar.Add($"Update failed: {updateResult.ErrorMessage}", Severity.Error);
@@ -593,22 +1032,207 @@ public partial class LibraryBrowser : IDisposable
                 }
             }
 
-            // Reload library data from disk (re-discover libraries, re-parse changed files).
-            // RefreshRepositoryAsync removes and reloads all libraries, so the old expansion
-            // state references stale tree items with null Children — clear it to avoid the
-            // "expanded but no children visible" MudTreeView glitch.
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-            _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-
-            // Trigger background analysis (formatting + dependencies + style + resources).
-            // Handler will restart monitoring once formatting is complete.
-            NavState.VcsFilesChanged(Repository.Id);
+            await ReloadAndAnalyseAsync(repository, pause);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(LibraryBrowser), $"Updating repository {repository.Name} failed", ex);
+            Snackbar.Add($"Update failed: {ex.Message}", Severity.Error);
         }
         finally
         {
             _isLoading = false;
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>
+    /// Reloads a repository's libraries from a working copy a VCS operation has rewritten, then
+    /// starts the formatting and analysis pipeline - in that order, and for an operation started
+    /// from this browser, from here only (B296).
+    /// </summary>
+    /// <remarks>
+    /// <para>The order is the point. The merge and rebase dialogs used to start the pipeline while
+    /// they were still open, and this browser then removed and reloaded every library once they
+    /// closed, so the analysis ran over a graph being rebuilt under it. A dialog now records what it
+    /// did in a <see cref="VcsDialogOutcome"/> and leaves the rest to this.</para>
+    ///
+    /// <para>With <paramref name="analyse"/> false the pipeline is not started: a merge or rebase
+    /// left with conflicts has files in it that are not Modelica, and the pipeline formats every
+    /// changed file.</para>
+    ///
+    /// <para><b>Every repository in the working copy</b>, not only this one (B301): a VCS operation
+    /// acts on the whole checkout, so a second library checked out beside this one has been rewritten
+    /// too.</para>
+    /// </remarks>
+    private async Task ReloadAndAnalyseAsync(Repository repository, MonitorPause? pause, bool analyse = true)
+    {
+        var workingCopy = WorkingCopyOf(repository);
+
+        // Said, because it is most of the wait and nothing else on screen accounts for it: the
+        // VCS step has finished by now, and without this the progress bar that stays up reads
+        // as the update still running (B294).
+        Snackbar.Add("Reloading libraries…", Severity.Normal);
+
+        // Reload library data from disk (re-discover libraries, re-parse changed files).
+        // RefreshRepositoryAsync removes and reloads all libraries, so the old expansion
+        // state references stale tree items with null Children — clear it to avoid the
+        // "expanded but no children visible" MudTreeView glitch.
+        foreach (var each in workingCopy)
+            await RepositoryService.RefreshRepositoryAsync(each.Id);
+        _expandedNodeIds.Clear();
+        await CheckForUncommittedChangesAsync();
+        await RefreshTreeItems();
+
+        if (!analyse)
+            return;
+
+        // Trigger background analysis (formatting + dependencies + style + resources).
+        // Handler will restart monitoring once formatting is complete.
+        pause?.HandOver();
+        foreach (var each in workingCopy)
+            NavState.VcsFilesChanged(each.Id);
+    }
+
+    /// <summary>
+    /// This repository and every other one checked out in the same working copy (B301).
+    /// </summary>
+    private IReadOnlyList<Repository> WorkingCopyOf(Repository repository)
+    {
+        var sharing = RepositoryService.GetRepositoriesSharingWorkingCopy(repository.Id);
+        return sharing is { Count: > 0 } ? sharing : [repository];
+    }
+
+    /// <summary>
+    /// What follows a VCS dialog, whichever way it was closed: nothing but a status refresh if it
+    /// left the working copy alone, and a reload and analysis if it did not.
+    /// </summary>
+    internal async Task AfterVcsDialogAsync(Repository repository, VcsDialogOutcome outcome, string operation)
+    {
+        if (!outcome.WorkingCopyChanged)
+        {
+            RepositoryService.InvalidateWorkingCopyCache(repository.Id);
+            await CheckForUncommittedChangesAsync();
+            await RefreshTreeItems();
+            StateHasChanged();
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            await ReloadAndAnalyseAsync(repository, pause: null, analyse: !outcome.LeftInProgress);
+
+            if (outcome.LeftInProgress)
+                Snackbar.Add(operation == "rebase"
+                        // A rebase is finished by continuing it, not by a commit, which is refused
+                        // while it is in progress (B327) - and Rebase is where that is (B382).
+                        ? "The rebase is not finished: resolve the remaining conflicts and continue it, or abort it, from Rebase."
+                        : $"The {operation} is not finished: resolve the remaining conflicts and commit, or abort it.",
+                    Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(LibraryBrowser), $"Reloading {repository.Name} after the {operation} failed", ex);
+            Snackbar.Add($"Reloading after the {operation} failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Whether this Git repository is on no branch - a tag or a revision checked out directly.
+    /// </summary>
+    /// <remarks>
+    /// Commit, Merge, Rebase and Push all act on a branch, and on a detached HEAD there is none: a
+    /// commit or merge made there belongs to nothing and the next switch strands it, and a push has
+    /// nothing to push. They were all offered, gated only on uncommitted changes (B327). The Git
+    /// layer refuses them as well; this is so the user is not offered what will be refused.
+    /// </remarks>
+    private bool IsDetachedHead =>
+        Repository is { VcsType: RepositoryVcsType.Git } repository && string.IsNullOrEmpty(repository.CurrentBranch);
+
+    /// <summary>The tooltip for an action that needs a branch, saying why it is off when it is.</summary>
+    private string NeedsABranch(string tooltip) =>
+        IsRebaseInProgress
+            ? $"{tooltip} - a rebase is in progress: continue or abort it first (More actions, Rebase)"
+            : IsDetachedHead ? $"{tooltip} - needs a branch: HEAD is detached. Create a branch here first." : tooltip;
+
+    /// <summary>The Create new branch tooltip, which on a detached HEAD says why it is highlighted.</summary>
+    private string CreateBranchTooltip =>
+        IsDetachedHead && !IsRebaseInProgress
+            ? "Create a branch here - HEAD is detached, so Commit, Merge, Rebase and Push need a branch first"
+            : "Create new branch";
+
+    /// <summary>
+    /// Whether this Git working copy is part-way through a rebase that stopped - HEAD is detached
+    /// until it is continued or aborted, and the Rebase button is where both are done (B382).
+    /// </summary>
+    /// <remarks>
+    /// Before this, a rebase that closed its dialog with conflicts could be finished nowhere in MLQT:
+    /// the dialog never looked for one in progress, and Rebase was disabled on the detached HEAD the
+    /// rebase itself had left.
+    /// </remarks>
+    private bool IsRebaseInProgress =>
+        Repository is { VcsType: RepositoryVcsType.Git, RebaseInProgress: not null };
+
+    private string MoreActionsTooltip =>
+        IsRebaseInProgress ? "More actions - a rebase is in progress: continue or abort it from Rebase" : "More actions ...";
+
+    private string RebaseTooltip =>
+        IsRebaseInProgress ? "Continue or abort the rebase in progress" : NeedsABranch("Rebase current branch");
+
+    /// <summary>
+    /// Whether a VCS operation started from this browser is still running, so the others stay
+    /// disabled until it finishes.
+    /// </summary>
+    private bool _vcsBusy;
+
+    /// <summary>
+    /// Whether no VCS operation may start from here: one started here is still running, or VCS
+    /// work - an operation, or the analysis pipeline one started - is running anywhere (B326).
+    /// </summary>
+    private bool VcsBlocked => _vcsBusy || NavState.IsVcsWorkInProgress;
+
+    private void OnVcsWorkChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// Runs one VCS operation, refusing to start a second until it has finished (B294) - and until
+    /// the analysis pipeline any earlier one started has finished too (B326).
+    /// </summary>
+    /// <remarks>
+    /// <para>Nothing stopped two overlapping before: a Revert was still reloading its files one at a
+    /// time when Update started removing and reloading every library in the same repository, and the
+    /// two read and rewrote the same graph at once. The buttons are disabled while this is set; the
+    /// check here is for the click that arrives before the render that disables them.</para>
+    ///
+    /// <para>The operation is counted as VCS work for as long as it runs, so the other browsers -
+    /// one per repository - hold off too, and the pipeline it fires is counted from inside the
+    /// operation, so there is no gap between the two.</para>
+    /// </remarks>
+    private async Task RunVcsOperationAsync(Func<Task> operation)
+    {
+        if (VcsBlocked)
+        {
+            if (NavState.IsVcsWorkInProgress && !_vcsBusy)
+                Snackbar.Add("Wait for the previous version-control operation and its analysis to finish.", Severity.Info);
+            return;
+        }
+
+        _vcsBusy = true;
+        StateHasChanged();
+        using var work = NavState.BeginVcsWork();
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            _vcsBusy = false;
             StateHasChanged();
         }
     }
@@ -624,7 +1248,9 @@ public partial class LibraryBrowser : IDisposable
         await DialogService.ShowAsync<VCSHistory>("VCS History", parameters, options);
     }
 
-    private async Task ShowSwitchBranchDialog()
+    private Task ShowSwitchBranchDialog() => RunVcsOperationAsync(SwitchBranchAsync);
+
+    private async Task SwitchBranchAsync()
     {
         if (Repository == null)
             return;
@@ -633,7 +1259,12 @@ public partial class LibraryBrowser : IDisposable
         {
             { x => x.RepositoryId, Repository.Id }
         };
-        var options = new DialogOptions { CloseOnEscapeKey = true };
+        // Small, not the provider's Large default: the dialog is a list and a sentence, and
+        // MudDialog grows to fit its content up to the cap - so selecting a tag, which adds a
+        // paragraph explaining detached HEAD, stretched it to most of the screen the moment
+        // the user clicked (B193). The content has a width of its own, so this is the belt to
+        // that brace.
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small };
         var dialog = await DialogService.ShowAsync<SwitchBranchDialog>("Switch Branch", parameters, options);
         var result = await dialog.Result;
 
@@ -650,11 +1281,17 @@ public partial class LibraryBrowser : IDisposable
             await RefreshTreeItems();
             Snackbar.Add($"Switched to branch: {result.Data}", Severity.Success);
             StateHasChanged();
-            NavState.VcsFilesChanged(Repository.Id);
+
+            // Every repository in the working copy switched, and SwitchBranchAsync reloaded all of
+            // them - so all of them are analysed, not only this one (B301).
+            foreach (var each in WorkingCopyOf(Repository))
+                NavState.VcsFilesChanged(each.Id);
         }
     }
 
-    private async Task ShowCreateBranchDialog()
+    private Task ShowCreateBranchDialog() => RunVcsOperationAsync(CreateBranchAsync);
+
+    private async Task CreateBranchAsync()
     {
         if (Repository == null)
             return;
@@ -669,66 +1306,55 @@ public partial class LibraryBrowser : IDisposable
 
         if (result != null && !result.Canceled)
         {
-            // Branch was created successfully - refresh repository info
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
+            // Nothing to reload: a new branch starts where the working copy already is, and
+            // CreateBranchAsync has already read the new branch name. This used to remove and
+            // reload every library for it (B296).
             Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
             StateHasChanged();
         }
     }
 
-    private async Task ShowMergeBranchDialog()
+    private Task ShowMergeBranchDialog() => RunVcsOperationAsync(MergeBranchAsync);
+
+    private async Task MergeBranchAsync()
     {
         _showGitMenuDialog = false;
         if (Repository == null)
             return;
 
-        if (Repository.VcsType == RepositoryVcsType.Git)
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+
+        // Waited for however it closes - a merge cancelled in its conflict phase has still rewritten
+        // the working copy, and the outcome says so where a cancelled result cannot (B296).
+        if (repository.VcsType == RepositoryVcsType.Git)
         {
             var gitParameters = new DialogParameters<GitMergeBranchDialog>
             {
-                { x => x.RepositoryId, Repository.Id }
+                { x => x.RepositoryId, repository.Id },
+                { x => x.Outcome, outcome }
             };
-            var gitOptions = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
-            var gitDialog = await DialogService.ShowAsync<GitMergeBranchDialog>("Merge Branch", gitParameters, gitOptions);
-            var gitResult = await gitDialog.Result;
-
-            if (gitResult != null && !gitResult.Canceled)
+            var gitDialog = await DialogService.ShowAsync<GitMergeBranchDialog>("Merge Branch", gitParameters, options);
+            await gitDialog.Result;
+        }
+        else
+        {
+            var parameters = new DialogParameters<MergeBranchDialog>
             {
-                // VcsFilesChanged (formatting + analysis) is fired by GitMergeBranchDialog itself
-                // after the merge commit. Refresh the tree to reflect the new state.
-                // RefreshRepositoryAsync reloads all libraries — clear stale expansion state.
-                await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-                _expandedNodeIds.Clear();
-                await CheckForUncommittedChangesAsync();
-                await RefreshTreeItems();
-                StateHasChanged();
-            }
-            return;
+                { x => x.RepositoryId, repository.Id },
+                { x => x.Outcome, outcome }
+            };
+            var dialog = await DialogService.ShowAsync<MergeBranchDialog>("Merge Branch", parameters, options);
+            await dialog.Result;
         }
 
-        var parameters = new DialogParameters<MergeBranchDialog>
-        {
-            { x => x.RepositoryId, Repository.Id }
-        };
-        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
-        var dialog = await DialogService.ShowAsync<MergeBranchDialog>("Merge Branch", parameters, options);
-        var result = await dialog.Result;
-
-        if (result != null && !result.Canceled)
-        {
-            // Merge was performed — refresh the tree to show uncommitted merge changes.
-            // VcsFilesChanged (formatting + analysis) is fired by MergeBranchDialog itself
-            // after the commit dialog closes, so that formatting runs on committed files only.
-            // RefreshRepositoryAsync reloads all libraries — clear stale expansion state.
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-            _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-            StateHasChanged();
-        }
+        await AfterVcsDialogAsync(repository, outcome, "merge");
     }
 
-    private async Task ShowCommitChangesDialog()
+    private Task ShowCommitChangesDialog() => RunVcsOperationAsync(CommitChangesAsync);
+
+    private async Task CommitChangesAsync()
     {
         if (Repository == null)
             return;
@@ -741,27 +1367,29 @@ public partial class LibraryBrowser : IDisposable
         RepositoryService.InvalidateWorkingCopyCache(Repository.Id);
         await CheckForUncommittedChangesAsync();
 
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<CommitChangesDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialog = await DialogService.ShowAsync<CommitChangesDialog>("Commit Changes", parameters, options);
         var result = await dialog.Result;
 
         if (result != null && !result.Canceled)
-        {
-            // A commit doesn't change file content, only VCS status — no need to reload libraries.
-            // Just invalidate the working copy cache and refresh the tree status markers.
-            RepositoryService.InvalidateWorkingCopyCache(Repository.Id);
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
             Snackbar.Add("Changes committed successfully.", Severity.Success);
-            StateHasChanged();
-        }
+
+        // A commit changes no file content, only VCS status, so this is usually a status refresh.
+        // Not when the working copy was out of date: the dialog updated it before committing, which
+        // rewrites files, and that has to be reloaded whether or not the commit then went ahead (B296).
+        await AfterVcsDialogAsync(repository, outcome, "commit");
     }
 
-    private async Task ShowRevertFilesDialog()
+    private Task ShowRevertFilesDialog() => RunVcsOperationAsync(RevertFilesAsync);
+
+    private async Task RevertFilesAsync()
     {
         if (Repository == null)
             return;
@@ -798,19 +1426,26 @@ public partial class LibraryBrowser : IDisposable
             // (re-parses from disk) and formerly-added files deleted by the revert (removes
             // their models from the graph).
             bool hasMoChanges = false;
-            foreach (var relativePath in revertedRelativePaths)
+
+            // One tree announcement for the whole revert, not one per file (B293). Each announcement
+            // costs every open tree a working-copy status query and a rebuild, and reverting a
+            // reformatted library is thousands of files.
+            using (LibraryDataService.SuppressTreeDataChanged())
             {
-                if (relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                foreach (var relativePath in revertedRelativePaths)
                 {
-                    hasMoChanges = true;
-                    var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
-                    await LibraryDataService.ReloadFileAsync(fullPath);
-                }
-                else if (Path.GetFileName(relativePath).Equals("package.order", StringComparison.OrdinalIgnoreCase))
-                {
-                    // package.order affects library structure — needs full pipeline but not a full
-                    // library reload; flag so VcsFilesChanged is fired below.
-                    hasMoChanges = true;
+                    if (relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasMoChanges = true;
+                        var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
+                        await LibraryDataService.ReloadFileAsync(fullPath);
+                    }
+                    else if (Path.GetFileName(relativePath).Equals("package.order", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // package.order affects library structure — needs full pipeline but not a full
+                        // library reload; flag so VcsFilesChanged is fired below.
+                        hasMoChanges = true;
+                    }
                 }
             }
 
@@ -826,7 +1461,7 @@ public partial class LibraryBrowser : IDisposable
                     affectedModelIds.Add(model.Id);
             }
 
-            // Check VCS status first so AnnotateVcsStatus in RefreshTreeItems uses fresh data.
+            // Check VCS status first so the markers the refreshed tree draws are current.
             await CheckForUncommittedChangesAsync();
             await RefreshTreeItems();
 
@@ -855,33 +1490,34 @@ public partial class LibraryBrowser : IDisposable
         _showGitMenuDialog = !_showGitMenuDialog;
     }
 
-    private async Task RebaseBranch()
+    private Task RebaseBranch() => RunVcsOperationAsync(RebaseBranchAsync);
+
+    private async Task RebaseBranchAsync()
     {
         _showGitMenuDialog = false;
 
         if (Repository == null)
             return;
 
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<GitRebaseDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialog = await DialogService.ShowAsync<GitRebaseDialog>("Rebase Branch", parameters, options);
-        var result = await dialog.Result;
+        await dialog.Result;
 
-        if (result != null && !result.Canceled)
-        {
-            // RefreshRepositoryAsync reloads all libraries — clear stale expansion state.
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-            _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-            StateHasChanged();
-        }
+        // However it closed: a rebase cancelled in its conflict phase has still rewritten the working
+        // copy, and the outcome says so where a cancelled result cannot (B296).
+        await AfterVcsDialogAsync(repository, outcome, "rebase");
     }
 
-    private async Task PushToRemote()
+    private Task PushToRemote() => RunVcsOperationAsync(PushToRemoteAsync);
+
+    private async Task PushToRemoteAsync()
     {
         _showGitMenuDialog = false;
 
@@ -897,8 +1533,9 @@ public partial class LibraryBrowser : IDisposable
 
             if (result.Success)
             {
+                // Nothing to reload: a push sends commits and changes no file. This used to remove
+                // and reload every library for it (B296).
                 Snackbar.Add("Push successful.", Severity.Success);
-                await RepositoryService.RefreshRepositoryAsync(Repository.Id);
                 StateHasChanged();
             }
             else

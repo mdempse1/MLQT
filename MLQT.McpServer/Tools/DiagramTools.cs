@@ -1,5 +1,8 @@
 using System.ComponentModel;
 using System.Text.RegularExpressions;
+using ModelicaGraph.Analysis;
+using ModelicaParser.DataTypes;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
@@ -19,11 +22,6 @@ namespace MLQT.McpServer.Tools;
 [McpServerToolType]
 public sealed class DiagramTools
 {
-    private static readonly Regex ExtentRegex =
-        new(@"extent\s*=\s*\{\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*,\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*\}",
-            RegexOptions.Compiled);
-    private static readonly Regex RotationRegex = new(@"rotation\s*=\s*(-?\d+)", RegexOptions.Compiled);
-
     private readonly ILibraryDataService _libraries;
     private readonly IExternalResourceService _resources;
     private readonly SessionState _session;
@@ -37,8 +35,13 @@ public sealed class DiagramTools
 
     [McpServerTool(Name = "get_diagram_layout")]
     [Description("Get a class's diagram layout: each component's name, type and Placement extent " +
-                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. Use " +
-                "this to see how a model is arranged before adjusting it. Read-only.")]
+                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. " +
+                "INHERITED components are included, marked with the base class they come from - most " +
+                "blocks declare no connector of their own and get their ports from a base class - and " +
+                "so are PROTECTED ones, which are hidden from the class's users but not from its diagram. An " +
+                "extent is absolute: a Placement written with an origin has it added in already. Use " +
+                "this to see how a model is arranged before adjusting it, and get_diagram_image to " +
+                "look at it. Read-only.")]
     public object GetDiagramLayout(
         [Description("Fully-qualified class id.")] string classId)
     {
@@ -49,14 +52,23 @@ public sealed class DiagramTools
             return new ToolError($"Class '{classId}' failed to parse.");
 
         var code = node.Definition.ModelicaCode ?? string.Empty;
-        var layout = ClassBodyLocator.Analyze(code);
 
-        var components = layout.Components.Select(c =>
-        {
-            var text = code[c.DeclStart..(c.DeclStop + 1)];
-            var (extent, rotation) = ParsePlacement(text);
-            return new DiagramComponent(c.Name, c.TypeText, extent, rotation);
-        }).ToList();
+        // The same reader the image and the connection router use, so the numbers and the picture
+        // cannot describe different diagrams - which they did while this had a regex of its own.
+        var placements = DiagramGeometry.Placements(_libraries, classId, code);
+
+        // The components the image draws, protected ones included (B315).
+        var components = DiagramImage.Members(_libraries, node)
+            .Select(m =>
+            {
+                placements.TryGetValue(m.Element.Name, out var placement);
+                return new DiagramComponent(
+                    m.Element.Name, m.Element.Type,
+                    placement is null ? null : [.. placement.Extent.Select(ToInt)],
+                    placement is null or { Rotation: 0 } ? null : ToInt(placement.Rotation),
+                    m.InheritedFrom);
+            })
+            .ToList();
 
         var connections = BehaviorExtractor.ExtractFromCode(code).Connections
             .Select(x => new ConnectionView(x.PortA, x.PortB)).ToList();
@@ -64,11 +76,67 @@ public sealed class DiagramTools
         return new DiagramLayoutResult(classId, components, connections);
     }
 
+    [McpServerTool(Name = "get_diagram_image")]
+    [Description("Render a class's diagram as a PNG image and return it, so you can LOOK at a layout " +
+                "rather than read its coordinates back. Each component is drawn with its own type's " +
+                "icon at its Placement, with the connection lines between them; a component whose type " +
+                "is not loaded is drawn as a dashed box with its name, so an unresolved type and an " +
+                "absent component do not look alike. Anything placed outside the class's coordinate " +
+                "system is still shown, with the declared canvas outlined - being able to see that is " +
+                "most of the point. Use it after set_component_placement / add_connection to check what " +
+                "you built: overlapping components, a signal flowing right to left and a connector left " +
+                "on the wrong edge are obvious here and invisible in get_diagram_layout. Needs only a " +
+                "loaded library.")]
+    public object GetDiagramImage(
+        [Description("Fully-qualified class id.")] string classId,
+        [Description("Image width in pixels (default 800, 200-2000). The height follows the diagram's " +
+                     "aspect ratio.")]
+        int width = 800)
+    {
+        var node = _libraries.GetModelById(classId);
+        if (node is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (node.IsParseFailurePlaceholder)
+            return new ToolError($"Class '{classId}' failed to parse.");
+
+        width = Math.Clamp(width, DiagramImage.MinWidth, DiagramImage.MaxWidth);
+
+        string? svg;
+        try
+        {
+            svg = DiagramImage.RenderSvg(_libraries, node, width);
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not draw the diagram of '{classId}': {ex.Message}");
+        }
+
+        if (svg is null)
+            return new ToolError(
+                $"'{classId}' has nothing to draw: no component carries a Placement and the class has no "
+                + "diagram graphics of its own. Use set_component_placement to position its components.");
+
+        try
+        {
+            return new ImageContentBlock
+            {
+                MimeType = "image/png",
+                // Data is the base64 as UTF-8 bytes, which is what goes on the wire.
+                Data = System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(DiagramImage.ToPng(svg))),
+            };
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not rasterise the diagram of '{classId}': {ex.Message}");
+        }
+    }
+
     [McpServerTool(Name = "set_component_placement")]
     [Description("Set (or replace) a component's diagram Placement so it appears at a given position. " +
                 "Provide the component name and its bounding extent x1,y1,x2,y2 (diagram units, e.g. " +
                 "-10,-10,10,10) and an optional rotation. Adds a Placement annotation if the component has " +
-                "none, or replaces the existing one. Any connection to this component whose other end is " +
+                "none; otherwise replaces only its transformation (the diagram position), keeping its " +
+                "iconTransformation (where it sits on the class's icon) and visible. Any connection to this component whose other end is " +
                 "also placed automatically gets (or has refreshed) an orthogonal diagram Line routed between " +
                 "the connector positions, so positioned components appear wired up — no separate call " +
                 "needed. Fails if the component doesn't exist or the result would not parse. Set " +
@@ -103,18 +171,7 @@ public sealed class DiagramTools
         return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, null);
     }
 
-    private static (IReadOnlyList<int>? Extent, int? Rotation) ParsePlacement(string componentText)
-    {
-        var m = ExtentRegex.Match(componentText);
-        IReadOnlyList<int>? extent = null;
-        if (m.Success)
-            extent = new[] { ToInt(m.Groups[1].Value), ToInt(m.Groups[2].Value), ToInt(m.Groups[3].Value), ToInt(m.Groups[4].Value) };
-        var rot = RotationRegex.Match(componentText);
-        int? rotation = rot.Success ? ToInt(rot.Groups[1].Value) : null;
-        return (extent, rotation);
-    }
-
-    private static int ToInt(string s) => (int)Math.Round(double.Parse(s, System.Globalization.CultureInfo.InvariantCulture));
+    private static int ToInt(double value) => (int)Math.Round(value);
 
     // Set the Placement on a component, returning the new class code, or null if the component is absent.
     private static string? SetPlacement(string classCode, string componentName, int x1, int y1, int x2, int y2, int rotation)
@@ -125,14 +182,16 @@ public sealed class DiagramTools
 
         var extent = "{{" + x1 + "," + y1 + "},{" + x2 + "," + y2 + "}}";
         var rot = rotation != 0 ? ", rotation=" + rotation : string.Empty;
-        var placement = "Placement(transformation(extent=" + extent + rot + "))";
+        var transformation = "transformation(extent=" + extent + rot + ")";
+        var placement = "Placement(" + transformation + ")";
 
         var annotation = decl.comment()?.annotation();
         if (annotation is not null)
         {
             var existing = FindPlacementArgument(annotation);
             if (existing is not null)
-                return classCode[..existing.Start.StartIndex] + placement + classCode[(existing.Stop.StopIndex + 1)..];
+                return ReplaceTransformation(classCode, existing, transformation)
+                       ?? classCode[..existing.Start.StartIndex] + placement + classCode[(existing.Stop.StopIndex + 1)..];
 
             // Annotation exists but no Placement: insert as the first argument.
             var cm = annotation.class_modification();
@@ -148,16 +207,46 @@ public sealed class DiagramTools
     }
 
     private static modelicaParser.ArgumentContext? FindPlacementArgument(modelicaParser.AnnotationContext annotation)
+        => FindArgument(annotation.class_modification(), "Placement");
+
+    private static modelicaParser.ArgumentContext? FindArgument(
+        modelicaParser.Class_modificationContext? modification, string name)
     {
-        var argList = annotation.class_modification()?.argument_list();
+        var argList = modification?.argument_list();
         if (argList is null)
             return null;
         foreach (var arg in argList.argument())
         {
-            var name = arg.element_modification_or_replaceable()?.element_modification()?.name()?.GetText();
-            if (name == "Placement")
+            if (arg.element_modification_or_replaceable()?.element_modification()?.name()?.GetText() == name)
                 return arg;
         }
         return null;
+    }
+
+    /// <summary>
+    /// The class code with only the <c>transformation(...)</c> of an existing Placement replaced -
+    /// or added as its first argument when it has none - or null when the Placement has no argument
+    /// list to edit.
+    ///
+    /// <para><b>Only the transformation</b> (B321). A Placement also carries
+    /// <c>iconTransformation</c>, where the component sits on the enclosing class's <i>icon</i>,
+    /// and <c>visible</c>. Overwriting the whole Placement deleted both, so moving a class's own
+    /// connector on its diagram moved it on the class's icon too, in every diagram that uses the
+    /// class. The old transformation's <c>origin</c> and <c>rotation</c> do go: the extent this
+    /// writes is absolute.</para>
+    /// </summary>
+    private static string? ReplaceTransformation(
+        string classCode, modelicaParser.ArgumentContext placement, string transformation)
+    {
+        var arguments = placement.element_modification_or_replaceable()?.element_modification()
+            ?.modification()?.class_modification();
+        if (arguments?.argument_list() is null)
+            return null;
+
+        if (FindArgument(arguments, "transformation") is { } existing)
+            return classCode[..existing.Start.StartIndex] + transformation + classCode[(existing.Stop.StopIndex + 1)..];
+
+        var at = arguments.Start.StartIndex + 1; // just after '('
+        return classCode[..at] + transformation + ", " + classCode[at..];
     }
 }

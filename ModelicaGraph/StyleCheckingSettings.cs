@@ -15,7 +15,6 @@ public class StyleCheckingSettings
 
     // Code formatting settings (formatter flags — NOT style-check rules; consumed by ModelicaRenderer)
     public bool ApplyFormattingRules { get; set; } = false;
-    public bool ComponentsBeforeClasses { get; set; } = false;
 
     // ---------------------------------------------------------------------------------------------
     // Per-rule severity map (the source of truth for rule enablement/severity).
@@ -41,6 +40,43 @@ public class StyleCheckingSettings
     public SortedDictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Writes down what is currently implicit: every rule that is on by default and has no entry
+    /// gets one, at the severity it is running with.
+    ///
+    /// <para><b>Called before a repository's settings are saved</b>, because that file is committed
+    /// and read by people and by CI. A rule that is on because MLQT says so and is nowhere in the
+    /// file is a gate nobody reviewing the repository can see, and it moves under them if a later
+    /// version changes its mind about the default. Recording it makes the repository's own answer
+    /// explicit and stops it changing by upgrade (B244).</para>
+    ///
+    /// <para>It only ever adds. A rule switched off is already written as <c>Off</c>, and an
+    /// explicit severity is left exactly as it is.</para>
+    /// </summary>
+    public void RecordDefaults()
+    {
+        foreach (var rule in RuleCatalog.Configurable.Where(d => d.EnabledByDefault))
+            if (!RuleSeverities.ContainsKey(rule.Id))
+                RuleSeverities[rule.Id] = SeverityFor(rule.Id);
+    }
+
+    /// <summary>
+    /// Settings with <b>every</b> rule off, including any that is on by default.
+    ///
+    /// <para><c>new StyleCheckingSettings()</c> used to mean this and no longer does: a rule marked
+    /// <see cref="RuleDefinition.EnabledByDefault"/> is on in a fresh object, which is the whole
+    /// point of the flag. Anything that means "check nothing" — a caller asking for no rules, or a
+    /// test whose subject is what happens when none are configured — has to say so, and this is
+    /// where it says it.</para>
+    /// </summary>
+    public static StyleCheckingSettings NothingEnabled()
+    {
+        var settings = new StyleCheckingSettings();
+        foreach (var rule in RuleCatalog.Configurable.Where(d => d.EnabledByDefault))
+            settings.SetRuleEnabled(rule.Id, false);
+        return settings;
+    }
+
+    /// <summary>
     /// The layout the formatter should write with, for these settings.
     ///
     /// <para>The one place the rule switches are translated into renderer options, so the app, the
@@ -52,6 +88,7 @@ public class StyleCheckingSettings
         OneOfEachSection: OneOfEachSection,
         ImportsFirst: ImportStatementsFirst,
         ComponentsBeforeClasses: ComponentsBeforeClasses,
+        DeclarationOrder: DeclarationOrder,
         // The two initial-section rules are mutually exclusive in the settings UI, so this reads
         // "last if the repository asked for last, otherwise first".
         InitialSectionsLast: InitialEQAlgoLast);
@@ -79,7 +116,16 @@ public class StyleCheckingSettings
         if (RuleCatalog.RequiredRuleFor(ruleId) is { } prerequisite && !IsRuleEnabled(prerequisite))
             return RuleSeverity.Off;
 
+        // Absent means "not configured", which is off for almost every rule — and on for one that
+        // reports a library drifting away from the layout MLQT maintains (see
+        // RuleDefinition.EnabledByDefault). A rule that is on by default is turned off by storing
+        // Off, not by removing the key, so an absent key can be read as "never asked" either way.
         if (!RuleSeverities.TryGetValue(ruleId, out var stored))
+            return RuleCatalog.IsEnabledByDefault(ruleId)
+                ? RuleCatalog.DefaultSeverityFor(ruleId)
+                : RuleSeverity.Off;
+
+        if (stored == RuleSeverity.Off)
             return RuleSeverity.Off;
 
         // A layout rule the formatter maintains is not judged at a level somebody typed: it is a
@@ -148,6 +194,10 @@ public class StyleCheckingSettings
         !SeveritiesEqual(other) ||
         ApplyFormattingRules != other.ApplyFormattingRules ||
         ComponentsBeforeClasses != other.ComponentsBeforeClasses ||
+        DeclarationOrder != other.DeclarationOrder ||
+        // Changes which package.order findings are reported, so the answer differs even though no
+        // rule was switched on or off.
+        PackageOrderMatchesDymola != other.PackageOrderMatchesDymola ||
         !NamingConvention.Equals(other.NamingConvention) ||
         !SpellCheckLanguages.SequenceEqual(other.SpellCheckLanguages) ||
         !ExcludedLibraries.SequenceEqual(other.ExcludedLibraries, StringComparer.OrdinalIgnoreCase) ||
@@ -190,10 +240,18 @@ public class StyleCheckingSettings
     /// settings off, when it had done nothing of the kind and ticking the prerequisite back on would
     /// bring them all straight back. Showing what is configured, greyed out, is the honest version.</para>
     /// </summary>
-    public bool IsRuleSwitchedOn(string ruleId) =>
-        RuleCatalog.GovernorOf(ruleId) is { } governor
-            ? IsRuleSwitchedOn(governor)
-            : RuleSeverities.ContainsKey(ruleId);
+    public bool IsRuleSwitchedOn(string ruleId)
+    {
+        if (RuleCatalog.GovernorOf(ruleId) is { } governor)
+            return IsRuleSwitchedOn(governor);
+
+        // An explicit Off is a repository saying no, which only a rule that is on by default ever
+        // has to store — but reading it here rather than treating any key as "on" keeps the two
+        // answers from disagreeing.
+        return RuleSeverities.TryGetValue(ruleId, out var stored)
+            ? stored != RuleSeverity.Off
+            : RuleCatalog.IsEnabledByDefault(ruleId);
+    }
 
     /// <summary>Enable a rule at its catalog default severity, or disable it. Public so a data-driven
     /// settings UI can bind a toggle to a rule id.</summary>
@@ -203,13 +261,31 @@ public class StyleCheckingSettings
         {
             // Don't overwrite an explicit severity (e.g. Error) — only seed the default when absent.
             // This keeps bool/map reconciliation order-independent during deserialization.
-            if (!RuleSeverities.ContainsKey(ruleId))
+            //
+            // A stored Off counts as absent here. It is how a rule that is on by default records
+            // being switched off, and without this, switching such a rule back on would find a key
+            // already there and leave it Off — the same shape as B238, seen from the other side.
+            if (!RuleSeverities.TryGetValue(ruleId, out var existing) || existing == RuleSeverity.Off)
                 RuleSeverities[ruleId] = RuleCatalog.DefaultSeverityFor(ruleId);
         }
         else
         {
-            RuleSeverities.Remove(ruleId);
+            StoreOffOrRemove(ruleId);
         }
+    }
+
+    /// <summary>
+    /// Records that a rule is off. For a rule that is off until someone turns it on, that is simply
+    /// the absence of a key. For one that is <em>on</em> until someone turns it off, the absence of a
+    /// key means the opposite, so the Off has to be written down — otherwise switching it off would
+    /// not survive being saved and read back, which is the defect B238 fixed one layer along.
+    /// </summary>
+    private void StoreOffOrRemove(string ruleId)
+    {
+        if (RuleCatalog.IsEnabledByDefault(ruleId))
+            RuleSeverities[ruleId] = RuleSeverity.Off;
+        else
+            RuleSeverities.Remove(ruleId);
     }
 
     /// <summary>Set an explicit severity for a rule. <see cref="RuleSeverity.Off"/> disables it
@@ -218,21 +294,99 @@ public class StyleCheckingSettings
     public void SetRuleSeverity(string ruleId, RuleSeverity severity)
     {
         if (severity == RuleSeverity.Off)
-            RuleSeverities.Remove(ruleId);
+            StoreOffOrRemove(ruleId);
         else
             RuleSeverities[ruleId] = severity;
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // The four rules with a prerequisite are NOT serialized through their bool facade (B238).
+    //
+    // A facade's getter answers the effective question — "will this rule run?" — which is what every
+    // caller of it wants and is false while the prerequisite is off. Serializing that wrote
+    // `"ImportStatementsFirst": false` for a rule the user had switched on, and because the bool
+    // setter *removes* the map entry when given false, reading the file back deleted the entry that
+    // the RuleSeverities map ahead of it had just restored. So a repository that switched an
+    // ordering rule on and then turned OneOfEachSection off lost the ordering rule at the next save,
+    // silently, while the settings dialog went on showing it ticked — the dialog binds to
+    // IsRuleSwitchedOn precisely so an inert rule still reads as configured.
+    //
+    // The bool reconciliation was designed to be order-independent and is, for `true`: enabling only
+    // seeds a default when the map has no entry. The asymmetry is that disabling removes
+    // unconditionally, which is right for a caller saying "turn this off" and wrong for a redundant
+    // `false` that only means "not currently in effect".
+    //
+    // So the legacy JSON name now carries the *configured* value, and the effective facade is out of
+    // the JSON surface entirely. Old settings files still load — the name they use is unchanged —
+    // and nothing that reads the facade in C# changes meaning.
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The configured state of a rule with a prerequisite, under the property name settings files
+    /// have always used. See the note above: this is what is written and read, while the facade
+    /// beside it stays the effective answer for callers.
+    /// </summary>
+    private bool Configured(string ruleId) => IsRuleSwitchedOn(ruleId);
+
     // Code formatting style rules
+    [JsonIgnore]
     public bool ImportStatementsFirst
     {
         get => IsRuleEnabled(RuleIds.ImportStatementsFirst);
         set => SetRuleEnabled(RuleIds.ImportStatementsFirst, value);
     }
+
+    [JsonPropertyName(nameof(ImportStatementsFirst))]
+    public bool ImportStatementsFirstConfigured
+    {
+        get => Configured(RuleIds.ImportStatementsFirst);
+        set => SetRuleEnabled(RuleIds.ImportStatementsFirst, value);
+    }
+
+    // No prerequisite, so effective and configured are the same answer and the facade serializes
+    // unchanged. It is the prerequisite of the other three.
     public bool OneOfEachSection
     {
         get => IsRuleEnabled(RuleIds.OneOfEachSection);
         set => SetRuleEnabled(RuleIds.OneOfEachSection, value);
+    }
+
+    /// <summary>
+    /// Was a plain formatter flag until B181 gave it a rule id. The JSON property name is unchanged,
+    /// so a settings file written by an earlier MLQT still loads.
+    /// </summary>
+    [JsonIgnore]
+    public bool ComponentsBeforeClasses
+    {
+        get => IsRuleEnabled(RuleIds.ComponentsBeforeClasses);
+        set => SetRuleEnabled(RuleIds.ComponentsBeforeClasses, value);
+    }
+
+    [JsonPropertyName(nameof(ComponentsBeforeClasses))]
+    public bool ComponentsBeforeClassesConfigured
+    {
+        get => Configured(RuleIds.ComponentsBeforeClasses);
+        set => SetRuleEnabled(RuleIds.ComponentsBeforeClasses, value);
+    }
+
+    /// <summary>
+    /// The finer ordering <see cref="ComponentsBeforeClasses"/> is the last boundary of: inputs and
+    /// outputs, constants, parameters, variables, components. Separate from it rather than folded
+    /// in, so that a repository which had the coarse rule on does not silently acquire a different
+    /// set of findings and a baseline full of drift (B252).
+    /// </summary>
+    [JsonIgnore]
+    public bool DeclarationOrder
+    {
+        get => IsRuleEnabled(RuleIds.DeclarationOrder);
+        set => SetRuleEnabled(RuleIds.DeclarationOrder, value);
+    }
+
+    [JsonPropertyName(nameof(DeclarationOrder))]
+    public bool DeclarationOrderConfigured
+    {
+        get => Configured(RuleIds.DeclarationOrder);
+        set => SetRuleEnabled(RuleIds.DeclarationOrder, value);
     }
     public bool DontMixEquationAndAlgorithm
     {
@@ -244,14 +398,31 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.DontMixConnections);
         set => SetRuleEnabled(RuleIds.DontMixConnections, value);
     }
+    [JsonIgnore]
     public bool InitialEQAlgoFirst
     {
         get => IsRuleEnabled(RuleIds.InitialEqAlgoFirst);
         set => SetRuleEnabled(RuleIds.InitialEqAlgoFirst, value);
     }
+
+    [JsonPropertyName(nameof(InitialEQAlgoFirst))]
+    public bool InitialEQAlgoFirstConfigured
+    {
+        get => Configured(RuleIds.InitialEqAlgoFirst);
+        set => SetRuleEnabled(RuleIds.InitialEqAlgoFirst, value);
+    }
+
+    [JsonIgnore]
     public bool InitialEQAlgoLast
     {
         get => IsRuleEnabled(RuleIds.InitialEqAlgoLast);
+        set => SetRuleEnabled(RuleIds.InitialEqAlgoLast, value);
+    }
+
+    [JsonPropertyName(nameof(InitialEQAlgoLast))]
+    public bool InitialEQAlgoLastConfigured
+    {
+        get => Configured(RuleIds.InitialEqAlgoLast);
         set => SetRuleEnabled(RuleIds.InitialEqAlgoLast, value);
     }
 
@@ -428,6 +599,34 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.PackageOrder);
         set => SetRuleEnabled(RuleIds.PackageOrder, value);
     }
+    /// <summary>
+    /// Not serialized, unlike the other facades: a bool cannot say "not configured", and for a rule
+    /// that is on by default that is the difference between a file saying nothing and a file saying
+    /// yes. Writing it out added a key to every settings file that was merely read and written back.
+    /// The severity map is the only store for this rule, which is what it should be.
+    /// </summary>
+    [JsonIgnore]
+    public bool CheckSingleFilePackage
+    {
+        get => IsRuleEnabled(RuleIds.SingleFilePackage);
+        set => SetRuleEnabled(RuleIds.SingleFilePackage, value);
+    }
+
+    /// <summary>
+    /// Narrow <c>MLQT.Structure.PackageOrder</c> to what Dymola's own loader would warn about: a
+    /// child class stored where Dymola looks for it and missing from package.order (B195).
+    ///
+    /// <para>A modifier on a rule rather than a rule of its own, because it does not decide whether
+    /// anything is checked — it decides which of one rule's findings are reported. Off means MLQT's
+    /// full answer, which is the larger one: Dymola never descends into a directory that is not a
+    /// package, so a class stored somewhere it does not look produces no warning from it at all, and
+    /// it says nothing about a package.order entry naming something that is not there.</para>
+    ///
+    /// <para>The use for it is a repository whose agreed standard is "no warnings on load in
+    /// Dymola". Turning it on makes MLQT's gate the same gate rather than a stricter one that fails
+    /// a build over something the tool of record accepts.</para>
+    /// </summary>
+    public bool PackageOrderMatchesDymola { get; set; } = false;
     public bool CheckUsesUndeclared
     {
         get => IsRuleEnabled(RuleIds.UsesUndeclared);
@@ -472,7 +671,20 @@ public class StyleCheckingSettings
     /// in the map and does nothing, and a settings file holding only those would otherwise announce
     /// that rules are enabled and then report nothing, which is the least debuggable outcome there is.
     /// </summary>
-    public bool HasAnyStyleRuleEnabled => RuleSeverities.Keys.Any(IsRuleEnabled);
+    /// <summary>
+    /// Whether anything is enabled beyond the rules that are on without being asked for.
+    ///
+    /// <para>The question a tool asks before telling a user their report is thinner than it looks:
+    /// a library nobody has configured is not silent any more, and one rule's worth of findings
+    /// reads like a clean bill of health.</para>
+    /// </summary>
+    public bool HasAnyRuleEnabledBeyondTheDefaults =>
+        RuleCatalog.Configurable.Any(d => !d.EnabledByDefault && IsRuleEnabled(d.Id));
+
+    public bool HasAnyStyleRuleEnabled =>
+        RuleSeverities.Keys.Any(IsRuleEnabled)
+        // ...and the rules that are on without a key, which no repository has to mention.
+        || RuleCatalog.Configurable.Any(d => d.EnabledByDefault && IsRuleEnabled(d.Id));
 
     /// <summary>
     /// Stamps each finding with the severity these settings resolve for its rule, in place.

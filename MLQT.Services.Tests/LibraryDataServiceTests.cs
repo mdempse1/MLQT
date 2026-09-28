@@ -1091,6 +1091,200 @@ end TestPkg;
         }
     }
 
+    /// <summary>
+    /// Two libraries side by side whose directory names share a prefix, <c>Lib</c> loaded first, and
+    /// a new file arriving in <c>LibExtra</c>. A file the graph has not seen yet is given to a library
+    /// by its path, and that used to be a bare <c>StartsWith</c>: <c>…/Lib</c> is a prefix of
+    /// <c>…/LibExtra/New.mo</c>, so the new class was indexed under <c>Lib</c> (B323 follow-up).
+    /// </summary>
+    private static async Task<(LibraryDataService Service, LoadedLibrary Lib, LoadedLibrary Extra, string Root, string NewFile)>
+        SiblingLibrariesWithANewFileAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-siblings-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "Lib");
+        var extra = Path.Combine(root, "LibExtra");
+        Directory.CreateDirectory(lib);
+        Directory.CreateDirectory(extra);
+        await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        await File.WriteAllTextAsync(Path.Combine(extra, "package.mo"), "package LibExtra\nend LibExtra;\n");
+
+        var service = new LibraryDataService();
+        var libLibrary = await service.AddLibraryFromDirectoryAsync(lib);
+        var extraLibrary = await service.AddLibraryFromDirectoryAsync(extra);
+
+        var newFile = Path.Combine(extra, "New.mo");
+        await File.WriteAllTextAsync(newFile, "within LibExtra;\nmodel New\nend New;\n");
+        return (service, libLibrary, extraLibrary, root, newFile);
+    }
+
+    [Fact]
+    public async Task ReloadFileAsync_ANewFile_BelongsToItsOwnLibrary_NotOneWhosePathIsAPrefix()
+    {
+        var (service, lib, extra, root, newFile) = await SiblingLibrariesWithANewFileAsync();
+        try
+        {
+            await service.ReloadFileAsync(newFile);
+
+            Assert.Contains("LibExtra.New", extra.ModelIds);
+            Assert.DoesNotContain("LibExtra.New", lib.ModelIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateChangedFilesAsync_ANewFile_BelongsToItsOwnLibrary_NotOneWhosePathIsAPrefix()
+    {
+        var (service, lib, extra, root, newFile) = await SiblingLibrariesWithANewFileAsync();
+        try
+        {
+            await service.UpdateChangedFilesAsync([newFile], root);
+
+            Assert.Contains("LibExtra.New", extra.ModelIds);
+            Assert.DoesNotContain("LibExtra.New", lib.ModelIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateChangedFilesAsync_AFileInAnotherWorkingCopy_KeepsItsOwnPath()
+    {
+        // Refresh hands every pending change to the first repository's root (B384); a change in a
+        // second working copy must still be stored under its own path and in its own library.
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-two-copies-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "A", "Lib");
+        var other = Path.Combine(root, "B", "Other");
+        Directory.CreateDirectory(lib);
+        Directory.CreateDirectory(other);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+            var package = Path.Combine(other, "package.mo");
+            await File.WriteAllTextAsync(package, "package Other\nmodel M\nend M;\nend Other;\n");
+            var service = new LibraryDataService();
+            await service.AddLibraryFromDirectoryAsync(lib);
+            var otherLibrary = await service.AddLibraryFromDirectoryAsync(other);
+
+            await File.WriteAllTextAsync(package, "package Other\nmodel M\nend M;\nmodel N\nend N;\nend Other;\n");
+            await service.UpdateChangedFilesAsync([package], Path.Combine(root, "A"));
+
+            var n = service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("Other.N");
+            Assert.NotNull(n);
+            var file = service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(n.ContainingFileId!);
+            Assert.Equal(Path.GetFullPath(package), file!.FilePath);
+            Assert.Contains("Other.N", otherLibrary.ModelIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ============================================================================
+    // RefreshDependenciesAsync - a reload takes the file's dependency edges (B290)
+    // ============================================================================
+
+    /// <summary>
+    /// A one-file-per-class library: <c>Der</c> extends <c>Base</c>, and <c>User</c> declares a
+    /// <c>Der</c> - so reloading Der.mo loses an edge in each direction.
+    /// </summary>
+    private static async Task<(LibraryDataService Service, string Root, string DerFile)> AnalysedLibraryAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-refresh-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "Lib");
+        Directory.CreateDirectory(lib);
+        await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        await File.WriteAllTextAsync(Path.Combine(lib, "Base.mo"), "within Lib;\npartial model Base\nend Base;\n");
+        var derFile = Path.Combine(lib, "Der.mo");
+        await File.WriteAllTextAsync(derFile, "within Lib;\nmodel Der \"Derivative\"\n  extends Base;\nend Der;\n");
+        await File.WriteAllTextAsync(Path.Combine(lib, "User.mo"), "within Lib;\nmodel User\n  Der d;\nend User;\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        await service.EnsureDependenciesAnalyzedAsync();
+        return (service, root, derFile);
+    }
+
+    private static List<string> Uses(LibraryDataService service, string id) =>
+        service.CombinedGraph.GetUsedModels(id).Select(m => m.Id).ToList();
+
+    [Fact]
+    public async Task AReloadedClass_HasNoEdgesUntilRefreshed()
+    {
+        var (service, root, derFile) = await AnalysedLibraryAsync();
+        try
+        {
+            Assert.Contains("Lib.Base", Uses(service, "Lib.Der"));
+
+            await File.WriteAllTextAsync(derFile, "within Lib;\nmodel Der \"Derivative of input\"\n  extends Base;\nend Der;\n");
+            var affected = await service.ReloadFileAsync(derFile);
+
+            // What the user saw: the graph still says it is analysed, and the class uses nothing.
+            Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+            Assert.Empty(Uses(service, "Lib.Der"));
+
+            await service.RefreshDependenciesAsync(affected);
+
+            Assert.Equal(["Lib.Base"], Uses(service, "Lib.Der"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Refreshing_RestoresTheEdgesOtherClassesHadToTheReloadedOne()
+    {
+        var (service, root, derFile) = await AnalysedLibraryAsync();
+        try
+        {
+            // User keeps its side - it records the edge by id - but the new Der node does not know it
+            // is used, which is what impact analysis and the unused-class check read.
+            var affected = await service.ReloadFileAsync(derFile);
+            Assert.DoesNotContain("Lib.User", service.CombinedGraph.GetModelUsedBy("Lib.Der").Select(m => m.Id));
+
+            await service.RefreshDependenciesAsync(affected);
+
+            Assert.Contains("Lib.Der", Uses(service, "Lib.User"));
+            Assert.Contains("Lib.User", service.CombinedGraph.GetModelUsedBy("Lib.Der").Select(m => m.Id));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Refreshing_BeforeAnyAnalysis_AnalysesNothing()
+    {
+        // Nothing to keep current, and analysing a handful of classes must not leave the graph
+        // claiming an analysis that never ran over the rest.
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-refresh-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "Lib");
+        Directory.CreateDirectory(lib);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\n  model A\n  end A;\n  model B\n    A a;\n  end B;\nend Lib;\n");
+            var service = new LibraryDataService();
+            await service.AddLibraryFromDirectoryAsync(lib);
+
+            await service.RefreshDependenciesAsync(["Lib.B"]);
+
+            Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+            Assert.Empty(Uses(service, "Lib.B"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     // ============================================================================
     // Multiple libraries
     // ============================================================================
@@ -1270,6 +1464,45 @@ end TestPkg;
         await service.EnsureDependenciesAnalyzedAsync();
 
         Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_CoversALibraryLoadedWhileItRan()
+    {
+        // The run took its set of classes at the start, so B was not in it; marking the graph analysed
+        // at the end claimed edges B did not have, and the caller awaiting the run went on without
+        // them (B352).
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        var loaded = 0;
+
+        await service.EnsureDependenciesAnalyzedAsync(message =>
+        {
+            if (message.StartsWith("Phase 1+2:", StringComparison.Ordinal) && Interlocked.Exchange(ref loaded, 1) == 0)
+                service.AddLibraryFromFileAsync("B.mo", "model B A a; end B;").GetAwaiter().GetResult();
+        });
+
+        Assert.Equal(1, loaded);   // the load did happen mid-run
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
+    }
+
+    [Fact]
+    public async Task AddLibraryFromZipAsync_LeavesTheAnalysisToTheGate()
+    {
+        // It ran a full analysis of its own, outside EnsureDependenciesAnalyzedAsync and without the
+        // library roots. Now it invalidates like every other load, and the gate's run adds the edges.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromZipAsync(new Dictionary<string, string>
+        {
+            ["A.mo"] = "model A Real x; end A;",
+            ["B.mo"] = "model B A a; end B;",
+        });
+        Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+
+        await service.EnsureDependenciesAnalyzedAsync();
+
         Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
     }
 

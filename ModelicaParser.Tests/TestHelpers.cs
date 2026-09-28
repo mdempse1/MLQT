@@ -21,7 +21,10 @@ public class TestHelpers
         int maxLineLength = 100,
         bool onlyOneOfEachSection = false, 
         bool? importsFirst = null,
-        bool? componentsBeforeClasses = null)
+        bool? componentsBeforeClasses = null,
+        bool declarationOrder = false,
+        Func<string, string, bool>? isSimpleType = null,
+        string? rootClassId = null)
     {
         string testModelCode;
         if (testModel.StartsWith("within"))
@@ -40,7 +43,10 @@ public class TestHelpers
             formatting: new FormattingOptions(
                 OneOfEachSection: onlyOneOfEachSection,
                 ImportsFirst: importsFirst ?? onlyOneOfEachSection,
-                ComponentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection));
+                ComponentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection,
+                DeclarationOrder: declarationOrder),
+            rootClassId: rootClassId,
+            isSimpleType: isSimpleType);
         visitor.Visit(parseTree);
 
         // Remove trailing empty lines from actual output
@@ -82,7 +88,10 @@ public class TestHelpers
         int maxLineLength = 100,
         bool onlyOneOfEachSection = false,
         bool? importsFirst = null,
-        bool? componentsBeforeClasses = null)
+        bool? componentsBeforeClasses = null,
+        bool declarationOrder = false,
+        Func<string, string, bool>? isSimpleType = null,
+        string? rootClassId = null)
     {
         string testModelCode;
         if (testModel.StartsWith("within"))
@@ -101,7 +110,10 @@ public class TestHelpers
             formatting: new FormattingOptions(
                 OneOfEachSection: onlyOneOfEachSection,
                 ImportsFirst: importsFirst ?? onlyOneOfEachSection,
-                ComponentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection));
+                ComponentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection,
+                DeclarationOrder: declarationOrder),
+            rootClassId: rootClassId,
+            isSimpleType: isSimpleType);
         visitor.Visit(parseTree);
 
         var actualOutput = visitor.Code.ToList();

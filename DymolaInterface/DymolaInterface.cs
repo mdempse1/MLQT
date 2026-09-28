@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DymolaInterface.Interfaces;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -35,7 +36,7 @@ public sealed class NamedArgument
 /// C# client for Dymola's JSON-RPC scripting API. Mirrors the JavaScript interface
 /// shipped with Dymola (<c>Modelica/Library/javascript_interface/dymola_interface.js</c>).
 /// </summary>
-public class DymolaInterface : IDisposable
+public class DymolaInterface : IDymolaSession
 {
     private readonly string _dymolaPath;
     private readonly int _portNumber;
@@ -45,6 +46,37 @@ public class DymolaInterface : IDisposable
     private Process? _dymolaProcess;
     private int _rpcId;
     private bool _isOffline;
+
+    /// <summary>
+    /// The id for the next JSON-RPC request - the only way one is taken. Atomic, because a probe
+    /// (<see cref="GetSessionStateAsync"/>) runs outside the command lock and can take an id while a
+    /// command is taking one: <c>_rpcId++</c> followed by a second read of <c>_rpcId</c> could hand
+    /// both the same id, or skip one (B396).
+    /// </summary>
+    internal int NextRequestId() => Interlocked.Increment(ref _rpcId);
+
+    /// <summary>
+    /// Offline because the caller said so, which no probe may undo (B262).
+    /// </summary>
+    /// <remarks>
+    /// <para>Kept apart from <see cref="_isOffline"/>, which means "Dymola did not answer" and which
+    /// the recovery probe rightly clears when it answers again. Sharing one flag, the probe could not
+    /// tell the two apart: <see cref="SetOfflineMode"/>(true) was followed by a command that probed,
+    /// found Dymola, cleared the flag and ran — so the switch did nothing, and the only test of it
+    /// asserted that the flag round-tripped, never that a command was held back.</para>
+    ///
+    /// <para><see cref="StopDymolaProcessAsync"/> sets it too. Having stopped Dymola, the next command
+    /// must not reconnect to whatever else is listening on that port — a different Dymola, started
+    /// by somebody else.</para>
+    /// </remarks>
+    private bool _forcedOffline;
+
+    /// <summary>
+    /// What became of the last command — see <see cref="CommandOutcome"/>. Set under the command lock,
+    /// so it belongs to the last command to finish; a caller sharing the interface with another must
+    /// read it before that one's next command.
+    /// </summary>
+    public CommandOutcome LastOutcome { get; private set; } = CommandOutcome.Answered;
     private bool _disposed;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
 
@@ -157,25 +189,39 @@ public class DymolaInterface : IDisposable
 
     #region Process management
 
-    public async Task StartDymolaProcessAsync()
+    /// <summary>
+    /// Starts Dymola with its JSON-RPC server on this interface's port and waits up to thirty seconds
+    /// for it to answer. When the Dymola this interface started is still running, no second one is
+    /// started: the call returns at once if it answers, and otherwise waits for it as for a new one -
+    /// a Dymola slow to come up the first time is still coming up the second (B331).
+    /// </summary>
+    /// <param name="cancellationToken">Stops the wait. A Dymola already launched is left running, and
+    /// the next call waits for it rather than starting another.</param>
+    public async Task StartDymolaProcessAsync(CancellationToken cancellationToken = default)
     {
-        if (_dymolaProcess != null && !_dymolaProcess.HasExited)
+        var alreadyRunning = _dymolaProcess != null && !_dymolaProcess.HasExited;
+        if (alreadyRunning && Probe() == ProbeResult.Answered)
+        {
+            _isOffline = false;
             return;
+        }
 
-        if (string.IsNullOrEmpty(_dymolaPath))
+        if (!alreadyRunning && string.IsNullOrEmpty(_dymolaPath))
             throw new InvalidOperationException("Dymola path not specified.");
 
-        await _commandLock.WaitAsync();
+        await _commandLock.WaitAsync(cancellationToken);
         try
         {
-            _dymolaProcess = Process.Start(CreateStartInfo());
+            if (!alreadyRunning)
+                _dymolaProcess = Process.Start(CreateStartInfo());
 
             for (int i = 0; i < 30; i++)
             {
-                await Task.Delay(1000);
+                await Task.Delay(1000, cancellationToken);
                 if (Probe() == ProbeResult.Answered)
                 {
                     _isOffline = false;
+                    _forcedOffline = false;
                     return;
                 }
             }
@@ -212,18 +258,37 @@ public class DymolaInterface : IDisposable
         {
             if (_dymolaProcess != null && !_dymolaProcess.HasExited)
             {
-                _dymolaProcess.Kill();
+                KillStartedTree(_dymolaProcess);
                 _dymolaProcess.WaitForExit();
                 _dymolaProcess.Dispose();
                 _dymolaProcess = null;
             }
             _isOffline = true;
+            _forcedOffline = true;   // see _forcedOffline: not to be undone by the next probe
         }
         finally
         {
             _commandLock.Release();
         }
     }
+
+    /// <summary>
+    /// Ends the Dymola this interface started and everything it started in turn (B411).
+    /// </summary>
+    /// <remarks>
+    /// <para>What <see cref="_dymolaPath"/> names is not always Dymola. On Linux detection prefers the
+    /// launcher script (<c>/usr/local/bin/dymola</c>, B395), because Dassault's guide says it sets the
+    /// environment the program needs; a script that runs <c>bin64/dymola</c> as a child rather than
+    /// <c>exec</c>-ing it leaves this interface holding the shell. A plain <c>Kill()</c> then ended the
+    /// shell and left Dymola running, with the user's work in it and the port still taken. The tree is
+    /// ended instead, which for a Dymola started directly is the same thing as before. Held by
+    /// <c>MLQT.Services.Tests/DymolaLauncherStopTests</c>.</para>
+    /// <para>What it cannot reach: a launcher that starts Dymola in the background and exits. The
+    /// shell has gone by the time this runs, so <see cref="OwnsProcess"/> is already false and on
+    /// Linux the child has been handed to init, out of any tree. Nothing short of walking the
+    /// process table per platform would find it, and no launcher is known to do that.</para>
+    /// </remarks>
+    private static void KillStartedTree(Process process) => process.Kill(entireProcessTree: true);
 
     /// <summary>
     /// True if this interface started — and therefore owns — a still-running Dymola
@@ -326,8 +391,7 @@ public class DymolaInterface : IDisposable
 
         try
         {
-            _rpcId++;
-            var request = new { method = "ping", @params = (object?)null, id = _rpcId };
+            var request = new { method = "ping", @params = (object?)null, id = NextRequestId() };
             var jsonRequest = JsonSerializer.Serialize(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
             using var limit = new CancellationTokenSource(ConnectionProbeTimeout);
@@ -344,13 +408,76 @@ public class DymolaInterface : IDisposable
         }
     }
 
-    public bool IsOfflineMode() => _isOffline;
-    public void SetOfflineMode(bool enable) => _isOffline = enable;
+    public bool IsOfflineMode() => _forcedOffline || _isOffline;
+
+    /// <summary>
+    /// Holds every command back (<c>true</c>) until told otherwise, or releases that hold
+    /// (<c>false</c>) and treats Dymola as reachable until a command finds it is not.
+    /// </summary>
+    public void SetOfflineMode(bool enable)
+    {
+        _forcedOffline = enable;
+        _isOffline = enable;
+    }
+
+    /// <summary>
+    /// Whether this session can still be used — cheaply, and without waiting on the 300-second
+    /// command timeout.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Asked before handing a cached instance back.</b> Closing Dymola's window ends the
+    /// process and its JSON-RPC server, but the object holding the connection knows nothing about
+    /// it: <see cref="IsOfflineMode"/> is a flag set at construction, not a probe. So the first
+    /// check worked, the window was closed, and every check after it failed against a session that
+    /// had gone (B171).</para>
+    /// <para>Two questions, cheapest first. A process we started that has exited is dead and needs
+    /// no network call to say so; anything else is asked over the wire with a two-second timeout,
+    /// which is what <see cref="PingAsync"/> exists for. A session Dymola was already running when
+    /// MLQT started has no process handle here, and the ping is the whole answer for it.</para>
+    /// </remarks>
+    public async Task<bool> IsAliveAsync()
+    {
+        if (_disposed || _forcedOffline || _isOffline)
+            return false;
+
+        if (_dymolaProcess is { HasExited: true })
+            return false;
+
+        return await PingAsync(_portNumber, _hostname);
+    }
+
+    /// <summary>
+    /// Busy, gone, answering or still starting - the question <see cref="IsAliveAsync"/> cannot
+    /// answer, because a Dymola working on a command fails a ping exactly as a closed one does. Ask
+    /// this before deciding to replace a session: a busy one must be waited for, and disposing it
+    /// kills the Dymola this interface started (B331).
+    /// </summary>
+    public async Task<DymolaSessionState> GetSessionStateAsync()
+    {
+        if (_disposed || _forcedOffline)
+            return DymolaSessionState.Gone;
+
+        if (_dymolaProcess is { HasExited: true })
+            return DymolaSessionState.Gone;
+
+        // On the pool: the probe is synchronous and can take its whole connect and answer budget.
+        var probe = await Task.Run(Probe);
+        switch (probe)
+        {
+            case ProbeResult.Answered:
+                _isOffline = false;   // it answers now, whatever it did before
+                return DymolaSessionState.Answering;
+            case ProbeResult.Busy:
+                return DymolaSessionState.Busy;
+            default:
+                return OwnsProcess ? DymolaSessionState.Starting : DymolaSessionState.Gone;
+        }
+    }
 
     public void Dispose()
     {
         if (_disposed) return;
-        try { _dymolaProcess?.Kill(); _dymolaProcess?.Dispose(); } catch { /* ignore */ }
+        try { if (_dymolaProcess != null) KillStartedTree(_dymolaProcess); _dymolaProcess?.Dispose(); } catch { /* ignore */ }
         _dymolaProcess = null;
         _httpClient.Dispose();
         _commandLock.Dispose();
@@ -496,20 +623,35 @@ public class DymolaInterface : IDisposable
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine($"Dymola command '{cmd}' was cancelled by the caller before it was sent.");
+            LastOutcome = CommandOutcome.Cancelled;
             return null;
         }
 
         try
         {
+            // Held back without asking: the caller said offline, and a probe that found Dymola
+            // would otherwise override them. See _forcedOffline.
+            if (_forcedOffline)
+            {
+                LastOutcome = CommandOutcome.Offline;
+                return null;
+            }
+
             if (_isOffline)
             {
                 if (Probe() != ProbeResult.Answered)
+                {
+                    LastOutcome = CommandOutcome.Offline;
                     return null;
+                }
                 _isOffline = false;
             }
 
-            _rpcId++;
-            int sentId = _rpcId;
+            // Pessimistic until a reply is in hand: every exit below that is not a result is some
+            // kind of failure, and the catches narrow it.
+            LastOutcome = CommandOutcome.Failed;
+
+            int sentId = NextRequestId();
             var fixedParams = FixJsonParameterList(parameters) ?? Array.Empty<object?>();
             var request = new
             {
@@ -537,13 +679,17 @@ public class DymolaInterface : IDisposable
             {
                 Console.Error.WriteLine(
                     $"Dymola answered request {answeredId.GetRawText()} while '{cmd}' (request {sentId}) was waiting; discarding it.");
+                LastOutcome = CommandOutcome.Failed;
                 return null;
             }
 
             if (jsonResponse.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Null)
             {
                 if (jsonResponse.TryGetProperty("result", out var result))
+                {
+                    LastOutcome = CommandOutcome.Answered;
                     return result;
+                }
             }
             else if (jsonResponse.TryGetProperty("error", out var errorObj))
             {
@@ -553,11 +699,13 @@ public class DymolaInterface : IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             Console.Error.WriteLine($"Dymola command '{cmd}' was cancelled by the caller.");
+            LastOutcome = CommandOutcome.Cancelled;
         }
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine(
                 $"Dymola command '{cmd}' gave up after {effectiveTimeout} (CommandTimeout); Dymola may still be running it.");
+            LastOutcome = CommandOutcome.TimedOut;
         }
         catch (Exception e)
         {

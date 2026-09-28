@@ -20,18 +20,48 @@ public interface ILibraryDataService
     /// </summary>
     /// <remarks>
     /// <para>Not <c>Libraries.Sum(l =&gt; l.ModelIds.Count)</c>, which is what the callers used to do
-    /// and which over-counts. The same library is routinely loaded twice — a tool's library folder
-    /// ships the encrypted build of a library the user also has checked out as source — and while only
-    /// one copy of each class survives in the graph, <b>both</b> <c>LoadedLibrary</c> entries can list
-    /// the id. Whether they do depends on which load won the race: a stub is not recorded at all when
-    /// the source is already there, and is recorded and later superseded when it is not.</para>
+    /// and which over-counts whenever two libraries list the same id. Until B268 that was routine: a
+    /// tool's encrypted build and the user's checkout of the same library were both loaded, and whether
+    /// both indexes listed an id depended on which load won the race — so the sum was <b>differently
+    /// wrong each run</b>, 77,860 then 76,129 for one project on consecutive launches. It is the number
+    /// the deferred-analysis threshold is compared against.</para>
     ///
-    /// <para>So the sum was not merely wrong, it was <b>differently wrong each run</b> — the same
-    /// project reported 77,860 and 76,129 on consecutive launches, and the difference was read as a
-    /// symptom of the host migration. It is the number the deferred-analysis threshold is compared
-    /// against.</para>
+    /// <para>An encrypted build is no longer loaded beside source for the same library, so that case
+    /// has gone. The distinct count stays because two libraries can still list one id: two readable
+    /// checkouts of the same library in different repositories, which nothing prevents.</para>
     /// </remarks>
     int TotalModelCount { get; }
+
+    /// <summary>
+    /// Which loaded library a class belongs to — the one whose copy of it is the one in the graph.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Not <c>Libraries.FirstOrDefault(l =&gt; l.ModelIds.Contains(id))</c>, which is what
+    /// five callers used to do</b>, and <c>LibraryOwnershipPolicyTests</c> holds the line. When two
+    /// libraries list the same id, <c>FirstOrDefault</c> returns whichever was added first. Until B268
+    /// that was the ordinary case — a tool's encrypted build loaded beside the user's checkout of the
+    /// same library, both indexes claiming the same classes. An encrypted build is no longer loaded
+    /// beside its source, but two readable checkouts of one library still produce two claimants, and
+    /// the answer here does not depend on load order either way.</para>
+    ///
+    /// <para><b>What that cost.</b> <c>FirstOrDefault</c> returns whichever library was added first,
+    /// which is a race between two parallel loads, so a class could resolve to the vendor's
+    /// read-only copy in <c>Program Files</c> instead of to the user's working copy. Everything
+    /// that asks "which repository is this class in?" then got the wrong answer — the Code Review
+    /// page decided the class was not under version control and disabled all three diff views,
+    /// while the library browser, which goes from the changed <i>file</i> to its models, marked the
+    /// same class as changed. The two disagreed about the same edit, for a subset of classes that
+    /// changed from run to run.</para>
+    ///
+    /// <para><b>The rule is the graph's own.</b> Whichever way <c>AddNode</c> resolved the
+    /// collision, the owning library is the one that could have supplied that node: an encrypted
+    /// library owns a stub, and anything else owns readable source. Where only one library claims
+    /// the class — overwhelmingly the common case — that one is the answer and the node is not
+    /// consulted.</para>
+    /// </remarks>
+    /// <param name="modelId">The class's full Modelica name.</param>
+    /// <returns>The owning library, or null when no loaded library claims the class.</returns>
+    LoadedLibrary? GetOwningLibrary(string modelId);
 
     /// <summary>
     /// Gets the name and root path of each loaded library, as needed by
@@ -120,6 +150,21 @@ public interface ILibraryDataService
     void RemoveLibrary(string libraryId);
 
     /// <summary>
+    /// Records that a library loaded from one <c>.mo</c> file is now the package directory
+    /// <paramref name="directoryPath"/>, as a full format that expanded it into one file per class
+    /// leaves it (B417). Its <see cref="LoadedLibrary.SourcePath"/> becomes the directory, and a
+    /// library opened on its own as a <see cref="LibrarySourceType.File"/> becomes a
+    /// <see cref="LibrarySourceType.Directory"/> — what loading that directory would have made it.
+    /// Its classes and their files are not touched: the save has already moved them.
+    /// </summary>
+    /// <remarks>
+    /// Use <see cref="IRepositoryService.RelocateLibraryAsync"/> for a library in a repository, which
+    /// also moves the repository's record of where the library is.
+    /// </remarks>
+    /// <returns>False when no such library is loaded.</returns>
+    bool RelocateLibrary(string libraryId, string directoryPath);
+
+    /// <summary>
     /// Clears all loaded libraries.
     /// </summary>
     void ClearAllLibraries();
@@ -129,8 +174,30 @@ public interface ILibraryDataService
     /// Removes old models from the file, re-parses, and updates library indexes.
     /// </summary>
     /// <param name="filePath">Path to the file to reload.</param>
-    /// <returns>List of affected model IDs (both removed and newly added).</returns>
+    /// <returns>List of affected model IDs (both removed and newly added), plus the classes in other
+    /// files below a class in this one whose imports changed - their names now resolve differently
+    /// (B347).</returns>
+    /// <remarks>
+    /// <b>The reloaded classes come back with no dependency edges</b>, while the graph goes on saying
+    /// its dependencies are analysed. Call <see cref="RefreshDependenciesAsync"/> with what this
+    /// returns once the edit is complete — after the last reload, when one edit touches several files.
+    /// </remarks>
     Task<List<string>> ReloadFileAsync(string filePath);
+
+    /// <summary>
+    /// Rebuilds the dependency edges of <paramref name="modelIds"/> after they were reloaded, and
+    /// repairs the edges other classes had to them. Does nothing when dependencies have not been
+    /// analysed, since there is nothing to keep current.
+    /// </summary>
+    /// <remarks>
+    /// A reload replaces each class in the file with a new node that uses nothing, and removing the
+    /// old one takes every other class's edge to it as well. Without this, a class the user had just
+    /// corrected a word in offered no classes to go to, and the classes using it stopped showing it
+    /// (B290). Separate from the reload, rather than part of it, because an edit that moves a class
+    /// between files reloads both, and analysing after the first would resolve the moved class while
+    /// it was in neither.
+    /// </remarks>
+    Task RefreshDependenciesAsync(IReadOnlyCollection<string> modelIds);
 
     /// <summary>
     /// Removes all models associated with a specific file from the graph.
@@ -182,6 +249,19 @@ public interface ILibraryDataService
     /// </summary>
     /// <returns>All model nodes.</returns>
     IEnumerable<ModelNode> GetAllModels();
+
+    /// <summary>
+    /// Every package that contains, at any depth, a class that failed to parse — so a tree can show
+    /// the warning on the ancestors and lead the user down to it.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Computed here, once, rather than by each tree.</b> The answer does not depend on
+    /// which repository is asking, but each library browser used to walk every model in the project
+    /// to work it out: 69,141 of them, on the dispatcher, once per repository per refresh. Measured
+    /// at <b>872ms</b> for one of those walks while a load still held the lock (B258).</para>
+    /// <para>Recomputed when the libraries change, which is exactly when the trees rebuild.</para>
+    /// </remarks>
+    IReadOnlySet<string> ModelsWithDescendantParserErrors();
 
     /// <summary>
     /// Gets the combined graph containing all models from all libraries.

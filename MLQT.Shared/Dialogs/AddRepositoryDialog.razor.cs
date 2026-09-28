@@ -192,6 +192,17 @@ public partial class AddRepositoryDialog
                 await RepositoryService.LoadLibrariesAsync(_addedRepositoryId, selectedLibraries);
                 var repository = RepositoryService.GetRepository(_addedRepositoryId);
 
+                // Discovered but none of them loaded — a different failure from finding nothing, and
+                // it was equally silent (B206). LoadLibrariesAsync logs each failure and carries on,
+                // so without this the dialog closes reporting success over an empty tree.
+                if (discoveredLibraries.Count > 0 && repository is { LibraryIds.Count: 0 })
+                {
+                    Snackbar.Add(
+                        $"{discoveredLibraries.Count} librar{(discoveredLibraries.Count == 1 ? "y was" : "ies were")} " +
+                        $"found in '{repository.Name}' but none could be loaded. The log has the reason for each.",
+                        MudBlazor.Severity.Warning);
+                }
+
                 //Start style checking
                 // Offload to a background thread: StartBackgroundChecking does
                 // sync-over-async work (settings + custom dictionary load) whose

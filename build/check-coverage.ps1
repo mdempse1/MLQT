@@ -10,17 +10,31 @@
 
     Two things make a naive gate the wrong tool here, and both are why this one has a baseline:
 
-      - Not every suite can run everywhere. The SVN tests need a working copy and a server no runner
-        has, so on CI the SVN classes in RevisionControl sit near zero. That is a fact about the
+      - Not every suite can run everywhere. The SVN tests need an svn client no runner has (they
+        build their own repository with svnadmin), so on CI the SVN classes in RevisionControl sit near zero. That is a fact about the
         runner, not about the code, and a gate that fails on it teaches people to ignore the gate.
-      - Some real debt predates the bar. DymolaCheckingService and OpenModelicaCheckingService are
-        around 32% because they talk to a live tool.
+      - Some real debt predates the bar, and some of it is code only a live tool reaches: most of
+        OpenModelicaInterface runs through a session that starts omc, which no runner has.
 
     So this is a ratchet, which is the same answer MLQT gives its own users: today's numbers are
     recorded in build/coverage-baseline.json, and the build fails when a class goes backwards from
     what is recorded, or when a class that met the bar stops meeting it, or when a new class arrives
     below it. Debt is tolerated; new debt is not. Run with -UpdateBaseline to re-record, and read the
     diff - it is the point of keeping the file in the repository.
+
+    -UpdateBaseline records what THIS machine measured, and this machine may measure more than the
+    runner can. The gate runs on windows-latest, which has no svn client, so the SVN tests that
+    need one skip there and cover nothing;
+    a developer's machine that has it covers more and would write a baseline CI cannot meet. Recording
+    an improvement is only safe from a machine configured like the runner - or after the run that
+    produced it has been seen to pass there (B266).
+
+    That paragraph was here and it happened anyway: a re-record from a machine with svn on PATH put
+    SvnCli at 51.5% against the 27.3% CI measures, and the gate failed on the next push. So the
+    script now declines to raise a RevisionControl.Svn* figure when svn is present, and names each
+    one it held back - including one that meets the bar here, which it keeps in the ledger at its
+    recorded figure rather than dropping (B363). The warning stays for the cases the hold-back does
+    not cover.
 
     A fourth way it fails, and the reason the baseline has an "excluded" list: a class in the ledger
     that is not in the report at all. That is not the same fact as "it meets the bar now" - it is no
@@ -41,7 +55,11 @@
       - Generated code, which nobody wrote and nobody can sensibly test to a bar: ANTLR's output from
         modelica.g4 (modelicaParser and friends - 4,862 coverable lines of it, which on its own moves
         the assembly's average by more than any real class can) and the regex source generator's.
-      - DymolaInterface and OpenModelicaInterface, whose tests drive a live install.
+
+    DymolaInterface and OpenModelicaInterface ARE gated (B438), measured from the part of their suites
+    that needs no tool - the same trait filters CI's test jobs use (B399). A class there that only
+    a live Dymola or omc reaches is ledger debt with that reason, which is a different fact from a
+    class nobody has written tests for, and the ledger says which.
 
     MLQT.Shared joined the gate in phase 7a-5, and deliberately with no file filter. The plan for that
     step assumed a Razor component's generated BuildRenderTree would be attributed to the component's
@@ -88,17 +106,22 @@ Push-Location $repoRoot
 . (Join-Path $PSScriptRoot 'CoverageAssemblies.ps1')
 $bars = $MlqtBars
 
-# The suites, and the filter each needs. SVN integration tests want a working copy at
-# C:\Projects\ModelicaEditorTest plus a server; the build workflow excludes them the same way, so
+# The suites, and the filter each needs. SVN integration tests want an svn client and svnadmin, to
+# build a repository of their own; the build workflow excludes them the same way, so
 # this has to as well or the local numbers and CI's would not be comparable.
 $suites = @(
     @{ Project = 'ModelicaParser.Tests';  Filter = $null }
     @{ Project = 'ModelicaGraph.Tests';   Filter = $null }
-    @{ Project = 'MLQT.Services.Tests';   Filter = $null }
+    @{ Project = 'MLQT.Services.Tests';   Filter = 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
     @{ Project = 'MLQT.Cli.Tests';        Filter = $null }
     @{ Project = 'MLQT.McpServer.Tests';  Filter = $null }
     @{ Project = 'MLQT.Shared.Tests';     Filter = $null }
-    @{ Project = 'RevisionControl.Tests'; Filter = 'FullyQualifiedName!~Svn' }
+    @{ Project = 'RevisionControl.Tests'; Filter = 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
+    # The classes needing a live tool carry [Trait("Requires", ...)] and are left out, as CI's test
+    # jobs leave them out (B399). Run whole, these would start Dymola and omc - on this machine if
+    # it has them, and fail on a runner that has neither (B438).
+    @{ Project = 'DymolaInterface.Tests';       Filter = 'Requires!=Dymola' }
+    @{ Project = 'OpenModelicaInterface.Tests'; Filter = 'Requires!=OpenModelica' }
 )
 
 function Fail([string] $message) {
@@ -235,12 +258,19 @@ $excludedReasons = @{}
 # one that stopped being measured.
 $previouslyAccepted = @()
 
+# The figure each entry already carries, so -UpdateBaseline can decline to raise one that only this
+# machine can reach. See the svn note in the update block below.
+$previousCoverage = @{}
+
 if (Test-Path $BaselinePath) {
     $existing = Get-Content $BaselinePath -Raw | ConvertFrom-Json
     foreach ($property in $existing.classes.PSObject.Properties) {
         $previouslyAccepted += $property.Name
         if ($property.Value.PSObject.Properties.Name -contains 'reason') {
             $reasons[$property.Name] = [string] $property.Value.reason
+        }
+        if ($property.Value.PSObject.Properties.Name -contains 'coverage') {
+            $previousCoverage[$property.Name] = [double] $property.Value.coverage
         }
     }
     if ($existing.PSObject.Properties.Name -contains 'excluded' -and $existing.excluded) {
@@ -251,11 +281,55 @@ if (Test-Path $BaselinePath) {
     }
 }
 
+# How much of RevisionControl's svn code is covered depends on whether an svn client is on PATH, not
+# on which tests ran - the Code Coverage job is windows-latest with none installed, and a developer's
+# machine that has one covers roughly twice as much. Recording this machine's figure for those
+# classes writes a floor CI cannot reach, and the gate then fails there on the next push.
+#
+# The header has warned about this since B266 and it happened anyway, which is the argument for doing
+# something rather than saying something: -UpdateBaseline keeps the figure already recorded for those
+# entries, and names each one. A prose warning in a help block is not read at the moment it matters.
+$svnPresent = [bool] (Get-Command svn -ErrorAction SilentlyContinue)
+$svnDependent = 'RevisionControl::RevisionControl.Svn'
+
+# Holding a figure back is only half of it (B363). The ledger is rebuilt from the classes below the
+# bar, so an accepted svn entry that reaches the bar on this machine was not held back at all - it was
+# dropped, and the next CI run, measuring it where it always was, failed with "a new class below the
+# bar". So with svn present every accepted svn entry is carried forward at its recorded figure, below
+# the bar here or not. It leaves the ledger when a CI run shows it meeting the bar, not when this
+# machine does.
+#
+# Decided once, here, because two places act on it (B372): -UpdateBaseline keeps these entries, and
+# the gate must not then tell the reader they "can be dropped". It did, for a while - the gate's list
+# of recovered classes was every accepted class meeting its bar, svn or not, so it advised exactly the
+# edit -UpdateBaseline had just been changed to refuse.
+$carriedForSvn = @(if ($svnPresent) {
+    $gated | Where-Object {
+        $_.Key.StartsWith($svnDependent) -and
+        $_.Coverage -ge $_.Bar -and
+        $previousCoverage.ContainsKey($_.Key)
+    }
+})
+
 if ($UpdateBaseline) {
+    $heldBack = @()
+
+    $toRecord = @($below) + $carriedForSvn
+
     $entries = [ordered] @{}
-    foreach ($item in ($below | Sort-Object Key)) {
+    foreach ($item in ($toRecord | Sort-Object Key)) {
+        $coverage = [math]::Round($item.Coverage, 1)
+
+        if ($svnPresent -and $item.Key.StartsWith($svnDependent) -and $previousCoverage.ContainsKey($item.Key)) {
+            $recorded = $previousCoverage[$item.Key]
+            if ($coverage -gt $recorded) {
+                $heldBack += [pscustomobject]@{ Key = $item.Key; Here = $coverage; Kept = $recorded }
+                $coverage = $recorded
+            }
+        }
+
         $entries[$item.Key] = [ordered] @{
-            coverage = [math]::Round($item.Coverage, 1)
+            coverage = $coverage
             lines    = $item.Lines
             bar      = $item.Bar
             reason   = if ($reasons.ContainsKey($item.Key)) { $reasons[$item.Key] } else { $NeedsReason }
@@ -281,6 +355,15 @@ if ($UpdateBaseline) {
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content $BaselinePath -Encoding utf8
     Write-Host "Recorded $($entries.Count) class(es) in $BaselinePath" -ForegroundColor Green
+
+    if ($heldBack) {
+        Write-Host ''
+        Write-Host 'Kept the recorded figure for these - this machine has an svn client and the runner has none:' -ForegroundColor Yellow
+        foreach ($entry in $heldBack) {
+            Write-Host ("  {0,-70} kept {1}%, measured {2}% here" -f $entry.Key, $entry.Kept, $entry.Here) -ForegroundColor Yellow
+        }
+        Write-Host '  Raise them from a CI run that passed, not from here.' -ForegroundColor Yellow
+    }
 
     $unexplained = @($entries.Keys | Where-Object { $entries[$_].reason -eq $NeedsReason }) +
                    @($exclusions.Keys | Where-Object { $exclusions[$_].reason -eq $NeedsReason })
@@ -320,7 +403,14 @@ foreach ($item in $below) {
 # said "MLQT.McpServer::Program now meets the bar" about a class the report no longer contained.
 # Recovered now means measured and meeting its bar; not measured is its own outcome, and is only
 # acceptable when the ledger says so and says why.
-$recovered = $accepted.Keys | Where-Object { $measured.Contains($_) -and $_ -notin $below.Key }
+#
+# The svn entries -UpdateBaseline carries forward are not "recovered" either, on a machine with svn:
+# they meet the bar here because this machine has a client the runner does not, and re-recording would
+# keep them. They are listed on their own, saying why (B372).
+$recovered = $accepted.Keys | Where-Object {
+    $measured.Contains($_) -and $_ -notin $below.Key -and $_ -notin $carriedForSvn.Key
+}
+$keptForSvn = $accepted.Keys | Where-Object { $_ -in $carriedForSvn.Key }
 $vanished  = $accepted.Keys | Where-Object { -not $measured.Contains($_) -and -not $excludedReasons.ContainsKey($_) }
 
 # An exclusion that has started being measured again is stale: it is now under the gate like
@@ -345,6 +435,13 @@ if ($recovered) {
     Write-Host ''
     Write-Host 'These now meet the bar and can be dropped from the baseline (-UpdateBaseline):' -ForegroundColor Green
     foreach ($key in ($recovered | Sort-Object)) { Write-Host "  $key" -ForegroundColor Green }
+}
+
+if ($keptForSvn) {
+    Write-Host ''
+    Write-Host 'These meet the bar here only because this machine has an svn client and the runner has none.' -ForegroundColor DarkGray
+    Write-Host 'They stay in the baseline - -UpdateBaseline keeps them at their recorded figure - until a CI run shows them meeting it:' -ForegroundColor DarkGray
+    foreach ($key in ($keptForSvn | Sort-Object)) { Write-Host "  $key" -ForegroundColor DarkGray }
 }
 
 if ($newDebt) {

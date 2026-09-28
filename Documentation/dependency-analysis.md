@@ -22,6 +22,19 @@ When you leave the Dependencies tab, multi-selection mode is automatically disab
 
 The dependency network graph is an interactive visualization showing the selected models and all models that would be impacted by changes to them. It uses directed edges to show dependency relationships.
 
+### Very large graphs are not plotted
+
+Above **500 classes** the plot is skipped and the impact list is shown on its own, with a
+**Draw it anyway** button beside the explanation.
+
+This is about legibility rather than speed. Generating the plot is quick enough at that size — a
+few hundred milliseconds — but in a panel this tall, five hundred nodes are a couple of pixels
+each, so drawing them costs something and shows nothing you can read. The list underneath answers
+the same question and stays useful at any size.
+
+The override applies to the selection you are looking at. Change the selection and the limit
+applies again, so one decision to draw a large graph does not silently turn the limit off.
+
 ### Node Colors
 
 The graph uses a color-coded legend to distinguish between different types of nodes:

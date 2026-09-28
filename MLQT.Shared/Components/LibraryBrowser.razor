@@ -26,20 +26,26 @@
                 <BodyContent>
                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
                         <MudText Typo="Typo.body1">@treeItem.Value?.Name</MudText>
-                        @if (treeItem.Value?.Id != null && _modelVcsStatus.TryGetValue(treeItem.Value.Id, out var libStatus))
+                        @{ var libMarker = MarkerFor(treeItem.Value); }
+                        @if (libMarker.Shape != ChangeMarkerShape.None)
                         {
-                            <MudChip T="string" Size="Size.Small"
-                                     Color="@VcsStatusHelper.GetStatusColor(libStatus)"
-                                     Variant="Variant.Text"
-                                     Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
-                                @VcsStatusHelper.GetStatusText(libStatus)
-                            </MudChip>
-                        }
-                        else if (treeItem.Value?.Id != null && _modelsWithDescendantChanges.Contains(treeItem.Value.Id))
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
-                                     Size="Size.Small" Color="Color.Warning"
-                                     Style="font-size: 8px; margin-left: 4px;" />
+                            <MudTooltip Text="@libMarker.Tooltip" Placement="Placement.Right">
+                                @if (libMarker.Shape == ChangeMarkerShape.Chip)
+                                {
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@libMarker.Color"
+                                             Variant="Variant.Text"
+                                             Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
+                                        @libMarker.Text
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
+                                             Size="Size.Small" Color="@libMarker.Color"
+                                             Style="font-size: 8px; margin-left: 4px;" />
+                                }
+                            </MudTooltip>
                         }
                         @if (treeItem.Value != null && (treeItem.Value.HasParserErrors || _modelsWithDescendantParserErrors.Contains(treeItem.Value.Id)))
                         {
@@ -75,8 +81,19 @@ else if (Repository != null)
                         break;
                 }
                 <MudText Typo="Typo.subtitle1">@Repository.Name</MudText>
+                @* Labels the repository, so it belongs beside the name rather than inside the
+                   current-branch row below: that row renders only for a non-Local repository with a
+                   revision, which is why every reference repository but one appeared unlabelled
+                   (B200). *@
+                @if (Repository.IsReferenceOnly)
+                {
+                    <MudTooltip Text="This repository is marked Reference only: MLQT loads it so references into it resolve and never checks, formats or writes to it. Untick Reference only in Settings > Manage Repositories to work in it.">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                                 Icon="@Icons.Material.Outlined.Lock">Reference only</MudChip>
+                    </MudTooltip>
+                }
                 <MudSpacer/>
-                @if (Repository.VcsType != RepositoryVcsType.Local) 
+                @if (Repository.VcsType != RepositoryVcsType.Local)
                 {
                     <MudTooltip Text="Browse history">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.List" Size="Size.Medium" OnClick="ShowHistory"></MudIconButton>
@@ -94,47 +111,67 @@ else if (Repository != null)
                     }
                     else
                     {
-                        <MudText Typo="Typo.body1">Detached HEAD</MudText>
+                        @* Where, not just that. A detached HEAD is the ordinary result of switching
+                           to a tag, and "Detached HEAD" on its own leaves the user to work out which
+                           version they are looking at (B193). *@
+                        <MudText Typo="Typo.body1">
+                            @if (Repository.RebaseInProgress is { } rebase)
+                            {
+                                @* HEAD is detached because a rebase stopped part-way, and the way out
+                                   is to continue or abort it, not to make a branch (B382). *@
+                                <span data-testid="rebase-in-progress">Rebase@(string.IsNullOrEmpty(rebase.Branch) ? "" : " of ")<strong>@rebase.Branch</strong> in progress</span>
+                            }
+                            else if (!string.IsNullOrEmpty(Repository.DetachedHeadLabel))
+                            {
+                                <span>Detached HEAD at <strong>@Repository.DetachedHeadLabel</strong></span>
+                            }
+                            else
+                            {
+                                <span>Detached HEAD</span>
+                            }
+                        </MudText>
                     }
                     <MudSpacer />
-                    @if (Repository.IsReferenceOnly)
-                    {
-                        <MudTooltip Text="This repository is marked Reference only: MLQT loads it so references into it resolve and never checks, formats or writes to it. Untick Reference only in Settings > Manage Repositories to work in it.">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
-                                     Icon="@Icons.Material.Outlined.Lock">Reference only</MudChip>
-                        </MudTooltip>
-                    }
-                    else
+                    @if (!Repository.IsReferenceOnly)
                     {
                     <MudTooltip Text="Switch branch">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Medium" OnClick="ShowSwitchBranchDialog" Class="compact-icon-button" />
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Medium" OnClick="ShowSwitchBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked" />
                     </MudTooltip>
-                    <MudTooltip Text="Create new branch">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.ForkRight" Size="Size.Medium" OnClick="ShowCreateBranchDialog" Class="compact-icon-button" />
+                    @* On a detached HEAD this is the way out of the state that disables Commit,
+                       Merge, Rebase and Push, so it is filled to draw the eye rather than repeated
+                       as a second button beside the state's name (B327). *@
+                    <MudTooltip Text="@CreateBranchTooltip">
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.ForkRight" Size="Size.Medium" OnClick="ShowCreateBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked"
+                                       Variant="@(IsDetachedHead && !IsRebaseInProgress ? Variant.Filled : Variant.Text)" aria-label="Create new branch" />
                     </MudTooltip>
                     @if (Repository.VcsType == RepositoryVcsType.SVN) 
                     {
                         <MudTooltip Text="Merge branch into working copy">
-                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" />
+                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" Disabled="@VcsBlocked" />
                         </MudTooltip>
                     }
                     else 
                     {
-                        <MudTooltip Text="More actions ...">
-                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Medium" OnClick="ShowGitMenuDialog" Class="compact-icon-button" />
+                        @* A rebase left in progress is continued or aborted from the Rebase button in
+                           here, so both are filled to lead the eye to it, as Create branch is on a
+                           detached HEAD (B382). *@
+                        <MudTooltip Text="@MoreActionsTooltip">
+                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Medium" OnClick="ShowGitMenuDialog" Class="compact-icon-button" aria-label="More actions" Disabled="@VcsBlocked"
+                                           Variant="@(IsRebaseInProgress ? Variant.Filled : Variant.Text)" />
                             <MudPopover OverflowBehavior="OverflowBehavior.FlipNever" Open="_showGitMenuDialog" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopLeft" Class="pt-0 pb-0 pl-2 pr-2">
                                 <MudStack Row="true" Spacing="1">
-                                    <MudTooltip Text="Rebase current branch">
-                                        <MudIconButton Color="Color.Primary" Icon="@_rebaseIcon" Size="Size.Medium" OnClick="RebaseBranch" Class="compact-icon-button" />
+                                    <MudTooltip Text="@RebaseTooltip">
+                                        <MudIconButton Color="Color.Primary" Icon="@_rebaseIcon" Size="Size.Medium" OnClick="RebaseBranch" Class="compact-icon-button" aria-label="Rebase current branch" Disabled="@(VcsBlocked || (IsDetachedHead && !IsRebaseInProgress))"
+                                                       Variant="@(IsRebaseInProgress ? Variant.Filled : Variant.Text)" />
                                     </MudTooltip>
-                                    <MudTooltip Text="Merge branch into working copy">
-                                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" />
+                                    <MudTooltip Text="@NeedsABranch("Merge branch into working copy")">
+                                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" aria-label="Merge branch into working copy" Disabled="@(VcsBlocked || IsDetachedHead)" />
                                     </MudTooltip>
-                                    <MudTooltip Text="Push changes to remote">
-                                        <MudIconButton Color="Color.Primary" Icon="@_pushIcon" Size="Size.Medium" OnClick="PushToRemote" Class="compact-icon-button" Disabled="@_isPushing" />
+                                    <MudTooltip Text="@NeedsABranch("Push changes to remote")">
+                                        <MudIconButton Color="Color.Primary" Icon="@_pushIcon" Size="Size.Medium" OnClick="PushToRemote" Class="compact-icon-button" aria-label="Push changes to remote" Disabled="@(_isPushing || VcsBlocked || IsDetachedHead)" />
                                     </MudTooltip>
-                                    <MudTooltip Text="Create pull request">
-                                        <MudIconButton Color="Color.Primary" Icon="@_pullRequestIcon" Size="Size.Medium" OnClick="CreatePullRequest" Class="compact-icon-button" />
+                                    <MudTooltip Text="@NeedsABranch("Create pull request")">
+                                        <MudIconButton Color="Color.Primary" Icon="@_pullRequestIcon" Size="Size.Medium" OnClick="CreatePullRequest" Class="compact-icon-button" aria-label="Create pull request" Disabled="@(VcsBlocked || IsDetachedHead)" />
                                     </MudTooltip>
                                 </MudStack>
                             </MudPopover>
@@ -170,13 +207,13 @@ else if (Repository != null)
                     @if (!Repository.IsReferenceOnly)
                     {
                     <MudTooltip Text="Update repository">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Download" Size="Size.Medium" OnClick="RefreshRepository" Class="compact-icon-button" />
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Download" Size="Size.Medium" OnClick="RefreshRepository" Class="compact-icon-button" aria-label="Update repository" Disabled="@VcsBlocked" />
                     </MudTooltip>
-                    <MudTooltip Text="Commit changes">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Commit" Size="Size.Medium" OnClick="ShowCommitChangesDialog" Class="compact-icon-button" Disabled="@(!_hasUncommittedChanges)" />
+                    <MudTooltip Text="@NeedsABranch("Commit changes")">
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Commit" Size="Size.Medium" OnClick="ShowCommitChangesDialog" Class="compact-icon-button" aria-label="Commit changes" Disabled="@(!_hasUncommittedChanges || VcsBlocked || IsDetachedHead)" />
                     </MudTooltip>
                     <MudTooltip Text="Revert changes">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Undo" Size="Size.Medium" OnClick="ShowRevertFilesDialog" Class="compact-icon-button" Disabled="@(!_hasUncommittedChanges)" />
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Undo" Size="Size.Medium" OnClick="ShowRevertFilesDialog" Class="compact-icon-button" aria-label="Revert changes" Disabled="@(!_hasUncommittedChanges || VcsBlocked)" />
                     </MudTooltip>
                     }
                 </MudStack>
@@ -187,9 +224,47 @@ else if (Repository != null)
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
             }
 
+            @* Only for a repository that has changes to narrow to. Chips rather than a dropdown:
+               there are four of them, they are the whole of what this control does, and each can
+               carry the number of classes behind it - so "nothing is cosmetic here" is readable
+               without selecting anything (B191). ToggleSelection, not SingleSelection: clicking the
+               selected chip again turns the filter off, and the value it falls back to is
+               default(ChangeFilter) - None, the All chip - so the row is never left with nothing
+               selected (B367). *@
+            @if (_hasUncommittedChanges)
+            {
+                <MudChipSet T="ChangeFilter" SelectionMode="SelectionMode.ToggleSelection"
+                            SelectedValue="_changeFilter" SelectedValueChanged="OnChangeFilterChanged"
+                            CheckMark="true" Size="Size.Small" Variant="Variant.Text"
+                            SelectedColor="Color.Primary" Class="mlqt-change-filter mb-1">
+                    <MudTooltip Text="Show all models">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.None">All</MudChip>
+                    </MudTooltip>
+                    <MudTooltip Text="Show all changed models">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.Changed">Changed (@CountFor(ChangeFilter.Changed))</MudChip>
+                    </MudTooltip>
+                    <MudTooltip Text="Show changed models that impact simulation">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.AffectsSimulation" SelectedColor="Color.Warning">Simulation (@CountFor(ChangeFilter.AffectsSimulation))</MudChip>
+                    </MudTooltip>
+                    <MudTooltip Text="Show changed models whose only changes are documentation or graphical">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.Cosmetic" SelectedColor="Color.Info">Cosmetic (@CountFor(ChangeFilter.Cosmetic))</MudChip>
+                    </MudTooltip>
+                </MudChipSet>
+            }
+
+            @if (_changeFilter != ChangeFilter.None && _filteredTreeItems.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Class="ml-2 mb-2">
+                    No classes in this repository match that filter.
+                </MudText>
+            }
+
+            @* One tree, two item sources. A filter prunes it to the changed classes and the packages
+               that hold them, built whole and already open - and the lazy loader is withheld while
+               it is on, or expanding a pruned package would fetch all of its children back. *@
             <MudTreeView T="ModelNode"
-                Items="@TreeItems"
-                ServerData="@LoadServerData"
+                Items="@ActiveTreeItems"
+                ServerData="@ActiveServerData"
                 Dense="true"
                 Color="Color.Primary"
                 SelectedValueChanged="@((ModelNode node) => OnModelSelected(node))"
@@ -211,20 +286,26 @@ else if (Repository != null)
                                 <ChildContent>                            
                                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
                                         <MudText Typo="Typo.body1">@treeItem.Value?.Name</MudText>
-                                        @if (treeItem.Value?.Id != null && _modelVcsStatus.TryGetValue(treeItem.Value.Id, out var repoStatus))
+                                        @{ var repoMarker = MarkerFor(treeItem.Value); }
+                                        @if (repoMarker.Shape != ChangeMarkerShape.None)
                                         {
-                                            <MudChip T="string" Size="Size.Small"
-                                                    Color="@VcsStatusHelper.GetStatusColor(repoStatus)"
-                                                    Variant="Variant.Text"
-                                                    Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
-                                                @VcsStatusHelper.GetStatusText(repoStatus)
-                                            </MudChip>
-                                        }
-                                        else if (treeItem.Value?.Id != null && _modelsWithDescendantChanges.Contains(treeItem.Value.Id))
-                                        {
-                                            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
-                                                    Size="Size.Small" Color="Color.Warning"
-                                                    Style="font-size: 8px; margin-left: 4px;" />
+                                            <MudTooltip Text="@repoMarker.Tooltip" Placement="Placement.Right">
+                                                @if (repoMarker.Shape == ChangeMarkerShape.Chip)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small"
+                                                            Color="@repoMarker.Color"
+                                                            Variant="Variant.Filled"
+                                                            Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
+                                                        @repoMarker.Text
+                                                    </MudChip>
+                                                }
+                                                else
+                                                {
+                                                    <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
+                                                            Size="Size.Small" Color="@repoMarker.Color"
+                                                            Style="font-size: 8px; margin-left: 4px;" />
+                                                }
+                                            </MudTooltip>
                                         }
                                         @if (treeItem.Value != null && (treeItem.Value.HasParserErrors || _modelsWithDescendantParserErrors.Contains(treeItem.Value.Id)))
                                         {

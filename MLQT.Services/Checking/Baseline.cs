@@ -84,8 +84,15 @@ public sealed class Baseline
     /// they match, or when the baseline predates rule recording (see <see cref="Rules"/>) — there is
     /// nothing to compare against, and guessing would be worse than staying quiet.
     /// </summary>
+    /// <param name="current">The settings in force now.</param>
+    /// <param name="currentDependencies">The dependency libraries loaded this time.</param>
+    /// <param name="loadedFromSource">Dependencies whose encrypted build was not loaded because
+    /// readable source for the same library is (B268). A baseline taken before that rule may name
+    /// them, and they are not missing: references into them resolve, against the source. Reporting
+    /// them as missing would tell the user to pass a --dependency they already passed.</param>
     public RuleSetDrift DriftFrom(
-        StyleCheckingSettings current, IReadOnlyList<string>? currentDependencies = null)
+        StyleCheckingSettings current, IReadOnlyList<string>? currentDependencies = null,
+        IReadOnlyCollection<string>? loadedFromSource = null)
     {
         if (Rules is null)
             return RuleSetDrift.NotComparable;
@@ -114,7 +121,9 @@ public sealed class Baseline
 
         return new RuleSetDrift(
             true, enabledSince, disabledSince, severityChanged, exclusionsChanged,
-            wasDependencies.Except(nowDependencies).OrderBy(n => n, StringComparer.Ordinal).ToList(),
+            wasDependencies.Except(nowDependencies)
+                .Except(loadedFromSource ?? [], StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.Ordinal).ToList(),
             nowDependencies.Except(wasDependencies).OrderBy(n => n, StringComparer.Ordinal).ToList());
     }
 

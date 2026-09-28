@@ -154,7 +154,8 @@ partial model PartialSimpleTestCase "Partial base class for simple test case of 
   parameter Integer nPre(min=1)=12 "Number of time steps to predict";
   ElectricalLoad baseLoad(final nPre=nPre,
     use_dayOfAdj=false,
-    predictionModel=Buildings.Controls.Predictors.Types.PredictionModel.Average) "Baseload prediction"
+    predictionModel=Buildings.Controls.Predictors.Types.PredictionModel.Average)
+    "Baseload prediction"
     annotation (Placement(transformation(extent={{60, -10}, {80, 10}})));
   Modelica.Blocks.Sources.BooleanPulse tri(width=4/24*100/7,
     period=7*tPeriod,
@@ -356,8 +357,10 @@ model MultiPort "Multiply a port; useful if multiple connections shall be made t
     annotation (Placement(transformation(extent={{-50, -10}, {-30, 10}})));
   Modelica.Fluid.Interfaces.FluidPorts_b ports_b[nPorts_b](redeclare each package Medium = Medium)
     annotation (Placement(transformation(extent={{30, 40}, {50, -40}})));
-  Medium.MassFraction ports_b_Xi_inStream[nPorts_b, Medium.nXi] "inStream mass fractions at ports_b";
-  Medium.ExtraProperty ports_b_C_inStream[nPorts_b, Medium.nC] "inStream extra properties at ports_b";
+  Medium.MassFraction ports_b_Xi_inStream[nPorts_b, Medium.nXi]
+    "inStream mass fractions at ports_b";
+  Medium.ExtraProperty ports_b_C_inStream[nPorts_b, Medium.nC]
+    "inStream extra properties at ports_b";
 
 equation
   // Only one connection allowed to a port to avoid unwanted ideal mixing

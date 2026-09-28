@@ -103,7 +103,8 @@ equation
   // liquid volume
   V = V_l;
   // Check that two-phase equilibrium is actually possible
-  assert(p < Medium.fluidConstants[1].criticalPressure - 10000, "Evaporator model requires subcritical pressure");
+  assert(p < Medium.fluidConstants[1].criticalPressure - 10000,
+    "Evaporator model requires subcritical pressure");
 
 initial equation
   // Initial conditions

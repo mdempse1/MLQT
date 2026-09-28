@@ -136,7 +136,24 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             MLQT.Services.LoggingService.Error(nameof(Program), $"Unhandled: {e.ExceptionObject}");
 
-        app.Run();
+        // What exiting does to the simulation tools MLQT started: the headless omc is ended with
+        // everything it started, and Dymola - which has a window the user may still be working in -
+        // is left running (B260, B493). Hooked here to the ways out that never return from Run (the
+        // process ended from outside, an unhandled exception, a terminal's Ctrl+C or hang-up), and
+        // run after it for the ordinary one, the window closing. After Run rather than in a
+        // WindowClosing handler because the close can still be cancelled there. Whichever arrives
+        // first does the work; the others find it done.
+        var externalTools = app.Services.GetRequiredService<ExternalToolShutdown>();
+        externalTools.EndWith(AppDomain.CurrentDomain);
+
+        try
+        {
+            app.Run();
+        }
+        finally
+        {
+            externalTools.Run("the window closed");
+        }
     }
 
     /// <summary>

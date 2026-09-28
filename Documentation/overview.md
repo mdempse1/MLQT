@@ -111,7 +111,7 @@ errors sit outside all of that: they are always reported, always errors, and can
 disabled — because every other rule reads a parse tree, and a file that did not parse was
 never really checked.
 
-![The naming convention settings, showing the preset dropdown and per-element naming style selectors](Images/naming-conventions-1.png)
+![The naming convention settings, showing the preset dropdown, the underscore-suffix toggle and the exception names](Images/naming-conventions-1.png)
 
 See [spell-checking.md](spell-checking.md), [naming-conventions.md](naming-conventions.md) and
 [settings-reference.md](settings-reference.md).

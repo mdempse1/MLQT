@@ -1590,7 +1590,9 @@ end TestModel;
     [Fact]
     public void HasAnyStyleRuleEnabled_NoneEnabled_ReturnsFalse()
     {
-        var settings = new StyleCheckingSettings();
+        // NothingEnabled(), not a fresh object: one rule is on by default now, so "none enabled"
+        // has to be asked for rather than being what you get.
+        var settings = StyleCheckingSettings.NothingEnabled();
         Assert.False(settings.HasAnyStyleRuleEnabled);
     }
 }

@@ -239,6 +239,13 @@ public class FormattableModelicaFilesTests
     }
 
     [Fact]
+    public void AFileInASiblingWhoseNameStartsWithTheLibrarys_IsNotFormattable()
+    {
+        // wc/Lib is a prefix of wc/LibExtra; it is not a parent of it (B323).
+        Assert.Empty(Resolve(Change(TestPaths.Relative("LibExtra", "Thing.mo"))));
+    }
+
+    [Fact]
     public void ADeletedFile_IsNotFormattable()
     {
         Assert.Empty(Resolve(Change(TestPaths.Relative("Lib", "Gone.mo"), VcsFileStatus.Deleted)));
@@ -295,5 +302,58 @@ public class FormattableModelicaFilesTests
     public void TheExtensionIsMatchedRegardlessOfCase()
     {
         Assert.Single(Resolve(Change(TestPaths.Relative("Lib", "Thing.MO"))));
+    }
+
+    [Fact]
+    public void AForwardSlashedVcsPath_ComesBackInThePlatformsForm()
+    {
+        // Git and SVN both report Lib/Thing.mo (B472). Joined as it comes, that is C:\wc\Lib/Thing.mo
+        // on Windows: the same file to the filesystem, a different string to the pre-commit check
+        // that looks it up among the paths the formatter wrote.
+        Assert.Equal([TestPaths.Rooted("wc", "Lib", "Thing.mo")], Resolve(Change("Lib/Thing.mo")));
+    }
+}
+
+/// <summary>
+/// <see cref="VcsChangeResolver.ScheduledForAddition"/> - the files a full-library save must not
+/// delete, because a merge added them and the commit is owed them.
+/// </summary>
+public class ScheduledForAdditionTests
+{
+    private static readonly string Root = TestPaths.Rooted("wc");
+
+    [Fact]
+    public void AnAddedFile_IsAFullPathInThePlatformsForm_ResolvedAgainstTheVcsRoot()
+    {
+        // The save compares these as strings with paths read from the graph. A VCS reports
+        // Lib/Added.mo relative to its own root (B472): joined to the library folder, or left with
+        // its forward slash, it matched no file the save had read, and the file was deleted.
+        var paths = VcsChangeResolver.ScheduledForAddition(Root,
+        [
+            new VcsWorkingCopyFile { Path = "Lib/Added.mo", Status = VcsFileStatus.Added },
+        ]);
+
+        Assert.Equal([TestPaths.Rooted("wc", "Lib", "Added.mo")], paths);
+    }
+
+    [Theory]
+    [InlineData(VcsFileStatus.Modified)]
+    [InlineData(VcsFileStatus.Untracked)]
+    [InlineData(VcsFileStatus.Deleted)]
+    public void AFileNotScheduledForAddition_IsNotProtected(VcsFileStatus status)
+    {
+        Assert.Empty(VcsChangeResolver.ScheduledForAddition(Root,
+        [
+            new VcsWorkingCopyFile { Path = "Lib/Thing.mo", Status = status },
+        ]));
+    }
+
+    [Fact]
+    public void ARepositoryWithNoVcsRoot_ProtectsNothing()
+    {
+        Assert.Empty(VcsChangeResolver.ScheduledForAddition("",
+        [
+            new VcsWorkingCopyFile { Path = "Lib/Added.mo", Status = VcsFileStatus.Added },
+        ]));
     }
 }

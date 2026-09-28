@@ -31,6 +31,34 @@ public class GraphBuilderTests
     }
 
     [Fact]
+    public void LoadModelicaFile_AClassInItsOwnFile_LeavesItsPackagesSourceOrderAlone()
+    {
+        // B450: Sub/Beta.mo names Lib.Sub as its parent, and loading it after Sub/package.mo wrote
+        // ["Beta"] over the ["Alpha"] read from the package's own source. A parallel directory load
+        // finishes its files in any order, so the package's order changed from run to run.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "package.mo"),
+            "within Lib;\npackage Sub\n  model Alpha\n  end Alpha;\n  model Gamma\n  end Gamma;\nend Sub;\n");
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "Beta.mo"),
+            "within Lib.Sub;\nmodel Beta\nend Beta;\n");
+
+        Assert.Equal(["Alpha", "Gamma"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder!);
+    }
+
+    [Fact]
+    public void LoadModelicaFile_APackageLoadedAfterAClassInItsOwnFile_KeepsItsSourceOrder()
+    {
+        // The other order: the package is not yet in the graph, and its own file sets its order.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "Beta.mo"),
+            "within Lib.Sub;\nmodel Beta\nend Beta;\n");
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine("Lib", "Sub", "package.mo"),
+            "within Lib;\npackage Sub\n  model Alpha\n  end Alpha;\nend Sub;\n");
+
+        Assert.Equal(["Alpha"], graph.GetNode<ModelNode>("Lib.Sub")!.NestedChildrenOrder!);
+    }
+
+    [Fact]
     public void LoadModelicaFile_SetsFileNodeProperties()
     {
         // Arrange
@@ -1069,17 +1097,18 @@ end Test;";
         var modelIds = GraphBuilder.LoadModelicaFile(graph, filePath, content);
 
         Assert.Single(graph.FileNodes);
-        var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
-        if (placeholder != null)
-        {
-            Assert.Contains(placeholder.Id, modelIds);
-            Assert.Equal(content.Replace("\r\n", "\n").Replace("\r", "\n"), placeholder.Definition.ModelicaCode);
-            Assert.Contains(placeholder.Definition.ParserErrors,
-                e => e.Severity == ParserErrorSeverity.FatalParseFailure);
-            Assert.Equal("unknown", placeholder.ClassType);
-        }
-        // If the extractor survived and produced nothing rather than crashing, the
-        // behaviour is still acceptable — no crash reached the caller.
+
+        // Unconditional, and it did not used to be (B201). This test wrapped everything below in
+        // `if (placeholder != null)` and closed with "if the extractor survived and produced nothing
+        // rather than crashing, the behaviour is still acceptable — no crash reached the caller".
+        // Producing nothing is precisely the defect: the file leaves no node and its errors are
+        // dropped. The test written to cover the placeholder machinery was excusing its total
+        // absence — against this very input, which produced no placeholder at all.
+        var placeholder = Assert.Single(graph.ModelNodes, m => m.IsParseFailurePlaceholder);
+        Assert.Contains(placeholder.Id, modelIds);
+        Assert.Equal(content.Replace("\r\n", "\n").Replace("\r", "\n"), placeholder.Definition.ModelicaCode);
+        Assert.NotEmpty(placeholder.Definition.ParserErrors);
+        Assert.Equal("unknown", placeholder.ClassType);
     }
 
     [Fact]
@@ -1412,6 +1441,38 @@ end Bar;";
 
             Assert.Contains("Inner", affected);
             Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "Inner");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_AFileOutsideTheRoot_IsStoredUnderItsOwnFullPath()
+    {
+        // Refresh passes one root for changes in several working copies, so a file in another
+        // arrives as "../B/Lib/package.mo" (B384). Its FileNode must carry the path as it is on
+        // disk, not "A\..\B\...", which no path comparison would ever match.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdOut_" + Guid.NewGuid().ToString("N"));
+        var rootA = Path.Combine(tempDir, "A");
+        var libB = Path.Combine(tempDir, "B", "Lib");
+        Directory.CreateDirectory(rootA);
+        Directory.CreateDirectory(libB);
+        try
+        {
+            var moPath = Path.Combine(libB, "package.mo");
+            File.WriteAllText(moPath, "package Lib\n  model M\n  end M;\nend Lib;");
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, moPath, File.ReadAllText(moPath));
+
+            File.WriteAllText(moPath, "package Lib\n  model M\n  end M;\n  model N\n  end N;\nend Lib;");
+            var relative = Path.GetRelativePath(rootA, moPath).Replace('\\', '/');
+            GraphBuilder.UpdateGraphForChangedFiles(graph, rootA, new HashSet<string> { relative });
+
+            var file = Assert.Single(graph.FileNodes);
+            Assert.Equal(Path.GetFullPath(moPath), file.FilePath);
+            Assert.Contains(graph.ModelNodes, m => m.Id == "Lib.N");
         }
         finally
         {

@@ -26,13 +26,39 @@ public class ModelicaPackageSaver
     /// <param name="modelIds">Set of model IDs belonging to the library to save</param>
     /// <param name="rootDirectory">The root directory to save to (parent of library directory)</param>
     /// <param name="showAnnotations">Whether to include annotations in the output</param>
+    /// <param name="settings">
+    /// The repository's settings, which decide which classes are written back exactly as they are:
+    /// every class when <see cref="StyleCheckingSettings.ApplyFormattingRules"/> is off, and otherwise
+    /// each one <see cref="FormattingExclusion.Excludes"/> names — the name list and
+    /// <c>__MLQT(format=false)</c> alike. Null asks only the source, for a caller with no repository.
+    /// </param>
+    /// <param name="newFileStyle">
+    /// The encoding and line ending for a file the save creates. A file that already exists keeps its
+    /// own either way; null writes a new one as UTF-8 with line feeds. Split into files passes the
+    /// style of the file the package came from, so its new files match it (B308).
+    /// </param>
+    /// <param name="untouchedModelIds">
+    /// The classes stored in files the save must leave exactly as they are — a file with syntax
+    /// errors, for Format All (B414). Such a class is neither parsed, rendered nor written, and does
+    /// not move: a package's inline children stay in its file rather than being split out beside
+    /// it, and a single-file library is not expanded. Classes below it that are stored in files of
+    /// their own are still written, into the directory the package already has. The caller keeps
+    /// those files (and a skipped <c>package.mo</c>'s <c>package.order</c>), which this does not
+    /// write and so does not report.
+    /// </param>
     /// <returns>SaveResult containing information about all written files and model-to-file mappings</returns>
-    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, IReadOnlyList<string>? excludedModelIds = null)
+    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, StyleCheckingSettings? settings = null, ModelicaFileEncoding.FileStyle? newFileStyle = null, IReadOnlySet<string>? untouchedModelIds = null)
     {
         var result = new SaveResult();
+        var untouched = untouchedModelIds ?? new HashSet<string>(StringComparer.Ordinal);
 
         // Get only the models belonging to this library
         var allModels = graph.ModelNodes.Where(m => modelIds.Contains(m.Id)).ToList();
+
+        // The ones the save renders: every class but those in a file it must leave alone.
+        var modelsToRender = untouched.Count == 0
+            ? allModels
+            : allModels.Where(m => !untouched.Contains(m.Id)).ToList();
 
         // Refuse outright rather than filtering them out. A stub stands for a class in an encrypted
         // third-party library, and its "source" is a reconstruction from documentation — writing it
@@ -47,30 +73,45 @@ public class ModelicaPackageSaver
                 "reconstruction from vendor documentation. Reference libraries are read-only.");
         }
 
+        // A directory whose package.mo defines a model rather than a package cannot be written back
+        // as it is laid out: the class is written as a file, and the classes stored in the directory
+        // beside it have nowhere to go. Refused before anything is written, rather than leaving a
+        // Lib.mo beside the untouched Lib/ that defines Lib a second time (B443).
+        result.NonPackageDirectoryIds.AddRange(NonPackageDirectories(graph, modelsToRender));
+        if (result.NonPackageDirectoryIds.Count > 0)
+        {
+            Warn(nameof(ModelicaPackageSaver),
+                $"Not saving: {string.Join(", ", result.NonPackageDirectoryIds)} is stored as a directory " +
+                "but is not a package, and only a package is written as one");
+            return result;
+        }
+
         // PHASE 1: Pre-parse all models in parallel (batched to limit peak memory)
-        PreParseModelsParallel(allModels, modelIds);
+        PreParseModelsParallel(modelsToRender, modelIds);
 
         // PHASE 2: Pre-compute tree structure (parent-child relationships and standalone status)
         var modelIndex = allModels.ToDictionary(m => m.Id);
         var childrenByParent = BuildChildrenIndex(allModels, modelIds);
-        var standaloneChildren = ComputeStandaloneChildren(allModels, childrenByParent);
 
         // Pre-compute data that requires parse trees while they are still available
-        // (parse trees will be released during rendering in Phase 3)
+        // (parse trees will be released during rendering in Phase 3). This runs before
+        // ComputeStandaloneChildren because that asks what each child would be written AS, and a
+        // short class definition is a package that is still written as a file.
         var shortClassIds = new HashSet<string>();
         var preComputedElementNames = new Dictionary<string, List<string>>();
         var formatPreserved = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in allModels)
         {
-            if (IsShortClassDefinition(model))
+            if (PackageFileLayout.IsShortClassDefinition(model))
                 shortClassIds.Add(model.Id);
 
-            // Honour in-source formatting opt-out: __MLQT(format=false) / preserveOrder=true keeps
-            // the model's original text (no reformatting/reordering). Asked through the shared
-            // FormattingExclusion so the incremental format in MainLayout gets the same answer — it
-            // used to read the name list only, and reordered exactly the classes the annotation was
-            // written on.
-            if (FormattingExclusion.OptsOutInSource(model))
+            // Keeps the model's original text (no reformatting/reordering). Asked through the shared
+            // FormattingExclusion so every writing path gets the same answer — the incremental format
+            // used to read the name list only and reordered the classes the annotation was written
+            // on, and Split into files passed no list at all and reformatted the ones named in it
+            // (B65, B305). A repository with formatting off has every class moved as it was written.
+            if (!untouched.Contains(model.Id)
+                && (settings is { ApplyFormattingRules: false } || FormattingExclusion.Excludes(model, settings)))
                 formatPreserved.Add(model.Id);
 
             // Pre-compute element names for packages without a stored package.order
@@ -83,16 +124,23 @@ public class ModelicaPackageSaver
             }
         }
 
+        AddChildrenSavedElsewhere(graph, allModels, modelIds, preComputedElementNames);
+
+        var standaloneChildren = ComputeStandaloneChildren(childrenByParent, shortClassIds);
+
         // PHASE 3: Pre-render all models in parallel
         // Parse trees are released immediately after each model is rendered to avoid
         // having all parse trees and all rendered strings coexist in memory.
-        var excludedSet = new HashSet<string>(StringComparer.Ordinal);
-        if (excludedModelIds != null)
-            excludedSet.UnionWith(excludedModelIds);
-        excludedSet.UnionWith(formatPreserved); // models with __MLQT(format=false/preserveOrder)
-        var excludedOrNull = excludedSet.Count > 0 ? excludedSet : null;
-        var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
-            formatting, excludedOrNull);
+        var excludedOrNull = formatPreserved.Count > 0 ? formatPreserved : null;
+        var verbatimText = ExciseStandaloneChildrenFromVerbatimPackages(
+            allModels, formatPreserved, standaloneChildren, shortClassIds);
+        // Built once for the whole save, and only when the layout actually asks for the finer
+        // declaration order — resolving a type walks imports and the extends chain, and a save that
+        // is not ordering declarations must not pay for it.
+        var isSimpleType = formatting.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null;
+
+        var renderedCode = PreRenderModelsParallel(modelsToRender, childrenByParent, standaloneChildren,
+            formatting, excludedOrNull, isSimpleType, verbatimText);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
         // Rendered code entries are removed from the dictionary after writing to free memory.
@@ -105,7 +153,16 @@ public class ModelicaPackageSaver
         foreach (var model in topLevelModels)
         {
             WriteModelFiles(model, rootDirectory, allModels, savedModels, childrenByParent,
-                standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result);
+                standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result, newFileStyle,
+                untouched, formatPreserved);
+        }
+
+        // The last line (B441): every class the save was given is in a file it wrote, or the caller
+        // is told which are not, so that it deletes nothing that may be the only copy of one.
+        foreach (var model in modelsToRender)
+        {
+            if (!result.ModelIdToFilePath.ContainsKey(model.Id))
+                result.UnplacedModelIds.Add(model.Id);
         }
 
         return result;
@@ -124,7 +181,11 @@ public class ModelicaPackageSaver
     /// from its current <c>ModelicaCode</c> so a caller can mutate the source first.
     /// </para>
     /// </summary>
-    public static string RenderFileOwnerModel(ModelNode fileOwner, FormattingOptions formatting)
+    /// <param name="isSimpleType">The lookup that tells a variable from a component, for
+    /// <see cref="FormattingOptions.DeclarationOrder"/> — the checker's, keyed from
+    /// <paramref name="fileOwner"/>'s id, so the two cannot order a class differently.</param>
+    public static string RenderFileOwnerModel(ModelNode fileOwner, FormattingOptions formatting,
+        Func<string, string, bool>? isSimpleType = null)
     {
         // The stored ModelicaCode is the extracted class body without a 'within' clause.
         // The file written to disk must carry the within clause so that, when the library is
@@ -137,7 +198,15 @@ public class ModelicaPackageSaver
         var (parseTree, _) = ModelicaParserHelper.ParseWithErrors(sourceCode);
         fileOwner.Definition.ParsedCode = parseTree;
 
-        return RenderStoredDefinition(parseTree, formatting);
+        var rendered = RenderStoredDefinition(parseTree, formatting,
+            rootClassId: isSimpleType is null ? null : fileOwner.Id, isSimpleType);
+
+        // The file's header and trailing comments, which the stored source never carries (B445), as
+        // the renderer writes them. Not when the source is already a whole file (format_class hands
+        // over the file as it is on disk): its own header was rendered with it.
+        return fileOwner.FileText is { } fileText && !WithinClause.Has(fileOwner.Definition.ModelicaCode ?? "")
+            ? fileText.Formatted().ApplyTo(rendered)
+            : rendered;
     }
 
     /// <summary>
@@ -168,16 +237,49 @@ public class ModelicaPackageSaver
     /// produce output for malformed input, but that output is not a faithful copy of the file.
     /// </param>
     public static string RenderFileSource(string fileSource, string? withinParent, FormattingOptions formatting,
-        out IReadOnlyList<ParserError> parserErrors)
+        out IReadOnlyList<ParserError> parserErrors, string? rootClassId = null,
+        Func<string, string, bool>? isSimpleType = null)
+    {
+        var (parseTree, errors) = ParseFileSource(fileSource, withinParent);
+        parserErrors = errors;
+        return RenderStoredDefinition(parseTree, formatting, rootClassId, isSimpleType);
+    }
+
+    /// <summary>
+    /// The syntax errors in a file's own text, parsed exactly as <see cref="RenderFileSource(string, string?, FormattingOptions, out IReadOnlyList{ParserError}, string?, Func{string, string, bool}?)"/>
+    /// parses it before rendering.
+    ///
+    /// <para><b>The one rule both formatters apply</b>: a file with any is left exactly as the user
+    /// left it, because the renderer still produces output for malformed input and that output is
+    /// not a faithful copy of the file. The incremental formatter asks it through
+    /// <c>RenderFileSource</c>; <b>Format All Files</b> asks it here, of every file of a library
+    /// before the save, and leaves every class stored in such a file where it is (B414).</para>
+    /// </summary>
+    /// <param name="fileSource">The complete current text of the file, as read from disk.</param>
+    /// <param name="withinParent">The package the file's classes live in, used only if the file
+    /// carries no within clause of its own.</param>
+    public static IReadOnlyList<ParserError> SyntaxErrorsInFile(string fileSource, string? withinParent)
+        => ParseFileSource(fileSource, withinParent).Errors;
+
+    /// <summary>How a file refused for its syntax errors is described in the log.</summary>
+    public static string DescribeSyntaxErrors(IReadOnlyList<ParserError> errors)
+        => $"{errors.Count} syntax error(s), first at line {errors[0].Line}: {errors[0].Message}";
+
+    private static (modelicaParser.Stored_definitionContext Tree, IReadOnlyList<ParserError> Errors) ParseFileSource(
+        string fileSource, string? withinParent)
     {
         var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(WithinClause.Ensure(fileSource, withinParent));
-        parserErrors = errors;
-        return RenderStoredDefinition(parseTree, formatting);
+        return (parseTree, errors);
     }
 
     /// <summary>Renders a parsed stored_definition with the standard save-time renderer settings.</summary>
+    /// <param name="rootClassId">The id of the outermost class, for the type lookup below.</param>
+    /// <param name="isSimpleType">Tells the renderer a variable from a component, which is what
+    /// <see cref="FormattingOptions.DeclarationOrder"/> needs and the grammar cannot answer. The
+    /// checker is given the same lookup, so the two cannot order a class differently.</param>
     private static string RenderStoredDefinition(modelicaParser.Stored_definitionContext parseTree,
-        FormattingOptions formatting)
+        FormattingOptions formatting, string? rootClassId = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         var visitor = new ModelicaRenderer(
             renderForCodeEditor: false,
@@ -185,7 +287,9 @@ public class ModelicaPackageSaver
             excludeClassDefinitions: false,
             tokenStream: null,
             classNamesToExclude: null,
-            formatting: formatting);
+            formatting: formatting,
+            rootClassId: rootClassId,
+            isSimpleType: isSimpleType);
         visitor.VisitStored_definition(parseTree);
 
         var code = string.Join("\n", visitor.Code);
@@ -235,6 +339,44 @@ public class ModelicaPackageSaver
     }
 
     /// <summary>
+    /// Adds to a package's <c>package.order</c> names the children the save was not given (B375).
+    ///
+    /// <para>A package with no stored <c>package.order</c> gets one built from what the save knows:
+    /// the children in its set and the names in the package's own source. A save of part of a
+    /// library — Split into files, which is given only the classes in the package's own file (B305)
+    /// — does not have the children that already live in files of their own, and the order it wrote
+    /// left them out. A <c>package.order</c> that omits a class is one a tool may read as the whole
+    /// list. They go last, by name, because nothing on disk says where else they belong.</para>
+    ///
+    /// <para>A package with a stored order is left to it: that order is the user's, and it already
+    /// names whatever it names.</para>
+    /// </summary>
+    private static void AddChildrenSavedElsewhere(
+        DirectedGraph graph, List<ModelNode> allModels, HashSet<string> modelIds,
+        Dictionary<string, List<string>> orderNames)
+    {
+        var unordered = allModels
+            .Where(m => m.PackageOrder == null && m.ClassType == "package")
+            .Select(m => m.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (unordered.Count == 0)
+            return;
+
+        foreach (var group in graph.ModelNodes
+                     .Where(m => !modelIds.Contains(m.Id)
+                                 && m.ParentModelName is { } parent && unordered.Contains(parent))
+                     .GroupBy(m => m.ParentModelName!))
+        {
+            if (!orderNames.TryGetValue(group.Key, out var names))
+                orderNames[group.Key] = names = [];
+
+            foreach (var name in group.Select(m => m.Definition.Name).OrderBy(n => n, StringComparer.Ordinal))
+                if (!names.Contains(name))
+                    names.Add(name);
+        }
+    }
+
+    /// <summary>
     /// Builds an index of children by parent model ID.
     /// </summary>
     private static Dictionary<string, List<ModelNode>> BuildChildrenIndex(List<ModelNode> allModels, HashSet<string> modelIds)
@@ -259,39 +401,56 @@ public class ModelicaPackageSaver
     /// <summary>
     /// Computes which children can be stored standalone for each parent.
     /// Returns a dictionary mapping parent ID to set of standalone child names.
+    ///
+    /// <para>The answer itself is <see cref="PackageFileLayout"/>'s, because
+    /// <c>SingleFilePackageAnalyzer</c> reports on exactly the classes this decides to write, and
+    /// the two had a copy each of a rule that was the same wrong answer twice (B245). The
+    /// short-class question is handed in rather than asked, because every parse tree is still in
+    /// hand at this point.</para>
     /// </summary>
     private static Dictionary<string, HashSet<string>> ComputeStandaloneChildren(
+        Dictionary<string, List<ModelNode>> childrenByParent,
+        HashSet<string> shortClassIds)
+        => childrenByParent.ToDictionary(
+            kvp => kvp.Key,
+            kvp => PackageFileLayout.StandaloneChildNames(kvp.Value, m => shortClassIds.Contains(m.Id)));
+
+    /// <summary>
+    /// The text each package excluded from formatting is written as: its own source, verbatim, less
+    /// the children written as files of their own (B309).
+    ///
+    /// <para>A formatted package has those children removed by the renderer
+    /// (<c>classNamesToExclude</c>); a verbatim one bypasses the renderer, so any such child still in
+    /// its source — one the trimmer never cut, or a package that was never trimmed — was written
+    /// twice, inline and beside it: a duplicate definition, and a load error. A child that cannot be
+    /// cut out without taking a neighbour's text with it stays inline instead, and is taken out of
+    /// <paramref name="standaloneChildren"/> so it is not also written separately.</para>
+    ///
+    /// <para>Sequential, before the parallel render, because it edits
+    /// <paramref name="standaloneChildren"/>, which that render reads for every package.</para>
+    /// </summary>
+    private static Dictionary<string, string> ExciseStandaloneChildrenFromVerbatimPackages(
         List<ModelNode> allModels,
-        Dictionary<string, List<ModelNode>> childrenByParent)
+        HashSet<string> excludedModelIds,
+        Dictionary<string, HashSet<string>> standaloneChildren,
+        HashSet<string> shortClassIds)
     {
-        var result = new Dictionary<string, HashSet<string>>();
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var kvp in childrenByParent)
+        foreach (var model in allModels)
         {
-            var parentId = kvp.Key;
-            var children = kvp.Value;
-            var standaloneNames = new HashSet<string>();
+            if (!excludedModelIds.Contains(model.Id)
+                || model.Definition.ParsedCode is null
+                || !PackageFileLayout.WrittenAsDirectory(model, m => shortClassIds.Contains(m.Id))
+                || !standaloneChildren.TryGetValue(model.Id, out var names)
+                || names.Count == 0)
+                continue;
 
-            // Detect case-insensitive duplicate names
-            var nameCounts = children
-                .GroupBy(m => m.Definition.Name.ToLowerInvariant())
-                .ToDictionary(g => g.Key, g => g.Count());
-
-            foreach (var child in children)
-            {
-                var canStore = child.CanBeStoredStandalone;
-
-                var lowerName = child.Definition.Name.ToLowerInvariant();
-                var hasCaseInsensitiveDuplicate = nameCounts[lowerName] > 1;
-                var conflictsWithPackageMo = lowerName == "package";
-
-                if (canStore && !hasCaseInsensitiveDuplicate && !conflictsWithPackageMo)
-                {
-                    standaloneNames.Add(child.Definition.Name);
-                }
-            }
-
-            result[parentId] = standaloneNames;
+            // The same text PreParseModelsParallel parsed, so the tree's lines are this text's lines.
+            var source = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
+            result[model.Id] = PackageCodeTrimmer.ExciseInlineClasses(
+                source, model.Definition.ParsedCode, names, out var keptInline);
+            names.ExceptWith(keptInline);
         }
 
         return result;
@@ -308,7 +467,9 @@ public class ModelicaPackageSaver
         Dictionary<string, List<ModelNode>> childrenByParent,
         Dictionary<string, HashSet<string>> standaloneChildren,
         FormattingOptions formatting,
-        HashSet<string>? excludedModelIds = null)
+        HashSet<string>? excludedModelIds = null,
+        Func<string, string, bool>? isSimpleType = null,
+        IReadOnlyDictionary<string, string>? verbatimText = null)
     {
         const int batchSize = 500;
         var renderedCode = new ConcurrentDictionary<string, string>();
@@ -329,18 +490,16 @@ public class ModelicaPackageSaver
                     // emits the clause from the parse tree; this is the one path that bypasses it.
                     if (excludedModelIds != null && excludedModelIds.Contains(model.Id))
                     {
-                        renderedCode[model.Id] = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
+                        renderedCode[model.Id] = verbatimText != null && verbatimText.TryGetValue(model.Id, out var excised)
+                            ? excised
+                            : WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
                         model.Definition.ParsedCode = null;
                         return;
                     }
 
-                    var classType = model.ClassType;
-
-                    var isShortClass = IsShortClassDefinition(model);
-
                     // Determine which children to exclude (for packages)
                     HashSet<string>? classNamesToExclude = null;
-                    if (classType == "package" && !isShortClass)
+                    if (PackageFileLayout.WrittenAsDirectory(model))
                     {
                         standaloneChildren.TryGetValue(model.Id, out classNamesToExclude);
                     }
@@ -352,7 +511,9 @@ public class ModelicaPackageSaver
                         excludeClassDefinitions: false,
                         tokenStream: null,
                         classNamesToExclude: classNamesToExclude,
-                        formatting: formatting);
+                        formatting: formatting,
+                        rootClassId: model.Id,
+                        isSimpleType: isSimpleType);
                     visitor.VisitStored_definition(model.Definition.ParsedCode);
                     var code = string.Join("\n", visitor.Code);
 
@@ -394,22 +555,41 @@ public class ModelicaPackageSaver
         HashSet<string> shortClassIds,
         Dictionary<string, List<string>> preComputedElementNames,
         ConcurrentDictionary<string, string> renderedCode,
-        SaveResult result)
+        SaveResult result,
+        ModelicaFileEncoding.FileStyle? newFileStyle,
+        IReadOnlySet<string> untouched,
+        IReadOnlySet<string> verbatim)
     {
         if (savedModels.Contains(model.Id))
             return;
 
         savedModels.Add(model.Id);
 
+        // A class in a file the save must leave alone (B414) is not written and does not move. The
+        // classes nested in its file are untouched with it; any below it stored in files of their
+        // own are written where they already are, in the directory the package has.
+        if (untouched.Contains(model.Id))
+        {
+            if (childrenByParent.TryGetValue(model.Id, out var below))
+            {
+                var packageDir = Path.Combine(parentDirectory, model.Definition.Name);
+                foreach (var child in below.Where(c => !untouched.Contains(c.Id)))
+                {
+                    WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
+                        standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
+                        newFileStyle, untouched, verbatim);
+                }
+            }
+
+            return;
+        }
+
         if (!renderedCode.TryRemove(model.Id, out var code))
             return;
 
-        var classType = model.ClassType;
-
-        // Use pre-computed short class status since parse trees have been released
-        var isShortClass = shortClassIds.Contains(model.Id);
-
-        if (classType == "package" && !isShortClass)
+        // The same question ComputeStandaloneChildren asked when it decided this class could have
+        // its own entry, so the two cannot disagree about what that entry is.
+        if (PackageFileLayout.WrittenAsDirectory(model, m => shortClassIds.Contains(m.Id)))
         {
             // Create package directory
             var packageDir = Path.Combine(parentDirectory, model.Definition.Name);
@@ -427,20 +607,17 @@ public class ModelicaPackageSaver
             var packageFile = Path.Combine(packageDir, "package.mo");
             try
             {
-                ModelicaFileEncoding.WriteAllText(packageFile, code);
+                ModelicaFileEncoding.WriteAllTextLike(packageFile, WithFileText(model, code, verbatim), newFileStyle);
                 result.WrittenFiles.Add(packageFile);
                 result.ModelIdToFilePath[model.Id] = packageFile;
             }
             catch (Exception e)
             {
                 Error("ModelicaPackageSaver", $"Failed to write package file: {packageFile}", e);
+                result.FailedFiles.Add(packageFile);
             }
 
-            // Update ModelicaCode with the rendered version to free the old source string.
-            // The within clause is stripped back off: it belongs to the file just written, not
-            // to the class, and every other path stores class source without one.
-            model.Definition.ModelicaCode = WithinClause.Strip(code);
-            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+            StoreWrittenCode(model, code, result.WrittenFiles.Contains(packageFile));
 
             // Get children for this package
             childrenByParent.TryGetValue(model.Id, out var children);
@@ -456,12 +633,13 @@ public class ModelicaPackageSaver
                 {
                     try
                     {
-                        ModelicaFileEncoding.WriteAllLines(packageOrderFile, packageOrderList);
+                        ModelicaFileEncoding.WriteAllLinesLike(packageOrderFile, packageOrderList, newFileStyle);
                         result.WrittenFiles.Add(packageOrderFile);
                     }
                     catch (Exception e)
                     {
                         Error("ModelicaPackageSaver", $"Failed to write package.order: {packageOrderFile}", e);
+                        result.FailedFiles.Add(packageOrderFile);
                     }
                 }
             }
@@ -473,17 +651,23 @@ public class ModelicaPackageSaver
             // Process children
             foreach (var child in children)
             {
-                if (standaloneNames.Contains(child.Definition.Name))
+                // A child already stored in a file of its own is written back there even when the
+                // layout would not give it one - its name colliding with a sibling's entry or a
+                // reserved one. It is not in this package's source, so it cannot go into package.mo,
+                // and mapping it there left its own file, the only copy of the class, to be deleted
+                // as an orphan (B441).
+                if (standaloneNames.Contains(child.Definition.Name) || StoredInAFileOfItsOwn(child, model.ContainingFileId))
                 {
                     // Recursively write standalone child
                     WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
-                        standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result);
+                        standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
+                        newFileStyle, untouched, verbatim);
                 }
                 else
                 {
                     // Non-standalone children are in package.mo — update their ModelicaCode
                     // with the rendered version so the displayed code matches what was saved
-                    UpdateNestedChildren(child, packageFile, savedModels, childrenByParent,
+                    UpdateNestedChildren(child, packageFile, model.ContainingFileId, savedModels, childrenByParent,
                         renderedCode, result);
                 }
             }
@@ -495,20 +679,17 @@ public class ModelicaPackageSaver
             var filePath = Path.Combine(parentDirectory, fileName);
             try
             {
-                ModelicaFileEncoding.WriteAllText(filePath, code);
+                ModelicaFileEncoding.WriteAllTextLike(filePath, WithFileText(model, code, verbatim), newFileStyle);
                 result.WrittenFiles.Add(filePath);
                 result.ModelIdToFilePath[model.Id] = filePath;
             }
             catch (Exception e)
             {
                 Error("ModelicaPackageSaver", $"Failed to write model file: {filePath}", e);
+                result.FailedFiles.Add(filePath);
             }
 
-            // Update ModelicaCode with the rendered version to free the old source string.
-            // The within clause is stripped back off: it belongs to the file just written, not
-            // to the class, and every other path stores class source without one.
-            model.Definition.ModelicaCode = WithinClause.Strip(code);
-            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+            StoreWrittenCode(model, code, result.WrittenFiles.Contains(filePath));
 
             // Update non-standalone children embedded in this model (e.g., nested classes
             // inside a model/block/connector) so their displayed code matches what was saved
@@ -516,7 +697,7 @@ public class ModelicaPackageSaver
             {
                 foreach (var child in nestedChildren)
                 {
-                    UpdateNestedChildren(child, filePath, savedModels, childrenByParent,
+                    UpdateNestedChildren(child, filePath, model.ContainingFileId, savedModels, childrenByParent,
                         renderedCode, result);
                 }
             }
@@ -524,35 +705,116 @@ public class ModelicaPackageSaver
     }
 
     /// <summary>
+    /// The text of the file <paramref name="model"/> heads: <paramref name="code"/>, with the file's
+    /// own text outside the class put back around it (B445). A class written as it was keeps that text
+    /// as it was; a formatted one gets it as the renderer writes it, which is what the incremental
+    /// formatter writes for the same file. A class that headed no file has none, so a split's new
+    /// per-class files get no header and the package that headed the single file keeps it.
+    /// </summary>
+    private static string WithFileText(ModelNode model, string code, IReadOnlySet<string> verbatim)
+        => model.FileText is not { } fileText ? code
+            : (verbatim.Contains(model.Id) ? fileText : fileText.Formatted()).ApplyTo(code);
+
+    /// <summary>
+    /// Stores the rendered text on the class, which frees the old source string - but only when the
+    /// file that holds it was written. A class whose file failed is still on disk as it was, and
+    /// storing the rendered text left the graph showing and checking code that was nowhere on disk
+    /// after a partial Format All (B374). The within clause is stripped back off: it belongs to the
+    /// file, and every other path stores class source without one.
+    /// </summary>
+    private static void StoreWrittenCode(ModelNode model, string code, bool written)
+    {
+        if (!written)
+            return;
+
+        model.Definition.ModelicaCode = WithinClause.Strip(code);
+        model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+    }
+
+    /// <summary>
     /// Recursively updates ModelicaCode for a non-standalone model and all its descendants.
     /// These models are embedded in their parent's file and don't get written separately,
     /// but their in-memory ModelicaCode must reflect the formatted version.
     /// </summary>
+    /// <param name="ownerFileId">The file the class that heads <paramref name="containingFilePath"/>
+    /// was loaded from. Only a class loaded from that same file is in the text written there.</param>
     private static void UpdateNestedChildren(
         ModelNode model,
         string containingFilePath,
+        string? ownerFileId,
         HashSet<string> savedModels,
         Dictionary<string, List<ModelNode>> childrenByParent,
         ConcurrentDictionary<string, string> renderedCode,
         SaveResult result)
     {
         savedModels.Add(model.Id);
-        result.ModelIdToFilePath[model.Id] = containingFilePath;
+
+        // Only a file that was written holds the class. Mapping it to one whose write failed told a
+        // caller the class was safely on disk when it was nowhere but the file it came from (B303).
+        // Nor does a file hold a class that came from another file: the text written is the owner's
+        // own source, rendered, and a class stored elsewhere was never in it (B441). Left unmapped,
+        // it is reported in UnplacedModelIds and its library loses no file.
+        var written = result.WrittenFiles.Contains(containingFilePath)
+            && !StoredInAFileOfItsOwn(model, ownerFileId);
+        if (written)
+            result.ModelIdToFilePath[model.Id] = containingFilePath;
         if (renderedCode.TryRemove(model.Id, out var childCode))
-        {
-            model.Definition.ModelicaCode = WithinClause.Strip(childCode);
-            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
-        }
+            StoreWrittenCode(model, childCode, written);
 
         // Recurse into this model's own nested children
         if (childrenByParent.TryGetValue(model.Id, out var grandchildren))
         {
             foreach (var grandchild in grandchildren)
             {
-                UpdateNestedChildren(grandchild, containingFilePath, savedModels,
+                UpdateNestedChildren(grandchild, containingFilePath, ownerFileId, savedModels,
                     childrenByParent, renderedCode, result);
             }
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="model"/> was loaded from a different file than
+    /// <paramref name="enclosingFileId"/> — its own, rather than inline in the class around it. The
+    /// question <see cref="PackageCodeTrimmer"/> asks of the same nodes. Unknown on either side (a
+    /// graph built without file nodes) reads as inline, which is what every class was taken to be
+    /// before B441.
+    /// </summary>
+    private static bool StoredInAFileOfItsOwn(ModelNode model, string? enclosingFileId)
+        => model.ContainingFileId is not null
+            && enclosingFileId is not null
+            && !string.Equals(model.ContainingFileId, enclosingFileId, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The classes among <paramref name="models"/> that a directory's <c>package.mo</c> defines and
+    /// that the save would not write as a directory — a <c>model</c>, <c>block</c> or short class
+    /// definition rather than a package (B443). MLS 3.6 §13.4.1 asks only that the node define "a
+    /// class A", so such a layout loads, but <see cref="PackageFileLayout.WrittenAsDirectory"/> gives a
+    /// directory to a package alone, and saving one would move the class out of its directory.
+    ///
+    /// <para>A class heads a <c>package.mo</c> when that is its file, its name is the directory's, and
+    /// it is not nested inline in a class of the same file. The name is what tells the node from a
+    /// class called <c>Package</c> in its own <c>Package.mo</c>, which a case-sensitive filesystem can
+    /// hold beside it.</para>
+    /// </summary>
+    public static IReadOnlyList<string> NonPackageDirectories(DirectedGraph graph, IEnumerable<ModelNode> models)
+    {
+        var found = new List<string>();
+        foreach (var model in models)
+        {
+            if (model.ContainingFileId is null
+                || graph.GetNode<FileNode>(model.ContainingFileId)?.FilePath is not { } path
+                || !string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), model.Definition.Name, StringComparison.Ordinal))
+                continue;
+
+            var parent = model.ParentModelName is null ? null : graph.GetNode<ModelNode>(model.ParentModelName);
+            if (parent is not null && string.Equals(parent.ContainingFileId, model.ContainingFileId, StringComparison.Ordinal))
+                continue;
+
+            if (!PackageFileLayout.WrittenAsDirectory(model))
+                found.Add(model.Id);
+        }
+        return found;
     }
 
     /// <summary>
@@ -612,23 +874,6 @@ public class ModelicaPackageSaver
     /// Checks if a model uses a short class definition (e.g., package A = B "description";).
     /// Short class definitions should be saved as .mo files, not as directories.
     /// </summary>
-    private static bool IsShortClassDefinition(ModelNode model)
-    {
-        if (model.Definition.ParsedCode == null)
-            return false;
-
-        // Look for short_class_specifier in the parsed code
-        foreach (var classDefContext in model.Definition.ParsedCode.class_definition())
-        {
-            var classSpecifier = classDefContext.class_specifier();
-            if (classSpecifier?.short_class_specifier() != null)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /// <summary>
     /// Extracts all element names from a package's parsed code.

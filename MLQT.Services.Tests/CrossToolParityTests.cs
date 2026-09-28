@@ -46,11 +46,21 @@ package P ""P package""
 end P;
 ";
 
-    private static StyleCheckingSettings Settings() => new()
+    /// <summary>
+    /// The two per-class rules this comparison is about, and nothing else.
+    ///
+    /// <para>Built from <see cref="StyleCheckingSettings.NothingEnabled"/> rather than a fresh
+    /// object, which now has <c>MLQT.Structure.SingleFilePackage</c> on. That is a graph analysis:
+    /// the facade would run it and the worker driven directly below would not, so the two counts
+    /// would differ for a reason that has nothing to do with the parity being tested.</para>
+    /// </summary>
+    private static StyleCheckingSettings Settings()
     {
-        ClassHasDescription = true,
-        ParameterHasDescription = true,
-    };
+        var settings = StyleCheckingSettings.NothingEnabled();
+        settings.ClassHasDescription = true;
+        settings.ParameterHasDescription = true;
+        return settings;
+    }
 
     private static (DirectedGraph graph, List<ModelNode> models) LoadTrimmed()
     {
@@ -249,7 +259,7 @@ end Q;
         // No style rules at all — a check that returned nothing here would be reporting a clean bill
         // of health on code it could not read.
         var findings = LibraryCheckSession.Check(
-            data.CombinedGraph, models, new StyleCheckingSettings(),
+            data.CombinedGraph, models, StyleCheckingSettings.NothingEnabled(),
             new CustomDictionaryService(), new DictionaryManagerService());
 
         Assert.NotEmpty(findings);
@@ -296,6 +306,81 @@ end Q;
             .Select(f => (f.LineNumber, f.Message)).OrderBy(x => x.LineNumber).ToList();
 
         Assert.Equal(beforeCheck, afterCheck);
+    }
+
+    // --- A within clause that does not match the directory (B458) -------------------------------
+
+    /// <summary>The rule is off by default, so both surfaces are handed settings that enable it.</summary>
+    private static StyleCheckingSettings WithinClauseEnabled()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.WithinClause, true);
+        return settings;
+    }
+
+    /// <summary>
+    /// A library on disk with two files whose within clause names a package other than the one
+    /// whose directory they are in, loaded the way every surface loads a directory.
+    /// </summary>
+    private static (LibraryDataService data, Repository repo, string root) LoadMisplacedWithinLibrary()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mlqt-within-parity-" + Guid.NewGuid().ToString("N"));
+        var lib = Path.Combine(root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "within;\npackage Lib\n  package Q\n  end Q;\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "R.mo"), "within Lib.Q;\nmodel R\nend R;\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.mo"), "within Lib;\npackage Sub\nend Sub;\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "X.mo"), "within Lib;\nmodel X\nend X;\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "Y.mo"), "within Lib.Sub;\nmodel Y\nend Y;\n");
+
+        var data = new LibraryDataService();
+        var repo = new Repository { Name = "WithinRepo", StyleSettings = WithinClauseEnabled() };
+        var library = data.AddLibraryFromDirectoryAsync(lib).GetAwaiter().GetResult();
+        library.RepositoryId = repo.Id;
+        PackageCodeTrimmer.TrimStandaloneChildren(data.CombinedGraph);
+        return (data, repo, root);
+    }
+
+    [Fact]
+    public void AWithinClauseThatDoesNotMatchItsDirectory_IsReportedAlikeByEverySurface()
+    {
+        var (data, repo, root) = LoadMisplacedWithinLibrary();
+        try
+        {
+            var models = data.Libraries.SelectMany(l => l.ModelIds).Select(data.GetModelById)
+                .Where(m => m is not null && !m.IsParseFailurePlaceholder)!.Cast<ModelNode>().ToList();
+            var facade = LibraryCheckSession
+                .Check(data.CombinedGraph, models, WithinClauseEnabled(),
+                    new CustomDictionaryService(), new DictionaryManagerService())
+                .Where(f => f.RuleId == RuleIds.WithinClause)
+                .Select(f => f.ModelId).OrderBy(id => id, StringComparer.Ordinal).ToList();
+
+            var service = new StyleCheckingService(
+                data,
+                new RepositoryService(data, new InMemorySettingsService(), new FileMonitoringService()),
+                new CustomDictionaryService(),
+                new DictionaryManagerService(),
+                new CodeReviewService());
+            var found = new List<LogMessage>();
+            service.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+            service.StartBackgroundChecking(repo);
+            Assert.True(service.WaitForCompletionAsync().Wait(TimeSpan.FromSeconds(30)),
+                "style checking did not complete in time");
+
+            List<string> gui;
+            lock (found)
+                gui = found.Where(m => m.RuleId == RuleIds.WithinClause)
+                    .Select(m => m.ModelName).OrderBy(id => id, StringComparer.Ordinal).ToList();
+
+            // R.mo in Lib/ saying Lib.Q, and X.mo in Lib/Sub/ saying Lib; Y and both package.mo files
+            // say what they should.
+            Assert.Equal(["Lib.Q.R", "Lib.X"], facade);
+            Assert.Equal(facade, gui);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
     }
 
     [Fact]

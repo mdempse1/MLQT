@@ -136,7 +136,8 @@ public class StyleCheckingService : IStyleCheckingService
     /// <see cref="StartBackgroundChecking"/>, which had no guard at all, and stayed quiet only while
     /// the vendor's own <c>.mlqt/settings.json</c> enabled nothing — which is not a property of the
     /// flag. The whole-graph analyses had no guard on any path; see
-    /// <see cref="StartGraphAnalyses"/>.</para>
+    /// <see cref="StartGraphAnalyses"/>. Nor did the incremental <see cref="CheckModelsAsync"/>,
+    /// which a reload reaches from another repository's change (B404).</para>
     /// </summary>
     private static bool SkipBecauseReferenceOnly(Repository repository)
     {
@@ -859,7 +860,7 @@ public class StyleCheckingService : IStyleCheckingService
         var modelsByRepo = new Dictionary<string, List<string>>();
         foreach (var modelId in modelIdList)
         {
-            var library = _libraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(modelId));
+            var library = _libraryDataService.GetOwningLibrary(modelId);
             var repoId = library?.RepositoryId ?? "";
             if (!modelsByRepo.TryGetValue(repoId, out var list))
             {
@@ -878,6 +879,15 @@ public class StyleCheckingService : IStyleCheckingService
             // Get the style settings for this repository
             StyleCheckingSettings settings;
             var repo = _repositoryService.Repositories.FirstOrDefault(r => r.Id == repoId);
+
+            // A reference-only repository's classes arrive here whenever a reload reaches them from
+            // somebody else's change — a library checked out inside another repository's tree, whose
+            // monitor and VCS pipeline are the other repository's (B330). The full run and the graph
+            // analyses below skip such a repository; this entry point did not, and ran the vendor's
+            // own per-class rules over them (B404).
+            if (repo is not null && SkipBecauseReferenceOnly(repo))
+                continue;
+
             if (repo?.StyleSettings != null)
             {
                 settings = repo.StyleSettings;
@@ -885,8 +895,11 @@ public class StyleCheckingService : IStyleCheckingService
             else
             {
                 // Classes outside every repository — a library loaded only for reference. Nothing has
-                // set rules for them, so nothing is checked.
-                settings = new StyleCheckingSettings();
+                // set rules for them, so nothing is checked. NothingEnabled, not a fresh object: that
+                // stopped meaning "nothing on" when B241 made SingleFilePackage default-on, and it is
+                // only by that rule running over the graph rather than per class that a fresh object
+                // happened to check nothing here.
+                settings = StyleCheckingSettings.NothingEnabled();
             }
 
             var workerName = repo?.Name ?? "unknown";
@@ -961,6 +974,21 @@ public class StyleCheckingService : IStyleCheckingService
             }
             // Final flush when done
             FlushPendingFindings();
+
+            // The parse errors, read now that the check has parsed. A class nothing had parsed
+            // records its errors when the check first does, and the caller read them before starting
+            // it - so they reached the list only if something unrelated read again (B390). Every
+            // class, not only this run's: they are derived from the graph, and reading them for all
+            // costs one pass over it, once per run.
+            try
+            {
+                ParserErrorReporter.Refresh(_codeReviewService, _libraryDataService.GetAllModels().ToList());
+            }
+            catch (Exception ex)
+            {
+                // A library replaced mid-read, say. The errors read before the run are still listed.
+                Error("StyleCheckingService", "Reading parse errors after the check failed", ex);
+            }
 
             // The workers have finished, so what is left unmeasured is what no check reached. Inside
             // the run, so the progress dialog covers it and completion still means everything is done.

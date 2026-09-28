@@ -13,6 +13,10 @@ MLQT monitors each loaded repository's directory tree for:
 
 Other file types (data files, images, documentation) are not monitored for the library browser, but are tracked separately by the [External Resources](external-resources.md) system.
 
+When several libraries are checked out in one working copy, MLQT watches the working copy once and
+records each change against the library whose folder it is in, so a change is formatted with that
+library's settings. A change outside every library's folder is not recorded as a pending change.
+
 ### What Is Ignored
 
 The file monitor skips:
@@ -22,7 +26,7 @@ The file monitor skips:
 
 ### Debouncing
 
-When a file is saved, the operating system often generates multiple change events in rapid succession (e.g., a temporary write followed by the final write). MLQT debounces these with a 500ms window — if the same type of change occurs on the same file within 500ms, only the last event is kept.
+When a file is saved, the operating system often generates multiple change events in rapid succession (e.g., a temporary write followed by the final write). MLQT debounces these with a 500ms window — if the same type of change occurs on the same file within 500ms of the event MLQT recorded, the first event is kept and the repeats are ignored.
 
 Different change types are not debounced against each other. For example, if a file is deleted and then re-created (as SVN does during some operations), both events are tracked and consolidated.
 
@@ -86,11 +90,11 @@ Some VCS operations automatically trigger a full refresh without you needing to 
 |-----------|-------------|
 | **Update (Pull)** | Yes — files may have changed from the remote |
 | **Switch branch** | Yes — the entire working copy changes |
-| **Merge** | Yes — merged files need re-analysis |
-| **Rebase** | Yes — rebased files need re-analysis |
+| **Merge** | Yes, once the dialog closes — merged files need re-analysis. Closed with conflicts still unresolved, the libraries are reloaded but not formatted or re-checked: a file with conflict markers in it is not Modelica |
+| **Rebase** | Yes, once the dialog closes, as for a merge |
 | **Revert** | Yes — reverted files need re-analysis |
 | **Checkout revision** | Yes — all files may change |
-| **Commit** | No — committing does not change file content |
+| **Commit** | No — committing does not change file content. Yes if the SVN working copy was out of date: MLQT updates it before committing, and that changes files |
 | **Push** | No — pushing does not change local files |
 | **Create branch** | No — creating a branch does not change files |
 
@@ -122,8 +126,11 @@ During automatic refreshes, the file monitor is temporarily paused to avoid dete
 
 The file monitor is automatically paused and resumed during certain operations to prevent false change detection:
 
-- **During VCS operations**: Paused before the operation starts, resumed after the analysis pipeline completes
+- **During VCS operations**: Paused before the operation starts, and resumed however it ends — by the analysis pipeline once it has formatted, or straight away if the operation fails or its dialog is closed. While you resolve a merge or rebase conflict in its dialog the monitor stays paused, and closing the dialog with conflicts unresolved resumes it
 - **During formatting**: Paused before writing formatted files, resumed after all files are saved
 - **During repository settings changes**: Paused if formatting settings change, resumed after reformatting completes
+- **During edits made from Code Review**: Paused while **Split into files**, a **Suppress** or formatting-exclusion annotation, or a spelling correction writes the file and reloads it, and resumed however that ends, including when the reload fails
+
+In every case the pause covers every library checked out in the same working copy, not only the one being written to: they share one watcher, so a neighbour left watching would report the write as its own change.
 
 This ensures that MLQT's own file writes don't show up as pending external changes.

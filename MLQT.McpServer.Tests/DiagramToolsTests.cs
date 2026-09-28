@@ -12,6 +12,10 @@ public class DiagramToolsTests
             Real plain;
             Real placed annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
             Real described "has desc" annotation (Dialog(group="x"));
+            Real port annotation (Placement(visible=true,
+              transformation(extent={{-8,-8},{8,8}}, rotation=90, origin={-100,0}),
+              iconTransformation(extent={{-120,-20},{-80,20}})));
+            Real iconOnly annotation (Placement(iconTransformation(extent={{80,-20},{120,20}})));
           equation
             connect(plain, placed);
           end M;
@@ -62,6 +66,42 @@ public class DiagramToolsTests
         var src = Source(host);
         Assert.Contains("extent={{0,0},{40,40}}, rotation=90", src);
         Assert.DoesNotContain("{-10,-10}", src); // old extent gone
+    }
+
+    /// <summary>
+    /// Moving a component on the diagram replaces where it sits on the diagram and nothing else
+    /// (B321). The whole Placement used to be overwritten, so moving a class's own connector deleted
+    /// its iconTransformation - which moved it on the class's icon, in every diagram that uses the
+    /// class - along with its visible flag.
+    /// </summary>
+    [Fact]
+    public async Task SetPlacement_ReplacesOnlyTheTransformation()
+    {
+        using var host = new TestHost();
+        var (tools, _) = Load(host);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.SetComponentPlacement("D.M", "port", -60, -10, -40, 10));
+        var src = Source(host);
+
+        Assert.Contains("Placement(visible=true,", src);
+        Assert.Contains("transformation(extent={{-60,-10},{-40,10}})", src);
+        Assert.Contains("iconTransformation(extent={{-120,-20},{-80,20}})", src);
+        // The old transformation's origin and rotation went with it: the new extent is absolute.
+        Assert.DoesNotContain("origin={-100,0}", src);
+        Assert.DoesNotContain("rotation=90", src);
+    }
+
+    [Fact]
+    public async Task SetPlacement_AddsATransformationBesideAnIconTransformation()
+    {
+        using var host = new TestHost();
+        var (tools, _) = Load(host);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.SetComponentPlacement("D.M", "iconOnly", 0, 0, 20, 20));
+
+        Assert.Contains(
+            "Placement(transformation(extent={{0,0},{20,20}}), iconTransformation(extent={{80,-20},{120,20}}))",
+            Source(host));
     }
 
     [Fact]

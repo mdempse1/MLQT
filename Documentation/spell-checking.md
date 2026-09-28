@@ -111,7 +111,7 @@ MLQT ships with English (US) and English (UK) dictionaries. You can select which
 
 ### Selecting Active Dictionaries
 
-In **Settings > Manage Repositories**, click the repository and look under **Spell checking**: below the two severity rows a **Language dictionaries** multi-select dropdown shows all available dictionaries. Select the languages this repository should be checked against — a word is considered correct if it appears in **any** of the selected dictionaries.
+In **Settings > Manage Repositories**, click the repository and look under **Spell checking**: below the two severity rows, once at least one of them is not **Off**, a **Language dictionaries** multi-select dropdown shows all available dictionaries. Select the languages this repository should be checked against — a word is considered correct if it appears in **any** of the selected dictionaries.
 
 By default, both English (US) and English (UK) are selected; selecting none falls back to those two.
 
@@ -141,7 +141,7 @@ Because the language selection is committed with the repository while the dictio
 
 Each repository can have its own set of active dictionaries. This is useful when different libraries are documented in different languages — for example, one library might use English documentation while another uses German.
 
-The language selection in repository settings overrides the default language selection.
+There is no application-level language setting: the selection exists only per repository. A repository with no language selected is checked against the bundled English (US) and English (UK) dictionaries.
 
 ## Accepted Spellings (Custom Dictionary)
 
@@ -167,7 +167,7 @@ libraries in three repositories has to be accepted in all three. There is no sha
 
 ### Managing Accepted Spellings
 
-The word list is in **Settings > Repositories**, under the repository's spell-check options, inside
+The word list is in **Settings > Manage Repositories**, under the repository's spell-check options, inside
 the **Accepted spellings** expandable section:
 
 - **Add a word** — Type a word in the text field and press Enter or click the **+** button. Case is
@@ -209,6 +209,6 @@ so **Add to Dictionary** is disabled and says why.
 
 - **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the finding to jump to the word, right-click the underlined word, and choose "Add to Dictionary". It also puts the word in the right repository for you.
 
-- **Different languages for different repositories.** If your team maintains libraries documented in different languages, set the appropriate dictionaries per repository rather than at the application level.
+- **Different languages for different repositories.** If your team maintains libraries documented in different languages, set the appropriate dictionaries in each repository's settings — the language choice is made per repository, so each library is checked against its own.
 
 - **Import dictionaries once, use everywhere.** Imported language dictionaries are stored in your user profile and available across all projects and repositories. You only need to import a dictionary once.

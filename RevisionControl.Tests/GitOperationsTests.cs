@@ -1,4 +1,5 @@
 using LibGit2Sharp;
+using System.Text;
 
 namespace RevisionControl.Tests;
 
@@ -628,6 +629,102 @@ public class GitOperationsTests : IDisposable
 
     #endregion
 
+    #region Detached HEAD (B327)
+
+    /// <summary>A repository with a feature branch, left detached at main's tip.</summary>
+    private (string repoPath, string headSha) DetachedRepository()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (repo)
+        {
+            var main = repo.Head.FriendlyName;
+            Commands.Checkout(repo, repo.CreateBranch("feature"));
+            AddCommit(repo, repoPath, new() { ["g.mo"] = "model G end G;" }, "feature work");
+            Commands.Checkout(repo, repo.Branches[main].Tip);
+            return (repoPath, repo.Head.Tip.Sha);
+        }
+    }
+
+    /// <summary>
+    /// B327: a commit on a detached HEAD belongs to no branch and the next switch strands it, so it
+    /// is refused - and nothing is made, which a refusal from some other cause would also satisfy
+    /// without the message.
+    /// </summary>
+    [Fact]
+    public void Commit_OnADetachedHead_IsRefusedAndMakesNoCommit()
+    {
+        var (repoPath, headSha) = DetachedRepository();
+        File.WriteAllText(Path.Combine(repoPath, "f.mo"), "model A \"edited\" end A;");
+
+        var result = _git.Commit(repoPath, "on nothing");
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(headSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void MergeBranch_OnADetachedHead_IsRefusedAndMakesNoCommit()
+    {
+        var (repoPath, headSha) = DetachedRepository();
+
+        var result = _git.MergeBranch(repoPath, "feature");
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(headSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void Rebase_OnADetachedHead_IsRefused()
+    {
+        var (repoPath, headSha) = DetachedRepository();
+
+        var result = _git.Rebase(repoPath, "feature");
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(headSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void CountCommitsOnNoBranch_CountsOnlyWhatNoBranchOrTagHolds()
+    {
+        var (repoPath, _) = DetachedRepository();
+
+        // Detached on a commit a branch holds: switching away loses nothing.
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(repoPath));
+
+        // Two commits made there, as another tool would, belong to nothing.
+        using (var repo = new Repository(repoPath))
+        {
+            AddCommit(repo, repoPath, new() { ["h.mo"] = "model H end H;" }, "stranded 1");
+            AddCommit(repo, repoPath, new() { ["h.mo"] = "model H \"2\" end H;" }, "stranded 2");
+            Assert.True(repo.Info.IsHeadDetached);
+        }
+        Assert.Equal(2, _git.CountCommitsOnNoBranch(repoPath));
+
+        // A tag on the tip holds them.
+        using (var repo = new Repository(repoPath))
+            repo.ApplyTag("kept");
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(repoPath));
+    }
+
+    [Fact]
+    public void CountCommitsOnNoBranch_OnABranch_IsZero()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "v1" });
+        using (repo) { }
+
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(repoPath));
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(NewTempPath()));
+    }
+
+    #endregion
+
     #region Commit Tests
 
     [Fact]
@@ -957,7 +1054,70 @@ public class GitOperationsTests : IDisposable
 
         Assert.True(result.Success);
         Assert.True(result.HasChanges);
-        Assert.NotNull(result.ModifiedFiles);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "feature.mo"))], result.ModifiedFiles);
+    }
+
+    /// <summary>
+    /// B480: a merge result's paths are full, in the platform's form - <c>Path.GetFullPath</c>'s -
+    /// whichever system made them, and whatever the merge did to each file. Git joined the working
+    /// copy to its own forward-slashed relative path for a merged file, handing out
+    /// <c>C:\repo\Lib/Clean.mo</c> on Windows beside a conflicted <c>C:\repo\Lib\Conflict.mo</c>.
+    /// <see cref="SvnMergeCommitTests"/> holds SVN to the same shape over the same merge.
+    /// </summary>
+    [Fact]
+    public void MergeBranch_WithAConflict_GivesEveryPathInFullPlatformForm()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new()
+        {
+            ["Lib/Conflict.mo"] = "model Conflict end Conflict;",
+            ["Lib/Clean.mo"] = "model Clean end Clean;"
+        });
+        using var r = repo;
+        var mainBranch = r.Head.FriendlyName;
+
+        Commands.Checkout(r, r.CreateBranch("feature"));
+        AddCommit(r, repoPath, new()
+        {
+            ["Lib/Conflict.mo"] = "model Conflict \"theirs\" end Conflict;",
+            ["Lib/Clean.mo"] = "model Clean \"merged\" end Clean;"
+        }, "feature work");
+        Commands.Checkout(r, r.Branches[mainBranch]);
+        AddCommit(r, repoPath, new() { ["Lib/Conflict.mo"] = "model Conflict \"mine\" end Conflict;" }, "main work");
+
+        var result = _git.MergeBranch(repoPath, "feature");
+
+        Assert.True(result.HasConflicts, result.ErrorMessage);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "Lib", "Conflict.mo"))], result.ConflictedFiles);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "Lib", "Clean.mo"))], result.ModifiedFiles);
+        Assert.Empty(result.TreeConflictedFiles);
+    }
+
+    /// <summary>
+    /// B480: a merge that completes lists the files it changed. Git read them from what was staged
+    /// afterwards, and a completed merge has committed, so there was never anything staged and the
+    /// list was always empty.
+    /// </summary>
+    [Fact]
+    public void MergeBranch_NonFastForward_ListsTheFilesTheMergeChanged()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new()
+        {
+            ["Lib/Mine.mo"] = "model Mine end Mine;",
+            ["Lib/Theirs.mo"] = "model Theirs end Theirs;"
+        });
+        using var r = repo;
+        var mainBranch = r.Head.FriendlyName;
+
+        Commands.Checkout(r, r.CreateBranch("feature"));
+        AddCommit(r, repoPath, new() { ["Lib/Theirs.mo"] = "model Theirs \"merged\" end Theirs;" }, "feature work");
+        Commands.Checkout(r, r.Branches[mainBranch]);
+        AddCommit(r, repoPath, new() { ["Lib/Mine.mo"] = "model Mine \"mine\" end Mine;" }, "main work");
+
+        var result = _git.MergeBranch(repoPath, "feature");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.HasConflicts);
+        Assert.Equal([Path.GetFullPath(Path.Combine(repoPath, "Lib", "Theirs.mo"))], result.ModifiedFiles);
     }
 
     #endregion
@@ -1083,6 +1243,267 @@ public class GitOperationsTests : IDisposable
 
         Assert.False(result.Success);
         Assert.NotNull(result.ErrorMessage);
+    }
+
+    /// <summary>
+    /// A force push must refuse when the remote has moved on — the whole of what
+    /// <c>--force-with-lease</c> buys over a plain <c>--force</c>.
+    ///
+    /// <para>Nothing tested this. The interface promises the lease in its own documentation
+    /// (<c>IRevisionControlSystem.ForcePush</c>, <c>IRepositoryService.ForcePushAsync</c>), the
+    /// implementation builds the argument string, and the string was not named in a single test — so
+    /// the mutation audit could replace it wholesale and no test objected. Dropping to a plain
+    /// <c>--force</c> would still pass every other test here, and would silently delete a colleague's
+    /// pushed commits the first time two people worked on one branch.</para>
+    ///
+    /// <para>So this asserts the behaviour rather than the flag: after someone else pushes, the force
+    /// push fails <b>and their commit is still on the remote</b>. The second half is what a plain
+    /// --force would break, and is the reason not to settle for asserting the command text.</para>
+    /// </summary>
+    [Fact]
+    public void ForcePush_WhenTheRemoteHasMovedOn_IsRefusedAndLeavesTheOtherCommitAlone()
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        // Ours: one commit, pushed.
+        var (ours, oursPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (ours)
+        {
+            ours.Network.Remotes.Add("origin", remotePath);
+            RunGit(oursPath, "push -u origin HEAD");
+        }
+
+        // Theirs: a separate clone that adds a commit and pushes it first.
+        var theirsPath = NewTempPath("GitOpsTheirs");
+        RunGit(Path.GetTempPath(), $"clone \"{remotePath}\" \"{theirsPath}\"");
+        File.WriteAllText(Path.Combine(theirsPath, "theirs.mo"), "model B end B;");
+        RunGit(theirsPath, "add theirs.mo");
+        RunGit(theirsPath, "-c user.email=t@t -c user.name=T commit -m \"Theirs\"");
+        RunGit(theirsPath, "push origin HEAD");
+
+        var theirCommit = RunGit(theirsPath, "rev-parse HEAD").Trim();
+        Assert.NotEmpty(theirCommit);
+
+        // Ours rewrites its own history without ever seeing their commit.
+        using (var repo = new Repository(oursPath))
+        {
+            AddCommit(repo, oursPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Ours, rewritten");
+        }
+
+        var result = _git.ForcePush(oursPath);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.ErrorMessage);
+
+        // The part that matters: their work is still there.
+        var remoteHead = RunGit(remotePath, "rev-parse HEAD").Trim();
+        Assert.Equal(theirCommit, remoteHead);
+    }
+
+    [Fact]
+    public void ForcePush_WhenTheRemoteHasNotMovedOn_Succeeds()
+    {
+        // The positive control. Without it the test above would pass just as well against a force
+        // push that always failed, or one that was never issued at all.
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (ours, oursPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (ours)
+        {
+            ours.Network.Remotes.Add("origin", remotePath);
+            RunGit(oursPath, "push -u origin HEAD");
+            AddCommit(ours, oursPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Ours again");
+        }
+
+        var result = _git.ForcePush(oursPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+    }
+
+    /// <summary>Runs git in a directory and returns stdout; the tests above need a real remote.</summary>
+    // ---- what a write actually wrote (B275) --------------------------------------
+
+    /// <summary>
+    /// A new file that git has never seen is included in a commit-everything.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why this is separate from <see cref="Commit_WithAllChanges_StagesAndCommits"/>.</b>
+    /// That test creates an untracked file too, but asserts only that a commit came back - and it
+    /// also modifies a tracked file, so the commit succeeds either way. Turning off
+    /// <c>IncludeUntracked</c> leaves it green while every newly created class silently fails to be
+    /// committed, which is the whole point of the option (B275).</para>
+    ///
+    /// <para>Read back through LibGit2Sharp rather than through <c>GetWorkingCopyChanges</c>: the
+    /// question is what is in the commit, and asking the same product that staged it would answer
+    /// with the same assumption.</para>
+    /// </remarks>
+    [Fact]
+    public void Commit_PutsAnUntrackedFileInTheCommit()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["tracked.mo"] = "v1" });
+        using (repo) { }
+
+        File.WriteAllText(Path.Combine(repoPath, "brand-new.mo"), "model New end New;");
+
+        var result = _git.Commit(repoPath, "add a new class");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Contains("brand-new.mo", CommittedPaths(repoPath));
+    }
+
+    /// <summary>
+    /// The same, for a file in a directory git has never seen - which is what adding a sub-package
+    /// looks like on disk, and what <c>RecurseUntrackedDirs</c> is for. Without it git reports the
+    /// directory as one untracked entry and staging it by name stages nothing.
+    /// </summary>
+    [Fact]
+    public void Commit_PutsAFileFromAnUntrackedDirectoryInTheCommit()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["tracked.mo"] = "v1" });
+        using (repo) { }
+
+        Directory.CreateDirectory(Path.Combine(repoPath, "NewPackage"));
+        File.WriteAllText(Path.Combine(repoPath, "NewPackage", "package.mo"), "package NewPackage end NewPackage;");
+
+        var result = _git.Commit(repoPath, "add a sub-package");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Contains("NewPackage/package.mo", CommittedPaths(repoPath));
+    }
+
+    /// <summary>
+    /// The positive case for <see cref="GitRevisionControlSystem.Push"/>, which had none: the only
+    /// push tests were an invalid path and a repository with no remote, so nothing established that
+    /// a push puts anything anywhere. Uses a bare repository on disk as the remote, exactly as the
+    /// force-push tests below do.
+    /// </summary>
+    [Fact]
+    public void Push_PutsTheLocalCommitOnTheRemote()
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        string localHead;
+        using (repo)
+        {
+            repo.Network.Remotes.Add("origin", remotePath);
+            RunGit(repoPath, "push -u origin HEAD");
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Second");
+            localHead = repo.Head.Tip.Sha;
+        }
+
+        var result = _git.Push(repoPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(localHead, RunGit(remotePath, "rev-parse HEAD").Trim());
+    }
+
+    /// <summary>
+    /// A push that is not a fast-forward is refused, and the other person's commit survives. This
+    /// is the safety property that separates <c>push</c> from <c>push --force-with-lease</c>, and
+    /// force-push had a test for it while push did not.
+    /// </summary>
+    [Fact]
+    public void Push_WhenTheRemoteHasMovedOn_IsRefusedAndLeavesTheOtherCommitAlone()
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (ours, oursPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (ours)
+        {
+            ours.Network.Remotes.Add("origin", remotePath);
+            RunGit(oursPath, "push -u origin HEAD");
+        }
+
+        var theirsPath = NewTempPath("GitOpsTheirs");
+        RunGit(Path.GetTempPath(), $"clone \"{remotePath}\" \"{theirsPath}\"");
+        File.WriteAllText(Path.Combine(theirsPath, "theirs.mo"), "model B end B;");
+        RunGit(theirsPath, "add theirs.mo");
+        RunGit(theirsPath, "-c user.email=t@t -c user.name=T commit -m \"Theirs\"");
+        RunGit(theirsPath, "push origin HEAD");
+
+        var theirCommit = RunGit(theirsPath, "rev-parse HEAD").Trim();
+        Assert.NotEmpty(theirCommit);
+
+        using (var repo = new Repository(oursPath))
+            AddCommit(repo, oursPath, new() { ["f.mo"] = "model A \"ours\" end A;" }, "Ours");
+
+        var result = _git.Push(oursPath);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Equal(theirCommit, RunGit(remotePath, "rev-parse HEAD").Trim());
+    }
+
+    /// <summary>Every path in the repository's current commit, slash-separated as git reports them.</summary>
+    private static List<string> CommittedPaths(string repoPath)
+    {
+        using var repo = new Repository(repoPath);
+        var paths = new List<string>();
+        Walk(repo.Head.Tip.Tree, "");
+        return paths;
+
+        void Walk(Tree tree, string prefix)
+        {
+            foreach (var entry in tree)
+            {
+                if (entry.TargetType == TreeEntryTargetType.Tree)
+                    Walk((Tree)entry.Target, prefix + entry.Name + "/");
+                else
+                    paths.Add(prefix + entry.Name);
+            }
+        }
+    }
+
+    private static string RunGit(string workingDirectory, string args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git", args)
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        var stdout = process.StandardOutput.ReadToEnd();
+        process.StandardError.ReadToEnd();
+        process.WaitForExit(20000);
+        return stdout;
+    }
+
+    /// <summary>
+    /// B324: on a detached HEAD there is no branch to push, and neither push may guess one. The
+    /// remote is left exactly as it was - the assertion a refusal by accident (no remote, say)
+    /// would also pass without it is the message.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Push_OnADetachedHead_IsRefusedAndTouchesNothing(bool force)
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (repo)
+        {
+            repo.Network.Remotes.Add("origin", remotePath);
+            RunGit(repoPath, "push -u origin HEAD");
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Second");
+            Commands.Checkout(repo, repo.Head.Tip);
+        }
+        var remoteBefore = RunGit(remotePath, "rev-parse HEAD").Trim();
+
+        var result = force ? _git.ForcePush(repoPath) : _git.Push(repoPath);
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        Assert.Equal(remoteBefore, RunGit(remotePath, "rev-parse HEAD").Trim());
     }
 
     [Fact]
@@ -1358,6 +1779,295 @@ public class GitOperationsTests : IDisposable
         Assert.NotNull(result.ErrorMessage);
     }
 
+    /// <summary>
+    /// A repository whose <c>feature</c> branch has been rebased onto main and stopped on a
+    /// conflict in f.mo, as the rebase dialog leaves it when it is closed there (B382).
+    /// </summary>
+    private (string repoPath, string featureTipBefore) RebaseStoppedOnAConflict()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (repo)
+        {
+            // rebase --continue makes commits through git.exe, which needs an identity of its own.
+            repo.Config.Set("user.name", "Test User");
+            repo.Config.Set("user.email", "test@example.com");
+
+            var main = repo.Head.FriendlyName;
+            Commands.Checkout(repo, repo.CreateBranch("feature"));
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"feature\" end A;" }, "feature edit");
+            var featureTip = repo.Head.Tip.Sha;
+            Commands.Checkout(repo, repo.Branches[main]);
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"main\" end A;" }, "main edit");
+            Commands.Checkout(repo, repo.Branches["feature"]);
+
+            var rebase = _git.Rebase(repoPath, main);
+            Assert.True(rebase.HasConflicts, rebase.ErrorMessage);
+            return (repoPath, featureTip);
+        }
+    }
+
+    [Fact]
+    public void GetRebaseInProgress_WithNoRebase_IsNull()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "v1" });
+        using (repo) { }
+
+        Assert.Null(_git.GetRebaseInProgress(repoPath));
+        Assert.Null(_git.GetRebaseInProgress(NewTempPath()));
+    }
+
+    /// <summary>
+    /// B382: a rebase stopped on a conflict is found after the fact - which branch, and which files -
+    /// so a dialog opened later can offer to continue or abort it.
+    /// </summary>
+    [Fact]
+    public void GetRebaseInProgress_FindsAStoppedRebase_ItsBranch_AndItsConflicts()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+
+        var rebase = _git.GetRebaseInProgress(repoPath);
+
+        Assert.NotNull(rebase);
+        Assert.Equal("feature", rebase.Branch);
+        Assert.Equal([Path.Combine(repoPath, "f.mo")], rebase.ConflictedFiles);
+    }
+
+    /// <summary>
+    /// B382: once its conflicts are resolved the rebase is still in progress, with nothing left in
+    /// conflict - which is when it may be continued, and continuing it finishes it.
+    /// </summary>
+    [Fact]
+    public void GetRebaseInProgress_AfterResolving_HasNoConflicts_AndContinuingFinishesIt()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+        var file = Path.Combine(repoPath, "f.mo");
+
+        File.WriteAllText(file, "model A \"both\" end A;");
+        Assert.True(_git.ResolveConflict(repoPath, file, ConflictResolutionChoice.MarkResolved).Success);
+
+        var resolved = _git.GetRebaseInProgress(repoPath);
+        Assert.NotNull(resolved);
+        Assert.Empty(resolved.ConflictedFiles);
+
+        var result = _git.ContinueRebase(repoPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.HasConflicts);
+        Assert.Null(_git.GetRebaseInProgress(repoPath));
+        Assert.Equal("feature", _git.GetCurrentBranch(repoPath));
+    }
+
+    [Fact]
+    public void GetRebaseInProgress_AfterAborting_IsNull_AndTheBranchIsBackWhereItWas()
+    {
+        var (repoPath, featureTipBefore) = RebaseStoppedOnAConflict();
+
+        Assert.True(_git.AbortRebase(repoPath).Success);
+
+        Assert.Null(_git.GetRebaseInProgress(repoPath));
+        using var repo = new Repository(repoPath);
+        Assert.Equal("feature", repo.Head.FriendlyName);
+        Assert.Equal(featureTipBefore, repo.Head.Tip.Sha);
+    }
+
+    /// <summary>
+    /// B418: in a rebase, Keep Mine keeps the user's own change - the commit being replayed, which
+    /// git calls "theirs" there - and the rebase finishes with it on top of main. It used to check
+    /// out HEAD, which mid-rebase is main, and so threw the user's change away.
+    /// </summary>
+    [Fact]
+    public void ResolveConflict_KeepMine_InARebase_KeepsTheUsersReplayedChange_AndContinuingCommitsIt()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var result = _git.ResolveConflict(repoPath, file, ConflictResolutionChoice.KeepMine);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("model A \"feature\" end A;", File.ReadAllText(file).Trim());
+        Assert.Empty(_git.GetRebaseInProgress(repoPath)!.ConflictedFiles);
+
+        Assert.True(_git.ContinueRebase(repoPath).Success);
+        using var repo = new Repository(repoPath);
+        Assert.Equal("feature", repo.Head.FriendlyName);
+        Assert.Equal("model A \"feature\" end A;", ((Blob)repo.Head.Tip["f.mo"].Target).GetContentText().Trim());
+        Assert.Equal("main edit", repo.Head.Tip.Parents.Single().MessageShort);
+    }
+
+    /// <summary>
+    /// B418: in a rebase, Accept Incoming takes the branch being rebased onto - HEAD there, git's
+    /// "ours". It used to check out MERGE_HEAD, which a rebase does not have, and fail.
+    /// </summary>
+    [Fact]
+    public void ResolveConflict_AcceptIncoming_InARebase_TakesTheBranchRebasedOnto()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var result = _git.ResolveConflict(repoPath, file, ConflictResolutionChoice.AcceptIncoming);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("model A \"main\" end A;", File.ReadAllText(file).Trim());
+        Assert.Empty(_git.GetRebaseInProgress(repoPath)!.ConflictedFiles);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(repo.Head.Tip["f.mo"].Target.Id, repo.Index["f.mo"].Id);
+    }
+
+    /// <summary>
+    /// B418: the conflict diff's "ours" is the user's side in a rebase as in a merge - git's
+    /// stage 3 there, the commit being replayed - so it matches what Keep Mine keeps.
+    /// </summary>
+    [Fact]
+    public void GetConflictVersions_InARebase_OursIsTheUsersReplayedChange()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+
+        var (ours, theirs) = _git.GetConflictVersions(repoPath, Path.Combine(repoPath, "f.mo"));
+
+        Assert.Equal("model A \"feature\" end A;", Encoding.UTF8.GetString(ours!));
+        Assert.Equal("model A \"main\" end A;", Encoding.UTF8.GetString(theirs!));
+    }
+
+    /// <summary>
+    /// B418: where the user's replayed commit deleted a file main edited, Keep Mine keeps the
+    /// deletion and Accept Incoming keeps main's edit.
+    /// </summary>
+    [Theory]
+    [InlineData(ConflictResolutionChoice.KeepMine, false)]
+    [InlineData(ConflictResolutionChoice.AcceptIncoming, true)]
+    public void ResolveConflict_InARebase_WhereTheUserDeletedTheFile_TakesTheChosenSide(ConflictResolutionChoice choice, bool fileKept)
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;", ["g.mo"] = "model G end G;" });
+        using (repo)
+        {
+            var main = repo.Head.FriendlyName;
+            Commands.Checkout(repo, repo.CreateBranch("feature"));
+            File.Delete(Path.Combine(repoPath, "f.mo"));
+            Commands.Stage(repo, "f.mo");
+            var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
+            repo.Commit("feature deletes f", sig, sig);
+            Commands.Checkout(repo, repo.Branches[main]);
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"main\" end A;" }, "main edit");
+            Commands.Checkout(repo, repo.Branches["feature"]);
+            Assert.True(_git.Rebase(repoPath, main).HasConflicts);
+        }
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var result = _git.ResolveConflict(repoPath, file, choice);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(fileKept, File.Exists(file));
+        if (fileKept)
+            Assert.Equal("model A \"main\" end A;", File.ReadAllText(file).Trim());
+        Assert.Empty(_git.GetRebaseInProgress(repoPath)!.ConflictedFiles);
+    }
+
+    /// <summary>A path that is not in conflict is refused during a rebase, not silently staged.</summary>
+    [Fact]
+    public void ResolveConflict_KeepMine_InARebase_OnAFileNotInConflict_Fails()
+    {
+        var (repoPath, _) = RebaseStoppedOnAConflict();
+
+        var result = _git.ResolveConflict(repoPath, Path.Combine(repoPath, "other.mo"), ConflictResolutionChoice.KeepMine);
+
+        Assert.False(result.Success);
+        Assert.Contains("not in conflict", result.ErrorMessage);
+    }
+
+    /// <summary>
+    /// B418's control: in a merge the choices keep their meaning - Keep Mine is the current branch
+    /// (HEAD), Accept Incoming the branch being merged in.
+    /// </summary>
+    [Theory]
+    [InlineData(ConflictResolutionChoice.KeepMine, "main version")]
+    [InlineData(ConflictResolutionChoice.AcceptIncoming, "feature version")]
+    public void ResolveConflict_InAMerge_KeepsMineAsTheCurrentBranch(ConflictResolutionChoice choice, string expected)
+    {
+        var (repo, repoPath) = CreateConflictRepo();
+        using (repo) { }
+        var merge = _git.MergeBranch(repoPath, "conflict-branch");
+        Assert.True(merge.HasConflicts, merge.ErrorMessage);
+        var file = Path.Combine(repoPath, "f.mo");
+
+        var (ours, theirs) = _git.GetConflictVersions(repoPath, file);
+        Assert.Contains("main version", Encoding.UTF8.GetString(ours!));
+        Assert.Contains("feature version", Encoding.UTF8.GetString(theirs!));
+
+        var result = _git.ResolveConflict(repoPath, file, choice);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(expected, File.ReadAllText(file).Trim());
+        using var r = new Repository(repoPath);
+        Assert.False(r.Index.Conflicts.Any());
+    }
+
+    /// <summary>
+    /// B433: in a merge where one side deleted a file the other edited, Keep Mine keeps the current
+    /// branch's side and Accept Incoming the merged branch's - a deletion included. Both used to
+    /// check out HEAD/MERGE_HEAD for the path, which fails when that side has no such file.
+    /// </summary>
+    [Theory]
+    [InlineData(true, ConflictResolutionChoice.KeepMine, false)]
+    [InlineData(true, ConflictResolutionChoice.AcceptIncoming, true)]
+    [InlineData(false, ConflictResolutionChoice.KeepMine, true)]
+    [InlineData(false, ConflictResolutionChoice.AcceptIncoming, false)]
+    public void ResolveConflict_InAMerge_WhereOneSideDeletedTheFile_TakesTheChosenSide(
+        bool currentBranchDeletes, ConflictResolutionChoice choice, bool fileKept)
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;", ["g.mo"] = "model G end G;" });
+        string expectedContent;
+        using (repo)
+        {
+            var main = repo.Head.FriendlyName;
+            var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
+            Commands.Checkout(repo, repo.CreateBranch("incoming"));
+            if (currentBranchDeletes)
+                AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"incoming\" end A;" }, "incoming edit");
+            else
+            {
+                File.Delete(Path.Combine(repoPath, "f.mo"));
+                Commands.Stage(repo, "f.mo");
+                repo.Commit("incoming deletes f", sig, sig);
+            }
+
+            Commands.Checkout(repo, repo.Branches[main]);
+            if (currentBranchDeletes)
+            {
+                File.Delete(Path.Combine(repoPath, "f.mo"));
+                Commands.Stage(repo, "f.mo");
+                repo.Commit("main deletes f", sig, sig);
+            }
+            else
+                AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"main\" end A;" }, "main edit");
+
+            expectedContent = currentBranchDeletes ? "model A \"incoming\" end A;" : "model A \"main\" end A;";
+        }
+        var merge = _git.MergeBranch(repoPath, "incoming");
+        Assert.True(merge.HasConflicts, merge.ErrorMessage);
+        var file = Path.Combine(repoPath, "f.mo");
+        using (var before = new Repository(repoPath))
+        {
+            var conflict = before.Index.Conflicts["f.mo"];
+            Assert.NotNull(conflict);
+            Assert.Equal(currentBranchDeletes, conflict.Ours == null);
+            Assert.Equal(!currentBranchDeletes, conflict.Theirs == null);
+        }
+        Assert.True(File.Exists(file), "the merge leaves the edited side on disk");
+
+        var result = _git.ResolveConflict(repoPath, file, choice);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(fileKept, File.Exists(file));
+        using var r = new Repository(repoPath);
+        Assert.False(r.Index.Conflicts.Any());
+        Assert.Equal(fileKept, r.Index["f.mo"] != null);
+        if (fileKept)
+        {
+            Assert.Equal(expectedContent, File.ReadAllText(file).Trim());
+            Assert.Equal(expectedContent, r.Lookup<Blob>(r.Index["f.mo"].Id).GetContentText().Trim());
+        }
+    }
+
     #endregion
 
     #region GetConflictVersions Tests
@@ -1441,55 +2151,58 @@ public class GitOperationsTests : IDisposable
         r.Reset(ResetMode.Hard);
     }
 
+    /// <summary>
+    /// Merges "conflict-branch" into main with LibGit2Sharp directly, and fails the test - rather than
+    /// letting it return and pass having tested nothing - if the merge does not stop on f.mo (B434).
+    /// </summary>
+    private string MergeStoppedOnAConflict()
+    {
+        var (repo, repoPath) = CreateConflictRepo();
+        using (repo)
+        {
+            var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
+            var mergeResult = repo.Merge(repo.Branches["conflict-branch"], sig, new MergeOptions
+            {
+                FastForwardStrategy = FastForwardStrategy.NoFastForward
+            });
+
+            Assert.Equal(MergeStatus.Conflicts, mergeResult.Status);
+            Assert.NotNull(repo.Index.Conflicts["f.mo"]);
+        }
+        return repoPath;
+    }
+
+    /// <summary>f.mo is no longer in conflict, and what is staged for it is exactly what is on disk.</summary>
+    private static void AssertResolvedAs(string repoPath, string expected)
+    {
+        var filePath = Path.Combine(repoPath, "f.mo");
+        Assert.Equal(expected, File.ReadAllText(filePath).Trim());
+        using var r = new Repository(repoPath);
+        Assert.False(r.Index.Conflicts.Any());
+        var staged = r.Lookup<Blob>(r.Index["f.mo"].Id).GetContentText();
+        Assert.Equal(expected, staged.Trim());
+    }
+
     [Fact]
     public void GetConflictVersions_WithMergeConflict_ReturnsBothVersions()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        // Create the merge conflict using LibGit2Sharp directly
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            // No conflict created, skip
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         var filePath = Path.Combine(repoPath, "f.mo");
         var (ours, theirs) = _git.GetConflictVersions(repoPath, filePath);
 
         Assert.NotNull(ours);
         Assert.NotNull(theirs);
-        Assert.Contains("main version", ours);
-        Assert.Contains("feature version", theirs);
 
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        // Bytes as the blob stored them, decoded by the caller - see B240 and VcsFileText.
+        Assert.Equal("main version", Encoding.UTF8.GetString(ours).Trim());
+        Assert.Equal("feature version", Encoding.UTF8.GetString(theirs).Trim());
     }
 
     [Fact]
-    public void ResolveConflict_MarkResolved_WithConflictedFile_Succeeds()
+    public void ResolveConflict_MarkResolved_WithConflictedFile_StagesTheEditedFileAsItIs()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         // Write a resolved version
         var filePath = Path.Combine(repoPath, "f.mo");
@@ -1497,64 +2210,32 @@ public class GitOperationsTests : IDisposable
 
         var result = _git.ResolveConflict(repoPath, filePath, ConflictResolutionChoice.MarkResolved);
 
-        Assert.True(result.Success);
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.True(result.Success, result.ErrorMessage);
+        AssertResolvedAs(repoPath, "resolved content");
     }
 
     [Fact]
-    public void ResolveConflict_KeepMine_WithConflictedFile_Succeeds()
+    public void ResolveConflict_KeepMine_WithConflictedFile_KeepsTheCurrentBranch()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         var filePath = Path.Combine(repoPath, "f.mo");
         var result = _git.ResolveConflict(repoPath, filePath, ConflictResolutionChoice.KeepMine);
 
-        Assert.True(result.Success);
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.True(result.Success, result.ErrorMessage);
+        AssertResolvedAs(repoPath, "main version");
     }
 
     [Fact]
-    public void ResolveConflict_AcceptIncoming_WithConflictedFile_Succeeds()
+    public void ResolveConflict_AcceptIncoming_WithConflictedFile_TakesTheMergedBranch()
     {
-        var (repo, repoPath) = CreateConflictRepo();
-        using var r = repo;
-
-        var sig = new Signature("Test", "t@t.com", DateTimeOffset.Now);
-        var mergeResult = r.Merge(r.Branches["conflict-branch"], sig, new MergeOptions
-        {
-            FastForwardStrategy = FastForwardStrategy.NoFastForward
-        });
-
-        if (mergeResult.Status != MergeStatus.Conflicts)
-        {
-            r.Reset(ResetMode.Hard);
-            return;
-        }
+        var repoPath = MergeStoppedOnAConflict();
 
         var filePath = Path.Combine(repoPath, "f.mo");
         var result = _git.ResolveConflict(repoPath, filePath, ConflictResolutionChoice.AcceptIncoming);
 
-        Assert.True(result.Success);
-
-        // Cleanup
-        r.Reset(ResetMode.Hard);
+        Assert.True(result.Success, result.ErrorMessage);
+        AssertResolvedAs(repoPath, "feature version");
     }
 
     #endregion

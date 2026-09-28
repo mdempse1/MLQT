@@ -13,7 +13,7 @@ namespace MLQT.Journeys;
 /// <para>Off unless <c>MLQT_DOC_SCREENSHOTS</c> names a directory, so an ordinary run does not write
 /// to the repository. Run it with:</para>
 /// <code>
-/// $env:MLQT_DOC_SCREENSHOTS = "Documentation/Images"
+/// $env:MLQT_DOC_SCREENSHOTS = "C:\Projects\MLQT\Documentation\Images"   # absolute - see CLAUDE.md
 /// MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
 /// </code>
 ///
@@ -45,8 +45,9 @@ namespace MLQT.Journeys;
 /// no native title bar, no taskbar, no menu. Anything about the window itself — the icon, the window
 /// size, a native file dialog — needs a photograph of the real Photino host, because nothing can
 /// drive that automatically - a CDP-driven WebView2 is work that cannot be carried to WebKitGTK. Nor
-/// can it produce the SVN pictures (no server to talk to) or the Dymola check progress (no Dymola).
-/// Those stay photographs; <c>Design/backlog.md</c> B152 lists them, and so does CLAUDE.md.</para>
+/// does it produce the two Dymola pictures (a check caught part way, and a finding only a failed
+/// check carries). Those stay photographs, and CLAUDE.md lists them. The SVN pictures used to be on that list and are not: an SVN repository needs no
+/// server, only <c>svnadmin create</c>, so this run needs <c>svn</c> and <c>svnadmin</c> installed.</para>
 /// </remarks>
 [Collection(JourneyCollection.Name)]
 public class DocumentationScreenshots(TestHostFixture host) : IDisposable
@@ -64,7 +65,14 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// <summary>The repository MLQT knows the fixture by, for the scenes that drive services.</summary>
     private string? _repositoryId;
 
-    public void Dispose() => _library?.Dispose();
+    /// <summary>The same library in an SVN working copy, for the SVN pictures. Built last, when needed.</summary>
+    private LibraryFixture? _svnLibrary;
+
+    public void Dispose()
+    {
+        _library?.Dispose();
+        _svnLibrary?.Dispose();
+    }
 
     /// <summary>Where to write them, or null when nobody asked.</summary>
     private static string? OutputDirectory =>
@@ -181,6 +189,10 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         // Last, because it leaves changes waiting that nothing else wants to see.
         await PendingChangesAsync(page);
+
+        // After everything, because it takes the Git repository away: the SVN fixture holds the
+        // same library, and two libraries called Lib in one project would be the same classes twice.
+        await SvnOperationsAsync(page);
     }
 
     // ---------------------------------------------------------------- the scenes
@@ -316,9 +328,21 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await page.Mouse.MoveAsync(Width / 2, Height - 4);
         await page.WaitForTimeoutAsync(800);
 
-        // The tree itself, with the M chip on the class the fixture leaves uncommitted and the dot
+        // The tree itself, with the chip on the class the fixture leaves uncommitted and the dot
         // that carries it up to the package.
+        //
+        // The fixture's edit is a re-layout of Modified.mo and nothing else - same declarations,
+        // same equation, same annotation - so since B191 this is the **cosmetic** marker rather
+        // than the plain modified one. That is the picture worth having here: it is the
+        // distinction the section is about, and the caption in library-browser.md says so.
         await ShotOfAsync(page.Locator(".mud-treeview").First, "library-browser-2");
+
+        // The filter above the tree. It appears only for a repository with uncommitted changes,
+        // which is what the fixture's one edit is for, and each chip carries the number behind it.
+        var changeFilter = page.Locator(".mlqt-change-filter").First;
+        Assert.True(await changeFilter.CountAsync() > 0,
+            "the change filter is not on screen; does the fixture still leave an uncommitted edit?");
+        await ShotAroundAsync(page, changeFilter, "library-browser-6");
 
         // The whole left panel, which is what a user sees once a repository is in: the repository as
         // an expansion header, its VCS row, and the packages below it.
@@ -484,6 +508,88 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     }
 
     /// <summary>
+    /// The SVN dialogs, and the one settings section only an SVN repository has.
+    /// </summary>
+    /// <remarks>
+    /// <para>These were photographs because "SVN needs a server". It needs a repository, and
+    /// <c>svnadmin create</c> makes one: a <c>file://</c> URL is as real to the svn client as a
+    /// hosted one, so the fixture's SVN variant is the same library in a trunk checkout with a
+    /// branch and a tag beside it (<see cref="LibraryFixtureVcs.Svn"/>).</para>
+    ///
+    /// <para><b>The Git repository is removed first.</b> Both fixtures hold a library called
+    /// <c>Lib</c>, and two of them in one project would be the same class ids twice - so the SVN
+    /// working copy stands in the left panel on its own, which is also what the pictures want.</para>
+    ///
+    /// <para>This repository requires an issue number to commit, which the Git one does not: the
+    /// commit dialog's caption in svn-operations.md asks for the Issue ID field, and it is drawn only
+    /// when that setting is on. Every dialog is cancelled; nothing here changes the working copy.</para>
+    /// </remarks>
+    private async Task SvnOperationsAsync(IPage page)
+    {
+        // The changes PendingChangesAsync left waiting are forgotten first: the idle signal waits for
+        // pending changes to be picked up, and nothing is going to pick these up now.
+        host.Services.GetRequiredService<IFileMonitoringService>().ClearPendingChanges(_repositoryId!);
+
+        var repositories = host.Services.GetRequiredService<IRepositoryService>();
+        repositories.RemoveRepository(_repositoryId!, unloadLibraries: true);
+        await host.WaitForIdleAsync();
+
+        _svnLibrary = new LibraryFixture(
+            Path.Combine(Path.GetDirectoryName(RepositoryPathForPictures())!, "MySvnLibrary"),
+            LibraryFixtureVcs.Svn);
+        EnableSomeRules(_svnLibrary, requireIssueNumber: true);
+
+        var added = await repositories.AddRepositoryAsync(_svnLibrary.RepositoryPath, name: "MySvnLibrary", startMonitoring: false);
+        Assert.True(added.Success, added.ErrorMessage);
+        await repositories.LoadLibrariesAsync(added.Repository!.Id);
+        await host.WaitForIdleAsync();
+
+        await OpenTabAsync(page, CodeTab);
+
+        var revisionRow = RowContaining(page, "Revision:");
+        var branchRow = RowContaining(page, "Current branch:");
+        await revisionRow.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+
+        // Update, Commit, Revert - the same row as Git's, with a revision number in place of a hash.
+        // The commit dialog is filled in, because the caption wants the Commit button live and that
+        // takes a message and, here, an issue number.
+        await ShellReadiness.WaitUntilClickableAsync(page);
+        await revisionRow.Locator("button").Nth(1).ClickAsync();
+        var commit = page.Locator(".mud-dialog").First;
+        var issue = commit.GetByLabel("Issue ID");
+        await issue.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+        await issue.FillAsync("TKT-00011");
+        await commit.GetByLabel("Commit Message").FillAsync("Tidy the layout of Modified");
+        await Assertions.Expect(commit.GetByRole(AriaRole.Button, new() { Name = "Commit (" }))
+                        .ToBeEnabledAsync(new() { Timeout = 10_000 });
+        await page.Mouse.MoveAsync(0, 0, new MouseMoveOptions { Steps = 8 });
+        await page.WaitForTimeoutAsync(800);
+        await ShotOfAsync(commit, "svn-operations-1");
+        await CloseTheDialogAsync(page);
+
+        await DialogShotAsync(page, revisionRow.Locator("button").Nth(2), "svn-operations-2");
+
+        // Switch, create, merge - SVN has no More actions popover; merge is on the row itself.
+        await DialogShotAsync(page, branchRow.Locator("button").First, "svn-operations-3");
+        await DialogShotAsync(page, branchRow.Locator("button").Nth(1), "svn-operations-4");
+
+        // The dirty phase, which is the one the uncommitted edit puts it in.
+        await DialogShotAsync(page, branchRow.Locator("button").Nth(2), "svn-operations-5");
+
+        await DialogShotAsync(page, RowContaining(page, "MySvnLibrary").Locator("button").Last, "svn-operations-6");
+
+        // The SVN branch directories, which the Edit Repository dialog draws only for SVN.
+        await OpenTabAsync(page, SettingsTab);
+        await OpenSettingsPanelAsync(page, "Manage Repositories");
+        await ShellReadiness.WaitUntilClickableAsync(page);
+        await page.GetByText("MySvnLibrary").Last.ClickAsync();
+        await page.Locator(".mud-dialog").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+        await page.WaitForTimeoutAsync(1500);
+        await SectionShotAsync(page, "SVN branch directories", "settings-reference-4", height: 150);
+        await CloseTheDialogAsync(page);
+    }
+
+    /// <summary>
     /// The Add Repository dialog, in both of its two ways of naming a repository.
     /// </summary>
     /// <remarks>
@@ -538,13 +644,6 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// their position in the row they live in - which is why each one says which row and which
     /// position, and why a changed row order shows up as a picture of the wrong dialog rather than as
     /// an error. Each shot asserts the dialog opened, so that failure is loud.</para>
-    ///
-    /// <para><b>git-operations-6 is not here.</b> The merge dialog's ready-to-merge phase needs a
-    /// clean working copy, and committing the fixture's change - through git, at the end, after
-    /// everything that wanted it - is not enough: MLQT holds the working-copy status it last read,
-    /// and nothing short of a VCS operation *in the application* makes it read again, which is
-    /// reasonable behaviour and leaves no way to reach the picture from here. It stays a
-    /// photograph.</para>
     /// </remarks>
     private async Task GitOperationsAsync(IPage page)
     {
@@ -637,6 +736,62 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
             await history.HoverAsync();
             await page.Mouse.MoveAsync(0, 0, new MouseMoveOptions { Steps = 8 });
         }
+
+        // Last among the Git pictures, because it commits: every one above wants the uncommitted
+        // edit, and the history above wants exactly the fixture's two commits.
+        await ReadyToMergeAsync(page, more);
+    }
+
+    /// <summary>
+    /// The merge dialog's ready-to-merge phase, reached the way a user reaches it: commit from the
+    /// dirty phase, and come back to a clean working copy.
+    /// </summary>
+    /// <remarks>
+    /// <para>This was a photograph for a while on the grounds that it could not be reached: committing
+    /// the fixture's change behind MLQT's back leaves the dialog reading the status MLQT last read,
+    /// and nothing short of a VCS operation <i>in the application</i> makes it read again. That is
+    /// the answer as well as the obstacle - the dirty phase's own Commit Changes button is such an
+    /// operation, and when the commit dialog it opens closes, the merge dialog checks the working
+    /// copy again and moves on. Which is exactly the path git-operations.md describes.</para>
+    ///
+    /// <para>A branch is selected before the shot, because the caption asks for the Merge button
+    /// and it is drawn disabled until there is something to merge.</para>
+    /// </remarks>
+    private static async Task ReadyToMergeAsync(IPage page, ILocator more)
+    {
+        var actions = await OpenActionsPopoverAsync(page, more);
+        await actions.Locator("button").Nth(1).ClickAsync();
+
+        var merge = page.Locator(".mud-dialog").First;
+        var commitFirst = merge.GetByRole(AriaRole.Button, new() { Name = "Commit Changes" });
+        await commitFirst.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+        await commitFirst.ClickAsync();
+
+        var commit = page.Locator(".mud-dialog").Last;
+        var message = commit.GetByLabel("Commit Message");
+        await message.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+        await message.FillAsync("Tidy the layout of Modified and configure the repository");
+
+        // The message field debounces for 500ms, and the button is disabled until it has a value.
+        var commitButton = commit.GetByRole(AriaRole.Button, new() { Name = "Commit (" });
+        await Assertions.Expect(commitButton).ToBeEnabledAsync(new() { Timeout = 10_000 });
+        await commitButton.ClickAsync();
+
+        // One dialog again, and that one past its dirty phase.
+        await Assertions.Expect(page.Locator(".mud-dialog")).ToHaveCountAsync(1, new() { Timeout = 30_000 });
+        var mergeButton = merge.GetByRole(AriaRole.Button, new() { Name = "Merge", Exact = true });
+        await mergeButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+
+        await merge.GetByText("pump-curves", new() { Exact = true }).First.ClickAsync();
+        await Assertions.Expect(mergeButton).ToBeEnabledAsync(new() { Timeout = 10_000 });
+        await page.Mouse.MoveAsync(0, 0, new MouseMoveOptions { Steps = 8 });
+        await page.WaitForTimeoutAsync(800);
+
+        await ShotOfAsync(merge, "git-operations-6");
+        await CloseTheDialogAsync(page);
+
+        await more.HoverAsync();
+        await page.Mouse.MoveAsync(0, 0, new MouseMoveOptions { Steps = 8 });
     }
 
     /// <summary>
@@ -759,9 +914,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         // The formatting switches on their own. code-formatting.md's table describes exactly these,
         // and described four of them under invented short names, so a reader could not match what
-        // they were reading to what was on screen. Tall enough for the master switch and all five
+        // they were reading to what was on screen. Tall enough for the master switch and all six
         // rules: the last two labels are a full line each.
-        await SectionShotAsync(page, "Formatting rules", "code-formatting-1", height: 178);
+        await SectionShotAsync(page, "Formatting rules", "code-formatting-1", height: 210);
 
         await SectionShotAsync(page, "Spell checking", "settings-reference-6", height: 320);
 
@@ -829,12 +984,12 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// </remarks>
     private async Task OpenTheLibraryAsync(IPage page)
     {
-        EnableSomeRules();
+        EnableSomeRules(_library!);
 
         var repositories = host.Services.GetRequiredService<IRepositoryService>();
 
         if (repositories.GetActiveProject() is null)
-            repositories.CreateProject("Documentation");
+            await repositories.CreateProjectAsync("Documentation");
 
         // Two more projects, empty, so that Manage Repositories shows what getting-started.md says it
         // shows. With a single project the panel renders none of what the "Switching Between Projects"
@@ -845,11 +1000,11 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         //
         // Through the service and not the New Project button, and that is the point rather than a
         // shortcut: a project created through the UI *becomes the active one*, which would unload
-        // MyLibrary and take the repository out of every screenshot after this. CreateProject only
+        // MyLibrary and take the repository out of every screenshot after this. CreateProjectAsync only
         // adds it. They are left empty because the section is about projects, not their contents, and
         // an inactive project's panel is collapsed anyway.
         foreach (var name in new[] { "Product Development", "Research" })
-            repositories.CreateProject(name);
+            await repositories.CreateProjectAsync(name);
 
         var added = await repositories.AddRepositoryAsync(_library!.RepositoryPath, name: "MyLibrary", startMonitoring: false);
         Assert.True(added.Success, added.ErrorMessage);
@@ -900,13 +1055,14 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// descriptions, which are the ones a new user turns on first, and two about layout, which are
     /// what settings-reference.md shows being reported.</para>
     /// </remarks>
-    private void EnableSomeRules()
+    private static void EnableSomeRules(LibraryFixture library, bool requireIssueNumber = false)
     {
-        var mlqt = Path.Combine(_library!.RepositoryPath, ".mlqt");
+        var mlqt = Path.Combine(library.RepositoryPath, ".mlqt");
         Directory.CreateDirectory(mlqt);
 
-        File.WriteAllText(Path.Combine(mlqt, "settings.json"), """
+        File.WriteAllText(Path.Combine(mlqt, "settings.json"), $$"""
             {
+              "CommitRequiresIssueNumber": {{(requireIssueNumber ? "true" : "false")}},
               "RuleSeverities": {
                 "MLQT.Doc.ClassDescription": "Warning",
                 "MLQT.Doc.ParameterDescription": "Error",
@@ -928,19 +1084,8 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// the code viewer, the findings list and the dependency graph show anything - and doing it the
     /// way a user does is what keeps the picture honest about the number of clicks involved.
     /// </remarks>
-    private static async Task SelectAClassAsync(IPage page, string className = "Modified")
-    {
-        // Expanding and selecting are different gestures, and the tree is lazy: clicking the node's
-        // label selects it and leaves it closed, so the children a later step wants are not in the
-        // DOM at all. The arrow is what loads them.
-        await ExpandAsync(page, "Lib");
-
-        var target = NodeByText(page, className);
-
-        Assert.True(await target.CountAsync() > 0, $"{className} is not in the tree");
-        await target.ClickAsync();
-        await page.WaitForTimeoutAsync(1500);
-    }
+    private static Task SelectAClassAsync(IPage page, string className = "Modified") =>
+        LibraryTree.SelectClassAsync(page, className);
 
     /// <summary>
     /// The row a piece of text sits in — its nearest enclosing stack.
@@ -975,8 +1120,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     private static ILocator LeftToolbar(IPage page) => page.Locator(".mud-button-group-root").First;
 
     /// <summary>One tree node, addressed by the text on it.</summary>
-    private static ILocator NodeByText(IPage page, string text) =>
-        page.Locator(".mud-treeview-item-content", new PageLocatorOptions { HasTextString = text }).First;
+    private static ILocator NodeByText(IPage page, string text) => LibraryTree.NodeByText(page, text);
 
     /// <summary>
     /// Opens one tree node by its arrow, and waits for its children to arrive.
@@ -987,26 +1131,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// unconditional click would have shut what the first one opened. MudBlazor marks an open
     /// node's arrow with <c>mud-transform</c>, which is the only way to ask.
     /// </remarks>
-    private static async Task ExpandAsync(IPage page, string nodeText)
-    {
-        var node = NodeByText(page, nodeText);
-        await node.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
-
-        var icon = node.Locator(".mud-treeview-item-arrow-expand").First;
-        if (await icon.CountAsync() > 0 &&
-            (await icon.GetAttributeAsync("class"))?.Contains("mud-transform") == true)
-            return;
-
-        var arrow = node.Locator(".mud-treeview-item-arrow button").First;
-
-        if (await arrow.CountAsync() > 0)
-            await arrow.ClickAsync();
-        else
-            await node.DblClickAsync();
-
-        // Server-side children: the node's own click returns before they are fetched.
-        await page.WaitForTimeoutAsync(1500);
-    }
+    private static Task ExpandAsync(IPage page, string nodeText) => LibraryTree.ExpandAsync(page, nodeText);
 
     /// <summary>Ticks a tree node's impact-analysis checkbox.</summary>
     private static async Task CheckInTheTreeAsync(IPage page, string nodeText)

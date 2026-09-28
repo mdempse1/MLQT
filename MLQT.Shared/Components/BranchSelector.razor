@@ -5,11 +5,11 @@
     @if (_isLoading)
     {
         <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-        <MudText Typo="Typo.body1">Loading branches...</MudText>
+        <MudText Typo="Typo.body1">Loading branches and tags...</MudText>
     }
     else if (_treeItems.Count == 0)
     {
-        <MudAlert Severity="Severity.Info" Dense="true">No branches found.</MudAlert>
+        <MudAlert Severity="Severity.Info" Dense="true">No branches or tags found.</MudAlert>
     }
     else
     {
@@ -40,7 +40,7 @@
                                 <MudIcon Icon="@(SelectedBranch == node.Value.FullPath ? Icons.Material.Filled.RadioButtonChecked : Icons.Material.Filled.RadioButtonUnchecked)"
                                          Size="Size.Small"
                                          Color="@(SelectedBranch == node.Value.FullPath ? Color.Primary : (node.Value.IsCurrent ? Color.Primary : Color.Default))" />
-                                <MudIcon Icon="@(node.Value.IsRemote ? Icons.Material.Filled.Cloud : Icons.Material.Filled.AccountTree)"
+                                <MudIcon Icon="@(node.Value.IsTag ? Icons.Material.Filled.Sell : node.Value.IsRemote ? Icons.Material.Filled.Cloud : Icons.Material.Filled.AccountTree)"
                                          Size="Size.Small"
                                          Color="@(node.Value.IsCurrent ? Color.Primary : Color.Default)" />
                                 <MudText Typo="Typo.body1"
@@ -54,6 +54,12 @@
                                 @if (node.Value.IsRemote)
                                 {
                                     <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Remote</MudChip>
+                                }
+                                @* A tag is not somewhere you can commit, and the chip is the only
+                                   thing saying so before the switch happens (B193). *@
+                                @if (node.Value.IsTag)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Tag</MudChip>
                                 }
                             }
                         </MudStack>

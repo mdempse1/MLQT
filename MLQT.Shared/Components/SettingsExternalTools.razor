@@ -1,20 +1,27 @@
 @using DymolaInterface
 @using OpenModelicaInterface
+@using MLQT.Services.Helpers
 @using System.Threading.Tasks
 
 
 <MudPaper Elevation="0">
     <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">Dymola</MudText>
-    <MudTextField @bind-Value="@_settings.Dymola.DymolaPath"
-                    Label="Path to Dymola Executable"
-                    Variant="Variant.Outlined"
-                    Adornment="Adornment.End"
-                    AdornmentIcon="@Icons.Material.Filled.FolderOpen"
-                    OnAdornmentClick="BrowseForDymolaFolder"
-                    Margin="Margin.Dense"
-                    Typo="Typo.body1" 
-                    ShrinkLabel="true"
-                    Class="mt-4"/>
+    <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center" Class="mt-4">
+        <MudTextField @bind-Value="@_settings.Dymola.DymolaPath"
+                        Label="Path to Dymola Executable"
+                        Variant="Variant.Outlined"
+                        Adornment="Adornment.End"
+                        AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                        OnAdornmentClick="@(() => BrowseForDymola(OperatingSystem.IsWindows()))"
+                        Margin="Margin.Dense"
+                        Typo="Typo.body1"
+                        ShrinkLabel="true"
+                        Class="flex-grow-1"/>
+        <MudTooltip Text="Look for Dymola where it is normally installed, and on PATH. Clears the path if none is found.">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary" Class="ml-2"
+                       OnClick="DetectDymola" aria-label="Auto-detect Dymola">Auto-detect</MudButton>
+        </MudTooltip>
+    </MudStack>
     @if (_showDymolaWarning) 
     {
         <MudAlert Severity="Severity.Warning">Could not find Dymola at @_settings.Dymola.DymolaPath</MudAlert>
@@ -29,18 +36,34 @@
                     ShrinkLabel="true"
                     Class="mt-4"/>
 
-
-    <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">OpenModelica</MudText>
-    <MudTextField @bind-Value="@_settings.OpenModelica.OmcPath"
-                    Label="Path to OpenModelica Compiler Executable"
+    <MudNumericField @bind-Value="@DymolaTimeLimitSeconds"
+                    Label="@($"{ToolTimeLimit.SettingName} (seconds)")"
+                    HelperText="How long one check or library load may take before it is stopped. 0 means no limit."
                     Variant="Variant.Outlined"
-                    Adornment="Adornment.End"
-                    AdornmentIcon="@Icons.Material.Filled.FolderOpen"
-                    OnAdornmentClick="BrowseForOpenModelicaFolder"
                     Margin="Margin.Dense"
-                    Typo="Typo.body1" 
+                    Min="0" Max="@MaxTimeLimitSeconds"
+                    Typo="Typo.body1"
                     ShrinkLabel="true"
                     Class="mt-4"/>
+
+
+    <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">OpenModelica</MudText>
+    <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center" Class="mt-4">
+        <MudTextField @bind-Value="@_settings.OpenModelica.OmcPath"
+                        Label="Path to OpenModelica Compiler Executable"
+                        Variant="Variant.Outlined"
+                        Adornment="Adornment.End"
+                        AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                        OnAdornmentClick="@(() => BrowseForOpenModelica(OperatingSystem.IsWindows()))"
+                        Margin="Margin.Dense"
+                        Typo="Typo.body1"
+                        ShrinkLabel="true"
+                        Class="flex-grow-1"/>
+        <MudTooltip Text="Look for OpenModelica where it is normally installed, and on PATH. Clears the path if none is found.">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary" Class="ml-2"
+                       OnClick="DetectOpenModelica" aria-label="Auto-detect OpenModelica">Auto-detect</MudButton>
+        </MudTooltip>
+    </MudStack>
     @if (_showOpenModelicaWarning) 
     {
         <MudAlert Severity="Severity.Warning">Could not find OpenModelica at @_settings.OpenModelica.OmcPath</MudAlert>
@@ -52,6 +75,16 @@
                     Margin="Margin.Dense"
                     Min="1" Max="65535"
                     Typo="Typo.body1" 
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+
+    <MudNumericField @bind-Value="@OpenModelicaTimeLimitSeconds"
+                    Label="@($"{ToolTimeLimit.SettingName} (seconds)")"
+                    HelperText="How long one check or library load may take before it is stopped. 0 means no limit."
+                    Variant="Variant.Outlined"
+                    Margin="Margin.Dense"
+                    Min="0" Max="@MaxTimeLimitSeconds"
+                    Typo="Typo.body1"
                     ShrinkLabel="true"
                     Class="mt-4"/>
 </MudPaper>

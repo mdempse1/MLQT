@@ -45,6 +45,12 @@ public abstract class MlqtComponentTestBase : BunitContext
 
         JSInterop.Mode = JSRuntimeMode.Loose;
 
+        // bUnit's default of one second is shorter than a busy full-suite run can take to re-render
+        // after a background task: WaitForAssertion then fails as "canceled" on a test that passes
+        // on its own. A wait returns as soon as its assertion holds, so a longer limit costs a
+        // passing test nothing - and no test here expects a wait to run out.
+        DefaultWaitTimeout = TimeSpan.FromSeconds(10);
+
         // AppState is a concrete class with no dependencies, and its events are the thing under test
         // in most component tests. Register the real one and assert on what it raises.
         Services.AddSingleton<AppState>();

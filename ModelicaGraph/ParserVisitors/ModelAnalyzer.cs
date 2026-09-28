@@ -1,6 +1,7 @@
 using Antlr4.Runtime.Misc;
 using ModelicaParser;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -29,6 +30,12 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     // recorded at depth 1 — see ResolveAndAddDependency.
     private int _classDepth;
 
+    // Depth of annotation nesting, and of the code-bearing annotation arguments inside it. An
+    // annotation is metadata, not code, so its content is not collected as references — see
+    // ResolveAndAddDependency and CodeBearingAnnotationKeys.
+    private int _annotationDepth;
+    private int _annotationCodeDepth;
+
     // --- External resource state (from ExternalResourceExtractor) ---
     private static readonly Dictionary<string, ResourceReferenceType> ExternalAnnotationKeys = new(StringComparer.Ordinal)
     {
@@ -41,6 +48,8 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private readonly List<ExternalResourceInfo> _resources = new();
     private bool _inLoadResourceCall;
+    /// <summary>The path a loadResource call names, when its argument is a lone string literal (B210).</summary>
+    private string? _loadResourcePath;
 
     // --- LoadSelector Pass 1 state (from LoadSelectorAnalyzer) ---
     private bool _isParameterDeclaration;
@@ -82,53 +91,23 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         _classDepth++;
         try
         {
+            // The class's own imports, read before anything in it is visited. An import is in scope
+            // for the whole class wherever it is written, and a nested class's imports are that
+            // class's scope, not this one's. Collected as the visit reached them, a reference written
+            // above its import missed it and a nested class's import leaked out to every reference
+            // after it (B348).
+            if (_classDepth == 1)
+            {
+                _imports.Clear();
+                _imports.AddRange(ReferenceResolver.CollectClassImports(context));
+            }
+
             return base.VisitClass_definition(context);
         }
         finally
         {
             _classDepth--;
         }
-    }
-
-    /// <summary>
-    /// Visit import clauses to build the import list for dependency resolution.
-    /// </summary>
-    public override object? VisitImport_clause([NotNull] modelicaParser.Import_clauseContext context)
-    {
-        var importText = context.GetText();
-        var name = context.name();
-        if (name != null)
-        {
-            var qualifiedName = GetQualifiedName(name);
-            var ident = context.IDENT();
-            if (ident != null)
-            {
-                _imports.Add(new ImportInfo
-                {
-                    Alias = ident.GetText(),
-                    QualifiedName = qualifiedName,
-                    IsWildcard = false
-                });
-            }
-            else if (importText.Contains(".*"))
-            {
-                _imports.Add(new ImportInfo
-                {
-                    QualifiedName = qualifiedName,
-                    IsWildcard = true
-                });
-            }
-            else
-            {
-                _imports.Add(new ImportInfo
-                {
-                    QualifiedName = qualifiedName,
-                    IsWildcard = false
-                });
-            }
-        }
-
-        return base.VisitImport_clause(context);
     }
 
     /// <summary>
@@ -195,25 +174,10 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        bool hasExternal = false;
-        for (int i = 0; i < context.ChildCount; i++)
-        {
-            if (context.GetChild(i) is Antlr4.Runtime.Tree.ITerminalNode terminal &&
-                terminal.GetText() == "external")
-            {
-                hasExternal = true;
-                break;
-            }
-        }
-
-        if (hasExternal)
-        {
-            var annotations = context.annotation();
-            if (annotations != null && annotations.Length > 0)
-            {
-                ExtractExternalAnnotationResources(annotations[0]);
-            }
-        }
+        // By position, not index: annotation()[0] is the leading class annotation when there is one
+        // (B446).
+        if (CompositionAnnotations.External(context) is { } externalAnnotation)
+            ExtractExternalAnnotationResources(externalAnnotation);
 
         return base.VisitComposition(context);
     }
@@ -235,10 +199,20 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
                 if (function == "Modelica.Utilities.Files.loadResource" ||
                     function == "ModelicaServices.ExternalReferences.loadResource")
                 {
-                    // External resource: capture the resource path argument
+                    // External resource: capture the argument only when it *is* a path.
+                    //
+                    // A composed argument - loadResource("modelica://" + packageName + "/package.mo")
+                    // - has a value only once the model is translated. Capturing every literal met
+                    // inside the call turned that one line into two resources, "modelica://" and
+                    // "/package.mo", and the second was reported as a missing file (B210).
+                    //
+                    // The arguments are still walked, because they can hold component and type
+                    // references that this visitor exists to record; only the capture is gated.
+                    _loadResourcePath = ResourceArgument.SoleStringLiteral(context.function_call_args());
                     _inLoadResourceCall = true;
                     Visit(context.function_call_args());
                     _inLoadResourceCall = false;
+                    _loadResourcePath = null;
 
                     // LoadSelector Pass 1: flag loadResource default for parameter tracking
                     if (_isParameterDeclaration)
@@ -259,15 +233,17 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
             var text = context.STRING().GetText();
             if (_inLoadResourceCall)
             {
-                // Inside loadResource() call — capture the argument as a LoadResource reference
+                // Only the literal the call consists of, and only once - not every literal inside a
+                // composed expression.
                 var path = StripQuotes(text);
-                if (!string.IsNullOrWhiteSpace(path))
+                if (_loadResourcePath is not null && path == _loadResourcePath)
                 {
                     _resources.Add(new ExternalResourceInfo
                     {
                         RawPath = path,
                         ReferenceType = ResourceReferenceType.LoadResource
                     });
+                    _loadResourcePath = null;
                 }
             }
             else
@@ -375,7 +351,59 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
             CheckForLoadSelector(context.class_modification());
         }
 
-        return base.VisitAnnotation(context);
+        // Everything below here is annotation content, and dependency recording is off for it (see
+        // ResolveAndAddDependency). The subtree is still walked: external resources, modelica:// URIs
+        // and loadSelector parameters all live inside annotations and are what this visitor is for.
+        _annotationDepth++;
+        try
+        {
+            return base.VisitAnnotation(context);
+        }
+        finally
+        {
+            _annotationDepth--;
+        }
+    }
+
+    /// <summary>
+    /// The annotation arguments whose contents name classes the translator really calls, rather than
+    /// describing how to draw something. Inside one of these, dependency recording is on again.
+    ///
+    /// <para><c>derivative</c> and <c>inverse</c> name functions (§12.7, §12.8) and <c>choices</c>
+    /// names the classes a redeclaration may be given (§7.3.4). Without them the blanket exclusion
+    /// would drop real edges and report every <c>_der</c> function as an unused class.</para>
+    /// </summary>
+    private static readonly HashSet<string> CodeBearingAnnotationKeys = new(StringComparer.Ordinal)
+    {
+        "derivative", "inverse", "choices", "choice"
+    };
+
+    /// <summary>
+    /// An annotation argument: <c>name (modification)? string_comment</c>. The name is the key —
+    /// <c>Icon</c>, <c>Dialog</c>, <c>Placement</c> — and is never a class reference, so it is not
+    /// visited as one. Only the modification is, and only under a code-bearing key does it record.
+    /// </summary>
+    public override object? VisitElement_modification([NotNull] modelicaParser.Element_modificationContext context)
+    {
+        if (_annotationDepth == 0)
+            return base.VisitElement_modification(context);
+
+        var key = context.name()?.GetText();
+        var isCodeBearing = key != null && CodeBearingAnnotationKeys.Contains(key);
+        if (isCodeBearing)
+            _annotationCodeDepth++;
+        try
+        {
+            // The key itself is skipped; its value is not.
+            if (context.modification() is { } modification)
+                Visit(modification);
+            return null;
+        }
+        finally
+        {
+            if (isCodeBearing)
+                _annotationCodeDepth--;
+        }
     }
 
     #endregion
@@ -388,6 +416,16 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         // inside nested class definitions belong to those classes' own ModelNodes, which are analysed
         // separately — attributing them here would pollute the enclosing node's dependency edges.
         if (_classDepth > 1)
+            return;
+
+        // An annotation describes the class; it does not use anything. Its contents are annotation
+        // grammar — Line, Rectangle, Dialog, Placement — and name resolution cannot tell that from a
+        // class, so a library holding a class of the same name collected an edge from every model
+        // with an icon. The uses(...) annotation is the sharpest case of both directions: it names
+        // the libraries, so counting it as a reference made every declared library look used and
+        // every graphics keyword look like a library (B246). CodeBearingAnnotationKeys is the
+        // exception — derivative, inverse and choices do name classes.
+        if (_annotationDepth > 0 && _annotationCodeDepth == 0)
             return;
 
         var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference);
@@ -504,53 +542,17 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private void ExtractModelicaUris(string stringLiteral)
     {
-        var text = StripQuotes(stringLiteral);
-        if (string.IsNullOrWhiteSpace(text)) return;
-
-        var searchText = text;
-        int startIndex = 0;
-
-        while (startIndex < searchText.Length)
+        // Scanned by the shared helper, not by a copy of its loop. This method and
+        // ExternalResourceExtractor's held byte-for-byte identical versions, and the graph build uses
+        // this one - so B209 was fixed in the other and nothing a user could see changed.
+        foreach (var uri in ModelicaUriScanner.FindFileUris(StripQuotes(stringLiteral)))
         {
-            var uriStart = searchText.IndexOf("modelica://", startIndex, StringComparison.OrdinalIgnoreCase);
-            if (uriStart < 0) break;
-
-            var uriEnd = uriStart + "modelica://".Length;
-            while (uriEnd < searchText.Length &&
-                   !char.IsWhiteSpace(searchText[uriEnd]) &&
-                   searchText[uriEnd] != '"' &&
-                   searchText[uriEnd] != '\'' &&
-                   searchText[uriEnd] != '>' &&
-                   searchText[uriEnd] != '<' &&
-                   searchText[uriEnd] != ')' &&
-                   searchText[uriEnd] != '\\')
+            _resources.Add(new ExternalResourceInfo
             {
-                uriEnd++;
-            }
-
-            var uri = searchText.Substring(uriStart, uriEnd - uriStart);
-            if (HasFileExtension(uri))
-            {
-                _resources.Add(new ExternalResourceInfo
-                {
-                    RawPath = uri,
-                    ReferenceType = ResourceReferenceType.UriReference
-                });
-            }
-
-            startIndex = uriEnd;
+                RawPath = uri,
+                ReferenceType = ResourceReferenceType.UriReference
+            });
         }
-    }
-
-    private static bool HasFileExtension(string uri)
-    {
-        var pathPart = uri.Substring("modelica://".Length);
-        var lastSlash = pathPart.LastIndexOf('/');
-        if (lastSlash < 0) return false;
-
-        var lastSegment = pathPart.Substring(lastSlash + 1);
-        var dotIndex = lastSegment.LastIndexOf('.');
-        return dotIndex > 0 && dotIndex < lastSegment.Length - 1;
     }
 
     #endregion

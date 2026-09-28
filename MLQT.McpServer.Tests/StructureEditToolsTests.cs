@@ -729,6 +729,51 @@ public class StructureEditToolsTests
         Assert.Contains("nope", err.Error);
     }
 
+    // B457: a class body holding nothing but its annotation. The grammar's optional leading
+    // `annotation ';'` matches before the empty element list, so the annotation read as a leading one,
+    // the locator found no trailing annotation to stop at, and the first element went after it.
+    private const string AnnotationOnly = """
+        within;
+        package B "b"
+          model M
+            annotation (Icon());
+          end M;
+        end B;
+        """;
+
+    private static async Task<StructureEditTools> LoadAnnotationOnly(TestHost host)
+    {
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = AnnotationOnly });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        return new StructureEditTools(host.Libraries, host.Resources, host.Session);
+    }
+
+    [Fact]
+    public async Task AddComponent_ToAClassHoldingOnlyItsAnnotation_GoesBeforeTheAnnotation()
+    {
+        using var host = new TestHost();
+        var tools = await LoadAnnotationOnly(host);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("B.M", "Real", "x"));
+
+        var src = Source(host, "B.M");
+        Assert.True(src.IndexOf("Real x;", StringComparison.Ordinal)
+                    < src.IndexOf("annotation (Icon())", StringComparison.Ordinal), src);
+    }
+
+    [Fact]
+    public async Task AddEquation_ToAClassHoldingOnlyItsAnnotation_GoesBeforeTheAnnotation()
+    {
+        using var host = new TestHost();
+        var tools = await LoadAnnotationOnly(host);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.AddEquation("B.M", "der(x) = 1"));
+
+        var src = Source(host, "B.M");
+        Assert.True(src.IndexOf("der(x) = 1;", StringComparison.Ordinal)
+                    < src.IndexOf("annotation (Icon())", StringComparison.Ordinal), src);
+    }
+
     // Regression: a class with a trailing class annotation and no equation section. The new equation
     // section must be inserted BEFORE the annotation (the grammar requires it to be last), otherwise the
     // result does not parse. Also verifies the unresolved-type note is actionable (mentions loading a library).

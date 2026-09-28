@@ -1,0 +1,219 @@
+using System.Diagnostics;
+using Xunit;
+
+namespace OpenModelicaInterface.Tests;
+
+/// <summary>
+/// omc honouring its own time limits (B263), against a real omc.
+/// </summary>
+/// <remarks>
+/// <para><c>OpenModelicaSettings.CommandTimeoutMs</c> and <c>StartupTimeoutMs</c> existed from the
+/// start and nothing read either: a command's reply was a bare blocking receive, so a long check hung
+/// its caller for as long as omc took, and start-up slept a fixed two seconds whatever the setting
+/// said. These start an omc of their own on their own port, so the fixture's session is not the one
+/// they close.</para>
+///
+/// <para><c>loadModel(Modelica)</c> is the long command: loading the whole standard library takes
+/// omc seconds, far longer than the limits set here.</para>
+/// </remarks>
+// Starts an omc of its own rather than taking the fixture, so ToolTraitTests cannot see that it needs
+// one - the trait is the only thing keeping it out of CI's tool-free run (B399).
+[Trait("Requires", "OpenModelica")]
+public class TimeLimitTests
+{
+    private const string OmcPath = @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe";
+    private static CancellationToken Test => TestContext.Current.CancellationToken;
+
+    /// <summary>A command that keeps omc busy for half a minute whatever it has cached - loading the
+    /// standard library can take barely a second once it is warm.</summary>
+    private static string LongCommand => OperatingSystem.IsWindows()
+        ? "system(\"ping -n 30 127.0.0.1\")"
+        : "system(\"sleep 30\")";
+
+    private static async Task<OpenModelicaInterface> StartedAsync(int port)
+    {
+        var omc = new OpenModelicaInterface(OmcPath, port) { StartupTimeout = TimeSpan.FromSeconds(30) };
+        await omc.StartAsync();
+        return omc;
+    }
+
+    [Fact]
+    public async Task StartingNeedsNoFixedWait()
+    {
+        // The two-second sleep is gone; start-up takes as long as omc does, and a session that has
+        // started answers at once.
+        var clock = Stopwatch.StartNew();
+        using var omc = await StartedAsync(13131);
+        clock.Stop();
+
+        Assert.True(omc.IsConnected);
+        Assert.False(string.IsNullOrEmpty(await omc.GetVersionAsync()));
+    }
+
+    [Fact]
+    public async Task ACommandThatRunsOutOfTime_ClosesTheSession()
+    {
+        using var omc = await StartedAsync(13132);
+        omc.CommandTimeout = TimeSpan.FromMilliseconds(200);
+
+        var clock = Stopwatch.StartNew();
+        var failure = await Assert.ThrowsAsync<TimeoutException>(() => omc.SendCommandAsync("loadModel(Modelica)", cancellationToken: TestContext.Current.CancellationToken));
+        clock.Stop();
+
+        // Closed, not merely given up on: the REQ socket cannot send again until it has received, and
+        // omc is still working on the command behind it.
+        Assert.False(omc.IsConnected);
+        Assert.Contains("loadModel", failure.Message);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"the limit was not kept: {clock.Elapsed}");
+    }
+
+    [Fact]
+    public async Task CancellingACommandInFlight_ClosesTheSession()
+    {
+        using var omc = await StartedAsync(13133);
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Test);
+        cancel.CancelAfter(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => omc.SendCommandAsync("loadModel(Modelica)", cancel.Token));
+
+        Assert.False(omc.IsConnected);
+    }
+
+    [Fact]
+    public async Task AStartThatRunsOutOfTime_IsReportedAndLeavesNothingRunning()
+    {
+        using var omc = new OpenModelicaInterface(OmcPath, 13134) { StartupTimeout = TimeSpan.FromMilliseconds(1) };
+
+        await Assert.ThrowsAsync<TimeoutException>(() => omc.StartAsync(cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.False(omc.IsConnected);
+    }
+
+    [Fact]
+    public async Task AfterATimeout_TheFactoryStartsAFreshSession()
+    {
+        var factory = new OpenModelicaInterfaceFactory();
+        factory.UpdateSettings(new OpenModelicaSettings(OmcPath)
+        {
+            PortNumber = 13135,
+            CommandTimeoutMs = 200,
+            StartupTimeoutMs = 30_000,
+        });
+        try
+        {
+            var first = (OpenModelicaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<TimeoutException>(() => first.SendCommandAsync("loadModel(Modelica)", cancellationToken: TestContext.Current.CancellationToken));
+
+            var second = (OpenModelicaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.NotSame(first, second);
+            Assert.True(second.IsConnected);
+            Assert.False(string.IsNullOrEmpty(await second.GetVersionAsync()));
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task TheFactoryAppliesBothLimitsFromTheSettings()
+    {
+        var factory = new OpenModelicaInterfaceFactory();
+        factory.UpdateSettings(new OpenModelicaSettings(OmcPath)
+        {
+            PortNumber = 13136,
+            CommandTimeoutMs = 45_000,
+            StartupTimeoutMs = 20_000,
+        });
+        try
+        {
+            var omc = (OpenModelicaInterface)await factory.GetOrCreateAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Equal(TimeSpan.FromSeconds(45), omc.CommandTimeout);
+            Assert.Equal(TimeSpan.FromSeconds(20), omc.StartupTimeout);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// B336: only the time limit reached a running session; a new port or omc did nothing until the
+    /// session died or MLQT restarted.
+    /// </summary>
+    [Fact]
+    public async Task TheFactoryStartsANewSessionWhenThePortChanges()
+    {
+        var factory = new OpenModelicaInterfaceFactory();
+        var settings = new OpenModelicaSettings(OmcPath) { PortNumber = 13138, StartupTimeoutMs = 30_000 };
+        factory.UpdateSettings(settings);
+        try
+        {
+            var first = (OpenModelicaInterface)await factory.GetOrCreateAsync(Test);
+
+            settings.PortNumber = 13139;   // edited in place, as the settings dialog does
+            var second = (OpenModelicaInterface)await factory.GetOrCreateAsync(Test);
+
+            Assert.NotSame(first, second);
+            Assert.False(first.IsConnected);
+            Assert.True(second.IsConnected);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// B369: disposing a session with a command in flight disposed the socket and the lock under it,
+    /// so its exchange failed on a disposed socket and its release threw on a disposed lock. The
+    /// command is stopped and gives them back first, and says the session was disposed.
+    /// </summary>
+    [Fact]
+    public async Task DisposingWithACommandInFlight_StopsTheCommandFirst()
+    {
+        var omc = await StartedAsync(13140);
+        omc.CommandTimeout = Timeout.InfiniteTimeSpan;
+        var command = omc.SendCommandAsync(LongCommand, Test);
+        await Task.Delay(200, Test);
+
+        var clock = Stopwatch.StartNew();
+        await Task.Run(omc.Dispose, Test);
+        clock.Stop();
+
+        // Disposed by the session, not by a lock or socket pulled from under it: before the fix this
+        // was the SemaphoreSlim's own ObjectDisposedException, thrown from the release in the finally.
+        var failure = await Record.ExceptionAsync(() => command);
+        var disposed = Assert.IsType<ObjectDisposedException>(failure);
+        Assert.Equal(nameof(OpenModelicaInterface), disposed.ObjectName);
+        Assert.False(omc.IsConnected);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), $"Dispose took {clock.Elapsed}");
+    }
+
+    /// <summary>
+    /// B334: omc dying under a command. A REQ socket gives no sign its peer has gone, so this waited
+    /// out the whole time limit and reported a timeout - and with no limit, as here, it waited until
+    /// somebody pressed Stop. The wait watches the process now.
+    /// </summary>
+    [Fact]
+    public async Task OmcExitingUnderACommand_EndsTheWaitAndSaysSo()
+    {
+        using var omc = await StartedAsync(13137);
+        omc.CommandTimeout = Timeout.InfiniteTimeSpan;
+        var pid = omc.ProcessId ?? throw new InvalidOperationException("omc has no process");
+
+        var clock = Stopwatch.StartNew();
+        var command = omc.SendCommandAsync(LongCommand, Test);
+        await Task.Delay(200, Test);
+        Process.GetProcessById(pid).Kill();
+
+        await Assert.ThrowsAsync<OpenModelicaExitedException>(() => command);
+        clock.Stop();
+
+        Assert.False(omc.IsConnected);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), $"the wait outlived omc by {clock.Elapsed}");
+    }
+}

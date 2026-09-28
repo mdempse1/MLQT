@@ -1,8 +1,16 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Server GC (B281). A check parses tens of thousands of classes from every core at once, and
+         parsing allocates heavily: under the default workstation GC every thread stops for every
+         collection on one shared heap, and the whole-graph analyses spent 53 of their 72 seconds on
+         Claytex suspended waiting for it. Measured over the Claytex repository with the Dymola 2026x
+         library folder: 242s -> 104s on the same code, 70.5s with B281's parallel analyzers, peak
+         memory 8.2 GB -> 8.7 GB, findings identical. Every host sets this; HostGarbageCollectionTests
+         holds that, because the parallel analyzers are slower than serial ones without it. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>MLQT.McpServer</RootNamespace>
@@ -17,6 +25,12 @@
          Microsoft.AspNetCore.App framework reference, which is no longer needed now that
          MLQT.Services is UI-free (no MudBlazor). -->
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+    <!-- Rasterises a rendered diagram SVG to PNG for get_diagram_image (B196): an agent that has
+         just placed components can look at what it made instead of reading coordinates back. Svg.Skia
+         is MIT and pulls SkiaSharp, whose native library is per-RID - the Linux asset is named
+         explicitly because SkiaSharp ships Windows and macOS by default and MLQT ships Linux too. -->
+    <PackageReference Include="Svg.Skia" Version="5.2.3" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
   </ItemGroup>
 
   <ItemGroup>

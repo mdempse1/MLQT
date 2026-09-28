@@ -134,7 +134,7 @@ public class HelperTypeTests
     public async Task StartDymolaProcessAsync_EmptyPath_ThrowsInvalidOperation()
     {
         using var di = new DymolaInterface("", 1, "127.0.0.1");
-        await Assert.ThrowsAsync<InvalidOperationException>(() => di.StartDymolaProcessAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => di.StartDymolaProcessAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]

@@ -14,13 +14,15 @@
       $MlqtBars              the assemblies the gate enforces a per-class bar on. Every one has a
                              suite that runs in CI, so a number here is a number CI can defend.
 
-      $MlqtOwnedAssemblies   everything we wrote, including DymolaInterface and OpenModelicaInterface,
-                             whose suites drive a live simulation tool and therefore run in no CI job.
-                             They are measurable locally by run-all-tests.ps1 and nowhere else.
+      $MlqtOwnedAssemblies   everything we wrote. Today the same list: DymolaInterface and
+                             OpenModelicaInterface were once only here, because their suites drive a
+                             live simulation tool and ran in no CI job. Since B399 CI runs the classes
+                             of those suites needing no tool, and since B438 the gate measures the two
+                             from that part, filtered the same way - so what only a live tool reaches
+                             is debt in the ledger with that reason, not an assembly left unmeasured.
 
-    check-coverage.ps1 reports on the first list: including the other two would show 0% for code that
-    is tested, just not by the suites it ran, which is worse than not showing them. run-all-tests.ps1
-    reports on the second, because it is the one thing that runs every suite we have.
+    Kept as two names because they are still two questions: an assembly of ours with no suite CI
+    can run would belong in the second and not the first.
 #>
 
 # The gate's per-class bars. ModelicaParser is higher because CLAUDE.md singles it out as critical.
@@ -32,11 +34,13 @@ $MlqtBars = @{
     'RevisionControl' = 80.0
     'mlqt'            = 80.0   # the assembly name of MLQT.Cli, from its ToolCommandName
     'MLQT.Shared'     = 80.0   # joined the gate in phase 7a-5
+    # Measured from their tests needing no tool - the trait filters CI uses (B399, B438).
+    'DymolaInterface'       = 80.0
+    'OpenModelicaInterface' = 80.0
 }
 
-# Everything we own. The two additions are the simulation-tool interfaces: real code of ours, with
-# real tests, that no runner can execute.
-$MlqtOwnedAssemblies = @($MlqtBars.Keys) + @('DymolaInterface', 'OpenModelicaInterface')
+# Everything we own. Every assembly of ours is gated at present (B438).
+$MlqtOwnedAssemblies = @($MlqtBars.Keys)
 
 <#
 .SYNOPSIS

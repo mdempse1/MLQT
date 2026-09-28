@@ -402,3 +402,8 @@ CoverageReport/
 AllTestResults/
 AllTestCoverage/
 !build/coverage-baseline.json
+
+# Mutation testing output - build/run-mutation.ps1 -All writes here, and a campaign over the
+# whole solution produces hundreds of megabytes of per-mutant detail.
+MutationReport/
+StrykerOutput/

@@ -14,14 +14,10 @@ public interface IImpactAnalysisService
     /// </summary>
     /// <param name="graph">The dependency graph.</param>
     /// <param name="selectedModelIds">IDs of the selected models.</param>
-    /// <param name="svgWidth">Width available for visualization.</param>
-    /// <param name="svgHeight">Height available for visualization.</param>
     /// <returns>Impact analysis result with nodes, edges, and details.</returns>
     ImpactAnalysisResult AnalyzeImpact(
         DirectedGraph graph,
-        IEnumerable<string> selectedModelIds,
-        int svgWidth = 700,
-        int svgHeight = 450);
+        IEnumerable<string> selectedModelIds);
 
     /// <summary>
     /// Gets the connected node IDs for a given node (nodes directly connected by edges).

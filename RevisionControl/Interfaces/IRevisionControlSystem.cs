@@ -160,6 +160,45 @@ public interface IRevisionControlSystem
     List<VcsBranchInfo> GetBranches(string repositoryPath, bool includeRemote = false);
 
     /// <summary>
+    /// Where HEAD is when it is not on a branch, for a UI that would otherwise have nothing to show.
+    /// </summary>
+    /// <remarks>
+    /// <para>Checking out a tag or a revision leaves Git with a <b>detached HEAD</b>: there is no
+    /// branch, so <see cref="GetCurrentBranch"/> correctly returns null, and the UI showed a blank
+    /// where the branch name goes. This is what to show instead - the tag HEAD is sitting on, or a
+    /// short commit id when it is not on a tag (B193).</para>
+    ///
+    /// <para>Null when HEAD is on a branch, which is the ordinary case, and always null for SVN: a
+    /// working copy switched to a tag there is switched to a directory like any other, and
+    /// <see cref="GetCurrentBranch"/> already names it.</para>
+    /// </remarks>
+    /// <param name="repositoryPath">Path to the repository or working copy</param>
+    /// <returns>A short description of where HEAD is, or null when it is on a branch</returns>
+    string? GetDetachedHeadLabel(string repositoryPath);
+
+    /// <summary>
+    /// How many commits would be left on no branch by switching away from a detached HEAD: the
+    /// ones reachable from HEAD and from no branch, remote branch or tag (B327).
+    /// </summary>
+    /// <remarks>
+    /// Zero when HEAD is on a branch, and always zero for SVN, whose commits go to the server. A
+    /// commit made on a detached HEAD - by MLQT before B327, or by another tool - is reachable from
+    /// HEAD alone, and a switch leaves it to the reflog with nothing said.
+    /// </remarks>
+    int CountCommitsOnNoBranch(string repositoryPath);
+
+    /// <summary>
+    /// The rebase this working copy is part-way through, or null when there is none (B382).
+    /// </summary>
+    /// <remarks>
+    /// A rebase that stopped for conflicts stays stopped after the dialog that started it has
+    /// closed, and HEAD stays detached, so everything that needs a branch is refused until it is
+    /// continued or aborted. This is how a dialog opened later finds it. Always null for SVN, which
+    /// has no rebase.
+    /// </remarks>
+    VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath);
+
+    /// <summary>
     /// Commits changes to the repository.
     /// </summary>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
@@ -195,13 +234,45 @@ public interface IRevisionControlSystem
     VcsOperationResult CreateBranch(string repositoryPath, string branchName, bool switchToBranch = true);
 
     /// <summary>
-    /// Gets the content of a file at a specific revision.
+    /// Gets a file's stored bytes at a specific revision.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Bytes, for the same reason as <see cref="GetConflictVersions"/>.</b> This returned a
+    /// string, decoded as UTF-8 by whichever mechanism the system happened to use - a default
+    /// <c>StreamReader</c> over a git blob, <c>StandardOutputEncoding</c> on <c>svn cat</c> - so a
+    /// Windows-1252 Modelica library showed replacement characters on both sides of a diff of itself,
+    /// and the bytes were gone before any caller could say otherwise (B264).</para>
+    ///
+    /// <para>What the bytes mean is the caller's question. <c>MLQT.Services.Helpers.VcsFileText</c> is
+    /// where MLQT answers it, through the same encoding funnel it uses for files on disk.</para>
+    /// </remarks>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="filePath">Relative path to the file within the repository</param>
     /// <param name="revision">Revision identifier (null or "HEAD" for the last committed version)</param>
-    /// <returns>The file content, or null if the file doesn't exist at that revision</returns>
-    string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null);
+    /// <returns>The file's bytes, or null if the file doesn't exist at that revision</returns>
+    byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null);
+
+    /// <summary>
+    /// The revision that came immediately before <paramref name="revision"/>, so a commit can be
+    /// compared against what it changed.
+    /// </summary>
+    /// <remarks>
+    /// <para>The two systems answer this differently and neither answer is arithmetic the caller
+    /// should be doing for itself. <b>Git</b> has no ordering to count backwards along: the
+    /// predecessor is the commit's <i>first parent</i>, and a root commit has none. <b>SVN</b> has no
+    /// parents recorded at all - <c>VcsLogEntry.ParentRevisions</c> is empty for it - but its
+    /// revisions are global and sequential, so N-1 is the state of the whole repository before N,
+    /// whether or not N-1 touched this file.</para>
+    ///
+    /// <para>Null means there is nothing before it: the first commit, or a revision this system
+    /// cannot resolve. A caller diffing against it should treat that as empty rather than as a
+    /// failure - a file added by the first commit has no previous content, and that is a complete
+    /// answer, not a missing one.</para>
+    /// </remarks>
+    /// <param name="repositoryPath">Path to the repository or working copy</param>
+    /// <param name="revision">The revision whose predecessor is wanted</param>
+    /// <returns>The predecessor's revision identifier, or null if there is none</returns>
+    string? GetPreviousRevision(string repositoryPath, string revision);
 
     /// <summary>
     /// Merges changes from a source branch into the current working copy.
@@ -216,6 +287,12 @@ public interface IRevisionControlSystem
     /// <summary>
     /// Resolves a conflict in a specific file using the given resolution strategy.
     /// </summary>
+    /// <remarks>
+    /// <see cref="ConflictResolutionChoice.KeepMine"/> keeps the user's own branch and
+    /// <see cref="ConflictResolutionChoice.AcceptIncoming"/> takes the other one - in a Git rebase,
+    /// the user's replayed commit and the branch being rebased onto respectively, which is the
+    /// reverse of git's own "ours" and "theirs" there (B418).
+    /// </remarks>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="filePath">Absolute path to the conflicted file</param>
     /// <param name="choice">How to resolve the conflict</param>
@@ -235,13 +312,28 @@ public interface IRevisionControlSystem
     /// <summary>
     /// Returns the "ours" (current branch) and "theirs" (incoming branch) content of a
     /// conflicted file so the user can compare the two versions before resolving.
+    /// "Ours" is always the user's own side, the one Keep Mine keeps: in a Git rebase that is the
+    /// commit being replayed, which git itself calls "theirs" (B418).
     /// For Git: reads blobs from the index conflict entry.
     /// For SVN: reads the .mine (ours) and highest-revision .r{n} (theirs) sidecar files.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Bytes, not text, and that is the whole of B240.</b> Both systems used to decode for
+    /// the caller and both assumed UTF-8 - Git through <c>Blob.GetContentText()</c>, SVN through
+    /// <c>File.ReadAllText</c> - so a Windows-1252 library's conflict diff showed replacement
+    /// characters where its accented characters were. Read-only, so nothing was corrupted; it just
+    /// looked wrong.</para>
+    ///
+    /// <para>The fix could not be to call the encoding funnel, because <b>this assembly has no
+    /// project references at all</b> and that is deliberate: it is the one part of MLQT that knows
+    /// nothing about Modelica. Handing back what was stored says the same thing without giving that
+    /// up - a version control system stores bytes, and what those bytes mean is the caller's
+    /// question. <c>ModelicaFileEncoding.DetectFromBytes</c> is where MLQT answers it.</para>
+    /// </remarks>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="filePath">Absolute path to the conflicted file</param>
-    /// <returns>Tuple of (ours content, theirs content); either may be null if unavailable</returns>
-    (string? ours, string? theirs) GetConflictVersions(string repositoryPath, string filePath);
+    /// <returns>Tuple of (ours bytes, theirs bytes); either may be null if unavailable</returns>
+    (byte[]? ours, byte[]? theirs) GetConflictVersions(string repositoryPath, string filePath);
 
     /// <summary>
     /// Rebases the current branch onto a target branch, replaying local commits on top of it.

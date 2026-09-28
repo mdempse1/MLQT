@@ -57,7 +57,9 @@ public class StyleCheckingNoRulesTests : IDisposable
             Assert.True(added.Success, added.ErrorMessage);
             await repos.LoadLibrariesAsync(added.Repository!.Id);
 
-            added.Repository.StyleSettings = new StyleCheckingSettings();
+            // NothingEnabled(): one rule is on in a fresh object now, and this test is about what
+            // happens when a repository has no rules at all.
+            added.Repository.StyleSettings = StyleCheckingSettings.NothingEnabled();
             Assert.False(added.Repository.StyleSettings.HasAnyStyleRuleEnabled);
             loaded.Add(added.Repository);
         }

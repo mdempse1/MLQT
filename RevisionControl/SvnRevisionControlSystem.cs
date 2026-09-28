@@ -127,7 +127,9 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (info == null) return null;
 
             var rev = SvnCli.NormalizeRevision(revision);
-            var doc = SvnCli.RunXml("log", info.RepositoryRoot, "-r", rev, "-l", "1");
+            // A label, asked of the server after every update: a short limit, so a server that
+            // stalled the update does not hold the reload after it for a second ten minutes (B330).
+            var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", info.RepositoryRoot, "-r", rev, "-l", "1");
             var logEntry = doc?.Root?.Element("logentry");
             if (logEntry == null) return null;
 
@@ -156,7 +158,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (revision.Equals("PREV", OIC))
             {
-                var doc = SvnCli.RunXml("log", url, "-l", "2");
+                var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", url, "-l", "2");
                 var revisions = doc?.Root?.Elements("logentry")
                     .Select(e => e.Attribute("revision")?.Value)
                     .Where(v => !string.IsNullOrEmpty(v))
@@ -211,7 +213,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (wcInfo != null && !UrlEquals(wcInfo.Url, targetUrl))
             {
                 RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Url} to {targetUrl}");
-                if (!SvnCli.Run("switch", targetUrl, checkoutPath).Success)
+                if (!SvnCli.RunOnWorkingCopy(checkoutPath, "switch", targetUrl, checkoutPath).Success)
                 {
                     RevisionControlLogger.Error("UpdateExistingCheckout",
                         new InvalidOperationException($"SVN switch from {wcInfo.Url} to {targetUrl} failed"));
@@ -220,7 +222,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
 
             var rev = SvnCli.NormalizeRevision(revision);
-            return SvnCli.Run("update", "-r", rev, checkoutPath).Success;
+            return SvnCli.RunOnWorkingCopy(checkoutPath, "update", "-r", rev, checkoutPath).Success;
         }
         catch (Exception ex)
         {
@@ -267,7 +269,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (wcInfo != null && !UrlEquals(wcInfo.Url, targetUrl))
             {
                 RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Url} to {targetUrl}");
-                if (!SvnCli.Run("switch", targetUrl, checkoutPath).Success)
+                if (!SvnCli.RunOnWorkingCopy(checkoutPath, "switch", targetUrl, checkoutPath).Success)
                 {
                     RevisionControlLogger.Error("UpdateRevisionInPlace",
                         new InvalidOperationException($"SVN switch from {wcInfo.Url} to {targetUrl} failed"));
@@ -276,11 +278,13 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
             switchSw.Stop();
 
-            // 3. Run the update. --quiet suppresses per-file output so stdout doesn't fill
-            //    with one line per file on a 30000-file working copy.
+            // 3. Run the update. Not quiet: the output is how SvnCli tells an update that is
+            //    still working from one that has stalled (B297), so an update of a large working
+            //    copy that printed nothing for the idle limit was stopped as a stall (B383). One
+            //    line per file is drained as it arrives, so it cannot fill a pipe.
             updateSw.Start();
             var rev = SvnCli.NormalizeRevision(revision);
-            var update = SvnCli.Run("update", "-r", rev, "--quiet", checkoutPath);
+            var update = SvnCli.RunOnWorkingCopy(checkoutPath, "update", "-r", rev, checkoutPath);
             updateSw.Stop();
 
             if (!update.Success)
@@ -322,7 +326,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return false;
 
             // Revert all changes recursively.
-            SvnCli.Run("revert", "-R", checkoutPath);
+            SvnCli.RunOnWorkingCopy(checkoutPath, "revert", "-R", checkoutPath);
 
             // Remove all unversioned files and directories (deeper paths first).
             var unversioned = GetStatusEntries(checkoutPath)
@@ -378,10 +382,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             result.OldRevision = info.Revision.ToString();
 
-            var update = SvnCli.Run("update", "-r", "HEAD", repositoryPath);
+            var update = SvnCli.RunOnWorkingCopy(repositoryPath, "update", "-r", "HEAD", repositoryPath);
             if (!update.Success)
             {
-                result.ErrorMessage = "SVN update failed.";
+                result.ErrorMessage = update.FailureMessage("SVN update failed.");
                 return result;
             }
 
@@ -429,7 +433,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 }
                 else
                 {
-                    SvnCli.Run("revert", fullPath);
+                    SvnCli.RunOnWorkingCopy(repositoryPath, "revert", fullPath);
                 }
             }
 
@@ -546,26 +550,33 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            var url = ResolveUrl(repositoryPath);
+            var workingCopy = Directory.Exists(repositoryPath) ? GetInfo(repositoryPath) : null;
+            var url = workingCopy?.Url ?? ResolveUrl(repositoryPath);
             var currentBranch = ExtractBranchFromSvnUrl(url, branchDirectories);
 
             // -v (verbose) retrieves changed paths, needed to determine the actual branch for
             // each revision since SVN log follows copy history across branches.
-            var args = new List<string> { "log", url, "-v" };
+            XDocument? doc;
             if (!string.IsNullOrEmpty(options.Revision))
             {
-                args.Add("-r");
-                args.Add(SvnCli.NormalizeRevision(options.Revision));
-                args.Add("-l");
-                args.Add("1");
+                // One revision: looked up exactly as GetChangedFiles looks it up (B386, B419).
+                var revision = SvnCli.NormalizeRevision(options.Revision);
+                var target = workingCopy is null ? url : PegForChangedFiles(url, revision, workingCopy.Revision);
+                doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", target, "-v", "-r", revision, "-l", "1");
             }
             else
             {
-                args.Add("-l");
-                args.Add(options.MaxEntries.ToString());
+                var limit = options.MaxEntries.ToString();
+                doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", url, "-v", "-l", limit);
+
+                // Unpegged, the URL is pegged at HEAD, which is what shows commits newer than the
+                // working copy - but a branch deleted or renamed since has nothing there, and the
+                // History dialog came back empty (B419). Then the history is read back from the
+                // working copy's own revision, where its URL certainly exists.
+                if (doc?.Root == null && HistoryPeg(url, workingCopy?.Revision ?? 0) is { } pegged)
+                    doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", pegged, "-v", "-l", limit);
             }
 
-            var doc = SvnCli.RunXml(args.ToArray());
             if (doc?.Root == null)
                 return entries;
 
@@ -659,7 +670,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (info == null)
                 return null;
 
-            var lookup = SvnCli.RunXml("log", info.RepositoryRoot, "-r", copyFromRevision.Value.ToString(), "-l", "1");
+            var lookup = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", info.RepositoryRoot, "-r", copyFromRevision.Value.ToString(), "-l", "1");
             var sourceEntry = lookup?.Root?.Element("logentry");
             if (sourceEntry == null)
                 return null;
@@ -711,7 +722,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         if (!string.IsNullOrWhiteSpace(startRevision))
             target = $"{url}@{SvnCli.NormalizeRevision(startRevision)}";
 
-        var doc = SvnCli.RunXml("log", target, "--stop-on-copy", "-v");
+        var doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", target, "--stop-on-copy", "-v");
         if (doc?.Root == null)
             return null;
 
@@ -744,10 +755,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            var url = ResolveUrl(repositoryPath);
             var rev = SvnCli.NormalizeRevision(revision);
+            var target = ChangedFilesTarget(repositoryPath, rev);
 
-            var doc = SvnCli.RunXml("log", url, "-r", rev, "-v", "-l", "1");
+            var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", target, "-r", rev, "-v", "-l", "1");
             var paths = doc?.Root?.Element("logentry")?.Element("paths");
             if (paths == null)
                 return changedFiles;
@@ -788,6 +799,45 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         return changedFiles;
     }
 
+    /// <summary>
+    /// What <see cref="GetChangedFiles"/> asks <c>svn log</c> about: a working copy's URL pegged
+    /// where it is known to exist (B386).
+    /// </summary>
+    /// <remarks>
+    /// Unpegged, the URL is pegged at HEAD, and a working copy whose branch has since been deleted or
+    /// renamed has nothing at its URL there - so every revision's changed files came back empty.
+    /// Pegging at the revision asked for (B328's fix for content) would be wrong here: svn follows
+    /// copy history backwards from the peg, which is how a revision from before the branch was
+    /// created is found on trunk, and the branch's URL did not exist at such a revision. So the peg
+    /// is the later of the two - the working copy's own revision, where its URL certainly exists,
+    /// or the revision asked for when that is newer.
+    /// </remarks>
+    private string ChangedFilesTarget(string repositoryPath, string normalizedRevision)
+    {
+        if (Directory.Exists(repositoryPath) && GetInfo(repositoryPath) is { } info)
+            return PegForChangedFiles(info.Url, normalizedRevision, info.Revision);
+        return ResolveUrl(repositoryPath);
+    }
+
+    /// <summary>
+    /// A working copy's URL pegged at the later of its own revision and the one asked for; left
+    /// unpegged for a keyword, which svn resolves itself.
+    /// </summary>
+    internal static string PegForChangedFiles(string workingCopyUrl, string normalizedRevision, long workingCopyRevision)
+    {
+        if (!long.TryParse(normalizedRevision, out var asked) || workingCopyRevision <= 0)
+            return workingCopyUrl;
+        return Pegged(workingCopyUrl, Math.Max(asked, workingCopyRevision).ToString());
+    }
+
+    /// <summary>
+    /// Where <see cref="GetLogEntries(string, VcsLogOptions?, IReadOnlyList{string}?)"/> reads a
+    /// working copy's history from when its URL has nothing at HEAD (B419): the working copy's own
+    /// revision. None when that revision is not known - there is no working copy to ask.
+    /// </summary>
+    internal static string? HistoryPeg(string workingCopyUrl, long workingCopyRevision)
+        => workingCopyRevision > 0 ? Pegged(workingCopyUrl, workingCopyRevision.ToString()) : null;
+
     /// <inheritdoc/>
     public IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
     {
@@ -797,7 +847,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             // `svn diff --summarize -r <rev> <wc>` compares the revision to the working copy
             // (including local modifications). --xml gives absolute working-copy paths.
-            var res = SvnCli.Run("diff", "--summarize", "--xml", "-r", sinceRevision, repositoryPath);
+            var res = SvnCli.Run(["diff", "--summarize", "--xml", "-r", sinceRevision, repositoryPath], stdinText: null, SvnCli.HistoryIdleTimeout);
             if (!res.Success)
             {
                 RevisionControlLogger.Error("GetChangedFilePathsSince",
@@ -869,7 +919,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 }
                 else
                 {
-                    var doc = SvnCli.RunXml("list", branchUrl, "--depth", "immediates");
+                    var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "list", branchUrl, "--depth", "immediates");
                     var list = doc?.Root?.Element("list");
                     if (list == null)
                         continue;
@@ -932,9 +982,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            if (!SvnCli.Run("switch", branchUrl, repositoryPath).Success)
+            var switched = SvnCli.RunOnWorkingCopy(repositoryPath, "switch", branchUrl, repositoryPath);
+            if (!switched.Success)
             {
-                result.ErrorMessage = "SVN switch failed.";
+                result.ErrorMessage = switched.FailureMessage("SVN switch failed.");
                 return result;
             }
 
@@ -995,7 +1046,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var copy = SvnCli.Run("copy", currentUrl, branchUrl, "-m", $"Create branch: {branchName}");
             if (!copy.Success)
             {
-                result.ErrorMessage = "Failed to create branch.";
+                result.ErrorMessage = copy.FailureMessage("Failed to create branch.");
                 return result;
             }
 
@@ -1027,7 +1078,24 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// For a numeric revision, the file's HEAD peg is used so SVN can follow copy history back
     /// to revisions that predate the current branch.
     /// </summary>
-    public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
+    /// <summary>
+    /// The revision before this one, which in SVN is arithmetic.
+    /// </summary>
+    /// <remarks>
+    /// Revision numbers are global and sequential, so N-1 is the state of the whole repository
+    /// immediately before N - whether or not N-1 touched the file being looked at, which is exactly
+    /// what "before this commit" means. Revision 1 has nothing before it. A non-numeric revision is
+    /// not something SVN can count back from, and null says so rather than guessing.
+    /// </remarks>
+    public string? GetPreviousRevision(string repositoryPath, string revision)
+    {
+        if (!long.TryParse(revision, out var number) || number <= 1)
+            return null;
+
+        return (number - 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
         {
@@ -1043,29 +1111,109 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 || revision.Equals("HEAD", OIC)
                 || !long.TryParse(revision, out _);
 
-            SvnCli.Result result;
+            // RunForBytes, not Run: `svn cat` writes a file, and a file's encoding is its own
+            // business - decoding it as UTF-8 loses a Windows-1252 library's accented characters
+            // before any caller can say otherwise (B264).
+            // Pegged even here, with nothing to follow: a path containing '@' is otherwise read as
+            // one carrying a peg revision, and a file called "a@b.mo" is not found.
             if (useBase)
-            {
-                result = SvnCli.Run("cat", "-r", "BASE", fullPath);
-            }
-            else if (File.Exists(fullPath))
+                return SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", Pegged(fullPath, "BASE")) is { Success: true } b ? b.StdOut : null;
+
+            if (File.Exists(fullPath))
             {
                 // Peg at HEAD to identify the file, operate at the requested revision so SVN
                 // follows copy history (e.g. a branch created from trunk).
-                result = SvnCli.Run("cat", "-r", revision!, $"{fullPath}@HEAD");
-            }
-            else
-            {
-                result = SvnCli.Run("cat", "-r", revision!, fullPath);
+                var local = SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", "-r", revision!, Pegged(fullPath, "HEAD"));
+                if (local.Success)
+                    return local.StdOut;
             }
 
-            return result.Success ? result.StdOut : null;
+            // The working copy could not answer, and that is ordinary rather than exceptional: the
+            // path may be **repository-root-relative** ("trunk/Modelica/Foo.mo"), which is what
+            // `svn log` reports and what the history view passes back; the working copy may be older
+            // than the revision being looked at, so the file is not there yet; or the file may have
+            // been deleted since. Asking the server by URL answers all three, and the revision the
+            // caller named is a server revision in any case (B265).
+            //
+            // Pegged at that revision, not left to default: an unpegged URL is pegged at HEAD, which
+            // asks for "the file now at this path, as it was then" - and a file deleted or moved
+            // since has nothing at this path now, so the one case the fallback exists for failed
+            // (B328). The path came from `svn log` for that revision, so that revision is where it
+            // is to be found.
+            foreach (var url in ContentUrlCandidates(repositoryPath, filePath))
+            {
+                var remote = SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", Pegged(url, revision!));
+                if (remote.Success)
+                    return remote.StdOut;
+            }
+
+            return null;
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("GetFileContentAtRevision", ex);
+            RevisionControlLogger.Error("GetFileBytesAtRevision", ex);
             return null;
         }
+    }
+
+    /// <summary>
+    /// A path or URL with an explicit peg revision: <c>target@revision</c>.
+    /// </summary>
+    /// <remarks>
+    /// svn takes the <b>last</b> '@' of a target as the start of its peg revision, so always adding
+    /// one is also what makes a target that contains an '@' of its own safe - its '@' is no longer
+    /// the last. A URL's own '@' is escaped as <c>%40</c> by <see cref="ContentUrls"/> in any case.
+    /// </remarks>
+    internal static string Pegged(string target, string revision) => $"{target}@{revision}";
+
+    /// <summary>
+    /// The URLs a file path might mean, most likely first.
+    /// </summary>
+    /// <remarks>
+    /// <para>Two path spaces reach this class and they are not distinguishable by looking at them.
+    /// <c>svn log</c> reports <b>repository-root-relative</b> paths - <c>trunk/Modelica/Foo.mo</c> -
+    /// while everything working from the checkout on disk uses <b>working-copy-relative</b> ones -
+    /// <c>Modelica/Foo.mo</c>. A caller cannot reliably convert between them either: doing it by
+    /// stripping a <c>trunk/</c> prefix and testing whether the result exists on disk fails whenever
+    /// the working copy is older than the revision, and fails silently.</para>
+    ///
+    /// <para>So both are tried, against the repository root and against the working copy's own URL.
+    /// One <c>svn cat</c> each, and only when the local route has already failed.</para>
+    /// </remarks>
+    internal static IReadOnlyList<string> ContentUrlCandidates(string repositoryPath, string filePath)
+    {
+        var info = GetInfo(repositoryPath);
+        return info == null ? [] : ContentUrls(info.RepositoryRoot, info.Url, filePath);
+    }
+
+    /// <summary>
+    /// The same two URLs without asking svn anything, so the shape of them can be tested without a
+    /// server — which is most of what there is to get wrong here.
+    /// </summary>
+    internal static IReadOnlyList<string> ContentUrls(
+        string repositoryRoot, string workingCopyUrl, string filePath)
+    {
+        // Forward slashes and escaped spaces: these are URLs, and library directories here are
+        // called things like "VeSyMA - Suspensions".
+        var relative = string.Join('/',
+            filePath.Replace('\\', '/')
+                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(segment => segment.Length > 0)
+                .Select(Uri.EscapeDataString));
+
+        if (relative.Length == 0)
+            return [];
+
+        var fromRoot = $"{repositoryRoot.TrimEnd('/')}/{relative}";
+
+        // The working copy's own URL is the branch it is checked out from, so this is the same file
+        // asked for the other way - and it differs from the first only for a working-copy-relative
+        // path, which is exactly the case the first one gets wrong.
+        var fromWorkingCopy = $"{workingCopyUrl.TrimEnd('/')}/{relative}";
+
+        return string.Equals(fromRoot, fromWorkingCopy, StringComparison.Ordinal)
+            ? [fromRoot]
+            : [fromRoot, fromWorkingCopy];
     }
 
     // ===================================================================================
@@ -1103,7 +1251,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
                 var file = new VcsWorkingCopyFile
                 {
-                    Path = Path.GetRelativePath(repositoryPath, e.Path),
+                    // Forward-slashed, as Git reports it on both platforms. GetRelativePath gives
+                    // the OS's separator, so on Windows every consumer was handed Lib\Thing.mo by
+                    // SVN and Lib/Thing.mo by Git for the same file (B472). See VcsRelativePath.
+                    Path = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, e.Path)),
                     IsStaged = false, // SVN doesn't have staging.
                     Status = e.TreeConflicted
                         ? VcsFileStatus.Conflicted
@@ -1143,7 +1294,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                     {
                         filesToAdd.Add(new VcsWorkingCopyFile
                         {
-                            Path = Path.GetRelativePath(repositoryPath, newFile),
+                            Path = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, newFile)),
                             Status = VcsFileStatus.Untracked,
                             IsStaged = false
                         });
@@ -1281,11 +1432,13 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
 
             // Remove files that must be committed separately (new files in merge-added directories).
-            // Record them as skipped so the UI can offer a follow-up commit.
+            // Record them as skipped so the UI can offer a follow-up commit. Forward-slashed, the
+            // shape GetWorkingCopyChanges reports them in, so the list matches the one the dialog
+            // reloads for that commit (B478).
             foreach (var skipPath in filesToSkip)
             {
                 pathsToCommit.Remove(skipPath);
-                result.SkippedFiles.Add(Path.GetRelativePath(repositoryPath, skipPath));
+                result.SkippedFiles.Add(VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, skipPath)));
             }
 
             // Add any parent directories that were scheduled for add to the commit paths.
@@ -1313,7 +1466,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             try
             {
                 File.WriteAllLines(targetsFile, pathsToCommit);
-                commit = SvnCli.Run("commit", "--targets", targetsFile, "-m", message);
+                commit = SvnCli.RunOnWorkingCopy(repositoryPath, "commit", "--targets", targetsFile, "-m", message);
             }
             finally
             {
@@ -1322,7 +1475,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (!commit.Success)
             {
-                result.ErrorMessage = string.IsNullOrWhiteSpace(commit.StdErr) ? "SVN commit failed." : commit.StdErr.Trim();
+                result.ErrorMessage = commit.FailureMessage("SVN commit failed.");
                 result.IsOutOfDate = IsOutOfDateError(commit.StdErr);
                 return result;
             }
@@ -1330,8 +1483,12 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var newRevision = ParseCommittedRevision(commit.StdOut);
             if (newRevision == null)
             {
-                // svn committed nothing (no actual changes were staged).
-                result.ErrorMessage = "SVN commit failed.";
+                // svn ran and committed nothing: every selected path already matches what the server
+                // has. That is a different thing from a commit that failed, and saying "commit
+                // failed" for it sent a diagnosis a long way down the wrong road (B266) - the svn
+                // command had succeeded, so there was no error anywhere to find.
+                result.ErrorMessage =
+                    "Nothing was committed: the selected files match the versions already in the repository.";
                 return result;
             }
 
@@ -1388,7 +1545,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // Determine eligible (not-yet-merged) revisions. This prevents "File already exists"
             // errors that an r0:HEAD range merge would cause when a file independently exists in
             // both source and target (e.g. .mlqt/settings.json committed to both branches).
-            var eligible = SvnCli.Run("mergeinfo", "--show-revs", "eligible", sourceUrl, repositoryPath);
+            var eligible = SvnCli.Run(["mergeinfo", "--show-revs", "eligible", sourceUrl, repositoryPath], stdinText: null, SvnCli.HistoryIdleTimeout);
             var eligibleRevs = ParseMergeinfoRevs(eligible.StdOut);
             if (!eligible.Success || eligibleRevs.Count == 0)
             {
@@ -1400,7 +1557,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // Postpone all conflicts; the user resolves them via the dialog. With --accept
             // postpone the CLI exits 0 even when conflicts occur, so we classify the outcome
             // from the working-copy status afterwards rather than from an exception.
-            var merge = SvnCli.Run("merge", sourceUrl, repositoryPath, "--accept", "postpone");
+            var merge = SvnCli.RunOnWorkingCopy(repositoryPath, "merge", sourceUrl, repositoryPath, "--accept", "postpone");
 
             var textConflictedFiles = new List<string>();
             var treeConflictedFiles = new List<string>();
@@ -1436,7 +1593,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (!merge.Success && !anyConflicts)
             {
-                result.ErrorMessage = string.IsNullOrWhiteSpace(merge.StdErr) ? "SVN merge failed." : merge.StdErr.Trim();
+                result.ErrorMessage = merge.FailureMessage("SVN merge failed.");
                 return result;
             }
 
@@ -1467,10 +1624,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 _ => "postpone"
             };
 
-            var resolve = SvnCli.Run("resolve", "--accept", accept, filePath);
+            var resolve = SvnCli.RunOnWorkingCopy(repositoryPath, "resolve", "--accept", accept, filePath);
             result.Success = resolve.Success;
             if (!result.Success)
-                result.ErrorMessage = string.IsNullOrWhiteSpace(resolve.StdErr) ? "SVN resolve returned false." : resolve.StdErr.Trim();
+                result.ErrorMessage = resolve.FailureMessage("SVN resolve returned false.");
         }
         catch (Exception ex)
         {
@@ -1484,7 +1641,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// Returns the "ours" and "theirs" versions of a conflicted SVN file.
     /// SVN writes sidecar files: filename.ext.mine (ours) and filename.ext.r{n} (theirs = highest revision).
     /// </summary>
-    public (string? ours, string? theirs) GetConflictVersions(string repositoryPath, string filePath)
+    public (byte[]? ours, byte[]? theirs) GetConflictVersions(string repositoryPath, string filePath)
     {
         try
         {
@@ -1493,7 +1650,9 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             // "Ours" = the working copy version before the merge conflict markers were applied.
             var mineFile = Path.Combine(dir, fileName + ".mine");
-            var ours = File.Exists(mineFile) ? File.ReadAllText(mineFile) : null;
+            // Bytes, not text: File.ReadAllText decodes as UTF-8 and a Windows-1252 library's
+            // accented characters come back as replacement characters (B240).
+            var ours = File.Exists(mineFile) ? File.ReadAllBytes(mineFile) : null;
 
             // "Theirs" = the incoming branch revision — highest-numbered .r{n} sidecar file.
             var rFiles = Directory.GetFiles(dir, fileName + ".r*")
@@ -1505,7 +1664,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 .OrderByDescending(x => x.rev)
                 .ToList();
 
-            var theirs = rFiles.Count > 0 ? File.ReadAllText(rFiles[0].path) : null;
+            var theirs = rFiles.Count > 0 ? File.ReadAllBytes(rFiles[0].path) : null;
             return (ours, theirs);
         }
         catch (Exception ex)
@@ -1518,6 +1677,18 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     // ===================================================================================
     // Git-only operations: no-ops / unsupported for SVN.
     // ===================================================================================
+
+    /// <summary>
+    /// Always null: SVN has no detached state. A working copy switched to a tag is switched to a
+    /// directory like any other, and <c>GetCurrentBranch</c> names it (B193).
+    /// </summary>
+    public string? GetDetachedHeadLabel(string repositoryPath) => null;
+
+    /// <inheritdoc/>
+    public int CountCommitsOnNoBranch(string repositoryPath) => 0;
+
+    /// <inheritdoc/>
+    public VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath) => null;
 
     /// <summary>SVN commits go directly to the remote server, so push is a no-op.</summary>
     public VcsOperationResult Push(string repositoryPath, string? branchName = null)
@@ -1558,7 +1729,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             args.Add(SvnCli.NormalizeRevision(revision));
         }
 
-        var entry = SvnCli.RunXml(args.ToArray())?.Root?.Element("entry");
+        var entry = SvnCli.RunXml(SvnCli.QueryIdleTimeout, args.ToArray())?.Root?.Element("entry");
         if (entry == null)
             return null;
 

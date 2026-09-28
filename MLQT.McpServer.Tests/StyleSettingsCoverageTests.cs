@@ -81,7 +81,10 @@ public class StyleSettingsCoverageTests
         // round-trip through a single property would notice.
         foreach (var ruleId in StyleSettingsInput.SettableRuleIds)
         {
-            var settings = new StyleCheckingSettings();
+            // From nothing at all, so the only rule on is the one under test — a fresh object
+            // carries the rule that is on by default, which would fail the "no others" check for
+            // every id except itself.
+            var settings = StyleCheckingSettings.NothingEnabled();
             settings.SetRuleEnabled(ruleId, true);
 
             var input = StyleSettingsInput.From(settings);
@@ -141,6 +144,27 @@ public class StyleSettingsCoverageTests
 
         Assert.True(settings.IsRuleSwitchedOn(RuleIds.ClassDescription));
         Assert.False(settings.IsRuleSwitchedOn(RuleIds.ClassIcon));
+    }
+
+    [Fact]
+    public void ToSettings_TreatsAnUnmentionedDefaultOnRuleAsOffToo()
+    {
+        // B322: "a blank settings object" stopped meaning all-off when B241 made SingleFilePackage
+        // default-on, so an explicit rule set ran one rule the caller never asked for. Every
+        // default-on rule, so the next one cannot arrive the same way.
+        var settings = new StyleSettingsInput { ClassHasDescription = true }.ToSettings();
+
+        var defaultOn = RuleCatalog.Configurable.Where(d => d.EnabledByDefault).ToList();
+        Assert.NotEmpty(defaultOn);
+        Assert.All(defaultOn, d => Assert.False(settings.IsRuleSwitchedOn(d.Id), d.Id));
+    }
+
+    [Fact]
+    public void ToSettings_StillSwitchesOnADefaultOnRuleThatIsAskedFor()
+    {
+        var settings = new StyleSettingsInput { CheckSingleFilePackage = true }.ToSettings();
+
+        Assert.True(settings.IsRuleSwitchedOn(RuleIds.SingleFilePackage));
     }
 
     [Fact]

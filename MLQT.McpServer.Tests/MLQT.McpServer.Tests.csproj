@@ -38,4 +38,15 @@
     <ProjectReference Include="..\RevisionControl\RevisionControl.csproj" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- One settings double for every suite, and the contract that holds it to the real service's
+         behaviour. Three copies drifted apart before this: two round-tripped through JSON and one
+         stored objects by reference, which is B205. -->
+    <Compile Include="../TestSupport/InMemorySettingsService.cs" Link="TestSupport/InMemorySettingsService.cs" />
+    <Compile Include="../TestSupport/SettingsServiceContract.cs" Link="TestSupport/SettingsServiceContract.cs" />
+
+    <!-- Project-wide, so the double keeps the name every existing test already calls it by. -->
+    <Using Include="MLQT.TestSupport" />
+  </ItemGroup>
 </Project>

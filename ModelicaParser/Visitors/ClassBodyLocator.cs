@@ -28,7 +28,7 @@ public static class ClassBodyLocator
         int? protectedListEnd = null;
         int? lastEquationEnd = null;
         int? lastAlgorithmEnd = null;
-        int? trailingAnnotationStart = null;
+        int? tailStart = null;
         var components = new List<ClassBodyComponent>();
         var connections = new List<ClassBodyConnection>();
 
@@ -71,20 +71,26 @@ public static class ClassBodyLocator
                     if (alg.Stop is not null)
                         lastAlgorithmEnd = alg.Stop.StopIndex + 1;
                     break;
-
-                // The trailing class annotation is a direct child of composition after the first
-                // element_list; a leading annotation appears before it (and the external-clause
-                // annotation is nested, not a direct child).
-                case modelicaParser.AnnotationContext ann when sawFirstList:
-                    trailingAnnotationStart = ann.Start.StartIndex;
-                    break;
             }
         }
 
-        // New elements and new equation/algorithm sections must be inserted before the class annotation,
-        // which the grammar requires to be the last thing in the composition. When one is present, the
-        // insertion boundary is its start, not the 'end' keyword (inserting after it would not parse).
-        var insertBoundary = trailingAnnotationStart is int annStart && annStart < bodyEnd ? annStart : bodyEnd;
+        // The trailing class annotation - or the external clause, which the grammar puts before it
+        // and after every section. The clause's annotation is a direct child of the composition after
+        // the first element_list too, so position after the lists does not tell it from the class's:
+        // taken for the class's, a new element went inside the external clause (B446).
+        var externalKeyword = composition.children
+            .OfType<ITerminalNode>()
+            .FirstOrDefault(t => SectionKeyword.Of(t) == "external");
+        if (externalKeyword is not null)
+            tailStart = externalKeyword.Symbol.StartIndex;
+        else if (CompositionAnnotations.Of(composition).Trailing is { } trailing)
+            tailStart = trailing.Start.StartIndex;
+
+        // New elements and new equation/algorithm sections must be inserted before the external clause
+        // and the class annotation, which the grammar requires to be the last things in the composition.
+        // When either is present, the insertion boundary is its start, not the 'end' keyword (inserting
+        // after it would not parse).
+        var insertBoundary = tailStart is int annStart && annStart < bodyEnd ? annStart : bodyEnd;
 
         return new ClassBodyLayout(
             Found: true,

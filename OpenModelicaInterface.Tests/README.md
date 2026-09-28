@@ -44,6 +44,22 @@ The test suite uses a **shared OMC instance** managed by the `OpenModelicaFixtur
 dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj
 ```
 
+### Run Only the Tests That Need No omc
+
+The classes that drive a live omc carry `[Trait("Requires", "OpenModelica")]`; everything else runs
+anywhere, and CI runs it on both platforms (B399):
+
+```bash
+dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --filter "Requires!=OpenModelica"
+```
+
+A new class that needs omc must carry the trait. `ToolTraitTests` fails for one that takes the shared
+fixture without it; one that starts its own omc, as `TimeLimitTests` does, has to be marked by hand.
+
+That filtered run is also what the coverage ratchet measures `OpenModelicaInterface` from
+(`build/check-coverage.ps1`, B438), so code only a live omc reaches is recorded as debt with that
+reason in `build/coverage-baseline.json`.
+
 ### Run Specific Test Class
 
 ```bash
@@ -66,7 +82,7 @@ dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --fil
 ### Run Tests with Detailed Output
 
 ```bash
-dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --logger "console;verbosity=detailed"
+dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --output detailed
 ```
 
 ## Test Categories
@@ -235,7 +251,7 @@ For automated testing in CI/CD pipelines:
 3. Run tests with timeout configuration:
 
 ```bash
-dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --logger trx --results-directory ./TestResults
+dotnet test OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj --report-trx --results-directory ./TestResults
 ```
 
 ## Coverage

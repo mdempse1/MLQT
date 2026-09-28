@@ -42,7 +42,7 @@ public class SpellCheckerConcurrencyTests
     }
 
     [Fact]
-    public void AcceptingAWordWhileOtherThreadsReadIsSafe_AndTakesEffect()
+    public async Task AcceptingAWordWhileOtherThreadsReadIsSafe_AndTakesEffect()
     {
         // The write path copies the set and swaps it, so a reader sees the old snapshot or the new
         // one and never one being mutated. Before the change this was a lock; the risk being covered
@@ -64,7 +64,7 @@ public class SpellCheckerConcurrencyTests
                 checker.IsCorrect(word);
                 _ = checker.CustomWords.Count;
             }
-        });
+        }, TestContext.Current.CancellationToken);
 
         for (var i = 0; i < 50; i++)
             checker.AddCustomWord($"filler{i}");
@@ -72,7 +72,7 @@ public class SpellCheckerConcurrencyTests
         checker.AddCustomWord(word);
 
         readers.Cancel();
-        reading.GetAwaiter().GetResult();        // rethrows anything the reader threw
+        await reading;                           // rethrows anything the reader threw
 
         Assert.True(checker.IsCorrect(word), "the accepted word did not take effect");
         Assert.Contains(word, checker.CustomWords);

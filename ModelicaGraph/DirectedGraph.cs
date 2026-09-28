@@ -63,7 +63,49 @@ public class DirectedGraph
     public bool DependenciesAnalyzed { get; private set; }
 
     /// <summary>Records that full dependency analysis has completed over this graph.</summary>
-    public void MarkDependenciesAnalyzed() => DependenciesAnalyzed = true;
+    public void MarkDependenciesAnalyzed()
+    {
+        lock (_lock)
+            DependenciesAnalyzed = true;
+    }
+
+    // Moves on at every invalidation, so an analysis can tell whether one happened while it ran.
+    private long _analysisGeneration;
+
+    /// <summary>
+    /// Where invalidation has got to. An analysis reads this before it takes the set of classes to
+    /// analyse and hands it back to <see cref="MarkDependenciesAnalyzed(long)"/>.
+    /// </summary>
+    public long AnalysisGeneration
+    {
+        get
+        {
+            lock (_lock)
+                return _analysisGeneration;
+        }
+    }
+
+    /// <summary>
+    /// Records that full dependency analysis has completed, unless the graph was invalidated after
+    /// <paramref name="generation"/> was read - content arrived that the analysis did not see.
+    /// </summary>
+    /// <returns>Whether the graph is now marked analysed.</returns>
+    /// <remarks>
+    /// A library loaded while a full analysis ran is not in the set of classes the analysis took at
+    /// its start, and its load invalidated the graph. Marking unconditionally at the end overwrote
+    /// that, leaving the new classes without edges in a graph that claimed them, and nothing ran the
+    /// analysis again (B352).
+    /// </remarks>
+    public bool MarkDependenciesAnalyzed(long generation)
+    {
+        lock (_lock)
+        {
+            if (_analysisGeneration != generation)
+                return false;
+            DependenciesAnalyzed = true;
+            return true;
+        }
+    }
 
     /// <summary>
     /// Records that the graph has gained content that has never been through dependency analysis
@@ -71,7 +113,14 @@ public class DirectedGraph
     /// re-analysis of already-loaded models (<see cref="GraphBuilder.AnalyzeDependenciesForModelsAsync"/>)
     /// maintains the edges itself and must not call this.
     /// </summary>
-    public void InvalidateDependencyAnalysis() => DependenciesAnalyzed = false;
+    public void InvalidateDependencyAnalysis()
+    {
+        lock (_lock)
+        {
+            _analysisGeneration++;
+            DependenciesAnalyzed = false;
+        }
+    }
 
     /// <summary>
     /// Adds a node to the graph.
@@ -87,9 +136,10 @@ public class DirectedGraph
             else if (node is ModelNode newModel && _nodes[node.Id] is ModelNode existingModel)
             {
                 // Readable source always beats a class reconstructed from vendor documentation, in
-                // whichever order the two arrive. The same library really does turn up twice: a tool's
-                // library folder ships the encrypted build of a library the user also has checked out
-                // as source, and both land in the one graph.
+                // whichever order the two arrive. The encrypted build of a library is no longer kept
+                // beside its source (B268, SourceSupersedesEncrypted) — but when the encrypted copy is
+                // loaded first, the source's classes land here before that library is retired, and
+                // this is what replaces the stubs in that window.
                 //
                 // This has to be decided before the standalone rule below, because that rule cannot
                 // see the difference. A stub is never standalone, so a stub colliding with a nested
@@ -140,7 +190,7 @@ public class DirectedGraph
 
         lock (_lock) {
             // Remove all edges to this node
-            foreach (var edges in _edges.Values)
+            foreach (var edges in ScanEdgeSets())
             {
                 edges.Remove(nodeId);
             }
@@ -183,12 +233,12 @@ public class DirectedGraph
             if (ids.Count == 1)
             {
                 var only = ids.First();
-                foreach (var edges in _edges.Values)
+                foreach (var edges in ScanEdgeSets())
                     edges.Remove(only);
             }
             else
             {
-                foreach (var edges in _edges.Values)
+                foreach (var edges in ScanEdgeSets())
                     edges.RemoveWhere(ids.Contains);
             }
 
@@ -202,6 +252,25 @@ public class DirectedGraph
 
             return removed;
         }
+    }
+
+    /// <summary>
+    /// How many times removal has walked every node's edge set - the pass that makes removing a node
+    /// cost the size of the graph, and the one <see cref="RemoveNodes"/> exists to take once rather
+    /// than once per node.
+    /// </summary>
+    /// <remarks>
+    /// Counted so a test can ask how much work a removal did instead of timing it (B461): the same
+    /// question as a stopwatch ratio, with an exact answer under any load. Only ever changed under
+    /// <c>_lock</c>.
+    /// </remarks>
+    internal long EdgeSetScans { get; private set; }
+
+    /// <summary>Every node's edge set, for a pass over all of them; counts the pass.</summary>
+    private ICollection<HashSet<string>> ScanEdgeSets()
+    {
+        EdgeSetScans++;
+        return _edges.Values;
     }
 
     /// <summary>
@@ -358,9 +427,14 @@ public class DirectedGraph
         if (usingModel == null || usedModel == null)
             throw new ArgumentException("Both model nodes must exist.");
 
-        usingModel.AddUsedModel(usedModelId);
-        usedModel.AddUsedByModel(usingModelId);
-        AddEdge(usingModelId, usedModelId);
+        // Under the lock, so a reader taking GetUsedByModelIds never sees one end of the edge
+        // without the other, nor a set being added to while it is copied (B351).
+        lock (_lock)
+        {
+            usingModel.AddUsedModel(usedModelId);
+            usedModel.AddUsedByModel(usingModelId);
+            AddEdge(usingModelId, usedModelId);
+        }
     }
 
     /// <summary>
@@ -408,14 +482,30 @@ public class DirectedGraph
     /// </summary>
     public IEnumerable<ModelNode> GetModelUsedBy(string modelNodeId)
     {
-        var modelNode = GetNode<ModelNode>(modelNodeId);
-        if (modelNode == null)
-            return Enumerable.Empty<ModelNode>();
-
-        return modelNode.UsedByModelIds
+        return GetUsedByModelIds(modelNodeId)
             .Select(id => GetNode<ModelNode>(id))
             .Where(node => node != null)
             .Cast<ModelNode>();
+    }
+
+    /// <summary>
+    /// The ids of the models that use <paramref name="modelNodeId"/>, copied under the graph lock.
+    /// </summary>
+    /// <remarks>
+    /// A copy rather than the live <see cref="ModelNode.UsedByModelIds"/>: an incremental dependency
+    /// analysis adds to and removes from those sets from its own thread while a check may be reading
+    /// them, and enumerating a <see cref="HashSet{T}"/> that changes underneath throws (B351). Read
+    /// the reverse edges through this from anything that can run beside a reload.
+    /// </remarks>
+    public string[] GetUsedByModelIds(string modelNodeId)
+    {
+        if (GetNode<ModelNode>(modelNodeId) is not { } modelNode)
+            return [];
+
+        lock (_lock)
+        {
+            return [.. modelNode.UsedByModelIds];
+        }
     }
 
     #region Resource Node Management

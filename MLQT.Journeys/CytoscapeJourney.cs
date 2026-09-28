@@ -136,4 +136,5 @@ public class CytoscapeJourney(TestHostFixture host)
             "() => window._cytoscapeInstances['journey-graph'] !== undefined");
         Assert.False(stillThere);
     }
+
 }

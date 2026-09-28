@@ -1,3 +1,5 @@
+using ModelicaParser.Helpers;
+
 namespace ModelicaParser.ExternalDocs;
 
 /// <summary>
@@ -49,10 +51,7 @@ public static class DymolaHelpParser
     /// are not classes we can resolve, and synthesizing <c>extends Real;</c> onto anything other
     /// than a short class definition does not parse. They are dropped from the extends list.
     /// </summary>
-    private static readonly HashSet<string> PredefinedTypes = new(StringComparer.Ordinal)
-    {
-        "Real", "Integer", "Boolean", "String", "enumeration", "Clock", "ExternalObject"
-    };
+    private static readonly IReadOnlySet<string> PredefinedTypes = ModelicaLanguage.PredefinedTypes;
 
     /// <summary>
     /// Whether the content looks like Dymola-generated class documentation. Checked before

@@ -26,9 +26,32 @@ public class RepositoryService : IRepositoryService
     private readonly List<string> _loadWarnings = new();
     private string? _activeProjectId;
     private readonly object _lock = new();
+
+    // One save at a time, each taking its contents once it is its turn, so the save that lands last
+    // is always the newest (B447). See SaveRepositorySettingsAsync. Every write of the settings key
+    // takes it - CreateAndSelectProjectAsync and the legacy migration in LoadRepositorySettingsAsync
+    // as well (B452) - and nothing holding it may call anything that saves. Both of those run
+    // MigrateLegacyRepositories on what they read before writing it back (B460).
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+
+    // Whether memory owns the settings key: set by the first LoadRepositorySettingsAsync, or by a
+    // save that found nothing saved. Until then a save leaves the key alone (B455).
+    private volatile bool _settingsOwned;
     private readonly Dictionary<string, (List<VcsWorkingCopyFile> Changes, long Ticks)> _workingCopyCache = new();
     private readonly object _workingCopyCacheLock = new();
     private const long WorkingCopyCacheLifetimeMs = 300000; // 5 minutes — event-based invalidation handles real changes
+
+    // The query each repository has in flight, and the invalidation it started under. See
+    // GetWorkingCopyChanges (B293).
+    private readonly Dictionary<string, (Task<List<VcsWorkingCopyFile>> Query, long Generation)> _workingCopyQueries = new();
+    private readonly Dictionary<string, long> _workingCopyGenerations = new();
+    private long _allWorkingCopiesGeneration;
+
+    /// <summary>
+    /// Asks the repository's VCS for its working-copy changes. A seam, so a test can count and slow
+    /// the queries <see cref="GetWorkingCopyChanges"/> makes without a working copy that is slow.
+    /// </summary>
+    internal Func<Repository, List<VcsWorkingCopyFile>> QueryWorkingCopy { get; set; }
 
     private const string SettingsKey = "Repositories";
 
@@ -42,6 +65,12 @@ public class RepositoryService : IRepositoryService
         _fileMonitoringService = fileMonitoringService;
         _git = new GitRevisionControlSystem();
         _svn = new SvnRevisionControlSystem();
+        QueryWorkingCopy = repository => repository.VcsType switch
+        {
+            RepositoryVcsType.Git => _git.GetWorkingCopyChanges(repository.VcsRootPath),
+            RepositoryVcsType.SVN => _svn.GetWorkingCopyChanges(repository.VcsRootPath),
+            _ => throw new InvalidOperationException("Unsupported VCS type")
+        };
 
         // Invalidate working copy cache when repositories change (commits, branch switches, etc.)
         OnRepositoriesChanged += () => InvalidateWorkingCopyCache();
@@ -251,6 +280,17 @@ public class RepositoryService : IRepositoryService
                 d => d.RelativePath,
                 d => d.LibraryName);
 
+            // A repository with nothing in it that MLQT can read is added successfully and then does
+            // nothing, which looks exactly like a library that failed to load (B206). Say so, and say
+            // what was looked for, so the user can see why their layout was not recognised rather
+            // than being left with an empty tree and no account of it.
+            if (discoveredLibraries.Count == 0)
+            {
+                var message = LibraryDiscovery.NothingFoundIn(repository.LocalPath);
+                result.Warnings.Add(message);
+                Warn("RepositoryService", message);
+            }
+
             // Load settings if they exist, create a new settings class if they don't
             var settingsPath = Path.Combine(repository.LocalPath, ".mlqt", "settings.json");
             if (File.Exists(settingsPath))
@@ -266,6 +306,17 @@ public class RepositoryService : IRepositoryService
                     Warn("RepositoryService",
                         $"Could not read .mlqt/settings.json for '{repository.Name}': {ex.Message}. Using defaults.");
                 }
+
+                // What is on disk now, so the saves that follow a load write nothing unless something
+                // changes. For a file that did not parse this is the defaults being used in its place:
+                // overwriting the user's file with them would lose whatever they meant (B310).
+                repository.SettingsOnDisk = SerializeSettings(repository.StyleSettings);
+
+                // Asked now rather than learned from a write: since B310 the save that follows does
+                // not write a file whose settings are unchanged, so an unwritable one would go
+                // unflagged - and the user unwarned - until the first change they tried to keep (B381).
+                if (!repository.IsReferenceOnly && !CanWriteSettingsFile(settingsPath, repository.Name))
+                    repository.IsSettingsReadOnly = true;
             }
             else
             {
@@ -293,6 +344,10 @@ public class RepositoryService : IRepositoryService
             // that reloads, re-analyses and reformats — so a vendor's checkout being updated outside
             // MLQT ended in MLQT writing to it. The encrypted-library design note lists this guard
             // and it was not built.
+            //
+            // The repository's own folder is its scope within that, so a change is recorded for
+            // the library it belongs to and not for every one checked out beside it (B325).
+            _fileMonitoringService.SetRepositoryScope(repository.Id, repository.LocalPath);
             if (startMonitoring && !repository.IsReferenceOnly)
             {
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
@@ -303,11 +358,14 @@ public class RepositoryService : IRepositoryService
             // Save settings
             await SaveRepositorySettingsAsync();
 
+            // Worded as the repository dialog's alert is (B424). A readable file's settings are the
+            // ones used - only changes to them are not kept - and a repository with no file uses
+            // the defaults, so "global settings will be used instead" was true of neither.
             if (repository.IsSettingsReadOnly)
             {
                 result.Warnings.Add(
-                    $"Could not write settings to '{repository.Name}' repository " +
-                    "(insufficient permissions). Global settings will be used instead.");
+                    $"Settings cannot be saved to the '{repository.Name}' repository " +
+                    "(insufficient permissions). Changes will only apply to the current session.");
             }
 
             Info("RepositoryService", $"Successfully added repository: {repository.Name} with {discoveredLibraries.Count} libraries");
@@ -382,13 +440,24 @@ public class RepositoryService : IRepositoryService
         return libraries;
     }
 
+    /// <summary>
+    /// The library's own declared name, read out of its <c>package.mo</c>.
+    ///
+    /// <para>The outermost class is the one with no parent, and "no parent" is the <b>empty
+    /// string</b>, not null (B204). Asking for <c>== null</c> matched nothing, ever — for a file with
+    /// a <c>within</c> clause and for one without alike — so this silently returned null on every
+    /// call and every caller fell back to the directory name. That is usually the same word, which is
+    /// why it went unnoticed: a library called <c>Modelica</c> lives in a folder called
+    /// <c>Modelica</c>. It is wrong precisely when the folder is not named after the library, which
+    /// is the ordinary case for a repository checked out under its own name.</para>
+    /// </summary>
     private string? ExtractLibraryName(string packageMoPath)
     {
         try
         {
             var content = ModelicaFileEncoding.ReadAllTextOnly(packageMoPath);
             var models = ModelicaParserHelper.ExtractModels(content);
-            var topLevel = models.FirstOrDefault(m => m.ParentModelName == null);
+            var topLevel = models.FirstOrDefault(m => string.IsNullOrEmpty(m.ParentModelName));
             return topLevel?.Name;
         }
         catch (Exception ex)
@@ -410,6 +479,15 @@ public class RepositoryService : IRepositoryService
         LogProcessStart("RepositoryService", $"Loading libraries from repository: {repository.Name}");
         OnRepositoryLoadStateChanged?.Invoke(repositoryId, true);
 
+        // The tree is told once, after every library is recorded on this repository (B198). Each
+        // library otherwise announces itself from AddLibraryFromPathAsync - before the loop below has
+        // set its RepositoryId or added it to LibraryIds - and a repository's browser filters the tree
+        // by exactly that membership. A browser that rebuilt on the announcement before the membership
+        // landed showed the repository empty, and nothing announced again, so a newly added repository
+        // stayed empty until a restart: one add in five, measured through the add dialog's path. The
+        // project switch and the refresh already load under a scope like this; this nests inside theirs.
+        using var treeNotifications = _libraryDataService.SuppressTreeDataChanged();
+
         try
         {
             var pathsToLoad = libraryPaths?.ToList()
@@ -424,17 +502,33 @@ public class RepositoryService : IRepositoryService
                 _ => LibrarySourceType.Directory
             };
 
+            // Asked once, before anything in this repository loads: every other repository in the
+            // project has been discovered by now, so this is the whole project's answer and not a
+            // race between parallel loads (B268).
+            var readable = ReadableLibrariesInProject();
+
             // Load all libraries in parallel for much faster repository loading
             var tasks = pathsToLoad.Select(relativePath => Task.Run(async () =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var fullPath = string.IsNullOrEmpty(relativePath)
-                    ? repository.LocalPath
-                    : Path.Combine(repository.LocalPath, relativePath);
+                var fullPath = LibraryPath(repository, relativePath);
 
                 try
                 {
+                    // An encrypted build of a library the project also has as source is not read at
+                    // all. LibraryDataService would retire it on arrival anyway; this saves reading
+                    // its documentation to find that out. See SourceSupersedesEncrypted.
+                    if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath)
+                        && SourceSupersedesEncrypted.ReadableSourceFor(
+                            repository.DiscoveredLibraries.GetValueOrDefault(relativePath), readable) is { } source)
+                    {
+                        Info("RepositoryService",
+                            $"Not loading encrypted library '{repository.DiscoveredLibraries[relativePath]}' at " +
+                            $"{fullPath}: readable source for it is in the project at {source}");
+                        return;
+                    }
+
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
 
                     // A repository can contain an encrypted library alongside the source that uses
@@ -485,6 +579,71 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    private static string LibraryPath(Repository repository, string relativePath) =>
+        string.IsNullOrEmpty(relativePath)
+            ? repository.LocalPath
+            : Path.Combine(repository.LocalPath, relativePath);
+
+    /// <summary>
+    /// Every readable library the project knows of, by name and location: each repository's
+    /// discovered libraries that are not encrypted, and every readable library already loaded — which
+    /// covers the ones that arrived by the reference-library setting and have no repository.
+    /// </summary>
+    private List<(string Name, string Location)> ReadableLibrariesInProject()
+    {
+        List<Repository> repositories;
+        lock (_lock)
+        {
+            repositories = _repositories.ToList();
+        }
+
+        var readable = new List<(string Name, string Location)>();
+        foreach (var repository in repositories)
+        {
+            foreach (var (relativePath, name) in repository.DiscoveredLibraries.ToList())
+            {
+                var fullPath = LibraryPath(repository, relativePath);
+                if (!EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath))
+                    readable.Add((name, fullPath));
+            }
+        }
+
+        foreach (var library in _libraryDataService.Libraries)
+        {
+            if (library.SourceType != LibrarySourceType.EncryptedDirectory)
+                readable.Add((library.Name, library.SourcePath));
+        }
+
+        return readable;
+    }
+
+    /// <inheritdoc />
+    public bool MoveRepository(string repositoryId, int delta)
+    {
+        if (delta == 0)
+            return false;
+
+        lock (_lock)
+        {
+            var index = _repositories.FindIndex(r => r.Id == repositoryId);
+            if (index < 0)
+                return false;
+
+            var target = index + delta;
+            if (target < 0 || target >= _repositories.Count)
+                return false;
+
+            var repository = _repositories[index];
+            _repositories.RemoveAt(index);
+            _repositories.Insert(target, repository);
+
+            Info("RepositoryService", $"Moved repository '{repository.Name}' from position {index + 1} to {target + 1}");
+        }
+
+        OnRepositoriesChanged?.Invoke();
+        return true;
+    }
+
     public void RemoveRepository(string repositoryId, bool unloadLibraries = true)
     {
         Repository? repository;
@@ -497,8 +656,9 @@ public class RepositoryService : IRepositoryService
             _repositories.Remove(repository);
         }
 
-        // Stop file monitoring for this repository
+        // Stop file monitoring for this repository, and forget it
         _fileMonitoringService.StopMonitoring(repositoryId);
+        _fileMonitoringService.SetRepositoryScope(repositoryId, null);
 
         if (unloadLibraries)
         {
@@ -506,13 +666,17 @@ public class RepositoryService : IRepositoryService
             {
                 _libraryDataService.RemoveLibrary(libraryId);
             }
+
+            RepositoryRemovedSinceProjectLoad = true;
         }
 
         OnRepositoriesChanged?.Invoke();
 
-        // Save settings asynchronously
-        _ = SaveRepositorySettingsAsync();
+        SaveInBackground(nameof(RemoveRepository));
     }
+
+    /// <inheritdoc />
+    public bool RepositoryRemovedSinceProjectLoad { get; private set; }
 
     public async Task RefreshRepositoryAsync(string repositoryId, CancellationToken cancellationToken = default)
     {
@@ -537,13 +701,19 @@ public class RepositoryService : IRepositoryService
             repository.LastLoadedAt = DateTime.UtcNow;
         }
 
-        //Now reload the libraries in this repository as things might have changed
-        foreach (var libraryId in repository.LibraryIds)
+        // Removed and reloaded under one tree announcement, as a project switch is (B293). Each library
+        // announced on its own, and every open tree answered each with a working-copy status query
+        // and a rebuild - sixteen of them for MSL's eight libraries, on top of everything else a VCS
+        // operation sets off.
+        using (_libraryDataService.SuppressTreeDataChanged())
         {
-            _libraryDataService.RemoveLibrary(libraryId);
+            foreach (var libraryId in repository.LibraryIds)
+            {
+                _libraryDataService.RemoveLibrary(libraryId);
+            }
+
+            await LoadLibrariesAsync(repositoryId, repository.DiscoveredLibraries.Keys.ToList(), cancellationToken);
         }
-        //Now load the discovered libraries        
-        await LoadLibrariesAsync(repositoryId, repository.DiscoveredLibraries.Keys.ToList(), new CancellationToken());
 
         OnRepositoriesChanged?.Invoke();
     }
@@ -556,6 +726,19 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyList<Repository> GetRepositoriesSharingWorkingCopy(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository == null)
+            return [];
+
+        if (repository.VcsType == RepositoryVcsType.Local || string.IsNullOrEmpty(repository.VcsRootPath))
+            return [repository];
+
+        return [repository, .. GetRepositoriesWithVcsRoot(repository.VcsRootPath).Where(r => r.Id != repository.Id)];
+    }
+
     public Repository? GetRepositoryForLibrary(string libraryId)
     {
         lock (_lock)
@@ -564,7 +747,175 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> RelocateLibraryAsync(string libraryId, string directoryPath)
+    {
+        var library = _libraryDataService.Libraries.FirstOrDefault(l => l.Id == libraryId);
+        if (library is null)
+            return false;
+
+        var repository = GetRepositoryForLibrary(libraryId);
+        if (repository is not null && !string.IsNullOrEmpty(repository.LocalPath))
+        {
+            // The relative path as discovery writes it for the same directory, so a Refresh or a
+            // project reload finds the key it would have made itself: empty for the repository's own
+            // root, otherwise the path below it.
+            var root = Path.GetFullPath(repository.LocalPath).TrimEnd(Path.DirectorySeparatorChar);
+            var directory = Path.GetFullPath(directoryPath).TrimEnd(Path.DirectorySeparatorChar);
+            var relativePath = string.Equals(root, directory, StringComparison.OrdinalIgnoreCase)
+                ? ""
+                : Path.GetRelativePath(root, directory);
+
+            lock (_lock)
+            {
+                var oldKey = library.RelativePathInRepository;
+                var name = oldKey is not null && repository.DiscoveredLibraries.Remove(oldKey, out var known)
+                    ? known
+                    : library.Name;
+                repository.DiscoveredLibraries[relativePath] = name;
+                library.RelativePathInRepository = relativePath;
+            }
+
+            Info("RepositoryService",
+                $"Library '{library.Name}' in '{repository.Name}' is now the directory {relativePath}");
+        }
+
+        _libraryDataService.RelocateLibrary(libraryId, directoryPath);
+
+        // The saved project lists each repository's libraries by path; the old one names a file
+        // that is gone.
+        if (repository is not null)
+            await SaveRepositorySettingsAsync();
+
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task ApplyRepositorySettingsAsync(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository is { IsReferenceOnly: false })
+        {
+            // A rule that is on by default is on whether or not the file mentions it, and a file that
+            // does not mention it hides a gate from everyone reading the repository. Writing it down
+            // is what makes a saved settings file the whole answer for that repository (B244) - and
+            // it is done here, when the user applies this repository's settings, rather than on
+            // every save, where it rewrote every committed file on the first launch after it
+            // arrived (B310).
+            lock (_lock)
+                repository.StyleSettings?.RecordDefaults();
+        }
+
+        await SaveRepositorySettingsAsync();
+    }
+
+    private static readonly JsonSerializerOptions SettingsJsonOptions = new() { WriteIndented = true, NewLine = "\n" };
+
+    /// <summary>The settings as they are compared against <see cref="Repository.SettingsOnDisk"/>.</summary>
+    private static string SerializeSettings(StyleCheckingSettings? settings)
+        => JsonSerializer.Serialize(settings, SettingsJsonOptions);
+
+    /// <summary>
+    /// Whether the existing settings file at <paramref name="settingsPath"/> can be written, found
+    /// by opening it for writing and closing it again - <b>nothing is written</b>, so neither its
+    /// content nor its modification time changes and a committed file is not left modified (B381).
+    /// </summary>
+    private static bool CanWriteSettingsFile(string settingsPath, string repositoryName)
+    {
+        try
+        {
+            using (new FileStream(settingsPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) { }
+            return true;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Warn("RepositoryService",
+                $"Cannot write .mlqt/settings.json for '{repositoryName}': {ex.Message}. " +
+                "Changes to its settings will only apply to the current session.");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="repo"/>'s <c>.mlqt/settings.json</c> if, and only if, its settings
+    /// differ from what was last read from or written to it — or there is no file yet, in which case
+    /// the defaults are recorded in the new one (B244): creating a file rewrites nothing anybody
+    /// committed.
+    ///
+    /// <para><b>Written in the file's own line endings</b> and with its own final newline, so a change
+    /// to one setting is a one-line diff on every platform rather than a whole-file one: the
+    /// serializer's default is <c>Environment.NewLine</c>, which flipped a file between the endings of
+    /// whichever machine saved it last.</para>
+    /// </summary>
+    private static void WriteSettingsFileIfChanged(Repository repo)
+    {
+        var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
+        try
+        {
+            var existing = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
+            if (existing is null)
+                repo.StyleSettings?.RecordDefaults();
+
+            var json = SerializeSettings(repo.StyleSettings);
+            if (existing is not null && json == repo.SettingsOnDisk)
+                return;
+
+            var newline = existing?.Contains("\r\n") == true ? "\r\n" : "\n";
+            var text = json.Replace("\n", newline);
+            if (existing is null || existing.EndsWith('\n'))
+                text += newline;
+
+            // Nothing to write if the file already says exactly this, whoever wrote it.
+            if (text != existing)
+            {
+                var settingsDir = Path.GetDirectoryName(settingsPath);
+                if (settingsDir != null && !Directory.Exists(settingsDir))
+                    Directory.CreateDirectory(settingsDir);
+                File.WriteAllText(settingsPath, text);
+            }
+
+            repo.SettingsOnDisk = json;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Warn("RepositoryService",
+                $"Could not write .mlqt/settings.json for '{repo.Name}': {ex.Message}. " +
+                "Changes to its settings will only apply to the current session.");
+            repo.IsSettingsReadOnly = true;
+        }
+    }
+
+    /// <remarks>
+    /// <para><b>Saves are serialised, and each takes its contents only once it is its turn (B447).</b>
+    /// A save used to capture the project list and active id when it was called and write them
+    /// whenever the store got round to it, so a save nobody awaited - creating or renaming a project,
+    /// removing a repository - could land after a later one and put an older project list or active
+    /// id back. Creating and renaming now await their save; removing a repository still does not (its
+    /// callers are synchronous), and this is what makes that safe: a later save waits behind the
+    /// earlier one and then reads the state as it is, so whichever write lands last is the newest.</para>
+    ///
+    /// <para><b>Nothing saved is overwritten before it has been loaded (B455).</b> A save writes the
+    /// whole project list from memory, and before the first <see cref="LoadRepositorySettingsAsync"/>
+    /// memory holds none of it - so a save then replaced every saved project with one empty Default,
+    /// and a legacy <c>Repositories</c> list with nothing before the load could migrate it. Until the
+    /// first load, a save writes the key only if nothing is saved there yet; otherwise it leaves it
+    /// alone and writes only each repository's own <c>.mlqt/settings.json</c>, and the load that
+    /// follows replaces memory with what is saved, as it always has.</para>
+    /// </remarks>
     public async Task SaveRepositorySettingsAsync()
+    {
+        await _saveGate.WaitAsync();
+        try
+        {
+            await SaveRepositorySettingsCoreAsync();
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
+    private async Task SaveRepositorySettingsCoreAsync()
     {
         var settings = new RepositorySettingsCollection();
 
@@ -594,23 +945,9 @@ public class RepositoryService : IRepositoryService
                 if (repo.IsReferenceOnly)
                     continue;
 
-                //Save the formatting settings into the repository so that every user gets the same
-                try
-                {
-                    var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
-                    var json = JsonSerializer.Serialize(repo.StyleSettings, new JsonSerializerOptions { WriteIndented = true });
-                    var settingsDir = Path.GetDirectoryName(settingsPath);
-                    if (settingsDir != null && !Directory.Exists(settingsDir))
-                        Directory.CreateDirectory(settingsDir);
-                    File.WriteAllText(settingsPath, json);
-                }
-                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-                {
-                    Warn("RepositoryService",
-                        $"Could not write .mlqt/settings.json for '{repo.Name}': {ex.Message}. " +
-                        "Repository will use global settings.");
-                    repo.IsSettingsReadOnly = true;
-                }
+                // Save the formatting settings into the repository so that every user gets the same
+                // - but only if they changed (B310).
+                WriteSettingsFileIfChanged(repo);
             }
 
             // Ensure at least a default project exists
@@ -649,7 +986,20 @@ public class RepositoryService : IRepositoryService
             settings.ActiveProjectId = _activeProjectId;
         }
 
+        if (!_settingsOwned)
+        {
+            var stored = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+            if (stored.Projects.Count > 0 || stored.Repositories.Count > 0)
+            {
+                Warn("RepositoryService",
+                    "Repository settings were not saved: the saved projects have not been loaded yet, " +
+                    "and saving now would replace them.");
+                return;
+            }
+        }
+
         await _settingsService.SetAsync(SettingsKey, settings);
+        _settingsOwned = true;
     }
 
     public async Task LoadRepositorySettingsAsync(string? projectId = null, CancellationToken cancellationToken = default)
@@ -659,21 +1009,24 @@ public class RepositoryService : IRepositoryService
         {
             _loadWarnings.Clear();
         }
-        var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+        RepositoryRemovedSinceProjectLoad = false;
 
-        // Migration: if no projects defined but legacy Repositories exist, migrate them
-        if (settings.Projects.Count == 0 && settings.Repositories.Count > 0)
+        // The read and the legacy migration's write take the save gate (B452), so a save queued
+        // before this load lands before it reads, and cannot land after the migration and put the
+        // unmigrated contents back. Released before any repository is added below, because adding
+        // one saves - and so takes the gate itself.
+        RepositorySettingsCollection settings;
+        await _saveGate.WaitAsync();
+        try
         {
-            Info("RepositoryService", $"Migrating {settings.Repositories.Count} legacy repositories to Default project");
-            var defaultProject = new ProjectProfile
-            {
-                Name = "Default",
-                Repositories = settings.Repositories.ToList()
-            };
-            settings.Projects.Add(defaultProject);
-            settings.ActiveProjectId = defaultProject.Id;
-            settings.Repositories.Clear();
-            await _settingsService.SetAsync(SettingsKey, settings);
+            settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+
+            if (MigrateLegacyRepositories(settings))
+                await _settingsService.SetAsync(SettingsKey, settings);
+        }
+        finally
+        {
+            _saveGate.Release();
         }
 
         // If no projects at all, create a Default empty project
@@ -691,11 +1044,38 @@ public class RepositoryService : IRepositoryService
             _projects.AddRange(settings.Projects);
         }
 
-        // Determine the active project
+        // Determine the active project.
+        //
+        // The fallback to the first project is for the *saved* active id naming a project that is no
+        // longer there — a deleted or renamed project leaves exactly that state, and starting up on
+        // some project beats refusing to start.
+        //
+        // It is deliberately NOT applied to an explicitly requested projectId (B192). Substituting a
+        // different project for one the caller named is how "create a project, then Load Project"
+        // came up holding the previously selected project and its repositories: the new project had
+        // been created in memory and its save not yet awaited, so it was absent from the settings
+        // just re-read here, `FirstOrDefault` found nothing, and the `??` quietly loaded the first
+        // existing project instead. A caller that names a project either gets it or is told.
         var activeId = projectId ?? settings.ActiveProjectId ?? settings.Projects.First().Id;
-        var activeProject = settings.Projects.FirstOrDefault(p => p.Id == activeId)
-                            ?? settings.Projects.First();
+        var activeProject = settings.Projects.FirstOrDefault(p => p.Id == activeId);
+        if (activeProject is null)
+        {
+            if (projectId is not null)
+            {
+                var message =
+                    $"Project '{projectId}' was asked for but is not in the saved settings; " +
+                    $"loading '{settings.Projects.First().Name}' instead.";
+                Warn("RepositoryService", message);
+                AddLoadWarning(message);
+            }
+
+            activeProject = settings.Projects.First();
+        }
+
         _activeProjectId = activeProject.Id;
+
+        // From here memory holds the saved projects, so a save may write them (B455).
+        _settingsOwned = true;
 
         Info("RepositoryService", $"Loading project '{activeProject.Name}' with {activeProject.Repositories.Count} repositories");
 
@@ -715,7 +1095,7 @@ public class RepositoryService : IRepositoryService
             {
                 Warn("RepositoryService", $"Repository path no longer exists, skipping: {entry.LocalPath}");
                 AddLoadWarning($"Repository '{entry.Name}' was not loaded: its path no longer exists ({entry.LocalPath}). " +
-                    "Fix or remove it in Settings > Repositories.");
+                    "Fix or remove it in Settings > Manage Repositories.");
                 continue;
             }
 
@@ -761,6 +1141,44 @@ public class RepositoryService : IRepositoryService
         LogProcessEnd("RepositoryService", "Loading repository settings");
     }
 
+    /// <summary>
+    /// Moves a legacy top-level <c>Repositories</c> list into a project of its own. Every read of
+    /// the settings key that may write it back goes through this (B460).
+    /// </summary>
+    /// <returns>Whether anything was migrated. The list is cleared, so a second call does nothing.</returns>
+    /// <remarks>
+    /// <para><b>Why after every read, not only when there are no projects.</b> Only the load
+    /// migrated, and only over a file with no projects. Creating a project on the startup screen
+    /// over a legacy file appended one, so the load that followed skipped the migration, and the
+    /// next save - which writes projects and never <c>Repositories</c> - lost the legacy list. A
+    /// file written that way holds both, and this recovers it too.</para>
+    ///
+    /// <para>The project is called "Default", or the first "Default N" no project uses. The active
+    /// project is set to it only when the saved active id names no project; a caller that makes
+    /// another project active sets that afterwards.</para>
+    /// </remarks>
+    private static bool MigrateLegacyRepositories(RepositorySettingsCollection settings)
+    {
+        if (settings.Repositories.Count == 0)
+            return false;
+
+        var name = "Default";
+        for (var n = 2; !ProjectNameRules.IsAvailable(name, settings.Projects); n++)
+            name = $"Default {n}";
+
+        Info("RepositoryService", $"Migrating {settings.Repositories.Count} legacy repositories to project '{name}'");
+        var migrated = new ProjectProfile
+        {
+            Name = name,
+            Repositories = settings.Repositories.ToList()
+        };
+        settings.Projects.Add(migrated);
+        if (!settings.Projects.Any(p => p.Id == settings.ActiveProjectId))
+            settings.ActiveProjectId = migrated.Id;
+        settings.Repositories.Clear();
+        return true;
+    }
+
     // ========== Project Profile Management ==========
 
     public IReadOnlyList<ProjectProfile> GetProjects()
@@ -779,48 +1197,226 @@ public class RepositoryService : IRepositoryService
         }
     }
 
-    public ProjectProfile CreateProject(string name)
+    /// <summary>
+    /// Creates a project, makes it the active one, and persists both facts — <b>without loading
+    /// anything and without touching any in-memory state</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why this exists (B192).</b> Creating a project on the startup screen has to append to
+    /// the saved project list, and the only way to get that list into memory was
+    /// <see cref="LoadRepositorySettingsAsync"/> — which also opens every repository of the currently
+    /// active project and loads their libraries. So choosing "New Project" opened the previous
+    /// session's repositories, and nothing unloads them afterwards: that method never clears
+    /// <c>_repositories</c> or the graph, and only <see cref="SwitchProjectAsync"/> does. The user saw
+    /// the old repositories under a project that should have been empty, no progress dialog (the new
+    /// project genuinely has nothing to load), a UI still busy with the old project's analysis, and a
+    /// stale title.</para>
+    ///
+    /// <para><b>Why it touches no in-memory state.</b> <see cref="SaveRepositorySettingsAsync"/>
+    /// writes the active project's repository list from the loaded <c>_repositories</c>. Populating
+    /// <c>_projects</c> here without loading repositories would leave those two describing different
+    /// projects, and the next save — <see cref="CreateProjectAsync"/> makes one of its own — would write
+    /// an empty list over a project that has repositories, or one project's repositories into
+    /// another. Reading the settings, appending, and writing them back is the whole operation, and it
+    /// leaves nothing half-done for a later save to act on.</para>
+    ///
+    /// <para>The caller loads the new project afterwards in the ordinary way, with
+    /// <c>LoadRepositorySettingsAsync(project.Id)</c>.</para>
+    /// </remarks>
+    public async Task<ProjectProfile> CreateAndSelectProjectAsync(string name)
     {
-        var project = new ProjectProfile { Name = name };
-        lock (_lock)
+        // The whole read-modify-write takes the save gate (B452): a save queued before it lands
+        // first and is read here, rather than landing afterwards with a project list that has never
+        // heard of this project. Nothing below saves, so the gate is not asked for twice.
+        ProjectProfile project;
+        await _saveGate.WaitAsync();
+        try
         {
-            _projects.Add(project);
+            var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+
+            // Checked against what is saved, not against the in-memory list, because this path runs
+            // before anything is loaded. The screens check first and show the reason; reaching here with
+            // a name already taken means something got past them.
+            var refusal = ProjectNameRules.Validate(name, settings.Projects);
+            if (refusal is not null)
+                throw new InvalidOperationException(refusal);
+
+            project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
+            settings.Projects.Add(project);
+
+            // After the new project is added, so the migrated one gets a name the user did not
+            // choose - the startup dialog validated against a legacy file's empty project list, so
+            // "Default" is a name it lets through (B460).
+            MigrateLegacyRepositories(settings);
+            settings.ActiveProjectId = project.Id;
+
+            await _settingsService.SetAsync(SettingsKey, settings);
         }
-        _ = SaveRepositorySettingsAsync();
+        finally
+        {
+            _saveGate.Release();
+        }
+
+        Info("RepositoryService", $"Created project '{name}' and made it active; nothing loaded");
         return project;
     }
 
-    public void RenameProject(string projectId, string newName)
+    /// <summary>
+    /// Adds a project to the in-memory list and saves it before returning. If the save fails the
+    /// project is taken out again and the exception propagates, so memory and the settings file
+    /// still agree.
+    ///
+    /// <para><b>The save is awaited (B447).</b> It used to be started and not awaited, capturing the
+    /// active id at the time; the panel then switched to the new project, and the create's save
+    /// landing after the switch's put the previous project back as the active one.</para>
+    ///
+    /// <para>This one requires the project list to be loaded already, and it writes the currently
+    /// loaded repositories out as part of saving. Use
+    /// <see cref="CreateAndSelectProjectAsync"/> where nothing has been loaded yet — at startup, in
+    /// particular.</para>
+    /// </summary>
+    public async Task<ProjectProfile> CreateProjectAsync(string name)
     {
+        ProjectProfile project;
         lock (_lock)
         {
-            var project = _projects.FirstOrDefault(p => p.Id == projectId);
-            if (project != null)
-                project.Name = newName;
+            var refusal = ProjectNameRules.Validate(name, _projects);
+            if (refusal is not null)
+                throw new InvalidOperationException(refusal);
+
+            project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
+            _projects.Add(project);
         }
-        _ = SaveRepositorySettingsAsync();
+
+        try
+        {
+            await SaveRepositorySettingsAsync();
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                _projects.Remove(project);
+            }
+            throw;
+        }
+        return project;
     }
 
-    public bool DeleteProject(string projectId)
+    /// <summary>
+    /// Renames a project. Throws when the new name is already another project's.
+    /// </summary>
+    /// <remarks>
+    /// A uniqueness rule that only creation enforces is not a uniqueness rule: the same two projects
+    /// can be made indistinguishable by renaming one of them into the other. The project being
+    /// renamed is excluded from the comparison, so confirming a rename that changes nothing, or only
+    /// changes case, is allowed.
+    ///
+    /// <para><b>The save is awaited (B447)</b>: started and not awaited, it carried the active id of
+    /// the moment, and landing after a following switch's save it restored the old one. If it fails
+    /// the old name is put back and the exception propagates.</para>
+    /// </remarks>
+    public async Task RenameProjectAsync(string projectId, string newName)
     {
+        ProjectProfile? project;
+        string oldName;
+        lock (_lock)
+        {
+            project = _projects.FirstOrDefault(p => p.Id == projectId);
+            if (project == null)
+                return;
+
+            var refusal = ProjectNameRules.Validate(newName, _projects, ignoringProjectId: projectId);
+            if (refusal is not null)
+                throw new InvalidOperationException(refusal);
+
+            oldName = project.Name;
+            project.Name = ProjectNameRules.Normalise(newName);
+        }
+
+        try
+        {
+            await SaveRepositorySettingsAsync();
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                project.Name = oldName;
+            }
+            throw;
+        }
+    }
+
+    /// <remarks>
+    /// <para><b>The active project is refused, and the save is awaited (B442).</b> This used to remove
+    /// whichever project it was given and start a save it did not await. For the active project that
+    /// save was taken while the active id still named it, so it wrote an active id naming no project;
+    /// the caller's switch to another project then saved twice, and the unawaited save could land
+    /// after both and put the deleted id back - or, if that switch threw, leave the service itself
+    /// with an active project that did not exist. The panel has only ever offered to delete an
+    /// inactive project, so refusing the active one here costs nothing and makes the dangling id
+    /// impossible rather than unlikely. Awaiting the save means no later save can be overtaken by
+    /// this one; if it fails the project is put back, so memory and the settings file still agree.</para>
+    /// </remarks>
+    public async Task<bool> DeleteProjectAsync(string projectId)
+    {
+        ProjectProfile? project;
+        int index;
         lock (_lock)
         {
             if (_projects.Count <= 1)
                 return false;
 
-            var project = _projects.FirstOrDefault(p => p.Id == projectId);
-            if (project == null)
+            index = _projects.FindIndex(p => p.Id == projectId);
+            if (index < 0)
                 return false;
 
-            _projects.Remove(project);
+            if (projectId == _activeProjectId)
+            {
+                Warn("RepositoryService", $"Project '{projectId}' is the active project and was not deleted");
+                return false;
+            }
+
+            project = _projects[index];
+            _projects.RemoveAt(index);
         }
-        _ = SaveRepositorySettingsAsync();
+
+        try
+        {
+            await SaveRepositorySettingsAsync();
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                _projects.Insert(Math.Min(index, _projects.Count), project);
+            }
+            throw;
+        }
         return true;
     }
 
     public async Task SwitchProjectAsync(string projectId, CancellationToken cancellationToken = default)
     {
         LogProcessStart("RepositoryService", $"Switching to project: {projectId}");
+
+        // Look the project up before anything is saved, cleared or changed (B440). This used to be
+        // done after the repositories and the graph were cleared and the active id set to the one
+        // asked for, so a switch to a missing project left nothing loaded, an active id naming no
+        // project, and that id written at the next save. Returning without raising OnProjectChanged
+        // is how the caller learns the switch did not happen (SettingsRepositories.SwitchToProjectAsync).
+        ProjectProfile? project;
+        lock (_lock)
+        {
+            project = _projects.FirstOrDefault(p => p.Id == projectId);
+        }
+        if (project == null)
+        {
+            Warn("RepositoryService", $"Project '{projectId}' was not found; the current project stays open");
+            LogProcessEnd("RepositoryService", "Switching project - project not found");
+            return;
+        }
 
         // Save current project's state before switching
         await SaveRepositorySettingsAsync();
@@ -837,17 +1433,12 @@ public class RepositoryService : IRepositoryService
 
         _fileMonitoringService.StopAllMonitoring();
         _libraryDataService.ClearAllLibraries();
+        RepositoryRemovedSinceProjectLoad = false;
 
         OnRepositoriesChanged?.Invoke();
 
         // Set active project
         _activeProjectId = projectId;
-        var project = _projects.FirstOrDefault(p => p.Id == projectId);
-        if (project == null)
-        {
-            LogProcessEnd("RepositoryService", "Switching project - project not found");
-            return;
-        }
 
         Info("RepositoryService", $"Loading project '{project.Name}' with {project.Repositories.Count} repositories");
 
@@ -914,11 +1505,38 @@ public class RepositoryService : IRepositoryService
                 // Reference-only repositories are not watched — see AddRepositoryAsync.
                 if (repository.IsReferenceOnly)
                     continue;
+                _fileMonitoringService.SetRepositoryScope(repository.Id, repository.LocalPath);
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
                 started++;
             }
         }
         Info("RepositoryService", $"Started file monitoring for {started} repositories");
+    }
+
+    /// <inheritdoc/>
+    public void SetReferenceOnly(string repositoryId, bool isReferenceOnly)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository is null || repository.IsReferenceOnly == isReferenceOnly)
+            return;
+
+        lock (_lock)
+            repository.IsReferenceOnly = isReferenceOnly;
+
+        // Watched exactly when it is the user's own code - see AddRepositoryAsync.
+        if (isReferenceOnly)
+        {
+            _fileMonitoringService.StopMonitoring(repository.Id);
+        }
+        else
+        {
+            _fileMonitoringService.SetRepositoryScope(repository.Id, repository.LocalPath);
+            _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
+        }
+
+        // Nothing kept for it while it was reference only is worth keeping now, in either direction.
+        InvalidateWorkingCopyCache(repository.Id);
+        OnRepositoriesChanged?.Invoke();
     }
 
     public void ClearAllRepositories()
@@ -944,8 +1562,37 @@ public class RepositoryService : IRepositoryService
 
         OnRepositoriesChanged?.Invoke();
 
-        // Save settings asynchronously
-        _ = SaveRepositorySettingsAsync();
+        SaveInBackground(nameof(ClearAllRepositories));
+    }
+
+    /// <summary>
+    /// Starts a save the caller does not wait for, and logs it if it fails (B447).
+    /// </summary>
+    /// <remarks>
+    /// For <see cref="RemoveRepository"/> and <see cref="ClearAllRepositories"/> only, whose callers
+    /// are synchronous (a dialog's Cancel, a button's click) and whose effects - monitoring stopped,
+    /// libraries unloaded - cannot be undone if the save fails, so a caller could do nothing with a
+    /// failure but show it. Serialised saves (<see cref="SaveRepositorySettingsAsync"/>) are what stop
+    /// one of these landing after a later save; the log is what stops a failure disappearing into an
+    /// unobserved task.
+    /// </remarks>
+    private void SaveInBackground(string operation)
+    {
+        _ = SaveRepositorySettingsAsync().ContinueWith(
+            t => Error("RepositoryService", $"Saving the project list after {operation} failed", t.Exception!.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Refreshes the revision info of every repository sharing this one's working copy - an
+    /// operation on the checkout moves all of them (B301, B324).
+    /// </summary>
+    private async Task UpdateWorkingCopyRevisionInfoAsync(Repository repository)
+    {
+        foreach (var repo in GetRepositoriesSharingWorkingCopy(repository.Id))
+            await UpdateRevisionInfoAsync(repo);
     }
 
     private async Task UpdateRevisionInfoAsync(Repository repository)
@@ -965,6 +1612,16 @@ public class RepositoryService : IRepositoryService
                 repository.CurrentBranch = repository.VcsType == RepositoryVcsType.SVN
                     ? _svn.GetCurrentBranch(repository.VcsRootPath, repository.StyleSettings?.SvnBranchDirectories)
                     : vcs.GetCurrentBranch(repository.VcsRootPath);
+
+                // Only asked when there is no branch, which is the only time it has an answer.
+                repository.DetachedHeadLabel = repository.CurrentBranch is null
+                    ? vcs.GetDetachedHeadLabel(repository.VcsRootPath)
+                    : null;
+
+                // A stopped rebase detaches HEAD, so it too is only asked for on no branch (B382).
+                repository.RebaseInProgress = repository.CurrentBranch is null
+                    ? vcs.GetRebaseInProgress(repository.VcsRootPath)
+                    : null;
 
                 if (repository.CurrentRevision != null)
                 {
@@ -1046,61 +1703,140 @@ public class RepositoryService : IRepositoryService
 
         var result = await Task.Run(() => vcs.UpdateToLatest(repository.VcsRootPath), cancellationToken);
 
-        // Update the repository's revision info if successful
+        // Update the revision info of every repository in the working copy, which all moved (B301).
         if (result.Success && result.HasChanges)
         {
-            await UpdateRevisionInfoAsync(repository);
+            foreach (var repo in GetRepositoriesWithVcsRoot(repository.VcsRootPath))
+                await UpdateRevisionInfoAsync(repo);
             OnRepositoriesChanged?.Invoke();
         }
 
         return result;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para><b>One query per repository at a time, shared by everyone who asks while it runs</b>
+    /// (B293). Every caller that missed the cache used to start its own, and after a VCS operation
+    /// they all miss it at once: the reload raises an event per library, each open tree answers with
+    /// a status query, and the baseline refresh adds its own. On MSL, after Format All and a revert
+    /// had rewritten every file, that was 55 LibGit2Sharp status scans of one working copy running
+    /// together - one of them on the UI thread - and the window froze for two and a half minutes. A
+    /// single scan took under a third of a second.</para>
+    ///
+    /// <para><b>A caller only joins a query started since the last invalidation.</b> One that
+    /// began before it may have read the working copy before the change it was told about, so an
+    /// invalidation makes the next caller start afresh - and only that one; the rest join it. For
+    /// the same reason a query's answer is cached only if nothing was invalidated while it ran.</para>
+    ///
+    /// <para><b>One per working copy, not per repository</b> (B330). The query is of the checkout,
+    /// so two libraries checked out in one tree asked the same question twice, at once - and for Git
+    /// each slow status is followed by an index refresh that takes <c>index.lock</c>, so the two
+    /// raced for it. The cache, the query in flight and the invalidations are all keyed by
+    /// <see cref="WorkingCopyKey"/>.</para>
+    /// </remarks>
     public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryId)
     {
-        // Check cache first
+        TaskCompletionSource<List<VcsWorkingCopyFile>>? owned = null;
+        Task<List<VcsWorkingCopyFile>>? joined = null;
+        long generation;
+
+        // Worked out before the cache lock is taken: it takes the repository list's own lock.
+        var key = WorkingCopyKey(repositoryId);
+
         lock (_workingCopyCacheLock)
         {
-            if (_workingCopyCache.TryGetValue(repositoryId, out var cached))
+            if (_workingCopyCache.TryGetValue(key, out var cached)
+                && Environment.TickCount64 - cached.Ticks < WorkingCopyCacheLifetimeMs)
+                return cached.Changes;
+
+            generation = WorkingCopyGeneration(key);
+            if (_workingCopyQueries.TryGetValue(key, out var inFlight) && inFlight.Generation == generation)
             {
-                var age = Environment.TickCount64 - cached.Ticks;
-                if (age < WorkingCopyCacheLifetimeMs)
-                    return cached.Changes;
+                joined = inFlight.Query;
+            }
+            else
+            {
+                // Asynchronous continuations, so nothing waiting on this runs on the owner's thread
+                // before the owner has finished with its own answer.
+                owned =new TaskCompletionSource<List<VcsWorkingCopyFile>>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _workingCopyQueries[key] = (owned.Task, generation);
             }
         }
 
+        // Waited for outside the lock: the owner takes it again to publish its answer, and waiting
+        // while holding it was a deadlock the first version of this had.
+        if (owned == null)
+            return joined!.GetAwaiter().GetResult();
+
+        try
+        {
+            var repository = GetRepository(repositoryId);
+            var changes = repository == null || repository.VcsType == RepositoryVcsType.Local
+                ? new List<VcsWorkingCopyFile>()
+                : QueryWorkingCopy(repository);
+
+            lock (_workingCopyCacheLock)
+            {
+                if (WorkingCopyGeneration(key) == generation)
+                    _workingCopyCache[key] = (changes, Environment.TickCount64);
+            }
+
+            owned.SetResult(changes);
+            return changes;
+        }
+        catch (Exception ex)
+        {
+            owned.SetException(ex);
+            throw;
+        }
+        finally
+        {
+            lock (_workingCopyCacheLock)
+            {
+                if (_workingCopyQueries.TryGetValue(key, out var current) && current.Query == owned.Task)
+                    _workingCopyQueries.Remove(key);
+            }
+        }
+    }
+
+    /// <summary>How many times this working copy's status has been invalidated. Read and changed
+    /// only under <see cref="_workingCopyCacheLock"/>.</summary>
+    private long WorkingCopyGeneration(string key) =>
+        _allWorkingCopiesGeneration + _workingCopyGenerations.GetValueOrDefault(key);
+
+    /// <summary>
+    /// What a repository's working-copy status is cached and shared under: its checkout, for a
+    /// repository under version control, so every library in one tree shares one answer (B330). A
+    /// local repository, or one no longer known, is its own.
+    /// </summary>
+    /// <remarks>
+    /// Case-insensitive, as <see cref="GetRepositoriesSharingWorkingCopy"/> matches roots.
+    /// </remarks>
+    private string WorkingCopyKey(string repositoryId)
+    {
         var repository = GetRepository(repositoryId);
-        if (repository == null || repository.VcsType == RepositoryVcsType.Local)
-        {
-            return new List<VcsWorkingCopyFile>();
-        }
-
-        IRevisionControlSystem vcs = repository.VcsType switch
-        {
-            RepositoryVcsType.Git => _git,
-            RepositoryVcsType.SVN => _svn,
-            _ => throw new InvalidOperationException("Unsupported VCS type")
-        };
-
-        var changes = vcs.GetWorkingCopyChanges(repository.VcsRootPath);
-
-        lock (_workingCopyCacheLock)
-        {
-            _workingCopyCache[repositoryId] = (changes, Environment.TickCount64);
-        }
-
-        return changes;
+        return repository == null || repository.VcsType == RepositoryVcsType.Local || string.IsNullOrEmpty(repository.VcsRootPath)
+            ? $"repository:{repositoryId}"
+            : $"{repository.VcsType}:{repository.VcsRootPath.ToUpperInvariant()}";
     }
 
     /// <inheritdoc/>
     public void InvalidateWorkingCopyCache(string? repositoryId = null)
     {
+        var key = repositoryId == null ? null : WorkingCopyKey(repositoryId);
         lock (_workingCopyCacheLock)
         {
-            if (repositoryId != null)
-                _workingCopyCache.Remove(repositoryId);
+            if (key != null)
+            {
+                _workingCopyCache.Remove(key);
+                _workingCopyGenerations[key] = _workingCopyGenerations.GetValueOrDefault(key) + 1;
+            }
             else
+            {
                 _workingCopyCache.Clear();
+                _allWorkingCopiesGeneration++;
+            }
         }
 
         // Anything that invalidates this cache is saying the working copy's VCS status may have
@@ -1165,10 +1901,10 @@ public class RepositoryService : IRepositoryService
 
         var result = await Task.Run(() => vcs.Commit(repository.VcsRootPath, message, filesToCommit, progress));
 
-        // Update the repository's revision info if successful
+        // Every repository in the working copy is now at the new revision, not only this one (B324).
         if (result.Success)
         {
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
             OnRepositoriesChanged?.Invoke();
         }
 
@@ -1295,10 +2031,12 @@ public class RepositoryService : IRepositoryService
             ? await Task.Run(() => _svn.CreateBranch(repository.VcsRootPath, branchName, switchToBranch, repository.StyleSettings?.SvnBranchDirectories))
             : await Task.Run(() => vcs.CreateBranch(repository.VcsRootPath, branchName, switchToBranch));
 
-        // Update the repository's revision info if successful
+        // A switch moves the whole working copy, so every repository in it is now on the new branch.
+        // Refreshing only this one left a sibling library's CurrentBranch naming the old branch,
+        // which is what its Push and Force Push then pushed (B324).
         if (result.Success && switchToBranch)
         {
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
             OnRepositoriesChanged?.Invoke();
         }
 
@@ -1327,7 +2065,48 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        return vcs.GetFileContentAtRevision(repository.VcsRootPath, filePath, revision);
+        // Decoded here, through the same funnel a file on disk goes through. The VCS layer hands
+        // back what was stored because it knows nothing about Modelica (B264).
+        return VcsFileText.Decode(vcs.GetFileBytesAtRevision(repository.VcsRootPath, filePath, revision));
+    }
+
+    public string? GetPreviousRevision(string repositoryId, string revision)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository == null || string.IsNullOrWhiteSpace(revision))
+            return null;
+
+        // A local directory has no history, so nothing came before anything.
+        IRevisionControlSystem? vcs = repository.VcsType switch
+        {
+            RepositoryVcsType.Git => _git,
+            RepositoryVcsType.SVN => _svn,
+            _ => null
+        };
+
+        return vcs?.GetPreviousRevision(repository.VcsRootPath, revision);
+    }
+
+    /// <inheritdoc/>
+    public int CountCommitsOnNoBranch(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        return repository?.VcsType == RepositoryVcsType.Git
+            ? _git.CountCommitsOnNoBranch(repository.VcsRootPath)
+            : 0;
+    }
+
+    /// <inheritdoc/>
+    public async Task<VcsRebaseInProgress?> GetRebaseInProgressAsync(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository?.VcsType != RepositoryVcsType.Git)
+            return null;
+
+        var rebase = await Task.Run(() => _git.GetRebaseInProgress(repository.VcsRootPath));
+        foreach (var each in GetRepositoriesWithVcsRoot(repository.VcsRootPath))
+            each.RebaseInProgress = rebase;
+        return rebase;
     }
 
     public async Task<VcsOperationResult> CheckoutRevisionAsync(string repositoryId, string revision, CancellationToken cancellationToken = default)
@@ -1461,9 +2240,12 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        var result = await Task.Run(() => vcs.Push(repository.VcsRootPath, repository.CurrentBranch));
+        // No branch named: the push acts on the branch HEAD is on at the moment it runs. The stored
+        // CurrentBranch can be stale - a sibling library switched the checkout, or another tool did -
+        // and git pushes the branch it is given, not HEAD (B324).
+        var result = await Task.Run(() => vcs.Push(repository.VcsRootPath));
         if (result.Success)
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
         return result;
     }
 
@@ -1480,7 +2262,10 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        return await Task.Run(() => vcs.GetConflictVersions(repository.VcsRootPath, filePath));
+        // Decoded here rather than in RevisionControl, which returns what was stored because it
+        // knows nothing about Modelica and should not start now (B240).
+        var (ours, theirs) = await Task.Run(() => vcs.GetConflictVersions(repository.VcsRootPath, filePath));
+        return (VcsFileText.Decode(ours), VcsFileText.Decode(theirs));
     }
 
     public async Task<VcsMergeResult> RebaseAsync(string repositoryId, string targetBranch)
@@ -1535,9 +2320,11 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        var result = await Task.Run(() => vcs.ForcePush(repository.VcsRootPath, repository.CurrentBranch));
+        // HEAD's branch, never the stored name: a force push of a stale name rewinds the remote's copy
+        // of a branch this checkout is no longer on, and the lease passes against a fresh fetch (B324).
+        var result = await Task.Run(() => vcs.ForcePush(repository.VcsRootPath));
         if (result.Success)
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
         return result;
     }
 

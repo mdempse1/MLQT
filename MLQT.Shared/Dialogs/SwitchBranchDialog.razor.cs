@@ -1,8 +1,11 @@
+using RevisionControl;
+
 namespace MLQT.Shared.Dialogs;
 
 public partial class SwitchBranchDialog
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+    [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
@@ -11,6 +14,9 @@ public partial class SwitchBranchDialog
     public string RepositoryId { get; set; } = "";
 
     private string? _selectedBranch;
+
+    /// <summary>Whether the selection is a tag, which switches into a detached HEAD (B193).</summary>
+    private bool _selectedIsTag;
     private bool _isSwitching = false;
     private bool _hasChanges = false;
     private string? _errorMessage;
@@ -21,6 +27,11 @@ public partial class SwitchBranchDialog
         await CheckForChanges();
     }
 
+    /// <summary>
+    /// Commits reachable only from the detached HEAD being left, which the switch strands (B327).
+    /// </summary>
+    private int _commitsOnNoBranch;
+
     private async Task CheckForChanges()
     {
         try
@@ -29,6 +40,7 @@ public partial class SwitchBranchDialog
             {
                 var changes = RepositoryService.GetWorkingCopyChanges(RepositoryId);
                 _hasChanges = changes.Count > 0;
+                _commitsOnNoBranch = RepositoryService.CountCommitsOnNoBranch(RepositoryId);
             });
         }
         catch
@@ -49,7 +61,15 @@ public partial class SwitchBranchDialog
 
         try
         {
-            var result = await RepositoryService.SwitchBranchAsync(RepositoryId, _selectedBranch);
+            // Held off for the checkout, which rewrites every file that differs between the two
+            // branches - and was the one VCS operation that let the monitor report each of them
+            // (B296). Started again straight after: the browser reloads and starts the analysis.
+            VcsOperationResult result;
+            var repository = RepositoryService.GetRepository(RepositoryId);
+            using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId)))
+            {
+                result = await RepositoryService.SwitchBranchAsync(RepositoryId, _selectedBranch);
+            }
 
             if (!result.Success)
             {

@@ -65,6 +65,65 @@ Modelica icons support inheritance through `extends` clauses. When a class exten
 3. Multiple inheritance levels are supported
 4. Circular inheritance is prevented with max depth parameter
 
+### Which coordinate system an inherited icon or diagram is drawn in
+
+The Modelica specification's rule (MLS 3.6 §18.6.1.1), implemented once in
+`IconData.ResolveCoordinateSystem` and used by both the icon merge and the MCP server's diagram
+(`DiagramImage.DiagramSystem`): "The coordinate system attributes (extent and preserveAspectRatio)
+of a class are **separately** defined by the following priority: 1. The coordinate system
+annotation given in the class (if specified). 2. The coordinate systems of the **first** base class
+where the extent on the extends-clause specifies a null-region (if any). 3. The default coordinate
+system." (B394)
+
+- **Separately**: `coordinateSystem(preserveAspectRatio=false)` with no extent - common in MSL and
+  Buildings - still takes the base's extent. `IconData.Declares*` records which attributes a class
+  stated; a stated `{{-100,-100},{100,100}}` and the default look the same otherwise.
+- **The first base**, resolved through its own chain - not the first base that states something.
+  A first base that states nothing lends the default.
+- **A base that draws nothing still lends its system.**
+- **Null region**: an extends clause with `IconMap(extent=...)` / `DiagramMap(extent=...)` other than
+  `{{0,0},{0,0}}` maps its base into that region (§18.6.3) and does not lend its system.
+  `IconExtractionResult.MappedExtends` lists those clauses.
+
+### What an `IconMap` / `DiagramMap` does to the base's graphics (B420)
+
+`IconExtractionResult.ExtendsMaps` holds each clause's map as an `ExtendsMap(Region, PrimitivesVisible)`,
+for the layer extracted (`IconMap` for the icon, `DiagramMap` for the diagram); `MapFor(name)` reads one.
+Both the icon merge (`IconSvgRenderer.ExtractIconWithInheritance`) and the MCP diagram
+(`DiagramImage.InheritedDiagram`, which walks clause by clause for this) apply it:
+
+- **`primitivesVisible=false`** drops the base's graphics, its own bases' included. The base still
+  lends its coordinate system, and its components are still drawn - on a diagram they are
+  separate, and on an icon the connectors a diagram draws are `DiagramComponent.Children`, not
+  graphics. MSL has four such clauses (`Sensors.RelativeAngles`, RobotR3 `AxisType1`, and the
+  short-class connectors `ComplexInput`/`ComplexOutput`, whose base a short class definition does not
+  follow here anyway).
+- **A region** maps the base's resolved coordinate system into it through `GraphicsMapping.Into`: as a
+  component's icon goes onto its placement, a reversed region mirroring, and with the scale made
+  even and the result centred when the base preserves its aspect ratio. The primitives are rewritten
+  rather than wrapped in a transform, so every consumer of the flat list still works; a mirror turns
+  a rotation the other way and a quarter turn swaps the axes a scale applies to. Only a non-uniform
+  scale of a primitive turned by an angle that is not a multiple of 90 is approximate. Buildings'
+  `HeatRecoveryChiller` is the one use in the corpus (`IconMap(extent={{-600,600},{600,-600}})`,
+  flipping its base vertically).
+- **What else the base contributes goes through the same map (B436).** The arithmetic is
+  `CoordinateMap` (`ModelicaParser/Icons`): `Apply` for a primitive, `Placement` for a component's
+  placement (extent, rotation and rotation centre - a mirror reverses the extent), `Point` for a
+  connect line's points, `Then` to compose two clauses. On the MCP side
+  `DiagramGeometry.BaseMaps(libraries, node, layer)` is the one answer to where each base, by id, is
+  drawn, composed down the chain; `DiagramGeometry.Placements` maps every inherited placement with
+  it, so the connectors on an icon (`Layer.Icon`, what `ConnectorsOn` reads) and the components on a
+  diagram land where the base's graphics do, and the router - which ends lines on those same
+  components through `PortOf` (B314) - follows without knowing about maps. The image maps a base's
+  own `Line(points=...)` with the same map. Buildings' `HeatRecoveryChiller` now has `port_*2` on
+  the upper half of its icon, where `Validation.HeatRecoveryChiller`'s Dymola-drawn lines end
+  (`(±60,40)`, and `port_*1` at `(±60,-32)`). The desktop icon draws no connectors, so this is MCP
+  only.
+
+Before B394 the icon merge kept the derived class's system whenever it had an Icon annotation,
+stated or not: 52 Buildings icons (e.g. `DHC.ETS.BaseClasses.CollectorDistributor`) were drawn in
+-100..100 when their bases state -200..200 or -300..300.
+
 ### API
 
 ```csharp

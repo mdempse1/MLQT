@@ -43,7 +43,12 @@ public interface IFormattingPipeline
     /// Told which library failed and why, so a host can surface it. A library that will not save is
     /// not a reason to abandon the others.
     /// </param>
-    Task SaveAllLibrariesWithFormattingAsync(
+    /// <returns>
+    /// The files left exactly as they were because they have syntax errors — the incremental
+    /// formatter's rule (B414). Every class such a file holds stays in it: a package's inline
+    /// children are not split out, and a single-file library is not expanded. A host tells the user.
+    /// </returns>
+    Task<IReadOnlyList<string>> SaveAllLibrariesWithFormattingAsync(
         string? filterRepositoryId = null,
         Action<string, Exception>? onLibraryFailed = null);
 

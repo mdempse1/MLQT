@@ -67,6 +67,8 @@ public static class RuleSettingsLayout
         // switched the user's settings off.
         new(RuleIds.OneOfEachSection, Formatting, RuleControl.Bespoke, Binding: "SelectedSettings.OneOfEachSection"),
         new(RuleIds.ImportStatementsFirst, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"),
+        new(RuleIds.ComponentsBeforeClasses, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.ComponentsBeforeClasses)"),
+        new(RuleIds.DeclarationOrder, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.DeclarationOrder)"),
         new(RuleIds.InitialEqAlgoFirst, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.InitialEqAlgoFirst)"),
         new(RuleIds.InitialEqAlgoLast, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.InitialEqAlgoLast)"),
 

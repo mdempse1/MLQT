@@ -45,9 +45,103 @@ public class AppState
     /// </summary>
     public void ChangeModelID(string modelID)
     {
+        RecordVisit(modelID);
         ModelID = modelID;
         OnChangeModel?.Invoke();
     }
+
+    #region Where the user has been (B197)
+
+    /// <summary>
+    /// The classes visited, oldest first, and where in them the user currently is.
+    /// </summary>
+    /// <remarks>
+    /// <para>Here rather than on a page because every surface moves the selection — the tree, a
+    /// finding, the dependency graph — and a history kept by one of them would only know about its
+    /// own moves. It is session memory in the same sense as <c>MetricsScope</c>: not persisted, and
+    /// nothing is wrong if it is empty.</para>
+    /// </remarks>
+    private readonly List<string> _visited = [];
+    private int _visitedIndex = -1;
+    private bool _movingThroughHistory;
+
+    /// <summary>How many classes are remembered. Enough to get back, not enough to be a list.</summary>
+    private const int VisitLimit = 50;
+
+    public bool CanGoBack => _visitedIndex > 0;
+
+    public bool CanGoForward => _visitedIndex >= 0 && _visitedIndex < _visited.Count - 1;
+
+    /// <summary>The classes behind the current one, nearest first — for a back button's menu.</summary>
+    public IReadOnlyList<string> Back =>
+        _visitedIndex <= 0 ? [] : [.. _visited.Take(_visitedIndex).Reverse()];
+
+    /// <summary>Goes back one class, if there is one. Does not record the move as a new visit.</summary>
+    public void GoBack()
+    {
+        if (!CanGoBack)
+            return;
+
+        _visitedIndex--;
+        MoveTo(_visited[_visitedIndex]);
+    }
+
+    /// <summary>Goes forward one class, if the user has been back.</summary>
+    public void GoForward()
+    {
+        if (!CanGoForward)
+            return;
+
+        _visitedIndex++;
+        MoveTo(_visited[_visitedIndex]);
+    }
+
+    private void MoveTo(string modelID)
+    {
+        _movingThroughHistory = true;
+        try
+        {
+            ModelID = modelID;
+            OnChangeModel?.Invoke();
+        }
+        finally
+        {
+            _movingThroughHistory = false;
+        }
+    }
+
+    /// <summary>
+    /// Remembers a class the user has opened.
+    /// </summary>
+    /// <remarks>
+    /// <para>Going somewhere new after going back <b>discards what was ahead</b>, which is what every
+    /// editor and browser does: keeping it would offer a "forward" to a class the user has just
+    /// chosen not to look at.</para>
+    ///
+    /// <para>Re-selecting the class already shown is not a visit. It happens on its own — a reload
+    /// re-raises the selection to refresh the page (<c>LibraryBrowser</c> does exactly that after a
+    /// VCS operation) — and counting it would fill the history with one class repeated.</para>
+    /// </remarks>
+    private void RecordVisit(string modelID)
+    {
+        if (_movingThroughHistory || string.IsNullOrEmpty(modelID))
+            return;
+
+        if (_visitedIndex >= 0 && _visited[_visitedIndex] == modelID)
+            return;
+
+        if (_visitedIndex < _visited.Count - 1)
+            _visited.RemoveRange(_visitedIndex + 1, _visited.Count - _visitedIndex - 1);
+
+        _visited.Add(modelID);
+
+        if (_visited.Count > VisitLimit)
+            _visited.RemoveAt(0);
+
+        _visitedIndex = _visited.Count - 1;
+    }
+
+    #endregion
 
     /// <summary>
     /// Sets the selected models (for multi-select mode) and notifies listeners.
@@ -184,6 +278,79 @@ public class AppState
         OnVcsModelsChanged?.Invoke(repositoryId, modelIds);
     }
 
+    // ========== VCS work in progress (B326) ==========
+
+    private int _vcsWorkInProgress;
+
+    /// <summary>
+    /// Whether a VCS operation, or the analysis pipeline one started, is still running anywhere.
+    /// No other VCS operation may start while it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>The Library Browser's own busy flag cleared when its operation returned, and the
+    /// operation returned as soon as it had fired <see cref="VcsFilesChanged"/>: the formatting and
+    /// analysis that follows runs detached. So a Switch Branch could start while the previous
+    /// Update's pipeline was still "Applying code formatting…" - the switch reloaded every library
+    /// under a running analysis, and the formatter, which reads and then writes file by file, wrote
+    /// old-branch text over the checkout. The pipeline had also stopped the monitor, so the switch's
+    /// pause skipped the repository and the pipeline's restart landed mid-checkout.</para>
+    ///
+    /// <para>Shared rather than per browser, because a pipeline acts on the graph and on every
+    /// repository in a working copy, not on the browser that started it.</para>
+    /// </remarks>
+    public bool IsVcsWorkInProgress => Volatile.Read(ref _vcsWorkInProgress) > 0;
+
+    /// <summary>Raised whenever <see cref="IsVcsWorkInProgress"/> may have changed.</summary>
+    public event Action? OnVcsWorkChanged;
+
+    /// <summary>
+    /// Counts one piece of VCS work as running until the returned handle is disposed. Take it
+    /// before the work is handed anywhere that runs it later, so there is no moment between the
+    /// operation ending and its pipeline starting when nothing is counted.
+    /// </summary>
+    public IDisposable BeginVcsWork()
+    {
+        Interlocked.Increment(ref _vcsWorkInProgress);
+        OnVcsWorkChanged?.Invoke();
+        return new VcsWork(this);
+    }
+
+    private sealed class VcsWork(AppState state) : IDisposable
+    {
+        private int _ended;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _ended, 1) != 0)
+                return;
+
+            Interlocked.Decrement(ref state._vcsWorkInProgress);
+            state.OnVcsWorkChanged?.Invoke();
+        }
+    }
+
+    // ========== Startup progress (B407) ==========
+
+    /// <summary>
+    /// The step the application's startup sequence is on, or <c>null</c> when none is running.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than on the layout because a reload replaces the layout and not the run: the old
+    /// instance's startup carries on to the end on singletons (B357), and the new instance, which
+    /// skips startup (B270), had nothing to show for it. This is what it reads instead.
+    /// </remarks>
+    public string? StartupStep { get; private set; }
+
+    /// <summary>Raised whenever <see cref="StartupStep"/> changes.</summary>
+    public event Action? OnStartupProgressChanged;
+
+    /// <summary>Records the startup step now running, or <c>null</c> when the sequence has ended.</summary>
+    public void StartupProgress(string? step)
+    {
+        StartupStep = step;
+        OnStartupProgressChanged?.Invoke();
+    }
+
     // ========== Project Profiles ==========
 
     /// <summary>
@@ -198,7 +365,55 @@ public class AppState
     /// </summary>
     public void ProjectSwitchStarting()
     {
+        ResetNavigation();
         OnProjectSwitchStarting?.Invoke();
+    }
+
+    /// <summary>
+    /// Event fired when a switch announced by <see cref="ProjectSwitchStarting"/> ended without the
+    /// project changing - it failed, or the project was not found. Listeners close whatever the
+    /// announcement opened (B435).
+    /// </summary>
+    public event Action? OnProjectSwitchAbandoned;
+
+    /// <summary>
+    /// Notifies that a project switch ended without <c>OnProjectChanged</c>, and clears the progress it
+    /// published.
+    /// </summary>
+    /// <remarks>
+    /// The switch's progress is cleared by the handler of <c>OnProjectChanged</c>, so a switch that
+    /// never raised it left <see cref="StartupStep"/> set for the rest of the session: the six-step
+    /// dialog stayed open, and a reload afterwards showed the non-closable earlier-run dialog for
+    /// ever and skipped startup (B422, B423). Cleared here, not by a listener, so it is cleared in a
+    /// session whose layout is not listening.
+    /// </remarks>
+    public void ProjectSwitchAbandoned()
+    {
+        StartupProgress(null);
+        OnProjectSwitchAbandoned?.Invoke();
+    }
+
+    /// <summary>
+    /// Forgets the classes visited, the class shown and the selection (B359).
+    /// </summary>
+    /// <remarks>
+    /// This class is a singleton and outlives a project, so without this a switch left Code Review
+    /// offering "Back to" a class the new project's graph does not have. Called by
+    /// <see cref="ProjectSwitchStarting"/>, which every project switch goes through.
+    /// </remarks>
+    public void ResetNavigation()
+    {
+        _visited.Clear();
+        _visitedIndex = -1;
+
+        if (ModelID.Length > 0)
+        {
+            ModelID = string.Empty;
+            OnChangeModel?.Invoke();
+        }
+
+        if (SelectedModelIDs.Count > 0)
+            ClearSelectedModels();
     }
 
     /// <summary>

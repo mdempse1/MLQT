@@ -45,8 +45,13 @@ public interface IModelCheckingService
     /// </summary>
     /// <param name="modelNode">The model node to check.</param>
     /// <param name="graph">The graph containing file information.</param>
+    /// <param name="cancellationToken">Stops the check, including one the tool is already running
+    /// and the tool starting or opening the library first (B397).</param>
     /// <returns>The result of the model check.</returns>
-    Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph);
+    /// <exception cref="OperationCanceledException">The check was cancelled - not a result, so
+    /// none is returned.</exception>
+    Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Checks a model and all its child models (if it's a package).

@@ -26,4 +26,10 @@
     <ProjectReference Include="..\MLQT.TestHost\MLQT.TestHost.csproj" />
   </ItemGroup>
 
+  <!-- The test host's gated settings double is held to the contract every ISettingsService is
+       (SettingsDoublePolicyTests), here because this is the suite that references the host. -->
+  <ItemGroup>
+    <Compile Include="../TestSupport/SettingsServiceContract.cs" Link="TestSupport/SettingsServiceContract.cs" />
+  </ItemGroup>
+
 </Project>

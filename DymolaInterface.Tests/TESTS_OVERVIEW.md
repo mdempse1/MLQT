@@ -216,9 +216,9 @@ For automated testing:
 ```bash
 # Run with timeout and detailed logging
 dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj \
-  --logger "trx;LogFileName=test_results.trx" \
+  --report-trx --report-trx-filename test_results.trx \
   --results-directory ./TestResults \
-  -- RunConfiguration.TestSessionTimeout=600000
+  --timeout 10m
 ```
 
 ## Next Steps

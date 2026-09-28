@@ -2,16 +2,19 @@ namespace RevisionControl.Tests;
 
 /// <summary>
 /// Tests for SvnRevisionControlSystem.
-/// Note: These are basic API tests. Full integration tests would require
-/// an actual SVN repository setup.
+/// Mostly basic API tests; the integration region at the end uses a working copy of a repository
+/// this run builds for itself (<see cref="SvnWorkingCopyFixture"/>, B426), and is skipped where
+/// svn is not installed (B486).
 /// </summary>
-public class SvnRevisionControlSystemTests
+public class SvnRevisionControlSystemTests : IClassFixture<SvnWorkingCopyFixture>
 {
     private readonly SvnRevisionControlSystem _svn;
+    private readonly SvnWorkingCopyFixture _fixture;
 
-    public SvnRevisionControlSystemTests()
+    public SvnRevisionControlSystemTests(SvnWorkingCopyFixture fixture)
     {
         _svn = new SvnRevisionControlSystem();
+        _fixture = fixture;
     }
 
     [Fact]
@@ -801,14 +804,7 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void IsValidRepository_WithRealSvnWorkingCopy_ReturnsTrue()
     {
-        // This test requires C:\Projects\ModelicaEditorTest to be an SVN working copy
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.IsValidRepository(testPath);
@@ -820,87 +816,57 @@ public class SvnRevisionControlSystemTests
     [Fact]
     public void GetCurrentRevision_WithRealSvnWorkingCopy_ReturnsRevision()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetCurrentRevision(testPath);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.True(int.TryParse(result, out _), "Revision should be a numeric string");
+        // Assert - the last revision that changed trunk, not the repository's HEAD: the tags and the
+        // branch were copied from trunk afterwards without changing it
+        Assert.Equal(SvnTestRepository.TrunkLastChangedRevision.ToString(), result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithRealSvnWorkingCopy_ReturnsBranch()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetCurrentBranch(testPath);
 
-        // Assert - trunk, branches/*, or tags/*
-        Assert.NotNull(result);
-        Assert.True(result == "trunk" || result.StartsWith("branches/") || result.StartsWith("tags/"),
-            $"Branch should be trunk, branches/*, or tags/*, got: {result}");
+        // Assert - the fixture checks trunk out
+        Assert.Equal("trunk", result);
     }
 
     [Fact]
     public void GetWorkingCopyChanges_WithRealSvnWorkingCopy_ReturnsChanges()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetWorkingCopyChanges(testPath);
 
-        // Assert
-        Assert.NotNull(result);
-        // Result may be empty if no uncommitted changes, that's fine
+        // Assert - nothing in this class modifies the working copy, so it is as checked out
+        Assert.Empty(result);
     }
 
     [Fact]
     public void GetBranches_WithRealSvnWorkingCopy_ReturnsBranches()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act
         var result = _svn.GetBranches(testPath, includeRemote: false);
 
-        // Assert
-        Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        // Should at least have trunk
-        Assert.Contains(result, b => b.Name == "trunk" || b.Name.StartsWith("branches/") || b.Name.StartsWith("tags/"));
+        // Assert - trunk, then each container's entries: the one branch and the two tags
+        Assert.Equal(["trunk", "branches/feature-test", "tags/v1.0", "tags/v2.0"], result.Select(b => b.Name));
+        Assert.Equal("trunk", Assert.Single(result, b => b.IsCurrent).Name);
     }
 
     [Fact]
     public void MergeBranch_WithRealSvnWorkingCopy_AndNonExistentBranch_ReturnsFailure()
     {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        var testPath = _fixture.RequireWorkingCopy();
 
         // Act - try to merge a non-existent branch
         var result = _svn.MergeBranch(testPath, "branches/this-branch-does-not-exist-12345");
@@ -908,18 +874,8 @@ public class SvnRevisionControlSystemTests
         // Assert
         Assert.False(result.Success);
         Assert.NotNull(result.ErrorMessage);
+        Assert.Empty(_svn.GetWorkingCopyChanges(testPath));
     }
 
     #endregion
-
-    // Note: Integration tests with actual SVN repositories would be added here
-    // Examples:
-    // - Test checkout from real SVN repository
-    // - Test update between revisions
-    // - Test clean workspace with real working copy
-    // - Test revision resolution (HEAD, BASE, revision numbers)
-    // - Test GetCurrentBranch with real working copies
-    //
-    // These require setting up a test SVN repository, which is beyond
-    // the scope of basic unit tests but would be valuable for CI/CD pipelines
 }

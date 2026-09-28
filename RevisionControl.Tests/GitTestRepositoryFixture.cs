@@ -6,26 +6,29 @@ namespace RevisionControl.Tests;
 /// Shared fixture that creates a local test repository for all tests.
 /// Creates a repository with Modelica files and commits that mirror the expected structure.
 /// </summary>
+/// <remarks>
+/// <b>A fixture that cannot build its repository throws</b>, so every test using it fails with the
+/// reason. It used to catch the exception and report <c>RepositoryAvailable = false</c>, and about
+/// 187 tests returned on that having asserted nothing - a broken fixture read as a green suite
+/// (B481). There is nothing here a machine may legitimately lack: LibGit2Sharp is a package
+/// reference and the repository is built in the temporary directory.
+/// </remarks>
 public class GitTestRepositoryFixture : IDisposable
 {
     public string ClonePath { get; }
-    public bool RepositoryAvailable { get; }
-    public string? CloneError { get; }
 
     public GitTestRepositoryFixture()
     {
         ClonePath = Path.Combine(Path.GetTempPath(), "GitAdvancedTest_Shared_" + Guid.NewGuid().ToString());
 
-        // Create a local test repository
         try
         {
             CreateTestRepository();
-            RepositoryAvailable = true;
         }
-        catch (Exception ex)
+        catch
         {
-            CloneError = ex.Message;
-            RepositoryAvailable = false;
+            ForceDeleteDirectory(ClonePath);
+            throw;
         }
     }
 

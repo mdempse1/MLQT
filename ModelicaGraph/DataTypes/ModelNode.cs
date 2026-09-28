@@ -1,5 +1,6 @@
 using ModelicaParser.DataTypes;
-using RevisionControl;
+using ModelicaParser.ExternalDocs;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph.DataTypes;
 
@@ -67,27 +68,70 @@ public class ModelNode : GraphNode
     public bool SourceMatchesFile { get; set; } = true;
 
     /// <summary>
+    /// Which lines of this class's own source are not in its stored <see cref="ModelDefinition.ModelicaCode"/>,
+    /// when the two differ only by whole lines having been dropped (B216).
+    ///
+    /// <para>A package's inline standalone children are excised rather than rendered away, so the
+    /// text that is left is the file's own, character for character, with runs of lines missing.
+    /// That is a <see cref="SourceElision"/> — monotone and invertible — so a finding's line in the
+    /// stored text still maps to a line in the file, and <see cref="SourceMatchesFile"/> stays true.
+    /// Before this, trimming rebuilt the package through the renderer and the mapping was gone: the
+    /// findings in a trimmed package pointed at the class declaration and nothing more precise.</para>
+    ///
+    /// <para><c>null</c> means the stored source is contiguous — nothing was dropped — which is the
+    /// case for every class that is not a trimmed package.</para>
+    /// </summary>
+    public SourceElision? TrimElision { get; set; }
+
+    /// <summary>
+    /// Whether the stored source is the whole class as the file has it — nothing rewritten and
+    /// nothing dropped.
+    ///
+    /// <para><see cref="SourceMatchesFile"/> used to answer both this and "does a line in the stored
+    /// text map to a line in the file?", because the only thing that rewrote the text also destroyed
+    /// the mapping. B216 separates them: a trimmed package's lines still map, through
+    /// <see cref="TrimElision"/>, but its children are missing from the text — so anything that
+    /// wants to <em>show</em> the class has to read the file again, while anything reporting a line
+    /// does not.</para>
+    /// </summary>
+    public bool StoredSourceIsWholeClass => SourceMatchesFile && TrimElision is null;
+
+    /// <summary>
     /// Ending line number in the source file.
     /// </summary>
     public int StopLine { get; set; }
 
     /// <summary>
-    /// Zero-based character offset of the first character of the
-    /// <c>class_definition</c> rule in the underlying source file, read with
-    /// <see cref="System.Text.Encoding.Latin1"/> to match the parser.
-    /// <c>-1</c> when not populated (legacy placeholder nodes, snapshots
-    /// written before the field existed, etc.). Used by snapshot rehydration
-    /// to slice the same character range the parser originally captured —
-    /// line-based slicing alone can leak preceding element prefixes
+    /// Zero-based character offset of the first character of the <c>class_definition</c> rule —
+    /// <b>into the file's text with its line endings normalised to LF</b>, which is what
+    /// <c>ModelicaParserHelper.PreprocessCode</c> hands the lexer and therefore the only text these
+    /// offsets mean anything against. <c>-1</c> when not populated (legacy placeholder nodes,
+    /// snapshots written before the field existed).
+    ///
+    /// <para><b>Do not slice a file with these by hand — use <c>ClassSource.SliceFromFile</c>.</b>
+    /// This said for a long time that the offsets were into the file "read with
+    /// <c>Encoding.Latin1</c> to match the parser", and that <see cref="StopIndex"/> was the last
+    /// character of the class. Both are wrong, and following either produced a slice that matched
+    /// <b>0 of 13,997 classes</b> across the Modelica Standard Library and Buildings: every file in
+    /// both is CRLF, so slicing the file as read drifts by one character per line above the class,
+    /// and for a class a few thousand lines down the result is somebody else's class entirely
+    /// (backlog B231).</para>
+    ///
+    /// <para>Used by snapshot rehydration to slice the same character range the parser originally
+    /// captured — line-based slicing alone can leak preceding element prefixes
     /// (<c>replaceable</c>, <c>redeclare</c>, …) into the rehydrated
-    /// <see cref="ModelDefinition.ModelicaCode"/> and break re-parsing.
+    /// <see cref="ModelDefinition.ModelicaCode"/> and break re-parsing.</para>
     /// </summary>
     public int StartIndex { get; set; } = -1;
 
     /// <summary>
-    /// Zero-based character offset of the last character of the
-    /// <c>class_definition</c> rule (inclusive) in the underlying source file.
-    /// <c>-1</c> when not populated. See <see cref="StartIndex"/>.
+    /// Zero-based offset of the last character of the <c>class_definition</c> rule, in the same
+    /// normalised text as <see cref="StartIndex"/>. <c>-1</c> when not populated.
+    ///
+    /// <para><b>This is not the last character of the class as stored.</b> The rule ends at the
+    /// <c>IDENT</c> of <c>end A</c>, so the <c>;</c> that closes the statement is <em>after</em> it
+    /// — which is why <c>ClassSource.SliceFromFile</c> takes the terminator as well, and why
+    /// slicing <c>[StartIndex..StopIndex]</c> comes back one character short of what is stored.</para>
     /// </summary>
     public int StopIndex { get; set; } = -1;
 
@@ -95,6 +139,17 @@ public class ModelNode : GraphNode
     /// Whether this is a nested model (contained within another model).
     /// </summary>
     public bool IsNested { get; set; }
+
+    /// <summary>
+    /// The text of this class's file that is outside every class in it — a licence header above
+    /// <c>within</c>, a comment after the clause or after the class — on the class that heads the
+    /// file, and null everywhere else (B445). Read once when the file is loaded; never part of
+    /// <see cref="ModelDefinition.ModelicaCode"/>, which every line number is counted from. Every
+    /// writer that rebuilds the file from the stored source puts it back through
+    /// <see cref="WithinClause.Ensure(string, string?, FileLevelText?)"/>, and it stays with this
+    /// class wherever the class is written: a rename keeps it, a move takes it along.
+    /// </summary>
+    public FileLevelText? FileText { get; set; }
 
     /// <summary>
     /// Whether the class sits in a public section of its enclosing class — false only for one
@@ -120,7 +175,8 @@ public class ModelNode : GraphNode
     /// <para>There is a type for it because there were two hand-written versions, each capturing the
     /// source and the parse tree and neither capturing anything else — and what "anything else" means
     /// has changed under them since. Setting <see cref="ModelDefinition.ModelicaCode"/> now also drops
-    /// the coverage facts and the suppression set, and trimming a package sets
+    /// the coverage facts, the suppression set and the parse errors (and lifts the bar on recording
+    /// them), and trimming a package sets
     /// <see cref="SourceMatchesFile"/> and <see cref="ChildrenTrimmed"/>. A snapshot that names the
     /// fields is a list a reader can check; two tuples of two are not.</para>
     /// </summary>
@@ -130,7 +186,10 @@ public class ModelNode : GraphNode
         CoverageFacts? Coverage,
         ModelicaParser.StyleRules.SuppressionSet? Suppressions,
         bool SourceMatchesFile,
-        bool ChildrenTrimmed);
+        bool ChildrenTrimmed,
+        SourceElision? TrimElision,
+        List<ParserError> ParserErrors,
+        bool MayRecordParserErrors);
 
     /// <summary>Captures this class's source and everything derived from it.</summary>
     public SourceSnapshot TakeSourceSnapshot() => new(
@@ -139,11 +198,14 @@ public class ModelNode : GraphNode
         Definition.Coverage,
         Definition.Suppressions,
         SourceMatchesFile,
-        ChildrenTrimmed);
+        ChildrenTrimmed,
+        TrimElision,
+        Definition.ParserErrors,
+        Definition.MayRecordParserErrors);
 
     /// <summary>
     /// Puts a snapshot back, in the order the setters require: the source first, because assigning it
-    /// clears the tree and the two caches, and then the things it cleared.
+    /// clears the tree, the caches and the parse errors, and then the things it cleared.
     /// </summary>
     public void RestoreSource(SourceSnapshot snapshot)
     {
@@ -153,6 +215,11 @@ public class ModelNode : GraphNode
         Definition.Suppressions = snapshot.Suppressions;
         SourceMatchesFile = snapshot.SourceMatchesFile;
         ChildrenTrimmed = snapshot.ChildrenTrimmed;
+        TrimElision = snapshot.TrimElision;
+        // What the load found in the source being put back. It cannot be worked out again: a class
+        // from a file that failed to parse is barred from recording its own (B389).
+        Definition.ParserErrors = snapshot.ParserErrors;
+        Definition.MayRecordParserErrors = snapshot.MayRecordParserErrors;
     }
 
     /// <summary>
@@ -195,7 +262,10 @@ public class ModelNode : GraphNode
     public string[]? PackageOrder { get; set; }
 
     /// <summary>
-    /// Ordering of nested children within this model.
+    /// Ordering of nested children within this model: the classes written inside its own source,
+    /// in source order. Never the classes in files of their own below a directory package — those
+    /// are ordered by <see cref="PackageOrder"/>, and taking them from whichever such file loaded
+    /// last made the order vary between loads (B450).
     /// </summary>
     public string[]? NestedChildrenOrder { get; set; }
 
@@ -221,17 +291,21 @@ public class ModelNode : GraphNode
     /// <summary>
     /// SVG markup for the Modelica icon annotation, if available.
     /// </summary>
-    public string? IconSvg { get; set; }
+    /// <remarks>
+    /// Kept on the definition, because it is derived from the class's code and has to be discarded
+    /// when that changes — the same rule as the parse tree, the coverage facts and the suppressions.
+    /// This stays as the name everything already uses.
+    /// </remarks>
+    public string? IconSvg
+    {
+        get => Definition.IconSvg;
+        set => Definition.IconSvg = value;
+    }
 
     /// <summary>
     /// Gets whether this node has a custom Modelica icon.
     /// </summary>
     public bool HasCustomIcon => !string.IsNullOrEmpty(IconSvg);
-
-    /// <summary>
-    /// VCS file status of the file containing this model, if applicable.
-    /// </summary>
-    public VcsFileStatus? FileStatus { get; set; }
 
     /// <summary>
     /// True when this node is a placeholder that stands in for a file whose contents
@@ -261,6 +335,23 @@ public class ModelNode : GraphNode
     public bool IsExternalStub { get; set; }
 
     /// <summary>
+    /// The documentation a stub was reconstructed from, kept whole, or null for a class read from
+    /// source. Only ever set alongside <see cref="IsExternalStub"/>.
+    ///
+    /// <para><b>The one thing the synthesized source cannot carry.</b> The vendor's help lists a
+    /// class's parameters, connectors, function inputs and outputs — name, description and unit —
+    /// and a Modelica declaration needs a <em>type</em>, which the generator does not emit and which
+    /// must never be guessed: <c>parameter Real k</c> is a fabrication that feeds the type and unit
+    /// resolvers, and a connector written as one would be wrong for every class that has one. So
+    /// these members are the exception to "synthesize source, never metadata" — not because the
+    /// metadata path is nicer, but because there is no truthful declaration to write.</para>
+    ///
+    /// <para>Nothing that checks, resolves or writes reads this. It is here for the surfaces that
+    /// <em>report</em> a class to a user or an agent, which can say where it came from (B179).</para>
+    /// </summary>
+    public DocumentedClass? RecoveredFromDocumentation { get; set; }
+
+    /// <summary>
     /// True when any <see cref="ParserError"/> has been recorded against this model —
     /// either a recoverable syntax error or a fatal parse failure. Convenience for UI
     /// code that needs to flag problem models in the tree and code viewer.
@@ -274,11 +365,6 @@ public class ModelNode : GraphNode
     /// </summary>
     public bool HasFatalParseFailure =>
         Definition?.ParserErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure) == true;
-
-    /// <summary>
-    /// Indicates whether any descendant model has uncommitted VCS changes.
-    /// </summary>
-    public bool HasDescendantChanges { get; set; }
 
     public ModelNode(string id, string modelName, string modelicaCode = "")
         : base(id, NodeType.Model, modelName)

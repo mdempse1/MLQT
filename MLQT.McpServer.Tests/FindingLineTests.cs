@@ -1,6 +1,7 @@
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Tools;
 using MLQT.Services.Checking;
+using ModelicaParser.Helpers;
 
 namespace MLQT.McpServer.Tests;
 
@@ -64,6 +65,45 @@ public class FindingLineTests
         Assert.Equal(9, second.Line);
         Assert.Equal(1, second.ModelLine);
         Assert.EndsWith("package.mo", second.FilePath);
+    }
+
+    /// <summary>
+    /// A class whose offending parameter sits below a multi-line annotation, so any rewrite of the
+    /// text moves it.
+    /// </summary>
+    private const string PackageWithAnAnnotationAboveTheFinding = """
+        within;
+        package P "p"
+          model M "m"
+            parameter Real gain = 1 "the gain"
+              annotation (Dialog(group="Tuning",
+                tab="Advanced"));
+            parameter Real undescribed = 2;
+          end M;
+        end P;
+        """;
+
+    [Fact]
+    public void TheModelLineIndexesGetClassSource_AnnotationsOrNot()
+    {
+        // The third relationship, and the one B218 broke: an agent reads a class through
+        // get_class_source and then reads findings against it. get_class_source used to re-render
+        // the class when it stripped annotations, so modelLine indexed a text nobody had.
+        using var host = Library(PackageWithAnAnnotationAboveTheFinding, "M\n");
+        Style(host).CheckLibrary(settings: new StyleSettingsInput { ParameterHasDescription = true })
+            .GetAwaiter().GetResult();
+
+        var findings = ToolAssert.Ok<FindingsResult>(Style(host).ListFindings());
+        var finding = Assert.Single(findings.Items, i => i.ModelId == "P.M" && i.Category != "parse");
+
+        var query = new ClassQueryTools(host.Libraries);
+        foreach (var annotations in new[] { true, false })
+        {
+            var source = ToolAssert.Ok<ClassSourceResult>(
+                query.GetClassSource("P.M", includeAnnotations: annotations)).Source;
+            var line = ModelicaParserHelper.NormalizeLineEndings(source).Split('\n')[finding.ModelLine - 1];
+            Assert.Contains("undescribed", line);
+        }
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using RevisionControl;
 
 namespace MLQT.Services.DataTypes;
 
@@ -68,6 +69,28 @@ public class Repository
     public string? CurrentRevision { get; set; }
 
     /// <summary>
+    /// Where HEAD is when <see cref="CurrentBranch"/> is null, so the UI has something true to show.
+    /// </summary>
+    /// <remarks>
+    /// Checking out a Git tag leaves a detached HEAD: there is no branch, and the browser showed a
+    /// blank where the branch name goes. This is the tag, or a short commit id when HEAD is not on
+    /// one. Always null for SVN, which has no such state (B193).
+    /// </remarks>
+    public string? DetachedHeadLabel { get; set; }
+
+    /// <summary>
+    /// The Git rebase this working copy is part-way through, or null (B382). Its conflict list is
+    /// as of the last refresh; a dialog about to act on it asks
+    /// <see cref="MLQT.Services.Interfaces.IRepositoryService.GetRebaseInProgressAsync"/> for a current one.
+    /// </summary>
+    /// <remarks>
+    /// A rebase that stops for conflicts leaves HEAD detached, so <see cref="CurrentBranch"/> is
+    /// null and the browser would otherwise say only "Detached HEAD" - and advise creating a branch,
+    /// which is the wrong way out: the rebase has to be continued or aborted.
+    /// </remarks>
+    public VcsRebaseInProgress? RebaseInProgress { get; set; }
+
+    /// <summary>
     /// Current branch name (e.g., "main", "trunk", "branches/release-1.0").
     /// Null if not on a branch (e.g., detached HEAD in Git) or for Local VCS type.
     /// </summary>
@@ -115,4 +138,12 @@ public class Repository
     /// (e.g. due to permissions). The repository still functions using global settings.
     /// </summary>
     public bool IsSettingsReadOnly { get; set; }
+
+    /// <summary>
+    /// <see cref="StyleSettings"/> as they were last read from or written to
+    /// <c>.mlqt/settings.json</c>, serialized — null when there is no file. The file is committed, so
+    /// it is written only when the settings differ from this: a load, a reorder or a project switch
+    /// that changed nothing must not leave a modified file for someone to explain (B310).
+    /// </summary>
+    internal string? SettingsOnDisk { get; set; }
 }

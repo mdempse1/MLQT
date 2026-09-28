@@ -1,0 +1,756 @@
+using MLQT.Services.Helpers;
+using ModelicaGraph;
+using ModelicaGraph.DataTypes;
+using ModelicaParser.Visitors;
+
+namespace MLQT.Services.Tests.Helpers;
+
+/// <summary>
+/// B242 — splitting one single-file package into a directory, the fix offered on an
+/// <c>MLQT.Structure.SingleFilePackage</c> finding.
+///
+/// <para>Real files on disk, because the operation writes several and deletes one, and the order of
+/// those two matters: the package would be lost if the delete went first and the save then failed,
+/// and duplicated if the delete were skipped.</para>
+/// </summary>
+public class PackageSplitterTests : IDisposable
+{
+    private readonly string _root = Path.Combine(
+        Path.GetTempPath(), "mlqt-package-split", Guid.NewGuid().ToString("N"));
+
+    public PackageSplitterTests() => Directory.CreateDirectory(_root);
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+    }
+
+    /// <summary>
+    /// A split library, plus one package that arrived as a single file — the shape this exists for.
+    /// </summary>
+    private async Task<(LibraryDataService Service, string LibraryPath)> LibraryWithASingleFilePackage(
+        string packageSource = """
+            within Lib;
+            package Arrived "saved by another tool as one file"
+              model Alpha "first"
+                Real a;
+              end Alpha;
+
+              model Beta "second"
+                Real b;
+              end Beta;
+            end Arrived;
+            """)
+    {
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(lib);
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Existing\nArrived\n");
+        File.WriteAllText(Path.Combine(lib, "Existing.mo"),
+            "within Lib;\nmodel Existing \"already one class per file\"\nend Existing;\n");
+        File.WriteAllText(Path.Combine(lib, "Arrived.mo"), packageSource);
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        return (service, lib);
+    }
+
+    private static PackageSplitter.SplitResult Split(LibraryDataService service, string packageId)
+    {
+        var graph = service.CombinedGraph;
+        return PackageSplitter.Split(graph, graph.GetNode<ModelNode>(packageId)!, FormattingOptions.None);
+    }
+
+    [Fact]
+    public async Task ThePackageBecomesADirectoryWithAFilePerClass()
+    {
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "package.mo")));
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Beta.mo")));
+    }
+
+    [Fact]
+    public async Task TheSingleFileIsGone()
+    {
+        // Left behind, the library would load Lib.Arrived twice — from the file and from the
+        // directory — which is worse than not splitting at all.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived.mo")));
+        Assert.Contains(result.RemovedFiles, f => f.EndsWith("Arrived.mo", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheNewDirectoryGetsAPackageOrder()
+    {
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        Split(service, "Lib.Arrived");
+
+        var order = File.ReadAllText(Path.Combine(lib, "Arrived", "package.order"));
+        Assert.Contains("Alpha", order);
+        Assert.Contains("Beta", order);
+    }
+
+    [Fact]
+    public async Task NothingElseInTheLibraryIsTouched()
+    {
+        // The whole point of splitting one package rather than reformatting the repository. The
+        // parent's package.order already names Arrived and still should — what changed is where the
+        // package is stored, not what it is called.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        var existingBefore = File.ReadAllBytes(Path.Combine(lib, "Existing.mo"));
+        var packageBefore = File.ReadAllBytes(Path.Combine(lib, "package.mo"));
+        var orderBefore = File.ReadAllText(Path.Combine(lib, "package.order"));
+
+        Split(service, "Lib.Arrived");
+
+        Assert.Equal(existingBefore, File.ReadAllBytes(Path.Combine(lib, "Existing.mo")));
+        Assert.Equal(packageBefore, File.ReadAllBytes(Path.Combine(lib, "package.mo")));
+        Assert.Equal(orderBefore, File.ReadAllText(Path.Combine(lib, "package.order")));
+    }
+
+    [Fact]
+    public async Task TheSplitLibraryLoadsBackWithTheSameClasses()
+    {
+        // The result has to be a library, not just a set of files. Reloading from scratch is the
+        // only way to find a missing within clause or a package.order that lost a name.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var before = service.CombinedGraph.ModelNodes.Select(m => m.Id).OrderBy(id => id).ToList();
+
+        Split(service, "Lib.Arrived");
+
+        var reloaded = new LibraryDataService();
+        await reloaded.AddLibraryFromDirectoryAsync(lib);
+        var after = reloaded.CombinedGraph.ModelNodes.Select(m => m.Id).OrderBy(id => id).ToList();
+
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public async Task TheRuleStopsReportingIt()
+    {
+        // The fix has to clear the finding that offered it, or the user presses the button and
+        // nothing appears to happen.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        Split(service, "Lib.Arrived");
+
+        var reloaded = new LibraryDataService();
+        await reloaded.AddLibraryFromDirectoryAsync(lib);
+        var graph = reloaded.CombinedGraph;
+
+        Assert.False(PackageSplitter.CanSplit(graph, graph.GetNode<ModelNode>("Lib.Arrived")!));
+    }
+
+    [Fact]
+    public async Task APackageWithNothingInlineIsRefused()
+    {
+        // Lib's children each have a file already, so there is nothing to move and the fix is not
+        // offered — the same judgement the rule makes before reporting.
+        var (service, _) = await LibraryWithASingleFilePackage();
+        var graph = service.CombinedGraph;
+
+        var result = PackageSplitter.Split(
+            graph, graph.GetNode<ModelNode>("Lib")!, FormattingOptions.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Empty(result.WrittenFiles);
+    }
+
+    [Fact]
+    public async Task ADirectoryPackageHoldingItsClassesInlineIsAlsoSplit()
+    {
+        // A package can be a directory and still hold its classes inline. The rule reports it for
+        // the same reason, so the fix has to apply to it — refusing, which this did at first, offers
+        // a fix on a finding and then declines to apply it. The package.mo stays where it is and the
+        // children get files beside it, so nothing is deleted.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.mo"),
+            "within Lib;\npackage Sub \"a directory package with inline classes\"\n"
+            + "  model Alpha \"first\"\n  end Alpha;\n\n  model Beta \"second\"\n  end Beta;\nend Sub;\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.order"), "Alpha\nBeta\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+
+        var result = Split(service, "Lib.Sub");
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.True(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
+        Assert.True(File.Exists(Path.Combine(lib, "Sub", "Beta.mo")));
+        Assert.True(File.Exists(Path.Combine(lib, "Sub", "package.mo")));
+        Assert.Empty(result.RemovedFiles);
+    }
+
+    [Fact]
+    public async Task IfTheOldFileCannotBeDeleted_TheUserIsToldTheyHaveItTwice()
+    {
+        // The worst outcome this operation has: the package is written to its new directory and the
+        // file it came from is still there, so the library now defines every one of those classes
+        // twice. It happens when something else holds the file open — another editor, a virus
+        // scanner — and the one thing that must not happen is reporting success.
+        //
+        // **The obstruction is a directory standing where the file was, not an open handle.** The
+        // first version held the file with `FileShare.None`, which passed here and failed on the
+        // Linux runner — a test reporting success exactly where the product would have.
+        //
+        // The distinction is worth keeping, because four other tests in this repository hold a file
+        // that way and are right to: .NET implements `FileShare` on Unix with an advisory lock that
+        // other .NET `FileStream`s honour, so **blocking a read works on both platforms**. Deleting
+        // is not a read. `unlink` ignores advisory locks entirely, so the delete simply succeeded.
+        //
+        // A directory in the file's place makes `File.Delete` throw everywhere, and the splitter
+        // takes the path from the graph rather than from disk, so nothing before the delete notices
+        // the swap. The cause does not matter to the claim; that the failure is reported does.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+
+        File.Delete(arrived);
+        Directory.CreateDirectory(arrived);
+        File.WriteAllText(Path.Combine(arrived, "in the way"), "");
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("twice", result.Error!);
+
+        // ...and it says so having done the write, not instead of it, so the message describes
+        // what is actually on disk.
+        Assert.NotEmpty(result.WrittenFiles);
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.True(Path.Exists(arrived), "what could not be deleted is still there");
+    }
+
+    /// <summary>
+    /// Something standing where the save means to write a file, so that one write fails and the
+    /// rest succeed. A directory, for the reason the test above gives: it stops a write on every
+    /// platform, where an open handle does not.
+    /// </summary>
+    private static void Obstruct(string path)
+    {
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "in the way"), "");
+    }
+
+    [Fact]
+    public async Task IfAClassCannotBeWritten_TheFileItLivesInIsKept()
+    {
+        // B303. The save logs a failed write and carries on, and the guard before the delete asked
+        // which classes had been *asked* to move — so Beta, written nowhere, counted as moved and
+        // the only copy of it was deleted with Arrived.mo.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        Obstruct(Path.Combine(lib, "Arrived", "Beta.mo"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Lib.Arrived.Beta", result.Error!);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.Empty(result.RemovedFiles);
+    }
+
+    [Fact]
+    public async Task APartialSplitIsUndone()
+    {
+        // Leaving Alpha.mo and a package.mo beside Arrived.mo is a library that defines every class
+        // it managed to write twice. What the split wrote goes; what was there before it stays.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var obstruction = Path.Combine(lib, "Arrived", "Beta.mo");
+        Obstruct(obstruction);
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.Contains("undone", result.Error!);
+        Assert.Empty(result.WrittenFiles);
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "package.mo")));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "package.order")));
+        Assert.True(File.Exists(Path.Combine(obstruction, "in the way")), "what was there before is not the split's to remove");
+    }
+
+    [Fact]
+    public async Task IfThePackageFileCannotBeWritten_NothingIsDeleted()
+    {
+        // The nested-class half of B303: a class that stays inline was reported as saved to the
+        // package.mo it lives in even when that package.mo was never written.
+        var (service, lib) = await LibraryWithASingleFilePackage("""
+            within Lib;
+            package Arrived "with a class that has to stay inline"
+              replaceable model Inner "has to be inline"
+              end Inner;
+
+              model Alpha "movable"
+              end Alpha;
+            end Arrived;
+            """);
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        Obstruct(Path.Combine(lib, "Arrived", "package.mo"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+    }
+
+    [Fact]
+    public async Task ADirectoryPackageThatCannotBeSplitWholeIsPutBackAsItWas()
+    {
+        // A directory package's package.mo is rewritten in place without its classes, so a class
+        // whose own file then fails is in neither: the package.mo has to come back as it was.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        var packageMo = Path.Combine(lib, "Sub", "package.mo");
+        File.WriteAllText(packageMo,
+            "within Lib;\r\npackage Sub \"a directory package with inline classes\"\r\n"
+            + "  model Alpha \"first\"\r\n  end Alpha;\r\n\r\n  model Beta \"second\"\r\n  end Beta;\r\nend Sub;\r\n");
+        var order = Path.Combine(lib, "Sub", "package.order");
+        File.WriteAllText(order, "Alpha\r\nBeta\r\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+
+        var packageBefore = File.ReadAllBytes(packageMo);
+        var orderBefore = File.ReadAllBytes(order);
+        Obstruct(Path.Combine(lib, "Sub", "Beta.mo"));
+
+        var result = Split(service, "Lib.Sub");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(packageBefore, File.ReadAllBytes(packageMo));
+        Assert.Equal(orderBefore, File.ReadAllBytes(order));
+        Assert.False(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
+    }
+
+    [Fact]
+    public async Task IfOnlyThePackageOrderCannotBeWritten_TheSplitIsStillUndone()
+    {
+        // Every class reached a file, so the classes-unwritten half of the guard is satisfied — but a
+        // directory package without its package.order loses the order the user gave its classes, and
+        // the failed write is reported by the save all the same. It is a partial split like any other.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        Obstruct(Path.Combine(lib, "Arrived", "package.order"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Could not write package.order.", result.Error!);
+        Assert.Contains("undone", result.Error!);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "package.mo")));
+    }
+
+    [Fact]
+    public async Task IfThePackagesDirectoryCannotBeCreated_NothingIsDeletedOrDisturbed()
+    {
+        // A file already standing where the package's directory would go. Nothing can be written, so
+        // there is nothing to undo — and the file in the way was there first, so it is not the
+        // split's to remove.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        var inTheWay = Path.Combine(lib, "Arrived");
+        File.WriteAllText(inTheWay, "not a directory");
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("undone", result.Error!);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Empty(result.RemovedFiles);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.Equal("not a directory", File.ReadAllText(inTheWay));
+    }
+
+    [Fact]
+    public async Task ASaveThatThrows_IsUndone_AndSaysWhy()
+    {
+        // The save throws only for what it cannot carry on from - here, being handed a class that
+        // exists only as a reconstruction of an encrypted library, which it refuses to write at all.
+        // Whatever it had done by then is taken back and the reason reaches the user.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        service.CombinedGraph.GetNode<ModelNode>("Lib.Arrived.Beta")!.IsExternalStub = true;
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.StartsWith("Could not write the package: Refusing to save 'Lib.Arrived.Beta'", result.Error);
+        Assert.Contains("undone", result.Error!);
+        Assert.Empty(result.RemovedFiles);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.False(Directory.Exists(Path.Combine(lib, "Arrived")));
+    }
+
+    [Fact]
+    public async Task AFileThatAlsoHoldsAnotherClass_IsKeptAfterTheSplit()
+    {
+        // B243 at the level of the operation, not just the guard: the package is written to its new
+        // directory, but the file it came from also defines a class that is not part of it, so
+        // deleting that file would delete the only copy of Lib.Other.
+        var (service, lib) = await LibraryWithASingleFilePackage("""
+            within Lib;
+            package Arrived "saved by another tool as one file"
+              model Alpha "first"
+              end Alpha;
+
+              model Beta "second"
+              end Beta;
+            end Arrived;
+
+            model Other "not part of the package"
+            end Other;
+            """);
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        Assert.NotNull(service.CombinedGraph.GetNode<ModelNode>("Lib.Other"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Lib.Other", result.Error!);
+        Assert.Contains("Nothing was deleted", result.Error!);
+        Assert.Empty(result.RemovedFiles);
+        Assert.NotEmpty(result.WrittenFiles);
+        Assert.True(File.Exists(arrived), "the file still holding Lib.Other was deleted");
+    }
+
+    // ── B305: what the split is allowed to change ─────────────────────────────────
+
+    /// <summary>Two classes laid out the way no formatter would leave them.</summary>
+    private const string Loose = """
+        within Lib;
+        package Arrived "saved by another tool as one file"
+          model Alpha "first"
+            Real    a;
+          end Alpha;
+
+          model Beta "second"
+            Real    b;
+          end Beta;
+        end Arrived;
+        """;
+
+    private static PackageSplitter.SplitResult Split(
+        LibraryDataService service, string packageId, StyleCheckingSettings settings)
+    {
+        var graph = service.CombinedGraph;
+        return PackageSplitter.Split(
+            graph, graph.GetNode<ModelNode>(packageId)!, settings.ToFormattingOptions(), settings);
+    }
+
+    [Fact]
+    public async Task AFormattedClassIsLaidOutAgain()
+    {
+        // The control for the two below: without an exclusion the class is re-rendered, so the
+        // spacing that marks it as untouched is gone.
+        var (service, lib) = await LibraryWithASingleFilePackage(Loose);
+
+        var result = Split(service, "Lib.Arrived", new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.DoesNotContain("Real    b;", File.ReadAllText(Path.Combine(lib, "Arrived", "Beta.mo")));
+    }
+
+    [Fact]
+    public async Task AClassInTheNameListIsMovedAsItWasWritten()
+    {
+        // The full save asks FormattingExclusion, which reads both the annotation and the name list;
+        // the split passed no list at all, so a name-listed class was reformatted on the way out.
+        var (service, lib) = await LibraryWithASingleFilePackage(Loose);
+        var settings = new StyleCheckingSettings
+        {
+            ApplyFormattingRules = true,
+            FormattingExcludedModels = ["Lib.Arrived.Alpha"],
+        };
+
+        var result = Split(service, "Lib.Arrived", settings);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Contains("Real    a;", File.ReadAllText(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.DoesNotContain("Real    b;", File.ReadAllText(Path.Combine(lib, "Arrived", "Beta.mo")));
+    }
+
+    [Fact]
+    public async Task WithFormattingSwitchedOffEveryClassIsMovedAsItWasWritten()
+    {
+        // A repository that has chosen not to be formatted asked to have files split, not to have
+        // every class in them laid out again.
+        var (service, lib) = await LibraryWithASingleFilePackage(Loose);
+
+        var result = Split(service, "Lib.Arrived", new StyleCheckingSettings { ApplyFormattingRules = false });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Contains("Real    a;", File.ReadAllText(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.Contains("Real    b;", File.ReadAllText(Path.Combine(lib, "Arrived", "Beta.mo")));
+
+        var reloaded = new LibraryDataService();
+        await reloaded.AddLibraryFromDirectoryAsync(lib);
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Arrived.Alpha"));
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Arrived.Beta"));
+    }
+
+    [Fact]
+    public async Task AChildAlreadyInItsOwnFileIsNotRewritten()
+    {
+        // "Touches nothing else": a directory package holding one class inline and one already in
+        // its own file. Only the inline one has anywhere to move to.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.mo"),
+            "within Lib;\npackage Sub \"inline and separate\"\n"
+            + "  model Alpha \"inline\"\n  end Alpha;\nend Sub;\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.order"), "Alpha\nBeta\n");
+        var beta = Path.Combine(lib, "Sub", "Beta.mo");
+        File.WriteAllText(beta, "within Lib.Sub;\nmodel Beta \"already separate\"\n  Real    b;\nend Beta;\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        var betaBefore = File.ReadAllBytes(beta);
+
+        var result = Split(service, "Lib.Sub", new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.True(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
+        Assert.Equal(betaBefore, File.ReadAllBytes(beta));
+        Assert.DoesNotContain(result.WrittenFiles, f => f.EndsWith("Beta.mo", StringComparison.Ordinal));
+        Assert.Contains("Beta", File.ReadAllText(Path.Combine(lib, "Sub", "package.order")));
+    }
+
+    [Fact]
+    public async Task WithNoPackageOrder_TheNewOneNamesTheChildrenAlreadyInTheirOwnFiles()
+    {
+        // B375: a directory package with no package.order, one class inline and one already in its
+        // own file. The save is given only the inline class (B305), and the package.order it wrote
+        // was built from what it was given - so Beta, which is in the library and on disk, was not
+        // in it.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.mo"),
+            "within Lib;\npackage Sub \"inline and separate\"\n"
+            + "  model Alpha \"inline\"\n  end Alpha;\nend Sub;\n");
+        var beta = Path.Combine(lib, "Sub", "Beta.mo");
+        File.WriteAllText(beta, "within Lib.Sub;\nmodel Beta \"already separate\"\nend Beta;\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        var betaBefore = File.ReadAllBytes(beta);
+
+        var result = Split(service, "Lib.Sub", new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        var order = File.ReadAllLines(Path.Combine(lib, "Sub", "package.order"));
+        Assert.Equal(["Alpha", "Beta"], order);
+        Assert.Equal(betaBefore, File.ReadAllBytes(beta));
+
+        var reloaded = new LibraryDataService();
+        await reloaded.AddLibraryFromDirectoryAsync(lib);
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Sub.Alpha"));
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Sub.Beta"));
+    }
+
+    [Fact]
+    public void WithNoPackageOrder_TheNewOneIsTheSameWhicheverFileLoadedLast()
+    {
+        // B450: the test above failed about one run in three, writing Beta before Alpha. The
+        // directory is loaded in parallel, and when Sub/Beta.mo happened to finish after
+        // Sub/package.mo its one-name child list replaced the package's source order, which the
+        // saver puts first. Loaded here in exactly that order, so the outcome is not left to it.
+        var lib = Path.Combine(_root, "Lib");
+        var sub = Path.Combine(lib, "Sub");
+        Directory.CreateDirectory(sub);
+
+        var files = new (string Path, string Text)[]
+        {
+            (Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n"),
+            (Path.Combine(sub, "package.mo"), "within Lib;\npackage Sub \"inline and separate\"\n"
+                + "  model Alpha \"inline\"\n  end Alpha;\nend Sub;\n"),
+            (Path.Combine(sub, "Beta.mo"), "within Lib.Sub;\nmodel Beta \"already separate\"\nend Beta;\n"),
+        };
+        var graph = new DirectedGraph();
+        foreach (var (path, text) in files)
+        {
+            File.WriteAllText(path, text);
+            GraphBuilder.LoadModelicaFile(graph, path, text);
+        }
+
+        var result = PackageSplitter.Split(graph, graph.GetNode<ModelNode>("Lib.Sub")!,
+            FormattingOptions.None, new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(["Alpha", "Beta"], File.ReadAllLines(Path.Combine(sub, "package.order")));
+    }
+
+    [Fact]
+    public async Task TheReloadAfterASplitNamesTheMovedClassesNotTheLibrary()
+    {
+        // B307: the page announces what this returns for re-analysis. It announced the whole
+        // library instead, and re-checked a class the split never touched.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        var result = Split(service, "Lib.Arrived");
+        var affected = await service.UpdateChangedFilesAsync(
+            [.. result.WrittenFiles, .. result.RemovedFiles], lib);
+
+        Assert.Contains("Lib.Arrived.Alpha", affected);
+        Assert.Contains("Lib.Arrived.Beta", affected);
+        Assert.DoesNotContain("Lib.Existing", affected);
+    }
+
+    [Fact]
+    public async Task TheNewFilesAreWrittenTheWayTheOldOneWas()
+    {
+        // B308: a Windows-1252 CRLF package came out as UTF-8 LF files, beside the CRLF files of the
+        // rest of the library. Every one of them is new, so there was nothing on disk to follow.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        File.WriteAllBytes(arrived, System.Text.Encoding.Latin1.GetBytes(
+            "within Lib;\r\npackage Arrived \"from Krüger's tool\"\r\n"
+            + "  model Alpha \"first\"\r\n    Real a;\r\n  end Alpha;\r\n\r\n"
+            + "  model Beta \"second\"\r\n    Real b;\r\n  end Beta;\r\nend Arrived;\r\n"));
+        await service.UpdateChangedFilesAsync([arrived], lib);
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.True(result.Succeeded, result.Error);
+        foreach (var file in result.WrittenFiles)
+        {
+            var bytes = File.ReadAllBytes(file);
+            var text = System.Text.Encoding.Latin1.GetString(bytes);
+            Assert.DoesNotContain("\n", text.Replace("\r\n", ""));
+            Assert.Contains("\r\n", text);
+        }
+
+        // Latin-1, not UTF-8: the ü is one byte.
+        var package = File.ReadAllBytes(Path.Combine(lib, "Arrived", "package.mo"));
+        Assert.Contains((byte)0xFC, package);
+        Assert.Contains("Krüger", ModelicaParser.Helpers.ModelicaFileEncoding.ReadAllTextOnly(
+            Path.Combine(lib, "Arrived", "package.mo")));
+    }
+
+    [Fact]
+    public void APackageWithNoFileIsRefusedRatherThanGuessed()
+    {
+        // A node with no file behind it cannot be written anywhere. Saying so beats picking a
+        // directory and hoping.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("P", "P", "package P\nend P;") { ClassType = "package" });
+        graph.AddNode(new ModelNode("P.A", "A", "model A end A;")
+        {
+            ClassType = "model",
+            ParentModelName = "P",
+        });
+
+        var result = PackageSplitter.Split(graph, graph.GetNode<ModelNode>("P")!, FormattingOptions.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("which file", result.Error!);
+    }
+
+    [Fact]
+    public void APackageWhoseFileHasNoDirectoryIsRefused()
+    {
+        // A bare file name has no directory to write the package's folder into.
+        var graph = new DirectedGraph();
+        graph.AddNode(new FileNode("f", "P.mo"));
+        graph.AddNode(new ModelNode("P", "P", "package P\nend P;")
+        {
+            ClassType = "package",
+            ContainingFileId = "f",
+        });
+        graph.AddNode(new ModelNode("P.A", "A", "model A end A;")
+        {
+            ClassType = "model",
+            ParentModelName = "P",
+            ContainingFileId = "f",
+        });
+
+        var result = PackageSplitter.Split(graph, graph.GetNode<ModelNode>("P")!, FormattingOptions.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("which directory", result.Error!);
+    }
+
+    [Fact]
+    public async Task APackageWhoseClassesMustStayInlineIsRefused()
+    {
+        // Same judgement the rule makes: a replaceable class cannot be stored on its own, so there
+        // is nothing to move and the button is not offered.
+        var (service, lib) = await LibraryWithASingleFilePackage("""
+            within Lib;
+            package Arrived "cannot be split"
+              replaceable model Inner "has to be inline"
+              end Inner;
+            end Arrived;
+            """);
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived.mo")));
+    }
+
+    [Fact]
+    public async Task ANestedPackageGoesWithIt()
+    {
+        // Every class below the package moves, not just its direct children — one left out would be
+        // written nowhere and lost with the old file.
+        var (service, lib) = await LibraryWithASingleFilePackage("""
+            within Lib;
+            package Arrived "with a nested package"
+              package Deep "nested"
+                model Inner "inside the nested package"
+                end Inner;
+              end Deep;
+            end Arrived;
+            """);
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Deep", "package.mo")));
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Deep", "Inner.mo")));
+    }
+
+    [Fact]
+    public async Task CanSplitAgreesWithTheRule()
+    {
+        // The button is offered exactly where the finding is raised. Asking two different questions
+        // would mean a finding with no fix, or a fix that does nothing.
+        var (service, _) = await LibraryWithASingleFilePackage();
+        var graph = service.CombinedGraph;
+
+        Assert.True(PackageSplitter.CanSplit(graph, graph.GetNode<ModelNode>("Lib.Arrived")!));
+        Assert.False(PackageSplitter.CanSplit(graph, graph.GetNode<ModelNode>("Lib")!));
+        Assert.False(PackageSplitter.CanSplit(graph, graph.GetNode<ModelNode>("Lib.Existing")!));
+    }
+}

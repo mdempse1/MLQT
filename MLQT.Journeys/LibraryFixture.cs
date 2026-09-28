@@ -1,4 +1,5 @@
 using LibGit2Sharp;
+using RevisionControl;
 
 namespace MLQT.Journeys;
 
@@ -24,14 +25,27 @@ namespace MLQT.Journeys;
 /// What it is not is a stand-in for a real library — the reference-library performance work uses
 /// libraries of tens of thousands of classes, and nothing here says anything about that.</para>
 ///
-/// <para>There is no SVN fixture, for the reason <c>RevisionControl.Tests</c> already documents: SVN
-/// integration needs a live working copy and a server no runner has. The Git side covers the same
-/// pipeline.</para>
+/// <para><b>Git by default; SVN when asked</b> (B152). An SVN "server" is only a repository
+/// directory: <c>svnadmin create</c> makes one, and a <c>file://</c> URL is as real a repository to
+/// the svn client - and so to MLQT - as any hosted one. So the SVN variant is the same library,
+/// with the same two commits and one uncommitted edit, in a trunk checkout of a local repository
+/// laid out as trunk/branches/tags with a branch and a tag in it. It needs the <c>svn</c> and
+/// <c>svnadmin</c> executables and says so when they are missing; the journeys proper use Git, so
+/// only the documentation screenshots ask for it.</para>
 /// </remarks>
 public sealed class LibraryFixture : IDisposable
 {
     /// <summary>The working copy root, which is also the repository root.</summary>
     public string RepositoryPath { get; }
+
+    /// <summary>Which version control system the working copy belongs to.</summary>
+    public LibraryFixtureVcs Vcs { get; }
+
+    /// <summary>
+    /// Where an SVN fixture's repository - the "server" - lives: beside the working copy, never
+    /// inside it. Null for a Git fixture, whose repository is the working copy.
+    /// </summary>
+    public string? SvnServerPath { get; }
 
     /// <summary>The library directory inside it — the path a user would open.</summary>
     public string LibraryPath => Path.Combine(RepositoryPath, "Lib");
@@ -67,19 +81,32 @@ public sealed class LibraryFixture : IDisposable
     /// a manual, so the screenshot generator asks for somewhere a reader can recognise. A named path
     /// is emptied first, because it is reused between runs.
     /// </remarks>
-    public LibraryFixture(string? repositoryPath = null)
+    /// <param name="vcs">Which version control system to put the library under.</param>
+    public LibraryFixture(string? repositoryPath = null, LibraryFixtureVcs vcs = LibraryFixtureVcs.Git)
     {
         RepositoryPath = repositoryPath
             ?? Path.Combine(Path.GetTempPath(), "mlqt-journey-" + Guid.NewGuid().ToString("N"));
+        Vcs = vcs;
 
         if (repositoryPath is not null && Directory.Exists(RepositoryPath))
             Delete(RepositoryPath);
+
+        if (vcs == LibraryFixtureVcs.Svn)
+        {
+            SvnServerPath = RepositoryPath + "-server";
+            Delete(SvnServerPath);
+            CreateSvnWorkingCopy();
+        }
 
         Directory.CreateDirectory(LibraryPath);
 
         WriteLibrary();
         WriteResources();
-        CommitEverything();
+
+        if (vcs == LibraryFixtureVcs.Svn)
+            CommitEverythingToSvn();
+        else
+            CommitEverything();
 
         // One uncommitted edit, so the working copy is not clean - the baseline classification has
         // nothing to classify against a pristine checkout, and neither has the "changed files only"
@@ -377,11 +404,32 @@ public sealed class LibraryFixture : IDisposable
         using var repo = new Repository(RepositoryPath);
         Commands.Stage(repo, "*");
         var who = new Signature("MLQT journeys", "journeys@mlqt.invalid", DateTimeOffset.Now);
-        var first = repo.Commit("The library as it stands before the journey edits it", who, who);
+        var first = repo.Commit(FirstCommitMessage, who, who);
 
-        // A second commit, so the history is a history rather than a single row - and so one file in
-        // it is *modified* rather than added, which is what gives the changed-files popover a diff to
-        // offer. A repository with one commit cannot show either.
+        WriteSecondRevision();
+
+        Commands.Stage(repo, "*");
+        repo.Commit(SecondCommitMessage, who, who);
+
+        // A second branch, not checked out. A repository with one branch makes the switch-branch and
+        // merge dialogs pictures of an empty list, and those dialogs are most of what git-operations.md
+        // is about.
+        repo.Branches.Add("feature/pump-curves", first);
+    }
+
+    private const string FirstCommitMessage = "The library as it stands before the journey edits it";
+    private const string SecondCommitMessage = "Report the rate of change as well as the state";
+
+    /// <summary>
+    /// The edit the second commit carries, whichever system it is committed to.
+    /// </summary>
+    /// <remarks>
+    /// A second commit, so the history is a history rather than a single row - and so one file in it
+    /// is *modified* rather than added, which is what gives the changed-files popover a diff to
+    /// offer. A repository with one commit cannot show either.
+    /// </remarks>
+    private void WriteSecondRevision()
+    {
         Write("Documented.mo", """
             within Lib;
             model Documented "A model with everything a rule could ask for"
@@ -393,14 +441,97 @@ public sealed class LibraryFixture : IDisposable
               annotation(Documentation(info="<html><p>Nothing to report here.</p></html>"));
             end Documented;
             """);
+    }
 
-        Commands.Stage(repo, "*");
-        repo.Commit("Report the rate of change as well as the state", who, who);
+    /// <summary>The <c>file://</c> URL of the SVN fixture's repository.</summary>
+    private string SvnUrl => new Uri(SvnServerPath!).AbsoluteUri;
 
-        // A second branch, not checked out. A repository with one branch makes the switch-branch and
-        // merge dialogs pictures of an empty list, and those dialogs are most of what git-operations.md
-        // is about.
-        repo.Branches.Add("feature/pump-curves", first);
+    /// <summary>
+    /// Creates the repository, lays it out as trunk/branches/tags, and checks trunk out as the
+    /// working copy - before anything is written, because <c>svn checkout</c> wants the directory it
+    /// fills to be empty.
+    /// </summary>
+    private void CreateSvnWorkingCopy()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(SvnServerPath)!);
+        RunTool(SvnAdmin(), "create", SvnServerPath!);
+
+        RunSvn("mkdir", "--parents", "-m", "Lay the repository out as trunk, branches and tags",
+               SvnUrl + "/trunk", SvnUrl + "/branches", SvnUrl + "/tags");
+        RunSvn("checkout", SvnUrl + "/trunk", RepositoryPath);
+    }
+
+    /// <summary>The SVN counterpart of <see cref="CommitEverything"/>: two commits, a branch, a tag.</summary>
+    /// <remarks>
+    /// The branch and the tag are what the switch-branch dialog lists beside trunk, and they are
+    /// copies made on the server, as a user makes them. The working copy is updated last so its
+    /// revision is the newest one: after a commit SVN leaves the directories at the revision they
+    /// were checked out at, and MLQT would show that as the working copy's revision.
+    /// </remarks>
+    private void CommitEverythingToSvn()
+    {
+        RunSvn("add", "--force", Path.Combine(RepositoryPath, "Lib"));
+        RunSvn("commit", "-m", FirstCommitMessage, RepositoryPath);
+        var first = RunSvn("info", "--show-item", "last-changed-revision", SvnUrl + "/trunk").Trim();
+
+        WriteSecondRevision();
+        RunSvn("commit", "-m", SecondCommitMessage, RepositoryPath);
+
+        RunSvn("copy", "-m", "Branch for the pump curve work", $"{SvnUrl}/trunk@{first}", SvnUrl + "/branches/pump-curves");
+        RunSvn("copy", "-m", "Tag version 1.0", SvnUrl + "/trunk", SvnUrl + "/tags/v1.0");
+        RunSvn("update", RepositoryPath);
+    }
+
+    /// <summary>
+    /// Runs the svn client MLQT itself would use, as the fixture's own author.
+    /// </summary>
+    /// <remarks>
+    /// With a username, because over <c>file://</c> svn otherwise records the login name of whoever
+    /// ran it - and the history dialog prints the author of every revision, so a developer's name
+    /// would go into the manual.
+    /// </remarks>
+    private static string RunSvn(params string[] arguments) =>
+        RunTool(SvnToolLocator.SvnExecutablePath
+                ?? throw new InvalidOperationException(
+                    "The SVN fixture needs an svn client: put svn on the PATH or set " + SvnToolLocator.OverrideEnvVar),
+                [.. arguments, "--non-interactive", "--username", "journeys"]);
+
+    /// <summary><c>svnadmin</c>, from beside the svn client if it is there, or from the PATH.</summary>
+    private static string SvnAdmin()
+    {
+        var svn = SvnToolLocator.SvnExecutablePath;
+        var name = OperatingSystem.IsWindows() ? "svnadmin.exe" : "svnadmin";
+
+        if (svn is not null && Path.IsPathRooted(svn)
+            && Path.Combine(Path.GetDirectoryName(svn)!, name) is var beside && File.Exists(beside))
+            return beside;
+
+        return "svnadmin";
+    }
+
+    private static string RunTool(string executable, params string[] arguments)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(executable)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+
+        using var process = System.Diagnostics.Process.Start(start)
+            ?? throw new InvalidOperationException($"{executable} did not start");
+
+        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(
+                $"{Path.GetFileName(executable)} {string.Join(' ', arguments)} failed ({process.ExitCode}): {error.Result}");
+
+        return output;
     }
 
     /// <summary>Touches a file under the library, the way a user editing it outside MLQT would.</summary>
@@ -412,7 +543,112 @@ public sealed class LibraryFixture : IDisposable
         File.AppendAllText(Path.Combine(LibraryPath, relativePath),
                            "\n// Edited outside MLQT.\n");
 
-    public void Dispose() => Delete(RepositoryPath);
+    /// <summary>
+    /// Switches the formatter on for this repository, in its <c>.mlqt/settings.json</c>, where MLQT
+    /// reads a repository's settings from when it is added.
+    /// </summary>
+    /// <remarks>
+    /// MLQT ships with formatting off, and Format All Files is disabled until it is on. Call before
+    /// adding the repository.
+    /// </remarks>
+    public void EnableFormatting()
+    {
+        var mlqt = Path.Combine(RepositoryPath, ".mlqt");
+        Directory.CreateDirectory(mlqt);
+        File.WriteAllText(Path.Combine(mlqt, "settings.json"), """{ "ApplyFormattingRules": true }""");
+    }
+
+    /// <summary>
+    /// Adds <c>Broken.mo</c>, a class with a syntax error that is also laid out the way the formatter
+    /// would put right - so a formatter that ignored the error would visibly rewrite it (B414).
+    /// </summary>
+    /// <returns>The file's path.</returns>
+    public string AddAClassWithASyntaxError()
+    {
+        Write("Broken.mo", """
+            within Lib;
+                model Broken    "A class with a syntax error"
+              Real x   "The state"
+                    equation
+                der(x) =    -x;
+                end Broken;
+            """);
+        File.AppendAllText(Path.Combine(LibraryPath, "package.order"), "Broken\n");
+        return Path.Combine(LibraryPath, "Broken.mo");
+    }
+
+    /// <summary>The branch <see cref="StopARebaseOnAConflict"/> rebases.</summary>
+    public const string RebasingBranch = "feature/rebase";
+
+    /// <summary>
+    /// Leaves the working copy part-way through a rebase, stopped on a conflict in
+    /// <c>Documented.mo</c> - the state a rebase is left in when its dialog is closed at the
+    /// conflicts, or when it was started outside MLQT (B382).
+    /// </summary>
+    /// <remarks>
+    /// <para>The fixture's uncommitted edit is committed first, since git will not start a rebase
+    /// over one. Then <see cref="RebasingBranch"/> and the branch it came from each change
+    /// <c>Documented.mo</c>'s description differently, and the rebase is run the way MLQT runs one,
+    /// through <see cref="RevisionControl.GitRevisionControlSystem.Rebase"/>, which drives git
+    /// itself - so the state on disk is git's own, with its <c>rebase-merge</c> directory, and not
+    /// something LibGit2Sharp approximates.</para>
+    /// </remarks>
+    /// <returns>The branch's tip before the rebase, and the file left in conflict.</returns>
+    public (string BranchTip, string ConflictedFile) StopARebaseOnAConflict()
+    {
+        if (Vcs != LibraryFixtureVcs.Git)
+            throw new InvalidOperationException("a rebase needs the fixture's Git working copy");
+
+        string main, tip;
+        using (var repo = new Repository(RepositoryPath))
+        {
+            // The rebase commits through git.exe, which needs an identity of its own.
+            repo.Config.Set("user.name", "MLQT journeys");
+            repo.Config.Set("user.email", "journeys@mlqt.invalid");
+            var who = new Signature("MLQT journeys", "journeys@mlqt.invalid", DateTimeOffset.Now);
+
+            Commands.Stage(repo, "*");
+            repo.Commit("The fixture's edit to Modified", who, who);
+            main = repo.Head.FriendlyName;
+
+            Commands.Checkout(repo, repo.CreateBranch(RebasingBranch));
+            WriteDocumented("Described on the feature branch");
+            Commands.Stage(repo, "*");
+            tip = repo.Commit("Describe Documented on the feature branch", who, who).Sha;
+
+            Commands.Checkout(repo, repo.Branches[main]);
+            WriteDocumented("Described on the main branch");
+            Commands.Stage(repo, "*");
+            repo.Commit("Describe Documented on the main branch", who, who);
+
+            Commands.Checkout(repo, repo.Branches[RebasingBranch]);
+        }
+
+        var result = new RevisionControl.GitRevisionControlSystem().Rebase(RepositoryPath, main);
+        if (!result.HasConflicts)
+            throw new InvalidOperationException("the fixture's rebase did not stop on a conflict: " + result.ErrorMessage);
+
+        return (tip, Path.Combine(LibraryPath, "Documented.mo"));
+    }
+
+    private void WriteDocumented(string description) => Write("Documented.mo", $$"""
+        within Lib;
+        model Documented "{{description}}"
+          Real x "The state";
+          Real dx "Its rate of change";
+        equation
+          der(x) = -x;
+          dx = der(x);
+          annotation(Documentation(info="<html><p>Nothing to report here.</p></html>"));
+        end Documented;
+        """);
+
+    public void Dispose()
+    {
+        Delete(RepositoryPath);
+        if (SvnServerPath is not null)
+            Delete(SvnServerPath);
+    }
 
     private static void Delete(string path)
     {
@@ -426,4 +662,14 @@ public sealed class LibraryFixture : IDisposable
         try { Directory.Delete(path, recursive: true); }
         catch (IOException) { /* a watcher still has a handle; the temp directory will be swept */ }
     }
+}
+
+/// <summary>The version control system a <see cref="LibraryFixture"/> puts its library under.</summary>
+public enum LibraryFixtureVcs
+{
+    /// <summary>A Git repository, made with LibGit2Sharp. What every journey uses.</summary>
+    Git,
+
+    /// <summary>A trunk checkout of a local <c>file://</c> SVN repository, made with the svn client.</summary>
+    Svn,
 }

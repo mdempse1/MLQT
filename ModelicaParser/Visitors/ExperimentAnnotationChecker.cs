@@ -44,7 +44,8 @@ public class ExperimentAnnotationChecker : modelicaBaseVisitor<object?>
 
     public override object? VisitComposition(modelicaParser.CompositionContext context)
     {
-        foreach (var annotation in context.annotation())
+        // The class's own annotations only, never the external clause's (B446).
+        foreach (var annotation in CompositionAnnotations.ClassLevel(context))
         {
             CheckAnnotation(annotation);
         }

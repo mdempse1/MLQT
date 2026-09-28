@@ -3,6 +3,7 @@ using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 using RevisionControl;
 using static MLQT.Services.LoggingService;
 
@@ -48,6 +49,15 @@ public sealed class FormattingPipeline : IFormattingPipeline
         return true;
     }
 
+    /// <summary>
+    /// The classes the incremental formatter must not write, asked per class of the library that owns
+    /// it. Skipping a reference-only repository is not enough on its own: the files arrive by path,
+    /// grouped by the repository that <em>watches</em> them, and a vendor library checked out inside a
+    /// maintained repository's folder is watched, and reported as changed, by the outer one (B421).
+    /// </summary>
+    private Func<string, bool> NeverWritten() =>
+        ReferenceOnlyScope.OwnedByReference(_libraryData, _repositories);
+
     /// <summary>The repository's modified and untracked Modelica files, as the VCS reports them.</summary>
     private HashSet<string> GetModifiedFilePathsFromVcs(Repository repository)
     {
@@ -71,7 +81,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
         IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings)
     {
         var written = await IncrementalFormatter.FormatAndWriteAsync(
-            _libraryData.CombinedGraph, changedFilePaths, styleSettings);
+            _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten());
 
         foreach (var (filePath, writtenAt) in written)
             _writtenFileTimestamps[filePath] = writtenAt;
@@ -107,7 +117,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
 
                 Info(nameof(FormattingPipeline), $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
                 var written = await IncrementalFormatter.FormatAndWriteAsync(
-                    _libraryData.CombinedGraph, changedFilePaths, styleSettings);
+                    _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten());
                 foreach (var (writtenPath, writtenAt) in written)
                     _writtenFileTimestamps[writtenPath] = writtenAt;
                 totalFormatted += changedFilePaths.Count;
@@ -129,22 +139,19 @@ public sealed class FormattingPipeline : IFormattingPipeline
     /// so paths are filtered to LocalPath to scope analysis to Modelica files only.
     /// </summary>
 
-    public async Task SaveAllLibrariesWithFormattingAsync(
+    public async Task<IReadOnlyList<string>> SaveAllLibrariesWithFormattingAsync(
         string? filterRepositoryId = null, Action<string, Exception>? onLibraryFailed = null)
     {
         LogProcessStart(nameof(FormattingPipeline), "Saving all libraries with formatting");
 
-        // Reference libraries are dropped before anything else looks at the list — every kind of
-        // them. The encrypted ones hold only reconstructions from vendor documentation, so there is
-        // nothing here that could be written back and the saver refuses them outright; a readable one
-        // is a tool's installed library, which the settings page promises is never formatted. That
-        // half used to rest on filterRepositoryId being non-null, which is true of every caller today
-        // and is not what the parameter means.
-        IReadOnlyList<LoadedLibrary> libraries = _libraryData.Libraries
-            .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
-            .Where(l => !ReferenceOnlyScope.IsReference(l, _repositories))
-            .Where(l => filterRepositoryId == null || l.RepositoryId == filterRepositoryId)
-            .ToList();
+        // Files left untouched for their syntax errors (B414), for the caller to tell the user about.
+        var skippedFiles = new List<string>();
+
+        // Reference and encrypted libraries are dropped before anything else looks at the list. The
+        // rule and the reasons live in FormattableLibraries, where they can be asked on their own —
+        // this is what decides whether MLQT writes into a library it must not touch.
+        IReadOnlyList<LoadedLibrary> libraries =
+            FormattableLibraries.Select(_libraryData.Libraries, _repositories, filterRepositoryId);
 
         // Collect all original file paths before we start saving
         // When filtering by repository, only consider files from those libraries
@@ -153,7 +160,10 @@ public sealed class FormattingPipeline : IFormattingPipeline
         foreach (var fileNode in _libraryData.CombinedGraph.FileNodes)
         {
             if (File.Exists(fileNode.FilePath) &&
-                (filterRepositoryId == null || librarySourcePaths.Any(sp => fileNode.FilePath.StartsWith(sp, StringComparison.OrdinalIgnoreCase))))
+                // Contained, not prefixed: `…/Lib` is a prefix of `…/LibExtra/Other.mo`, so a sibling
+                // library's files counted as this one's, were not written, and were deleted (B323's
+                // shape, found with B373).
+                (filterRepositoryId == null || librarySourcePaths.Any(sp => PathContainment.IsWithin(fileNode.FilePath, sp))))
             {
                 originalFiles.Add(fileNode.FilePath);
             }
@@ -184,6 +194,16 @@ public sealed class FormattingPipeline : IFormattingPipeline
         var allCreatedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var modelIdToFilePath = new Dictionary<string, string>();
 
+        // Libraries whose files are not the save's to delete: one it skipped or could not finish.
+        // An original file is an orphan only when everything it held was written somewhere else,
+        // and a library with a failed write cannot say that of any of its files - so a single-file
+        // library expanded into a directory lost every class whose new file failed, with the one
+        // file that still held it (B373, the B303 shape in Format All).
+        var librariesToKeep = new List<LoadedLibrary>();
+
+        // Single-file libraries the save expanded into a package directory, and that directory.
+        var relocations = new List<(LoadedLibrary Library, string Directory)>();
+
         // Process libraries sequentially to limit peak memory. Each library already
         // parallelizes its parse/render phases internally (Parallel.ForEach in batches).
         // Running libraries concurrently causes nested parallelism: N libraries × M cores
@@ -199,6 +219,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
             // Skip single-file libraries (they don't have a directory structure)
             if (library.SourceType == LibrarySourceType.File && !Directory.Exists(library.SourcePath))
             {
+                librariesToKeep.Add(library);
                 continue;
             }
 
@@ -270,7 +291,27 @@ public sealed class FormattingPipeline : IFormattingPipeline
                     if (saveDirectory is null)
                     {
                         Warn(nameof(FormattingPipeline), $"No writable save directory for library {library.Name} at {library.SourcePath}");
+                        lock (allWrittenFiles)
+                            librariesToKeep.Add(library);
                         return;
+                    }
+
+                    // A file with syntax errors is left exactly as it is, with every class it holds -
+                    // the incremental formatter's rule, asked of the same parse (B414). Kept from the
+                    // orphan sweep as if written, with a package.mo's package.order, which the save
+                    // does not write for a package it leaves alone.
+                    var unparsable = FilesWithSyntaxErrors(graph, library);
+                    var untouched = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var (filePath, modelsInFile) in unparsable)
+                    {
+                        untouched.UnionWith(modelsInFile);
+                        lock (allWrittenFiles)
+                        {
+                            skippedFiles.Add(filePath);
+                            allWrittenFiles.Add(filePath);
+                            if (string.Equals(Path.GetFileName(filePath), "package.mo", StringComparison.OrdinalIgnoreCase))
+                                allWrittenFiles.Add(Path.Combine(Path.GetDirectoryName(filePath)!, "package.order"));
+                        }
                     }
 
                     // Save the library and get information about written files using repository-specific settings
@@ -280,7 +321,8 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         saveDirectory,
                         showAnnotations: true,
                         formatting: styleSettings.ToFormattingOptions(),
-                        excludedModelIds: styleSettings.FormattingExcludedModels);
+                        settings: styleSettings,
+                        untouchedModelIds: untouched);
 
                     // Collect written files and directories
                     lock (allWrittenFiles)
@@ -297,6 +339,62 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         {
                             modelIdToFilePath[kvp.Key] = kvp.Value;
                         }
+
+                        if (saveResult.FailedFiles.Count > 0 || saveResult.UnplacedModelIds.Count > 0
+                            || saveResult.NonPackageDirectoryIds.Count > 0)
+                            librariesToKeep.Add(library);
+                    }
+
+                    // Refused before anything was written (B443): the library is left as it is and
+                    // the user is told which directory to change.
+                    if (saveResult.NonPackageDirectoryIds.Count > 0)
+                    {
+                        var first = saveResult.NonPackageDirectoryIds[0];
+                        var what = graph.GetNode<ModelNode>(first)?.ClassType is { } type && type != "package"
+                            ? $"a {type}"
+                            : "a short class definition";
+                        onLibraryFailed?.Invoke(library.Name, new InvalidOperationException(
+                            $"{first} is stored as a directory, but its package.mo defines {what}, not a package, " +
+                            "and Format All writes only a package as a directory. Nothing of the library was " +
+                            "changed; declare the class as a package to format the library."));
+                        return;
+                    }
+
+                    if (saveResult.FailedFiles.Count > 0)
+                    {
+                        Warn(nameof(FormattingPipeline),
+                            $"Library {library.Name}: {saveResult.FailedFiles.Count} file(s) could not be written " +
+                            $"({string.Join(", ", saveResult.FailedFiles)}); its original files were kept");
+                        onLibraryFailed?.Invoke(library.Name, new IOException(
+                            $"{saveResult.FailedFiles.Count} file(s) could not be written, including " +
+                            $"{saveResult.FailedFiles.First()}. No file of the library was deleted, so it may now " +
+                            "define some classes twice; see the log."));
+                        return;
+                    }
+
+                    // The last line (B441): a class of the library that is in no file the save wrote
+                    // or kept may be only in a file the sweep would take for an orphan. Nothing of the
+                    // library is deleted, whatever the reason the save could not place it.
+                    if (saveResult.UnplacedModelIds.Count > 0)
+                    {
+                        Error(nameof(FormattingPipeline),
+                            $"Library {library.Name}: {saveResult.UnplacedModelIds.Count} class(es) were written to no file " +
+                            $"({string.Join(", ", saveResult.UnplacedModelIds.Take(20))}); its original files were kept");
+                        onLibraryFailed?.Invoke(library.Name, new InvalidOperationException(
+                            $"{saveResult.UnplacedModelIds.Count} class(es) could not be placed in any file, including " +
+                            $"{saveResult.UnplacedModelIds[0]}. No file of the library was deleted, so it may now " +
+                            "define some classes twice; see the log."));
+                        return;
+                    }
+
+                    // A library that was one .mo file and whose root package now has a package.mo
+                    // of its own has been expanded into a directory; it is re-registered as one once
+                    // the file is gone. Only here, after a save that wrote everything (B417).
+                    if (!Directory.Exists(library.SourcePath)
+                        && ExpandedRoot(library, saveResult.ModelIdToFilePath) is { } expandedTo)
+                    {
+                        lock (allWrittenFiles)
+                            relocations.Add((library, expandedTo));
                     }
 
                     Debug(nameof(FormattingPipeline), $"Successfully saved library: {library.Name} ({saveResult.WrittenFiles.Count} files)");
@@ -305,6 +403,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
             catch (Exception ex)
             {
                 Error(nameof(FormattingPipeline), $"Failed to format library {library.Name}", ex);
+                librariesToKeep.Add(library);
                 onLibraryFailed?.Invoke(library.Name, ex);
             }
         }
@@ -314,19 +413,17 @@ public sealed class FormattingPipeline : IFormattingPipeline
         // not be written by the formatter if it has a malformed within-clause or mismatched
         // model name.  Deleting it would cause a "scheduled for addition, but is missing"
         // commit error.
+        // Against the VCS root, not the library, and normalised: see ScheduledForAddition (B472).
         var vcsAddedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrEmpty(filterRepositoryId))
         {
             try
             {
                 var repo = _repositories.GetRepository(filterRepositoryId);
-                if (repo?.LocalPath != null)
+                if (repo != null)
                 {
-                    foreach (var wc in _repositories.GetWorkingCopyChanges(filterRepositoryId)
-                        .Where(c => c.Status == VcsFileStatus.Added))
-                    {
-                        vcsAddedFiles.Add(Path.Combine(repo.LocalPath, wc.Path));
-                    }
+                    vcsAddedFiles = VcsChangeResolver.ScheduledForAddition(
+                        repo.VcsRootPath, _repositories.GetWorkingCopyChanges(filterRepositoryId));
                 }
             }
             catch (Exception ex)
@@ -336,7 +433,9 @@ public sealed class FormattingPipeline : IFormattingPipeline
         }
 
         var orphaned = OrphanedFileSelector.SelectOrphans(
-            originalFiles, originalOrderFiles, allWrittenFiles, vcsAddedFiles);
+                originalFiles, originalOrderFiles, allWrittenFiles, vcsAddedFiles)
+            .Where(f => !librariesToKeep.Any(l => PathContainment.IsWithin(f, l.SourcePath)))
+            .ToList();
 
         Debug(nameof(FormattingPipeline), $"Deleting {orphaned.Count} orphaned file(s) left by the save");
 
@@ -370,7 +469,79 @@ public sealed class FormattingPipeline : IFormattingPipeline
         // Update FileNodes in the graph with new file paths
         FileNodeReconciler.ReassignModels(_libraryData.CombinedGraph, modelIdToFilePath);
 
+        // An expanded library's classes are in the directory now, and the file it was loaded from
+        // is gone. Left naming that file, the library placed no class from the new files: a Refresh,
+        // a Code Review reload or a VCS update of any of them added its classes to no library until
+        // the project was reloaded (B417). Re-registered as the directory a reload would find.
+        foreach (var (library, directory) in relocations)
+            await _repositories.RelocateLibraryAsync(library.Id, directory);
+
         LogProcessEnd(nameof(FormattingPipeline), "Saving all libraries with formatting");
+        return skippedFiles;
+    }
+
+    /// <summary>
+    /// The files of a library that have syntax errors, each with the classes stored in it. Asked of
+    /// the file's own text on disk through <see cref="ModelicaPackageSaver.SyntaxErrorsInFile"/> — the
+    /// parse the incremental formatter refuses a file on — so the two formatters cannot disagree
+    /// about which files they leave alone (B414).
+    /// </summary>
+    private static List<(string FilePath, IReadOnlyList<string> ModelIds)> FilesWithSyntaxErrors(
+        DirectedGraph graph, LoadedLibrary library)
+    {
+        var fileIds = library.ModelIds
+            .Select(id => graph.GetNode<ModelNode>(id)?.ContainingFileId)
+            .Where(id => id is not null)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var found = new System.Collections.Concurrent.ConcurrentBag<(string, IReadOnlyList<string>)>();
+        Parallel.ForEach(fileIds, fileId =>
+        {
+            if (graph.GetNode<FileNode>(fileId!) is not { } fileNode || !File.Exists(fileNode.FilePath))
+                return;
+
+            var models = graph.GetModelsInFile(fileId!).ToList();
+            var owner = IncrementalFormatter.FileOwner(graph, fileId!, models);
+            if (owner is null)
+                return;
+
+            try
+            {
+                var errors = ModelicaPackageSaver.SyntaxErrorsInFile(
+                    ModelicaFileEncoding.ReadAllTextOnly(fileNode.FilePath), owner.ParentModelName);
+                if (errors.Count == 0)
+                    return;
+
+                Warn(nameof(FormattingPipeline),
+                    $"Not formatting {fileNode.FilePath}: {ModelicaPackageSaver.DescribeSyntaxErrors(errors)}");
+                found.Add((fileNode.FilePath, models.Select(m => m.Id).ToList()));
+            }
+            catch (Exception ex)
+            {
+                Warn(nameof(FormattingPipeline), $"Could not read {fileNode.FilePath} to check its syntax: {ex.Message}");
+            }
+        });
+
+        return found.OrderBy(f => f.Item1, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// The directory a library loaded from one <c>.mo</c> file was written out as, when the save
+    /// expanded it: its root class went to a <c>package.mo</c>. Null when the root stayed a single
+    /// file, as a library whose only class is a model does.
+    /// </summary>
+    private static string? ExpandedRoot(
+        LoadedLibrary library, IReadOnlyDictionary<string, string> modelIdToFilePath)
+    {
+        foreach (var rootId in library.TopLevelModelIds)
+        {
+            if (modelIdToFilePath.TryGetValue(rootId, out var written)
+                && string.Equals(Path.GetFileName(written), "package.mo", StringComparison.OrdinalIgnoreCase))
+                return Path.GetDirectoryName(written);
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -31,8 +31,20 @@ are set under **Settings > Manage Repositories** and stored in that repository's
 `.mlqt/settings.json`, so they travel with the code and every tool that reads it (the app, the `mlqt`
 CLI, the MCP server) applies the same ones.
 
-A newly added repository starts with every rule **Off**, and a library loaded outside any repository
-— a reference library, say — has no rules at all and is never reported on.
+A newly added repository starts with every rule **Off** except one, and a library loaded outside any
+repository — a reference library, say — has no rules at all and is never reported on.
+
+**The exception is [`MLQT.Structure.SingleFilePackage`](#static-analysis-rules), which is on at
+Warning unless you turn it off.** Every other rule waits to be discovered, which is right for a
+matter of taste. This one reports a library drifting away from the layout MLQT maintains, and the
+drift happens without anyone doing anything: another tool saves a new package as a single `.mo`
+file, MLQT's incremental formatting tidies it in place — it never moves a class between files — and
+nothing says the package is now stored differently from the rest of the library. A user who has not
+heard of the rule is exactly the user who needs it, so it is not something to opt into.
+
+Switch it off in the usual way if your repository keeps libraries single-file on purpose. That choice
+is written into `.mlqt/settings.json` as `"MLQT.Structure.SingleFilePackage": "Off"` rather than by
+removing the entry, because for this rule an absent entry means *on*.
 
 ---
 
@@ -57,11 +69,24 @@ See [encrypted-libraries.md](encrypted-libraries.md) for what is recovered from 
 
 ## Repository Settings
 
+### The order repositories appear in
+
+Repositories are listed — in the library browser, and in **Settings > Manage Repositories** — in the
+order you put them in, not the order you happened to add them. Use the **up** and **down** arrows in
+the Order column of the active project's repository table to move one. The arrows are greyed out at
+the ends of the list.
+
+The new order is saved as soon as you click, and it is the order the next session starts in. The
+Manage Repositories tab has no Save button because every change made there writes itself out, this
+one included.
+
+Only the active project's repositories can be reordered. Load a project to change its order.
+
 ### Reference-only repositories
 
 Some repositories hold code you depend on but do not maintain: a tool's library folder, or another
 team's repository. Tick **Reference only** — when adding the repository, or later in
-**Settings > Repositories** — and MLQT loads it so that references into it resolve and leaves it
+**Settings > Manage Repositories** — and MLQT loads it so that references into it resolve and leaves it
 alone otherwise:
 
 - it is not style-checked, so no findings are raised against code you cannot change;
@@ -69,7 +94,9 @@ alone otherwise:
   percentages;
 - it is not formatted;
 - nothing is written into it — no `.mlqt` directory, and so no settings, baseline or accepted
-  spellings kept beside it.
+  spellings kept beside it;
+- the library browser shows no change markers for it and offers no change filter over it, since
+  nothing in MLQT is going to change anything in it.
 
 A folder MLQT cannot write into is offered as reference-only automatically when you add it, since it
 could never keep those files anyway. The tick is only ever suggested: you can untick it, and marking
@@ -78,7 +105,7 @@ have read access to is exactly the case.
 
 Repository settings are edited through **Settings > Manage Repositories** by clicking on a repository row. Each repository has its own independent copy of all style, formatting, and commit settings.
 
-The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
+The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules, and is disabled while **Apply formatting rules** is off (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
 
 ### Commit Requirements
 
@@ -127,7 +154,7 @@ diagnostics, which are not settings — see
 | **Every class must have an icon** | `MLQT.Doc.ClassIcon` | Off | Checks that every class has an `annotation(Icon(...))` defining its graphical representation. Icons are used by graphical Modelica editors like Dymola and OpenModelica to display the class in diagrams. |
 | **Every public parameter must have a description** | `MLQT.Doc.ParameterDescription` | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
 | **Every public constant must have a description** | `MLQT.Doc.ConstantDescription` | Off | Checks that every public `constant` declaration includes a description string. |
-| **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When set to anything but **Off**, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
+| **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Shown in the dialog under its own **Naming** heading, between Spell checking and Style guidelines, rather than with the rules in this table. Checks that class, variable, parameter, and constant names follow configurable naming conventions. When set to anything but **Off**, a panel appears with the *Naming Convention Rules* dropdown (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants, or **Custom**), underscore suffix handling, and exception names. Choosing **Custom** shows the per-class-type naming rules (model, function, block, connector, record, type, package, class, operator) and per-visibility element rules (public/protected variables, parameters, constants); choosing a named preset replaces them all. See [Naming Conventions](naming-conventions.md) for full details. |
 | **A class may only have either an equation or algorithm section, not both** | `MLQT.Style.DontMixEquationAndAlgorithm` | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
 | **Do not mix connections and equations in the same class** | `MLQT.Style.DontMixConnections` | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
 
@@ -142,20 +169,22 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 |---------|---------|---------|-------------|
 | **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
 | **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
-| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. "Components before classes" refines this ordering and has no effect unless this switch is on. |
-| **Composition must have components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. It **refines** "Composition must be imports first" rather than competing with it: the formatter only consults this switch when that one is on, so on its own it changes nothing. |
+| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. "Components before classes" refines this ordering and has no effect unless this switch is on. A `record` or `operator record` keeps its `extends` clauses where they stand among its fields, and they are not reported: the inherited fields take the clause's place in the record constructor's inputs. |
+| **Composition must have components before classes** | `MLQT.Style.ComponentsBeforeClasses` | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. It **refines** "Composition must be imports first" rather than competing with it: the formatter only consults this switch when that one is on, so on its own it changes nothing. Each `public`/`protected` section is ordered separately — a class definition in one section followed by a component in the next is correctly ordered. |
+| **Declarations in order: inputs and outputs, constants, parameters, variables, components** | `MLQT.Style.DeclarationOrder` | Off | The finer order inside the group "components before classes" puts ahead of nested classes, and it **refines that switch** the way that one refines "imports first": the formatter reads it only when both are on, so on its own it changes nothing. `input`/`output` declarations come first and as one group, because a function's signature reads as a signature and a connector keeps its causal members together. A **variable** is a declaration whose type is a simple type — `Real x`, and also `SI.Length x`, whose type MLQT follows through its alias chain — while a **component** is an instance of a structured class such as `Resistor r`. Following that chain needs the dependency graph, so a check with no library loaded recognises only `Real`, `Integer`, `Boolean` and `String` as variables and treats everything else as a component. The formatter is told the same thing, so the two always agree. A `record` or `operator record` is left in source order by both, because its field order is its constructor's signature and sorting it would change what every positional call such as `R(2.0)` sets. The order is fixed rather than configurable: the formatter has to be able to produce whatever the rule asks for, so that every finding it raises can be cleared by formatting, and one order it can always produce is worth more than a setting few repositories would change. |
 | **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
 | **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
 
 The **Setting** column gives each checkbox's label exactly as the dialog shows it, so you can find
 it. The rest of this documentation uses the short names — **One of each section**, **Imports
-first**, **Extends at top**, **Components before classes**, **Initial equation/algorithm
-first**/**last** — and those are the same six settings.
+first**, **Extends at top**, **Components before classes**, **Declarations in order**, **Initial
+equation/algorithm first**/**last** — and those are the same six switches below **Apply formatting
+rules** (Imports first and Extends at top share one switch).
 
 #### One of each section is required by the rest
 
-The last four settings in that table — **Imports first, extends at top**, **Components before
-classes**, and the two **Initial equation/algorithm** options — **do nothing unless One of each
+The last five settings in that table — **Imports first, extends at top**, **Components before
+classes**, **Declarations in order**, and the two **Initial equation/algorithm** options — **do nothing unless One of each
 section is also on**, and MLQT enforces that rather than leaving it to be discovered.
 
 The reason is in the formatter. `ModelicaRenderer` reorders a class only in its one-of-each-section
@@ -163,7 +192,7 @@ mode; with that setting off it writes the composition in source order and moves 
 their own the other rules would report an arrangement that pressing **Format All Files** could never
 produce — findings nobody can clear, against a setting that looks enabled.
 
-- **In the app**, the four switches are greyed out until you turn **One of each section** on. They
+- **In the app**, the five switches are greyed out until you turn **One of each section** on. They
   keep showing what they are set to rather than jumping to off, because nothing has been switched
   off — the settings are still there, and are simply not in effect. Turning the prerequisite back on
   makes them active again exactly as they were.
@@ -221,7 +250,7 @@ Individual models can be excluded from automatic formatting. This is useful for 
 
 | Setting | Description |
 |---------|-------------|
-| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style findings are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. |
+| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style findings are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. **Maintained by hand.** The Code Review toolbar button writes `__MLQT(format=false)` into the class instead, because a name here does not survive the class being renamed; this list stays honoured for anything already in it, and for a class whose source you cannot edit. See [code-formatting.md](code-formatting.md#excluding-models-from-formatting). |
 
 A helper method `IsModelExcludedFromFormatting(string modelId)` is available for checking whether a given model is in the exclusion list.
 
@@ -266,6 +295,8 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
 | `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
+| `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`) and one that would be written to the same file or directory name as a sibling, ignoring case, are left alone. The comparison is between what would be written, not between class names: a model `JFET` becomes `JFET.mo` and a package `Jfet` becomes the directory `Jfet`, so the two do not collide. For the same reason a *package* called `Package` may be split out, while a model of that name may not. Such classes are left alone because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
+| `MLQT.Structure.WithinClause` | Error | A file stored in a package's directory whose `within` clause does not name that package — the rule of [MLS 13.4.3](https://specification.modelica.org/maint/3.6/packages.html#the-within-clause): "For a sub-entity of an enclosing structured entity, the within-clause shall designate the class of the enclosing entity". A `package.mo` is its directory's package, so it names the package of the directory above. A missing `within` below the top level is reported too. Only files inside a loaded package directory are judged: a library's root `package.mo`, or a `.mo` file in a directory with no `package.mo`, is a top-level entity whose `within` cannot be judged from where it is stored. The expected name is built from the root package's loaded name and the class names in each nested `package.mo`, so one wrong `package.mo` is one finding rather than one on every correct file below it. | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
@@ -290,6 +321,42 @@ them by name). Without the first, a library's example package reads as entirely 
 A library's *public API* is still reported — nothing inside the library uses it because its users are
 downstream — which is why `MLQT.Unused.PublicClass` is Info and off by default, and best suited to an
 application library. For a foundational library, either leave it off or exclude the library (below).
+
+### Matching Dymola on `package.order`
+
+Dymola reports an incomplete `package.order` itself, on load:
+
+```
+Warning: The package.order is incomplete, since the class Bad in file/directory .../Sub/Bad.mo is missing.
+```
+
+MLQT's `MLQT.Structure.PackageOrder` answers a **larger** question than that, in two ways:
+
+- it also reports *stale* entries — an entry naming a class or member that is not there, which
+  Dymola says nothing about;
+- it reports a class stored in a file whose name does not match it. Dymola resolves a package's
+  children by file name, in exactly two places — `Package/Name.mo` and `Package/Name/package.mo` —
+  so a `Widget.mo` holding `model Odd` is a class it cannot load from there and never warns about.
+  MLQT reads every `.mo` file in a package directory and takes each class's own name, so it loads
+  that class and can see that `package.order` does not list it.
+
+Neither tool descends into a directory with no `package.mo`, so a `.mo` file in an ordinary folder is
+invisible to both.
+
+| Setting | Effect |
+|---------|--------|
+| `"PackageOrderMatchesDymola": false` | Default. MLQT's full answer: stale entries, and every unlisted child wherever it is stored. |
+| `"PackageOrderMatchesDymola": true` | Only what Dymola would warn about: an unlisted child stored where Dymola looks for it. |
+
+Switch it on for a repository whose agreed standard is "no warnings on load in Dymola" — MLQT's gate
+is then the same gate rather than a stricter one that fails a build over something the tool of record
+accepts. It narrows one rule's findings and does not switch anything off, so the rule still has to be
+enabled for either answer.
+
+What it removes is worth keeping unless you have that reason. A stale entry is usually a class that
+was renamed or deleted and left behind, and a class in a mismatched file name is a class Dymola
+cannot load at all — which is a more serious problem than the one this rule usually reports, not a
+less serious one.
 
 ### Excluding whole libraries from the checks
 
@@ -335,6 +402,7 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckMissingUnits": true,
     "CheckUnusedImports": true,
     "CheckPackageOrder": true,
+    "PackageOrderMatchesDymola": false,
     "CheckUsesUndeclared": true,
     "CheckUsesDeclaredUnused": true,
     "CheckUnusedClass": true,
@@ -356,6 +424,11 @@ also works for the built-in style rules:
 }
 ```
 
+`MLQT.Structure.SingleFilePackage` has no on/off key of its own: it is on by default, and the only way
+to set it in `settings.json` is through `RuleSeverities`, for example
+`"MLQT.Structure.SingleFilePackage": "Off"`. `MLQT.Structure.WithinClause` has no on/off key either;
+it is off by default, and is enabled with `"MLQT.Structure.WithinClause": "Error"`.
+
 A per-finding waiver can be written into the source with a `__MLQT(suppress="<rule id>")` annotation
 (see [Code Review](code-review.md#suppressing-a-rule)).
 
@@ -365,7 +438,7 @@ A per-finding waiver can be written into the source with a `__MLQT(suppress="<ru
 |---------|---------|---------|-------------|
 | **Spell check every description string** | `MLQT.Spelling.Description` | Off | Runs spell checking on all description strings in the library. Helps catch typos in the short text that appears in class, parameter, and variable descriptions. |
 | **Spell check all documentation** | `MLQT.Spelling.Documentation` | Off | Runs spell checking on the HTML content in `annotation(Documentation(info="..."))` sections. Since documentation is often user-facing, catching spelling errors here is valuable. |
-| **Language dictionaries** | — | English (US), English (UK) | Multi-select dropdown, just below the two severity rows, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
+| **Language dictionaries** | — | English (US), English (UK) | Multi-select dropdown, just below the two severity rows and shown only while at least one of them is not **Off**, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
 
 The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica and engineering terms (Modelica, Dymola, Jacobian, revolute, enthalpy, thyristor, linearization, etc.) is also included, in the spelling of the language you selected. The possessive of an accepted word is accepted too, so a name in the repository's word list does not come back as a mistake the moment it is written as "Stodola's".
 
@@ -375,7 +448,7 @@ Spelling findings appear in the **Code Review** findings table with the line num
 
 Words that no dictionary knows but that are not mistakes (company names, domain terms, abbreviations) are kept per repository, in `.mlqt/dictionary.txt` beside `settings.json`. Committing it means the app and `mlqt check` in CI accept the same words and report the same spelling findings.
 
-The **Accepted spellings** expandable panel in this repository's settings lets you add, remove, filter, import, and export them. Words can also be added by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary**, which writes to the list of the repository owning that class — the fastest workflow.
+The **Accepted spellings** expandable panel in this repository's settings — shown, like the dictionary dropdown, only while at least one spell-check rule is not **Off** — lets you add, remove, filter, import, and export them. Words can also be added by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary**, which writes to the list of the repository owning that class — the fastest workflow.
 
 A word applies only to the repository holding it; the same term in another repository has to be accepted there too. Earlier versions kept one machine-wide list at `%LocalAppData%/MLQT/custom_dictionary.txt`; it is no longer used for checking, and an **Import machine list** button appears while it exists so its words can be copied into a repository.
 
@@ -476,7 +549,7 @@ your-repository/
         ...
 ```
 
-The `settings.json` file contains all the repository-specific settings in JSON format:
+The `settings.json` file holds the repository-specific settings in JSON format. The example below shows a selection of them; a saved file also carries keys not shown here, such as `RuleSeverities`, `ExcludedLibraries`, `PackageOrderMatchesDymola` and the `Check*` switches described above:
 
 ```json
 {
@@ -485,6 +558,7 @@ The `settings.json` file contains all the repository-specific settings in JSON f
     "ApplyFormattingRules": true,
     "ImportStatementsFirst": true,
     "ComponentsBeforeClasses": false,
+    "DeclarationOrder": false,
     "OneOfEachSection": true,
     "DontMixEquationAndAlgorithm": false,
     "DontMixConnections": false,
@@ -545,8 +619,8 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 ### When Settings Are Loaded and Saved
 
-- **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used.
-- **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application preferences.
+- **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used and a new file is written with them, rules that are on by default included. **An existing file is never rewritten by loading**, switching project or reordering repositories — so opening MLQT never leaves a modified settings file in a commit dialog.
+- **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application preferences. This is also when rules that are on by default are written into the file explicitly, so the file is the whole answer for the repository. The file keeps its own line endings, and if nothing in it would change it is not touched.
 - **After a settings change:** Style checking is re-run for that repository alone. Findings for the project's other repositories are left as they are — their rules have not changed, so there is nothing to re-check.
 - **The `.mlqt` directory is created automatically** if it does not exist when settings are first saved.
 

@@ -1,6 +1,7 @@
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Services.Checking;
 
@@ -15,7 +16,7 @@ namespace MLQT.Services.Checking;
 /// names a file maps through here, so console output, SARIF, JUnit, TeamCity and the JSON all agree
 /// on which line they mean.</para>
 /// </summary>
-public sealed record ClassLocation(string FilePath, int StartLine, bool LinesMapToFile)
+public sealed record ClassLocation(string FilePath, int StartLine, bool LinesMapToFile, SourceElision? Elision = null)
 {
     /// <summary>
     /// Where the class's file is, always as an absolute path.
@@ -48,7 +49,13 @@ public sealed record ClassLocation(string FilePath, int StartLine, bool LinesMap
         if (!LinesMapToFile)
             return start;
 
-        return start + Math.Max(1, lineInClass) - 1;
+        // A trimmed package's stored source is the file's own text with runs of lines dropped, so
+        // the offset has to be taken after putting those lines back (B216).
+        var inClass = Elision is null
+            ? Math.Max(1, lineInClass)
+            : Elision.ToSourceLine(Math.Max(1, lineInClass));
+
+        return start + inClass - 1;
     }
 
     /// <summary>Every class in the graph, keyed by model id.</summary>
@@ -62,7 +69,8 @@ public sealed record ClassLocation(string FilePath, int StartLine, bool LinesMap
                 continue;
 
             foreach (var model in graph.GetModelsInFile(file.Id))
-                locations[model.Id] = new ClassLocation(file.FilePath, model.StartLine, model.SourceMatchesFile);
+                locations[model.Id] = new ClassLocation(
+                    file.FilePath, model.StartLine, model.SourceMatchesFile, model.TrimElision);
         }
 
         return locations;

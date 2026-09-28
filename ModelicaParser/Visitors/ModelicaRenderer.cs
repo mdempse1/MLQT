@@ -21,6 +21,41 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private int _inGraphicsAnnotationLevel = 0;
     private bool _inSingleLineGraphicsElement = false;
     private bool _withAnnotation = false;
+    // Set when comments before 'constrainedby' (B432) have already ended the line the clause starts
+    // on, so the clause does not end it again and leave a blank line.
+    private bool _constrainedbyOnFreshLine = false;
+    // Whether the function call being written puts one argument a line, which is where a comment
+    // between its arguments (B431) leaves the next one: on its own line, or a level in.
+    private bool _callUsingMultiLine = false;
+    // The lines a matrix has already ended (B462) - its first line and each row before its last -
+    // and the indent level they were ended at. Its last line is ended by whoever writes what
+    // follows, possibly after an argument list wrapped for length has gone back a level, so the
+    // next EmitLine moves these lines to the level that line is written at.
+    private (int Start, int End, int Level)? _pendingMatrixLines;
+    // The least indent, in spaces, the line being written may be ended at (B465): set when it starts
+    // an argument of a list wrapped for length, from the line that list opened on, and cleared by
+    // EmitLine. -1 when there is none.
+    private int _currentLineMinimumIndent = -1;
+    // The deepest level the line being written may be ended at (B467): set when it starts an
+    // argument of a list wrapped for length, to the level its siblings are ended at, so an argument
+    // whose own list wraps - ending its first line inside the extra level the wrap adds - is not
+    // written deeper than they are. Cleared by EmitLine; -1 when there is none.
+    private int _currentLineMaximumLevel = -1;
+    // The line the '(' of the innermost argument list being written is on (B465) - not always the
+    // line the list starts on, since a comment after the '(' ends that line first (B431).
+    private int _argumentsOpeningLine;
+    // The innermost argument being written that an array of calls inside it may move to a line of
+    // its own before wrapping (B474): a first argument VisitFirstArgument may still move (B464), or a
+    // call's later positional argument, which is never wrapped for length (B483). The line it is on
+    // and where it starts in that line; Lines is -1 when there is none.
+    private (int Lines, int Start) _movableArgument = (-1, 0);
+    // The line the innermost first argument VisitFirstArgument may still move (B464) started on, or
+    // -1. Nothing inside it ends a line for length while it is still on that line (B487): an
+    // argument over more than one line is not moved.
+    private int _firstArgumentLine = -1;
+    // The innermost array constructor being written: the line its '{' is on and where in that line
+    // (B484). Lines is -1 when there is none.
+    private (int Lines, int Start) _arrayStart = (-1, 0);
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -31,8 +66,38 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private bool _suppressNextIndentation = false;
     private bool _inDocumentationAnnotation = false;
     private readonly HashSet<int> _noPostIndentLines = new(); // Lines exempt from public/protected post-processing indent
+    // How many element lists after a 'public' or 'protected' keyword the line being written is in:
+    // each moves its lines a level in only once they are written (AddIndentAtLineStart), so
+    // CurrentLineIndent adds them to the level being written at (B497).
+    private int _sectionIndents;
     private int _bracketDepth = 0;
+    // Whether the expression being written is inside an if-expression or an array constructor,
+    // at any depth (B485).
+    private bool _inBranchOrArray;
+    // Whether the if-expression about to be written is the 'if' of an 'else if' in a chain that
+    // starts each branch on a line of its own, whether a branch of such a chain is being written,
+    // and whether any if-expression is (B487).
+    private bool _continuesBrokenChain;
+    private bool _inBrokenChain;
+    private bool _inIfExpression;
+    // Whether the innermost if-expression being written starts each branch on a line of its own
+    // (B489).
+    private bool _innermostIfBreaks;
     private int _equationContinuationIndent = 0;
+    // Whether the condition of an if, when or while equation or statement is being written (B491):
+    // its continuation lines are a level further in, past the column of what it guards.
+    private bool _inControlCondition;
+    // What follows the first 'and' or 'or' of the condition being written when all before it is a
+    // lone Boolean name (B494): the operator before it does not start a line.
+    private IParseTree? _operandAfterFlag;
+    // The line the '('of the innermost parentheses being wrapped inside is on (B491), or -1.
+    private int _parenthesesLine = -1;
+    // The innermost parentheses being wrapped inside (B494), or null.
+    private modelicaParser.PrimaryContext? _parenthesesContext;
+    // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
+    // written at (B475), or -1 when the equation being written did not wrap at its '='.
+    private int _equalsLine = -1;
+    private int _equalsLevel = -1;
     private bool _isFunction = false;
     private bool _nameAsType = false;
 
@@ -61,6 +126,46 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private readonly bool _initialSectionsLast;
 
     /// <summary>
+    /// Write the finer declaration order inside the component group — see
+    /// <see cref="FormattingOptions.DeclarationOrder"/>. Read only where
+    /// <see cref="_componentsBeforeClasses"/> is.
+    /// </summary>
+    private readonly bool _declarationOrder;
+
+    /// <summary>
+    /// Given the class being written and a declared type name, whether that type is a simple type
+    /// rather than a structured class — the one part of <see cref="DeclarationKind"/> that cannot be
+    /// read off the grammar. Null when the caller has no graph, which leaves only the predefined
+    /// types recognised.
+    ///
+    /// <para><b>The rule is given the same callback</b>, so the arrangement this writes and the one
+    /// <c>MLQT.Style.DeclarationOrder</c> asks for cannot come apart — which they would the moment
+    /// the two resolved a type differently, leaving a finding the formatter does not clear.</para>
+    /// </summary>
+    private readonly Func<string, string, bool>? _isSimpleType;
+
+    /// <summary>
+    /// The id of the class currently being written, innermost last. Kept because the type lookup is
+    /// scope-sensitive: a nested class has its own imports, so asking as its parent can resolve
+    /// <c>SI.Length</c> differently from the way the rule, which checks that nested class on its
+    /// own, resolves it.
+    /// </summary>
+    private readonly Stack<string> _classPath = new();
+
+    /// <summary>Class-definition nesting depth; the outermost class is 1.</summary>
+    private int _classDepth;
+
+    /// <summary>
+    /// The type lookup bound to the class currently being written, or null when the caller supplied
+    /// none. <see cref="DeclarationKinds"/> then recognises only the predefined types, which is the
+    /// same answer <c>MLQT.Style.DeclarationOrder</c> gives without a graph.
+    /// </summary>
+    private Func<string, bool>? TypeLookup()
+        => _isSimpleType is null || _classPath.Count == 0
+            ? null
+            : typeName => _isSimpleType(_classPath.Peek(), typeName);
+
+    /// <summary>
     /// Gets the rendered code lines.
     /// </summary>
     public List<string> Code => _code;
@@ -72,7 +177,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         BufferedTokenStream? tokenStream = null, 
         HashSet<string>? classNamesToExclude = null, 
         int maxLineLength = 100, 
-        FormattingOptions? formatting = null)
+        FormattingOptions? formatting = null,
+        string? rootClassId = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         _renderForCodeEditor = renderForCodeEditor;
         _showAnnotations = showAnnotations;
@@ -86,6 +193,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         _importsFirst = layout.ImportsFirst;
         _componentsBeforeClasses = layout.ComponentsBeforeClasses;
         _initialSectionsLast = layout.InitialSectionsLast;
+        _declarationOrder = layout.DeclarationOrder;
+        _isSimpleType = isSimpleType;
+        if (!string.IsNullOrEmpty(rootClassId))
+            _classPath.Push(rootClassId);
     }
 
     #region Helper Methods
@@ -164,8 +275,28 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     private void EmitLine(bool ignoreIndentation=false)
     {
-        var indent = new string(' ', _indentLevel * IndentSpaces);
+        if (_pendingMatrixLines is { } matrix)
+        {
+            _pendingMatrixLines = null;
+            if (_indentLevel < matrix.Level)
+                MoveLinesBack(matrix.Start, matrix.End, (matrix.Level - _indentLevel) * IndentSpaces);
+        }
+
+        // A line is indented by the level it is ended at, so one that starts a wrapped argument and
+        // is ended inside that argument's own wrapped list would be a level deeper than its
+        // siblings (B467). Such a line is ended no deeper than they are.
+        int level = _currentLineMaximumLevel >= 0 ? Math.Min(_indentLevel, _currentLineMaximumLevel) : _indentLevel;
+        _currentLineMaximumLevel = -1;
+        var indent = new string(' ', level * IndentSpaces);
         var line = _currentLine.ToString().TrimEnd();
+
+        // A line is indented by the level it is ended at, which for the last line of a wrapped
+        // argument list is after the list has gone back out a level - so it can come out shallower
+        // than the line it continues (B465). Such a line keeps the indent it was started with.
+        int written = indent.Length + line.Length - line.TrimStart(' ').Length;
+        if (written < _currentLineMinimumIndent)
+            indent += new string(' ', _currentLineMinimumIndent - written);
+        _currentLineMinimumIndent = -1;
 
         // Check if we should suppress indentation for this line
         bool shouldIgnoreIndent = ignoreIndentation || _suppressNextIndentation;
@@ -237,9 +368,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// <summary>
     /// Get the plain text from the current line (without markup tags)
     /// </summary>
-    private string GetCurrentLinePlainText()
+    private string GetCurrentLinePlainText() => PlainText(_currentLine.ToString());
+
+    /// <summary>Text as written for the code editor, without its markup tags.</summary>
+    private string PlainText(string line)
     {
-        var line = _currentLine.ToString();
         if (!_renderForCodeEditor)
             return line;
 
@@ -256,6 +389,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private int GetCurrentLinePlainTextLength()
     {
         return GetCurrentLinePlainText().TrimStart().Length;
+    }
+
+    /// <summary>
+    /// The indentation, in spaces, the line being written will have once it is written: its level
+    /// and its own leading spaces, no less than the least indent <see cref="EmitLine"/> keeps it at
+    /// (B465), and a level for each <c>public</c> or <c>protected</c> element list it is in, which
+    /// is added after (B497). EmitLine's other adjustments - the deepest level (B467) and a line
+    /// after a multi-line string - never changed where a description went over the 8,899 files of
+    /// MSL and Buildings, so they are not repeated here.
+    /// </summary>
+    private int CurrentLineIndent()
+    {
+        var text = GetCurrentLinePlainText();
+        int leading = text.Length - text.TrimStart(' ').Length;
+        return Math.Max(_indentLevel * IndentSpaces + leading, _currentLineMinimumIndent) + _sectionIndents * IndentSpaces;
     }
 
     /// <summary>
@@ -368,6 +516,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _noPostIndentLines.Add(idx);
     }
 
+    /// <summary>
+    /// The <c>public</c> or <c>protected</c> line that announces an element list, at the level of
+    /// the class it belongs to - the level the list's elements were written at, before
+    /// <see cref="AddIndentAtLineStart"/> moves them a level in. Inserted with no indentation, it
+    /// stood at column 0 in any class nested inside another in the same file (B498); an enclosing
+    /// section's own post-indent still reaches it, as it reaches the class's other lines.
+    /// </summary>
+    private string SectionKeywordLine(string keyword)
+        => new string(' ', _indentLevel * IndentSpaces) + Keyword(keyword);
+
     private void AddIndentAtLineStart(int lineNumber)
     {
         if (lineNumber < 0 || lineNumber >= _code.Count)
@@ -383,6 +541,56 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (string.IsNullOrEmpty(line))
             return;
         _code[lineNumber] = new string(' ', IndentSpaces) + line;
+    }
+
+    /// <summary>
+    /// Moves lines <paramref name="start"/> to <paramref name="end"/> (exclusive) back by
+    /// <paramref name="spaces"/> of their indent (B462). Only ever back: the line that ends a matrix
+    /// is written at the level the matrix began at or an enclosing one, never a deeper one (none
+    /// was, over the 8,367 files of MSL and Buildings), so there is nothing to move along.
+    /// </summary>
+    private void MoveLinesBack(int start, int end, int spaces)
+    {
+        for (int i = start; i < end; i++)
+        {
+            var line = _code[i];
+            int leading = line.Length - line.TrimStart(' ').Length;
+            _code[i] = line[Math.Min(leading, spaces)..];
+        }
+    }
+
+    /// <summary>
+    /// Indents a line a matrix has just started (B462) - after a row break or a comment, so nothing
+    /// is on it yet but its continuation indent - by the leading spaces of the line the matrix
+    /// began on, so its rows stay a level in from that line when it is itself a continuation.
+    /// </summary>
+    private void IndentMatrixLine(int baseSpaces)
+        => _currentLine.Insert(0, new string(' ', baseSpaces));
+
+    /// <summary>
+    /// Ends the line and starts the next a level in from the line the matrix began on, for a row
+    /// that starts a line in the source (B462, B463).
+    /// </summary>
+    private void StartMatrixRowLine(int baseSpaces)
+    {
+        EmitLine();
+        AddIndentToCurrentLine();
+        IndentMatrixLine(baseSpaces);
+    }
+
+    /// <summary>
+    /// Keeps the line just started - one starting an argument of a list wrapped for length - at
+    /// least a level in from the line the list opened on, <paramref name="openingLine"/>, whatever
+    /// level it is ended at (B465). Only called once the list has wrapped, so that line has been
+    /// ended.
+    /// </summary>
+    private void KeepInFrom(int openingLine)
+    {
+        if (openingLine < _code.Count)
+        {
+            var opening = _code[openingLine];
+            _currentLineMinimumIndent = opening.Length - opening.TrimStart(' ').Length + IndentSpaces;
+        }
     }
 
     private void AddIndentToCurrentLine()
@@ -427,9 +635,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 else if (child is ITerminalNode terminal && terminal.GetText() == "within")
                 {
                     Write(Keyword("within"));
-                    Space();
+
+                    // The space belongs to the name, not to the keyword. A top-level file has no
+                    // name, and writing it anyway produced `within ;` - valid Modelica, but a
+                    // different spelling from the `within;` WithinClause.Ensure writes, which is
+                    // the one place CLAUDE.md says adds this clause. Every save re-renders the
+                    // whole file, so the difference reached every top-level package.mo MLQT
+                    // touched (B227).
                     if (i + 1 < children.Count && children[i + 1] is modelicaParser.NameContext nameCtx)
                     {
+                        Space();
                         Visit(nameCtx);
                         i++;
                     }
@@ -481,7 +696,25 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         Visit(context.class_prefixes());
         Space();
-        Visit(context.class_specifier());
+
+        // The outermost class is the root the caller named; anything below it is a nested class,
+        // which resolves type names in its own scope. Only extended when there is a path to extend —
+        // with no root the lookup has nothing to key on and is not called at all.
+        _classDepth++;
+        var extended = _classDepth > 1 && _classPath.Count > 0
+            && GetClassNameFromDefinition(context) is { } name;
+        if (extended)
+            _classPath.Push(_classPath.Peek() + "." + GetClassNameFromDefinition(context));
+        try
+        {
+            Visit(context.class_specifier());
+        }
+        finally
+        {
+            if (extended)
+                _classPath.Pop();
+            _classDepth--;
+        }
         return null;
     }
 
@@ -552,17 +785,28 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 var enumLiterals = context.enum_list().enumeration_literal();
                 bool useMultiLine = enumLiterals != null && enumLiterals.Length > 0;
 
+                // Comments after the '(' and before the ')' (B431): the run before the list and
+                // the run after it (the one after that, before the description, cannot happen).
+                var runs = CommentRuns(context);
+                var opening = runs?[0] ?? default;
+                var closing = runs is { Length: > 1 } ? runs[1] : default;
+
+                if (opening.Any)
+                    WriteOpeningComments(opening, useMultiLine);
                 if (useMultiLine)
                 {
-                    EmitLine();
+                    if (!opening.Any)
+                        EmitLine();
                     _indentLevel++;
                 }
 
                 Visit(context.enum_list());
 
+                if (closing.Any)
+                    WriteListComments(closing, useMultiLine, beforeClose: true);
                 if (useMultiLine)
                 {
-                    EmitLine();
+                    EndLineBeforeClose(closing.Any);
                     _indentLevel--;
                 }
             }
@@ -578,6 +822,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 Visit(context.array_subscripts());
             if (context.class_modification() != null)
                 Visit(context.class_modification());
+            // Not an enumeration's: its literals are written a line each, so its ')' starts a line
+            // and moving the description would only leave that ')' alone on it.
+            WrapBeforeDescription(context.comment());
         }
         Visit(context.comment());
         return null;
@@ -623,6 +870,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         External
     }
 
+    /// <summary>
+    /// Which elements one <see cref="WriteComposition"/> pass writes. The five declaration kinds are
+    /// here rather than inside <see cref="Components"/> because writing them in order means writing
+    /// them in five passes — the renderer's way of ordering anything is to walk the section once per
+    /// group, which is what kept all declarations in one undifferentiated group until B252.
+    /// </summary>
     private enum Element
     {
         Any,
@@ -630,8 +883,47 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         Extends,
         Components,
         Classes,
-        ClassAndComponents
+        ClassAndComponents,
+        InputsOutputs,
+        Constants,
+        Parameters,
+        Variables,
+        ComponentInstances
     }
+
+    /// <summary>The declaration kind one <see cref="Element"/> pass writes, or null if it is not a
+    /// declaration pass.</summary>
+    private static DeclarationKind? KindWritten(Element element) => element switch
+    {
+        Element.InputsOutputs => DeclarationKind.InputOutput,
+        Element.Constants => DeclarationKind.Constant,
+        Element.Parameters => DeclarationKind.Parameter,
+        Element.Variables => DeclarationKind.Variable,
+        Element.ComponentInstances => DeclarationKind.Component,
+        _ => null
+    };
+
+    /// <summary>The passes that write the declaration group, in the order they are written.</summary>
+    private static readonly Element[] DeclarationPasses =
+    {
+        Element.InputsOutputs, Element.Constants, Element.Parameters,
+        Element.Variables, Element.ComponentInstances
+    };
+
+    /// <summary>
+    /// How the declaration group is written: as one pass in source order, or as one pass per kind.
+    /// One call site per section so the public and protected halves cannot be given different
+    /// conventions — which is how the two initial-section orderings came to need
+    /// <see cref="WriteInitialSections"/>.
+    ///
+    /// <para>A record is always written in source order, because its field order is its
+    /// constructor's signature — see <see cref="DeclarationKinds.KeepsSourceOrder"/>, which the rule
+    /// asks too (B304).</para>
+    /// </summary>
+    private IEnumerable<Element> DeclarationGroupPasses(modelicaParser.CompositionContext context)
+        => _declarationOrder && !DeclarationKinds.KeepsSourceOrder(context)
+            ? DeclarationPasses
+            : new[] { Element.Components };
 
     /// <summary>
     /// Writes the <c>initial equation</c> and <c>initial algorithm</c> sections. Called either before
@@ -655,6 +947,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         [NotNull] modelicaParser.CompositionContext context, 
         CodeSection section, 
         Element elements,
+        // Only ever read for CodeSection.Protected - the public branch writes no marker at all,
+        // because public is Modelica's default section and MLQT does not announce it. It used to
+        // be passed as `true` at six public call sites, where it did nothing and read as though it
+        // did; those now leave it alone (B227).
         bool alreadyWrittenSectionMarker = false)
     {
         var elementList = context.element_list();
@@ -667,7 +963,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         for (int i = 0; i < children.Count; i++)
         {
             var child = children[i];
-            var text = child.GetText();
+            var text = SectionKeyword.Of(child);   // never GetText() on a rule node: see SectionKeyword
 
             if (text == "public" && (section == CodeSection.Any || section==CodeSection.Public))
             {
@@ -675,10 +971,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 //There might not be if we are excluding class definitions from the code generation
                 //We also don't want the public keyword if we are forcing the code order
                 int numberOfLines = _code.Count;
+                _sectionIndents++;
                 Visit(elementList[elementCounter]);
+                _sectionIndents--;
                 if (_code.Count > numberOfLines) {
                     if (section != CodeSection.Public) {
-                        InsertLineAt(Keyword("public"), numberOfLines);
+                        InsertLineAt(SectionKeywordLine("public"), numberOfLines);
                         numberOfLines++;
                     }
                     for (int j=numberOfLines; j < _code.Count; j++) {
@@ -698,10 +996,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 //We should only write protected if there are elements in the protected section
                 //There might not be if we are excluding class definitions from the code generation
                 int numberOfLines = _code.Count;
+                _sectionIndents++;
                 Visit(elementList[elementCounter]);
+                _sectionIndents--;
                 if (_code.Count > numberOfLines) {
                     if (section==CodeSection.Any || !alreadyWrittenSectionMarker) {
-                        InsertLineAt(Keyword("protected"), numberOfLines);
+                        InsertLineAt(SectionKeywordLine("protected"), numberOfLines);
                         numberOfLines++;
                         alreadyWrittenSectionMarker = true;
                     }
@@ -752,15 +1052,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     Visit(context.external_function_call());
                 }
 
-                // Handle optional annotation
-                var externalAnnotations = context.annotation();
-                if (externalAnnotations != null && externalAnnotations.Length > 0)
+                // The clause's own annotation, found by where it stands: the composition's first
+                // annotation is the leading class annotation when there is one (B446).
+                if (CompositionAnnotations.External(context) is { } externalAnnotation)
                 {
-                    // The first annotation is part of the external clause
                     EmitLine();
                     _withAnnotation = true;
                     Indent();
-                    Visit(externalAnnotations[0]);
+                    Visit(externalAnnotation);
                 }
 
                 Write(";");
@@ -783,8 +1082,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 elementCounter++;
             }
             else if (child is modelicaParser.C_commentContext &&
-                     (section == CodeSection.Any || section == CodeSection.External))
+                     (section == CodeSection.Any || section == CodeSection.External) &&
+                     !IsBeforeElementList(context, i))
             {
+                // Comments before the leading annotation (B432) are written with it, at the end.
                 Visit(child);
             }
             
@@ -796,7 +1097,6 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        bool externalElement = false;
         // Handle public/protected sections
         // A leading annotation will be automatically pushed to the end of the file as per the Modelica spec
         // even though it is allowed in the grammar for compatibility with Dymola
@@ -808,30 +1108,36 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                 if (_importsFirst) {
                     //Collect all imports at the top of the class
-                    WriteComposition(context, CodeSection.Public, Element.Imports, true);
-                    WriteComposition(context, CodeSection.Protected, Element.Imports, true);
+                    WriteComposition(context, CodeSection.Public, Element.Imports);
+                    // True, and it matters here: this lifts the protected imports to the top of the
+                    // file, above where the protected keyword will go, so the section must not be
+                    // announced around them. The public calls below pass nothing because the flag
+                    // is never read for a public section.
+                    WriteComposition(context, CodeSection.Protected, Element.Imports, alreadyWrittenSectionMarker: true);
 
                     //Public section
-                    WriteComposition(context, CodeSection.Public, Element.Extends, true);
+                    WriteComposition(context, CodeSection.Public, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        WriteComposition(context, CodeSection.Public, Element.Components, true);
+                        foreach (var pass in DeclarationGroupPasses(context))
+                            WriteComposition(context, CodeSection.Public, pass);
                         _writeFinalComments = true;
-                        WriteComposition(context, CodeSection.Public, Element.Classes, true);
+                        WriteComposition(context, CodeSection.Public, Element.Classes);
                     }
                     else {
                         _writeFinalComments = true;
-                        WriteComposition(context, CodeSection.Public, Element.ClassAndComponents, true);
+                        WriteComposition(context, CodeSection.Public, Element.ClassAndComponents);
                     }
                 }
                 else 
-                    WriteComposition(context, CodeSection.Public, Element.Any, true);
+                    WriteComposition(context, CodeSection.Public, Element.Any);
 
                 //Protected section
                 _writeFinalComments = false;
                 if (_importsFirst) {
                     var alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, Element.Components, alreadyWrittenSectionMarker);
+                        foreach (var pass in DeclarationGroupPasses(context))
+                            alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, pass, alreadyWrittenSectionMarker);
                         _writeFinalComments = true;
                         WriteComposition(context, CodeSection.Protected, Element.Classes, alreadyWrittenSectionMarker);
                     }
@@ -863,35 +1169,43 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (_initialSectionsLast)
                     WriteInitialSections(context);
 
-                externalElement = WriteComposition(context, CodeSection.External, Element.Any);
+                WriteComposition(context, CodeSection.External, Element.Any);
             }
             else 
             {
                 _currentSection.Push(CodeSection.Any);        
-                externalElement = WriteComposition(context, CodeSection.Any, Element.Any);
+                WriteComposition(context, CodeSection.Any, Element.Any);
                 _currentSection.Pop();
             }
         }
 
-        // Handle final annotation (if present and not part of external clause)
+        // The class's own annotations, leading and trailing. The external clause's was written with
+        // the clause, and is told apart by its position rather than its index (B446).
         if (_showAnnotations) {
-            var annotations = context.annotation();
-            if (annotations != null && annotations.Length > 0)
+            var annotations = CompositionAnnotations.Of(context);
+            foreach (var annotation in annotations.ClassLevel)
             {
-                // If there's an external clause, the first annotation was already handled
-                // Otherwise, or if there are multiple annotations, handle the remaining ones
-                int startIdx = externalElement ? 1 : 0;
-                for (int i = startIdx; i < annotations.Length; i++)
+                _classAnnotation = true;
+                // The leading annotation moves to the end, and the comments before it (B432)
+                // move with it, each on a line of its own. They go above the blank line, where
+                // a comment before a trailing annotation is written: anywhere else, the next
+                // save would read them as that and move them again.
+                // Asked by position, not as Leading: an annotation alone in its body is the trailing
+                // one (B457), and its comments are still before the element list, skipped there.
+                if (context.children is { } children && IsBeforeElementList(context, children.IndexOf(annotation)))
                 {
-                    _classAnnotation = true;
-                    EmitEmptyLine();
                     Indent();
-                    Visit(annotations[i]);
-                    Write(";");
-                    EmitLine();
+                    foreach (var comment in children.TakeWhile(c => !ReferenceEquals(c, annotation)).OfType<modelicaParser.C_commentContext>())
+                        Visit(comment);
                     Dedent();
-                    _classAnnotation = false;
                 }
+                EmitEmptyLine();
+                Indent();
+                Visit(annotation);
+                Write(";");
+                EmitLine();
+                Dedent();
+                _classAnnotation = false;
             }
         }
 
@@ -903,6 +1217,19 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// True when the composition's child at <paramref name="index"/> comes before its first
+    /// element_list - the leading annotation and the comments before it (B432). An element_list is
+    /// always there, possibly empty, so everything after the leading part comes after one.
+    /// </summary>
+    private static bool IsBeforeElementList(modelicaParser.CompositionContext context, int index)
+    {
+        for (int j = 0; j < index && j < context.children.Count; j++)
+            if (context.children[j] is modelicaParser.Element_listContext)
+                return false;
+        return index >= 0;
     }
 
     public override object? VisitFinal_comment([NotNull] modelicaParser.Final_commentContext context)
@@ -992,6 +1319,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         int elementCounter=0;
 
+        // A record's extends clause is written where it stands among its fields, not lifted to the
+        // top: the inherited fields take its place in the constructor's inputs (B378).
+        var extendsInPlace = context.Parent is modelicaParser.CompositionContext composition
+                             && DeclarationKinds.KeepsSourceOrder(composition);
+
         // Process all children (elements and comments) in order
         for (int i = 0; i < context.ChildCount; i++)
         {
@@ -1018,12 +1350,20 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);
                 }
-                else if (_currentElement.Peek() == Element.Extends && element.extends_clause() != null)
+                else if (_currentElement.Peek() == Element.Extends && element.extends_clause() != null && !extendsInPlace)
                 {
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);
                 }
-                else if ((_currentElement.Peek() == Element.Components || _currentElement.Peek() == Element.ClassAndComponents) && element.component_clause() != null)
+                else if ((_currentElement.Peek() == Element.Components || _currentElement.Peek() == Element.ClassAndComponents)
+                         && (element.component_clause() != null || (extendsInPlace && element.extends_clause() != null)))
+                {
+                    WriteCommentIfProceedsThisElement(context, i - 1);
+                    WriteElement(element);
+                }
+                else if (KindWritten(_currentElement.Peek()) is { } wanted
+                         && element.component_clause() is { } clause
+                         && DeclarationKinds.KindOf(clause, TypeLookup()) == wanted)
                 {
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);
@@ -1139,6 +1479,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Handle constraining clause (for replaceable elements)
         if (context.constraining_clause() != null && !_excludeClassDefinitions)
         {
+            // Comments before 'constrainedby' (B432), each where it stood, a level in as the
+            // clause is. They end their line, so the clause must not end it again.
+            if (context.c_comment() is { Length: > 0 } comments)
+            {
+                WriteLeadingComments(comments);
+                _constrainedbyOnFreshLine = true;
+            }
             Visit(context.constraining_clause());
 
             // Only visit comment if it has actual content
@@ -1217,7 +1564,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (_showAnnotations && context.annotation() != null)
         {
             _withAnnotation = true;
-            EmitLine();
+            // Comments before the annotation (B432) go with it and are hidden with it, as in
+            // VisitComment. They end their line, so it is not ended again.
+            if (context.c_comment() is { Length: > 0 } comments)
+            {
+                WriteLeadingComments(comments);
+                EndLineIfAny();
+            }
+            else
+                EmitLine();
             Indent();
             Visit(context.annotation());
             Dedent();
@@ -1235,12 +1590,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Count arguments (both regular arguments and inheritence modifications)
         int numArguments = ModelicaRendererHelper.CountArgumentsInInheritenceList(context.argument_or_inheritence_list());
 
+        // Comments after the '(' and before the ')' (B431), as in VisitClass_modification.
+        var runs = CommentRuns(context);
+        var opening = runs?[0] ?? default;
+        var closing = runs is { Length: > 1 } ? runs[^1] : default;
+
         // Special case: simple 2-argument graphics elements (like Line) stay on one line
         if (_inGraphicsAnnotationLevel == 2 && numArguments == 2)
         {
             Write("(");
+            if (opening.Any)
+                WriteOpeningComments(opening, multiLine: false);
             if (context.argument_or_inheritence_list() != null)
                 Visit(context.argument_or_inheritence_list());
+            if (closing.Any)
+                WriteListComments(closing, multiLine: false, beforeClose: true);
             Write(")");
             return null;
         }
@@ -1297,16 +1661,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _inClassAnnotationIcon = true;
 
         Write("(");
+        if (opening.Any)
+            WriteOpeningComments(opening, useMultiLineParens);
         if (useMultiLineParens)
         {
-            EmitLine();
+            if (!opening.Any)
+                EmitLine();
             Indent();
         }
         if (context.argument_or_inheritence_list() != null)
             Visit(context.argument_or_inheritence_list());
+        if (closing.Any)
+            WriteListComments(closing, useMultiLineParens, beforeClose: true);
         if (useMultiLineParens)
         {
-            EmitLine();
+            EndLineBeforeClose(closing.Any);
             Dedent();
             Write(")");
         }
@@ -1335,12 +1704,23 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     argCount++;
             }
 
+            var runs = CommentRuns(context);
+            int item = 0;
             for (int i = 0; i < children.Count; i++)
             {
                 var child = children[i];
                 if (child is modelicaParser.ArgumentContext || child is modelicaParser.Inheritence_modificationContext)
                 {
-                    if (!first)
+                    var run = runs?[item] ?? default;
+                    item++;
+                    if (!first && run.Any)
+                    {
+                        // Comments after the ',' (B431), as in VisitArgument_list.
+                        Write(",");
+                        WriteListComments(run, _parentUsingMultiLine);
+                        Visit(child);
+                    }
+                    else if (!first)
                     {
                         Write(",");
 
@@ -1403,7 +1783,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitConstraining_clause([NotNull] modelicaParser.Constraining_clauseContext context)
     {
-        EmitLine();
+        if (_constrainedbyOnFreshLine)
+        {
+            _constrainedbyOnFreshLine = false;
+            _currentLine.Clear();
+        }
+        else
+            EmitLine();
         AddIndentToCurrentLine();
         Write(Keyword("constrainedby"));
         Space();
@@ -1533,21 +1919,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Check if line is too long or will be too long with comment - if so, wrap before comment
         if (context.comment() != null && !string.IsNullOrWhiteSpace(context.comment().GetText()))
         {
-            // Estimate the length with the comment added (comment text + space before it)
-            // Only consider string_comment, not annotation (annotation always goes on new line)
-            var stringCommentText = context.comment().string_comment()?.GetText() ?? "";
-            var estimatedLength = GetCurrentLinePlainTextLength() + 1 + stringCommentText.Length;
-            bool willBeTooLong = !_inDocumentationAnnotation && estimatedLength > _maxLineLength;
-
-            if (IsLineTooLong() || willBeTooLong)
-            {
-                EmitLine();
-                // Add continuation indent without changing indent level
-                // AddIndentToCurrentLine() adds 2 spaces, then EmitLine() will add (_indentLevel * 2) spaces
-                // For models without public/protected: _indentLevel=1, so total = 2 + 2 = 4 spaces
-                // For models with public/protected: _indentLevel=0, total = 2 + 0 = 2, then AddIndentAtLineStart adds 2 more = 4 spaces
-                AddIndentToCurrentLine();
-            }
+            WrapBeforeDescription(context.comment());
             Visit(context.comment());
         }
 
@@ -1556,6 +1928,38 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Dedent();
 
         return null;
+    }
+
+    /// <summary>
+    /// Ends the line before a description that would take it past the maximum length, or that
+    /// follows a line already past it, and starts the description a level in - for a component and
+    /// for a short class definition alike (B482). The line is measured as it will be written,
+    /// indentation included (B497). Only the description is measured: an annotation
+    /// always starts a line of its own. A short class's description was always left on the line, so
+    /// once its modification's array wrapped (B474) the closing argument joined the short last line
+    /// and the description ran past the limit.
+    /// </summary>
+    private void WrapBeforeDescription(modelicaParser.CommentContext? comment)
+    {
+        if (comment == null || string.IsNullOrWhiteSpace(comment.GetText()))
+            return;
+        var description = DescriptionText(comment.string_comment());
+        // Measured as the line will be written (B497): its indentation, and the ';', ',' or ')' that
+        // follows the description unless an annotation does, which starts a line of its own. A
+        // declaration nested a few levels down, or the last line of a wrapped binding, fitted by
+        // the unindented measure and was written past the limit. Only this decision counts the
+        // indentation; the wraps inside an expression measure without it (B462-B494).
+        int terminator = comment.annotation() == null ? 1 : 0;
+        bool willBeTooLong = !_inDocumentationAnnotation
+            && CurrentLineIndent() + GetCurrentLinePlainTextLength() + 1 + description.Length + terminator
+                > _maxLineLength;
+        if (IsLineTooLong() || willBeTooLong)
+        {
+            EmitLine();
+            // A continuation indent without changing the level: the line is ended at the level
+            // it is written at, and this adds one more.
+            AddIndentToCurrentLine();
+        }
     }
 
     public override object? VisitDeclaration([NotNull] modelicaParser.DeclarationContext context)
@@ -1631,7 +2035,19 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // modification_expression can be either expression or 'break'
         if (context.expression() != null)
         {
-            Visit(context.expression());
+            // A component's binding is wrapped for length as an equation's right-hand side is
+            // (B491): with no continuation set, a declaration's expression never wrapped at an
+            // operator, and Buildings' BuildingTimeSeriesAtETS had 'dh_nominal=...' past 125
+            // characters. Only the binding of the declaration itself, not a modification's.
+            int enclosingIndent = _equationContinuationIndent;
+            if (context.Parent?.Parent is modelicaParser.DeclarationContext)
+            {
+                _equationContinuationIndent = 1;
+                VisitBinding(context.expression());
+            }
+            else
+                Visit(context.expression());
+            _equationContinuationIndent = enclosingIndent;
         }
         else if (context.GetText() == "break")
         {
@@ -1640,19 +2056,131 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         return null;
     }
 
+    /// <summary>
+    /// Writes a component's binding after its <c>=</c>, moving it whole to a continuation line of its
+    /// own, a level in, when written there its first line would end past the maximum length (B494).
+    /// A binding was only ever wrapped where it started, so a declaration with a long type kept a
+    /// first line far past the limit: Buildings' Templates heat pump had
+    /// <c>cpSou_default=if typ == ...AirToWater then ...cpAir</c> at 152 characters, since an
+    /// if-expression can break only at its branches. The binding is written in place first, and
+    /// written again on a line of its own only if that first line is too long - so a binding that
+    /// wraps before a <c>+</c> within the limit (B491) stays where it starts, and its continuation
+    /// lines are where they were. Not when the line up to its <c>=</c> is 20 characters or fewer -
+    /// the length an equation's left-hand side must pass before it wraps at its <c>=</c> - where
+    /// moving gains too little to be worth a line (MSL's Dissipation has <c>SI.Length h=if ...</c>);
+    /// nor when that line is past the limit already: the modification before the binding is what is
+    /// too long, and moving the binding would leave that line as long, to start one of its own with
+    /// as little as a <c>1</c>.
+    /// </summary>
+    private void VisitBinding(modelicaParser.ExpressionContext binding)
+    {
+        int line = _code.Count;
+        int before = GetCurrentLinePlainTextLength();
+        if (before <= MinimumMovedBindingPrefix || before > _maxLineLength)
+        {
+            Visit(binding);
+            return;
+        }
+        var mark = new RendererMark(this);
+        Visit(binding);
+        var firstLine = _code.Count > line ? PlainText(_code[line]).TrimStart() : GetCurrentLinePlainText().TrimStart();
+        if (firstLine.Length <= _maxLineLength)
+            return;
+        mark.Restore(this);
+        EmitLine();
+        // Written a level in, as a statement starting that line would be, so that what wraps
+        // inside it is placed from that line: kept at the declaration's level, an argument list's
+        // lines moved in with it and an if-expression's 'else' inside one did not, and read as
+        // another argument. The line is kept there if it is ended at the declaration's level.
+        Indent();
+        _currentLineMinimumIndent = _indentLevel * IndentSpaces;
+        Visit(binding);
+        Dedent();
+    }
+
+    /// <summary>
+    /// The length the line up to a binding's <c>=</c> must pass for the binding to be moved to a
+    /// line of its own (B494), as an equation's left-hand side must before it wraps at its <c>=</c>.
+    /// </summary>
+    private const int MinimumMovedBindingPrefix = 20;
+
+    /// <summary>
+    /// What writing an expression can change that the visitors do not restore themselves: the lines
+    /// written, the line being written, and what EmitLine carries to the next line - so an
+    /// expression can be written once to see where its lines end, and written again (B494).
+    /// </summary>
+    private sealed class RendererMark
+    {
+        private readonly int _lines;
+        private readonly int _from;
+        private readonly List<string> _changeable;
+        private readonly string _currentLine;
+        private readonly HashSet<int> _noPostIndentLines;
+        private readonly (int Start, int End, int Level)? _pendingMatrixLines;
+        private readonly int _currentLineMinimumIndent;
+        private readonly int _currentLineMaximumLevel;
+        private readonly bool _suppressNextIndentation;
+        private readonly bool _continuesBrokenChain;
+        private readonly int _indentLevel;
+
+        public RendererMark(ModelicaRenderer renderer)
+        {
+            _lines = renderer._code.Count;
+            // Lines already written change only when a pending matrix's lines are moved back.
+            _from = Math.Min(renderer._pendingMatrixLines?.Start ?? _lines, _lines);
+            _changeable = renderer._code.GetRange(_from, _lines - _from);
+            _currentLine = renderer._currentLine.ToString();
+            _noPostIndentLines = new HashSet<int>(renderer._noPostIndentLines);
+            _pendingMatrixLines = renderer._pendingMatrixLines;
+            _currentLineMinimumIndent = renderer._currentLineMinimumIndent;
+            _currentLineMaximumLevel = renderer._currentLineMaximumLevel;
+            _suppressNextIndentation = renderer._suppressNextIndentation;
+            _continuesBrokenChain = renderer._continuesBrokenChain;
+            _indentLevel = renderer._indentLevel;
+        }
+
+        public void Restore(ModelicaRenderer renderer)
+        {
+            renderer._code.RemoveRange(_from, renderer._code.Count - _from);
+            renderer._code.AddRange(_changeable);
+            renderer._currentLine.Clear().Append(_currentLine);
+            renderer._noPostIndentLines.Clear();
+            renderer._noPostIndentLines.UnionWith(_noPostIndentLines);
+            renderer._pendingMatrixLines = _pendingMatrixLines;
+            renderer._currentLineMinimumIndent = _currentLineMinimumIndent;
+            renderer._currentLineMaximumLevel = _currentLineMaximumLevel;
+            renderer._suppressNextIndentation = _suppressNextIndentation;
+            renderer._continuesBrokenChain = _continuesBrokenChain;
+            renderer._indentLevel = _indentLevel;
+        }
+    }
+
     public override object? VisitClass_modification([NotNull] modelicaParser.Class_modificationContext context)
     {
         int numArguments = 0;
         if (context.argument_list() != null && context.argument_list().argument() != null)
             numArguments = context.argument_list().argument().Length;
 
+        // Comments after the '(' and before the ')' (B431): the run before the list, and the run
+        // after it - or, with no list, the one run.
+        var runs = CommentRuns(context);
+        var opening = runs?[0] ?? default;
+        var closing = runs is { Length: > 1 } ? runs[^1] : default;
+        int enclosingOpeningLine = _argumentsOpeningLine;
+        _argumentsOpeningLine = _code.Count;
+
         // Special case: simple 2-argument graphics elements (like Line) stay on one line
         if (_inGraphicsAnnotationLevel == 2 && numArguments == 2)
         {
             Write("(");
+            if (opening.Any)
+                WriteOpeningComments(opening, multiLine: false);
             if (context.argument_list() != null)
                 Visit(context.argument_list());
+            if (closing.Any)
+                WriteListComments(closing, multiLine: false, beforeClose: true);
             Write(")");
+            _argumentsOpeningLine = enclosingOpeningLine;
             return null;
         }
 
@@ -1701,16 +2229,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _inClassAnnotationIcon = true;
 
         Write("(");
+        if (opening.Any)
+            WriteOpeningComments(opening, useMultiLineParens);
         if (useMultiLineParens)
         {
-            EmitLine();
+            if (!opening.Any)
+                EmitLine();
             Indent();
         }
         if (context.argument_list() != null)
             Visit(context.argument_list());
+        if (closing.Any)
+            WriteListComments(closing, useMultiLineParens, beforeClose: true);
         if (useMultiLineParens)
         {
-            EmitLine();
+            EndLineBeforeClose(closing.Any);
             Dedent();
             Write(")");
         }
@@ -1718,6 +2251,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Write(")");
 
         // Restore previous state
+        _argumentsOpeningLine = enclosingOpeningLine;
         _parentUsingMultiLine = previousParentState;
         _inClassAnnotationIcon = wasInClassAnnotationIcon;
         return null;
@@ -1726,12 +2260,22 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     public override object? VisitArgument_list([NotNull] modelicaParser.Argument_listContext context)
     {
         var arguments = context.argument();
+        var runs = CommentRuns(context);
+        int opening = _argumentsOpeningLine;
 
         if (arguments != null)
         {
             for (int i = 0; i < arguments.Length; i++)
             {
-                if (i > 0)
+                if (i > 0 && runs != null && runs[i].Any)
+                {
+                    // Comments after the ',' (B431) are written each where it stood, and the
+                    // argument starts the line they leave.
+                    Write(",");
+                    WriteListComments(runs[i], _parentUsingMultiLine);
+                    Visit(arguments[i]);
+                }
+                else if (i > 0)
                 {
                     Write(",");
 
@@ -1753,10 +2297,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                         EmitLine();
                         if (needsExtraIndent)
+                        {
+                            _currentLineMaximumLevel = _indentLevel;
                             Indent();
+                        }
                         // Add indent to current line unless parent is multi-line (parent already set up indent via Indent())
                         if (!_parentUsingMultiLine)
+                        {
                             AddIndentToCurrentLine();
+                            KeepInFrom(opening);
+                        }
 
                         Visit(arguments[i]);
 
@@ -1771,11 +2321,126 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 }
                 else
                 {
-                    Visit(arguments[i]);
+                    VisitFirstArgument(arguments[i], arguments.Length);
                 }
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Writes the first argument of a list, and moves it to a continuation line of its own, a level
+    /// in, when the list has to wrap and the argument took the opening line past the maximum length
+    /// (B464) - as each later argument that does not fit is. Only an argument written on one line
+    /// is moved: one the renderer has already broken over lines (a nested modification, a data
+    /// table) has its own layout, and nothing but the '(' may have been written since the list
+    /// opened, so a comment after the '(' keeps the line it leaves. A list inside one written an
+    /// argument a line, and a graphics annotation's lists, are laid out by their own rules rather
+    /// than wrapped for length, and are left as they were. The moved argument stays a level in from
+    /// the line it left (B465, B466).
+    /// </summary>
+    private void VisitFirstArgument(IParseTree first, int argumentCount)
+    {
+        if (argumentCount < 2 || _parentUsingMultiLine || _inGraphicsAnnotationLevel > 0
+            || !GetCurrentLinePlainText().EndsWith('('))
+        {
+            Visit(first);
+            return;
+        }
+
+        int start = _currentLine.Length;
+        int lines = _code.Count;
+        var enclosing = _movableArgument;
+        _movableArgument = (lines, start);
+        int enclosingFirst = _firstArgumentLine;
+        _firstArgumentLine = lines;
+        Visit(first);
+        _movableArgument = enclosing;
+        _firstArgumentLine = enclosingFirst;
+        // The ',' that follows is on this line too.
+        if (_code.Count != lines || GetCurrentLinePlainTextLength() + 1 <= _maxLineLength)
+            return;
+
+        MoveToContinuationLine(start);
+    }
+
+    /// <summary>
+    /// Moves what has been written of the current line from <paramref name="start"/> on to a
+    /// continuation line of its own, a level in from the line it leaves (B464).
+    /// </summary>
+    private void MoveToContinuationLine(int start)
+    {
+        var argument = _currentLine.ToString(start, _currentLine.Length - start);
+        _currentLine.Length = start;
+        EmitLine();
+        AddIndentToCurrentLine();
+        KeepInFrom(_code.Count - 1);
+        _currentLine.Append(argument);
+    }
+
+    /// <summary>
+    /// Whether an array element after the first starts a line of its own: a call that does not fit
+    /// (B468), in an array that has wrapped already or is still on the line it opened on (B474).
+    /// An array still on its opening line inside an argument that can be moved to a line of its own
+    /// - a first argument (B464) or a call's later positional one (B483) - moves that argument
+    /// first, and opens on that line from then on. An array that
+    /// wraps from its opening line has its wrapped elements a level in, even in a list written an
+    /// argument a line, where they would otherwise be at the column of its siblings.
+    /// </summary>
+    private bool WrapsArrayElement(modelicaParser.ExpressionContext element, ref int opening, ref bool levelIn)
+    {
+        if (!WrapsCallElementForLength(element))
+            return false;
+        if (_code.Count != opening)
+            return true;
+        if (MovedArgumentForArray() || MovedArrayPastTheLimit())
+        {
+            opening = _code.Count;
+            if (!WrapsCallElementForLength(element))
+                return false;
+        }
+        levelIn = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Moves the argument an array still on its opening line is in to a line of its own, as
+    /// VisitFirstArgument would a first argument once it was written (B464) - before the array wraps
+    /// an element, since an argument over more than one line is not moved (B474). A call's later
+    /// positional argument is moved the same way, so its array wraps whole rather than mid-list
+    /// (B483). Only the innermost such argument, and only while it is still on the line it started
+    /// on. True when it was moved.
+    /// </summary>
+    private bool MovedArgumentForArray()
+    {
+        var (lines, start) = _movableArgument;
+        // The start is past the end only if the line was cleared without being ended, which
+        // nothing inside an argument does; it is checked so a save cannot fail on it.
+        if (lines != _code.Count || start > _currentLine.Length)
+            return false;
+        // A line is ended by the move, so the argument can no longer be moved again.
+        MoveToContinuationLine(start);
+        return true;
+    }
+
+    /// <summary>
+    /// Moves an array whose elements so far have already taken its opening line past the maximum
+    /// length, when a call after them has to wrap, to a continuation line of its own - if there is
+    /// no argument to move instead and what it has written then fits (B484).
+    /// Buildings' IEEE 34-bus grid has <c>redeclare ... Generic cables={LowVoltageCables.PvcAl120(),</c>
+    /// in a list written an argument a line: the argument already starts its line, and wrapping
+    /// only the later elements left that line at 109 characters. True when it was moved.
+    /// </summary>
+    private bool MovedArrayPastTheLimit()
+    {
+        var (lines, start) = _arrayStart;
+        if (lines != _code.Count || start > _currentLine.Length
+            || GetCurrentLinePlainTextLength() <= _maxLineLength
+            // Past the limit, what the array has written fits only if something else came first.
+            || PlainText(_currentLine.ToString(start, _currentLine.Length - start)).Length > _maxLineLength)
+            return false;
+        MoveToContinuationLine(start);
+        return true;
     }
 
     public override object? VisitArgument([NotNull] modelicaParser.ArgumentContext context)
@@ -1888,6 +2553,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Visit(context.component_clause1());
 
         if (context.constraining_clause() !=null) {
+            // Comments before 'constrainedby' (B431), as VisitElement writes them (B432).
+            if (context.c_comment() is { Length: > 0 } comments)
+            {
+                WriteLeadingComments(comments);
+                _constrainedbyOnFreshLine = true;
+            }
             Visit(context.constraining_clause());
         }
         return null;
@@ -1904,7 +2575,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitArray_subscripts([NotNull] modelicaParser.Array_subscriptsContext context)
     {
+        // A subscript is counted as a bracket, as parentheses and a matrix's brackets are, so a '+'
+        // or '-' inside one is not wrapped for length (B491): Buildings' ElectricalLoad ended a line
+        // with 'TOutFut_in_internal[m' and started the next with '- 1]'.
         Write("[");
+        _bracketDepth++;
         var subscripts = context.subscript_();
         if (subscripts != null)
         {
@@ -1918,6 +2593,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 Visit(subscripts[i]);
             }
         }
+        _bracketDepth--;
         Write("]");
         return null;
     }
@@ -2095,6 +2771,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     AddIndentToCurrentLine();
                     Write(Operator("=", false)); // No leading space, just "="
                     Space(); // Add space after =
+                    _equalsLine = _code.Count;
+                    _equalsLevel = _indentLevel;
                 }
                 else
                 {
@@ -2106,6 +2784,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (wrapBeforeEquals)
                 {
                     Dedent();
+                    _equalsLine = -1;
+                    _equalsLevel = -1;
                 }
             }
         }
@@ -2128,9 +2808,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         else if (context.component_reference() != null && context.function_call_args() != null)
         {
             // Function call equation: component_reference function_call_args
+            // Restored rather than cleared (B232): a call nested inside another reference's
+            // subscripts used to switch the colouring off for the rest of the outer reference.
+            var wasFunction = _isFunction;
             _isFunction = true;
             Visit(context.component_reference());
-            _isFunction = false;
+            _isFunction = wasFunction;
             Visit(context.function_call_args());
         }
 
@@ -2156,16 +2839,24 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Visit(context.output_expression_list());
             Write(")");
             Write(Operator(":="));
+            var wasFunctionInOutputList = _isFunction;
             _isFunction = true;
             Visit(context.component_reference());
-            _isFunction = false;
+            _isFunction = wasFunctionInOutputList;
             Visit(functionCallArgs[0]);
         }
         else if (context.component_reference() != null)
         {
-            _isFunction = true;
+            // `statement : component_reference (':=' expression | function_call_args)` — so the
+            // reference is the thing being called in the second form and the thing being assigned to
+            // in the first. Marking both made the variable on the left of every assignment a
+            // function call: `y_dd := ...` in MultiBody's maxWithoutEvent_dd came out red (B254).
+            var isCall = context.expression() is null && functionCallArgs is { Length: > 0 };
+
+            var wasFunctionInStatement = _isFunction;
+            _isFunction = isCall;
             Visit(context.component_reference());
-            _isFunction = false;
+            _isFunction = wasFunctionInStatement;
 
             if (context.expression() != null)
             {
@@ -2229,12 +2920,74 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         return null;
     }
 
+    /// <summary>
+    /// Writes the condition of an if, elseif, when, elsewhen or while, wrapped for length as an
+    /// equation's expression is, with its continuation lines a level past the column of what it
+    /// guards (B491). The continuation was set only by the equation or statement the construct is,
+    /// and cleared by the first one nested in it, so a condition wrapped only in the first branch,
+    /// and there at the column of the body; B489 did not wrap a condition at 'and' or 'or' for that
+    /// reason, and MSL's IF97 kept its long 'if ... then' headers on one line.
+    /// </summary>
+    private void VisitControlCondition(IParseTree condition)
+    {
+        int enclosingIndent = _equationContinuationIndent;
+        bool enclosingCondition = _inControlCondition;
+        _equationContinuationIndent = 1;
+        _inControlCondition = true;
+        VisitCondition(condition);
+        _equationContinuationIndent = enclosingIndent;
+        _inControlCondition = enclosingCondition;
+    }
+
+    /// <summary>
+    /// Writes a condition - of an if-expression, or of an if, when or while - whose first 'and' or
+    /// 'or' does not start a line when all before it is a lone Boolean name (B494). Wrapped there,
+    /// the line held nothing of the condition but its flag: MSL's CombiTable1Ds ended one line with
+    /// <c>if tableOnFile</c> and started the next with <c>and fileName &lt;&gt; "NoName" ...</c>.
+    /// The flag stays with what it is joined to, and the condition wraps at a later 'and' or 'or'
+    /// if it has one; one of two operands is kept whole, as it was before B489.
+    /// </summary>
+    private void VisitCondition(IParseTree condition)
+    {
+        var enclosing = _operandAfterFlag;
+        _operandAfterFlag = OperandAfterFlag(condition) ?? enclosing;
+        Visit(condition);
+        _operandAfterFlag = enclosing;
+    }
+
+    /// <summary>
+    /// What follows a condition's first 'and' or 'or' when all before it is a lone Boolean name,
+    /// possibly negated - <c>initDelay</c>, <c>not have_chiWat</c>, <c>cfg.have_hrc</c> - or null.
+    /// Null for an 'or' whose right-hand side is an 'and' of several.
+    /// </summary>
+    private static IParseTree? OperandAfterFlag(IParseTree condition)
+    {
+        if (condition is not modelicaParser.ExpressionContext { } expression
+            || expression.simple_expression() is not { } simple || simple.logical_expression().Length != 1)
+            return null;
+        var terms = simple.logical_expression(0).logical_term();
+        var factors = terms[0].logical_factor();
+        if (!IsFlag(factors[0]))
+            return null;
+        if (factors.Length > 1)
+            return factors[1];
+        // Not an 'or' before an 'and': kept on the flag's line, the 'and' would wrap instead and read
+        // as joining the 'or' (B489).
+        return terms.Length > 1 && terms[1].logical_factor().Length == 1 ? terms[1] : null;
+    }
+
+    private static bool IsFlag(modelicaParser.Logical_factorContext factor)
+        => factor.relation() is { } relation && relation.arithmetic_expression().Length == 1
+           && relation.arithmetic_expression(0) is { } arithmetic && arithmetic.add_op().Length == 0
+           && arithmetic.term() is [{ } term] && term.factor() is [{ } single]
+           && single.primary() is [{ ChildCount: 1 } primary] && primary.component_reference() != null;
+
     public override object? VisitIf_equation([NotNull] modelicaParser.If_equationContext context)
     {
         // if
         Write(Keyword("if"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -2254,7 +3007,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elseif"));
                 Space();
-                Visit(elseif.expression());
+                VisitControlCondition(elseif.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -2390,7 +3143,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         Space();
 
         if (context.expression() != null)
-            Visit(context.expression());
+            VisitControlCondition(context.expression());
 
         Space();
         Write(Keyword("loop"));
@@ -2418,7 +3171,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         Write(Keyword("when"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -2437,7 +3190,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elsewhen"));
                 Space();
-                Visit(elsewhen.expression());
+                VisitControlCondition(elsewhen.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -2463,7 +3216,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         Write(Keyword("when"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -2482,7 +3235,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elsewhen"));
                 Space();
-                Visit(elsewhen.expression());
+                VisitControlCondition(elsewhen.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -2509,7 +3262,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // if
         Write(Keyword("if"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -2527,7 +3280,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elseif"));
                 Space();
-                Visit(elseif.expression());
+                VisitControlCondition(elseif.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -2581,28 +3334,49 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitEquation_or_comment([NotNull] modelicaParser.Equation_or_commentContext context)
     {
-        if (context.c_comment() != null && !string.IsNullOrWhiteSpace(context.c_comment().GetText()))
-            Visit(context.c_comment());
+        // Comment-only when there is no equation: since B432 an equation may carry comments too.
+        if (context.equation() is { } equation)
+        {
+            Visit(equation);
+            WriteSemicolonAndComments(context.c_comment());
+        }
         else
         {
-            Visit(context.equation());
-            Write(";");
-            EmitLine();
+            foreach (var comment in context.c_comment())
+                if (!string.IsNullOrWhiteSpace(comment.GetText()))
+                    Visit(comment);
         }
         return null;
     }
 
     public override object? VisitStatement_or_comment([NotNull] modelicaParser.Statement_or_commentContext context)
     {
-        if (context.c_comment() != null && !string.IsNullOrWhiteSpace(context.c_comment().GetText()))
-            Visit(context.c_comment());
+        if (context.statement() is { } statement)
+        {
+            Visit(statement);
+            WriteSemicolonAndComments(context.c_comment());
+        }
         else
         {
-            Visit(context.statement());
-            Write(";");
-            EmitLine();
+            foreach (var comment in context.c_comment())
+                if (!string.IsNullOrWhiteSpace(comment.GetText()))
+                    Visit(comment);
         }
         return null;
+    }
+
+    /// <summary>
+    /// Ends an equation or a statement. Comments between it and its ';' (B432) are written after
+    /// the ';' rather than before it - a line comment ends its line, so kept in place it would leave
+    /// the ';' alone on the next one - and each on a line of its own, which is how a comment after
+    /// the ';' is written. Written any other way, the next save would move them again.
+    /// </summary>
+    private void WriteSemicolonAndComments(modelicaParser.C_commentContext[] comments)
+    {
+        Write(";");
+        EmitLine();
+        foreach (var comment in comments)
+            Visit(comment);
     }
 
     #endregion
@@ -2619,10 +3393,22 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         {
             // if expression then expression elseif ... else expression
             var expressions = context.expression();
+            // An if-expression that does not fit where it starts has each 'elseif' and 'else' start
+            // a line of its own, and an 'else if' continues the chain it is in (B487).
+            bool breakBranches = _continuesBrokenChain || BreaksIfExpression(context);
+            _continuesBrokenChain = false;
+            bool enclosingBroken = _inBrokenChain;
+            _inBrokenChain = breakBranches || enclosingBroken;
+            bool enclosingIf = _inIfExpression;
+            _inIfExpression = true;
+            bool enclosingBreaks = _innermostIfBreaks;
+            _innermostIfBreaks = breakBranches;
+            bool enclosingNested = _inBranchOrArray;
+            _inBranchOrArray = true;
             Write(Keyword("if"));
             Space();
             if (expressions != null && expressions.Length > 0)
-                Visit(expressions[0]);
+                VisitCondition(expressions[0]);
             Space();
             Write(Keyword("then"));
             Space();
@@ -2635,11 +3421,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 foreach (var elseif in context.elseif_expression())
                 {
+                    if (breakBranches)
+                        StartContinuationLine(branchLine: true);
                     Write(Keyword("elseif"));
                     Space();
                     var elseifExpressions = elseif.expression();
                     if (elseifExpressions != null && elseifExpressions.Length > 0)
-                        Visit(elseifExpressions[0]);
+                        VisitCondition(elseifExpressions[0]);
                     Space();
                     Write(Keyword("then"));
                     Space();
@@ -2649,11 +3437,19 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 }
             }
 
+            if (breakBranches)
+                StartContinuationLine(branchLine: true);
             Write(Keyword("else"));
             Space();
             if (expressions != null && expressions.Length == 3)
+            {
+                _continuesBrokenChain = breakBranches && expressions[2].simple_expression() == null;
                 Visit(expressions[2]);
-
+            }
+            _inBranchOrArray = enclosingNested;
+            _inBrokenChain = enclosingBroken;
+            _inIfExpression = enclosingIf;
+            _innermostIfBreaks = enclosingBreaks;
         }
 
         return null;
@@ -2687,13 +3483,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         var logicalTerms = context.logical_term();
         if (logicalTerms != null)
         {
+            int termLine = _code.Count;
             for (int i = 0; i < logicalTerms.Length; i++)
             {
+                // The 'or' after a term that has wrapped starts a line, so that what it joins is not
+                // read as part of the 'and' before it (B489).
                 if (i > 0)
                 {
-                    Space();
-                    Write(Keyword("or"));
-                    Space();
+                    WriteLogicalOperator("or", logicalTerms[i], always: _code.Count != termLine);
+                    termLine = _code.Count;
                 }
                 Visit(logicalTerms[i]);
             }
@@ -2709,15 +3507,60 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             for (int i = 0; i < logicalFactors.Length; i++)
             {
                 if (i > 0)
-                {
-                    Space();
-                    Write(Keyword("and"));
-                    Space();
-                }
+                    WriteLogicalOperator("and", logicalFactors[i], always: false);
                 Visit(logicalFactors[i]);
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Writes an 'or' or 'and', starting a continuation line with it when what it joins does not fit
+    /// after it, as a '+' or '-' does (B489). A long condition or Boolean right-hand side was never
+    /// wrapped: Buildings' VerifyDifferenceThreePeriods had <c>diff = if (time &gt;= t0) and ... or
+    /// (time &gt;= t4) and (time &lt; t5) then abs(u1</c> ending a line and <c>- u2)</c> starting the
+    /// next. Only where what it joins then fits on the line it starts: one that would still run past
+    /// the limit stays where it is, as a positional argument does (B487). Not inside parentheses,
+    /// where a '+' does not wrap either, nor inside a first argument that may still be moved to a
+    /// line of its own (B464, B487), nor in an if-expression that does not start its branches on
+    /// lines of their own - one inside another's condition or 'then' (B487) - nor in an annotation,
+    /// nor in a for loop's range. The condition of an if, when or while wraps too, a level past the
+    /// column of what it guards (B491). Nor after a condition's first operand when that is a lone
+    /// Boolean name (B494). With <paramref name="always"/>, it starts a line wherever it may, whether
+    /// or not what it joins fits.
+    /// </summary>
+    private void WriteLogicalOperator(string op, IParseTree operand, bool always)
+    {
+        int length = op.Length + 1 + EstimatedLength(operand);
+        if (_bracketDepth == 0 && _equationContinuationIndent > 0 && _firstArgumentLine != _code.Count
+            && !_inAnnotation && (!_inIfExpression || _innermostIfBreaks) && !InForRange(operand)
+            && operand != _operandAfterFlag
+            && (always || GetCurrentLinePlainTextLength() + 1 + length > _maxLineLength - 3
+                && length <= _maxLineLength - 3))
+            StartContinuationLine(branchLine: false);
+        else
+            Space();
+        Write(Keyword(op));
+        Space();
+    }
+
+    /// <summary>
+    /// Whether an expression is part of a for loop's range - of the equation or statement itself,
+    /// not of an expression inside one.
+    /// </summary>
+    private static bool InForRange(IParseTree node)
+    {
+        for (var parent = node.Parent; parent != null; parent = parent.Parent)
+        {
+            switch (parent)
+            {
+                case modelicaParser.For_indexContext:
+                    return true;
+                case modelicaParser.EquationContext or modelicaParser.StatementContext:
+                    return false;
+            }
+        }
+        return false;
     }
 
     public override object? VisitLogical_factor([NotNull] modelicaParser.Logical_factorContext context)
@@ -2789,18 +3632,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                 if (shouldWrap)
                 {
-                    EmitLine();
-                    // Add the continuation indent
-                    for (int j = 0; j < _equationContinuationIndent; j++)
-                        Indent();
-                    AddIndentToCurrentLine();
+                    StartContinuationLine(branchLine: false);
                     // Write operator without leading space (we're at start of line)
                     Write(Operator(addOps[i + addOpsOffset].GetText(), false));
                     Space(); // Add space after operator
-
-                    // Remove the continuation indent
-                    for (int j = 0; j < _equationContinuationIndent; j++)
-                        Dedent();
                 }
                 else
                 {
@@ -2813,6 +3648,93 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Ends the line inside an equation's or a statement's expression and starts its continuation:
+    /// before a '+' or '-' that does not fit, or before an 'elseif' or 'else' of an if-expression
+    /// that does not fit (<paramref name="branchLine"/>, B487).
+    /// </summary>
+    private void StartContinuationLine(bool branchLine)
+    {
+        EmitLine();
+        // Add the continuation indent
+        for (int j = 0; j < _equationContinuationIndent; j++)
+            Indent();
+        AddIndentToCurrentLine();
+        // The line is ended after any argument list the expression is in has gone
+        // back out, so an expression that is an argument wrapped onto a line of its
+        // own had its continuation at the argument's column (B470). It is kept a level
+        // in from the level the expression is written at.
+        int expressionLevel = _indentLevel - _equationContinuationIndent;
+        _currentLineMinimumIndent = expressionLevel * IndentSpaces + IndentSpaces;
+        // A right-hand side after a wrapped '=' is written on a line that carries its
+        // own continuation indent, so a level in from its level was that line's own
+        // column (B475). Its continuation is a level in from that line instead.
+        if (expressionLevel == _equalsLevel)
+            KeepInFrom(_equalsLine);
+        // A '+' inside an if-expression or an array continues a term of it, not of the
+        // statement, so it is a level further in than the statement's own continuation
+        // (B485). A call's parentheses alone do not count: a statement's continuation
+        // is usually in them - an assert's message.
+        if (_inBranchOrArray)
+            _currentLineMinimumIndent += IndentSpaces;
+        // A term continuing a branch that starts a line of its own is a level in from the
+        // 'else' that starts it (B487).
+        if (_inBrokenChain && !branchLine)
+            _currentLineMinimumIndent += IndentSpaces;
+        // A condition's continuation is a level past the equations or statements it guards, so
+        // that it is not read as one of them (B491).
+        if (_inControlCondition)
+            _currentLineMinimumIndent += IndentSpaces;
+        // Inside parentheses wrapped for length, at least a level in from the line the '(' is on,
+        // and a term continuing a branch a level in from that (B491).
+        if (_parenthesesLine >= 0 && _parenthesesLine < _code.Count)
+        {
+            var opening = _code[_parenthesesLine];
+            int floor = opening.Length - opening.TrimStart(' ').Length + IndentSpaces;
+            if (_inBrokenChain && !branchLine)
+                floor += IndentSpaces;
+            _currentLineMinimumIndent = Math.Max(_currentLineMinimumIndent, floor);
+        }
+        // Remove the continuation indent
+        for (int j = 0; j < _equationContinuationIndent; j++)
+            Dedent();
+    }
+
+    /// <summary>
+    /// Whether an if-expression is written a branch a line: where a '+' or '-' could wrap, and it
+    /// does not fit on the line it starts on (B487). It was wrapped only where the line ran out,
+    /// mid-term, so MSL's PartialFriction had <c>else if startBackward then sa</c> at the end of one
+    /// line and <c>+ tau0_max/unitTorque else if ...</c> on the next. Not one inside another's
+    /// condition or 'then' branch: its 'else' would start a line at the column of the outer one's,
+    /// and read as that.
+    /// </summary>
+    private bool BreaksIfExpression(modelicaParser.ExpressionContext context)
+        => _bracketDepth == 0 && _equationContinuationIndent > 0 && _firstArgumentLine != _code.Count
+           && !_inIfExpression
+           && GetCurrentLinePlainTextLength() + EstimatedLength(context) > _maxLineLength - 3;
+
+    /// <summary>
+    /// About how long an expression is once written: its tokens, a space either side of a keyword
+    /// or a '+', '-' or relational operator, and one after a ','.
+    /// </summary>
+    private static int EstimatedLength(IParseTree tree)
+    {
+        if (tree is ITerminalNode terminal)
+        {
+            var text = terminal.GetText();
+            return text switch
+            {
+                "," => 2,
+                "if" or "then" or "elseif" or "else" or "and" or "or" or "not" or "for" or "in" => text.Length + 2,
+                _ => text.Length,
+            };
+        }
+        int length = tree is modelicaParser.Add_opContext or modelicaParser.Rel_opContext ? 2 : 0;
+        for (int i = 0; i < tree.ChildCount; i++)
+            length += EstimatedLength(tree.GetChild(i));
+        return length;
     }
 
     public override object? VisitAdd_op([NotNull] modelicaParser.Add_opContext context)
@@ -2890,9 +3812,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             //(component_reference | 'der' | 'initial' | 'pure') function_call_args
             if (context.component_reference()!=null) 
             {
+                var wasFunctionInCall = _isFunction;
                 _isFunction = true;
                 Visit(context.component_reference());
-                _isFunction = false;
+                _isFunction = wasFunctionInCall;
             }
             else
             {
@@ -2914,10 +3837,45 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         {
             // Parenthesized expression or output expression list
             Write("(");
-            _bracketDepth++;
+            // One expression in parentheses that does not fit on the line it starts on is wrapped
+            // inside them, its continuation a level further in (B491): nothing inside parentheses
+            // wrapped, so MSL's MassWithStopAndFriction had a 300-character 'else (if ... )'.
+            // An if-expression in them is not one inside another's branch: the parentheses say where
+            // it ends, so it breaks at its own branches as one standing alone does (B487).
+            bool wrapsInside = WrapsInsideParentheses(context);
+            bool enclosingNested = _inBranchOrArray;
+            bool enclosingIf = _inIfExpression;
+            bool enclosingBreaks = _innermostIfBreaks;
+            bool enclosingBroken = _inBrokenChain;
+            int enclosingLine = _parenthesesLine;
+            var enclosingParentheses = _parenthesesContext;
+            if (wrapsInside)
+            {
+                _inBranchOrArray = true;
+                _inIfExpression = false;
+                _innermostIfBreaks = false;
+                _inBrokenChain = false;
+                // The next link of a nested chain - a(b + x*(c + x*(d + ...))) - is wrapped at the
+                // column of the one it ends, not a level further in at each '(' (B494).
+                if (!ContinuesNestedChain(context, enclosingParentheses))
+                    _parenthesesLine = _code.Count;
+                _parenthesesContext = context;
+            }
+            else
+                _bracketDepth++;
             if (context.output_expression_list() != null)
                 Visit(context.output_expression_list());
-            _bracketDepth--;
+            if (wrapsInside)
+            {
+                _inBranchOrArray = enclosingNested;
+                _inIfExpression = enclosingIf;
+                _innermostIfBreaks = enclosingBreaks;
+                _inBrokenChain = enclosingBroken;
+                _parenthesesLine = enclosingLine;
+                _parenthesesContext = enclosingParentheses;
+            }
+            else
+                _bracketDepth--;
             Write(")");
             if (context.array_arguments() != null) {
                 Write("[");
@@ -2928,6 +3886,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         else if (context.GetText().StartsWith('['))
         {
             // Array expression [expression_list (';' expression_list)*]
+            // Comments after the '[', after a row's ';' and before the ']' (B431): run i
+            // is what comes before row i, and the last run what comes after the last row. A data
+            // table keeps the rows its author wrote (B462): a row that starts a line in the source
+            // starts one here, a level in - the first row too, when it is below the '[' (B463) -
+            // and rows the author ran together stay together - a
+            // comment ends its line the same way. Read from the tokens, so a table written one
+            // row a line keeps its rows on every save, and one written on one line stays there.
+            var runs = CommentRuns(context);
+            // A line starting a wrapped argument is ended at its siblings' level already (B467),
+            // so when the matrix begins on one, only the lines after it are moved.
+            int firstLine = _currentLineMaximumLevel >= 0 ? _code.Count + 1 : _code.Count;
+            int level = _indentLevel;
+            // A line the table starts is a level in from the line it began on, which may itself
+            // be a continuation line carrying its indent as leading spaces.
+            int baseSpaces = _currentLine.Length - _currentLine.ToString().TrimStart(' ').Length;
             Write("[");
             _bracketDepth++;
             var expressionLists = context.expression_list();
@@ -2938,20 +3911,50 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     if (i > 0)
                     {
                         Write(";");
-                        Space();
+                        if (runs == null || !runs[i].Any)
+                        {
+                            if (RowStartsLine(expressionLists[i - 1].Stop, expressionLists[i]))
+                                StartMatrixRowLine(baseSpaces);
+                            else
+                                Space();
+                        }
+                    }
+                    else if ((runs == null || !runs[0].Any) && RowStartsLine(context.Start, expressionLists[0]))
+                    {
+                        // A first row written on the line after the '[' stays there (B463).
+                        StartMatrixRowLine(baseSpaces);
+                    }
+                    if (runs != null && runs[i].Any)
+                    {
+                        if (i == 0)
+                            WriteOpeningComments(runs[i], multiLine: false);
+                        else
+                            WriteListComments(runs[i], multiLine: false);
+                        IndentMatrixLine(baseSpaces);
                     }
                     Visit(expressionLists[i]);
                 }
             }
+            if (runs != null && runs[^1].Any)
+            {
+                WriteListComments(runs[^1], multiLine: false, beforeClose: true);
+                IndentMatrixLine(baseSpaces);
+            }
             _bracketDepth--;
             Write("]");
+            if (_code.Count > firstLine)
+                _pendingMatrixLines = (firstLine, _code.Count, level);
         }
         else if (context.GetText().StartsWith('{'))
         {
             // Array constructor
             bool resetGraphicsFlag = false;
             bool singleLineGraphics = false;
-            if (_classAnnotation && GetCurrentLinePlainText().EndsWith("graphics="))
+            // Any annotation's graphics whose Icon or Diagram is written an argument a line are laid
+            // out as the class annotation's are (B476): a short class definition's annotation, or a
+            // component's, had each element's arguments at the element's own column.
+            bool wasClassAnnotation = _classAnnotation;
+            if ((_classAnnotation || (_inAnnotation && _parentUsingMultiLine)) && GetCurrentLinePlainText().EndsWith("graphics="))
             {
                 _inGraphicsAnnotationLevel = 1;
                 _classAnnotation = false;
@@ -2960,20 +3963,37 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 // Check if this should be formatted as a single line
                 singleLineGraphics = ModelicaRendererHelper.IsSingleLineGraphicsArray(context.array_arguments());
             }
+            // Comments after the '{' and before the '}' (B431), as in VisitClass_modification.
+            var runs = CommentRuns(context);
+            var opening = runs?[0] ?? default;
+            var closing = runs is { Length: > 1 } ? runs[^1] : default;
+            bool multiLine = resetGraphicsFlag && !singleLineGraphics;
+
+            var enclosingArray = _arrayStart;
+            _arrayStart = (_code.Count, _currentLine.Length);
+            bool enclosingNested = _inBranchOrArray;
+            _inBranchOrArray = true;
             Write("{");
-            if (resetGraphicsFlag && !singleLineGraphics)
+            if (opening.Any)
+                WriteOpeningComments(opening, multiLine);
+            if (multiLine)
             {
-                EmitLine();
+                if (!opening.Any)
+                    EmitLine();
                 Indent();
             }
             if (context.array_arguments() != null)
                 Visit(context.array_arguments());
+            _arrayStart = enclosingArray;
+            _inBranchOrArray = enclosingNested;
+            if (closing.Any)
+                WriteListComments(closing, multiLine, beforeClose: true);
             if (resetGraphicsFlag) {
                 _inGraphicsAnnotationLevel = 0;
-                _classAnnotation = true;
+                _classAnnotation = wasClassAnnotation;
                 if (!singleLineGraphics)
                 {
-                    EmitLine();
+                    EndLineBeforeClose(closing.Any);
                     Dedent();
                 }
             }
@@ -2986,6 +4006,84 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
         return null;
     }
+
+    /// <summary>
+    /// Whether a parenthesised expression is wrapped inside its parentheses, as one outside them
+    /// would be: one too long for a line of its own (B491). Not inside a first argument that may
+    /// yet be moved to a line of its own (B464), nor in an annotation. Outside an equation or a
+    /// statement, or inside other brackets, nothing inside would wrap anyway.
+    /// </summary>
+    private bool WrapsInsideParentheses(modelicaParser.PrimaryContext context)
+    {
+        if (_firstArgumentLine == _code.Count || _inAnnotation)
+            return false;
+        // Too long for a line of its own too: a shorter one is left whole, for whatever is outside
+        // it to wrap before.
+        return EstimatedLength(context) > _maxLineLength - 3;
+    }
+
+    /// <summary>
+    /// Whether parentheses wrapped inside are a link of a polynomial in nested form,
+    /// <c>a*(b + x*(c + x*(d + ...)))</c>, in the parentheses they are in, which are wrapped inside
+    /// too. Each link stepped a level further in than the last (B491), so MSL's IF97
+    /// <c>hlowerofp1</c> was a staircase eleven levels deep; its links are written at one column,
+    /// one a line (B494). A link holds two terms, the first short enough for a line of its own, and
+    /// ends the parentheses it is in after a '+' and nothing but names and numbers; and it opens
+    /// another link or is in one, so that a chain has at least two. Held that tightly so that
+    /// nothing but a chain is flattened: a wrapped sum of several terms, a term after a
+    /// parenthesised factor, after a '-' or after a first term that wraps, would otherwise start at
+    /// the column of the terms around its parentheses and read as one of them.
+    /// </summary>
+    private bool ContinuesNestedChain(modelicaParser.PrimaryContext context,
+        modelicaParser.PrimaryContext? enclosing)
+        => enclosing != null && LinkIn(context) == enclosing
+           && EstimatedLength(ArithmeticIn(context)!.term(0)) <= _maxLineLength - 3
+           && (OpensLink(context) || LinkIn(enclosing) != null);
+
+    /// <summary>
+    /// The parentheses a link ends, or null when it is not one: <paramref name="link"/> holds two
+    /// terms, and is the last factor of the last term of the parentheses it is in, after a '+' and
+    /// other factors that are all names or numbers - <c>(b + x*(c + ...))</c>.
+    /// </summary>
+    private static modelicaParser.PrimaryContext? LinkIn(modelicaParser.PrimaryContext link)
+    {
+        if (ArithmeticIn(link) is not { } inner || inner.term().Length != 2
+            || link.Parent is not modelicaParser.FactorContext { Parent: modelicaParser.TermContext term } factor
+            || factor.primary().Length != 1 || term.factor().Length < 2 || term.factor()[^1] != factor
+            || term.factor().Any(f => f != factor && !IsPlain(f))
+            || term.Parent is not modelicaParser.Arithmetic_expressionContext outer
+            || outer.term().Length < 2 || outer.term()[^1] != term || outer.add_op()[^1].GetText() != "+")
+            return null;
+        for (IParseTree? node = outer.Parent; node != null; node = node.Parent)
+            if (node is modelicaParser.PrimaryContext enclosing)
+                return ArithmeticIn(enclosing) == outer ? enclosing : null;
+        return null;
+    }
+
+    /// <summary>
+    /// Whether parentheses end with another link - <c>(b + x*(c + ...))</c>.
+    /// </summary>
+    private static bool OpensLink(modelicaParser.PrimaryContext parentheses)
+        => ArithmeticIn(parentheses)?.term()[^1].factor()[^1].primary() is [{ } last]
+           && LinkIn(last) == parentheses;
+
+    /// <summary>
+    /// A factor that is a name or a number: a single primary that is not a call, parentheses or an
+    /// array.
+    /// </summary>
+    private static bool IsPlain(modelicaParser.FactorContext factor)
+        => factor.primary() is [{ ChildCount: 1 }];
+
+    /// <summary>
+    /// The arithmetic expression parentheses hold, when that is all they hold - no comparison,
+    /// no 'and' or 'or', no if-expression - or null.
+    /// </summary>
+    private static modelicaParser.Arithmetic_expressionContext? ArithmeticIn(modelicaParser.PrimaryContext parentheses)
+        => parentheses.output_expression_list()?.expression() is [{ } expression]
+           && expression.simple_expression()?.logical_expression() is [{ } logical]
+           && logical.logical_term() is [{ } logicalTerm] && logicalTerm.logical_factor() is [{ ChildCount: 1 } logicalFactor]
+           && logicalFactor.relation()?.arithmetic_expression() is [{ } arithmetic]
+               ? arithmetic : null;
 
     public override object? VisitComponent_reference([NotNull] modelicaParser.Component_referenceContext context)
     {
@@ -3012,7 +4110,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 }
                 else if (child is modelicaParser.Array_subscriptsContext arrSubs)
                 {
+                    // A subscript is not part of the call being made (B232). `den2[i] := …` visits
+                    // the subscript while _isFunction is still set for the reference, so `i` was
+                    // coloured as a function call — 377 tokens in MSL, 512 in Buildings, and the
+                    // whole residue of the classifier's 99.998% agreement measurement.
+                    var wasFunction = _isFunction;
+                    _isFunction = false;
                     Visit(arrSubs);
+                    _isFunction = wasFunction;
                 }
             }
         }
@@ -3034,24 +4139,40 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         bool previousSingleLineState = _inSingleLineGraphicsElement;
         if (useSingleLine)
             _inSingleLineGraphicsElement = true;
+        bool previousCallState = _callUsingMultiLine;
+        _callUsingMultiLine = useMultiLine;
 
+        // Comments after the '(' and before the ')' (B431), as in VisitClass_modification.
+        var runs = CommentRuns(context);
+        var opening = runs?[0] ?? default;
+        var closing = runs is { Length: > 1 } ? runs[^1] : default;
+
+        int enclosingOpeningLine = _argumentsOpeningLine;
+        _argumentsOpeningLine = _code.Count;
         Write("(");
+        if (opening.Any)
+            WriteOpeningComments(opening, useMultiLine);
         if (useMultiLine)
         {
-            EmitLine();
+            if (!opening.Any)
+                EmitLine();
             Indent();
         }
         if (context.function_arguments() != null)
             Visit(context.function_arguments());
+        if (closing.Any)
+            WriteListComments(closing, useMultiLine, beforeClose: true);
         if (useMultiLine)
         {
-            EmitLine();
+            EndLineBeforeClose(closing.Any);
             Dedent();
         }
         Write(")");
 
         // Restore previous state
+        _argumentsOpeningLine = enclosingOpeningLine;
         _inSingleLineGraphicsElement = previousSingleLineState;
+        _callUsingMultiLine = previousCallState;
 
         return null;
     }
@@ -3061,28 +4182,44 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Grammar: expression (',' function_argument)* (',' named_arguments)? ('for' for_indices)?
         //        | function_partial_application (',' function_argument)* (',' named_arguments)?
         //        | named_arguments
+        // Comments after a ',' (B431): run i is what comes before item i, counting the
+        // first argument, each function_argument and the named_arguments in that order.
+        var runs = CommentRuns(context);
         if (context.expression() != null)
         {
+            var funcArgs = context.function_argument();
+            int lines = _code.Count;
             if (_inGraphicsAnnotationLevel > 0)
                 _inGraphicsAnnotationLevel++;
 
-            Visit(context.expression());
+            // A first argument that does not fit after the '(' starts a line of its own, as a later
+            // one that does not fit after its ',' does (B489).
+            if ((funcArgs is { Length: > 0 } || context.named_arguments() != null)
+                && WrapsPositionalArgument(context.expression()))
+                VisitWrappedPositionalArgument(context.expression());
+            else
+                Visit(context.expression());
 
             if (_inGraphicsAnnotationLevel > 0)
                 _inGraphicsAnnotationLevel--;
 
             // Visit additional function arguments
-            var funcArgs = context.function_argument();
             if (funcArgs != null)
             {
-                foreach (var arg in funcArgs)
+                for (int j = 0; j < funcArgs.Length; j++)
                 {
                     Write(",");
-                    if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
-                        EmitLine();
+                    bool afterBranches = EndedOnABranchLine(lines);
+                    lines = _code.Count;
+                    if (WroteSeparatorComments(runs, 1 + j))
+                        VisitMovableArgument(funcArgs[j]);
+                    else if (afterBranches || WrapsPositionalArgument(funcArgs[j]))
+                        VisitWrappedPositionalArgument(funcArgs[j]);
                     else
-                        Space();
-                    Visit(arg);
+                    {
+                        SeparateGraphicsArgument();
+                        VisitMovableArgument(funcArgs[j]);
+                    }
                 }
             }
 
@@ -3090,11 +4227,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             if (context.named_arguments() != null)
             {
                 Write(",");
-                if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
-                    EmitLine();
+                if (WroteSeparatorComments(runs, 1 + (funcArgs?.Length ?? 0)))
+                    Visit(context.named_arguments());
+                else if (EndedOnABranchLine(lines))
+                    VisitWrappedPositionalArgument(context.named_arguments());
                 else
-                    Space();
-                Visit(context.named_arguments());
+                {
+                    SeparateGraphicsArgument();
+                    Visit(context.named_arguments());
+                }
             }
 
             if (context.for_indices() != null)
@@ -3112,18 +4253,20 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             var funcArgs = context.function_argument();
             if (funcArgs != null)
             {
-                foreach (var arg in funcArgs)
+                for (int j = 0; j < funcArgs.Length; j++)
                 {
                     Write(",");
-                    Space();
-                    Visit(arg);
+                    if (!WroteSeparatorComments(runs, 1 + j))
+                        Space();
+                    Visit(funcArgs[j]);
                 }
             }
 
             if (context.named_arguments() != null)
             {
                 Write(",");
-                Space();
+                if (!WroteSeparatorComments(runs, 1 + (funcArgs?.Length ?? 0)))
+                    Space();
                 Visit(context.named_arguments());
             }
         }
@@ -3133,6 +4276,118 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Writes a call's later positional argument so that an array of calls inside it, still on the
+    /// line it opened on, moves the argument to a line of its own before it wraps (B483). Positional
+    /// arguments are never wrapped for length, so only the array broke, mid-list:
+    /// <c>axesRotations(sequence_start, {angle[1], ...}, {der(angle[1]),</c> then the rest of that
+    /// array on the next line.
+    /// </summary>
+    private void VisitMovableArgument(modelicaParser.Function_argumentContext argument)
+    {
+        var enclosing = _movableArgument;
+        _movableArgument = (_code.Count, _currentLine.Length);
+        Visit(argument);
+        _movableArgument = enclosing;
+    }
+
+    /// <summary>
+    /// Whether a call's later positional argument, in an equation or a statement, starts a line of
+    /// its own because it does not fit after the ',' (B487). Positional arguments were never wrapped
+    /// for length, so the line broke wherever a '+' or '-' fell: MSL's
+    /// PolyphaseElectroMagneticConverter had <c>Complex(sum({...}), sum({sTM[j, k].re*v[k].im</c> and
+    /// the rest of the second argument on the next line. Only an argument that then fits: one that
+    /// would still wrap stays where it is, rather than taking a line more to wrap anyway, and so does
+    /// one holding a string written over several lines, and one inside a first argument that could
+    /// still be moved to a line of its own (B464) or an array still on the line it opened on (B474).
+    /// A graphics annotation's calls - an equation's annotation is written while it is still the
+    /// equation being written - have rules of their own. A first positional argument that does not
+    /// fit after the '(' is asked the same (B489): Buildings' gFunction left <c>timeGeometric(tSho_min,</c>
+    /// ending a 116-character line, and multipoleThermalResistances <c>(2,</c> with <c>3, xPip, ...</c>
+    /// starting the next.
+    /// </summary>
+    private bool WrapsPositionalArgument(ParserRuleContext argument)
+    {
+        if (_inGraphicsAnnotationLevel > 0 || _bracketDepth > 0 || _equationContinuationIndent == 0
+            || argument.GetText().Contains('\n')
+            || _firstArgumentLine == _code.Count
+            // An array still on the line it opened on wraps its elements by its own rules (B474).
+            || _arrayStart.Lines == _code.Count)
+            return false;
+        int length = EstimatedLength(argument);
+        if (GetCurrentLinePlainTextLength() + 1 + length <= _maxLineLength - 3)
+            return false;
+        // The line it starts is a level in from the line the call opened on, which, if it is this
+        // one, has not been indented yet.
+        var opening = _argumentsOpeningLine < _code.Count ? _code[_argumentsOpeningLine] : _currentLine.ToString();
+        int openingIndent = opening.Length - opening.TrimStart(' ').Length
+            + (_argumentsOpeningLine < _code.Count ? 0 : _indentLevel * IndentSpaces);
+        int column = Math.Max(openingIndent, _indentLevel * IndentSpaces) + IndentSpaces;
+        return column + length <= _maxLineLength - 3;
+    }
+
+    /// <summary>
+    /// Whether the argument just written, begun when <paramref name="lines"/> lines had been written,
+    /// ended on the line an if-expression in it started with its 'else' (B487), so that the
+    /// next argument starts a line of its own rather than following the last branch (B489): MSL's
+    /// Fluid.Machines had <c>else (N/N_nominal)^2*flowCharacteristic(0) - s*unitHead, if
+    /// checkValveHomotopy == ...</c>, where the second argument of <c>homotopy</c> read as part of
+    /// the first's last branch.
+    /// </summary>
+    private bool EndedOnABranchLine(int lines)
+    {
+        if (_code.Count == lines)
+            return false;
+        return GetCurrentLinePlainText().TrimStart().StartsWith("else ", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Writes a later positional argument on a line of its own, a level in from the line the call
+    /// opened on, as a wrapped array element is (B468, B487).
+    /// </summary>
+    private void VisitWrappedPositionalArgument(ParserRuleContext argument)
+    {
+        EmitLine();
+        int argumentLine = _code.Count;
+        _currentLineMaximumLevel = _indentLevel;
+        Indent();
+        AddIndentToCurrentLine();
+        KeepInFrom(_argumentsOpeningLine);
+        // Already at the start of a line, so there is nothing to move (B483).
+        Visit(argument);
+        if (argumentLine < _code.Count)
+        {
+            var first = _code[argumentLine];
+            _currentLineMinimumIndent = Math.Max(_currentLineMinimumIndent, first.Length - first.TrimStart(' ').Length);
+        }
+        Dedent();
+    }
+
+    /// <summary>
+    /// Writes the comments before item <paramref name="item"/> of a function call's arguments
+    /// (B431), if there are any, leaving the line ready for the item; false when there are none and
+    /// the caller separates the item as it always has.
+    /// </summary>
+    private bool WroteSeparatorComments(CommentRun[]? runs, int item)
+    {
+        if (runs == null || item >= runs.Length || !runs[item].Any)
+            return false;
+        WriteListComments(runs[item], _callUsingMultiLine);
+        return true;
+    }
+
+    /// <summary>
+    /// What follows the ',' before a positional argument: a new line in a multi-line graphics
+    /// element, otherwise a space.
+    /// </summary>
+    private void SeparateGraphicsArgument()
+    {
+        if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
+            EmitLine();
+        else
+            Space();
     }
 
     public override object? VisitFunction_argument([NotNull] modelicaParser.Function_argumentContext context)
@@ -3178,17 +4433,48 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         // Grammar: expression (',' expression)* ('for' for_indices)?
         var expressions = context.expression();
+        // Comments after a ',' (B431). A multi-line graphics array already puts one
+        // element a line; anywhere else the element after a comment continues a level in.
+        var runs = CommentRuns(context);
+        int opening = _code.Count;
+        // Whether a wrapped element is a level in from the line the array opened on, rather than
+        // where the element before it ended (B468) - always, once the array has wrapped from the
+        // line it opened on (B474).
+        bool levelIn = !_parentUsingMultiLine;
         if (expressions != null && expressions.Length > 0)
         {
             for (int i = 0; i < expressions.Length; i++)
             {
+                bool wrapped = false;
+                int elementLine = _code.Count;
                 if (i > 0)
                 {
                     Write(",");
-                    if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
+                    if (runs != null && runs[i].Any)
+                        WriteListComments(runs[i],
+                            _inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement);
+                    else if (WrapsArrayElement(expressions[i], ref opening, ref levelIn))
+                    {
+                        // A call that will not fit after the element before it starts a line of its
+                        // own (B468): left on the last line of the element before, each call's
+                        // wrapped arguments were a level deeper than the last one's - and left on
+                        // the line the array opened on, the line ran on past the limit (B474). It
+                        // is a level in from the line the array opened on, as a wrapped argument
+                        // is - or, inside a list written an argument a line, where the element
+                        // before it ended, unless the array wrapped from its opening line.
                         EmitLine();
+                        elementLine = _code.Count;
+                        if (levelIn)
+                        {
+                            _currentLineMaximumLevel = _indentLevel;
+                            Indent();
+                            AddIndentToCurrentLine();
+                            KeepInFrom(opening);
+                            wrapped = true;
+                        }
+                    }
                     else
-                        Space();
+                        SeparateGraphicsArgument();
                 }
 
                 if (_inGraphicsAnnotationLevel > 0)
@@ -3198,6 +4484,18 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                 if (_inGraphicsAnnotationLevel > 0)
                     _inGraphicsAnnotationLevel--;
+                if (wrapped)
+                {
+                    // The last line of a wrapped element over more than one line - the ')' of a
+                    // call written an argument a line - is ended after the wrap has gone back out,
+                    // so it is kept at least at the element's own column (B474).
+                    if (elementLine < _code.Count)
+                    {
+                        var first = _code[elementLine];
+                        _currentLineMinimumIndent = Math.Max(_currentLineMinimumIndent, first.Length - first.TrimStart(' ').Length);
+                    }
+                    Dedent();
+                }
             }
 
             if (context.for_indices() != null)
@@ -3212,6 +4510,23 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         return null;
     }
 
+    /// <summary>
+    /// Whether an array element after the first is a function call that would not fit on the
+    /// current line after a space (B468). Only a call: a graphics annotation's arrays are laid out
+    /// by their own rules, and an array of numbers is not wrapped for length at all.
+    /// </summary>
+    private bool WrapsCallElementForLength(modelicaParser.ExpressionContext element)
+    {
+        if (_inGraphicsAnnotationLevel > 0)
+            return false;
+        IParseTree node = element;
+        while (node is ParserRuleContext { ChildCount: 1 } rule && node is not modelicaParser.PrimaryContext)
+            node = rule.GetChild(0);
+        if (node is not modelicaParser.PrimaryContext { } primary || primary.function_call_args() == null)
+            return false;
+        return GetCurrentLinePlainTextLength() + 1 + element.GetText().Length > _maxLineLength - 3;
+    }
+
     public override object? VisitNamed_arguments([NotNull] modelicaParser.Named_argumentsContext context)
     {
         // Grammar: named_argument (',' named_argument)*
@@ -3219,31 +4534,55 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (namedArgs == null || namedArgs.Length == 0)
             return null;
 
-        Visit(namedArgs[0]);
+        int opening = _argumentsOpeningLine;
+        int lines = _code.Count;
+        VisitFirstArgument(namedArgs[0], namedArgs.Length);
+        var runs = CommentRuns(context);
 
         for (int i = 1; i < namedArgs.Length; i++)
         {
             Write(",");
+            bool afterBranches = EndedOnABranchLine(lines);
+            lines = _code.Count;
+
+            // Comments after the ',' (B431), as in VisitFunction_arguments.
+            if (WroteSeparatorComments(runs, i))
+            {
+                Visit(namedArgs[i]);
+                continue;
+            }
 
             // Check if line is too long or will be too long with next argument
-            var nextArgText = namedArgs[i].GetText() ?? "";
-            var estimatedLength = GetCurrentLinePlainTextLength() + 1 + nextArgText.Length; // +1 for space
-            bool needsWrapForLength = !_inDocumentationAnnotation && estimatedLength > (_maxLineLength - 3);
+            // In an equation or a statement, estimated as written, with its spaces, as a positional
+            // argument is there (B487, B489): from its text alone, Media's ReferenceMoistAir kept
+            // 'X=cat(1, X, {1 - sum(X)})' on a line it did not fit, and it wrapped inside the 'cat'.
+            // Elsewhere - a declaration's modifications, a graphics annotation's calls - it is
+            // estimated as before: there it put an Icon Line's 'color=' on a line of its own.
+            int nextLength = _equationContinuationIndent > 0
+                ? EstimatedLength(namedArgs[i])
+                : namedArgs[i].GetText().Length;
+            var estimatedLength = GetCurrentLinePlainTextLength() + 1 + nextLength; // +1 for space
+            bool needsWrapForLength = !_inDocumentationAnnotation && estimatedLength > (_maxLineLength - 3)
+                || afterBranches;
 
             // Determine if we need to wrap
-            bool shouldWrap = (_inGraphicsAnnotationLevel > 0 && !_inSingleLineGraphicsElement) ||
-                             (_parentUsingMultiLine && !_inSingleLineGraphicsElement) ||
-                             needsWrapForLength;
+            bool anArgumentALine = (_inGraphicsAnnotationLevel > 0 || _parentUsingMultiLine) && !_inSingleLineGraphicsElement;
+            bool shouldWrap = anArgumentALine || needsWrapForLength;
 
             if (shouldWrap)
             {
-                bool needsExtraIndent = needsWrapForLength && !_parentUsingMultiLine;
-
+                // A list written an argument a line puts every argument at one column, so one that
+                // is also too long for its line is not given a wrapped argument's indent on top of
+                // that (B469).
+                bool needsExtraIndent = needsWrapForLength && !_parentUsingMultiLine && !anArgumentALine;
                 EmitLine();
                 if (needsExtraIndent)
+                {
+                    _currentLineMaximumLevel = _indentLevel;
                     Indent();
-                if (needsExtraIndent)
                     AddIndentToCurrentLine();
+                    KeepInFrom(opening);
+                }
 
                 Visit(namedArgs[i]);
 
@@ -3297,6 +4636,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     public override object? VisitExpression_list([NotNull] modelicaParser.Expression_listContext context)
     {
         var expressions = context.expression();
+        // Comments after a ',' (B431) - in a matrix row, or an external call's arguments.
+        var runs = CommentRuns(context);
         if (expressions != null)
         {
             for (int i = 0; i < expressions.Length; i++)
@@ -3304,7 +4645,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (i > 0)
                 {
                     Write(",");
-                    Space();
+                    if (runs != null && runs[i].Any)
+                        WriteListComments(runs[i], multiLine: false);
+                    else
+                        Space();
                 }
                 Visit(expressions[i]);
             }
@@ -3353,6 +4697,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         if (_showAnnotations && context.annotation() != null)
         {
+            // Comments before the annotation (B409) go with it, and are hidden with it.
+            if (context.c_comment() is { Length: > 0 } comments)
+                WriteLeadingComments(comments);
+
             // Flush current line content before starting annotation on a new line.
             // If _currentLine is whitespace-only (e.g., indent left over after the parent
             // visitor already wrapped a long line), clear it instead of emitting a blank line.
@@ -3376,6 +4724,17 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitString_comment([NotNull] modelicaParser.String_commentContext context)
     {
+        // Comments before the description (B409) are written first, each where it stood: one that
+        // shared a line with what came before it stays on that line, one that started a line of its
+        // own starts one here too, a level in. The description then follows on the next line, a
+        // level in, because a comment ends its line. Dropping them would lose the user's text on save.
+        var comments = context.c_comment();
+        if (comments is { Length: > 0 })
+        {
+            WriteLeadingComments(comments);
+            AddIndentToCurrentLine();
+        }
+
         var strings = context.STRING();
         if (strings != null && strings.Length > 0)
         {
@@ -3388,6 +4747,211 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         return null;
     }
+
+    /// <summary>
+    /// Writes comments that stand before a description or an annotation (B409), each where it
+    /// stood: one that shared a line with what came before it stays on that line, one that started a
+    /// line of its own starts one here too, a level in. Every comment ends its line, so whatever
+    /// follows starts a new one.
+    /// <para>The same placement serves the other positions a comment was accepted in by B432 - after
+    /// a ',' in an enumeration, before 'constrainedby', and before an equation's ';' - where one on
+    /// a line of its own lines up with what surrounds it rather than a level in
+    /// (<paramref name="levelIn"/> false).</para>
+    /// </summary>
+    private void WriteLeadingComments(modelicaParser.C_commentContext[] comments, bool levelIn = true)
+        => WriteComments(comments, LastLineOfTokenBefore(comments[0]), levelIn);
+
+    /// <summary>
+    /// <see cref="WriteLeadingComments"/> with the line of the token before the first comment
+    /// already known - a list's runs know it from the walk that found them, and asking the tree
+    /// instead is a search of the list per run.
+    /// </summary>
+    private void WriteComments(modelicaParser.C_commentContext[] comments, int? previousLine, bool levelIn)
+    {
+        foreach (var comment in comments)
+        {
+            if (previousLine is null || comment.Start.Line > previousLine)
+            {
+                EndLineIfAny();
+                if (levelIn)
+                    Indent();
+                Visit(comment);
+                if (levelIn)
+                    Dedent();
+            }
+            else
+            {
+                Space();
+                Visit(comment);
+            }
+            previousLine = LastLineOf(comment.Start);
+        }
+    }
+
+    /// <summary>
+    /// Ends the current line if anything is on it, and otherwise discards the indent left on it.
+    /// After a comment the line is already ended, and an unconditional <see cref="EmitLine"/> there
+    /// writes a blank line.
+    /// </summary>
+    private void EndLineIfAny()
+    {
+        if (_currentLine.ToString().Trim().Length > 0)
+            EmitLine();
+        else
+            _currentLine.Clear();
+    }
+
+    /// <summary>
+    /// A run of comments inside a bracketed list (B431), with the line of the token before it.
+    /// </summary>
+    private readonly record struct CommentRun(modelicaParser.C_commentContext[] Comments, int? PreviousLine)
+    {
+        public bool Any => Comments is { Length: > 0 };
+    }
+
+    /// <summary>
+    /// The comments among <paramref name="list"/>'s children, grouped by the item they come before:
+    /// run <c>i</c> is what stands between item <c>i - 1</c> and item <c>i</c>, and the last run is
+    /// what follows the last item. An item is any child rule that is
+    /// not a comment, so the same walk serves a list (its arguments) and the rule that brackets one
+    /// (the list itself: the run before it is the opening run and the run after it the closing one).
+    /// Null when there are no comments, which is every list the grammar accepted before B431, so a
+    /// caller can leave its layout exactly as it was.
+    /// </summary>
+    private static CommentRun[]? CommentRuns(ParserRuleContext? list)
+    {
+        var children = list?.children;
+        if (children == null)
+            return null;
+
+        int items = 0;
+        bool any = false;
+        foreach (var child in children)
+        {
+            if (child is modelicaParser.C_commentContext)
+                any = true;
+            else if (child is ParserRuleContext)
+                items++;
+        }
+        if (!any)
+            return null;
+
+        var runs = new CommentRun[items + 1];
+        var pending = new List<modelicaParser.C_commentContext>();
+        int? lastLine = null;
+        bool lastLineKnown = false;
+        int? runPreviousLine = null;
+        int item = 0;
+        foreach (var child in children)
+        {
+            if (child is modelicaParser.C_commentContext comment)
+            {
+                if (pending.Count == 0)
+                    runPreviousLine = lastLineKnown ? lastLine : LastLineOfTokenBefore(list!);
+                pending.Add(comment);
+                continue;
+            }
+            if (child is ParserRuleContext rule)
+            {
+                runs[item++] = new CommentRun(pending.ToArray(), runPreviousLine);
+                pending.Clear();
+                if (rule.Stop != null && rule.Stop.TokenIndex >= rule.Start.TokenIndex)
+                {
+                    lastLine = LastLineOf(rule.Stop);
+                    lastLineKnown = true;
+                }
+            }
+            else if (child is ITerminalNode terminal)
+            {
+                lastLine = LastLineOf(terminal.Symbol);
+                lastLineKnown = true;
+            }
+        }
+        runs[item] = new CommentRun(pending.ToArray(), runPreviousLine);
+        return runs;
+    }
+
+    /// <summary>
+    /// Writes a run of comments inside a bracketed list (B431), each where it stood, and leaves the
+    /// line ready for what follows. A comment ends its line, so what follows starts a new one: in a
+    /// list already written one item a line (<paramref name="multiLine"/>) that line is the next
+    /// item's; otherwise it is a continuation line, a level in, as a list wrapped for length has.
+    /// The closing bracket goes back to the line's own level (<paramref name="beforeClose"/>).
+    /// </summary>
+    private void WriteListComments(CommentRun run, bool multiLine, bool beforeClose = false)
+    {
+        WriteComments(run.Comments, run.PreviousLine, levelIn: !multiLine);
+        if (!multiLine && !beforeClose)
+            AddIndentToCurrentLine();
+    }
+
+    /// <summary>
+    /// Writes the comments after a list's opening bracket (B431). They come before any indent for the
+    /// list, so one on a line of its own goes a level in either way; one on the bracket's line stays
+    /// there. In a list written one item a line the bracket's line is then ended, as it would have
+    /// been; otherwise the first item continues a level in.
+    /// </summary>
+    private void WriteOpeningComments(CommentRun run, bool multiLine)
+    {
+        WriteComments(run.Comments, run.PreviousLine, levelIn: true);
+        if (!multiLine)
+            AddIndentToCurrentLine();
+    }
+
+    /// <summary>
+    /// Ends the line before a multi-line list's closing bracket: a comment has already ended it when
+    /// the list closed on one (B431), and ending it again writes a blank line.
+    /// </summary>
+    private void EndLineBeforeClose(bool afterComments)
+    {
+        if (afterComments)
+            EndLineIfAny();
+        else
+            EmitLine();
+    }
+
+    /// <summary>
+    /// Whether a matrix row starts a line of its own in the source (B462): on a later line than
+    /// <paramref name="previous"/> ends on - the last token of the row before it, whichever side of
+    /// the ';' the break was written, or the '[' for the first row (B463).
+    /// </summary>
+    private static bool RowStartsLine(IToken previous, ParserRuleContext row)
+        => row.Start.Line > LastLineOf(previous);
+
+    /// <summary>The line a token ends on — a block comment or a string can span several.</summary>
+    private static int LastLineOf(IToken token)
+        => token.Line + (token.Text?.Count(c => c == '\n') ?? 0);
+
+    /// <summary>
+    /// The last line of the token that comes before <paramref name="node"/> in the tree, or null
+    /// when nothing does. Read from the tree rather than the token stream, which a caller may not
+    /// have given the renderer.
+    /// </summary>
+    private static int? LastLineOfTokenBefore(IParseTree node)
+    {
+        var current = node;
+        while (current.Parent is ParserRuleContext parent && parent.children != null)
+        {
+            for (int j = parent.children.IndexOf(current) - 1; j >= 0; j--)
+            {
+                switch (parent.children[j])
+                {
+                    case ITerminalNode terminal:
+                        return LastLineOf(terminal.Symbol);
+                    case ParserRuleContext rule when rule.Stop != null && rule.Stop.TokenIndex >= rule.Start.TokenIndex:
+                        return LastLineOf(rule.Stop);
+                }
+            }
+            current = parent;
+        }
+        return null;
+    }
+
+    /// <summary>The description strings of a string_comment, without any comments before them.</summary>
+    private static string DescriptionText(modelicaParser.String_commentContext? context)
+        => context?.STRING() is { Length: > 0 } strings
+            ? string.Join(" ", strings.Select(s => s.GetText()))
+            : "";
 
     public override object? VisitAnnotation([NotNull] modelicaParser.AnnotationContext context)
     {
@@ -3445,17 +5009,32 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitEnum_list([NotNull] modelicaParser.Enum_listContext context)
     {
-        var enumLiterals = context.enumeration_literal();
-        if (enumLiterals != null)
+        // Walked in order, because since B432 a ',' may have comments after it. Each keeps its line:
+        // one after the ',' stays on the literal's line, one on a line of its own gets one here.
+        var children = context.children;
+        if (children == null)
+            return null;
+        var pending = new List<modelicaParser.C_commentContext>();
+        foreach (var child in children)
         {
-            for (int i = 0; i < enumLiterals.Length; i++)
+            switch (child)
             {
-                if (i > 0)
-                {
+                case ITerminalNode terminal when terminal.GetText() == ",":
                     Write(",");
-                    EmitLine();
-                }
-                Visit(enumLiterals[i]);
+                    break;
+                case modelicaParser.C_commentContext comment:
+                    pending.Add(comment);
+                    break;
+                case modelicaParser.Enumeration_literalContext literal:
+                    if (pending.Count > 0)
+                    {
+                        WriteLeadingComments(pending.ToArray(), levelIn: false);
+                        pending.Clear();
+                    }
+                    else
+                        EndLineIfAny();
+                    Visit(literal);
+                    break;
             }
         }
         return null;

@@ -184,15 +184,17 @@ public static class MetricsCalculator
 /// </summary>
 public sealed class CoverageMeasurer
 {
-    private readonly DirectedGraph _graph;
     private readonly Func<string, string, bool>? _inheritedIcon;
     private readonly CoverageDimension _dimensions;
     private readonly bool _honorSuppressions;
 
-    // Memoises the (is-Real-derived, has-unit) verdict per resolved type class. Concurrent because
-    // style checking measures from its worker threads.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool, bool)> _unitCache =
-        new(StringComparer.Ordinal);
+    // Whether a declared type is Real-derived and carries a unit, asked per (class, type). The
+    // MissingUnits rule's own lookup, with both of the caches B174 found the time in: the question
+    // memoised, not only the answer, and each class's extends chain collected once rather than once
+    // per component. This had neither - it called UnitResolver with a cache keyed by the class a type
+    // resolved to and no ancestor cache - and measured 2,946s of thread-time on Claytex against the
+    // rule's 367s for the same questions about the same components (B261).
+    private readonly Func<string, string, (bool IsRealDerived, bool TypeHasUnit)> _unitLookup;
 
     private int _measured;
 
@@ -212,14 +214,21 @@ public sealed class CoverageMeasurer
     /// the class's layout findings back — and a report that dropped its layout rows while listing its
     /// layout findings would be the gap-with-no-finding defect the other way round.
     /// </param>
+    /// <param name="unitLookup">
+    /// The unit lookup to answer through — <b>the one the <c>MissingUnits</c> rule is using</b>, when
+    /// this measurer belongs to a check that runs the rule. The two then ask each question once
+    /// between them rather than once each, and the Unit dimension and the rule cannot come apart
+    /// because they are the same answer. Null builds one of its own, with the same caches.
+    /// </param>
     public CoverageMeasurer(
         DirectedGraph graph,
         CoverageDimension dimensions = CoverageDimension.All,
-        bool honorSuppressions = true)
+        bool honorSuppressions = true,
+        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null)
     {
-        _graph = graph;
         _dimensions = dimensions;
         _honorSuppressions = honorSuppressions;
+        _unitLookup = unitLookup ?? StyleChecking.CreateUnitLookup(graph)!;
         // For "has an icon" including icons inherited via `extends Modelica.Icons.*`.
         _inheritedIcon = StyleChecking.CreateBaseClassHasIconCallback(graph);
     }
@@ -287,11 +296,6 @@ public sealed class CoverageMeasurer
                     e.Kind == ClassElementKind.Extends && _inheritedIcon(e.Type ?? string.Empty, model.Id));
         }
 
-        var imports = iface.Elements
-            .Where(e => e.Kind == ClassElementKind.Import)
-            .Select(e => e.Name)
-            .ToList();
-
         // Unit coverage counts every Real-derived numeric quantity (plain Real and SI/quantity types
         // that ultimately alias Real). Which of them are united is decided by the MissingUnits rule
         // below, run with the same type lookup — so a gap on the dashboard is a finding in the report
@@ -318,7 +322,7 @@ public sealed class CoverageMeasurer
             if (!wantsUnits)
                 continue;
 
-            var (isReal, _) = UnitResolver.Resolve(_graph, model.Id, element.Type, imports, _unitCache);
+            var (isReal, _) = _unitLookup(model.Id, element.Type ?? string.Empty);
             if (isReal)
                 realTotal++;
         }
@@ -332,8 +336,7 @@ public sealed class CoverageMeasurer
             // counting them here would subtract them from a denominator that never included them.
             var unitVisitor = new MissingUnits(
                 ModelicaName.EnclosingPackageOf(model.Id),
-                unitLookup: (_, typeName) =>
-                    UnitResolver.Resolve(_graph, model.Id, typeName, imports, _unitCache));
+                unitLookup: (_, typeName) => _unitLookup(model.Id, typeName));
             unitVisitor.VisitStored_definition(tree);
             var missing = unitVisitor.Findings.Count(
                 f => f.RuleId == RuleIds.MissingUnit && f.ModelId == model.Id);

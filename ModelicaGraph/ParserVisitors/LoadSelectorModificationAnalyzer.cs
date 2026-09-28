@@ -142,16 +142,56 @@ public class LoadSelectorModificationAnalyzer : modelicaBaseVisitor<object?>
         return base.VisitElement_modification(context);
     }
 
+    /// <summary>
+    /// The file path a modification binds, or <c>null</c> when it does not bind one MLQT can know.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Only a string literal is a path (B210).</b> This used to return
+    /// <c>StripQuotes(modExpr.GetText())</c> — the raw text of whatever was bound — so
+    /// <c>fileName_1={fileName_1_xr,fileName_1_yr,fileName_1_zr}</c> became a path, was resolved
+    /// against the class's own directory, and was reported as a missing file named after the
+    /// expression. Claytex produces several of these.</para>
+    ///
+    /// <para>An array, a reference to another parameter, a concatenation or a function call has a
+    /// value only when the model is translated. MLQT cannot resolve it and therefore cannot say it is
+    /// absent, so it records nothing rather than something false. A <c>loadResource(...)</c> call is
+    /// excluded for the same reason it always was: the URI inside it is picked up separately, and
+    /// returning the call text here would double-count it.</para>
+    /// </remarks>
     private static string? ExtractModificationValue(modelicaParser.Modification_expressionContext modExpr)
     {
         var expression = modExpr.expression();
         if (expression == null)
-            return StripQuotes(modExpr.GetText());
+            return null;
 
         if (TryExtractLoadResourcePath(expression) != null)
             return null;
 
-        return StripQuotes(modExpr.GetText());
+        return StringLiteralOf(expression);
+    }
+
+    /// <summary>
+    /// The text of <paramref name="expression"/> when it is a single string literal, otherwise
+    /// <c>null</c>. Deliberately not a search of the subtree: <c>ExtractStringFromTree</c> returns the
+    /// first literal it finds anywhere below, which is what is wanted inside a <c>loadResource</c>
+    /// call and is wrong here — <c>{"a.txt", "b.txt"}</c> is not the path "a.txt".
+    /// </summary>
+    private static string? StringLiteralOf(modelicaParser.ExpressionContext expression)
+    {
+        Antlr4.Runtime.Tree.IParseTree node = expression;
+
+        // Walk down through the single-child chain the grammar builds for a bare primary.
+        while (node.ChildCount == 1)
+        {
+            if (node is modelicaParser.PrimaryContext leaf && leaf.STRING() != null)
+                return StripQuotes(leaf.STRING().GetText());
+
+            node = node.GetChild(0);
+        }
+
+        return node is modelicaParser.PrimaryContext primary && primary.STRING() != null
+            ? StripQuotes(primary.STRING().GetText())
+            : null;
     }
 
     private static string? TryExtractLoadResourcePath(Antlr4.Runtime.Tree.IParseTree tree)

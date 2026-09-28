@@ -39,8 +39,20 @@ grammar modelica;
 // A file has at most ONE within clause (Modelica spec 13.2.2.2). Accepting a repeated clause here
 // let a file that had been written with a duplicated 'within' parse clean, so nothing downstream
 // ever reported it and reformatting preserved the damage instead of flagging it.
+// Comments may also follow the clause and the file's last class (B430): `within P; // note` and
+// `end M; // trailer` were syntax errors. None of this text is in any class's source span, so a
+// writer that rebuilds the file from stored source keeps it only because FileLevelText carries it
+// (B445) - which it does for these two positions and the header, and not for a comment BETWEEN two
+// top-level classes, which Format All's one-file-per-class restructure would silently drop. That
+// position stays a syntax error, visible, rather than becoming a quiet deletion.
+// Each run can belong to one loop only: the trailing comments are inside the group that starts with
+// a class, so a run at the top or after the clause cannot be claimed by them. That keeps every choice
+// one token ahead - a comment continues its run, anything else ends it - so a long run is never
+// rescanned per comment (B235). A trailing loop outside the group would let a comment after the
+// clause belong to either, and deciding that means scanning to the end of the run for each one.
 stored_definition
-    : c_comment* ('within' (name)? ';')? (('final')? class_definition ';')* EOF
+    : c_comment* ('within' (name)? ';' c_comment*)?
+      (('final')? class_definition ';' (('final')? class_definition ';')* c_comment*)? EOF
     ;
 
 class_definition
@@ -75,7 +87,7 @@ long_class_specifier
 //In Modelica 3.6, Changed name to type_specifier
 short_class_specifier
     : IDENT '=' base_prefix type_specifier (array_subscripts)? (class_modification)? comment
-    | IDENT '=' 'enumeration' '(' ((enum_list)? | ':') ')' comment
+    | IDENT '=' 'enumeration' '(' (c_comment* enum_list c_comment* | ':')? ')' comment
     ;
 
 //In Modelica 3.6, Changed name to type_specifier
@@ -88,8 +100,14 @@ base_prefix
     : type_prefix
     ;
 
+// Comments may follow a ',' (B432) or come before one (B431): one literal a line with a note after
+// each is the natural way to write a long enumeration. Comments after the '(' and before the ')'
+// are the enclosing short_class_specifier's. This is the one list that takes a comment before its
+// separator - see argument_list for why the others do not, and why an enumeration can: a run
+// before a ',' belongs to the loop only when the ',' follows it, so it is decided once, but it makes
+// every turn of the loop a prediction rather than a one-token switch, and enumerations are few.
 enum_list
-    : enumeration_literal (',' enumeration_literal)*
+    : enumeration_literal (c_comment* ',' c_comment* enumeration_literal)*
     ;
 
 enumeration_literal
@@ -97,8 +115,13 @@ enumeration_literal
     ;
 
 //Added support for a more c-style comment locations
+// Comments may come before the leading class annotation (B432), on B409's terms: they belong to it
+// only when the annotation follows, so the choice is made once and the loop ends on 'annotation',
+// one token ahead. Otherwise they fall to element_list exactly as before. A class with nothing but
+// comments and an annotation was already ambiguous between the leading and the trailing annotation;
+// ANTLR takes the leading one, and the renderer writes both in the same place.
 composition
-    : (annotation ';')?
+    : (c_comment* annotation ';')?
       element_list (
         'public' element_list
         | 'protected' element_list
@@ -125,9 +148,11 @@ external_function_call
 
 //Added support for tracking c-style comments among element definitions
 element_list
-    : (c_comment | element ';')*
+    : (c_comment+ | element ';')*
     ;
 
+// Comments before 'constrainedby' (B432) belong to the element only when 'constrainedby' follows
+// them; the ';' that ends an element cannot start with a comment, so the choice is made once.
 element
     : import_clause
     | extends_clause
@@ -135,7 +160,7 @@ element
       (
         ( class_definition 
         | component_clause)
-        | 'replaceable' (class_definition | component_clause) (constraining_clause comment)?
+        | 'replaceable' (class_definition | component_clause) (c_comment* constraining_clause comment)?
       )
     ;
 
@@ -149,8 +174,9 @@ import_list
 
 //Changed in Modelica 3.6 with class_or_inheritence_modification instead of class_modification
 //In Modelica 3.6, Changed name to type_specifier
+// Comments may come before the annotation (B432), only when the annotation follows - as in comment.
 extends_clause
-    : 'extends' type_specifier (class_or_inheritence_modification)? (annotation)?
+    : 'extends' type_specifier (class_or_inheritence_modification)? (c_comment* annotation)?
     ;
 
 //In Modelica 3.6, Changed name to type_specifier
@@ -201,13 +227,15 @@ modification_expression
     ;
 
 //New in Modelica 3.6
+// Comments after the '(' and before the ')' (B431), as in class_modification.
 class_or_inheritence_modification
-    : '(' (argument_or_inheritence_list)? ')'
+    : '(' c_comment* (argument_or_inheritence_list c_comment*)? ')'
     ;
 
 //New in Modelica 3.6
+// Comments after a ',' (B431), as in argument_list.
 argument_or_inheritence_list
-    : (argument | inheritence_modification) (',' (argument | inheritence_modification))*
+    : (argument | inheritence_modification) (',' c_comment* (argument | inheritence_modification))*
     ;
 
 //New in Modelica 3.6
@@ -215,12 +243,30 @@ inheritence_modification
     : 'break' (connect_clause | IDENT)
     ;
 
+// Comments may come after the '(' and before the ')' (B431): `Real x(start=1, // why` then
+// `fixed=true);`, or a note on the last argument. The closing run is taken only after a list, so a
+// modification holding nothing but comments is the opening run's alone: with a run allowed both
+// before and after an optional list, an empty list leaves two loops competing for the same
+// comments, and the parser rescans the run at every comment to tell them apart (B235).
 class_modification
-    : '(' (argument_list)? ')'
+    : '(' c_comment* (argument_list c_comment*)? ')'
     ;
 
+// Comments after a ',' (B431). Every bracketed list - modifications, function arguments, arrays,
+// matrix rows, enumerations - takes this one shape: a run after a separator ends on the next item,
+// and a run after the last item is the enclosing rule's closing run, which ends on the bracket.
+// Every one of those loops ends one token ahead, so no run is rescanned per comment (B235), and
+// whose a run after an item is - a description's, an annotation's, a constrainedby's or the closing
+// run - is decided once, by the token after it.
+//
+// A comment BEFORE a ',' is refused, except in an enumeration. It could be taken on the same terms,
+// but then a COMMENT could either continue a list or end it, and no loop over a list could be
+// decided by one token any more: every ',' and every closing bracket in every file becomes a
+// prediction. Measured over MSL and Buildings, that was 2.15M more predictions (+61%) and parse
+// time 5-8% slower, for a position (`a=1 // why` then `, b=2` on the next line) that the usual
+// `a=1, // why` makes unnecessary. Without it the count rose by 189.
 argument_list
-    : argument (',' argument)*
+    : argument (',' c_comment* argument)*
     ;
 
 argument
@@ -243,8 +289,10 @@ element_redeclaration
     )
     ;
 
+// Comments before 'constrainedby' (B431), on the terms element has them (B432): only when
+// 'constrainedby' follows, so the run is otherwise the enclosing list's.
 element_replaceable
-    : 'replaceable' (short_class_definition | component_clause1) (constraining_clause)?
+    : 'replaceable' (short_class_definition | component_clause1) (c_comment* constraining_clause)?
     ;
 
 component_clause1
@@ -365,13 +413,17 @@ connect_clause
     ;
 
 //Added to support tracking comments within equations and statements
+// Comments may come between an equation or a statement and its ';' (B432). The equation's own
+// comment rule takes them only when an annotation follows, so these end on the ';', one token
+// ahead. An equation_or_comment is a comment-only node when it has no equation, not when it has
+// comments - read equation(), never c_comment(), to tell which.
 equation_or_comment
-    : (c_comment | (equation ';'))
+    : (c_comment+ | (equation c_comment* ';'))
     ;
 
 //Added to support tracking comments within equations and statements
 statement_or_comment
-    : (c_comment | (statement ';'))
+    : (c_comment+ | (statement c_comment* ';'))
     ;
     
 //Separated out elseif_expression for clarity in syntax highlighting
@@ -450,8 +502,11 @@ primary
     | (component_reference | 'der' | 'initial' | 'pure') function_call_args
     | component_reference
     | '(' output_expression_list ')' ( '[' array_arguments ']' )?
-    | '[' expression_list (';' expression_list)* ']'
-    | '{' array_arguments '}'
+    // Comments after the opening bracket, after a row's ';' and before the closing bracket (B431) -
+    // a data table with a note on each row is the real case. The shape is argument_list's; the
+    // rows' own ',' are expression_list's.
+    | '[' c_comment* expression_list (';' c_comment* expression_list)* c_comment* ']'
+    | '{' c_comment* array_arguments c_comment* '}'
     | 'end'
     ;
 
@@ -464,27 +519,33 @@ component_reference
     : ('.')? IDENT (array_subscripts)? ('.' IDENT (array_subscripts)?)*
     ;
 
+// Comments after the '(' and before the ')' (B431), on class_modification's terms.
 function_call_args
-    : '(' (function_arguments)? ')'
+    : '(' c_comment* (function_arguments c_comment*)? ')'
     ;
 
 //Changed in Modelica 3.6
 //Changed from right-recursive to iterative to avoid stack overflow on large argument lists
+// Comments after each ',' (B431), in argument_list's shape. Whether a ',' starts a positional or a
+// named argument is decided by what follows it, as it always was; a run after the ',' is scanned in
+// that decision once, and the loop over it ends one token ahead.
 function_arguments
-    : expression (',' function_argument)* (',' named_arguments)? ('for' for_indices)?
-    | function_partial_application (',' function_argument)* (',' named_arguments)?
+    : expression (',' c_comment* function_argument)* (',' c_comment* named_arguments)? ('for' for_indices)?
+    | function_partial_application (',' c_comment* function_argument)* (',' c_comment* named_arguments)?
     | named_arguments
     ;
 
 //New in Modelica 3.6
 //Changed from right-recursive to iterative to avoid stack overflow on large arrays
+// Comments after each ',' (B431); those after the '{' and before the '}' are primary's.
 array_arguments
-    : expression (',' expression)* ('for' for_indices)?
+    : expression (',' c_comment* expression)* ('for' for_indices)?
     ;
 
 //Changed from right-recursive to iterative to avoid stack overflow
+// Comments after each ',' (B431).
 named_arguments
-    : named_argument (',' named_argument)*
+    : named_argument (',' c_comment* named_argument)*
     ;
 
 named_argument
@@ -506,8 +567,9 @@ output_expression_list
     : (expression)? (',' (expression)?)*
     ;
 
+// Comments after each ',' (B431) - within a matrix row, or between an external call's arguments.
 expression_list
-    : expression (',' expression)*
+    : expression (',' c_comment* expression)*
     ;
 
 array_subscripts
@@ -520,12 +582,23 @@ subscript_
     ;
 
 //description in Modelica 3.6
+// Comments may also come before the annotation (B409), on the same terms as before a description:
+// they belong here only when an annotation follows, so the choice is taken once and the loop ends on
+// the 'annotation' keyword, one token ahead. Nothing that can follow this rule starts with a comment.
 comment
-    : string_comment (annotation)?
+    : string_comment (c_comment* annotation)?
     ;
 
+// Comments may come before a description string (B409): `function f // note` then the string on the
+// next line. Modelica allows a comment anywhere, and without this one here the description was a
+// syntax error and error recovery detached every later class in the file from its package.
+// The comments belong to this rule only when a STRING follows them - otherwise the rule is empty and
+// they fall to whatever comes next (a class body's element_list) exactly as before. That keeps the
+// choice unambiguous: entering is decided once, by scanning the run to the token after it, and the
+// loop inside ends on the STRING, one token ahead, so a long run is not rescanned per comment (B235).
+// A string_comment therefore still has text if and only if it has a STRING.
 string_comment
-    : (STRING ('+' STRING)*)?
+    : (c_comment* STRING ('+' STRING)*)?
     ;
 
 annotation

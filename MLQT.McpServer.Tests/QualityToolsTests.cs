@@ -9,7 +9,7 @@ public class QualityToolsTests
         => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Session);
     private static SpellingTools Spelling(TestHost h)
         => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Resources, h.Session);
-    private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Resources, h.Session);
+    private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Repositories, h.Resources, h.Session);
 
     private static void LoadSingle(TestHost h, string file, string content)
         => h.Libraries.AddLibraryFromFileAsync(h.WriteMoFile(file, content)).GetAwaiter().GetResult();
@@ -30,6 +30,27 @@ public class QualityToolsTests
 
         var cr = Assert.IsType<CheckResult>(result);
         Assert.Contains(cr.Findings, v => v.Summary.Contains("Ghost"));   // stale package.order entry
+    }
+
+    [Fact]
+    public void CheckLibrary_ReportsAWithinClauseThatDoesNotMatchItsDirectory()
+    {
+        // B458: R.mo is in Lib/ and says it is in Lib.Q. The same finding the app and mlqt check give.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Lib\n  package Q\n  end Q;\nend Lib;",
+            ["R.mo"] = "within Lib.Q;\nmodel R\nend R;",
+            ["S.mo"] = "within Lib;\nmodel S\nend S;",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var result = ToolAssert.Ok<CheckResult>(Style(host)
+            .CheckLibrary(settings: new StyleSettingsInput { CheckWithinClause = true }).GetAwaiter().GetResult());
+
+        var finding = Assert.Single(result.Findings, v => v.Summary.Contains("within Lib.Q;"));
+        Assert.Equal("Lib.Q.R", finding.ModelName);
+        Assert.DoesNotContain(result.Findings, v => v.ModelName == "Lib.S");
     }
 
     // ----- style -----
@@ -101,6 +122,42 @@ public class QualityToolsTests
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }).GetAwaiter().GetResult());
         Assert.True(res.ModelsChecked >= 1);
         Assert.True(res.FindingCount >= 1);
+    }
+
+    /// <summary>Two classes with no description; one of them waives the rule in its own source.</summary>
+    private const string SuppressedPair = """
+        model Plain
+          Real p;
+        equation
+          p = 1;
+        end Plain;
+
+        model Waived
+          annotation(__MLQT(suppress="MLQT.Doc.ClassDescription", reason="legacy"));
+          Real q;
+        equation
+          q = 1;
+        end Waived;
+        """;
+
+    [Fact]
+    public void CheckLibrary_HonoursAClassesOwnSuppression()
+    {
+        // check_library passes honorSuppressions: true, and flipping that to false survived the
+        // mutation audit - no test had ever put a suppressed class in front of it (B221). An agent
+        // reading findings the user has explicitly waived is worse than noise: it will go and
+        // "fix" them.
+        using var host = new TestHost();
+        LoadSingle(host, "Pair.mo", SuppressedPair);
+
+        var res = ToolAssert.Ok<CheckResult>(Style(host)
+            .CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+            .GetAwaiter().GetResult());
+
+        // The positive control and the assertion are the same two classes: one with no waiver must
+        // still be reported, or "nothing was reported" would pass by reporting nothing at all.
+        Assert.Contains(res.Findings, f => f.ModelName == "Plain");
+        Assert.DoesNotContain(res.Findings, f => f.ModelName == "Waived");
     }
 
     // ----- parse diagnostics -----
@@ -449,6 +506,30 @@ B
     }
 
     [Fact]
+    public void CorrectSpelling_AFileWithNoFinalNewline_GetsOne_AndThePreviewSaysSo()
+    {
+        // Every write ends a file with a newline (ModelicaFileEncoding.EnsureFinalNewline, B236), this
+        // one included. The tool used to promise the file kept its trailing newline — true only of a
+        // file that had one — and its preview returned the text without the newline the write then
+        // added, so what an agent was shown was not what landed on disk.
+        using var host = new TestHost();
+        var original = "model Foo \"The postion\"\r\n  Real x;\r\nequation\r\n  x=1;\r\nend Foo;";
+        var path = host.WriteMoFile("Foo.mo", original);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var spelling = Spelling(host);
+
+        var preview = ToolAssert.Ok<CorrectSpellingResult>(
+            spelling.CorrectSpelling("Foo", "postion", "position", preview: true).GetAwaiter().GetResult());
+        var written = ToolAssert.Ok<CorrectSpellingResult>(
+            spelling.CorrectSpelling("Foo", "postion", "position").GetAwaiter().GetResult());
+
+        var onDisk = File.ReadAllText(path);
+        Assert.Equal(original.Replace("postion", "position") + "\r\n", onDisk);
+        Assert.Equal(onDisk, preview.Source);
+        Assert.Equal(onDisk, written.Source);
+    }
+
+    [Fact]
     public void CorrectSpelling_NoMatch_ReturnsZero()
     {
         using var host = new TestHost();
@@ -534,5 +615,94 @@ B
         var err = ToolAssert.Error(Formatting(host).FormatClass("Bad").GetAwaiter().GetResult());
         Assert.Contains("syntax", err.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(before, File.ReadAllText(path)); // file left untouched
+    }
+
+    // ----- formatting: exclusions and declaration order (B313) -----
+
+    /// <summary>A class written out of every order the formatter knows.</summary>
+    private const string Jumbled =
+        "model Foo \"d\"\n  Real x;\n  parameter Real p = 1;\nequation\n  x = p;\nequation\nend Foo;\n";
+
+    [Fact]
+    public void FormatClass_LeavesAClassThatOptsOutInItsSource_Alone()
+    {
+        // format_class rendered through its own options and never asked FormattingExclusion, so it
+        // rewrote exactly the class __MLQT(format=false) was written on.
+        using var host = new TestHost();
+        var source = Jumbled.Replace("end Foo;", "  annotation(__MLQT(format=false));\nend Foo;");
+        var path = host.WriteMoFile("Foo.mo", source);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+
+        var err = ToolAssert.Error(Formatting(host)
+            .FormatClass("Foo", oneOfEachSection: true, componentsBeforeClasses: true, declarationOrder: true)
+            .GetAwaiter().GetResult());
+
+        Assert.Contains("excluded from formatting", err.Error);
+        Assert.Equal(source, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void FormatClass_LeavesAClassOnTheRepositorysExcludedList_Alone()
+    {
+        using var host = new TestHost();
+        var root = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["P/package.mo"] = "within;\npackage P \"p\"\nend P;\n",
+            ["P/Foo.mo"] = "within P;\n" + Jumbled,
+            ["P/package.order"] = "Foo\n",
+        });
+        var file = Path.Combine(root, "P", "Foo.mo");
+        var repository = host.Repositories.AddRepositoryAsync(root, startMonitoring: false)
+            .GetAwaiter().GetResult().Repository!;
+        host.Repositories.LoadLibrariesAsync(repository.Id).GetAwaiter().GetResult();
+        Assert.NotNull(host.Libraries.GetModelById("P.Foo"));
+        repository.StyleSettings!.FormattingExcludedModels.Add("P.Foo");
+        var before = File.ReadAllText(file);
+
+        var err = ToolAssert.Error(Formatting(host)
+            .FormatClass("P.Foo", oneOfEachSection: true).GetAwaiter().GetResult());
+
+        Assert.Contains("excluded from formatting", err.Error);
+        Assert.Equal(before, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void FormatCode_CanWriteDeclarationsInOrder()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<FormatCodeResult>(Formatting(host).FormatCode(Jumbled,
+            oneOfEachSection: true, importStatementsFirst: true, componentsBeforeClasses: true, declarationOrder: true));
+
+        Assert.True(res.Source.IndexOf("parameter Real p", StringComparison.Ordinal)
+                    < res.Source.IndexOf("Real x;", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FormatClass_ClearsWhatCheckClassReportsAsOutOfOrder()
+    {
+        // The two have to agree, or an agent is shown findings no tool can clear - which is what
+        // settings-reference.md promises cannot happen. A derived simple type is the case that
+        // needs the graph: without the same lookup the checker uses, `Length` stays a component.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage P \"p\"\n  type Length = Real;\n  model R \"r\"\n  end R;\n" +
+                             "  model Foo \"f\"\n    R r;\n    Length l;\n  end Foo;\nend P;\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var rules = new StyleSettingsInput
+        {
+            OneOfEachSection = true, ImportStatementsFirst = true,
+            ComponentsBeforeClasses = true, DeclarationOrder = true,
+        };
+        var before = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("P.Foo", rules));
+        Assert.Contains(before.Findings, f => f.Summary.Contains("'l'"));
+
+        ToolAssert.Ok<FormatClassResult>(Formatting(host).FormatClass("P.Foo",
+            oneOfEachSection: true, importStatementsFirst: true,
+            componentsBeforeClasses: true, declarationOrder: true).GetAwaiter().GetResult());
+
+        var after = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("P.Foo", rules));
+        Assert.DoesNotContain(after.Findings, f => f.Summary.Contains("'l'"));
     }
 }

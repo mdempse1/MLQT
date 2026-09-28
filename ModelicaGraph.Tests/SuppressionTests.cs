@@ -113,6 +113,10 @@ public class SuppressionTests
     private const string BreaksEveryLayoutRule = """
         model TestModel
           Real x;
+          parameter Real p = 1;
+          model Inner
+          end Inner;
+          Real y;
           import Modelica.Units.SI;
           extends Modelica.Icons.Example;
         equation
@@ -122,6 +126,8 @@ public class SuppressionTests
           x = 0;
         algorithm
           x := x;
+        equation
+          y = x;
         end TestModel;
         """;
 
@@ -133,6 +139,8 @@ public class SuppressionTests
         DontMixConnections = true,
         InitialEQAlgoFirst = true,
         InitialEQAlgoLast = true,
+        ComponentsBeforeClasses = true,
+        DeclarationOrder = true,
     };
 
     [Fact]
@@ -161,12 +169,21 @@ public class SuppressionTests
     [Fact]
     public void WithNeitherExclusion_TheSameClassReportsLayoutFindings()
     {
-        // The test above passes vacuously if the fixture breaks no rule, which is exactly how it would
-        // rot: a grammar or rule change that stops it reporting leaves two empty sets matching.
+        // The test above passes vacuously for any rule the fixture does not break, which is exactly
+        // how it rotted: ComponentsBeforeClasses and DeclarationOrder arrived after it, the fixture
+        // broke neither, and __MLQT(format=false) went on reporting both (B284). So the fixture is
+        // held to every layout rule in the catalogue, not merely to reporting something.
         var reported = StyleChecking.RunStyleCheckingFindings(
-            new ModelDefinition("M", BreaksEveryLayoutRule), EveryLayoutRule, "TestModel");
+                new ModelDefinition("M", BreaksEveryLayoutRule), EveryLayoutRule, "TestModel")
+            .Select(f => f.RuleId)
+            .ToHashSet(StringComparer.Ordinal);
 
-        Assert.NotEmpty(reported);
+        var layoutRules = RuleCatalog.BuiltIn.Values
+            .Where(r => r.Category == "Ordering")
+            .Select(r => r.Id)
+            .ToList();
+        Assert.NotEmpty(layoutRules);
+        Assert.All(layoutRules, id => Assert.Contains(id, reported));
     }
 
     [Fact]

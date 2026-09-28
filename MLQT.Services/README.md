@@ -29,6 +29,9 @@ All services follow the pattern:
 | `ExternalResourceService` | `IExternalResourceService` | External resource analysis, validation, and monitoring |
 | `CustomDictionaryService` | `ICustomDictionaryService` | Each repository's accepted spellings, at `<repo>/.mlqt/dictionary.txt` |
 | `BaselineStatusService` | `IBaselineStatusService` | Classifies findings against each repository's committed baseline (new / touched / accepted) |
+| `ModelChangeClassifier` | `IModelChangeClassifier` | What kind of change each model in a working copy carries — one that can affect simulation, or one that cannot |
+
+`LibraryDataService.GetOwningLibrary` is the **only** way to ask which library a class belongs to. A class can be claimed by two loaded libraries — a checkout and a tool's encrypted build of the same library — and `Helpers/LibraryOwnership.cs` decides between them the way the graph did (B268).
 | `DictionaryManagerService` | `IDictionaryManagerService` | Hunspell dictionary management (bundled + imported) |
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |
@@ -318,11 +321,15 @@ var warnings = externalResourceService.GetWarnings();
 
 ### Model Checking (IModelCheckingService)
 
-Both `DymolaCheckingService` and `OpenModelicaCheckingService` implement `IModelCheckingService`:
+Both `DymolaCheckingService` and `OpenModelicaCheckingService` implement `IModelCheckingService`,
+through `ModelCheckingServiceBase<TSession>`, which holds everything the two do the same way - the
+run, its progress and cancellation, and the check sequence. Each service supplies only its session
+factory, how it opens a library, and how its tool says a check gave no verdict (B398):
 
 ```csharp
-// Check a single model
-var result = await checkingService.CheckModelAsync(modelNode, graph);
+// Check a single model. Cancelling the token ends the check even while the tool is running it,
+// and throws OperationCanceledException rather than returning a result
+var result = await checkingService.CheckModelAsync(modelNode, graph, cancellationToken);
 if (!result.Success)
     Console.WriteLine($"Check failed: {result.ErrorMessage}");
 
@@ -345,18 +352,15 @@ await checkingService.StartCheckingAsync(modelNode, graph, cancellationToken);
 var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
     graph, modelIds, rootDirectory,
     showAnnotations: true,
-    oneOfEachSection: true,
-    importsFirst: true,
-    componentsBeforeClasses: false);
+    formatting: settings.ToFormattingOptions());
 
-// Save with formatting exclusions — excluded models keep their original code
+// Save with the repository's settings — a class FormattingExclusion.Excludes names (the name list
+// or __MLQT(format=false)) keeps its original code, and so does every class when formatting is off
 var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
     graph, modelIds, rootDirectory,
     showAnnotations: true,
-    oneOfEachSection: true,
-    importsFirst: true,
-    componentsBeforeClasses: false,
-    excludedModelIds: excludedIds);
+    formatting: settings.ToFormattingOptions(),
+    settings: settings);
 
 // SaveResult contains written file paths and model-to-file mappings
 foreach (var file in result.WrittenFiles)
@@ -364,7 +368,7 @@ foreach (var file in result.WrittenFiles)
 ```
 
 **Formatting Exclusion**: Models can be excluded from formatting at multiple levels:
-- `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts an `excludedModelIds` parameter — excluded models use their original `ModelicaCode` instead of being rendered through the formatter.
+- `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts the repository's `StyleCheckingSettings` and asks `FormattingExclusion.Excludes` of each model — excluded models (and every model, when `ApplyFormattingRules` is off) use their original `ModelicaCode` instead of being rendered through the formatter. Format All Files and Split into files both pass it (B305).
 - `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting findings.
 - `SaveChangedFilesWithFormattingAsync` in `MainLayout` skips excluded models during incremental formatting after VCS operations.
 
@@ -409,7 +413,7 @@ foreach (var file in result.WrittenFiles)
 
 | Type | Description |
 |------|-------------|
-| `ModelTreeNode` | Tree view node (Id, Name, ClassType, IconSvg, FileStatus) |
+| `ResourceTreeNode` | External Resources tree node (Name, FullPath, IsDirectory, AnnotationType, ReferencingModelIds, warning flags) |
 | `ExternalResourceReference` | Resource reference (ModelId, RawPath, ResolvedPath, ReferenceType) |
 | `ResourceWarning` | Resource warning (missing files, absolute paths) |
 

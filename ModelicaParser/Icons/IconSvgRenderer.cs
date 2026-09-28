@@ -16,6 +16,42 @@ public static class IconSvgRenderer
     public const int DefaultSize = 24;
 
     /// <summary>
+    /// Coordinate units per millimetre used when nobody says otherwise — the value the icon path has
+    /// always drawn with, at which Modelica's default 0.25 mm line comes out as 5 units in a 200-unit
+    /// icon and so as a visible hairline at 24 px.
+    /// </summary>
+    public const double DefaultUnitsPerMillimetre = 20;
+
+    /// <summary>
+    /// What the surrounding transform does to the primitives, and so what each has to do for itself.
+    ///
+    /// <para><b>Line thickness and arrow size are physical.</b> Modelica states them in millimetres,
+    /// which is a length on the page rather than in the drawing, so the number of coordinate units
+    /// they come to depends on how far the caller has zoomed in. An icon at 24 px and a diagram at
+    /// 800 px are two very different zooms of the same 200-unit square, and one constant for both
+    /// gives a diagram whose every outline is ten pixels thick.</para>
+    ///
+    /// <para><b>Mirroring is what a reversed extent means</b>, and it applies to the drawing and not
+    /// to the writing: Modelica mirrors a component whose Placement extent runs right to left, and
+    /// its label still has to be read. <c>MirrorX</c> / <c>MirrorY</c> say that the enclosing
+    /// transform flips, so text can undo it.</para>
+    /// </summary>
+    public sealed record GraphicsContext
+    {
+        /// <summary>What every caller got before any of this was a question.</summary>
+        public static readonly GraphicsContext Default = new();
+
+        /// <summary>Coordinate units to one millimetre, for line thickness and arrow size.</summary>
+        public double UnitsPerMillimetre { get; init; } = DefaultUnitsPerMillimetre;
+
+        /// <summary>Whether the enclosing transform mirrors horizontally.</summary>
+        public bool MirrorX { get; init; }
+
+        /// <summary>Whether the enclosing transform mirrors vertically.</summary>
+        public bool MirrorY { get; init; }
+    }
+
+    /// <summary>
     /// Renders IconData as an SVG string.
     /// </summary>
     /// <param name="icon">The IconData to render.</param>
@@ -53,7 +89,7 @@ public static class IconSvgRenderer
         {
             if (!primitive.Visible) continue;
 
-            var svg = RenderPrimitive(primitive, fileNameResolver);
+            var svg = RenderPrimitive(primitive, fileNameResolver, GraphicsContext.Default);
             if (!string.IsNullOrEmpty(svg))
             {
                 sb.AppendLine($"    {svg}");
@@ -141,7 +177,7 @@ public static class IconSvgRenderer
         int maxDepth = 10,
         string? initialPackageContext = null)
     {
-        return ExtractIconWithInheritanceInternal(modelicaCode, null, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext);
+        return ExtractIconWithInheritanceInternal(modelicaCode, null, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext, out _);
     }
 
     /// <summary>
@@ -161,17 +197,23 @@ public static class IconSvgRenderer
         int maxDepth = 10,
         string? initialPackageContext = null)
     {
-        return ExtractIconWithInheritanceInternal(null, parseTree, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext);
+        return ExtractIconWithInheritanceInternal(null, parseTree, baseClassResolver, maxDepth, new HashSet<string>(), initialPackageContext, out _);
     }
 
+    /// <param name="system">The class's resolved Icon coordinate system (MLS 3.6 §18.6.1.1, see
+    /// <see cref="IconData.ResolveCoordinateSystem"/>), whether or not it draws anything - a base
+    /// that draws nothing still lends a derived class its coordinate system. Null only when the
+    /// class could not be read at all.</param>
     private static IconData? ExtractIconWithInheritanceInternal(
         string? modelicaCode,
         modelicaParser.Stored_definitionContext? parseTree,
         Func<string, string?> baseClassResolver,
         int remainingDepth,
         HashSet<string> visitedClasses,
-        string? packageContext)
+        string? packageContext,
+        out IconData? system)
     {
+        system = null;
         if (remainingDepth <= 0)
             return null;
 
@@ -198,17 +240,19 @@ public static class IconSvgRenderer
         // that have no 'within' clause but whose qualified name was known at the call site).
         var effectivePackage = result.WithinPackage ?? packageContext;
 
-        // Start with this class's icon (may be null if no Icon annotation)
-        var mergedIcon = result.Icon;
-
         // Resolve and collect base class icons in extends-clause order.
         // All icons are gathered first so they can be layered correctly:
         // Modelica draws the 1st extends clause deepest (bottom), each subsequent extends
         // clause on top of the previous, and the class's own graphics on top of everything.
+        var baseIcons = new List<IconData>();
+
+        // The coordinate system of the first base whose extends clause does not map it into a
+        // region of its own - what this class uses for any attribute it does not state (B394).
+        IconData? inheritedSystem = null;
+        var systemChosen = false;
+
         if (result.HasExtends)
         {
-            var baseIcons = new List<IconData>();
-
             foreach (var baseClassName in result.ExtendsClasses)
             {
                 // Prevent infinite loops from circular inheritance
@@ -272,49 +316,89 @@ public static class IconSvgRenderer
                     baseClassResolver,
                     remainingDepth - 1,
                     visitedClasses,
-                    nextPackageContext);
+                    nextPackageContext,
+                    out var baseSystem);
 
-                if (baseIcon != null && baseIcon.HasGraphics)
-                    baseIcons.Add(baseIcon);
-            }
-
-            if (baseIcons.Count > 0)
-            {
-                // Concatenate all base graphics in extends-clause order: 1st extends is the deepest
-                // (bottom) layer, each subsequent extends sits on top of the previous one.
-                // This matches how Modelica tools composite multi-extends icons.
-                var combinedGraphics = baseIcons.SelectMany(b => b.Graphics).ToList();
-                var combinedBase = new IconData
+                // The FIRST such base, whether or not it states anything: one that states nothing
+                // has the default system, and that is what it lends. A base that could not be read
+                // is passed over, as an unresolved one is above.
+                if (!systemChosen && baseSystem != null && !result.MappedExtends.Contains(baseClassName))
                 {
-                    CoordinateExtent = baseIcons[0].CoordinateExtent,
-                    PreserveAspectRatio = baseIcons[0].PreserveAspectRatio,
-                    InitialScale = baseIcons[0].InitialScale,
-                    Graphics = combinedGraphics
-                };
+                    inheritedSystem = baseSystem;
+                    systemChosen = true;
+                }
 
-                // Place combined base layer beneath this class's own graphics
-                mergedIcon = mergedIcon == null ? combinedBase : mergedIcon.WithBaseLayer(combinedBase);
+                // What the extends clause's IconMap says (MLS 3.6 §18.6.3, B420): primitivesVisible=false
+                // hides the base's graphics - its connectors, which a diagram draws separately, stay -
+                // and an extent maps the base's coordinate system, with its graphics, into that region.
+                var map = result.MapFor(baseClassName);
+                if (baseIcon == null || !baseIcon.HasGraphics || map is { PrimitivesVisible: false })
+                    continue;
+
+                baseIcons.Add(map?.Region is { } region && baseSystem != null
+                    ? baseSystem.WithGraphics(GraphicsMapping.Into(baseIcon.Graphics, baseSystem, region))
+                    : baseIcon);
             }
         }
 
-        return mergedIcon;
+        system = IconData.ResolveCoordinateSystem(result.Icon, inheritedSystem);
+
+        // Nothing drawn and no Icon annotation of its own: no icon, as before - but the system above
+        // still answers for a class extending this one.
+        if (result.Icon == null && baseIcons.Count == 0)
+            return null;
+
+        // All base graphics in extends-clause order beneath this class's own: 1st extends is the
+        // deepest (bottom) layer, each subsequent extends sits on top of the previous one. This
+        // matches how Modelica tools composite multi-extends icons.
+        return system.WithGraphics(
+            [.. baseIcons.SelectMany(b => b.Graphics), .. result.Icon?.Graphics ?? []]);
     }
 
-    private static string? RenderPrimitive(GraphicsPrimitive primitive, Func<string, string?>? fileNameResolver)
+    /// <summary>
+    /// The graphics themselves, as an SVG fragment, with no surrounding element. For a caller that
+    /// has its own coordinate frame to put them in - a diagram places each component's icon inside a
+    /// transform of its own (B196) - and so cannot use a whole document.
+    ///
+    /// <para>The fragment assumes the Y-flipped group <see cref="RenderToSvg"/> establishes: text
+    /// and bitmaps counter-flip themselves, and everything else is written in Modelica coordinates
+    /// with Y up.</para>
+    /// </summary>
+    public static string RenderPrimitives(
+        IEnumerable<GraphicsPrimitive> graphics, Func<string, string?>? fileNameResolver = null,
+        GraphicsContext? context = null)
+    {
+        context ??= GraphicsContext.Default;
+
+        var sb = new StringBuilder();
+        foreach (var primitive in graphics)
+        {
+            if (!primitive.Visible)
+                continue;
+            var svg = RenderPrimitive(primitive, fileNameResolver, context);
+            if (!string.IsNullOrEmpty(svg))
+                sb.AppendLine(svg);
+        }
+
+        return sb.ToString();
+    }
+
+    private static string? RenderPrimitive(
+        GraphicsPrimitive primitive, Func<string, string?>? fileNameResolver, GraphicsContext context)
     {
         return primitive switch
         {
-            RectanglePrimitive rect => RenderRectangle(rect),
-            EllipsePrimitive ellipse => RenderEllipse(ellipse),
-            LinePrimitive line => RenderLine(line),
-            PolygonPrimitive polygon => RenderPolygon(polygon),
-            TextPrimitive text => RenderText(text),
+            RectanglePrimitive rect => RenderRectangle(rect, context),
+            EllipsePrimitive ellipse => RenderEllipse(ellipse, context),
+            LinePrimitive line => RenderLine(line, context),
+            PolygonPrimitive polygon => RenderPolygon(polygon, context),
+            TextPrimitive text => RenderText(text, context),
             BitmapPrimitive bitmap => RenderBitmap(bitmap, fileNameResolver),
             _ => null
         };
     }
 
-    private static string RenderRectangle(RectanglePrimitive rect)
+    private static string RenderRectangle(RectanglePrimitive rect, GraphicsContext context)
     {
         var x1 = rect.Extent[0];
         var y1 = rect.Extent[1];
@@ -327,7 +411,7 @@ public static class IconSvgRenderer
         var height = Math.Abs(y2 - y1);
 
         var transform = GetTransformAttribute(rect.Origin, rect.Rotation);
-        var style = GetStyleAttribute(rect);
+        var style = GetStyleAttribute(rect, context);
 
         if (rect.Radius > 0)
         {
@@ -336,7 +420,7 @@ public static class IconSvgRenderer
         return $"<rect x=\"{F(x)}\" y=\"{F(y)}\" width=\"{F(width)}\" height=\"{F(height)}\"{transform}{style}/>";
     }
 
-    private static string RenderEllipse(EllipsePrimitive ellipse)
+    private static string RenderEllipse(EllipsePrimitive ellipse, GraphicsContext context)
     {
         var x1 = ellipse.Extent[0];
         var y1 = ellipse.Extent[1];
@@ -349,7 +433,7 @@ public static class IconSvgRenderer
         var ry = Math.Abs(y2 - y1) / 2;
 
         var transform = GetTransformAttribute(ellipse.Origin, ellipse.Rotation);
-        var style = GetStyleAttribute(ellipse);
+        var style = GetStyleAttribute(ellipse, context);
 
         // Full ellipse
         if (ellipse.StartAngle == 0 && ellipse.EndAngle == 360)
@@ -395,28 +479,80 @@ public static class IconSvgRenderer
         return $"<path d=\"{path}\"{transform}{style}/>";
     }
 
-    private static string RenderLine(LinePrimitive line)
+    private static string RenderLine(LinePrimitive line, GraphicsContext context)
     {
         if (line.Points.Count < 2) return "";
 
         var transform = GetTransformAttribute(line.Origin, line.Rotation);
-        var style = GetLineStyleAttribute(line);
+        var style = GetLineStyleAttribute(line, context);
+
+        var svg = new StringBuilder();
 
         if (line.Smooth == "Bezier" && line.Points.Count >= 4)
         {
-            return RenderBezierLine(line, transform, style);
+            svg.Append(RenderBezierLine(line, transform, style));
         }
-
-        // Polyline for multiple points, line for two points
-        if (line.Points.Count == 2)
+        else if (line.Points.Count == 2)
         {
             var p1 = line.Points[0];
             var p2 = line.Points[1];
-            return $"<line x1=\"{F(p1[0])}\" y1=\"{F(p1[1])}\" x2=\"{F(p2[0])}\" y2=\"{F(p2[1])}\"{transform}{style}/>";
+            svg.Append($"<line x1=\"{F(p1[0])}\" y1=\"{F(p1[1])}\" x2=\"{F(p2[0])}\" y2=\"{F(p2[1])}\"{transform}{style}/>");
+        }
+        else
+        {
+            var points = string.Join(" ", line.Points.Select(p => $"{F(p[0])},{F(p[1])}"));
+            svg.Append($"<polyline points=\"{points}\" fill=\"none\"{transform}{style}/>");
         }
 
-        var points = string.Join(" ", line.Points.Select(p => $"{F(p[0])},{F(p[1])}"));
-        return $"<polyline points=\"{points}\" fill=\"none\"{transform}{style}/>";
+        // A Line's arrow is part of the Line and was being dropped: the label pointing at the PI
+        // controller in Modelica.Blocks.Examples.PID_Controller came out as a plain red stroke.
+        svg.Append(RenderArrow(line, context, line.ArrowEnd, line.Points[^1], line.Points[^2], transform));
+        svg.Append(RenderArrow(line, context, line.ArrowStart, line.Points[0], line.Points[1], transform));
+
+        return svg.ToString();
+    }
+
+    /// <summary>
+    /// One end's arrowhead, as a triangle on the line's own axis, or nothing when that end has none.
+    /// </summary>
+    /// <param name="kind">The Modelica <c>Arrow</c> value: None, Open, Filled or Half.</param>
+    /// <param name="tip">The point the arrow sits at.</param>
+    /// <param name="towards">The neighbouring point, which gives the direction it points away from.</param>
+    private static string RenderArrow(
+        LinePrimitive line, GraphicsContext context, string? kind,
+        double[] tip, double[] towards, string transform)
+    {
+        if (string.IsNullOrEmpty(kind) || kind == "None")
+            return "";
+
+        var dx = tip[0] - towards[0];
+        var dy = tip[1] - towards[1];
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        if (length == 0)
+            return "";
+
+        // arrowSize is a length on the page, like the line thickness beside it.
+        var size = (line.ArrowSize > 0 ? line.ArrowSize : 3) * context.UnitsPerMillimetre;
+        var (ux, uy) = (dx / length, dy / length);
+        var (px, py) = (-uy, ux);                       // the perpendicular, for the barbs
+        var baseX = tip[0] - ux * size;
+        var baseY = tip[1] - uy * size;
+        var half = size * 0.35;
+
+        var points = string.Join(" ",
+            $"{F(tip[0])},{F(tip[1])}",
+            $"{F(baseX + px * half)},{F(baseY + py * half)}",
+            $"{F(baseX - px * half)},{F(baseY - py * half)}");
+
+        var colour = ColorToHex(line.LineColor);
+
+        // Open draws the barbs and no more; Filled and Half are solid, Half being a single barb that
+        // is not worth a shape of its own at the sizes these are drawn at.
+        return kind == "Open"
+            ? $"<polyline points=\"{points}\" fill=\"none\" stroke=\"{colour}\" "
+              + $"stroke-width=\"{W(context.UnitsPerMillimetre * line.LineThickness)}\"{transform}/>"
+            : $"<polygon points=\"{points}\" fill=\"{colour}\" stroke=\"{colour}\" "
+              + $"stroke-width=\"{W(context.UnitsPerMillimetre * line.LineThickness)}\"{transform}/>";
     }
 
     private static string RenderBezierLine(LinePrimitive line, string transform, string style)
@@ -436,12 +572,12 @@ public static class IconSvgRenderer
         return $"<path d=\"{path}\" fill=\"none\"{transform}{style}/>";
     }
 
-    private static string RenderPolygon(PolygonPrimitive polygon)
+    private static string RenderPolygon(PolygonPrimitive polygon, GraphicsContext context)
     {
         if (polygon.Points.Count < 3) return "";
 
         var transform = GetTransformAttribute(polygon.Origin, polygon.Rotation);
-        var style = GetStyleAttribute(polygon);
+        var style = GetStyleAttribute(polygon, context);
 
         if (polygon.Smooth == "Bezier" && polygon.Points.Count >= 4)
         {
@@ -476,7 +612,7 @@ public static class IconSvgRenderer
         return $"<path d=\"{path}\"{transform}{style}/>";
     }
 
-    private static string RenderText(TextPrimitive text)
+    private static string RenderText(TextPrimitive text, GraphicsContext context)
     {
         var x1 = text.Extent[0];
         var y1 = text.Extent[1];
@@ -488,7 +624,6 @@ public static class IconSvgRenderer
         var width = Math.Abs(x2 - x1);
         var height = Math.Abs(y2 - y1);
 
-        var transform = GetTransformAttribute(text.Origin, text.Rotation);
         var fontSize = text.FontSize > 0 ? text.FontSize : height * 0.8;
 
         // Handle text alignment
@@ -515,8 +650,25 @@ public static class IconSvgRenderer
         // Escape special characters in text
         var displayText = System.Security.SecurityElement.Escape(text.TextString);
 
-        // Note: SVG text needs special handling for Y-axis flip - we counteract the parent group's flip
-        return $"<text x=\"{F(x)}\" y=\"{F(-cy)}\" font-size=\"{F(fontSize)}\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"{fillColor}\" transform=\"scale(1,-1)\"{fontFamily}{fontWeight}{fontStyle}{textDecoration}>{displayText}</text>";
+        // The parent group has Y flipped, so text counteracts it. Where the caller also mirrors —
+        // a component whose Placement extent runs right to left — it counteracts that as well: the
+        // drawing is mirrored, the words are not, which is what a Modelica tool shows and what
+        // anyone reading a label expects.
+        var flipX = context.MirrorX ? -1 : 1;
+        var flipY = context.MirrorY ? 1 : -1;
+
+        // The text's own origin and rotation come first - outermost - so they act in the icon's
+        // coordinates as every other primitive's do, and the counter-flip only rights the letters.
+        // They were computed and then dropped (B320): a label written with origin= sat at the
+        // icon's centre instead, and a rotated one - a vertical axis label - lay flat.
+        var placement = TransformList(text.Origin, text.Rotation);
+        var transform = placement.Length > 0
+            ? $"{placement} scale({flipX},{flipY})"
+            : $"scale({flipX},{flipY})";
+
+        return $"<text x=\"{F(x * flipX)}\" y=\"{F(-cy * -flipY)}\" font-size=\"{F(fontSize)}\" "
+             + $"text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"{fillColor}\" "
+             + $"transform=\"{transform}\"{fontFamily}{fontWeight}{fontStyle}{textDecoration}>{displayText}</text>";
     }
 
     private static string RenderBitmap(BitmapPrimitive bitmap, Func<string, string?>? fileNameResolver)
@@ -526,13 +678,15 @@ public static class IconSvgRenderer
         var x2 = bitmap.Extent[2];
         var y2 = bitmap.Extent[3];
 
+        // The image is written inside a counter-flip, where y runs down: the extent's top edge,
+        // Modelica's larger y, is at -max(y1, y2) there. Taking min(y1, y2) placed it correctly only
+        // for an extent symmetric about y = 0, and MSL's are mostly not - EngineV6_analytic's picture
+        // at y = -39..75 was drawn at -75..39 (B391).
         var x = Math.Min(x1, x2);
-        var y = Math.Min(y1, y2);
+        var y = -Math.Max(y1, y2);
         var width = Math.Abs(x2 - x1);
         var height = Math.Abs(y2 - y1);
 
-        // Images need scale(1,-1) to counteract the parent group's Y-axis flip, exactly like text.
-        // The combined double-flip leaves image content right-side up while keeping correct position.
         var transform = GetBitmapTransformAttribute(bitmap.Origin, bitmap.Rotation);
 
         // imageSource takes priority: it is base64-encoded image data embedded directly in the annotation
@@ -554,19 +708,20 @@ public static class IconSvgRenderer
     }
 
     /// <summary>
-    /// Builds the transform attribute for a Bitmap element, always including scale(1,-1) to
-    /// counteract the parent group's Y-axis flip so the image content appears right-side up.
+    /// Builds the transform attribute for a Bitmap element: the bitmap's own origin and rotation,
+    /// then scale(1,-1) to counteract the parent group's Y-axis flip so the picture is upright.
+    ///
+    /// <para>The origin and rotation come first - outermost - so they act in the icon's coordinates
+    /// with y up, as every other primitive's do. They used to follow the counter-flip and so act in
+    /// the flipped frame, where an origin's y is negated and a rotation turns the wrong way (B391,
+    /// the same ordering B320 gave text).</para>
     /// </summary>
     private static string GetBitmapTransformAttribute(double[] origin, double rotation)
     {
-        var transforms = new List<string>();
-        // scale(1,-1) counters the parent group flip; combined double-flip = identity on content
-        transforms.Add("scale(1,-1)");
-        if (origin[0] != 0 || origin[1] != 0)
-            transforms.Add($"translate({F(origin[0])},{F(origin[1])})");
-        if (rotation != 0)
-            transforms.Add($"rotate({F(rotation)})");
-        return $" transform=\"{string.Join(" ", transforms)}\"";
+        var placement = TransformList(origin, rotation);
+        return placement.Length > 0
+            ? $" transform=\"{placement} scale(1,-1)\""
+            : " transform=\"scale(1,-1)\"";
     }
 
     /// <summary>
@@ -590,6 +745,13 @@ public static class IconSvgRenderer
 
     private static string GetTransformAttribute(double[] origin, double rotation)
     {
+        var transforms = TransformList(origin, rotation);
+        return transforms.Length > 0 ? $" transform=\"{transforms}\"" : "";
+    }
+
+    /// <summary>A primitive's origin and rotation as an SVG transform list; empty for neither.</summary>
+    private static string TransformList(double[] origin, double rotation)
+    {
         var transforms = new List<string>();
 
         if (origin[0] != 0 || origin[1] != 0)
@@ -602,14 +764,10 @@ public static class IconSvgRenderer
             transforms.Add($"rotate({F(rotation)})");
         }
 
-        if (transforms.Count > 0)
-        {
-            return $" transform=\"{string.Join(" ", transforms)}\"";
-        }
-        return "";
+        return string.Join(" ", transforms);
     }
 
-    private static string GetStyleAttribute(GraphicsPrimitive primitive)
+    private static string GetStyleAttribute(GraphicsPrimitive primitive, GraphicsContext context)
     {
         var styles = new List<string>();
 
@@ -627,7 +785,7 @@ public static class IconSvgRenderer
         if (primitive.LinePattern != "None")
         {
             styles.Add($"stroke=\"{ColorToHex(primitive.LineColor)}\"");
-            styles.Add($"stroke-width=\"{F(20 * primitive.LineThickness)}\"");
+            styles.Add($"stroke-width=\"{W(context.UnitsPerMillimetre * primitive.LineThickness)}\"");
 
             // Line pattern
             var dashArray = GetDashArray(primitive.LinePattern);
@@ -644,12 +802,12 @@ public static class IconSvgRenderer
         return " " + string.Join(" ", styles);
     }
 
-    private static string GetLineStyleAttribute(LinePrimitive line)
+    private static string GetLineStyleAttribute(LinePrimitive line, GraphicsContext context)
     {
         var styles = new List<string>();
 
         styles.Add($"stroke=\"{ColorToHex(line.LineColor)}\"");
-        styles.Add($"stroke-width=\"{F(20 * line.LineThickness)}\"");
+        styles.Add($"stroke-width=\"{W(context.UnitsPerMillimetre * line.LineThickness)}\"");
 
         // Line pattern
         var dashArray = GetDashArray(line.LinePattern);
@@ -657,9 +815,6 @@ public static class IconSvgRenderer
         {
             styles.Add($"stroke-dasharray=\"{dashArray}\"");
         }
-
-        // Arrow markers would require defining SVG markers - simplified for now
-        // In a full implementation, we'd define markers in <defs> and reference them
 
         return " " + string.Join(" ", styles);
     }
@@ -688,6 +843,17 @@ public static class IconSvgRenderer
     private static string F(double value)
     {
         return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A stroke width, which needs more places than a coordinate does. Two decimals is ample for a
+    /// position in a 200-unit drawing and not for a line thickness that gets smaller the further in
+    /// the view zooms - at 1600 px a hairline is 0.125 units, which "0.##" turns into 0.13, and a
+    /// few steps further in it rounds to nothing at all and the line disappears.
+    /// </summary>
+    private static string W(double value)
+    {
+        return value.ToString("0.#####", CultureInfo.InvariantCulture);
     }
 
     #endregion

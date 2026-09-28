@@ -15,6 +15,71 @@ public partial class SettingsExternalTools : IDisposable
     private bool _showDymolaWarning = false;
     private bool _showOpenModelicaWarning = false;
 
+    /// <summary>
+    /// The largest limit the field accepts: the settings hold milliseconds in an <c>int</c>, which
+    /// stops at about 24.8 days. Nothing needs longer, and nothing longer could be stored.
+    /// </summary>
+    internal const int MaxTimeLimitSeconds = int.MaxValue / 1000;
+
+    /// <summary>
+    /// Each tool's check time limit, shown in seconds and kept in milliseconds (B263). One field per
+    /// tool, and the same one for both, because a user asking for longer asks it of whichever tool
+    /// they are using - and the tool left without a setting is the one whose silence reads as
+    /// agreement (B170).
+    /// </summary>
+    internal int DymolaTimeLimitSeconds
+    {
+        get => _settings.Dymola.CommandTimeoutMs / 1000;
+        set => _settings.Dymola.CommandTimeoutMs = ToMilliseconds(value);
+    }
+
+    /// <inheritdoc cref="DymolaTimeLimitSeconds"/>
+    internal int OpenModelicaTimeLimitSeconds
+    {
+        get => _settings.OpenModelica.CommandTimeoutMs / 1000;
+        set => _settings.OpenModelica.CommandTimeoutMs = ToMilliseconds(value);
+    }
+
+    /// <summary>The path to Dymola as the field shows it.</summary>
+    internal string DymolaPath => _settings.Dymola.DymolaPath;
+
+    /// <summary>
+    /// Where Dymola's Auto-detect looks: the machine's own installation, unless a test says otherwise.
+    /// </summary>
+    internal Func<string> FindInstalledDymola { get; set; } = DymolaSettings.FindInstalledDymola;
+
+    /// <summary>
+    /// Dymola's Auto-detect, on the same terms as <see cref="DetectOpenModelica"/>: the path becomes
+    /// whatever the search finds, and blank when it finds nothing (B395).
+    /// </summary>
+    internal void DetectDymola()
+    {
+        _settings.Dymola.DymolaPath = FindInstalledDymola();
+        _showDymolaWarning = false;
+        StateHasChanged();
+    }
+
+    /// <summary>The path to omc as the field shows it.</summary>
+    internal string OmcPath => _settings.OpenModelica.OmcPath;
+
+    /// <summary>
+    /// Where Auto-detect looks: the machine's own installation, unless a test says otherwise.
+    /// </summary>
+    internal Func<string> FindInstalledOmc { get; set; } = OpenModelicaSettings.FindInstalledOmc;
+
+    /// <summary>
+    /// Auto-detect: the path becomes whatever the search finds, and blank when it finds nothing -
+    /// a path left in place after a search that could not find it would read as confirmed.
+    /// </summary>
+    internal void DetectOpenModelica()
+    {
+        _settings.OpenModelica.OmcPath = FindInstalledOmc();
+        _showOpenModelicaWarning = false;
+        StateHasChanged();
+    }
+
+    private static int ToMilliseconds(int seconds) => Math.Clamp(seconds, 0, MaxTimeLimitSeconds) * 1000;
+
     protected override void OnInitialized()
     {
         NavState.OnSaveSettings += SaveSettings;
@@ -93,15 +158,33 @@ public partial class SettingsExternalTools : IDisposable
         }
     }
 
-    private async Task BrowseForDymolaFolder()
+    /// <summary>
+    /// Browse for Dymola. On Windows the user chooses the installation folder and
+    /// <c>bin64\dymola.exe</c> is taken inside it (or <c>dymola.exe</c> in the folder itself when they
+    /// chose <c>bin64</c>). On Linux the user chooses the program or its launcher itself, starting in
+    /// <c>/usr/local/bin</c> where Dymola's launcher scripts are installed: appending
+    /// <c>bin64/dymola.exe</c> to a folder produced a path that could not exist there (B395).
+    /// </summary>
+    internal async Task BrowseForDymola(bool windows)
     {
         try
         {
-            var folder = await FilePickerService.PickFolderAsync("Select Dymola installation directory");
-            if (!string.IsNullOrEmpty(folder))
+            string? dymola;
+            if (windows)
             {
-                _settings.Dymola.DymolaPath = Path.Combine(folder, "bin64", "dymola.exe");
-                _showDymolaWarning = !File.Exists(_settings.Dymola.DymolaPath);
+                var folder = await FilePickerService.PickFolderAsync("Select Dymola installation directory");
+                dymola = string.IsNullOrEmpty(folder) ? null : DymolaSettings.DymolaUnder(folder);
+            }
+            else
+            {
+                dymola = await FilePickerService.PickExecutableAsync("Select Dymola or its launcher (dymola)",
+                    Directory.Exists("/usr/local/bin") ? "/usr/local/bin" : null);
+            }
+
+            if (!string.IsNullOrEmpty(dymola))
+            {
+                _settings.Dymola.DymolaPath = dymola;
+                _showDymolaWarning = !File.Exists(dymola);
                 StateHasChanged();
             }
         }
@@ -109,26 +192,44 @@ public partial class SettingsExternalTools : IDisposable
         {
             // A picker that throws used to leave the button doing nothing and no trace anywhere —
             // not even in the log — which is indistinguishable from the user having cancelled.
-            LoggingService.Warn("SettingsExternalTools", $"Could not browse for the Dymola folder: {ex.Message}");
+            LoggingService.Warn("SettingsExternalTools", $"Could not browse for Dymola: {ex.Message}");
         }
     }
 
-    private async Task BrowseForOpenModelicaFolder()
+    /// <summary>
+    /// Browse for omc. On Windows the user chooses the installation folder and <c>bin\omc.exe</c> is
+    /// taken inside it, because that is where every OpenModelica installer puts it. On Linux the user
+    /// chooses <c>omc</c> itself: it lives in a shared folder such as <c>/usr/bin</c>, where "choose
+    /// <c>/usr</c>" is not something anyone would think to do (B338).
+    /// </summary>
+    internal async Task BrowseForOpenModelica(bool windows)
     {
         try
         {
-            var folder = await FilePickerService.PickFolderAsync("Select OpenModelica installation directory");
-            if (!string.IsNullOrEmpty(folder))
+            string? omc;
+            if (windows)
             {
-                _settings.OpenModelica.OmcPath = Path.Combine(folder, "bin", "omc.exe");
-                _showOpenModelicaWarning = !File.Exists(_settings.OpenModelica.OmcPath);
+                var folder = await FilePickerService.PickFolderAsync("Select OpenModelica installation directory");
+                // The folder itself when the user chose bin.
+                omc = string.IsNullOrEmpty(folder) ? null : OpenModelicaSettings.OmcUnder(folder);
+            }
+            else
+            {
+                omc = await FilePickerService.PickExecutableAsync("Select the OpenModelica compiler (omc)",
+                    Directory.Exists("/usr/bin") ? "/usr/bin" : null);
+            }
+
+            if (!string.IsNullOrEmpty(omc))
+            {
+                _settings.OpenModelica.OmcPath = omc;
+                _showOpenModelicaWarning = !File.Exists(omc);
                 StateHasChanged();
             }
         }
         catch (Exception ex)
         {
             LoggingService.Warn("SettingsExternalTools",
-                $"Could not browse for the OpenModelica folder: {ex.Message}");
+                $"Could not browse for omc: {ex.Message}");
         }
     }
 }

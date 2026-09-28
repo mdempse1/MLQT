@@ -17,19 +17,36 @@ public class GuidanceToolsTests
         Assert.Contains("Load first", (string)Prop(result, "guidance")!);
     }
 
+    public static TheoryData<string> AllTopics()
+    {
+        var data = new TheoryData<string>();
+        foreach (var topic in GuidanceTools.Topics)
+            data.Add(topic);
+        return data;
+    }
+
+    /// <summary>
+    /// Every topic the server offers, taken from the list it offers them from — not written out
+    /// here, or a topic added to one and not the other is exactly what nothing would notice.
+    /// </summary>
     [Theory]
-    [InlineData("workflows")]
-    [InlineData("dependencies")]
-    [InlineData("style")]
-    [InlineData("spelling")]
-    [InlineData("formatting")]
-    [InlineData("vcs")]
-    [InlineData("resources")]
+    [MemberData(nameof(AllTopics))]
     public void KnownTopics_ReturnGuidance(string topic)
     {
         var result = new GuidanceTools().GetGuidance(topic);
         Assert.IsNotType<ToolError>(result);
         Assert.Equal(topic, Prop(result, "topic"));
+        Assert.NotEmpty((string)Prop(result, "guidance")!);
+    }
+
+    [Fact]
+    public void TheTopicsOfferedAreExactlyTheOnesWritten()
+    {
+        // A list and a dictionary of the same thing. Advertised with no text, a topic reads to an
+        // agent as a server that lost its documentation; written with no listing, it is unreachable.
+        Assert.Equal(
+            GuidanceTools.Topics.OrderBy(t => t, StringComparer.Ordinal),
+            GuidanceTools.Guidance.Keys.OrderBy(t => t, StringComparer.Ordinal));
     }
 
     [Fact]

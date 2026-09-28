@@ -176,12 +176,19 @@ public class VcsConflictRulesTests
 
     // ---- RelativeTo ------------------------------------------------------------------------
 
+    /// <summary>
+    /// Forward-slashed, as the dirty-file list above it in the same dialog is (B472, B480): a merge
+    /// result's paths are full and in the platform's form, so on Windows the relative path came out
+    /// <c>Sub\Model.mo</c> a few rows below a <c>Sub/Other.mo</c>.
+    /// </summary>
     [Fact]
-    public void AFileInTheWorkingCopy_IsShownRelativeToIt()
+    public void AFileInTheWorkingCopy_IsShownRelativeToIt_ForwardSlashed()
     {
+        var workingCopy = Path.Combine(Path.GetTempPath(), "repo");
+
         Assert.Equal(
-            Path.Combine("Sub", "Model.mo"),
-            VcsConflictRules.RelativeTo(Path.Combine("C:", "repo"), Path.Combine("C:", "repo", "Sub", "Model.mo")));
+            "Sub/Model.mo",
+            VcsConflictRules.RelativeTo(workingCopy, Path.Combine(workingCopy, "Sub", "Model.mo")));
     }
 
     [Theory]

@@ -26,6 +26,27 @@ public class LoadedLibrary
     public LibrarySourceType SourceType { get; set; }
 
     /// <summary>
+    /// Whether the library is one <c>.mo</c> file rather than a package directory.
+    ///
+    /// <para><b>Asked of the path, not the source type.</b> A library found in a repository has its
+    /// source type overwritten with Git or SVN whatever shape it has on disk, so
+    /// <see cref="LibrarySourceType.File"/> is only what a library opened on its own says (B306,
+    /// B428). A path ending in <c>.mo</c> is a file unless a directory of that name exists.</para>
+    /// </summary>
+    public bool IsSingleFile =>
+        SourceType == LibrarySourceType.File
+        || (SourcePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) && !Directory.Exists(SourcePath));
+
+    /// <summary>
+    /// The directory the library's <c>modelica://</c> URIs and relative paths resolve against: the
+    /// directory holding the file for a <see cref="IsSingleFile">single-file</see> library,
+    /// <see cref="SourcePath"/> itself for every other. The one answer to that question — resource
+    /// analysis, icon bitmaps and exported finding paths all ask it here (B428).
+    /// </summary>
+    public string RootDirectory =>
+        IsSingleFile ? Path.GetDirectoryName(SourcePath) ?? SourcePath : SourcePath;
+
+    /// <summary>
     /// Revision identifier for version-controlled libraries.
     /// </summary>
     public string? Revision { get; set; }
@@ -87,4 +108,15 @@ public class LoadedLibrary
     /// telling anyone about.</para>
     /// </summary>
     public int? DocumentedClassCount { get; set; }
+
+    /// <summary>
+    /// For an encrypted library that was not used because readable source for the same library is
+    /// loaded, where that source is. Null for every library that is in use.
+    ///
+    /// <para>Such a library has an empty <see cref="ModelIds"/>, and so does one that ships no
+    /// documentation — and the two need opposite messages: one is a vendor library MLQT cannot read,
+    /// the other is working exactly as intended (B268). A caller reporting on a library it asked to
+    /// load asks this before reading the empty index as a problem.</para>
+    /// </summary>
+    public string? SupersededBy { get; set; }
 }

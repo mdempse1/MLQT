@@ -3,40 +3,33 @@ using LibGit2Sharp;
 namespace RevisionControl.Tests;
 
 /// <summary>
-/// Integration tests for GitRevisionControlSystem using the real test repository.
-/// Repository: https://github.com/mdempse1/ModelicaEditorTests.git
-///
-/// Note: These tests clone a real remote repository once to test Git operations.
-/// The repository is cloned in the constructor for all tests to share.
+/// Integration tests for GitRevisionControlSystem against a real repository with history, tags
+/// and a second branch.
 /// </summary>
+/// <remarks>
+/// Each test builds its own repository (<see cref="GitTestRepositoryFixture"/>, which throws when it
+/// cannot), because some of them switch its branch. They used to clone
+/// <c>https://github.com/mdempse1/ModelicaEditorTests.git</c> for every test and return early when the
+/// clone failed, so offline, or with that repository gone, 21 tests passed having asserted nothing
+/// (B481). Nothing here needs that repository in particular: the fixture builds the same layout.
+/// </remarks>
 public class GitIntegrationTests : IDisposable
 {
-    private const string TestRepoUrl = "https://github.com/mdempse1/ModelicaEditorTests.git";
     private readonly GitRevisionControlSystem _git;
+    private readonly GitTestRepositoryFixture _repository;
     private readonly string _clonePath;
-    private readonly bool _repositoryAvailable;
     private readonly List<string> _tempPaths = new();
 
     public GitIntegrationTests()
     {
         _git = new GitRevisionControlSystem();
-        _clonePath = Path.Combine(Path.GetTempPath(), "GitIntegrationTestRepo_" + Guid.NewGuid().ToString());
-
-        // Clone the repository for testing
-        try
-        {
-            Repository.Clone(TestRepoUrl, _clonePath);
-            _repositoryAvailable = true;
-        }
-        catch
-        {
-            _repositoryAvailable = false;
-        }
+        _repository = new GitTestRepositoryFixture();
+        _clonePath = _repository.ClonePath;
     }
 
     public void Dispose()
     {
-        ForceDeleteDirectory(_clonePath);
+        _repository.Dispose();
         foreach (var path in _tempPaths)
         {
             ForceDeleteDirectory(path);
@@ -83,9 +76,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void IsValidRepository_WithClonedRepository_ReturnsTrue()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var result = _git.IsValidRepository(_clonePath);
 
@@ -109,9 +99,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentRevision_FromClonedRepo_ReturnsValidSha()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var sha = _git.GetCurrentRevision(_clonePath);
 
@@ -123,18 +110,10 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void ResolveRevision_WithMainBranch_ResolvesSha()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var sha = _git.ResolveRevision(_clonePath, "main");
 
-        // Assert - main might not exist, try master
-        if (sha == null)
-        {
-            sha = _git.ResolveRevision(_clonePath, "master");
-        }
-
+        // Assert
         Assert.NotNull(sha);
         Assert.Equal(40, sha.Length);
     }
@@ -142,9 +121,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void ResolveRevision_WithHEAD_ResolvesSha()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var sha = _git.ResolveRevision(_clonePath, "HEAD");
 
@@ -156,9 +132,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void GetRevisionDescription_WithCurrentHead_ReturnsDescription()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var sha = _git.GetCurrentRevision(_clonePath);
 
@@ -173,9 +146,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_ToNewPath_CreatesCheckout()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -191,9 +161,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithHEAD_ChecksOutLatestCommit()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var outputPath = CreateTempPath();
 
@@ -208,9 +175,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_ToNestedPath_CreatesDirectories()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var nestedPath = Path.Combine(CreateTempPath(), "nested", "deep", "path");
 
@@ -225,9 +189,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_WithNonExistentPath_PerformsCheckout()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -243,9 +204,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_WithExistingCheckout_UpdatesSuccessfully()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -266,8 +224,6 @@ public class GitIntegrationTests : IDisposable
         // Git's fast path currently delegates to UpdateExistingCheckout (LibGit2Sharp's
         // Checkout is already narrow), so this is a smoke test that the new interface
         // method is wired through for Git too.
-        if (!_repositoryAvailable) return;
-
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
 
@@ -280,8 +236,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void UpdateRevisionInPlace_WithExistingCheckout_UpdatesSuccessfully()
     {
-        if (!_repositoryAvailable) return;
-
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
         _git.UpdateExistingCheckout(checkoutPath, _clonePath, sha!);
@@ -294,9 +248,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_MultipleTimes_WorksConsistently()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -312,9 +263,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void CleanWorkspace_AfterAddingFiles_RemovesUntrackedFiles()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -334,26 +282,13 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void CleanWorkspace_AfterModifyingFiles_RevertsChanges()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
         _git.UpdateExistingCheckout(checkoutPath, _clonePath, sha!);
 
-        // Try to find a file to modify (look for any file in the checkout)
-        var files = Directory.GetFiles(checkoutPath, "*", SearchOption.TopDirectoryOnly)
-            .Where(f => !f.Contains(".git"))
-            .ToArray();
-
-        if (files.Length == 0)
-        {
-            // No files to modify, skip test
-            return;
-        }
-
-        var testFile = files[0];
+        var testFile = Path.Combine(checkoutPath, "README.md");
+        Assert.True(File.Exists(testFile), testFile);
         var originalContent = File.ReadAllText(testFile);
         File.WriteAllText(testFile, "Modified content that should be reverted");
 
@@ -382,35 +317,27 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithDifferentRevisions_ChecksOutCorrectVersion()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange
         var currentSha = _git.GetCurrentRevision(_clonePath);
         Assert.NotNull(currentSha);
 
-        // Try to get parent commit
         var parentSha = _git.ResolveRevision(_clonePath, "HEAD~1");
+        Assert.NotNull(parentSha);
+        Assert.NotEqual(currentSha, parentSha);
+        var parentPath = CreateTempPath();
 
-        if (parentSha != null)
-        {
-            var parentPath = CreateTempPath();
+        // Act
+        var result = _git.CheckoutRevision(_clonePath, parentSha, parentPath);
 
-            // Act
-            var result = _git.CheckoutRevision(_clonePath, parentSha, parentPath);
-
-            // Assert
-            Assert.True(result);
-            Assert.True(Directory.Exists(parentPath));
-        }
+        // Assert - HEAD~1 is the commit before README.md gained its "Updated" section
+        Assert.True(result);
+        Assert.True(Directory.Exists(parentPath));
+        Assert.DoesNotContain("## Updated", File.ReadAllText(Path.Combine(parentPath, "README.md")));
     }
 
     [Fact]
     public void ResolveRevision_WithInvalidRevision_ReturnsNull()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var result = _git.ResolveRevision(_clonePath, "nonexistent-revision-12345");
 
@@ -421,9 +348,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void GetRevisionDescription_WithInvalidRevision_ReturnsNull()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var result = _git.GetRevisionDescription(_clonePath, "nonexistent-revision-12345");
 
@@ -436,15 +360,11 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentBranch_WithClonedRepository_ReturnsBranchName()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Act
         var result = _git.GetCurrentBranch(_clonePath);
 
-        // Assert - should return "main" or "master" depending on the repo's default branch
-        Assert.NotNull(result);
-        Assert.True(result == "main" || result == "master", $"Expected 'main' or 'master' but got '{result}'");
+        // Assert
+        Assert.Equal("main", result);
     }
 
     [Fact]
@@ -477,9 +397,6 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentBranch_WithDetachedHead_ReturnsNull()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
         // Arrange - checkout a specific commit to detach HEAD
         var checkoutPath = CreateTempPath();
         var sha = _git.GetCurrentRevision(_clonePath);
@@ -499,35 +416,20 @@ public class GitIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentBranch_WithFeatureBranch_ReturnsBranchName()
     {
-        // Skip if repository not available
-        if (!_repositoryAvailable) return;
-
-        // Arrange - check if feature-test branch exists
-        var branchSha = _git.ResolveRevision(_clonePath, "feature-test");
-
-        if (branchSha != null)
+        // Arrange - check the branch out by name (not SHA) to get proper branch tracking. The
+        // repository is this test's own, so it is not switched back.
+        using (var repo = new Repository(_clonePath))
         {
-            // Checkout the branch by name (not SHA) to get proper branch tracking
-            using var repo = new Repository(_clonePath);
             var branch = repo.Branches["feature-test"];
-            if (branch != null)
-            {
-                Commands.Checkout(repo, branch);
-
-                // Act
-                var result = _git.GetCurrentBranch(_clonePath);
-
-                // Assert
-                Assert.Equal("feature-test", result);
-
-                // Restore to main
-                var mainBranch = repo.Branches["main"] ?? repo.Branches["master"];
-                if (mainBranch != null)
-                {
-                    Commands.Checkout(repo, mainBranch);
-                }
-            }
+            Assert.NotNull(branch);
+            Commands.Checkout(repo, branch);
         }
+
+        // Act
+        var result = _git.GetCurrentBranch(_clonePath);
+
+        // Assert
+        Assert.Equal("feature-test", result);
     }
 
     #endregion

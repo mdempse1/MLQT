@@ -8,6 +8,7 @@ namespace OpenModelicaInterface.Tests;
 /// These tests run sequentially and share a single OMC instance.
 /// </summary>
 [Collection("OpenModelica Collection")]
+[Trait("Requires", "OpenModelica")]
 public class OpenModelicaInterfaceTests
 {
     private readonly OpenModelicaFixture _fixture;
@@ -40,7 +41,7 @@ public class OpenModelicaInterfaceTests
         );
 
         // Act
-        await omc.StartAsync();
+        await omc.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(omc.IsConnected);
@@ -96,7 +97,7 @@ public class OpenModelicaInterfaceTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act
-        var response = await _fixture.Omc.SendCommandAsync("getVersion()");
+        var response = await _fixture.Omc.SendCommandAsync("getVersion()", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(response);

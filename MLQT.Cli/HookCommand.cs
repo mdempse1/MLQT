@@ -1,4 +1,5 @@
 using System.Text;
+using MLQT.Services;
 
 namespace MLQT.Cli;
 
@@ -52,9 +53,46 @@ internal static class HookCommand
 
     private static int Install(HookOptions options, TextWriter stdout, TextWriter stderr)
     {
-        if (!TryResolve(options, out var library, out var hookPath, stderr))
+        if (!TryResolve(options, out var library, out var location, stderr))
             return ExitCodes.Error;
 
+        // core.hooksPath sends git somewhere else - usually husky, pre-commit or lefthook, which own
+        // that directory. Writing .git/hooks anyway produced the one outcome a commit gate cannot
+        // have: install said it worked, status said it was installed, and no commit was checked
+        // (B41). MLQT cannot know how somebody else's hook manager wants to be extended, so it says
+        // what to add instead.
+        if (location.IsRedirected)
+        {
+            stderr.WriteLine(
+                $"error: this repository sets core.hooksPath, so git runs its hooks from {location.HooksDirectory} " +
+                $"and will not run one written under {location.DefaultHooksDirectory}.");
+            stderr.WriteLine(
+                "       That is usually husky, pre-commit or lefthook managing the hooks. Add the " +
+                "check to whatever they run instead:");
+            stderr.WriteLine(
+                $"         mlqt check \"{library}\" --fail-on " +
+                $"{options.FailOn.ToString().ToLowerInvariant()}");
+            stderr.WriteLine("       See the `hook` section of Documentation/cli.md.");
+            return ExitCodes.Error;
+        }
+
+        // A hook for something that is not a library fails every commit, and the path it was given
+        // decides which repository it lands in: the CLI test binaries' directory is inside MLQT's own
+        // working copy, so an install that fell back to the current directory wrote a hook checking
+        // `bin/Release/net10.0` into MLQT itself (B488). Asked with the discovery `mlqt check` uses,
+        // so what is refused here is exactly what the hook's check would have refused.
+        if (LibraryDiscovery.DiscoverLibraryPaths(library).Count == 0)
+        {
+            stderr.WriteLine(
+                $"error: no Modelica library found in {library} " +
+                "(expected a package.mo, sub-package directories, or .mo files), so no hook was installed.");
+            stderr.WriteLine(
+                $"       It would have gone into the repository at {location.WorkingTreeRoot}. " +
+                "Give the path of the library the hook should check.");
+            return ExitCodes.Error;
+        }
+
+        var hookPath = location.HookPath;
         if (File.Exists(hookPath) && !IsOurs(hookPath) && !options.Force)
         {
             stderr.WriteLine(
@@ -64,10 +102,16 @@ internal static class HookCommand
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(hookPath)!);
-        File.WriteAllText(hookPath, HookScript(options, library!), new UTF8Encoding(false));
+        File.WriteAllText(hookPath, HookScript(options, library, location.WorkingTreeRoot), new UTF8Encoding(false));
         TryMakeExecutable(hookPath);
 
         stdout.WriteLine($"Installed pre-commit hook: {hookPath}");
+        stdout.WriteLine($"  in the repository at {location.WorkingTreeRoot}.");
+        if (location.WorktreeHooksDirectory is not null)
+        {
+            stdout.WriteLine("  Git runs it for every worktree of this repository, and in each it checks");
+            stdout.WriteLine("  that worktree's own copy of the library.");
+        }
         stdout.WriteLine($"  It checks {library} when a commit touches a .mo file,");
         stdout.WriteLine($"  and blocks the commit on findings at or above '{options.FailOn.ToString().ToLowerInvariant()}'.");
         stdout.WriteLine("  `git commit --no-verify` skips it.");
@@ -76,32 +120,51 @@ internal static class HookCommand
 
     private static int Uninstall(HookOptions options, TextWriter stdout, TextWriter stderr)
     {
-        if (!TryResolve(options, out _, out var hookPath, stderr, installing: false))
+        if (!TryResolve(options, out _, out var location, stderr))
             return ExitCodes.Error;
 
-        if (!File.Exists(hookPath))
+        var removed = false;
+
+        // Before B490 an install from a worktree wrote into the worktree's own git directory, where
+        // git never looks. Only ever ours to remove, so --force plays no part.
+        if (location.WorktreeHookPath is { } stranded && File.Exists(stranded) && IsOurs(stranded))
         {
+            File.Delete(stranded);
+            stdout.WriteLine($"Removed {stranded} (git never ran it: a worktree's hooks are the repository's)");
+            removed = true;
+        }
+
+        // Where install writes: git's own location unless core.hooksPath redirects it, in which case
+        // this is a hook installed before the redirect was set, which can still be removed. A
+        // redirected directory belongs to whatever set core.hooksPath and is never touched.
+        var hookPath = location.DefaultHookPath;
+        if (File.Exists(hookPath))
+        {
+            if (!IsOurs(hookPath) && !options.Force)
+            {
+                stderr.WriteLine(
+                    $"error: {hookPath} was not written by mlqt, so it is left alone. Pass --force to delete it anyway");
+                return ExitCodes.Error;
+            }
+
+            File.Delete(hookPath);
+            stdout.WriteLine($"Removed {hookPath}");
+            removed = true;
+        }
+
+        if (!removed)
             stdout.WriteLine("No pre-commit hook to remove.");
-            return ExitCodes.Ok;
-        }
 
-        if (!IsOurs(hookPath) && !options.Force)
-        {
-            stderr.WriteLine(
-                $"error: {hookPath} was not written by mlqt, so it is left alone. Pass --force to delete it anyway");
-            return ExitCodes.Error;
-        }
-
-        File.Delete(hookPath);
-        stdout.WriteLine($"Removed {hookPath}");
         return ExitCodes.Ok;
     }
 
     private static int Status(HookOptions options, TextWriter stdout, TextWriter stderr)
     {
-        if (!TryResolve(options, out _, out var hookPath, stderr, installing: false))
+        if (!TryResolve(options, out _, out var location, stderr))
             return ExitCodes.Error;
 
+        // What git will run is the answer; anything of ours elsewhere is reported as not run.
+        var hookPath = location.HookPath;
         if (!File.Exists(hookPath))
             stdout.WriteLine($"No pre-commit hook at {hookPath}");
         else if (IsOurs(hookPath))
@@ -109,148 +172,62 @@ internal static class HookCommand
         else
             stdout.WriteLine($"A pre-commit hook exists at {hookPath}, but mlqt did not write it");
 
+        foreach (var path in new[] { location.IsRedirected ? location.DefaultHookPath : null, location.WorktreeHookPath })
+        {
+            if (path is not null && File.Exists(path) && IsOurs(path))
+            {
+                stdout.WriteLine(
+                    $"An mlqt pre-commit hook is also at {path}, where git does not run it; " +
+                    "`mlqt hook uninstall` removes it.");
+            }
+        }
+
         return ExitCodes.Ok;
     }
 
     /// <summary>
-    /// Locates the library and the hook file, or says what is wrong. The repository is found by
-    /// walking up from the library, so a library in a subdirectory needs no second path.
+    /// Locates the library and where git keeps the repository's hooks, or says what is wrong. The
+    /// repository is the one enclosing the library, so a library in a subdirectory needs no second
+    /// path. A <c>core.hooksPath</c> redirect is noted here for status and uninstall, which have to
+    /// be able to see and remove a hook installed before it was set; install refuses it.
     /// </summary>
-    /// <param name="installing">
-    /// True for <c>install</c>, which must refuse when <c>core.hooksPath</c> redirects git elsewhere:
-    /// the file would be written and never run. <c>status</c> and <c>uninstall</c> pass false and
-    /// carry on — status has to be able to say what is there, and uninstall has to be able to remove
-    /// a hook installed before the redirect was set.
-    /// </param>
     private static bool TryResolve(
-        HookOptions options, out string? library, out string hookPath, TextWriter stderr,
-        bool installing = true)
+        HookOptions options, out string library, out HookLocation location, TextWriter stderr)
     {
-        library = null;
-        hookPath = string.Empty;
+        library = Path.GetFullPath(options.LibraryPath);
+        location = null!;
 
-        var libraryPath = Path.GetFullPath(options.LibraryPath);
-        if (!Directory.Exists(libraryPath) && !File.Exists(libraryPath))
+        if (!Directory.Exists(library) && !File.Exists(library))
         {
-            stderr.WriteLine($"error: library not found: {libraryPath}");
+            stderr.WriteLine($"error: library not found: {library}");
             return false;
         }
 
-        var gitDir = FindGitDirectory(libraryPath);
-        if (gitDir is null)
+        if (HookLocation.Resolve(library) is not { } found)
         {
             stderr.WriteLine(
-                $"error: {libraryPath} is not inside a git working copy. " +
+                $"error: {library} is not inside a git working copy. " +
                 "A pre-commit hook is a git feature; SVN runs its hooks on the server");
             return false;
         }
 
-        if (ConfiguredHooksPath(libraryPath) is { } configured)
+        location = found;
+
+        if (found.FallbackReason is { } reason)
         {
-            var lead = installing ? "error" : "note";
             stderr.WriteLine(
-                $"{lead}: this repository sets core.hooksPath to '{configured}', so git reads its hooks " +
-                "from there and will not run one written under .git/hooks.");
-
-            if (installing)
-            {
-                stderr.WriteLine(
-                    "       That is usually husky, pre-commit or lefthook managing the hooks. Add the " +
-                    "check to whatever they run instead:");
-                stderr.WriteLine(
-                    $"         mlqt check \"{libraryPath}\" --fail-on " +
-                    $"{options.FailOn.ToString().ToLowerInvariant()}");
-                stderr.WriteLine("       See the `hook` section of Documentation/cli.md.");
-                return false;
-            }
+                $"note: {reason}, so the hooks directory was taken from the .git directory: " +
+                $"{found.DefaultHooksDirectory}. If this repository sets core.hooksPath, git will not run " +
+                "a hook written there.");
+        }
+        else if (found.IsRedirected)
+        {
+            stderr.WriteLine(
+                $"note: this repository sets core.hooksPath, so git runs its hooks from {found.HooksDirectory}, " +
+                $"not {found.DefaultHooksDirectory}.");
         }
 
-        library = libraryPath;
-        hookPath = Path.Combine(gitDir, "hooks", "pre-commit");
         return true;
-    }
-
-    /// <summary>
-    /// The repository's <c>core.hooksPath</c>, or null when it sets none.
-    ///
-    /// <para>Asked because git reads hooks from that directory <em>instead of</em>
-    /// <c>.git/hooks</c>, and husky, pre-commit and lefthook all set it. Writing the file anyway
-    /// produced the one outcome a commit gate cannot have: install reported success, status reported
-    /// the hook installed, and no commit was ever checked. Refusing with the command to add by hand
-    /// is the honest answer — MLQT cannot know how somebody else's hook manager wants to be
-    /// extended.</para>
-    ///
-    /// <para>Asked of <c>git</c> rather than read out of a config file, because the value can come
-    /// from any of the system, global, local or worktree scopes.</para>
-    /// </summary>
-    private static string? ConfiguredHooksPath(string libraryPath)
-    {
-        try
-        {
-            var start = Directory.Exists(libraryPath) ? libraryPath : Path.GetDirectoryName(libraryPath);
-            if (string.IsNullOrEmpty(start))
-                return null;
-
-            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "git",
-                ArgumentList = { "config", "--get", "core.hooksPath" },
-                WorkingDirectory = start,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-
-            if (process is null)
-                return null;
-
-            var value = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit(5000);
-
-            // Exit 1 is git's "not set", which is the ordinary case and not a failure.
-            return value.Length == 0 ? null : value;
-        }
-        catch
-        {
-            // No git on PATH, or it would not run. The hook is still worth installing: the
-            // overwhelmingly common case is no core.hooksPath at all, and refusing to install
-            // because we could not ask would be worse than installing where git looks by default.
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The repository's <c>.git</c> directory, walking up from the library. A worktree or submodule
-    /// has a <c>.git</c> <em>file</em> pointing at the real directory, which is followed here so the
-    /// hook lands where git will look for it.
-    /// </summary>
-    private static string? FindGitDirectory(string startPath)
-    {
-        var directory = Directory.Exists(startPath) ? startPath : Path.GetDirectoryName(startPath);
-
-        while (!string.IsNullOrEmpty(directory))
-        {
-            var candidate = Path.Combine(directory, ".git");
-
-            if (Directory.Exists(candidate))
-                return candidate;
-
-            if (File.Exists(candidate))
-            {
-                var line = File.ReadAllText(candidate).Trim();
-                const string prefix = "gitdir:";
-                if (line.StartsWith(prefix, StringComparison.Ordinal))
-                {
-                    var target = line[prefix.Length..].Trim();
-                    return Path.IsPathRooted(target) ? target : Path.GetFullPath(Path.Combine(directory, target));
-                }
-            }
-
-            directory = Path.GetDirectoryName(directory);
-        }
-
-        return null;
     }
 
     private static bool IsOurs(string hookPath)
@@ -267,19 +244,27 @@ internal static class HookCommand
 
     /// <summary>
     /// The hook. Written for <c>sh</c> because that is what git runs a hook with, on Windows too.
+    ///
+    /// <para>One hook serves every worktree of a repository, so a path inside the working tree is
+    /// written relative to <c>$TOP</c> — the top of whichever worktree is committing — rather than
+    /// as the absolute path it was installed from. Absolute, a commit in one worktree was judged on
+    /// another's files, and removing the worktree the hook was installed from blocked every commit
+    /// in the rest (B490).</para>
     /// </summary>
-    private static string HookScript(HookOptions options, string library)
+    private static string HookScript(HookOptions options, string library, string workingTreeRoot)
     {
         var arguments = new StringBuilder();
-        arguments.Append(Quote(ToPosix(library)));
+        arguments.Append(ShellPath(library, workingTreeRoot));
         arguments.Append(" --fail-on ").Append(options.FailOn.ToString().ToLowerInvariant());
 
+        // HookOptions has already made these absolute, against the library; one inside the working
+        // tree - a committed baseline, a library beside this one - is followed into each worktree too.
         if (options.BaselinePath is { } baseline)
-            arguments.Append(" --baseline ").Append(Quote(ToPosix(baseline)));
+            arguments.Append(" --baseline ").Append(ShellPath(baseline, workingTreeRoot));
         if (options.ChangedFrom is { } changedFrom)
             arguments.Append(" --changed-from ").Append(Quote(changedFrom));
         foreach (var dependency in options.DependencyPaths)
-            arguments.Append(" --dependency ").Append(Quote(ToPosix(dependency)));
+            arguments.Append(" --dependency ").Append(ShellPath(dependency, workingTreeRoot));
 
         var executable = Quote(ToPosix(ResolveExecutable()));
 
@@ -303,6 +288,9 @@ internal static class HookCommand
             if [ ! -x "$MLQT" ]; then
               MLQT=mlqt
             fi
+
+            # The worktree being committed; the library is checked in it, not where it was installed from.
+            TOP=$(git rev-parse --show-toplevel)
 
             echo "mlqt: checking before commit..."
             "$MLQT" check {arguments} --no-color
@@ -343,6 +331,24 @@ internal static class HookCommand
         }
 
         return command;
+    }
+
+    /// <summary>
+    /// A path argument for the hook: <c>"$TOP"/"rel"</c> when it is an absolute path inside the
+    /// working tree, and otherwise as given, quoted.
+    /// </summary>
+    private static string ShellPath(string path, string workingTreeRoot)
+    {
+        if (!Path.IsPathRooted(path))
+            return Quote(ToPosix(path));
+
+        var relative = Path.GetRelativePath(workingTreeRoot, path);
+        if (relative == ".")
+            return "\"$TOP\"";
+
+        var outside = Path.IsPathRooted(relative) || relative == ".." ||
+                      relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        return outside ? Quote(ToPosix(path)) : "\"$TOP\"/" + Quote(ToPosix(relative));
     }
 
     /// <summary>Git's sh takes forward slashes on Windows; a backslash there is an escape.</summary>

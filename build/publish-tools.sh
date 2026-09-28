@@ -134,6 +134,13 @@ done
 [ -f "$output/wwwroot/index.html" ] \
     || problems+=("wwwroot/index.html is missing, so the window would open empty")
 
+# The MCP server's diagram renderer rasterises through SkiaSharp, whose real work is in a native
+# library published per runtime identifier (B196). It is not loaded until get_diagram_image is
+# called, so a tree missing it builds, publishes, installs and answers every other tool - which is
+# B133 and B144's shape exactly, and the reason this script exists.
+skia="$output/libSkiaSharp$([ "$windows_target" -eq 1 ] && echo .dll || echo .so)"
+[ -f "$skia" ] || problems+=("libSkiaSharp is missing for $runtime, so get_diagram_image would fail at first use")
+
 # The private svn client, on Windows. On Linux the .deb declares `subversion` instead.
 if [ "$windows_target" -eq 1 ]; then
     svn="$output/svn/svn.exe"

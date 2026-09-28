@@ -20,11 +20,24 @@ internal sealed record LoadResult(
     IReadOnlyList<ModelNode>? Models = null,
     StyleCheckingSettings? Settings = null,
     IReadOnlyList<string>? DependencyLibraries = null,
-    CheckTimings? Timings = null)
+    CheckTimings? Timings = null,
+    IReadOnlyList<string>? DependenciesLoadedFromSource = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
     public static LoadResult Failed(int code) =>
         new(code, [], new Dictionary<string, string>(), new Dictionary<string, ClassLocation>(), 0);
+}
+
+/// <summary>
+/// Which models a run should apply the rules to, or why it cannot be decided.
+/// </summary>
+/// <param name="Only">The models to check, or null for every model loaded.</param>
+/// <param name="Error">Set when the selection failed, which stops the run rather than checking the
+/// wrong set — a diff that cannot be taken must not read as "nothing changed".</param>
+internal readonly record struct ModelSelection(IReadOnlySet<string>? Only, string? Error = null)
+{
+    public static readonly ModelSelection All = new(null);
+    public static ModelSelection Failed(string error) => new(null, error);
 }
 
 /// <summary>Shared load + check pipeline used by both `check` and the `baseline` commands.</summary>
@@ -40,12 +53,24 @@ internal static class CheckPipeline
     /// the baseline and compared name-by-name to detect a check running against a different set of
     /// dependencies than the baseline was taken with, so nothing variable — a class count, a path —
     /// may be folded into it: that would report drift every time the vendor reissued the library.</param>
+    /// <param name="loadedFromSource">Collects the name of an encrypted library that was not loaded
+    /// because readable source for it is (B268). It contributes nothing, so naming it as loaded would be
+    /// untrue — but it is not missing either, and baseline drift is told so.</param>
     private static void ReportEncrypted(
-        LoadedLibrary library, List<string> loadedNames, TextWriter stderr)
+        LoadedLibrary library, List<string> loadedNames, List<string> loadedFromSource, TextWriter stderr)
     {
-        // Only when the vendor shipped nothing readable. A library whose documentation was read
-        // perfectly well but whose every class we already have from source also adds no nodes, and
-        // warning about that told people to go looking for a problem they did not have.
+        // First: its index is empty and it read no documentation, which is exactly what a library
+        // shipping none looks like, and the warning below would be false.
+        if (library.SupersededBy is not null)
+        {
+            loadedFromSource.Add(library.Name);
+            return;
+        }
+
+        // Only when the vendor shipped nothing readable. Asked of the documentation count, not of
+        // the index: a library whose documentation was read but whose classes all turned out to be
+        // loaded already adds no nodes either, and warning about that told people to go looking for
+        // a problem they did not have.
         if (library.DocumentedClassCount is null or 0)
         {
             stderr.WriteLine(
@@ -132,10 +157,21 @@ internal static class CheckPipeline
         return false;
     }
 
+    /// <param name="selectModelsToCheck">
+    /// Given where each class lives, the models to apply the rules to — or null for all of them.
+    ///
+    /// <para><b>A callback rather than a parameter, because the answer needs the load.</b> Deciding
+    /// which models a change touched means mapping changed files to classes, and nothing knows that
+    /// mapping until the library is in the graph. The whole library is still loaded either way: a
+    /// class cannot be checked without its base classes, and a type written as <c>SI.Length</c>
+    /// cannot be resolved without the library that defines it. What this skips is applying the rules
+    /// to models the change did not touch, which on a large library is most of the run (B184).</para>
+    /// </param>
     public static async Task<LoadResult> LoadAndCheckAsync(
         string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
         IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false,
-        bool collectCoverage = false)
+        bool collectCoverage = false,
+        Func<IReadOnlyDictionary<string, string>, ModelSelection>? selectModelsToCheck = null)
     {
         var isDir = Directory.Exists(libraryPath);
         var isMoFile = File.Exists(libraryPath) &&
@@ -161,8 +197,15 @@ internal static class CheckPipeline
             return LoadResult.Failed(ExitCodes.Error);
         }
 
+        // Three states, not two. A library with no settings at all is no longer silent — one rule is
+        // on by default — and a report that covers a single structural rule looks far more thorough
+        // than it is. Saying which of the three you are in is the whole point of the note.
         if (!settings.HasAnyStyleRuleEnabled)
             stderr.WriteLine("note: no style rules are enabled; no findings will be produced.");
+        else if (!settings.HasAnyRuleEnabledBeyondTheDefaults)
+            stderr.WriteLine(
+                "note: only the rules that are on by default are enabled; nothing else has been "
+                + "configured for this library. See settings-reference.md to choose the rules you want.");
 
         // A settings file that names a rule it cannot set is a gate configured by a spelling mistake.
         // It loads without complaint either way, so the only thing standing between a typo and a rule
@@ -187,6 +230,7 @@ internal static class CheckPipeline
         var models = new List<ModelNode>();
         var seenModelIds = new HashSet<string>(StringComparer.Ordinal);
         var referenceLibraries = new List<string>();
+        var loadedFromSource = new List<string>();
         foreach (var path in libraryPaths)
         {
             LoadedLibrary library;
@@ -206,7 +250,7 @@ internal static class CheckPipeline
             // reconstruction.
             if (library.SourceType == LibrarySourceType.EncryptedDirectory)
             {
-                ReportEncrypted(library, referenceLibraries, stderr);
+                ReportEncrypted(library, referenceLibraries, loadedFromSource, stderr);
                 continue;
             }
 
@@ -243,7 +287,7 @@ internal static class CheckPipeline
                 {
                     var library = await libraryData.AddLibraryFromPathAsync(path);
                     if (library.SourceType == LibrarySourceType.EncryptedDirectory)
-                        ReportEncrypted(library, dependencyLibraries, stderr);
+                        ReportEncrypted(library, dependencyLibraries, loadedFromSource, stderr);
                     else
                         dependencyLibraries.Add(library.Name);
                 }
@@ -317,9 +361,28 @@ internal static class CheckPipeline
 
         // The accepted spellings come from the repository the library is in, so CI reads the same list
         // a developer's app does — see SettingsResolver.DictionaryRootFor for how it is located.
+        // Where each class lives. Needed before the check now, because deciding which models to
+        // check is a question about files (B184) — it was computed after, when nothing asked.
+        var locations = ClassLocation.ForGraph(graph);
+        var modelToFile = locations.ToDictionary(kv => kv.Key, kv => kv.Value.FilePath, StringComparer.Ordinal);
+
+        var toCheck = models;
+        if (selectModelsToCheck is not null)
+        {
+            var selection = selectModelsToCheck(modelToFile);
+            if (selection.Error is { } error)
+            {
+                stderr.WriteLine($"error: {error}");
+                return LoadResult.Failed(ExitCodes.Error);
+            }
+
+            if (selection.Only is { } only)
+                toCheck = models.Where(m => only.Contains(m.Id)).ToList();
+        }
+
         var timings = new CheckTimings();
         var findings = LibraryCheckSession
-            .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions,
+            .Check(graph, toCheck, settings, customDictionary, dictionaryManager, honorSuppressions,
                    dependenciesAnalyzed: null, repositoryRoot: dictionaryRoot,
                    collectCoverage: collectCoverage, timings: timings)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
@@ -328,15 +391,13 @@ internal static class CheckPipeline
             .ThenBy(f => f.ElementPath ?? string.Empty, StringComparer.Ordinal)
             .ToList();
 
-        // Where each class lives, and where in its file it starts — the second half is what lets a
-        // report turn a finding's class-relative line into the line a reader (or GitHub) will open.
-        var locations = ClassLocation.ForGraph(graph);
-        var modelToFile = locations.ToDictionary(kv => kv.Key, kv => kv.Value.FilePath, StringComparer.Ordinal);
-
         // Report the number of classes actually checked: excludes unparseable placeholders and any
         // library the settings exclude. Excluded classes are counted out loud rather than silently, so
         // a mistyped library name shows up as an unexpected number rather than as a quiet pass.
-        var checkable = models.Where(m => !m.IsParseFailurePlaceholder).ToList();
+        // From what was checked, not from what was loaded — a `--changed-from` run loads the whole
+        // library and checks a handful of it, and reporting the whole count would make a narrowed
+        // run indistinguishable from a full one (B184).
+        var checkable = toCheck.Where(m => !m.IsParseFailurePlaceholder).ToList();
         var excluded = checkable.Count(m => settings.IsLibraryExcluded(m.Id));
         if (excluded > 0)
             stderr.WriteLine($"note: {excluded} class(es) skipped as excluded libraries");
@@ -345,6 +406,6 @@ internal static class CheckPipeline
         // the set that was checked, without loading the library a second time.
         return new LoadResult(
             ExitCodes.Ok, findings, modelToFile, locations, modelsChecked, graph, models, settings,
-            dependencyLibraries, timings);
+            dependencyLibraries, timings, loadedFromSource);
     }
 }

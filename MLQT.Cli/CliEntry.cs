@@ -169,7 +169,8 @@ internal static class CliEntry
 
         hook:     installs `mlqt check` as a git pre-commit hook, so findings are caught before
                   the commit rather than by CI afterwards. The library defaults to the current
-                  directory; the repository is found by walking up from it. The hook skips any
+                  directory; the repository is found by walking up from it, and install
+                  refuses a path that holds no Modelica library. The hook skips any
                   commit that stages no .mo file, and `git commit --no-verify` bypasses it.
                   A pre-commit hook mlqt did not write is left alone unless --force.
                   Git only - SVN runs its hooks on the server.

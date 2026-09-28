@@ -9,9 +9,10 @@
     whoever remembered they existed, which for a while was nobody: 207 Dymola tests had never run in
     any automated context.
 
-    CI is right to skip them. They drive a live Dymola or OpenModelica install that no runner has,
-    and the workflow says so. But a developer machine often *does* have one, and on a machine that
-    does, they are the only tests that cover those interfaces at all.
+    CI runs only part of them: the classes that drive a live Dymola or OpenModelica install no runner
+    has carry [Trait("Requires", ...)] and are filtered out there, and the rest - wire format, socket
+    stubs, detection - runs on both platforms (B399). But a developer machine often *does* have the
+    tools, and on a machine that does, this is the only place the rest of those suites runs.
 
     The suite list is read from MLQT.slnx rather than written out here. This repository has been
     caught repeatedly by one rule with two implementations - a test project added to the solution and
@@ -21,8 +22,10 @@
     Build configuration. Release by default, to match CI and the coverage gate.
 
 .PARAMETER CoreOnly
-    Skip the suites that need an external simulation tool, leaving what CI runs. Use this to ask
-    "would CI be green?" without the noise of tools the runner would not have either.
+    Leave out what needs an external tool, leaving what CI runs: the journeys are skipped, and the
+    Dymola and OpenModelica suites run without their classes marked [Trait("Requires", ...)] - the
+    same filter CI uses (B399). Use this to ask "would CI be green?" without the noise of tools the
+    runner would not have either.
 
 .PARAMETER SkipBuild
     Run the suites as they were last built. Much faster when iterating on one of them.
@@ -30,15 +33,16 @@
 .NOTES
     A failure is a failure, whichever suite it is in. An earlier version excused failures in the
     tool-dependent suites on the grounds that the machine might not have the tool - and then quietly
-    excused a real one: OpenModelica *is* installed here, and
-    GetErrorStringAsync_AfterClear_ReturnsEmpty fails against it. Excusing by category hides the
+    excused a real one: OpenModelica *is* installed here, and a test in that suite was failing
+    against it (B116, fixed on 2026-09-08 - the test was wrong about omc). Excusing by category hides the
     thing you wanted to find. A machine without the tools uses -CoreOnly, which is a decision rather
     than a shrug.
 
 .PARAMETER Coverage
-    Also collect coverage and print a per-assembly summary. This is the only way to see coverage for
-    DymolaInterface and OpenModelicaInterface: their suites drive a live simulation tool, so no CI job
-    runs them and build/check-coverage.ps1 does not measure them.
+    Also collect coverage and print a per-assembly summary, over every assembly we own. This is the
+    only way to see what the live-tool tests add to DymolaInterface and OpenModelicaInterface: CI runs
+    only their classes needing no tool. With -CoreOnly those two are measured from that tool-free part
+    alone, as CI measures them, and the summary marks them so (B437).
 
     It reports; it does not gate. The ratchet lives in check-coverage.ps1 and is deliberately fed by
     the suites CI can actually run, so that a number it enforces is one CI can defend.
@@ -74,22 +78,46 @@ Push-Location $repositoryRoot
 # Suites needing something the machine may not have, and the filter that makes the rest of the suite
 # runnable anyway. Anything not named here runs unfiltered.
 #
-# The SVN exclusion is the same one build-and-test.yml and check-coverage.ps1 apply, and for the same
-# reason: those tests want a working copy at C:\Projects\ModelicaEditorTest and a server. Kept
-# identical so a local run and a CI run measure the same thing.
+# The SVN exclusion names the three classes that cannot run without an svn client, and nothing else.
+# It used to be the substring 'Svn', which excluded 281 of the suite's 672 tests - six classes that
+# need no svn at all, including guards written for a defect a user had reported. Measured rather than
+# assumed: with svn taken off PATH, exactly SvnIntegrationTests, SvnIntegrationAdvancedTests and
+# SvnMergeCommitTests fail; every other test passes (B266).
+#
+# On a machine that HAS svn, all three run, each against a repository it builds for itself with
+# svnadmin (SvnTestRepository, B426) - so two runs at once, from two worktrees, no longer commit
+# into one repository under each other. That is the point of this script - excusing a suite by
+# category is how a real failure hides in it.
+#
+# MLQT.Services.Tests has one such class too, RepositoryServiceSvnIntegrationTests (B471), and takes
+# the same filter under the same condition.
+$svnAvailable = [bool](Get-Command svn -ErrorAction SilentlyContinue)
+$svnFilter = if ($svnAvailable) { $null }
+             else { 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
+
 $suiteNotes = @{
     'RevisionControl.Tests' = @{
-        Filter       = 'FullyQualifiedName!~Svn'
-        Why          = 'SVN integration tests need a working copy and a server'
+        Filter       = $svnFilter
+        Why          = 'the SVN integration tests need an svn client'
         NeedsTooling = $false
     }
+    'MLQT.Services.Tests' = @{
+        Filter       = $svnFilter
+        Why          = 'the SVN integration tests need an svn client'
+        NeedsTooling = $false
+    }
+    # CoreFilter is what -CoreOnly runs instead of skipping the suite: the classes that need the
+    # tool carry [Trait("Requires", ...)], and CI runs the rest of the suite with the same filter
+    # (B399). LiveToolTestFilterTests holds these strings to the workflow's and to the traits.
     'DymolaInterface.Tests' = @{
         Filter       = $null
+        CoreFilter   = 'Requires!=Dymola'
         Why          = 'drives a live Dymola install'
         NeedsTooling = $true
     }
     'OpenModelicaInterface.Tests' = @{
         Filter       = $null
+        CoreFilter   = 'Requires!=OpenModelica'
         Why          = 'drives a live OpenModelica (omc) install'
         NeedsTooling = $true
     }
@@ -129,12 +157,20 @@ $suites = foreach ($path in $projects) {
         Name         = $name
         Project      = $path
         Filter       = if ($note) { $note.Filter } else { $null }
+        CoreFilter   = if ($note -and $note.ContainsKey('CoreFilter')) { $note.CoreFilter } else { $null }
         Why          = if ($note) { $note.Why } else { $null }
         NeedsTooling = if ($note) { [bool]$note.NeedsTooling } else { $false }
     }
 }
 
 if ($CoreOnly) {
+    # A suite with a CoreFilter is not skipped: the part of it that needs no tool runs, as it does in
+    # CI, and only the part that drives the tool is left out (B399).
+    foreach ($s in $suites | Where-Object { $_.NeedsTooling -and $_.CoreFilter }) {
+        Write-Host "Running $($s.Name) without the classes that need the tool - $($s.Why)" -ForegroundColor DarkGray
+        $s.Filter = $s.CoreFilter
+        $s.NeedsTooling = $false
+    }
     $skipped = $suites | Where-Object NeedsTooling
     $suites = $suites | Where-Object { -not $_.NeedsTooling }
     foreach ($s in $skipped) { Write-Host "Skipping $($s.Name) - $($s.Why)" -ForegroundColor DarkGray }
@@ -153,7 +189,7 @@ if ($CoreOnly) {
 #
 # WebKit is the half this does not rescue: its ubuntu24.04 build links libicu74 and libvpx9, and
 # 26.04 ships neither, so it will not launch whatever the override says. That is why the WebKit
-# rehearsal is a CI job on ubuntu-latest (nightly-webkit.yml) rather than something run here.
+# rehearsal is a CI job on ubuntu-24.04 (nightly-webkit.yml, pinned by B256) rather than something run here.
 #
 # Bump $NewestPlaywrightUbuntu when Playwright adds a platform, and this stops applying by itself.
 
@@ -291,11 +327,21 @@ if ($Coverage) {
         Write-Host ''
         Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
 
-        # Only the assemblies whose suites actually ran. With -CoreOnly the simulation interfaces
-        # are skipped, and listing them anyway showed DymolaInterface at 0% when it is at 91% - a
-        # suite that did not run is no information, not zero coverage, which is the same misreading
-        # that made the headline 19.2% (B117).
-        $measured = if ($CoreOnly) { @($MlqtBars.Keys) } else { $MlqtOwnedAssemblies }
+        # Every assembly we own, -CoreOnly or not. -CoreOnly used to drop the simulation interfaces,
+        # because their suites were skipped and a suite that did not run is no information, not zero
+        # coverage (B117). Since B399 they are not skipped: the classes needing no tool run, as in
+        # CI, so what they cover is real information and leaving it out hid it (B437). The figure is
+        # the tool-free part only, and the line below says so.
+        $measured = $MlqtOwnedAssemblies
+
+        # Which assemblies were measured from a filtered suite, so the summary can say its figure is
+        # partial rather than let it be read as the whole suite's.
+        $partial = @{}
+        if ($CoreOnly) {
+            foreach ($s in $suites | Where-Object { $_.CoreFilter -and $_.Filter -eq $_.CoreFilter }) {
+                $partial[($s.Name -replace '\.Tests$', '')] = $true
+            }
+        }
 
         if (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $measured) {
             $summary = Get-Content (Join-Path $ReportDirectory 'Summary.json') -Raw | ConvertFrom-Json
@@ -308,7 +354,8 @@ if ($Coverage) {
                 # Named where the gate has an opinion, so the two numbers are never confused: this
                 # report covers more suites than the gate does and is not the thing CI enforces.
                 $bar = if ($MlqtBars.ContainsKey($assembly.name)) { "bar {0}% per class" -f $MlqtBars[$assembly.name] }
-                       else { 'not gated - no CI job runs its suite' }
+                       else { 'not gated' }
+                if ($partial.ContainsKey($assembly.name)) { $bar += '; tests needing no tool only' }
 
                 Write-Host ("  {0,-22} {1,6}%   ({2})" -f $assembly.name, $assembly.coverage, $bar)
             }

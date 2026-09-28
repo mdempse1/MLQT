@@ -28,4 +28,13 @@ public interface IFilePickerService
     /// <param name="title">The title of the folder picker dialog.</param>
     /// <returns>The selected directory path, or null if cancelled.</returns>
     Task<string?> PickFolderAsync(string title = "Select folder");
+
+    /// <summary>
+    /// Opens a file picker for a program and returns its path, without reading it. Filtered to
+    /// <c>*.exe</c> on Windows and not filtered at all elsewhere, where a program has no extension.
+    /// </summary>
+    /// <param name="title">The title of the picker dialog.</param>
+    /// <param name="startIn">The folder the dialog opens in, or null for the platform's default.</param>
+    /// <returns>The selected file's path, or null if cancelled.</returns>
+    Task<string?> PickExecutableAsync(string title, string? startIn = null);
 }

@@ -7,6 +7,7 @@ namespace DymolaInterface.Tests;
 /// These tests run sequentially and share a single Dymola instance.
 /// </summary>
 [Collection("Dymola Collection")]
+[Trait("Requires", "Dymola")]
 public class CommandTests
 {
     private readonly DymolaFixture _fixture;

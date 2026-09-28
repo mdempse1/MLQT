@@ -35,6 +35,43 @@ public static class WithinClause
     }
 
     /// <summary>
+    /// <see cref="Ensure(string, string?)"/> for a writer rebuilding a <em>whole file</em> from the
+    /// source of the class that heads it: when the clause is added, the file's own text outside the
+    /// class — a licence header, a comment after the clause or after the class — is put back with it
+    /// (B445). A source that already opens with a clause is a whole file and is returned unchanged,
+    /// its own clause and its own header included.
+    /// </summary>
+    /// <param name="fileText">The heading class's <c>FileText</c>, read when the file was loaded;
+    /// null when the file had none.</param>
+    public static string Ensure(string source, string? parent, FileLevelText? fileText)
+    {
+        if (fileText is null || StartsWithClause(source, out _))
+            return Ensure(source, parent);
+
+        return fileText.ApplyTo(Ensure(source, parent));
+    }
+
+    /// <summary>
+    /// <see cref="Set(string, string?)"/> for a class that takes its file-level text to its new file:
+    /// the clause names the new parent, and the header and trailing comments go with the class.
+    /// </summary>
+    public static string Set(string source, string? parent, FileLevelText? fileText)
+        => Ensure(Strip(source), parent, fileText);
+
+    /// <summary>
+    /// True when <paramref name="source"/> opens with a within clause; <paramref name="clauseStart"/>
+    /// is where the keyword starts and <paramref name="hasTextAbove"/> says whether a comment sits
+    /// above it.
+    /// </summary>
+    internal static bool OpensWithClause(string source, out int clauseStart, out bool hasTextAbove)
+    {
+        var opens = StartsWithClause(source, out var keywordEnd, out var keepUpTo);
+        clauseStart = keywordEnd - Keyword.Length;
+        hasTextAbove = keepUpTo > 0;
+        return opens;
+    }
+
+    /// <summary>
     /// Returns <paramref name="source"/> without its leading within clause, and unchanged if it has
     /// none. Any newline immediately following the clause goes with it, so the class that followed
     /// becomes line 1 and stored line numbers stay put.
@@ -123,7 +160,7 @@ public static class WithinClause
     /// comment forms. An unterminated <c>/*</c> runs to the end, which is what the lexer does with it
     /// too — there is no clause after it either way.
     /// </summary>
-    private static int SkipIgnorable(string source, int index, out int lastCommentEnd)
+    internal static int SkipIgnorable(string source, int index, out int lastCommentEnd)
     {
         lastCommentEnd = 0;
 

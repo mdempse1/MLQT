@@ -159,6 +159,52 @@ public class ReferenceOnlyRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task AReferenceRepository_IsNotCheckedByTheIncrementalReCheck()
+    {
+        // The re-check after a reload. Its classes reach it whenever a change made through another
+        // repository reloads them — a vendor library checked out inside the team's own tree is
+        // watched, pulled and refreshed as part of the team's repository (B330) — and this entry
+        // point grouped them by repository and ran each repository's per-class rules without asking
+        // whether it was one anybody here maintains (B404).
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: false, isReferenceOnly: true);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.CheckModelsAsync(
+            h.Libraries.GetAllModels().Select(m => m.Id).ToList(), h.Libraries.CombinedGraph);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Empty(found);
+    }
+
+    [Fact]
+    public async Task ARepositoryTheTeamMaintains_IsCheckedByTheIncrementalReCheck()
+    {
+        // The other half: the guard must not be the reason nothing was reported.
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.CheckModelsAsync(
+            h.Libraries.GetAllModels().Select(m => m.Id).ToList(), h.Libraries.CombinedGraph);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Contains(found, m => m.RuleId == RuleIds.ClassDescription);
+    }
+
+    [Fact]
     public async Task AReferenceRepository_HasNoWholeGraphAnalysesRunOnItEither()
     {
         // The graph analyses had no guard on any path — including inside the one entry point that
@@ -249,6 +295,38 @@ public class ReferenceOnlyRepositoryTests : IDisposable
 
         Assert.False(h.Monitoring.IsMonitoringRepository(vendor.Repository!.Id));
         Assert.True(h.Monitoring.IsMonitoringRepository(ours.Repository!.Id));
+    }
+
+    /// <summary>
+    /// B354: ticking or unticking "Reference only" mid-session used to set the flag and nothing else,
+    /// so a repository marked reference only went on being watched, and one unmarked was never
+    /// watched again until the project was reloaded.
+    /// </summary>
+    [Fact]
+    public async Task SetReferenceOnly_StartsAndStopsTheWatch_AndSaysTheRepositoriesChanged()
+    {
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: true, isReferenceOnly: false);
+        var id = added.Repository!.Id;
+        Assert.True(h.Monitoring.IsMonitoringRepository(id));
+
+        var changed = 0;
+        h.Repositories.OnRepositoriesChanged += () => changed++;
+
+        h.Repositories.SetReferenceOnly(id, true);
+        Assert.True(added.Repository.IsReferenceOnly);
+        Assert.False(h.Monitoring.IsMonitoringRepository(id));
+        Assert.Equal(1, changed);
+
+        h.Repositories.SetReferenceOnly(id, false);
+        Assert.False(added.Repository.IsReferenceOnly);
+        Assert.True(h.Monitoring.IsMonitoringRepository(id));
+        Assert.Equal(2, changed);
+
+        // Setting what is already set announces nothing.
+        h.Repositories.SetReferenceOnly(id, false);
+        Assert.Equal(2, changed);
     }
 
     [Fact]
@@ -380,6 +458,110 @@ public class ReferenceOnlyRepositoryTests : IDisposable
 
         Assert.DoesNotContain("P.A", excluded);
         Assert.DoesNotContain("P", excluded);
+    }
+
+    // ---- a writable repository whose .mlqt settings file cannot be written (B223) ---------------
+
+    [Fact]
+    public async Task WhenTheSettingsFileCannotBeWritten_TheRepositoryIsMarkedAndTheUserIsTold()
+    {
+        // Distinct from reference-only: the repository is the user's own and MLQT keeps monitoring
+        // and checking it, but the per-repository settings cannot be kept beside the code, so it
+        // silently falls back to the global ones. Silently is the problem, which is why there is a
+        // warning - and nothing tested either half. The mutation audit could set the flag to false
+        // and delete the warning's condition without a failure (B223).
+        var h = Build();
+        var path = WriteLibrary("Ours");
+
+        // A file where the directory has to go: Directory.CreateDirectory then throws IOException,
+        // which is what the write guard catches. Simulating a permission failure by permission needs
+        // an ACL edit that does not mean the same thing on both platforms.
+        File.WriteAllText(Path.Combine(path, ".mlqt"), "not a directory");
+
+        var added = await h.Repositories.AddRepositoryAsync(
+            path, startMonitoring: false, isReferenceOnly: false);
+
+        Assert.True(added.Repository!.IsSettingsReadOnly);
+        Assert.False(added.Repository.IsReferenceOnly);   // still the user's own repository
+        Assert.Contains(added.Warnings, w => w.Contains("Ours") && w.Contains("current session"));
+    }
+
+    [Fact]
+    public async Task AnOrdinaryRepositoryIsNotMarkedReadOnly_AndWarnsAboutNothing()
+    {
+        // The positive control: the assertions above must not pass because every repository is
+        // marked, or because the warning list is never read.
+        var h = Build();
+
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+
+        Assert.False(added.Repository!.IsSettingsReadOnly);
+        Assert.Empty(added.Warnings);
+        Assert.True(File.Exists(Path.Combine(added.Repository.LocalPath, ".mlqt", "settings.json")));
+    }
+
+    /// <summary>
+    /// B381: since B310 a save does not write a settings file whose settings are unchanged, so the
+    /// failed write that used to mark an unwritable repository never happens on adding one that
+    /// already has its file. Writability is now asked on load, by opening the file for writing.
+    /// </summary>
+    [Fact]
+    public async Task AnExistingSettingsFileThatCannotBeWritten_IsFlaggedOnLoad()
+    {
+        var h = Build();
+        var path = WriteLibrary("Ours");
+        var settingsPath = Path.Combine(path, ".mlqt", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, "{ \"CommitRequiresIssueNumber\": true }\n");
+        File.SetAttributes(settingsPath, FileAttributes.ReadOnly);
+        try
+        {
+            // Run as root on Linux, a read-only mode bit stops nobody, and there is nothing to find.
+            try
+            {
+                using (new FileStream(settingsPath, FileMode.Open, FileAccess.Write)) { }
+                Assert.Skip("The file is writable despite being read-only (running as root?).");
+            }
+            catch (UnauthorizedAccessException) { }
+
+            var added = await h.Repositories.AddRepositoryAsync(
+                path, startMonitoring: false, isReferenceOnly: false);
+
+            Assert.True(added.Repository!.IsSettingsReadOnly);
+            // B424: the file can be read, so its settings are the ones used and only changes are
+            // lost - the warning must not say another set of settings is used in their place.
+            Assert.True(added.Repository.StyleSettings!.CommitRequiresIssueNumber);
+            var warning = Assert.Single(added.Warnings, w => w.Contains("Ours"));
+            Assert.Contains("Changes will only apply to the current session", warning);
+            Assert.DoesNotContain("global settings", warning, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.SetAttributes(settingsPath, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public async Task AnExistingWritableSettingsFile_IsNotFlagged_AndTheProbeWritesNothing()
+    {
+        // The control for the test above, and the promise that asking is not itself a write: the
+        // file is committed, so a probe that touched it would be B310 over again.
+        var h = Build();
+        var path = WriteLibrary("Ours");
+        var settingsPath = Path.Combine(path, ".mlqt", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, "{}\n");
+        var written = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(settingsPath, written);
+
+        var added = await h.Repositories.AddRepositoryAsync(
+            path, startMonitoring: false, isReferenceOnly: false);
+
+        Assert.False(added.Repository!.IsSettingsReadOnly);
+        Assert.Empty(added.Warnings);
+        Assert.Equal("{}\n", File.ReadAllText(settingsPath));
+        Assert.Equal(written, File.GetLastWriteTimeUtc(settingsPath));
     }
 
     [Fact]

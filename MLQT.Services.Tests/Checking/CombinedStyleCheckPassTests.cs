@@ -61,7 +61,8 @@ public class CombinedStyleCheckPassTests
     public void AClassWithNoRulesEnabled_ProducesNoFindings()
     {
         var (graph, model) = GraphWithOneClass();
-        var none = new StyleCheckingSettings();
+        // "Every rule switched off" has to be asked for now that one is on by default.
+        var none = StyleCheckingSettings.NothingEnabled();
         var findings = new ConcurrentBag<LogMessage>();
 
         var (pass, contexts) = CombinedStyleCheckPass.Build(
@@ -197,7 +198,8 @@ public class CombinedStyleCheckPassTests
         // rule switched off still has a documented-class percentage, and dropping these classes
         // would report it against a smaller denominator than the library actually has.
         var (graph, model) = GraphWithOneClass();
-        var none = new StyleCheckingSettings();
+        // "Every rule switched off" has to be asked for now that one is on by default.
+        var none = StyleCheckingSettings.NothingEnabled();
 
         var (pass, contexts) = CombinedStyleCheckPass.Build(
             graph, [Repo("repo-1", none)],

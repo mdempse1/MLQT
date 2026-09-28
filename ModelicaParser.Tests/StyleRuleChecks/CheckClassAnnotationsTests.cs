@@ -600,9 +600,11 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void ExternalAnnotation_IconDetected()
+    public void ExternalAnnotation_IconIsNotTheClasses()
     {
-        // Models with external function declarations have an annotation at the external level
+        // The external clause's annotation says what the function links against (Library,
+        // Include, ...); an Icon written there is not the class's icon, and a tool does not draw
+        // it. Until B446 every annotation in the class body was read as the class's.
         var code = """
             function TestFunc "A function"
               input Real x;
@@ -614,7 +616,7 @@ public class CheckClassAnnotationsTests
 
         var findings = CheckRule(code, checkIcon: true);
 
-        Assert.Empty(findings);
+        Assert.Single(findings);
     }
 
     // ============================================================================

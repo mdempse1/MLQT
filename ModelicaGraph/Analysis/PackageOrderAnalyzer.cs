@@ -24,6 +24,7 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)
     {
         var findings = new List<Finding>();
+        var matchDymola = context.Settings.PackageOrderMatchesDymola;
 
         // parent id -> direct child class simple names (from the whole graph, so it spans every file).
         var childClasses = context.Graph.ModelNodes
@@ -44,7 +45,10 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
 
             // Stale: an entry matching neither a child class nor a package-level member. Only run when
             // the package's members could be read (else a legitimate constant would look stale).
-            var members = ExtractMemberNames(package);
+            // Stale entries have no upstream equivalent — Dymola's loader reports an *incomplete*
+            // package.order and says nothing about an entry naming something that is not there — so
+            // a repository asking for Dymola's answer is not asking for these.
+            var members = matchDymola ? null : ExtractMemberNames(package);
             if (members is not null)
             {
                 var valid = new HashSet<string>(children, StringComparer.Ordinal);
@@ -69,7 +73,8 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
             // Missing: a direct child class not listed in package.order.
             var declaredSet = new HashSet<string>(declared, StringComparer.Ordinal);
             foreach (var childName in children)
-                if (!declaredSet.Contains(childName))
+                if (!declaredSet.Contains(childName)
+                    && (!matchDymola || DymolaWouldFind(context, package, childName)))
                     findings.Add(new Finding
                     {
                         RuleId = ModelicaParser.StyleRules.RuleIds.PackageOrder,
@@ -83,6 +88,55 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
 
         return findings;
     }
+
+    /// <summary>
+    /// Whether Dymola's own loader would have found this child and warned about it (B195).
+    ///
+    /// <para>Dymola resolves a package's children in exactly two places:
+    /// <c>&lt;Package&gt;/Name.mo</c> and <c>&lt;Package&gt;/Name/package.mo</c>. A class held inline
+    /// in the package's own <c>package.mo</c> is found too, because Dymola is already reading that
+    /// file.</para>
+    ///
+    /// <para><b>The difference this leaves is narrower than B195 assumed, and it was measured rather
+    /// than reasoned.</b> The item expected MLQT to find classes in folders Dymola never descends
+    /// into; it does not, because <c>LibraryDataService</c> skips a directory with no
+    /// <c>package.mo</c> for the same reason Dymola does. What is left is a class in a file whose
+    /// name does not match it — <c>Widget.mo</c> holding <c>model Odd</c>. MLQT reads every
+    /// <c>.mo</c> in a package directory and takes the class's own name, so it loads that class and
+    /// reports it unlisted; Dymola resolves by file name and cannot load it from there at all, so it
+    /// never warns. Worth keeping in the default answer: a class stored where the tool of record
+    /// cannot find it is a real problem, and this is the only thing that notices.</para>
+    /// </summary>
+    private static bool DymolaWouldFind(GraphAnalysisContext context, ModelNode package, string childName)
+    {
+        var packageFile = FilePathOf(context, package.ContainingFileId);
+        if (packageFile is null)
+            return true; // Cannot tell where it lives; report rather than silently drop.
+
+        var child = context.Graph.ModelNodes.FirstOrDefault(
+            m => string.Equals(m.ParentModelName, package.Id, StringComparison.Ordinal)
+                 && string.Equals(m.Definition.Name, childName, StringComparison.Ordinal));
+
+        var childFile = child is null ? null : FilePathOf(context, child.ContainingFileId);
+        if (childFile is null || string.Equals(childFile, packageFile, StringComparison.OrdinalIgnoreCase))
+            return true; // Inline in the package's own file, which Dymola is already reading.
+
+        var packageDir = Path.GetDirectoryName(packageFile);
+        if (string.IsNullOrEmpty(packageDir))
+            return true;
+
+        return PathsEqual(childFile, Path.Combine(packageDir, childName + ".mo"))
+            || PathsEqual(childFile, Path.Combine(packageDir, childName, "package.mo"));
+    }
+
+    private static string? FilePathOf(GraphAnalysisContext context, string? fileId) =>
+        string.IsNullOrEmpty(fileId) ? null : context.Graph.GetNode<FileNode>(fileId)?.FilePath;
+
+    private static bool PathsEqual(string a, string b) =>
+        string.Equals(
+            Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
 
     // The package's package-level member (constant/variable) names — the entries package.order may
     // legitimately contain that are not child classes. Null if the source can't be parsed.

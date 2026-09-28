@@ -21,6 +21,20 @@ namespace MLQT.Services;
 /// </summary>
 public static class LibraryDiscovery
 {
+    /// <summary>
+    /// What was looked for, in the user's words, for when nothing was found.
+    ///
+    /// <para>Kept beside the rules it describes so the two cannot drift: a message listing what MLQT
+    /// searches for is only useful while it is still what MLQT searches for. Adding a repository that
+    /// yields no library used to be silent apart from a log line — the dialog closed reporting
+    /// success and nothing appeared — which is indistinguishable from a library that failed to load
+    /// (B206, and the reason B198 could not be told apart from either).</para>
+    /// </summary>
+    public static string NothingFoundIn(string path) =>
+        $"No Modelica library was found in '{path}'. MLQT looks for a package.mo or package.moe in " +
+        "the folder itself, or in any immediate subfolder that is not hidden, and for loose .mo files " +
+        "at the top level.";
+
     public static IReadOnlyList<string> DiscoverLibraryPaths(string basePath)
     {
         var results = new List<string>();

@@ -122,3 +122,172 @@ body * {
 ::-webkit-scrollbar-corner {
     background: transparent;
 }
+
+/* ── The tab pane, and why no page in it subtracts from the viewport ─────────────
+   The same rule as the findings pane below, one level out, and for the same reason.
+
+   Every page in the tab host used to set its own height as `calc(100vh - N)`: 185px on Code
+   Review, 140px on Dependencies, 135px on External Resources. Three different numbers for the same
+   distance, which is the tell — N stands for the app bar, the pane margins, the current-class box,
+   the tab header and the page's own toolbar, and nobody can keep a constant equal to the sum of
+   five things they do not control.
+
+   Measured, Code Review's was right to within 12px. That is not a margin, it is the absence of
+   one: the parse-error alert is 34px, so a class with a syntax error made the page taller than the
+   window, and the first thing a page-level scrollbar carries out of view is the box telling you
+   which class you are looking at (B250).
+
+   So the chain from this pane down to a page is a flex column and each page fills what is left.
+   `min-height: 0` at every step is what allows a flex item to be shorter than its content; without
+   it each one's floor is its content height, nothing ever shrinks, and the overflow reappears
+   further out. The panels scroll rather than clip, so a page that does want more room than there
+   is gets a scrollbar of its own instead of moving the furniture. */
+
+.mlqt-tab-host {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* MudStack renders as `d-flex flex-column`; there is no `mud-stack` class to hang this on. */
+.mlqt-tab-host > .d-flex,
+.mlqt-tab-host .mud-tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-tab-host .mud-tabs-panels {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* A page's own root, and the stack inside it. Both have to pass the height through or the page
+   sizes to its content and the pane scrolls instead of the page filling it. */
+.mlqt-page-fill,
+.mlqt-page-fill > .d-flex {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* A MudExSplitPanel that takes the room left over. Both elements are needed: the `Class` lands on
+   the grid wrapper and the panel itself is inside it, so styling only one leaves the other sizing
+   to its content — which is the whole of what this is trying to stop. */
+.mlqt-fill-splitter {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-fill-splitter > .mud-ex-split-panel {
+    height: 100%;
+    min-height: 0;
+}
+
+/* ── The find-in-code match count ────────────────────────────────────────────────
+   Part of the control it belongs to, and nothing when there is nothing to say.
+
+   It used to reserve `min-width: 84px` whether or not it held a count, so the toolbar's resting
+   state — nothing searched for — was a 220px field, 84px of nothing, and a pair of arrows that
+   read as a separate control from either (B248). Sizing to its content closes that, and `:empty`
+   keeps the margins off until there is something between them. A conditional in the markup would
+   do the same and give something else to get wrong. */
+
+.mlqt-match-count:not(:empty) {
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+/* ── The findings pane on the Code Review page ───────────────────────────────────
+   One scrollbar, on the rows, and not a second one around the whole thing.
+
+   MudExSplitPanelItem gives its content `overflow: auto`, which is right for a pane whose content
+   is a document and wrong for one holding a table that scrolls itself: as soon as the toolbar plus
+   the table were taller than the pane, that outer box scrolled too, carrying the heading, the
+   filters and the search box out of view along with the rows. Two scrollbars, and the one the user
+   reached for moved the wrong thing.
+
+   So the pane does not scroll, and the table's own container takes exactly the height left over
+   after the toolbar. That is a flex calculation rather than a subtraction, because the toolbar's
+   height is not a constant — it carries a heading, two switches, a download button and a search
+   box, and wraps to a second line in a narrow pane. `MudTable Height="calc(100% - 48px)"` assumed
+   48px of it, which is true until it is not.
+
+   `min-height: 0` on both flex children is what lets them be *shorter* than their content: without
+   it a flex item's floor is its content height, the container never shrinks, and the scrollbar
+   reappears on the outer box no matter what overflow says. */
+
+.mlqt-findings-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.mlqt-findings-pane > .mud-table {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-findings-pane .mud-table-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* ── The resource tree on the External Resources page ────────────────────────────
+   A row stays on one line and the pane scrolls sideways to reach the rest of it,
+   rather than the name wrapping to fit whatever width the splitter is at.
+
+   Three things have to agree or nothing happens. The label wraps because it is
+   `white-space: normal`; the row clips because `.mud-treeview-item-content` is
+   `overflow: hidden`; and the tree can never be wider than the pane because every level
+   of it sizes to its parent, so there is nothing for the pane's `overflow-x: auto` to
+   scroll. Fix one or two of those and the result is the same picture, which is what
+   makes this worth writing down.
+
+   `min-width: 100%` alongside `width: max-content` on the row is what keeps the hover
+   and selection highlight spanning the full width of the pane for a short name, instead
+   of stopping at the end of the text. */
+
+.mlqt-resource-tree-pane .mud-treeview-item-label {
+    white-space: nowrap;
+}
+
+.mlqt-resource-tree-pane .mud-treeview-item-content {
+    overflow: visible;
+    width: max-content;
+    min-width: 100%;
+}
+
+.mlqt-resource-tree-pane .mud-treeview {
+    overflow: visible;
+    min-width: max-content;
+}
+
+/* ── Find in code ────────────────────────────────────────────────────────────────
+   A match keeps the syntax colour it already had and gains a background, rather than being
+   recoloured: the point of searching code is to find something in it, not to stop being
+   able to read what kind of thing it is. `inherit` on the colour is doing that work — the
+   span sits inside the token's own span, so without it the browser would keep the token
+   colour anyway, and saying so stops a later edit from "tidying" it into a foreground
+   colour. */
+
+.code-search-match {
+    background-color: rgba(255, 213, 79, 0.55);
+    color: inherit;
+    border-radius: 2px;
+}
+
+/* Dark themes get a dimmer wash: the light one is legible on white and glares on near-black. */
+@media (prefers-color-scheme: dark) {
+    .code-search-match {
+        background-color: rgba(255, 213, 79, 0.3);
+    }
+}

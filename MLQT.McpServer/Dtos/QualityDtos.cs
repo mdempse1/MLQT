@@ -20,6 +20,7 @@ public sealed class StyleSettingsInput
 {
     public bool? ImportStatementsFirst { get; set; }
     public bool? ComponentsBeforeClasses { get; set; }
+    public bool? DeclarationOrder { get; set; }
     public bool? OneOfEachSection { get; set; }
     public bool? DontMixEquationAndAlgorithm { get; set; }
     public bool? DontMixConnections { get; set; }
@@ -43,6 +44,8 @@ public sealed class StyleSettingsInput
     public bool? CheckMissingUnits { get; set; }
     public bool? CheckUnusedImports { get; set; }
     public bool? CheckPackageOrder { get; set; }
+    public bool? CheckSingleFilePackage { get; set; }
+    public bool? CheckWithinClause { get; set; }
     public bool? CheckUsesUndeclared { get; set; }
     public bool? CheckUsesDeclaredUnused { get; set; }
     public bool? CheckUnusedClass { get; set; }
@@ -68,6 +71,8 @@ public sealed class StyleSettingsInput
     private static readonly Toggle[] _toggles =
     [
         new(RuleIds.ImportStatementsFirst, i => i.ImportStatementsFirst, (i, v) => i.ImportStatementsFirst = v),
+        new(RuleIds.ComponentsBeforeClasses, i => i.ComponentsBeforeClasses, (i, v) => i.ComponentsBeforeClasses = v),
+        new(RuleIds.DeclarationOrder, i => i.DeclarationOrder, (i, v) => i.DeclarationOrder = v),
         new(RuleIds.OneOfEachSection, i => i.OneOfEachSection, (i, v) => i.OneOfEachSection = v),
         new(RuleIds.DontMixEquationAndAlgorithm, i => i.DontMixEquationAndAlgorithm, (i, v) => i.DontMixEquationAndAlgorithm = v),
         new(RuleIds.DontMixConnections, i => i.DontMixConnections, (i, v) => i.DontMixConnections = v),
@@ -88,6 +93,8 @@ public sealed class StyleSettingsInput
         new(RuleIds.MissingUnit, i => i.CheckMissingUnits, (i, v) => i.CheckMissingUnits = v),
         new(RuleIds.UnusedImport, i => i.CheckUnusedImports, (i, v) => i.CheckUnusedImports = v),
         new(RuleIds.PackageOrder, i => i.CheckPackageOrder, (i, v) => i.CheckPackageOrder = v),
+        new(RuleIds.SingleFilePackage, i => i.CheckSingleFilePackage, (i, v) => i.CheckSingleFilePackage = v),
+        new(RuleIds.WithinClause, i => i.CheckWithinClause, (i, v) => i.CheckWithinClause = v),
         new(RuleIds.UsesUndeclared, i => i.CheckUsesUndeclared, (i, v) => i.CheckUsesUndeclared = v),
         new(RuleIds.UsesDeclaredUnused, i => i.CheckUsesDeclaredUnused, (i, v) => i.CheckUsesDeclaredUnused = v),
         new(RuleIds.UnusedClass, i => i.CheckUnusedClass, (i, v) => i.CheckUnusedClass = v),
@@ -117,19 +124,18 @@ public sealed class StyleSettingsInput
                 s.SetRuleEnabled(toggle.RuleId, enabled);
         }
 
-        // Not a rule — a formatter flag, so it is not in the toggle table.
-        if (ComponentsBeforeClasses is { } componentsFirst)
-            s.ComponentsBeforeClasses = componentsFirst;
-
         if (SpellCheckLanguages is { Count: > 0 })
             s.SpellCheckLanguages = SpellCheckLanguages.ToList();
     }
 
     /// <summary>A fresh, full settings object from this input (default naming/SVN config). Rules the
-    /// input does not mention stay off, which is what a one-off check of an explicit rule set means.</summary>
+    /// input does not mention stay off, which is what a one-off check of an explicit rule set means —
+    /// <b>including a rule that is on by default</b>. <c>new StyleCheckingSettings()</c> stopped meaning
+    /// "nothing on" when B241 made <c>SingleFilePackage</c> default-on, and every explicit rule set then
+    /// ran it as well (B322); <see cref="StyleCheckingSettings.NothingEnabled"/> is what says it.</summary>
     public StyleCheckingSettings ToSettings()
     {
-        var s = new StyleCheckingSettings();
+        var s = StyleCheckingSettings.NothingEnabled();
         ApplyTo(s);
         return s;
     }
@@ -145,11 +151,7 @@ public sealed class StyleSettingsInput
     /// </summary>
     public static StyleSettingsInput From(StyleCheckingSettings s)
     {
-        var input = new StyleSettingsInput
-        {
-            ComponentsBeforeClasses = s.ComponentsBeforeClasses,
-            SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
-        };
+        var input = new StyleSettingsInput { SpellCheckLanguages = s.SpellCheckLanguages?.ToList() };
 
         foreach (var toggle in _toggles)
             toggle.Write(input, s.IsRuleSwitchedOn(toggle.RuleId));

@@ -38,9 +38,12 @@ public static class BehaviorExtractor
                     List<string>? eqPending = null;
                     foreach (var eoc in eq.equation_or_comment())
                     {
-                        if (eoc.c_comment() is { } eqComment)
+                        // Comment-only when there is no equation: an equation may carry comments
+                        // before its ';' too (B432), and those are not the next equation's.
+                        if (eoc.equation() is null && eoc.c_comment() is { } eqComments)
                         {
-                            (eqPending ??= new List<string>()).Add(eqComment.GetText().Trim());
+                            foreach (var eqComment in eqComments)
+                                (eqPending ??= new List<string>()).Add(eqComment.GetText().Trim());
                             continue;
                         }
                         var equation = eoc.equation();
@@ -66,9 +69,10 @@ public static class BehaviorExtractor
                     List<string>? algPending = null;
                     foreach (var soc in alg.statement_or_comment())
                     {
-                        if (soc.c_comment() is { } algComment)
+                        if (soc.statement() is null && soc.c_comment() is { } algComments)
                         {
-                            (algPending ??= new List<string>()).Add(algComment.GetText().Trim());
+                            foreach (var algComment in algComments)
+                                (algPending ??= new List<string>()).Add(algComment.GetText().Trim());
                             continue;
                         }
                         var statement = soc.statement();

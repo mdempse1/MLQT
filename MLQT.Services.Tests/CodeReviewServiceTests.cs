@@ -180,16 +180,22 @@ public class CodeReviewServiceTests
     }
 
     [Fact]
-    public void RemoveLogMessagesForModels_FiresEventWhenMessagesRemoved()
+    public async Task RemoveLogMessagesForModels_FiresEventWhenMessagesRemoved()
     {
+        // **Announced, but not necessarily on this thread's next instruction.** Changes arriving
+        // close together are coalesced, because a style check delivers its findings a class at a
+        // time and every announcement used to cost the UI thread a re-render (B190). The add above
+        // takes the immediate slot, so the removal is reported on the trailing edge just after it.
         var service = new CodeReviewService();
         service.AddLogMessage(new LogMessage("Model1", "Warning", 1, "Issue"));
-        var eventFired = false;
-        service.OnLogMessagesChanged += () => eventFired = true;
+
+        var fired = new TaskCompletionSource();
+        service.OnLogMessagesChanged += () => fired.TrySetResult();
 
         service.RemoveLogMessagesForModels(new[] { "Model1" });
 
-        Assert.True(eventFired);
+        Assert.True(await Task.WhenAny(fired.Task, Task.Delay(2000)) == fired.Task,
+            "removing messages should announce a change, immediately or on the trailing edge");
     }
 
     [Fact]

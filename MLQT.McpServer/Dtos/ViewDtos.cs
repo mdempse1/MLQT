@@ -16,11 +16,16 @@ public sealed record ClassInterfaceView(
     IReadOnlyList<ParameterView> Parameters,
     IReadOnlyList<ConnectorView> Connectors,
     IReadOnlyList<MemberView> PublicComponents,
-    FunctionSignatureView? FunctionSignature);
+    FunctionSignatureView? FunctionSignature,
+    bool RecoveredFromDocumentation = false);
 
 /// <summary>A settable parameter/constant (or a function argument). InheritedFrom is the base class id
 /// it comes from, or null if declared in the class itself. Default is the value it takes; TypeModification
-/// is any modification written on its type (e.g. "(min=0)"), which is a constraint, not a value.</summary>
+/// is any modification written on its type (e.g. "(min=0)"), which is a constraint, not a value.
+///
+/// <para>Unit is only ever set for a class recovered from documentation, where the vendor's table
+/// states it and there is no type to read it from. For a class read from source the unit lives in
+/// the declared type, as Modelica writes it.</para></summary>
 public sealed record ParameterView(
     string Name,
     string? Type,
@@ -28,7 +33,8 @@ public sealed record ParameterView(
     string? Default,
     string? TypeModification,
     string? Description,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? Unit = null);
 
 /// <summary>A connector member (physical connector, or a causal signal port).</summary>
 public sealed record ConnectorView(
@@ -38,14 +44,17 @@ public sealed record ConnectorView(
     string? Connection,
     bool TypeIsConnector,
     string? Description,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? Unit = null,
+    string? Condition = null);
 
 /// <summary>A public component that is neither a parameter nor a connector (e.g. a record field).</summary>
 public sealed record MemberView(
     string Name,
     string? Type,
     string? Description,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? Unit = null);
 
 /// <summary>A function's inputs and outputs, in declaration order.</summary>
 public sealed record FunctionSignatureView(
@@ -53,7 +62,8 @@ public sealed record FunctionSignatureView(
     IReadOnlyList<ParameterView> Outputs);
 
 /// <summary>One raw element from list_class_elements. InheritedFrom is the base class id it comes from,
-/// or null if declared in the class itself.</summary>
+/// or null if declared in the class itself. Condition is the expression a conditional component is
+/// declared with, and such a component exists only where that expression is true.</summary>
 public sealed record ClassElementView(
     string Kind,
     string Name,
@@ -69,13 +79,15 @@ public sealed record ClassElementView(
     IReadOnlyList<string> Prefixes,
     IReadOnlyList<string> LeadingComments,
     int Line,
+    string? Condition,
     string? InheritedFrom);
 
 /// <summary>Full element listing for a class.</summary>
 public sealed record ClassElementsResult(
     string Id,
     int Count,
-    IReadOnlyList<ClassElementView> Elements);
+    IReadOnlyList<ClassElementView> Elements,
+    bool RecoveredFromDocumentation = false);
 
 /// <summary>Documentation of a class: its description plus the Documentation annotation strings.</summary>
 public sealed record ClassDocumentationResult(
@@ -103,7 +115,13 @@ public sealed record InterfaceSearchItem(
 public sealed record InterfaceSearchResult(int Total, int Count, IReadOnlyList<InterfaceSearchItem> Items);
 
 /// <summary>A component's diagram placement: its bounding extent [x1,y1,x2,y2] and optional rotation.</summary>
-public sealed record DiagramComponent(string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation);
+/// <summary>
+/// A component on a class's diagram. Extent is [x1,y1,x2,y2] in the diagram's own coordinates, with
+/// any <c>origin</c> from the Placement already added in; InheritedFrom names the base class that
+/// declared it, or is null when the class declares it itself.
+/// </summary>
+public sealed record DiagramComponent(
+    string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation, string? InheritedFrom = null);
 
 /// <summary>The diagram layout of a class: its components' placements plus its connections.</summary>
 public sealed record DiagramLayoutResult(

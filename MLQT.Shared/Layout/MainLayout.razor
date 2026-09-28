@@ -17,18 +17,31 @@
 <MudSnackbarProvider />
 
 <style>
+    @* A startup step that is waiting to be run. The whole row is the target, so it has to look like
+       one — the play button alone is a small thing to aim at, and nothing else said the row could be
+       clicked (B194). Applied only while the step is actually runnable, so a step that has finished
+       or one that is waiting on another does not invite a click that would do nothing. *@
+    .mlqt-deferred-step {
+        cursor: pointer;
+    }
+
+    .mlqt-deferred-step:hover {
+        background-color: var(--mud-palette-action-default-hover);
+    }
+
     .mud-layout {
         height: 100vh;
         width: 100vw;
         position: relative;
     }
 
-    .mud-grid {
-        width: 100%;
+    /* The grid a MudExSplitPanel wraps itself in fills its container, which is what lets the panes
+       take the window's height. Only that grid: this used to be every .mud-grid, and a MudGrid used
+       for layout inside a page that has a definite height - the Metrics tab's coverage grid - then
+       stretched to the page's height and left a blank space below its content. MetricsLayoutJourney
+       holds the one; the documentation screenshots show the other. */
+    .mud-grid:has(> .mud-ex-split-panel) {
         height: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        box-sizing: border-box;
     }
 
     .mud-navmenu {
@@ -232,7 +245,7 @@
     <MudMainContent Style="height:calc(100vh - 4px); width:calc(100vw - 8px);">
         <MudExSplitPanel ColumnLayout="true" SplitterSize="4" SplitterColor="Color.Primary">
             <Left>
-                <MudExSplitPanelItem MinSize="200" Style="width: 25%; min-width:200px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2">
+                <MudExSplitPanelItem MinSize="200" Style="width: 25%; min-width:200px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-0">
                     <MudStack Row="false">
                         <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" >
                             <MudTooltip Text="Add Repository" Arrow="true" Placement="Placement.Right">
@@ -256,7 +269,7 @@
                                                    Color="@(_pendingChangesCount > 0 ? Color.Warning : Color.Primary)"
                                                    Size="Size.Medium"
                                                    OnClick="RefreshLibrariesAsync"
-                                                   Disabled="@_isRefreshing"/>
+                                                   Disabled="@(_isRefreshing || NavState.IsVcsWorkInProgress)"/>
                                 </MudTooltip>
                             </MudBadge>
                         </MudButtonGroup>
@@ -265,7 +278,9 @@
                             {
                                 @foreach (var repo in RepositoryService.Repositories)
                                 {
-                                    <LibraryBrowser LibraryOnly="false" Repository="@repo" />
+                                    @* Keyed, so a reorder moves each browser - its filter, busy flag and
+                                       expansion - with its repository rather than handing it on (B353). *@
+                                    <LibraryBrowser @key="repo.Id" LibraryOnly="false" Repository="@repo" />
                                 }
                             }
                             else
@@ -277,7 +292,13 @@
                 </MudExSplitPanelItem>
             </Left>
             <Right>
-                <MudExSplitPanelItem MinSize="400" Style="width: 75%; min-width:400px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2">
+                @* `mlqt-tab-host` makes this pane a flex column so the tabs take the height that is
+                   actually left rather than one computed from the viewport. See app.css: every page
+                   in here used to subtract its own guess at the chrome above it (185px, 140px,
+                   135px — three numbers for the same distance), and the Code Review page's was
+                   right to within 12px, so anything that grew above it scrolled the whole page and
+                   took the current-class box with it (B250). *@
+                <MudExSplitPanelItem MinSize="400" Style="width: 75%; min-width:400px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2 mlqt-tab-host">
                     <MudStack Row="false" Style="gap:0px !important;">
                         <CurrentModelDisplay />
                         <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true">
@@ -304,7 +325,7 @@
     </MudMainContent>
 </MudLayout>
 
-<MudDialog @bind-Visible="_startupProcessRunning">
+<ProgressDialog Visible="_startupProcessRunning">
     <TitleContent>
         <MudText Typo="Typo.h6">Loading project repositories, please wait</MudText>
     </TitleContent>
@@ -324,12 +345,19 @@
                     <MudText Typo="Typo.body1">Formatting modified files</MudText>
                 </ChildContent>
             </MudListItem>
-            <MudListItem>
+            @* The whole row runs the step, not only the play button (B194). The button stays: it is
+               what says the row is actionable at a glance, and it is the keyboard target. Both
+               reach the same handler, and a click on the button bubbles to the row, so the handler
+               refuses the second arrival rather than starting the work twice. *@
+            <MudListItem T="string" OnClick="RunDeferredDependenciesFromDialogAsync"
+                         Class="@(_step3deferred && !_runningDeferredStep ? "mlqt-deferred-step" : null)">
                 <AvatarContent>
                     @if (_step3deferred)
                     {
-                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
-                            OnClick="RunDeferredDependenciesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        <MudTooltip Text="Analyse dependencies now">
+                            <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                                OnClick="RunDeferredDependenciesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        </MudTooltip>
                     }
                     else
                     {
@@ -342,12 +370,19 @@
                     </MudStack>
                 </ChildContent>
             </MudListItem>
-            <MudListItem>
+            @* The whole row runs the step, not only the play button (B194). The button stays: it is
+               what says the row is actionable at a glance, and it is the keyboard target. Both
+               reach the same handler, and a click on the button bubbles to the row, so the handler
+               refuses the second arrival rather than starting the work twice. *@
+            <MudListItem T="string" OnClick="RunDeferredStyleCheckingFromDialogAsync"
+                         Class="@(_step4deferred && !_runningDeferredStep ? "mlqt-deferred-step" : null)">
                 <AvatarContent>
                     @if (_step4deferred)
                     {
-                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
-                            OnClick="RunDeferredStyleCheckingFromDialogAsync" Disabled="_runningDeferredStep" />
+                        <MudTooltip Text="Run style checking now">
+                            <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                                OnClick="RunDeferredStyleCheckingFromDialogAsync" Disabled="_runningDeferredStep" />
+                        </MudTooltip>
                     }
                     else
                     {
@@ -360,12 +395,19 @@
                     </MudStack>
                 </ChildContent>
             </MudListItem>
-            <MudListItem>
+            @* The whole row runs the step, not only the play button (B194). The button stays: it is
+               what says the row is actionable at a glance, and it is the keyboard target. Both
+               reach the same handler, and a click on the button bubbles to the row, so the handler
+               refuses the second arrival rather than starting the work twice. *@
+            <MudListItem T="string" OnClick="RunDeferredExternalResourcesFromDialogAsync"
+                         Class="@(_step5deferred && !_runningDeferredStep ? "mlqt-deferred-step" : null)">
                 <AvatarContent>
                     @if (_step5deferred)
                     {
-                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
-                            OnClick="RunDeferredExternalResourcesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        <MudTooltip Text="Analyse external resources now">
+                            <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                                OnClick="RunDeferredExternalResourcesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        </MudTooltip>
                     }
                     else
                     {
@@ -389,7 +431,7 @@
         {
             <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
                 A repository could not be loaded (see the notification) — its path may have moved or been
-                deleted. Continue to the app and fix or remove it in Settings &gt; Repositories.
+                deleted. Continue to the app and fix or remove it in Settings &gt; Manage Repositories.
             </MudAlert>
         }
         @if (_step3deferred || _step4deferred || _step5deferred)
@@ -409,9 +451,24 @@
             </MudStack>
         }
     </DialogContent>
-</MudDialog>
+</ProgressDialog>
 
-<MudDialog @bind-Visible="_fullFormatRunning" Options="_nonClosableDialogOptions">
+@* A startup begun before the window was reloaded, and still running on the services that survived
+   it (B407), or a project switch in the same position (B423). This instance skipped startup
+   (B270), so the step is all it has to show. *@
+<ProgressDialog Visible="EarlierStartupVisible" Options="_nonClosableDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Loading project repositories, please wait</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4">@NavState.StartupStep</MudText>
+        </MudStack>
+    </DialogContent>
+</ProgressDialog>
+
+<ProgressDialog Visible="_fullFormatRunning" Options="_nonClosableDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">Formatting all files</MudText>
     </TitleContent>
@@ -421,9 +478,9 @@
             <MudText Typo="Typo.body1" Class="mt-4">@_fullFormatStatusMessage</MudText>
         </MudStack>
     </DialogContent>
-</MudDialog>
+</ProgressDialog>
 
-<MudDialog @bind-Visible="_styleCheckRunning" Options="_nonClosableDialogOptions">
+<ProgressDialog Visible="_styleCheckRunning" Options="_nonClosableDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">Running style checking</MudText>
     </TitleContent>
@@ -433,7 +490,7 @@
             <MudText Typo="Typo.body1" Class="mt-4">@_styleCheckStatusMessage</MudText>
         </MudStack>
     </DialogContent>
-</MudDialog>
+</ProgressDialog>
 
 <MudDialog @bind-Visible="_showAboutDialog">
     <TitleContent>

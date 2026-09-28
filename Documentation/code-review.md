@@ -17,6 +17,17 @@ The Code Review tab is divided into two areas:
 
 Click on any model in the library tree (left panel) to view its code. The current model name is shown in the text field above the tab bar. For packages, the code viewer shows the package definition excluding nested class definitions (since those are separate nodes in the tree).
 
+**The viewer shows the class as you wrote it.** Nothing is reformatted for display: every line on
+screen is a line of your file, with the same text and layout, and lines are numbered from the start
+of the class — the numbering a finding's line uses — so a finding points at the text your editor
+shows. Only the colouring is added, and whatever you choose to hide is taken out by whole lines.
+
+**A very large class appears before it has finished parsing.** Above 64 KB, a class with nothing to
+hide is coloured from the lexer straight away, and the full colouring replaces it once the parse
+finishes — the only visible difference in the meantime is that a name is not yet told apart as a type
+or a function call. A package whose nested classes must be hidden, or a class shown with annotations
+hidden, waits for the parse, so what should be hidden never appears.
+
 ## Code Viewer Toolbar
 
 The toolbar above the code viewer provides two groups of buttons:
@@ -44,6 +55,12 @@ The diff view:
 - Compares the raw Modelica source of each version (syntax highlighting is applied for readability, but the text is not run through the formatter)
 - Displays added lines, removed lines, and unchanged context
 
+The class is found at HEAD by its full name in the file, or, if it has moved since, by its short name
+when only one class in the committed file has it. **If neither finds it** — the class was renamed, or
+the committed file does not parse — the diff says so rather than comparing the class with the whole
+committed file. And a diff too long to draw (more than 20,000 rows) says how many lines were added
+and removed and suggests an external diff tool, instead of rendering every row.
+
 ![Screenshot: The Code Review tab in side-by-side diff mode showing a model with changes. The left side should show the HEAD version and the right side the working copy, with added lines highlighted in green and removed lines in red.](Images/code-review-3.png)
 
 ### Additional Buttons
@@ -51,21 +68,49 @@ The diff view:
 | Button | Icon | Description |
 |--------|------|-------------|
 | **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the findings table with the results. Always available. |
-| **Exclude from Formatting** | FormatClear | Toggles formatting exclusion for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes, the file is reverted first to undo any prior formatting. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes a name into the repository's settings, which goes stale if the class is renamed or moved; for a permanent decision prefer the in-source `__MLQT(preserveOrder=true)` annotation, which travels with the class. |
-| **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, etc.) can be verbose — hiding them lets you focus on the functional code. This toggle also affects the diff view. |
-| **Check using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools. |
-| **Check using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools. |
+| **Exclude from auto-formatting** / **Include in auto-formatting** | FormatClear | Toggles formatting exclusion (the tooltip names what a click will do) for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes that are only formatting, the file is reverted first to undo it; a new file, or one with any other uncommitted edit, is left as it is. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes `__MLQT(format=false)` into the class itself, so the exclusion travels with it when it is renamed or moved and is committed alongside the code it applies to; toggling off removes the directive again. Write the annotation by hand if you want to record a `reason` for it. |
+| **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, `Placement`, `Line`) can be verbose — hiding them lets you focus on the functional code. **Every annotation goes, including the ones written on the same line as code** — so a `connect(...)` in an equation section comes back as just the connection. Nothing is left in their place: the button is filled while annotations are shown and outlined while they are hidden, and that is the only marker. Line numbers are unaffected, so a finding still points at the right line. The diff views always show the full source, annotations included, whatever this is set to. |
+| **Check this class using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools, and disabled when no class is selected. |
+| **Check this class using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools, and disabled when no class is selected. |
+
+### Moving between classes
+
+Three controls sit together on the toolbar, because they are one job:
+
+| Button | Icon | Description |
+|--------|------|-------------|
+| **Go to a class this one uses** | CallMade (↗) | Lists the classes the current one depends on; pick one to open it. Needs dependency analysis to have run — until it has, the button says so. |
+| **Back** | ArrowBack (←) | Returns to the class you came from. The tooltip names it, so you know before you press it. |
+| **Forward** | ArrowForward (→) | Undoes a **Back**. |
+
+**The history is shared across every tab** — selecting a class anywhere records it — but the arrows
+themselves are on the Code Review toolbar, so that is where you go back from.
+
+### Finding text in the class on screen
+
+The **Find in code** box at the right of the toolbar searches the class you are looking at, rather
+than the findings list. The count beside it says which match you are on and how many there are, and
+the arrows step through them, wrapping at both ends so the last match steps back to the first.
+
+The box is disabled until a class is open, and the count appears only once you have typed something.
+It is also disabled while a diff view is showing: it searches the single view, so switch back to
+that to use it. Clicking a finding while the diff is showing does the same — the line it names is
+scrolled to when you switch back.
+
+Matches are tinted inside the code's own colouring, one token at a time, so a match that spans
+several tokens — `der(y)` is three — is not tinted, though its line is still counted and stepped to
+by the arrows.
 
 ### External Tool Checking
 
 When you click the Dymola or OpenModelica button:
 
-- For a **single model**, the check runs immediately
-- For a **package**, a progress dialog appears showing which model is currently being checked and a progress bar
+- A progress dialog opens straight away, for a single model as well as for a package, showing what the tool is doing (starting, opening the library), then which model is being checked, with a progress bar. Its title is "Dymola check" (or "OpenModelica check"); for a package it adds the count, e.g. "Dymola check - 3 of 12 classes checked"
 - You can click **Stop** on the progress dialog to cancel the check
+- When the check finishes, a results dialog titled "Dymola check" or "OpenModelica check" opens with a one-line summary of how it went and the tool's own log for each class it has something to say about
 - Any errors found are added to the findings table below
 
-![Screenshot: The check progress dialog showing "Dymola Check Progress - x checked out of y" with a progress bar and the current model name being checked, and a Stop button.](Images/code-review-4.png)
+![Screenshot: The check progress dialog titled "Dymola check - x of y classes checked" with a progress bar and the current model name being checked, and a Stop button.](Images/code-review-4.png)
 
 ## Syntax Highlighting
 
@@ -98,17 +143,29 @@ The findings table at the bottom shows all detected problems across your loaded 
 
 | Column | Description |
 |--------|-------------|
-| **Model** | The fully qualified Modelica path of the model containing the finding. Long names are abbreviated with ellipsis (e.g., `MyLibrary...SubPackage.MyModel`). |
+| **Model** | The fully qualified Modelica path of the model containing the finding. Names longer than 40 characters are abbreviated to the first two parts and the last, with an ellipsis between (e.g., `MyLibrary.Fluid.Pipes.Examples.MyLongModelName` becomes `MyLibrary.Fluid....MyLongModelName`). |
 | **Description** | A summary of what the finding is (e.g., "Class has no description", "Parser error", "Check Failed"). |
 | **Line Number** | The line number in the model's source code where the finding was found. For style findings that apply to the class as a whole, this may be 0. |
 | **Type** | The severity of the finding — typically "Error", "Warning", or "Info". |
 
 ### Filtering Findings
 
-The findings table provides two filtering mechanisms:
+Four controls narrow the findings table, and they combine — each one applies on top of the others:
 
 - **"Only this model" toggle** — When enabled, the table only shows findings for the currently selected model. When disabled (default), findings from all models are shown.
-- **Search field** — Type text to filter findings by model name, description, details, or severity. Multiple search terms (space-separated) are matched independently.
+- **Search field** — Type text to filter findings by model name, description, details, severity, or rule id. **Every space-separated term must match**, so a second word narrows the list rather than widening it. Terms may match different fields, so a partial class name and a keyword work together.
+- **Rule list** — Narrows to one rule. Only the rules the current findings actually use are offered, so the list is never longer than it needs to be. The list selects a rule by its title; the search box matches a rule's id (such as part of `MLQT.Structure.UsesUndeclared`) but not its title, which is not in its findings' text.
+- **"Changes vs baseline" switch** — Hides accepted debt; see [Filtering to what you have changed](#filtering-to-what-you-have-changed) below.
+
+**The heading always says what you are looking at.** With nothing filtered it counts the findings
+held; once anything narrows the list it names both numbers, so a filter that matched nothing is
+never mistaken for a table that failed to load:
+
+```
+40 Findings to review        ← nothing narrowed
+3 of 40 findings             ← something did
+0 of 40 findings             ← the filter matched nothing
+```
 
 ### Exporting the Finding List
 
@@ -157,11 +214,36 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 ### Interacting with Findings
 
-- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code.
+- **The order is stable**: by class, then by line within the class, then by rule — the order a reader
+  works through a class, and the same order each time the same library is reviewed.
+- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code and scrolls to the line the finding names (a finding with no line leaves the viewer at the top of the class). A finding inside a nested class the viewer has hidden scrolls to the marker line that stands in for that class.
 - If the finding has **additional details**, clicking the row opens an **Finding Details dialog** showing the full summary, severity, line number, and detailed description.
 - In the Finding Details dialog, click **Resolve** to remove the finding from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the finding. 
 
 ![Screenshot: The Finding Details dialog showing an finding with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
+
+#### Splitting a single-file package
+
+A finding from `MLQT.Structure.SingleFilePackage` — a package held in one `.mo` file whose classes
+could each have a file of their own — carries a **Split into files** button at the end of its row,
+and the same action in the Finding Details dialog. This is the usual way a package arrives from
+another Modelica tool, which saves the whole thing as one file; MLQT never restructures it on its
+own, because the formatting that runs day to day rewrites files in place and never moves a class
+between them.
+
+The action writes that package as a directory with one file per class and a matching
+`package.order`, deletes the file it came from, and leaves the rest of the repository untouched. A
+package that is already a directory, with some classes inline in its `package.mo` and others in files
+of their own, has only the inline ones moved; where it had no `package.order`, the one written names
+the classes that were already in their own files too, after the ones it moved. It
+asks first, since it creates a directory and deletes a file. Everything it does is an ordinary
+working-copy change, so version control can undo it. A library in a repository that is itself a single `.mo` file (`MyLib.mo`) is split the same way into `MyLib/`, and MLQT carries on with the library as that directory — the project records the new location, so a Refresh, a VCS update or reopening the project all find it there, just as after **Format All Files**. A library read from an archive is never written to, so the action declines there.
+
+The alternative is **Format All Files** in repository settings, which does the same restructuring to
+the whole library — the right thing when you mean it, and a commit of thousands of files when you
+only wanted to correct one package.
+
+See [Code Formatting — A package that arrives from another tool](code-formatting.md#a-package-that-arrives-from-another-tool).
 
 #### Suppressing a Rule
 
@@ -204,7 +286,7 @@ For details on configuring naming conventions, presets, exception names, and und
 ### Finding Lifecycle
 
 - Findings are **cleared and recalculated** whenever a library is loaded or reloaded
-- **Parser errors** are detected immediately during loading
+- **Parser errors** are detected immediately during loading, and read again when a style check finishes — code reformatted in place (**Format All Files**) is parsed again by that check, so its errors, if it has any, are listed then
 - **Style findings** are detected by a background process that runs after loading completes
 - **External tool errors** are added when you manually run a Dymola or OpenModelica check
 - Findings persist across model selections — switching models does not clear the findings list
@@ -227,8 +309,14 @@ With the switch on, only `new` and `touched` are listed; `accepted` is hidden. T
 numbers, so the standing debt is never invisible:
 
 ```
-132 Findings to review (7 changed vs baseline)
+132 Findings to review (7 changed vs baseline)   ← switch off
+7 changed of 132 findings                        ← switch on
+2 of 7 changed findings                          ← switch on, and a search as well
 ```
+
+With the switch on, the heading counts against the changed findings rather than the whole ledger —
+a search that leaves 2 of the 7 says so, instead of crediting itself with hiding the 125 the switch
+hid.
 
 **"Touched" means pending commit, not a diff between commits.** A file counts as touched when the
 working copy has it modified, added, renamed, untracked or conflicted — the question the app answers

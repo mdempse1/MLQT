@@ -64,12 +64,136 @@ var simResult = await dymola.SimulateModelAsync(
 | `DymolaSettings` | Configuration (port, path, timeout) |
 | `DymolaFactory` | Factory for creating configured instances |
 | `DymolaCheckingService` | `IModelCheckingService` implementation |
+| `IDymolaInterface` | The five session calls the checking service makes — **what the factory returns** |
 
 ### Key Files
 - `DymolaInterface/DymolaInterface.cs` - Main implementation
 - `DymolaInterface/DymolaSettings.cs` - Configuration
 - `DymolaInterface/DymolaFactory.cs` - Factory pattern
 - `MLQT.Services/DymolaCheckingService.cs` - Editor integration
+
+## The two checking services
+
+`DymolaCheckingService` and `OpenModelicaCheckingService` do the same thing with two tools: open the
+library's root file, check a class or every class in a package, and turn what the tool said into
+`ModelCheckResult`s. Since B398 that shape is written **once**, in
+`MLQT.Services/ModelCheckingServiceBase<TSession>`: the one-at-a-time run on the thread pool
+(`CheckRunGate`), its progress and throttle, taking the session, the package fan-out, stopping at the
+first class that timed out or whose tool went away, `CheckModelAsync`, and the check sequence itself
+(clear the log, check, read the log on success, read the error and spot the demo-licence limit on
+failure, and the failed-check result). Each service is left with only what differs, as
+`private protected` hooks:
+
+| Hook | Dymola | OpenModelica |
+|------|--------|--------------|
+| `GetSessionAsync` / `ResetSessionAsync` | its factory | its factory |
+| `LoadLibraryAsync` | `openModel`, retried once; asks `LastOutcome` and `IsGoneAsync` why it failed | `loadFile`, retried once; timeout/cancel/exit are exceptions and drop the session |
+| `ClearLogAsync` | `clearlog()` | reads `getErrorString()`, which empties it |
+| `IssueCheckAsync` → `CheckAnswer` | `false` + `LastOutcome` says why there is no verdict | the exception says why, and the session is dropped |
+| `ReadLogAsync` / `ReadLogOrNullAsync` | `getLastError()` | `getErrorString()` |
+
+`CheckAnswer` (`MLQT.Services/Helpers`) is the one place the two tools' ways of saying "no verdict"
+meet: `Checked(passed)`, `WasCancelled`, or `NoVerdict(result)` carrying the timeout or went-away
+result. **A change to what both tools do goes in the base**; a change in a service should be about
+that tool alone. Two things about them are not obvious from reading any one file.
+
+**The factories return an interface, not the session class.** `IDymolaInterfaceFactory` and
+`IOpenModelicaInterfaceFactory` hand back `IDymolaInterface` / `IOpenModelicaInterface` — each a
+handful of members, exactly what the checking service calls. They exist so the services can be
+tested at all: every method of the concrete session ends in a round trip to a running tool, so with
+the concrete type in that signature nothing past the first call was reachable without Dymola or omc
+installed, and no automated run has either. Mutation testing priced that at an 11% kill rate with
+177 of the two services' mutants covered by no test whatsoever (B229). A member belongs on one of
+these interfaces when a caller outside the tool's own assembly needs it, not because the session
+offers it.
+
+**`CheckSingleModelAsync` is the only place a check happens.** `CheckModelAsync` opens the library
+and then calls it. That was not true until B229: each path had its own copy, and the package path's
+copy neither drained the log first nor read it back on success — so a class checked on its own
+showed its warnings and the same class checked as part of its package did not, and an error could be
+reported against the class after the one that produced it; since B398 there is one copy for both
+tools as well as for both paths. `MLQT.Services.Tests/
+ModelCheckingServiceContract.cs` asserts the shared promises once and runs them against both tools;
+`ToolHarness.cs` holds the fake sessions, which model each tool's **log buffer** rather than
+returning fixed strings, because most of these promises are about which check's output a result
+carries.
+
+**Running out of time, and being cancelled (B262, B263).** Both tools have a time limit per command,
+set in the External Tools tab (`DymolaSettings.CommandTimeoutMs`, `OpenModelicaSettings.CommandTimeoutMs`;
+0 is no limit) and applied by the factory on every hand-out, and both services pass the run's
+cancellation token into the check itself, so Cancel ends a check in flight. What a timeout leaves
+behind differs, and that difference is the whole design:
+
+- **Dymola returns `false`/`null` whatever went wrong**, so `IDymolaInterface.LastOutcome`
+  (`Answered` / `Offline` / `TimedOut` / `Cancelled` / `Failed`) says why. A `false` from
+  `CheckModelAsync` is the model's verdict only when the outcome is `Answered`. After `TimedOut` the
+  service must **not** ask for the log: Dymola is still busy and would answer nothing until it finished,
+  so the read waits out a second limit.
+- **omc throws `TimeoutException` and closes its own session.** Its REQ socket cannot send again until
+  it has received, and omc is still working, so the socket is disposed and omc killed;
+  `IsConnected` turns false and the factory replaces the session next time. Send *and* receive are
+  bounded against one clock (`Exchange`), because a REQ socket with no peer blocks in `SendFrame`
+  until one connects — and no wait is ever under a millisecond, because NetMQ truncates to whole
+  milliseconds and a zero did not mean "do not wait": a 1 ms start-up limit waited out omc's whole start.
+
+`ModelCheckResult.TimedOut` marks the result, `ToolTimeLimit` writes it (and names the setting by the
+constant the dialog's label uses), a package run stops at the first one, and a cancelled check returns
+no result at all. `ModelCheckingServiceContract` holds all of it against both tools.
+
+**`SetOfflineMode(true)` holds commands back** since B262, through a `_forcedOffline` the recovery
+probe cannot clear; `StopDymolaProcessAsync` sets it too, so a later command cannot reconnect to some
+other Dymola on the same port. The factory builds the session and starts Dymola **on the thread pool**:
+the constructor can wait out a busy Dymola for 30 seconds, synchronously, and a caller on the UI thread
+used to arrive there holding the window.
+
+**Change both tools in one piece, and use the result before calling it done.** A question answered
+for one tool and left alone for its sibling reads as agreement — that is how B170 was reported three
+times in two days, and why the time limit (B263) was built across both at once. And the live-tool
+classes run in no CI job (CI runs only the classes of those suites not marked `[Trait("Requires", ...)]`,
+B399), so the fakes prove the services' promises but not that a tool does what the
+fake says: the day after B170/B171 shipped, pressing the button found four more defects (a clean
+Dymola check reporting it had checked nothing, omc handed a class's own file instead of the library's
+`package.mo`, seconds of silence after the click, a headless `omc` outliving MLQT). Run
+`build/run-all-tests.ps1` on a machine with the tools, and then use the feature.
+
+### The factory never ends a Dymola (B331)
+`DymolaInterfaceFactory` (what MLQT registers) asks a cached session `GetSessionStateAsync()` —
+`Answering`, `Busy`, `Starting` or `Gone` — never a bare ping: a Dymola still working on a check
+that timed out or was stopped does not answer a ping, exactly like a closed one. Busy is told from
+gone by the TCP connect (a busy Dymola still accepts). A busy session is handed back and its
+commands wait; a starting one is waited for; only a gone one is dropped, and it is `Detach()`ed
+before it is disposed, because `Dispose()` kills the process a session started. The factory builds
+sessions through a `Func<DymolaSettings, IDymolaSession>`, which is how
+`MLQT.Services.Tests/DymolaInterfaceFactoryTests` tests it without Dymola.
+
+**Killing a session's Dymola ends its whole process tree** (`Kill(entireProcessTree: true)`, B411). On
+Linux `DymolaPath` is usually a launcher script, and one that runs `bin64/dymola` as a child leaves the
+interface holding the shell, so a plain `Kill()` ended the shell and left Dymola running.
+`MLQT.Services.Tests/DymolaLauncherStopTests` holds it with a fake launcher on both platforms. Not
+covered: a launcher that backgrounds Dymola and exits - the handle then describes a dead shell,
+`OwnsProcess` is false and the child is out of any tree MLQT can reach without per-platform
+process-table walking.
+
+### When MLQT exits: omc ended, Dymola left running (B260, B493)
+
+**The user's decision, on both platforms.** omc is headless and would run on unseen, so it is ended
+with every process it started; Dymola has a window the user may carry on working in, so it is let go
+of and never killed. "MLQT is exiting" is a **different request** from "stop this session" - for
+Dymola the second ends the tree (B411) - and each factory has a `Shutdown()` for the first only:
+OpenModelica's disposes the session (`quit()` within 5 s, a moment to exit, then
+`Kill(entireProcessTree: true)`); Dymola's only `Detach()`es the session and does not dispose it, so
+nothing on the exit path can reach `KillStartedTree`. Both refuse `GetOrCreateAsync` afterwards, so
+a check still running as MLQT exits cannot start a tool nobody will end.
+
+`MLQT.Services/ExternalToolShutdown` is the one place: `Run(why)` does the work once, and
+`EndWith(AppDomain)` hooks the ways out that never return from `app.Run()` - `ProcessExit`
+(`SIGTERM`, `Environment.Exit`), `UnhandledException` (no `finally` runs then), `SIGINT`/`SIGHUP`.
+The Photino host calls both; the TestHost's container disposes the omc factory; the MCP server
+registers neither factory. Only `SIGKILL`/End task escapes. Held by `ExternalToolShutdownTests`,
+`DymolaLauncherStopTests.ExitingMlqt_LeavesWhatItStartedRunning` (fake Dymola process),
+`OpenModelicaInterface.Tests/SessionEndTests` (fake omc process tree, tool-free) and
+`LiveSessionEndTests` (real omc). On Windows omc's own children died with it even under a plain
+`Kill()` in a live check, so the tree kill is proved by the fake process, whose child does not.
 
 ### Culture invariance
 Modelica command strings always use `.` as the decimal separator and never use `,`
@@ -192,6 +316,7 @@ using var omc = await factory.CreateAndStartAsync();
 | `OpenModelicaFactory` | Factory with auto-detection |
 | `SimulationResult` | Simulation results (Success, ResultFile, Messages) |
 | `OpenModelicaCheckingService` | `IModelCheckingService` implementation |
+| `IOpenModelicaInterface` | The four session calls the checking service makes — **what the factory returns** |
 
 ### Installation Requirements
 - .NET 9.0 or later

@@ -14,6 +14,7 @@ This document defines coding standards and best practices for C# and Blazor deve
 8. [Null Safety](#null-safety)
 9. [Comments and Documentation](#comments-and-documentation)
 10. [Testing](#testing)
+11. [Working a Defect](#working-a-defect)
 
 ---
 
@@ -971,6 +972,44 @@ nothing is reported" is satisfied by a fixture that reports nothing either way. 
 **Hold two lists together in both directions.** "Everything measured is built" and "everything built
 is measured" are different assertions and a defect hides in whichever one you left out.
 
+### Four ways a test is written that cannot fail
+
+Phase 1 found six tests that asserted something they could not see, every one by accident, and four
+of them were written by whoever had just made the fix: writing the test after the change makes it
+easy to assert the behaviour you just built rather than the one that was missing. **A test that
+cannot fail is worse than no test, because it is counted.** They came in three shapes, a fourth has
+been found since, and each needs a different defence:
+
+- **A conditional assertion** — `if (placeholder != null) { assert }`. The excused branch is usually
+  the defect: the placeholder test for unparseable files carried a comment saying that producing
+  nothing "is still acceptable", and producing nothing *was* the bug (B201). The same shape hid in
+  `if (service.IsRunning)` around the second call of a "does not start again" test, closing on
+  `callCount >= 1`. Suspect every `if` wrapped around an assertion.
+- **An expectation copied from the current behaviour.** `ExtractLoadResource_WithConcatenation_NotSupported`
+  asserted two resources from a concatenation — the defect, pinned — while its own name said it was
+  not supported. When a test fails after a fix, decide which of the two is wrong before changing
+  either; sometimes it is the test (a truncated class the parser salvages *should* keep its node).
+- **Reading state the defect duplicates.** B211 made two resource nodes for one file, one broken and
+  one fine, so a test that fetched "the" node by name got whichever came first and passed either way.
+  **Assert the count, not the contents**, whenever the failure mode is a duplicate rather than a
+  wrong value.
+- **A method that falls back to a safe answer when it fails.** `ModelicaTokenClassifier.Highlight`
+  catches any exception and returns `Plain(source)` — the source untagged, which passes a round-trip
+  test perfectly, so a fault that made the emit loop throw passed over 8,367 files as easily as over
+  eight (B234). Test the path with no catch around it, assert the thing the fallback cannot produce
+  (here, that the output is *tagged*), and keep a control showing the fallback passes the weaker
+  assertion, so the stronger one is not later removed as redundant.
+
+Two signals worth treating as defect reports rather than noise:
+
+- **A coverage figure that moves between identical runs.** `StartCheckingAsync`'s early return was
+  covered about one run in four because the test only reached it when a race went one way. Baselining
+  the low value would have buried a test that never checked what it was named for.
+- **A number that can only go one way.** "100% of annotations hidden" is trivially achieved by
+  destroying the text; the second number beside it — how many files still parse afterwards — is what
+  found 3,199 of 8,367 files broken by the elision (B233). Give every such measurement a partner that
+  can move the other way.
+
 ### Guard tests: a stated rule that nothing enforces is not a rule
 
 The recurring defect shape here is a promise made in a document, a rule id, or a comment, which no
@@ -1002,6 +1041,85 @@ rather than that it looks a particular way.
 **Do not write test source through a shell heredoc.** It turns backslashes into escapes silently,
 and the failure is invisible in exactly the cases where the result still compiles.
 
+**`FileShare.None` blocks a read on both platforms and a delete on only one.** .NET implements it on
+Unix as an advisory lock other .NET `FileStream`s honour, so holding a file open is a portable way to
+make a *read* fail — but `unlink` ignores advisory locks, so on Linux the delete simply succeeds
+(B255). To make `File.Delete` fail everywhere, put a directory where the file should be.
+
+### A test that writes proves where it is writing
+
+A test that does VCS or file work builds its repository under `Path.GetTempPath()` and **asserts that
+the path it is about to use is still under it before every call** that names it — not merely by being
+correct. Under `run-mutation.ps1`, a path in the code under test mutated to `""` sent git to the
+process working directory, which is the MLQT checkout, and the run created branches in it, committed
+to them and discarded every uncommitted change (B224). `RepositoryServiceTests.SandboxedId` is the
+pattern: route reads through it as well as writes, because a read that has strayed is the warning
+that the next write will.
+
+### A growth test counts work, it does not time it
+
+A test that a parse does not grow quadratically must not compare two stopwatch readings. Under a
+full parallel run the timing is noise: the parser's timed growth tests failed about one run in three
+while the same parse measured linear on its own (B459). Use `ParseGrowth.AssertLinear` in
+`ModelicaParser.Tests`, which counts the tokens ANTLR looks ahead over with its profiler — exact, and
+the same on every machine — and watch it fail against the quadratic grammar it is meant to catch.
+The same holds outside the parser: `GraphNodeRemovalTests` counts `DirectedGraph.EdgeSetScans`, the
+passes over every edge set that batched removal exists to take once (B461). Where there is nothing to
+count and the only bound is wall-clock, drop the bound and keep the functional assertions.
+
+---
+
+## Working a Defect
+
+Distilled from phase 1 (release feedback, 2026-09-17 to 2026-09-24), where more than a dozen items
+turned out to have a different cause from the one their backlog row named. The rules below are the
+ones that would have saved the most time.
+
+### Establish the mechanism before fixing
+
+- **An item's stated cause is a lead, not a finding.** B169's row blamed prefix matching; the cause
+  was library names not being unique. B185, B195 and B236 each described a mechanism that was not
+  there, and in every case **running the code** found it where reading did not.
+- **A fix that reproduces means the mechanism was never established**, not that another edge case
+  remains. B192 was reported fixed after two genuine faults on its path were removed; the
+  repositories were arriving through a call whose comment described reading a list and whose body
+  opened working copies. **A call whose comment describes less than it does is worth reading the
+  body of.** One cause that explains every reported symptom is what having the mechanism looks like.
+- **When an item names a screen rather than a symbol, say which screen you took it to mean** before
+  building. B194 was implemented, tested and mutation-checked against the wrong dialog; no
+  verification can reach an assumption about the target.
+- **Verify on a sample known to contain the failing case.** B169's first fix was checked against 38
+  real resources, all of them same-library, and looked complete because the measurement agreed with
+  it.
+- **Ask whether it is reachable.** A stack trace says where something failed, not whether a user can
+  get there — B271 was a test-host artefact the single-circuit desktop host cannot produce.
+
+### Measure before changing performance
+
+The profiling recipe is in CLAUDE.md (§"Where is the time actually going?"); these are the ways the
+measurement itself went wrong.
+
+- **No performance change without a before-and-after number**, from the log or from
+  `mlqt check --timings`, with the library and the build it came from.
+- **Vary one thing.** B185's first measurement changed the annotations and a block of comments
+  together and blamed the annotations; the comments were the whole cost (B235).
+- **Check what the run actually did before trusting what it took.** A 244 s "regression" against a
+  steady series of 74–95 s was a different operation — the combined analysis path — and was in fact
+  the faster one (B190, B257). A consistent series is exactly what makes an outlier persuasive.
+- **An intermittent cost that tracks an idle period is a throttle or a cache**, not the work in
+  front of you (B253: a throttle's leading edge ran synchronously on whoever raised the event).
+- **A per-render cost is invisible where it is added** and expensive where it is measured. Anything
+  on a component's render path pays per render, and a check can raise thousands of renders (B190,
+  B247).
+
+### A change to what the renderer writes is judged over a whole library
+
+`ModelicaRenderer`, the trimmer and the grammar feed every surface, so a change to their output is
+judged by running it over a real library before and after — files written, findings, the
+classifier's round trip — not by reading the diff. Every such item in phase 1 (B216, B236, B245,
+B252, B235) found something reading had not, and the figure that matters is the comparison with
+itself across the change rather than any absolute count.
+
 ---
 
 ## Summary Checklist
@@ -1026,6 +1144,8 @@ Before committing code, verify:
 - [ ] No test can pass vacuously — guards refuse to no-op, exclusion tests have a positive control
 - [ ] A rule stated in a document or implied by a rule id has a test holding the code to it
 - [ ] Paths in tests come from the shared helper, not from Windows-shaped literals
+- [ ] No assertion sits inside an `if`; a duplicate-shaped defect is asserted by count
+- [ ] A performance change carries a before-and-after number from a rebuilt binary
 
 ---
 
@@ -1037,3 +1157,5 @@ Before committing code, verify:
 | 2026-03-11 | 1.1 | - | Added null-proof return-value capture pattern; InvokeAsync method-group form; zero-warning checklist items |
 | 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the workspace `Claytex.Net` guidelines for phase 7a |
 | 2026-09-17 | 1.3 | - | Added to Testing: verify by mutation rather than by going green, positive controls beside guards, guard tests for stated-but-unenforced rules, and cross-platform path assertions. Distilled from the phase 7a/7b design notes before those notes were retired |
+| 2026-09-25 | 1.4 | - | Added "Three ways a test is written that cannot fail" to Testing, and a Working a Defect section (establishing the mechanism, measuring performance, judging renderer-output changes over a library). Distilled from the phase 1 plan before it was retired |
+| 2026-09-28 | 1.5 | - | Added to Testing: a fourth way a test cannot fail (a method that falls back to a safe answer), `FileShare.None` across platforms, and "A test that writes proves where it is writing". Distilled from the backlog before it was retired |

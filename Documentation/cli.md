@@ -50,7 +50,7 @@ copy of a library has that another does not, and `mlqt hook`
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
+| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the working-copy root; built-in defaults if there is none |
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models ([what a `<ref>` may be](#what-a-ref-may-be)) | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
@@ -66,7 +66,7 @@ copy of a library has that another does not, and `mlqt hook`
 | `--no-suppress` | Ignore `__MLQT` suppression annotations, to audit what has been waived — see [Suppressing intentional findings](ci-quality-gate.md#suppressing-intentional-findings) | off |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch (findings may not be real) | off |
-| `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
+| `--metrics` | Record a coverage snapshot in the repository's `.mlqt/metrics-history.json` (the nearest directory at or above `<library-path>` holding a `.mlqt` directory, else the working-copy root) | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
 | `--timings` | Print where the run's time went to stderr when it finishes: parsing, each style rule by name, each whole-graph analysis | off |
@@ -81,8 +81,10 @@ copy of a library has that another does not, and `mlqt hook`
 | `1` | Findings at or above `--fail-on` |
 | `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) — and any unexpected failure inside `mlqt` itself, which is reported as a defect to report rather than left as a crash |
 
-Because the built-in **style** rules report at **warning** severity by default, `--fail-on error` is
-effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for a
+Because most built-in **style** rules report at **warning** severity by default
+(`MLQT.Duplicate.Declaration` is Error, `MLQT.Unused.PublicClass` is Info), `--fail-on error` is
+largely report-only for them (it surfaces their findings but exits `0` — except on a duplicate
+declaration). Use `--fail-on warning` for a
 strict gate, or `--fail-on off` to never fail.
 
 Two things do report as errors and so fail even the default gate. **Diagnostics** are one — see
@@ -244,8 +246,12 @@ for good.
 ## Settings
 
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
-desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no style rules are enabled
-and only parse diagnostics are produced. See [settings-reference.md](settings-reference.md).
+desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, only the rules that are on
+by default run — currently `MLQT.Structure.SingleFilePackage` — alongside the
+[diagnostics](#diagnostics), and `mlqt` says so with `note: only the rules that are on by default are
+enabled; nothing else has been configured for this library. See settings-reference.md to choose the
+rules you want.` (`note: no style rules are enabled; no findings will be produced.` appears only when
+every rule has been turned off.) See [settings-reference.md](settings-reference.md).
 
 **Where they are found.** Without `--config`, `mlqt` looks for `.mlqt/settings.json` in the library
 directory and then in each directory above it, stopping at a working-copy root (one holding `.git` or
@@ -254,7 +260,8 @@ belong to a repository, and a repository usually holds several libraries under o
 `mlqt check MyRepo/MyLibrary` uses `MyRepo/.mlqt/settings.json` — the same rules, and the same
 accepted spellings, your team sees in the app.
 
-**Per-rule severity.** Enabled rules default to `Warning`. To make a rule fail the gate at
+**Per-rule severity.** Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`,
+`MLQT.Unused.PublicClass` is `Info`). To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
 
 ```json
@@ -329,7 +336,7 @@ record findings that a check with the right dependencies never raises.
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--baseline <path>` | Where to write (or re-read) the baseline | `<library-path>/.mlqt/baseline.json` |
-| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
+| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the working-copy root; built-in defaults if there is none |
 | `--dependency <path>` | Load another library so references resolve; never recorded as debt. Repeatable — see [Resolving references into other libraries](#resolving-references-into-other-libraries) | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch | off |
 | `--force` | Required by `update` to widen a baseline, and by `create` to overwrite one — see [`prune` vs `update`](#prune-vs-update) | off |
@@ -354,6 +361,7 @@ $ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
 note: baseline holds 101032 entries; one entry can cover several findings, so the accepted count
       below can be larger
 No new findings (104447 finding(s) accepted as baseline debt) in 38112 model(s).
+0 new, 0 touched-debt, 104447 accepted as baseline debt across 38112 model(s).
 ```
 
 An entry is a **fingerprint**: rule id + class + element + detail, deliberately *without* a line
@@ -436,7 +444,7 @@ configuration has moved on, because both ways it can differ are otherwise silent
 
 ```
 $ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
-warning: the baseline was generated with a different rule set
+warning: the baseline was generated with a different configuration
          enabled since: MLQT.Doc.ClassDescription
          severity changed: MLQT.Doc.ParameterDescription (Warning -> Error)
          Pre-existing findings of a newly enabled rule are reported as new.
@@ -515,6 +523,32 @@ Works with Git and SVN.
 > SVN has no merge base to ask for, so there the comparison is against the revision itself and a
 > long-lived branch will see trunk's later changes in it.
 
+### What a `--changed-from` run checks
+
+**The whole library is always loaded, and only the changed models are checked.** Loading is not
+optional — a class cannot be checked without its base classes, and a type written as `SI.Length`
+cannot be resolved without the library that defines it — but nothing is gained by applying the rules
+to a model the change did not touch. On a large library this is most of the run.
+
+**Except when the run also asks for whole-library numbers.** `--metrics`, `--min-coverage` and
+`--coverage-ratchet` measure the library, not the change: coverage over the dozen models a commit
+touched is not that library's coverage, and a ratchet that recorded it would move the baseline to a
+number nothing can be compared against. So a run that asks for any of those **checks everything**,
+exactly as it did before, and says so:
+
+```
+note: --metrics measures the whole library, so every model is checked
+```
+
+There is nothing to configure. Ask only for findings and the run is fast; ask for coverage and it is
+thorough. If you want both, run them as two commands — the coverage one on a schedule rather than on
+every push, since its answer changes slowly.
+
+**What the report counts.** In a `--changed-from` run without coverage, every number in the summary
+is over the models that were checked. A baseline entry for a model the change did not touch is
+neither reported as fixed nor counted as accepted debt — it was not looked at, and saying anything
+about it would be a guess.
+
 The three policies are:
 
 | Policy | Listed in the report? | Fails the gate? |
@@ -541,7 +575,8 @@ mlqt check ./ExternData --baseline .mlqt/baseline.json --changed-from main \
 
 ## Recording the coverage trend
 
-`--metrics` appends a point to `<library-path>/.mlqt/metrics-history.json` — the same file the desktop
+`--metrics` appends a point to the repository's `.mlqt/metrics-history.json` — the nearest directory at
+or above `<library-path>` that holds a `.mlqt` directory, else the working-copy root — the same file the desktop
 app's **Metrics** tab plots ([metrics-dashboard.md](metrics-dashboard.md)). Running it per commit in
 CI builds the burndown automatically,
 instead of it depending on someone remembering to press **Save snapshot**.
@@ -804,9 +839,27 @@ mlqt hook uninstall ./MyLibrary
 ```
 
 The library path defaults to the current directory, so standing in your repository `mlqt hook install`
-is usually the whole command. The repository is located by walking up from the library, so a library
-in a subdirectory needs nothing extra, and a worktree or submodule (whose `.git` is a file) is
-followed to the directory git actually reads hooks from.
+is usually the whole command. The repository is the one enclosing the library, so a library in a
+subdirectory needs nothing extra, and where its hooks live is asked of git itself
+(`git rev-parse --git-path hooks`) rather than assumed to be `.git/hooks` beside it.
+
+**Worktrees share one hook.** Git reads a worktree's hooks from the main repository's `.git/hooks`,
+not from the worktree's own git directory, so an install from any worktree goes there and applies to
+all of them — `status` and `uninstall` look in the same place. The hook checks the library in
+*whichever worktree is committing*: its path is written relative to the top of the working tree, not
+as the absolute path you installed from. (Before this was fixed, an install from a worktree wrote a
+hook git never ran; `status` reports such a leftover and `uninstall` removes it.)
+
+**Without git on your `PATH`**, the hooks directory is worked out from the `.git` directory instead —
+following a worktree's `.git` file to the repository it belongs to — and the command prints a `note:`
+saying so, because only git can say whether `core.hooksPath` sends it elsewhere.
+
+**The path must hold a library.** Because the repository is found from it, the path decides where the
+hook lands as well as what it checks. `install` looks for a library there the way `mlqt check` does —
+a `package.mo`, sub-package directories, or `.mo` files — and when it finds none it installs nothing,
+exits `2`, and names the repository the hook would have gone into. A hook checking a directory with no
+library in it would fail every commit that touches a `.mo` file, in whichever repository happened to
+enclose that directory. On success it prints both the hook's path and the repository it belongs to.
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -818,8 +871,9 @@ followed to the directory git actually reads hooks from.
 
 The options are baked into the generated script; re-run `mlqt hook install` to change them.
 
-**What the hook does.** It exits immediately unless the staged change touches a `.mo` file, so
-commits it has nothing to say about cost nothing. Otherwise it runs `mlqt check` over the library
+**What the hook does.** It exits immediately unless the staged change adds, copies or modifies a `.mo`
+file, so commits it has nothing to say about cost nothing — including one that only deletes `.mo`
+files, which skips the check. Otherwise it runs `mlqt check` over the library
 with the options above and blocks the commit on a non-zero exit — including exit `2`, because a check
 that could not run has not approved anything.
 
@@ -852,10 +906,12 @@ framework's. Add the check to that script yourself, or pass `--force`.
 
 **`core.hooksPath` is refused, not worked around.** If your repository sets it — husky, pre-commit
 and lefthook all do — git reads hooks only from that directory, so one written under `.git/hooks`
-would never run. `mlqt hook install` detects this and stops, naming the directory and printing the
-`mlqt check` line to add to whatever your hook manager runs. `status` and `uninstall` still work, so
-a hook installed before the redirect was set can be seen and removed; both say the redirect is
-there.
+would never run. `mlqt hook install` detects this and stops, naming the directory git uses (a
+relative `core.hooksPath` is taken from the top of the working tree, as git takes it) and printing the
+`mlqt check` line to add to whatever your hook manager runs. `status` reports on the hook git will
+actually run, in that directory, and also names an mlqt hook installed under `.git/hooks` before the
+redirect was set; `uninstall` removes that one and never touches the redirected directory. Both say
+the redirect is there.
 
 **Git only.** SVN has no client-side hooks: a pre-commit hook there runs on the server and would need
 MLQT installed on it. Outside a git working copy the command says so rather than writing a file
@@ -889,7 +945,7 @@ inventories compared, so the command is much faster than a check.
 | Code | Meaning |
 |------|---------|
 | `0` | Every class in A is present in B |
-| `1` | Classes are missing from B |
+| `1` | Classes are missing from B, or a file on either side could not be parsed |
 | `2` | Usage or load error (bad path, no library found there) |
 
 Classes that only B has never fail the command — gaining a class is not a loss.
@@ -903,7 +959,7 @@ Comparing class inventories
   B  C:/Libraries/MyLibrary-after
      8501 classes in MyLibrary
 
-warning: 1 file(s) in B could not be parsed, so every class they hold is counted as absent:
+warning: 1 file(s) in B could not be parsed, so the classes they hold are unknown and this comparison cannot be trusted:
            MyLibrary/Blocks/Continuous.mo
 
 33 classes are missing from B:
@@ -928,9 +984,12 @@ Three things in that report are worth knowing about:
   *new* class in B is usually the same class re-rooted: most often its `within` clause was lost, so
   `MyLibrary.Blocks.LimPID` came back as plain `LimPID`. That is one class showing up twice — once as
   missing, once as added — and it is why the added list is on by default.
-- **Unparseable files are called out first.** A file the parser cannot get a class out of looks exactly
-  like a file whose classes were all deleted, and a bulk edit is the most likely thing to have left
-  one. Fix those before reading anything else in the list.
+- **Unparseable files are called out first, and they fail the command on their own.** A file the
+  parser cannot read leaves a placeholder standing in for it, named for the class the file is
+  expected to define — so one of its classes may match and the rest silently will not. What it
+  really held is unknown, so the comparison below it cannot be trusted and `compare` exits 1 even
+  when nothing is listed as missing. A bulk edit is the most likely thing to have left such a
+  file. Fix those before reading anything else in the list.
 
 ```bash
 # Did the reformat lose anything?

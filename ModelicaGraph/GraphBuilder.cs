@@ -57,11 +57,26 @@ public static class GraphBuilder
                 };
             }
 
-            // If extraction failed catastrophically we still want the file to appear in the
-            // library tree so the user can see and fix it. Produce a placeholder model that
-            // carries the full file contents and the fatal error.
-            bool hasFatal = fileParserErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
-            if (hasFatal && models.Count == 0)
+            // If extraction produced nothing we still want the file to appear in the library tree
+            // so the user can see and fix it. Produce a placeholder model that carries the full
+            // file contents and the errors.
+            //
+            // The test is "errors recorded and no classes extracted", *whatever severity the
+            // parser chose* (B201). It used to additionally require a FatalParseFailure, which
+            // only ANTLR crashing or a visitor throwing produces — and the interesting case is
+            // neither. A file the grammar rejects without anything throwing records
+            // RecoveredSyntax errors and extracts no classes: `hasFatal` was false, no placeholder
+            // was made, and the errors in fileParserErrors were dropped for want of a node to hang
+            // them on. A real library with one malformed file silently lost those classes.
+            //
+            // RecoveredSyntax's own summary is where the assumption hid: "the parser recovered and
+            // the rest of the file was still processed". It recovered; there was nothing left to
+            // process. Recovery says nothing about whether any class came out, so the count is
+            // asked directly instead.
+            //
+            // No errors and no classes is left alone deliberately: a file holding only a `within`
+            // clause and comments is valid and has nothing to report.
+            if (models.Count == 0 && fileParserErrors.Count > 0)
             {
                 var placeholderId = CreateParseFailurePlaceholder(graph, fileId, filePath, normalizedContent, fileParserErrors);
                 modelIDs.Add(placeholderId);
@@ -116,10 +131,26 @@ public static class GraphBuilder
                 graph.AddFileContainsModel(fileId, modelId);
             }
 
-            // Store the child order in package properties
+            // The file's text outside every class goes on the class that heads the file (B445): a
+            // stored class source is its own span and nothing else, so this is the only place a
+            // licence header survives to be written back.
+            var topLevel = models.Where(m => !m.IsNested).ToList();
+            if (topLevel.Count > 0
+                && graph.GetNode<ModelNode>(GenerateModelId(topLevel[0].ParentModelName, topLevel[0].Name)) is { } head)
+                head.FileText = FileLevelText.Read(normalizedContent, topLevel[0].StartIndex, topLevel[^1].StopIndex);
+
+            // Store the child order in package properties — only on a package this file defines.
+            // A file holding one class of a directory package (Sub/Beta.mo) names that package as
+            // its parent too, and writing its one-name list onto Lib.Sub replaced the order read
+            // from Sub/package.mo with whichever of the directory's files the parallel load
+            // happened to finish last (B450). The order is of the classes nested in the package's
+            // own source; classes in files of their own are ordered by package.order.
+            var definedHere = new HashSet<string>(modelIDs, StringComparer.Ordinal);
             foreach (var kvp in packageChildOrder)
             {
                 var packageId = kvp.Key;
+                if (!definedHere.Contains(packageId))
+                    continue;
                 var childNames = kvp.Value.ToArray(); // Reverse to maintain original order when using stack-based traversal
 
                 // Find the package model node
@@ -477,6 +508,10 @@ public static class GraphBuilder
     {
         const int batchSize = 500;
 
+        // Read before the set of classes is taken: a library loaded after this point is not in it, and
+        // its load moves the generation on, so the run below does not claim to have covered it (B352).
+        var generation = graph.AnalysisGeneration;
+
         // Placeholder nodes carry raw (unparseable) file content and already have a fatal
         // error attached — re-parsing them wastes work and produces noise. Skip them here.
         //
@@ -575,18 +610,17 @@ public static class GraphBuilder
 
         // Phase 3: LoadSelector Pass 2 — find modifications of discovered parameters
         // Now that all loadSelector and loadResource parameters are known across the graph,
-        // re-scan models to find modifications of those parameters in component instances.
-        progressLog?.Invoke("Phase 3: LoadSelector pass 2");
-        bool hasTrackedParams = allModels.Any(m =>
-            m.LoadSelectorParameters.Count > 0 ||
-            m.LoadResourceParameters.Count > 0);
+        // re-scan the models that could modify one. Every model, once: a second parse of the whole
+        // graph, 40s of a Claytex check to find two resources (B282). See MayModifyATrackedParameter.
+        var phase3Models = allModels.Where(m => MayModifyATrackedParameter(graph, m)).ToList();
+        progressLog?.Invoke($"Phase 3: LoadSelector pass 2 over {phase3Models.Count} of {allModels.Count} models");
 
-        if (hasTrackedParams)
+        if (phase3Models.Count > 0)
         {
             // Built once for the whole pass: it describes the graph, not any one model.
             var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
             totalProcessed = 0;
-            foreach (var batch in Batch(allModels, batchSize))
+            foreach (var batch in Batch(phase3Models, batchSize))
             {
                 var pass2Results = new ConcurrentBag<(string modelId, List<ExternalResourceInfo> resources)>();
 
@@ -640,7 +674,7 @@ public static class GraphBuilder
                 }
 
                 totalProcessed += batch.Count;
-                progressLog?.Invoke($"Phase 3: {totalProcessed}/{allModels.Count} models processed");
+                progressLog?.Invoke($"Phase 3: {totalProcessed}/{phase3Models.Count} models processed");
                 GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
             }
         }
@@ -655,32 +689,60 @@ public static class GraphBuilder
             var model = graph.GetNode<ModelNode>(modelId);
             if (model == null) continue;
 
-            string? includeDirectory = null;
-            string? libraryDirectory = null;
+            // Every directory, not just the last one seen (B211). IncludeDirectory and
+            // LibraryDirectory are commonly arrays - VeSyMA.Roads.Functions.Internal.readNormal
+            // declares IncludeDirectory={"modelica://VeSyMA/...","modelica://Claytex/..."} - and
+            // assigning to a single variable kept whichever came last, so every #include in the
+            // class was looked for in that one directory and reported missing from it.
+            var includeDirectories = new List<string>();
+            var libraryDirectories = new List<string>();
 
             foreach (var info in resources)
             {
                 if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    AddResolved(includeDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
                 else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    AddResolved(libraryDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
             }
 
             foreach (var info in resources)
             {
-                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectory, libraryDirectory);
+                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectories, libraryDirectories);
             }
         }
 
         // Only now are UsedModelIds/UsedByModelIds complete. Consumers that need the edges gate on
-        // this flag rather than inspecting the graph, so it must be set last.
-        graph.MarkDependenciesAnalyzed();
-        progressLog?.Invoke("Dependency analysis complete");
+        // this flag rather than inspecting the graph, so it must be set last - and only if nothing
+        // arrived while the run was going.
+        if (graph.MarkDependenciesAnalyzed(generation))
+            progressLog?.Invoke("Dependency analysis complete");
+        else
+            progressLog?.Invoke("Dependency analysis complete, but the graph changed while it ran - not marked analysed");
     }
 
     /// <summary>
     /// Splits a list into batches of the specified size.
     /// </summary>
+    /// <summary>
+    /// Whether the second loadSelector pass could find anything in <paramref name="model"/>: whether it
+    /// uses a class that declares a loadSelector or loadResource parameter.
+    /// </summary>
+    /// <remarks>
+    /// <para>The pass matches <c>T comp(name = ...)</c> where <c>T</c> itself declares <c>name</c>, so a
+    /// class can only produce a result by declaring a component of such a <c>T</c> — which is a use of
+    /// <c>T</c>, and the first pass has just recorded it as an edge. Measured before being relied on
+    /// (B282): over Claytex with the Dymola library folder, MSL, and Buildings with MSL, every class the
+    /// full pass found a resource in was among these, and on Claytex they are 1,211 classes of 68,746.</para>
+    ///
+    /// <para>Asked per class, so it serves the full analysis and the incremental one alike. The
+    /// incremental one used to decide from whether a re-analysed class <i>declared</i> a tracked
+    /// parameter, which is the wrong end of the relationship: editing a class to set another class's
+    /// file parameter skipped the pass, and lost that resource until the next full analysis.</para>
+    /// </remarks>
+    public static bool MayModifyATrackedParameter(DirectedGraph graph, ModelNode model) =>
+        model.UsedModelIds.Any(id => graph.GetNode<ModelNode>(id) is { } used
+            && (used.LoadSelectorParameters.Count > 0 || used.LoadResourceParameters.Count > 0));
+
     private static IEnumerable<List<T>> Batch<T>(List<T> source, int batchSize)
     {
         for (int i = 0; i < source.Count; i += batchSize)
@@ -785,17 +847,18 @@ public static class GraphBuilder
                 modelResources[sourceId] = resources;
         }
 
-        // Phase 3: LoadSelector Pass 2 — only for target models with tracked parameters.
-        // Parse trees were released in Phase 1; EnsureParsed() re-parses on demand.
-        bool hasTrackedParams = models.Any(m =>
-            m.LoadSelectorParameters.Count > 0 || m.LoadResourceParameters.Count > 0);
+        // Phase 3: LoadSelector Pass 2 — for the re-analysed models that could modify a tracked
+        // parameter. Parse trees were released in Phase 1; EnsureParsed() re-parses on demand.
+        // Decided per model by what it uses, not by whether any of them declares a parameter, which
+        // skipped the pass for exactly the edit it exists for (B282). See MayModifyATrackedParameter.
+        var phase3Models = models.Where(m => MayModifyATrackedParameter(graph, m)).ToList();
 
-        if (hasTrackedParams)
+        if (phase3Models.Count > 0)
         {
             var pass2Results = new ConcurrentBag<(string modelId, List<ExternalResourceInfo> resources)>();
             var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
 
-            Parallel.ForEach(models, model =>
+            Parallel.ForEach(phase3Models, model =>
             {
                 try
                 {
@@ -847,19 +910,24 @@ public static class GraphBuilder
             var model = graph.GetNode<ModelNode>(kvp.Key);
             if (model == null) continue;
 
-            string? includeDirectory = null;
-            string? libraryDirectory = null;
+            // Every directory, not just the last one seen (B211). IncludeDirectory and
+            // LibraryDirectory are commonly arrays - VeSyMA.Roads.Functions.Internal.readNormal
+            // declares IncludeDirectory={"modelica://VeSyMA/...","modelica://Claytex/..."} - and
+            // assigning to a single variable kept whichever came last, so every #include in the
+            // class was looked for in that one directory and reported missing from it.
+            var includeDirectories = new List<string>();
+            var libraryDirectories = new List<string>();
 
             foreach (var info in kvp.Value)
             {
                 if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    AddResolved(includeDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
                 else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    AddResolved(libraryDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
             }
 
             foreach (var info in kvp.Value)
-                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectory, libraryDirectory);
+                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectories, libraryDirectories);
         }
 
         // Parse trees were already released in Phases 1 and 3 immediately after use.
@@ -874,8 +942,8 @@ public static class GraphBuilder
         ModelNode model,
         ExternalResourceInfo info,
         List<LibraryInfo> libraries,
-        string? includeDirectory,
-        string? libraryDirectory)
+        IReadOnlyList<string> includeDirectories,
+        IReadOnlyList<string> libraryDirectories)
     {
         string? resolvedPath = null;
         bool isDirectory = false;
@@ -893,7 +961,7 @@ public static class GraphBuilder
             case ResourceReferenceType.ExternalLibraryDirectory:
             case ResourceReferenceType.ExternalSourceDirectory:
                 // These are directory references - create directory node AND scan for files within
-                resolvedPath = ResolveModelicaUri(info.RawPath, libraries);
+                resolvedPath = ResolveModelicaUri(info.RawPath, libraries, FilePathOf(model, graph));
                 if (resolvedPath != null && Directory.Exists(resolvedPath))
                 {
                     // Create the directory node
@@ -926,19 +994,51 @@ public static class GraphBuilder
 
             case ResourceReferenceType.ExternalInclude:
                 // Parse #include "filename.h" and resolve using IncludeDirectory
-                var headerFile = ParseIncludeDirective(info.RawPath);
-                if (headerFile != null)
+                var include = ParseIncludeDirective(info.RawPath);
+                if (include is { } directive)
                 {
-                    var incDir = includeDirectory ?? GetDefaultIncludeDirectory(model.Id, libraries);
+                    // Every declared IncludeDirectory is searched, in the order written, and the
+                    // first that holds the file wins (B211). A class listing two of them is
+                    // ordinary - VeSyMA.Roads.Functions.Internal.readNormal names VeSyMA's and
+                    // Claytex's - and looking in only one of them reported a header that is present
+                    // in the other as missing from the one it was never in.
+                    var searched = includeDirectories.Count > 0
+                        ? includeDirectories
+                        : Existing(GetDefaultIncludeDirectory(model.Id, libraries, FilePathOf(model, graph)));
+
+                    var incDir = FirstDirectoryHolding(searched, directive.Header);
                     if (incDir != null)
-                        resolvedPath = Path.Combine(incDir, headerFile);
+                    {
+                        var candidate = Path.Combine(incDir, directive.Header);
+
+                        // A header the library ships is tracked whether or not it is there right now
+                        // — a missing one is exactly what this reporting is for. A header the
+                        // compiler supplies is not the library's to ship, so its absence from
+                        // Resources/Include is the normal case and not a finding (B172). Before this,
+                        // every external function using the C standard library reported a missing
+                        // file with nothing wrong with the library.
+                        //
+                        // IncludeDirectory behaves like a -I path, so a bracketed include can
+                        // legitimately resolve there; whether the file is actually present is what
+                        // settles it, which keeps this from hiding a header the library does ship.
+                        if (File.Exists(candidate)
+                            || !StandardCHeaders.IsSupplied(directive.Header, directive.IsSystemInclude))
+                        {
+                            resolvedPath = candidate;
+                        }
+                    }
                 }
                 break;
 
             case ResourceReferenceType.ExternalLibrary:
                 // Resolve all platform variants of the library file
-                var libDir = libraryDirectory ?? GetDefaultLibraryDirectory(model.Id, libraries);
-                if (libDir != null)
+                // Searched across every declared LibraryDirectory, for the same reason as the
+                // include directories above (B211).
+                var libDirs = libraryDirectories.Count > 0
+                    ? libraryDirectories
+                    : Existing(GetDefaultLibraryDirectory(model.Id, libraries, FilePathOf(model, graph)));
+
+                foreach (var libDir in libDirs)
                 {
                     var libraryFiles = ResolveAllLibraryFiles(info.RawPath, libDir);
                     foreach (var libPath in libraryFiles)
@@ -966,6 +1066,18 @@ public static class GraphBuilder
 
         if (resolvedPath == null)
             return;
+
+        // A reference that resolves to a directory that is really there is a directory reference,
+        // whatever kind of annotation named it (B208). `loadResource` is allowed to name a directory
+        // — `modelica://ModelicaTest/Resources/Data` in the Modelica Standard Library does — and
+        // nothing in the reference itself says which it is, so this was assumed to be a file and
+        // tested with File.Exists. The directory is on disk and MLQT reported it missing.
+        //
+        // Asked only when the path resolved: it is a question about what is on disk, and a path that
+        // is absent is left as a file, which is the right thing to report for a reference nobody can
+        // satisfy either way.
+        if (!isDirectory && Directory.Exists(resolvedPath))
+            isDirectory = true;
 
         // Create the resource node
         IGraphNode resourceNode;
@@ -1009,7 +1121,7 @@ public static class GraphBuilder
     {
         if (rawPath.StartsWith("modelica://", StringComparison.OrdinalIgnoreCase))
         {
-            return ResolveModelicaUri(rawPath, libraries);
+            return ResolveModelicaUri(rawPath, libraries, FilePathOf(model, graph));
         }
         else if (Path.IsPathRooted(rawPath))
         {
@@ -1043,7 +1155,8 @@ public static class GraphBuilder
     /// or: modelica://LibraryName.SubPackage/path/to/resource.ext
     /// Also handles malformed URIs with double slashes (e.g., modelica://Lib//Resources/...)
     /// </summary>
-    private static string? ResolveModelicaUri(string uri, List<LibraryInfo> libraries)
+    private static string? ResolveModelicaUri(
+        string uri, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         // Strip the modelica:// prefix
         if (!uri.StartsWith("modelica://", StringComparison.OrdinalIgnoreCase))
@@ -1080,8 +1193,7 @@ public static class GraphBuilder
         var libraryName = libraryIdentifier.Split('.')[0];
 
         // Find the library
-        var library = libraries.FirstOrDefault(l =>
-            l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
+        var library = SelectLibrary(libraries, libraryName, referencingFilePath);
 
         if (library == null)
             return null;
@@ -1108,12 +1220,161 @@ public static class GraphBuilder
         return fullPath;
     }
 
+
+
+    /// <summary>Resolves a directory URI and records it, skipping duplicates and failures.</summary>
+    private static void AddResolved(
+        List<string> directories, string rawPath, List<LibraryInfo> libraries, string? referencingFilePath)
+    {
+        var resolved = ResolveModelicaUri(rawPath, libraries, referencingFilePath);
+        if (resolved is null)
+            return;
+
+        foreach (var existing in directories)
+        {
+            if (string.Equals(existing, resolved, PathComparison))
+                return;
+        }
+
+        directories.Add(resolved);
+    }
+
+    /// <summary>A one-or-no-element list, for the default directory when a class declares none.</summary>
+    private static IReadOnlyList<string> Existing(string? directory) =>
+        directory is null ? [] : [directory];
+
     /// <summary>
-    /// Parses an Include directive to extract the filename.
-    /// E.g., '#include "ModelicaStandardTables.h"' returns "ModelicaStandardTables.h"
+    /// The first of <paramref name="directories"/> that holds <paramref name="fileName"/>, or the
+    /// first directory when none of them does.
+    /// </summary>
+    /// <remarks>
+    /// Falling back to the first rather than to nothing is what keeps a genuinely absent header
+    /// reportable: it still needs one definite path to be named by. Which of several is named is
+    /// arbitrary, and the file is missing from all of them either way.
+    /// </remarks>
+    private static string? FirstDirectoryHolding(IReadOnlyList<string> directories, string fileName)
+    {
+        foreach (var directory in directories)
+        {
+            if (File.Exists(Path.Combine(directory, fileName)))
+                return directory;
+        }
+
+        return directories.Count > 0 ? directories[0] : null;
+    }
+
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+    /// <summary>
+    /// Which of the loaded libraries a <c>modelica://</c> URI means, when more than one answers to
+    /// the name.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Library names are not unique across loaded libraries (B169).</b> A commercial library
+    /// is routinely present twice: the encrypted build a tool ships, and the source the team has
+    /// checked out. Both register under the same name — the encrypted one drops its version suffix,
+    /// so "Claytex 2026.1" is "Claytex" — and both have a <c>Resources/</c> directory. Picking the
+    /// first by name therefore picked whichever happened to load first, and a model's own resources
+    /// were attached to the other copy's directory. Nine libraries collide this way in the setup it
+    /// was reported from.</para>
+    ///
+    /// <para>Two things settle it, in order. The referencing file, when it lies inside one of the
+    /// candidates: a model resolves <c>modelica://Claytex/Resources/x</c> against the copy of Claytex
+    /// it is itself part of, longest matching root first. Then, for everything else — and that is
+    /// most references, because a library naming another library's resources sits inside neither of
+    /// its copies — the readable one, because <b>an encrypted library can never be the right answer
+    /// while a readable copy exists.</b> Nothing can read its code, so nothing knows what it
+    /// references; every reference naming it was written somewhere else.</para>
+    /// </remarks>
+    private static LibraryInfo? SelectLibrary(
+        List<LibraryInfo> libraries, string libraryName, string? referencingFilePath)
+    {
+        LibraryInfo? only = null;
+        List<LibraryInfo>? matches = null;
+
+        foreach (var candidate in libraries)
+        {
+            if (!candidate.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (only is null)
+            {
+                only = candidate;
+                continue;
+            }
+
+            matches ??= [only];
+            matches.Add(candidate);
+        }
+
+        // The ordinary case, and the one worth not allocating for: one library of that name.
+        if (matches is null)
+            return only;
+
+        // The copy the referencing file is itself inside, if it is inside one. Longest root wins, so
+        // a library nested inside another resolves to the nearer one.
+        if (!string.IsNullOrEmpty(referencingFilePath))
+        {
+            LibraryInfo? owning = null;
+            foreach (var candidate in matches)
+            {
+                if (!IsUnderRoot(referencingFilePath, candidate.RootPath))
+                    continue;
+
+                if (owning is null || candidate.RootPath.Length > owning.RootPath.Length)
+                    owning = candidate;
+            }
+
+            if (owning is not null)
+                return owning;
+        }
+
+        // Otherwise the readable copy, and this is the case that matters most: a reference from one
+        // library into another. A model in Engines naming modelica://Claytex/Resources/x sits under
+        // neither Claytex root, so the test above cannot separate them - and most references are of
+        // this kind, which is why fixing only the same-library case left most resources still
+        // attached to the encrypted build.
+        //
+        // An encrypted library can never be the right answer while a readable copy exists. Nothing
+        // can read its code, so nothing knows what it references: every reference naming it was
+        // written somewhere else, and the copy that someone can actually open is the one they meant.
+        foreach (var candidate in matches)
+        {
+            if (!candidate.IsEncrypted)
+                return candidate;
+        }
+
+        // Every copy is encrypted. Nothing distinguishes them, so the first keeps the old behaviour.
+        return matches[0];
+    }
+
+    /// <summary>Whether a file lies inside a directory.</summary>
+    private static bool IsUnderRoot(string filePath, string root)
+        => PathContainment.IsWithin(filePath, root);
+
+    /// <summary>The file a model was read from, or null when it has none (a documentation stub).</summary>
+    private static string? FilePathOf(ModelNode model, DirectedGraph graph)
+    {
+        var containingFileId = model.ContainingFileId;
+        if (containingFileId is null)
+            return null;
+
+        return graph.GetNode<FileNode>(containingFileId)?.FilePath;
+    }
+
+    /// <summary>
+    /// Parses an Include directive into the file name it names and how it named it.
+    /// E.g., '#include "ModelicaStandardTables.h"' returns ("ModelicaStandardTables.h", false) and
+    /// '#include &lt;stdio.h&gt;' returns ("stdio.h", true).
     /// Handles both regular quotes and escaped quotes (\" from ANTLR string tokens).
     /// </summary>
-    private static string? ParseIncludeDirective(string rawInclude)
+    /// <remarks>
+    /// The delimiter used to be discarded, and it is the part that says whether MLQT can be expected
+    /// to find the file at all: angle brackets name the compiler's own search path, which MLQT does
+    /// not know (B172). See <see cref="StandardCHeaders"/>.
+    /// </remarks>
+    private static (string Header, bool IsSystemInclude)? ParseIncludeDirective(string rawInclude)
     {
         // First unescape any escaped quotes from ANTLR token text
         // The Include annotation value comes from a Modelica string like:
@@ -1126,20 +1387,23 @@ public static class GraphBuilder
         // Handle: #include "filename.h" or #include <filename.h>
         var match = System.Text.RegularExpressions.Regex.Match(
             unescaped,
-            @"#include\s*[""<]([^"">]+)[>""]");
+            @"#include\s*(?<open>[""<])(?<header>[^"">]+)[>""]");
 
-        return match.Success ? match.Groups[1].Value : null;
+        if (!match.Success)
+            return null;
+
+        return (match.Groups["header"].Value, match.Groups["open"].Value == "<");
     }
 
     /// <summary>
     /// Gets the default IncludeDirectory for a model based on its library.
     /// Default: modelica://LibraryName/Resources/Include
     /// </summary>
-    private static string? GetDefaultIncludeDirectory(string modelId, List<LibraryInfo> libraries)
+    private static string? GetDefaultIncludeDirectory(
+        string modelId, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         var libraryName = ModelicaName.RootLibraryOf(modelId);
-        var library = libraries.FirstOrDefault(l =>
-            l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
+        var library = SelectLibrary(libraries, libraryName, referencingFilePath);
 
         if (library == null)
             return null;
@@ -1151,11 +1415,11 @@ public static class GraphBuilder
     /// Gets the default LibraryDirectory for a model based on its library.
     /// Default: modelica://LibraryName/Resources/Library
     /// </summary>
-    private static string? GetDefaultLibraryDirectory(string modelId, List<LibraryInfo> libraries)
+    private static string? GetDefaultLibraryDirectory(
+        string modelId, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         var libraryName = ModelicaName.RootLibraryOf(modelId);
-        var library = libraries.FirstOrDefault(l =>
-            l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
+        var library = SelectLibrary(libraries, libraryName, referencingFilePath);
 
         if (library == null)
             return null;
@@ -1302,8 +1566,12 @@ public static class GraphBuilder
     /// </summary>
     /// <param name="graph">The existing graph to update in-place.</param>
     /// <param name="rootPath">Root directory of the new checkout (where changed files are read from).</param>
-    /// <param name="changedRelativeFiles">Set of relative file paths that changed (from DetectChangedFiles).</param>
-    /// <returns>List of model IDs that were affected (removed or added).</returns>
+    /// <param name="changedRelativeFiles">Set of relative file paths that changed (from DetectChangedFiles).
+    /// A path may climb out of <paramref name="rootPath"/> (<c>../Other/x.mo</c>); every path is
+    /// resolved to a full one, so a file outside the root is still stored under its own path (B384).</param>
+    /// <returns>List of model IDs that were affected (removed or added), and the classes in other
+    /// files below a class whose imports changed, or that name a class added or removed below their
+    /// parent (see <see cref="EnclosingImportChanges"/>).</returns>
     public static List<string> UpdateGraphForChangedFiles(
         DirectedGraph graph,
         string rootPath,
@@ -1320,10 +1588,15 @@ public static class GraphBuilder
             .Where(f => f.EndsWith("package.order", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
+        // Before anything is removed: what the files' classes import on behalf of the classes below
+        // them that live elsewhere (B347).
+        var enclosingImports = EnclosingImportChanges.Capture(graph, changedMoFiles.Select(relativePath =>
+            GenerateFileId(ResolveChangedFile(rootPath, relativePath))));
+
         // Step 1: Remove models from changed/deleted .mo files
         foreach (var relativePath in changedMoFiles)
         {
-            var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var fullPath = ResolveChangedFile(rootPath, relativePath);
             var fileId = GenerateFileId(fullPath);
 
             // Collect models in this file before removing
@@ -1335,7 +1608,7 @@ public static class GraphBuilder
 
         // Step 2: Re-parse changed/added .mo files that still exist on disk
         var filesToReparse = changedMoFiles
-            .Select(f => Path.Combine(rootPath, f.Replace('/', Path.DirectorySeparatorChar)))
+            .Select(f => ResolveChangedFile(rootPath, f))
             .Where(File.Exists)
             .ToArray();
 
@@ -1345,10 +1618,12 @@ public static class GraphBuilder
             affectedModelIds.AddRange(newModelIds);
         }
 
+        affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(graph));
+
         // Step 3: Update changed package.order files
         foreach (var relativePath in changedOrderFiles)
         {
-            var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var fullPath = ResolveChangedFile(rootPath, relativePath);
             if (!File.Exists(fullPath)) continue;
 
             // Find the package model by looking at the directory's package.mo
@@ -1373,6 +1648,15 @@ public static class GraphBuilder
 
         return affectedModelIds.Distinct().ToList();
     }
+
+    /// <summary>
+    /// A changed file's full path. Resolved, not merely combined: Refresh hands every pending change
+    /// to one root, and a file in another working copy arrives relative to it as <c>../Other/x.mo</c>
+    /// - combined, that became the <see cref="FileNode.FilePath"/>, which no path comparison matches
+    /// (B384).
+    /// </summary>
+    private static string ResolveChangedFile(string rootPath, string relativePath) =>
+        Path.GetFullPath(Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
     /// <summary>
     /// Generates a unique file ID from a file path.

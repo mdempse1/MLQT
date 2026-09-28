@@ -78,20 +78,48 @@ public class MetricsStorageTests
             [Library("Vendor", null, "Vendor.One")], _ => null, _ => true));
     }
 
+    /// <summary>
+    /// Stands in for <c>ILibraryDataService.GetOwningLibrary</c>. The first claimant is the wrong
+    /// answer in the live service — a class in both a checked-out library and the vendor's copy of
+    /// it is claimed by both — which is exactly why this is a parameter rather than a search done
+    /// here.
+    /// </summary>
+    private static Func<string, LoadedLibrary?> OwnedBy(params LoadedLibrary[] libraries) =>
+        id => libraries.FirstOrDefault(l => l.ModelIds.Contains(id));
+
     [Fact]
     public void AScopeIsOwnedByTheLibraryThatContainsIt()
     {
         var libraries = new[] { Library("A", "repo1", "A.One", "A.Two"), Library("B", "repo2", "B.One") };
+        var owner = OwnedBy(libraries);
 
-        Assert.Equal("repo1", MetricsStorage.OwningRepositoryId("A.Two", libraries));
-        Assert.Equal("repo2", MetricsStorage.OwningRepositoryId("B.One", libraries));
-        Assert.Null(MetricsStorage.OwningRepositoryId("Unknown.Class", libraries));
+        Assert.Equal("repo1", MetricsStorage.OwningRepositoryId("A.Two", libraries, owner));
+        Assert.Equal("repo2", MetricsStorage.OwningRepositoryId("B.One", libraries, owner));
+        Assert.Null(MetricsStorage.OwningRepositoryId("Unknown.Class", libraries, owner));
     }
 
     [Fact]
     public void AScopeInALibraryWithNoRepositoryIsOwnedByNone()
     {
-        Assert.Null(MetricsStorage.OwningRepositoryId("C.One", [Library("C", null, "C.One")]));
+        var libraries = new[] { Library("C", null, "C.One") };
+
+        Assert.Null(MetricsStorage.OwningRepositoryId("C.One", libraries, OwnedBy(libraries)));
+    }
+
+    /// <summary>
+    /// The scope is attributed to the library the service says owns it, not to the first one in the
+    /// list that happens to list the id. Two libraries claiming one class is the ordinary state of
+    /// a project holding both a checked-out library and a tool's encrypted build of it.
+    /// </summary>
+    [Fact]
+    public void AScopeClaimedByTwoLibrariesGoesToTheOneThatOwnsIt()
+    {
+        var vendor = Library("Vendor", "repo-vendor", "Shared.One");
+        var source = Library("Source", "repo-source", "Shared.One");
+
+        Assert.Equal(
+            "repo-source",
+            MetricsStorage.OwningRepositoryId("Shared.One", [vendor, source], _ => source));
     }
 
     [Fact]
@@ -99,16 +127,16 @@ public class MetricsStorageTests
     {
         // With several it spans them all, and no single repository's revision could honestly be
         // claimed to describe the snapshot - so it is written per library instead.
-        Assert.Equal("repo1", MetricsStorage.OwningRepositoryId("", [Library("A", "repo1", "A.One")]));
+        Assert.Equal("repo1", MetricsStorage.OwningRepositoryId("", [Library("A", "repo1", "A.One")], OwnedBy()));
 
         Assert.Null(MetricsStorage.OwningRepositoryId(
-            "", [Library("A", "repo1", "A.One"), Library("B", "repo2", "B.One")]));
+            "", [Library("A", "repo1", "A.One"), Library("B", "repo2", "B.One")], OwnedBy()));
 
-        Assert.Null(MetricsStorage.OwningRepositoryId("", [Library("C", null, "C.One")]));
+        Assert.Null(MetricsStorage.OwningRepositoryId("", [Library("C", null, "C.One")], OwnedBy()));
 
         // Two libraries from the same repository is still one repository.
         Assert.Equal("repo1", MetricsStorage.OwningRepositoryId(
-            "", [Library("A", "repo1", "A.One"), Library("B", "repo1", "B.One")]));
+            "", [Library("A", "repo1", "A.One"), Library("B", "repo1", "B.One")], OwnedBy()));
     }
 
     [Fact]

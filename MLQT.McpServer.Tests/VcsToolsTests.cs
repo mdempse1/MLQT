@@ -101,6 +101,38 @@ public class VcsToolsTests
         Assert.Equal(0, res.ChangedFileCount);
     }
 
+    /// <summary>
+    /// A change in a sibling directory whose name merely starts with the repository's is not in the
+    /// repository (B323). A bare StartsWith read <c>…/Lib</c> as containing <c>…/LibExtra</c> - the
+    /// shape B301 made likelier, since two libraries sharing one working copy is now first-class.
+    /// </summary>
+    [Fact]
+    public void GetChangedClasses_ASiblingWithTheSamePrefixIsNotInTheRepository()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(LibFiles);
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var root = Path.GetDirectoryName(dir)!;
+        var sibling = Path.GetFileName(dir) + "Extra";
+        var repo = new Repository { Id = "r1", Name = "r", LocalPath = dir, VcsRootPath = root };
+
+        var repoMock = new Mock<IRepositoryService>();
+        repoMock.Setup(r => r.Repositories).Returns(new List<Repository> { repo });
+        repoMock.Setup(r => r.GetRepository("r1")).Returns(repo);
+        repoMock.Setup(r => r.GetWorkingCopyChanges("r1")).Returns(new List<VcsWorkingCopyFile>
+        {
+            new() { Path = $"{sibling}/Other.mo", Status = VcsFileStatus.Modified },
+            new() { Path = $"{Path.GetFileName(dir)}/Base.mo", Status = VcsFileStatus.Modified },
+        });
+        var vcs = new VcsTools(host.Libraries, repoMock.Object, host.Impact, host.Session);
+
+        var res = ToolAssert.Ok<ChangedClassesResult>(vcs.GetChangedClasses("r1"));
+
+        Assert.Equal(1, res.ChangedFileCount);
+        Assert.Contains("DepLib.Base", res.ClassIds);
+    }
+
     [Fact]
     public async Task AnalyzeChangeImpact_AfterAnalyze_ReturnsBlastRadius()
     {

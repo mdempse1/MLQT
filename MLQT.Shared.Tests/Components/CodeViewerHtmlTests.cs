@@ -145,9 +145,9 @@ public class CodeViewerHtmlTests
     [Fact]
     public void AWordNeedingEncoding_IsStillMatchedAndCarriesItsRawFormInTheAttribute()
     {
-        // The match runs over already-encoded content, so the pattern has to be the encoded word —
-        // while data-word has to hold the raw one, because that is what gets looked up in the
-        // dictionary when the user right-clicks it.
+        // The match runs over the token's raw text (B340), so the word is found as written — and
+        // data-word holds that raw form, because that is what gets looked up in the dictionary when
+        // the user right-clicks it.
         var html = OneLine("<COMMENT>// don&apos;t</COMMENT>", "don&apos;t");
 
         Assert.Contains("code-misspell", html);
@@ -159,4 +159,113 @@ public class CodeViewerHtmlTests
         Assert.DoesNotContain("code-misspell", OneLine("<COMMENT>// teh model</COMMENT>"));
         Assert.DoesNotContain("code-misspell", Assert.Single(CodeViewer.ToHtml(["<COMMENT>// teh</COMMENT>"], [])));
     }
+
+    // ---- searching never corrupts what is shown (B340) ----------------------------------------
+
+    private static readonly System.Text.RegularExpressions.Regex AnyHtmlTag =
+        new("<[^>]*>", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// What the browser would show for a rendered line: each run of text between tags decoded on its
+    /// own, as the browser does — so an entity a span was put inside comes out as its pieces rather
+    /// than being quietly rejoined by stripping the tags first.
+    /// </summary>
+    private static string Shown(string html) =>
+        string.Concat(AnyHtmlTag.Split(html).Select(System.Net.WebUtility.HtmlDecode)).Replace(' ', ' ');
+
+    private static void AssertBalanced(string html)
+    {
+        var opens = System.Text.RegularExpressions.Regex.Matches(html, "<span[ >]").Count;
+        var closes = System.Text.RegularExpressions.Regex.Matches(html, "</span>").Count;
+        Assert.Equal(opens, closes);
+    }
+
+    /// <summary>
+    /// The first keystroke of a search. Each of these letters is inside an entity the encoder emits
+    /// (<c>&amp;quot;</c>, <c>&amp;lt;</c>, <c>&amp;gt;</c>, <c>&amp;amp;</c>), and each of the
+    /// words inside the misspelling markup, so matching the encoded HTML split them.
+    /// </summary>
+    [Theory]
+    [InlineData("q")]
+    [InlineData("u")]
+    [InlineData("o")]
+    [InlineData("t")]
+    [InlineData("lt")]
+    [InlineData("gt")]
+    [InlineData("amp")]
+    [InlineData(";")]
+    [InlineData("&")]
+    [InlineData("class")]
+    [InlineData("span")]
+    [InlineData("data")]
+    [InlineData("word")]
+    [InlineData("code")]
+    public void SearchingNeverChangesTheTextOnScreen(string term)
+    {
+        var lines = new List<string>
+        {
+            "<KEYWORD>model</KEYWORD> <IDENT>M</IDENT> <STRING>\"a quoted &amp; <b>teh</b> word\"</STRING>",
+            "  <COMMENT>// teh class span data word code &lt;tag&gt;</COMMENT>",
+            "  a &lt; b &amp;&amp; c &quot;plain&quot;",
+        };
+        var before = CodeViewer.ToHtml(lines, ["teh"]);
+
+        var after = CodeViewer.ToHtml(lines, ["teh"], term);
+
+        Assert.Equal(before.Select(Shown), after.Select(Shown));
+        Assert.All(after, AssertBalanced);
+        Assert.Contains("code-search-match", string.Join("\n", after));
+        // The misspelling markup is still the misspelling markup, attribute and all.
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(
+            string.Join("\n", after), "<span class=\"code-misspell\" data-word=\"teh\">").Count);
+    }
+
+    [Fact]
+    public void AQuoteIsFoundAsAQuote()
+    {
+        var html = OneLineSearched("<STRING>\"a\"</STRING>", "\"a");
+
+        Assert.Contains("<span class=\"code-search-match\">&quot;a</span>", html);
+        Assert.Equal("\"a\"", Shown(html).Trim()[3..].Trim());
+    }
+
+    [Fact]
+    public void ALiteralEntityInADocumentationStringIsFoundAsTheUserSeesIt()
+    {
+        // Modelica documentation is HTML inside a string, so the source really does say `&lt;`, and
+        // the viewer shows exactly that. A search for it finds it, and a search for `<` does not.
+        var html = OneLineSearched("<STRING>\"a &lt; b\"</STRING>", "&lt;");
+
+        Assert.Contains("<span class=\"code-search-match\">&amp;lt;</span>", html);
+        Assert.DoesNotContain("code-search-match", OneLineSearched("<STRING>\"a &lt; b\"</STRING>", "<"));
+    }
+
+    [Fact]
+    public void AMatchAcrossTheEdgeOfAMisspelledWordIsTintedEitherSideOfIt()
+    {
+        var html = OneLineSearched("<COMMENT>// teh model</COMMENT>", "eh mo", "teh");
+
+        AssertBalanced(html);
+        Assert.Contains("<span class=\"code-misspell\" data-word=\"teh\">t<span class=\"code-search-match\">eh</span></span>"
+            + "<span class=\"code-search-match\"> mo</span>del", html);
+    }
+
+    [Fact]
+    public void TextOutsideAnyTagIsSearchedToo()
+    {
+        // Highlighting switched off gives lines with no tags at all, encoded by the classifier.
+        var html = OneLineSearched("a &lt; b", "<");
+
+        Assert.Contains("<span class=\"code-search-match\">&lt;</span>", html);
+        Assert.Equal("a < b", Shown(html)[5..]);
+    }
+
+    [Fact]
+    public void VisibleTextDecodesOnlyWhatIsOutsideATag()
+    {
+        Assert.Equal("a < b \"x &lt; y\"", CodeViewer.VisibleText("a &lt; b <STRING>\"x &lt; y\"</STRING>"));
+    }
+
+    private static string OneLineSearched(string tagged, string search, params string[] misspelled) =>
+        Assert.Single(CodeViewer.ToHtml([tagged], misspelled.Length == 0 ? null : misspelled, search));
 }

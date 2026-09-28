@@ -66,15 +66,22 @@ public static class MlqtServiceCollectionExtensions
         services.AddSingleton<IFormattingPipeline, FormattingPipeline>();
         services.AddSingleton<ICodeReviewService, CodeReviewService>();
         services.AddSingleton<IBaselineStatusService, BaselineStatusService>();
+        services.AddSingleton<IModelChangeClassifier, ModelChangeClassifier>();
         services.AddSingleton<IStyleCheckingService, StyleCheckingService>();
         services.AddSingleton<ICustomDictionaryService, CustomDictionaryService>();
         services.AddSingleton<IDictionaryManagerService, DictionaryManagerService>();
         services.AddSingleton<IImpactAnalysisService, ImpactAnalysisService>();
         services.AddSingleton<IExternalResourceService, ExternalResourceService>();
-        services.AddSingleton<DymolaInterface.Interfaces.IDymolaInterfaceFactory, DymolaInterfaceFactory>();
+        services.AddSingleton<DymolaInterface.Interfaces.IDymolaInterfaceFactory>(_ => new DymolaInterfaceFactory
+        {
+            Log = message => LoggingService.Info(nameof(DymolaInterfaceFactory), message)
+        });
         services.AddSingleton<OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory, OpenModelicaInterfaceFactory>();
         services.AddSingleton<DymolaCheckingService>();
         services.AddSingleton<OpenModelicaCheckingService>();
+        // What exiting does to those two tools: omc ended, Dymola left running (B493). The host
+        // hooks it to its ways out.
+        services.AddSingleton<ExternalToolShutdown>();
         services.AddScoped<BrowserService>();
 
         services.AddMudServices();

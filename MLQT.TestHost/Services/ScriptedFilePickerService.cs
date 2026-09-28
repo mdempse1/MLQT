@@ -60,4 +60,10 @@ public sealed class ScriptedFilePickerService : IFilePickerService
         var path = Next($"folder:{title}");
         return Task.FromResult(path is not null && Directory.Exists(path) ? path : null);
     }
+
+    public Task<string?> PickExecutableAsync(string title, string? startIn = null)
+    {
+        var path = Next($"executable:{title}");
+        return Task.FromResult(path is not null && File.Exists(path) ? path : null);
+    }
 }

@@ -22,7 +22,8 @@ public static class DocumentationExtractor
 
         string? info = null;
         string? revisions = null;
-        foreach (var annotation in composition.annotation())
+        // The class's own annotations only, never the external clause's (B446).
+        foreach (var annotation in CompositionAnnotations.ClassLevel(composition))
             ReadAnnotation(annotation, ref info, ref revisions);
         return (info, revisions);
     }

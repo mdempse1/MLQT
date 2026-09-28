@@ -1,9 +1,14 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace OpenModelicaInterface;
 
 /// <summary>
 /// Usage examples for OpenModelicaInterface.
 /// These examples demonstrate common workflows with OpenModelica.
+/// They are illustrative and are excluded from code coverage measurement, as DymolaInterface's are:
+/// nothing calls them, and every one of them starts an omc (B438).
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class Examples
 {
     /// <summary>

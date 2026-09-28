@@ -176,6 +176,17 @@ public sealed class SessionTools
 
         if (library.SourceType == LibrarySourceType.EncryptedDirectory)
         {
+            // Asked first: this library's index is empty too, and "ships no documentation" would be
+            // the wrong thing to say about a library whose classes are all available from source.
+            if (library.SupersededBy is { } source)
+            {
+                return new ToolError(
+                    $"'{library.Name}' at '{path}' is an encrypted library, and readable source for it is " +
+                    $"already loaded from '{source}'. The source is used instead, whole: an encrypted build " +
+                    "is never loaded beside source for the same library, because the two are often different " +
+                    "releases. Nothing further was loaded.");
+            }
+
             if (library.ModelIds.Count == 0)
             {
                 _libraries.RemoveLibrary(library.Id);

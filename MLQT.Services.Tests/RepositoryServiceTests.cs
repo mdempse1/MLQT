@@ -1,7 +1,9 @@
 using MLQT.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
+using Moq;
 using RevisionControl;
+using Git = LibGit2Sharp;
 
 namespace MLQT.Services.Tests;
 
@@ -10,13 +12,128 @@ namespace MLQT.Services.Tests;
 /// </summary>
 public class RepositoryServiceTests
 {
-    private RepositoryService CreateService()
+    private static RepositoryService CreateService(LibraryDataService? libraryDataService = null)
     {
         // Use real services for integration testing
-        var libraryDataService = new LibraryDataService();
         var settingsService = new InMemorySettingsService();
         var fileMonitoringService = new FileMonitoringService();
-        return new RepositoryService(libraryDataService, settingsService, fileMonitoringService);
+        return new RepositoryService(libraryDataService ?? new LibraryDataService(), settingsService, fileMonitoringService);
+    }
+
+    /// <summary>
+    /// A git repository under the temp directory holding exactly the files a test asks for, built
+    /// with LibGit2Sharp so it needs no git on PATH and cannot quietly come back empty.
+    ///
+    /// <para>These tests once used the developer's own MSL and Buildings checkouts at fixed paths
+    /// under <c>C:\Projects</c> and returned early without them, so they asserted nothing on CI, on
+    /// Linux or on any other machine - and the merge test merged into the real MSL checkout (B477).
+    /// None of them needs a real library, only one shaped like it.</para>
+    /// </summary>
+    private sealed class TempGitLibrary : IDisposable
+    {
+        private static readonly Git.Signature Author =
+            new("Test Author", "test@test.com", DateTimeOffset.Now);
+
+        public string Root { get; }
+
+        private TempGitLibrary(IEnumerable<(string Path, string Content)> files)
+        {
+            Root = Path.Combine(Path.GetTempPath(), "RepoServiceLib_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Root);
+            Git.Repository.Init(Root);
+
+            using var repo = new Git.Repository(Root);
+            foreach (var (relativePath, content) in files)
+                Write(relativePath, content);
+            Git.Commands.Stage(repo, "*");
+            repo.Commit("Initial commit", Author, Author, new Git.CommitOptions());
+            if (repo.Head.FriendlyName != "main")
+                repo.Branches.Rename(repo.Head, "main");
+        }
+
+        /// <summary>The MSL layout: several libraries side by side and none at the root, a nested
+        /// package inside one of them, and a hidden directory holding a <c>package.mo</c>.</summary>
+        public static TempGitLibrary MslShaped() => new(new[]
+        {
+            ("Modelica/package.mo", "package Modelica\nend Modelica;\n"),
+            ("Modelica/Blocks/package.mo", "within Modelica;\npackage Blocks\nend Blocks;\n"),
+            ("ModelicaServices/package.mo", "package ModelicaServices\nend ModelicaServices;\n"),
+            (".CI/package.mo", "package CiScripts\nend CiScripts;\n"),
+            ("README.md", "# Shaped like the Modelica Standard Library\n"),
+        });
+
+        /// <summary>The Buildings layout: one library in a subdirectory, beside files and a
+        /// directory that are not libraries.</summary>
+        public static TempGitLibrary BuildingsShaped() => new(new[]
+        {
+            ("Buildings/package.mo", "package Buildings\n  model Room\n  end Room;\nend Buildings;\n"),
+            ("bin/README.md", "Scripts, not Modelica\n"),
+            ("README.md", "# Shaped like the Buildings library\n"),
+        });
+
+        /// <summary>The smallest library: one <c>package.mo</c> at the repository root.</summary>
+        /// <remarks>These tests once built it by shelling out to the git CLI and returned null on
+        /// any failure, so with git missing or broken they passed without asserting anything - and
+        /// their cleanup, a bare <c>Directory.Delete</c> in a swallowed catch, failed on git's
+        /// read-only object files and left every repository behind in the temp directory (B479).</remarks>
+        public static TempGitLibrary WithPackage(string packageMoContent = "package TestLib end TestLib;") =>
+            new(new[] { ("package.mo", packageMoContent) });
+
+        /// <summary>Stages every change in the working copy and commits it.</summary>
+        public void CommitAll(string message)
+        {
+            using var repo = new Git.Repository(Root);
+            Git.Commands.Stage(repo, "*");
+            repo.Commit(message, Author, Author, new Git.CommitOptions());
+        }
+
+        /// <summary>Writes a file and stages it, leaving it uncommitted.</summary>
+        public void WriteAndStage(string relativePath, string content)
+        {
+            using var repo = new Git.Repository(Root);
+            Write(relativePath, content);
+            Git.Commands.Stage(repo, relativePath);
+        }
+
+        /// <summary>Creates a branch at the current commit without switching to it.</summary>
+        public void CreateBranch(string branchName)
+        {
+            using var repo = new Git.Repository(Root);
+            repo.Branches.Add(branchName, repo.Head.Tip);
+        }
+
+        /// <summary>Commits one file on a new branch and returns to <c>main</c>, leaving the branch
+        /// something to merge.</summary>
+        public void CommitOnBranch(string branchName, string relativePath, string content)
+        {
+            using var repo = new Git.Repository(Root);
+            var main = repo.Head;
+            Git.Commands.Checkout(repo, repo.Branches.Add(branchName, repo.Head.Tip));
+            Write(relativePath, content);
+            Git.Commands.Stage(repo, "*");
+            repo.Commit($"Add {relativePath}", Author, Author, new Git.CommitOptions());
+            Git.Commands.Checkout(repo, main);
+        }
+
+        private void Write(string relativePath, string content)
+        {
+            var fullPath = Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            File.WriteAllText(fullPath, content);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                // Git makes its object files read-only, which Directory.Delete refuses on Windows.
+                foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+                    File.SetAttributes(file, FileAttributes.Normal);
+                Directory.Delete(Root, recursive: true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     #region DetectVcsType Tests
@@ -102,17 +219,10 @@ public class RepositoryServiceTests
     [Fact]
     public void DetectVcsType_WithLocalGitRepo_ReturnsGitLocal()
     {
-        // This test requires C:\Projects\ModelicaStandardLibrary to exist
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
-        var (vcsType, isLocal) = service.DetectVcsType(testPath);
+        var (vcsType, isLocal) = service.DetectVcsType(library.Root);
 
         Assert.Equal(RepositoryVcsType.Git, vcsType);
         Assert.True(isLocal);
@@ -156,67 +266,47 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_WithLocalGitRepo_AddsRepository()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
         Assert.NotNull(result.Repository);
         Assert.Equal(RepositoryVcsType.Git, result.Repository.VcsType);
-        Assert.Equal(testPath, result.Repository.LocalPath);
+        Assert.Equal(library.Root, result.Repository.LocalPath);
         Assert.Single(service.Repositories);
+        SandboxedId(result);
     }
 
     [Fact]
     public async Task AddRepositoryAsync_DiscoversLibraries()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        // A repository holding several libraries side by side, none at its root - the MSL layout.
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-        Assert.NotEmpty(result.DiscoveredLibraries);
-
-        // Should discover Modelica, ModelicaServices, ModelicaTest, etc.
-        var libraryNames = result.DiscoveredLibraries.Select(l => l.LibraryName).ToList();
-        Assert.Contains("Modelica", libraryNames);
+        SandboxedId(result);
+        var libraryNames = result.DiscoveredLibraries.Select(l => l.LibraryName).OrderBy(n => n, StringComparer.Ordinal);
+        Assert.Equal(new[] { "Modelica", "ModelicaServices" }, libraryNames);
     }
 
     [Fact]
     public async Task AddRepositoryAsync_OnlyScansImmediateSubdirectories()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        // Modelica/Blocks/package.mo is a package two levels down: part of Modelica, not a library.
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-
-        // Should NOT find deeply nested packages (only root and immediate subdirs)
-        // All discovered libraries should be at root or one level deep
+        SandboxedId(result);
+        Assert.NotEmpty(result.DiscoveredLibraries);
+        Assert.DoesNotContain(result.DiscoveredLibraries, l => l.LibraryName == "Blocks");
         foreach (var lib in result.DiscoveredLibraries)
         {
             var slashCount = lib.RelativePath.Count(c => c == '\\' || c == '/');
@@ -227,44 +317,34 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_SkipsHiddenDirectories()
     {
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            // Skip test if directory doesn't exist
-            return;
-        }
-
+        // .CI holds a package.mo, as MSL's does, and .git is always there.
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-
-        // Should NOT include .git or other hidden directories
-        var libraryNames = result.DiscoveredLibraries.Select(l => l.RelativePath).ToList();
-        Assert.DoesNotContain(".git", libraryNames);
-        Assert.DoesNotContain(".CI", libraryNames);
+        SandboxedId(result);
+        Assert.True(File.Exists(Path.Combine(library.Root, ".CI", "package.mo")));
+        var relativePaths = result.DiscoveredLibraries.Select(l => l.RelativePath).ToList();
+        Assert.NotEmpty(relativePaths);
+        Assert.DoesNotContain(".git", relativePaths);
+        Assert.DoesNotContain(".CI", relativePaths);
     }
 
     [Fact]
-    public void GetRepository_WithValidId_ReturnsRepository()
+    public async Task GetRepository_WithValidId_ReturnsRepository()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var addResult = service.AddRepositoryAsync(testPath).Result;
+        var addResult = await service.AddRepositoryAsync(library.Root);
         Assert.True(addResult.Success);
 
-        var repo = service.GetRepository(addResult.Repository!.Id);
+        var repo = service.GetRepository(SandboxedId(addResult));
 
         Assert.NotNull(repo);
-        Assert.Equal(addResult.Repository.Id, repo.Id);
+        Assert.Equal(addResult.Repository!.Id, repo.Id);
     }
 
     [Fact]
@@ -278,39 +358,31 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void RemoveRepository_RemovesFromList()
+    public async Task RemoveRepository_RemovesFromList()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var addResult = service.AddRepositoryAsync(testPath).Result;
+        var addResult = await service.AddRepositoryAsync(library.Root);
         Assert.True(addResult.Success);
         Assert.Single(service.Repositories);
 
-        service.RemoveRepository(addResult.Repository!.Id, false);
+        service.RemoveRepository(SandboxedId(addResult), false);
 
         Assert.Empty(service.Repositories);
     }
 
     [Fact]
-    public void ClearAllRepositories_RemovesAll()
+    public async Task ClearAllRepositories_RemovesAll()
     {
+        using var msl = TempGitLibrary.MslShaped();
+        using var buildings = TempGitLibrary.BuildingsShaped();
         var service = CreateService();
-        var testPath1 = @"C:\Projects\ModelicaStandardLibrary";
-        var testPath2 = @"C:\Projects\modelica-buildings";
 
-        if (!Directory.Exists(testPath1) || !Directory.Exists(testPath2))
-        {
-            return;
-        }
-
-        service.AddRepositoryAsync(testPath1).Wait();
-        service.AddRepositoryAsync(testPath2).Wait();
+        var first = await service.AddRepositoryAsync(msl.Root);
+        var second = await service.AddRepositoryAsync(buildings.Root);
+        SandboxedId(first);
+        SandboxedId(second);
         Assert.Equal(2, service.Repositories.Count);
 
         service.ClearAllRepositories();
@@ -325,39 +397,30 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_FiresOnRepositoriesChangedEvent()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
 
         var eventFired = false;
         service.OnRepositoriesChanged += () => eventFired = true;
 
-        await service.AddRepositoryAsync(testPath);
+        var addResult = await service.AddRepositoryAsync(library.Root);
 
+        SandboxedId(addResult);
         Assert.True(eventFired);
     }
 
     [Fact]
-    public void RemoveRepository_FiresOnRepositoriesChangedEvent()
+    public async Task RemoveRepository_FiresOnRepositoriesChangedEvent()
     {
+        using var library = TempGitLibrary.MslShaped();
         var service = CreateService();
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var addResult = service.AddRepositoryAsync(testPath).Result;
+        var addResult = await service.AddRepositoryAsync(library.Root);
 
         var eventFired = false;
         service.OnRepositoriesChanged += () => eventFired = true;
 
-        service.RemoveRepository(addResult.Repository!.Id, false);
+        service.RemoveRepository(SandboxedId(addResult), false);
 
         Assert.True(eventFired);
     }
@@ -369,41 +432,31 @@ public class RepositoryServiceTests
     [Fact]
     public async Task LoadLibrariesAsync_SetsRepositoryIdOnLibrary()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
+        using var library = TempGitLibrary.BuildingsShaped();
+        var libraryDataService = new LibraryDataService();
+        var service = CreateService(libraryDataService);
+        var addResult = await service.AddRepositoryAsync(library.Root);
         Assert.True(addResult.Success);
 
-        await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-        // Check that libraries were loaded with the correct repository ID
-        Assert.NotEmpty(addResult.Repository.LibraryIds);
+        var loaded = Assert.Single(libraryDataService.Libraries);
+        Assert.Equal(addResult.Repository!.Id, loaded.RepositoryId);
     }
 
     [Fact]
     public async Task LoadLibrariesAsync_AddsLibraryIdToRepository()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
+        using var library = TempGitLibrary.BuildingsShaped();
+        var libraryDataService = new LibraryDataService();
+        var service = CreateService(libraryDataService);
+        var addResult = await service.AddRepositoryAsync(library.Root);
+        Assert.True(addResult.Success);
 
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
-        await service.LoadLibrariesAsync(addResult.Repository!.Id);
-
-        // Check that library IDs were added
-        Assert.NotEmpty(addResult.Repository.LibraryIds);
+        var libraryId = Assert.Single(addResult.Repository!.LibraryIds);
+        Assert.Equal(Assert.Single(libraryDataService.Libraries).Id, libraryId);
     }
 
     #endregion
@@ -413,28 +466,18 @@ public class RepositoryServiceTests
     [Fact]
     public async Task GetRepositoryForLibrary_ReturnsCorrectRepository()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
+        using var library = TempGitLibrary.BuildingsShaped();
         var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-        await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        var addResult = await service.AddRepositoryAsync(library.Root);
+        Assert.True(addResult.Success);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-        // Get a library ID that was loaded
-        var libraryId = addResult.Repository.LibraryIds.FirstOrDefault();
-        if (libraryId == null)
-        {
-            return; // No libraries loaded, skip test
-        }
+        var libraryId = Assert.Single(addResult.Repository!.LibraryIds);
 
         var foundRepo = service.GetRepositoryForLibrary(libraryId);
 
         Assert.NotNull(foundRepo);
-        Assert.Equal(addResult.Repository.Id, foundRepo.Id);
+        Assert.Equal(addResult.Repository!.Id, foundRepo.Id);
     }
 
     [Fact]
@@ -454,104 +497,17 @@ public class RepositoryServiceTests
     [Fact]
     public async Task AddRepositoryAsync_WithBuildingsRepo_DiscoversBuildings()
     {
-        var testPath = @"C:\Projects\modelica-buildings";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
+        // One library in a subdirectory of the repository, with files beside it that are not one.
+        using var library = TempGitLibrary.BuildingsShaped();
         var service = CreateService();
 
-        var result = await service.AddRepositoryAsync(testPath);
+        var result = await service.AddRepositoryAsync(library.Root);
 
         Assert.True(result.Success);
-        Assert.NotEmpty(result.DiscoveredLibraries);
-
-        var libraryNames = result.DiscoveredLibraries.Select(l => l.LibraryName).ToList();
-        Assert.Contains("Buildings", libraryNames);
-    }
-
-    #endregion
-
-    #region Root-Level Library Tests
-
-    [Fact]
-    public async Task AddRepositoryAsync_WithRootLevelLibrary_DiscoversLibrary()
-    {
-        // This repository has package.mo at the root level (not in a subdirectory)
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-
-        var result = await service.AddRepositoryAsync(testPath);
-
-        Assert.True(result.Success);
-        Assert.NotEmpty(result.DiscoveredLibraries);
-
-        // Should discover the library at root level
-        var rootLibrary = result.DiscoveredLibraries.FirstOrDefault(l => l.RelativePath == "");
-        Assert.NotNull(rootLibrary);
-        Assert.Single(result.DiscoveredLibraries);
-        Assert.Equal("ModelicaEditorTest", rootLibrary.LibraryName);
-    }
-
-    [Fact]
-    public async Task LoadLibrariesAsync_WithRootLevelLibrary_LoadsCorrectly()
-    {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        //var service = CreateService();
-        var libraryDataService = new LibraryDataService();
-        var settingsService = new InMemorySettingsService();
-        var fileMonitoringService = new FileMonitoringService();
-        var service = new RepositoryService(libraryDataService, settingsService, fileMonitoringService);
-
-
-        var result = await service.AddRepositoryAsync(testPath);
-        Assert.True(result.Success);
-
-        // Load the root-level library (empty relative path)
-        var rootLibraryPaths = result.DiscoveredLibraries
-            .Where(l => l.RelativePath == "")
-            .Select(l => l.RelativePath)
-            .ToList();
-
-        await service.LoadLibrariesAsync(result.Repository!.Id, rootLibraryPaths);
-
-        // Check that the library was loaded
-        Assert.NotEmpty(result.Repository.LibraryIds);
-        Assert.Single(libraryDataService.Libraries);
-        Assert.NotEmpty(libraryDataService.CombinedGraph.ModelNodes);
-    }
-
-    [Fact]
-    public void DetectVcsType_WithLocalSvnRepo_ReturnsSvnLocal()
-    {
-        // This directory is an SVN working copy with library at root
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-
-        var (vcsType, isLocal) = service.DetectVcsType(testPath);
-
-        Assert.Equal(RepositoryVcsType.SVN, vcsType);
-        Assert.True(isLocal);
+        SandboxedId(result);
+        var discovered = Assert.Single(result.DiscoveredLibraries);
+        Assert.Equal("Buildings", discovered.LibraryName);
+        Assert.Equal("Buildings", discovered.RelativePath);
     }
 
     #endregion
@@ -588,14 +544,11 @@ public class RepositoryServiceTests
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir);
 
-            // Skip if the path was detected as VCS (shouldn't happen for temp dir)
-            if (addResult.Repository?.VcsType != RepositoryVcsType.Local)
-            {
-                return;
-            }
+            // The temp directory is under no version control, so this is a plain local directory.
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository?.VcsType);
 
             // Act
-            var result = await service.MergeBranchAsync(addResult.Repository!.Id, "branches/test");
+            var result = await service.MergeBranchAsync(SandboxedId(addResult), "branches/test");
 
             // Assert
             Assert.False(result.Success);
@@ -613,105 +566,32 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public async Task MergeBranchAsync_WithValidSvnRepository_AndNonExistentBranch_ReturnsError()
+    public async Task MergeBranchAsync_WithValidGitRepository_MergesTheBranch()
     {
-        // This test requires C:\Projects\ModelicaEditorTest to be an SVN working copy
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
+        // This once merged "main" into the developer's own MSL checkout, without the sandbox guard
+        // (B477). It merges a branch the test made, in a repository the test made.
+        using var library = TempGitLibrary.MslShaped();
+        library.CommitOnBranch("feature", "Modelica/NewModel.mo",
+            "within Modelica;\nmodel NewModel\nend NewModel;\n");
+        Assert.False(File.Exists(Path.Combine(library.Root, "Modelica", "NewModel.mo")));
 
         var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
-        if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.SVN)
-        {
-            return;
-        }
-
-        // Act
-        var result = await service.MergeBranchAsync(addResult.Repository.Id, "branches/non-existent-branch-12345");
-
-        // Assert
-        Assert.False(result.Success);
-        Assert.NotNull(result.ErrorMessage);
-    }
-
-    [Fact]
-    public async Task MergeBranchAsync_WithValidGitRepository_ReturnsResult()
-    {
-        // This test requires C:\Projects\ModelicaStandardLibrary to be a Git repository
-        var testPath = @"C:\Projects\ModelicaStandardLibrary";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
-        if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Git)
-        {
-            return;
-        }
-
-        // Act
-        var result = await service.MergeBranchAsync(addResult.Repository.Id, "main");
-
-        // Assert - Git merge is implemented; merging the current branch returns a valid result
-        Assert.NotNull(result);
-    }
-
-    [Fact]
-    public async Task MergeBranchAsync_FiresOnRepositoriesChangedEvent_OnSuccess()
-    {
-        var testPath = @"C:\Projects\ModelicaEditorTest";
-
-        if (!Directory.Exists(testPath))
-        {
-            return;
-        }
-
-        var service = CreateService();
-        var addResult = await service.AddRepositoryAsync(testPath);
-
-        if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.SVN)
-        {
-            return;
-        }
-
-        // Get available branches
-        var branches = service.GetBranches(addResult.Repository.Id);
-        if (branches.Count < 2)
-        {
-            // Need at least 2 branches to test merge
-            return;
-        }
-
-        // Find a branch that is not the current one
-        var currentBranch = addResult.Repository.CurrentBranch;
-        var otherBranch = branches.FirstOrDefault(b => b.Name != currentBranch && !b.IsCurrent);
-
-        if (otherBranch == null)
-        {
-            return;
-        }
+        var addResult = await service.AddRepositoryAsync(library.Root);
+        Assert.True(addResult.Success);
+        Assert.Equal(RepositoryVcsType.Git, addResult.Repository!.VcsType);
+        var repositoryId = SandboxedId(addResult);
 
         var eventFired = false;
         service.OnRepositoriesChanged += () => eventFired = true;
 
-        // Act - even if merge has no changes, event should fire
-        var result = await service.MergeBranchAsync(addResult.Repository.Id, otherBranch.Name);
+        var result = await service.MergeBranchAsync(repositoryId, "feature");
 
-        // Assert - we can't control whether there are actual changes to merge,
-        // but if the merge completes (with or without changes), event should fire
-        if (result.Success || result.HasConflicts)
-        {
-            Assert.True(eventFired);
-        }
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.HasChanges);
+        Assert.False(result.HasConflicts);
+        Assert.Equal("feature", result.SourceBranch);
+        Assert.True(File.Exists(Path.Combine(library.Root, "Modelica", "NewModel.mo")));
+        Assert.True(eventFired);
     }
 
     [Fact]
@@ -736,396 +616,343 @@ public class RepositoryServiceTests
 
     #region Git Temp Repository Tests
 
-    private static string? CreateTempGitRepo(string packageMoContent = "package TestLib end TestLib;")
+    /// <summary>
+    /// The repository's id, having first proved it really is the throwaway one this test made.
+    ///
+    /// <para>Every test below builds a git repository under <see cref="Path.GetTempPath"/> and then
+    /// asks the service to commit, branch, switch, revert, push or clean inside it. That is only safe
+    /// while the service resolves the path correctly — and on 2026-09-19 it did not. Under mutation
+    /// testing a path in <c>RepositoryService</c> was replaced with <c>""</c>, git fell back to the
+    /// process working directory, which is the MLQT checkout itself, and these tests created two
+    /// branches, committed to them and discarded every uncommitted change in the developer's tree.
+    /// The tests were correct; what was missing was any statement that they had hold of the right
+    /// repository.</para>
+    ///
+    /// <para>So this is not a style assertion. It is the thing that turns "MLQT rewrote my working
+    /// copy" into a failing test. Route <b>every</b> service call that names a repository id through
+    /// it, reads included — a read that has strayed outside the sandbox is the warning that the next
+    /// write will too.</para>
+    ///
+    /// <para>The SVN tests are no exception. They once ran against a fixed working copy the developer
+    /// set up outside the temp directory, and could not call this; since B471 they check out a
+    /// repository the run builds for itself under the temp directory
+    /// (<see cref="RepositoryServiceSvnIntegrationTests"/>), and call it like every other test.</para>
+    /// </summary>
+    internal static string SandboxedId(AddRepositoryResult addResult)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), "RepoServiceTest_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        var repository = addResult.Repository!;
+        var temp = Path.GetTempPath();
 
-        try
-        {
-            // Initialize git repo
-            RunGit(tempDir, "init");
-            RunGit(tempDir, "config user.email test@test.com");
-            RunGit(tempDir, "config user.name TestUser");
+        Assert.True(repository.LocalPath.StartsWith(temp, StringComparison.OrdinalIgnoreCase),
+            $"Refusing to operate on '{repository.LocalPath}': it is outside {temp}.");
+        Assert.True(string.IsNullOrEmpty(repository.VcsRootPath)
+                    || repository.VcsRootPath.StartsWith(temp, StringComparison.OrdinalIgnoreCase),
+            $"Refusing to operate on VCS root '{repository.VcsRootPath}': it is outside {temp}.");
 
-            // Create package.mo and commit
-            File.WriteAllText(Path.Combine(tempDir, "package.mo"), packageMoContent);
-            RunGit(tempDir, "add .");
-            RunGit(tempDir, "commit -m \"Initial commit\"");
-
-            return tempDir;
-        }
-        catch
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-            return null;
-        }
+        return repository.Id;
     }
 
-    private static void RunGit(string workDir, string args)
+    [Fact]
+    public void SandboxedId_RefusesARepositoryOutsideTheTempDirectory()
     {
-        var psi = new System.Diagnostics.ProcessStartInfo("git", args)
+        // The positive control for the guard above. Without this the guard is itself an assertion
+        // nobody has seen fail, which is the exact shape it exists to catch: it would pass happily if
+        // StartsWith were inverted, or if Repository were never null and the path never checked.
+        var strayed = new AddRepositoryResult
         {
-            WorkingDirectory = workDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            Success = true,
+            Repository = new DataTypes.Repository
+            {
+                LocalPath = AppContext.BaseDirectory,      // the build output, not Path.GetTempPath()
+                VcsRootPath = AppContext.BaseDirectory,
+            },
         };
-        using var process = System.Diagnostics.Process.Start(psi)!;
-        process.WaitForExit(10000);
-        if (process.ExitCode != 0)
-            throw new Exception($"git {args} failed: {process.StandardError.ReadToEnd()}");
+
+        var ex = Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => SandboxedId(strayed));
+        Assert.Contains("Refusing to operate on", ex.Message);
     }
 
     [Fact]
     public async Task AddRepositoryAsync_WithLocalGitTempRepo_Succeeds()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return; // git not available, skip
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var result = await service.AddRepositoryAsync(tempDir);
+        var service = CreateService();
+        var result = await service.AddRepositoryAsync(tempDir);
 
-            Assert.True(result.Success);
-            Assert.NotNull(result.Repository);
-            Assert.Equal(RepositoryVcsType.Git, result.Repository.VcsType);
-            Assert.Single(service.Repositories);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.True(result.Success);
+        Assert.NotNull(result.Repository);
+        Assert.Equal(RepositoryVcsType.Git, result.Repository.VcsType);
+        Assert.Single(service.Repositories);
+        SandboxedId(result);
     }
 
     [Fact]
     public async Task AddRepositoryAsync_WithGitRepo_DiscoversLibrary()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var result = await service.AddRepositoryAsync(tempDir);
+        var service = CreateService();
+        var result = await service.AddRepositoryAsync(tempDir);
 
-            Assert.True(result.Success);
-            Assert.NotEmpty(result.DiscoveredLibraries);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.True(result.Success);
+        SandboxedId(result);
+        Assert.Equal("TestLib", Assert.Single(result.DiscoveredLibraries).LibraryName);
     }
 
     [Fact]
     public async Task GetBranches_WithGitRepo_ReturnsBranchList()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var branches = service.GetBranches(addResult.Repository!.Id);
+        var branches = service.GetBranches(SandboxedId(addResult));
 
-            Assert.NotNull(branches);
-            Assert.NotEmpty(branches);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotNull(branches);
+        Assert.NotEmpty(branches);
     }
 
     [Fact]
     public async Task GetLogEntries_WithGitRepo_ReturnsLogList()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
+        var logEntries = service.GetLogEntries(SandboxedId(addResult));
 
-            Assert.NotNull(logEntries);
-            Assert.NotEmpty(logEntries); // Should have at least our initial commit
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotNull(logEntries);
+        Assert.NotEmpty(logEntries); // Should have at least our initial commit
     }
 
     [Fact]
     public async Task GetWorkingCopyChanges_WithGitRepo_ReturnsChangesList()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var changes = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+        var changes = service.GetWorkingCopyChanges(SandboxedId(addResult));
 
-            Assert.NotNull(changes);
-            // May be empty (clean repo) or have changes
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotNull(changes);
+        // May be empty (clean repo) or have changes
     }
 
     [Fact]
     public async Task StartMonitoringAllRepositories_WithGitRepo_DoesNotThrow()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Should not throw
-            service.StartMonitoringAllRepositories();
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        // Should not throw
+        service.StartMonitoringAllRepositories();
     }
 
     [Fact]
     public async Task ClearAllRepositories_WithGitRepo_RemovesAll()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
+        SandboxedId(addResult);
+        Assert.Single(service.Repositories);
 
-            service.ClearAllRepositories();
+        service.ClearAllRepositories();
 
-            Assert.Empty(service.Repositories);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.Empty(service.Repositories);
     }
 
     [Fact]
     public async Task RemoveRepository_WithGitRepo_RemovesSuccessfully()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            service.RemoveRepository(addResult.Repository!.Id, unloadLibraries: false);
+        service.RemoveRepository(SandboxedId(addResult), unloadLibraries: false);
 
-            Assert.Empty(service.Repositories);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.Empty(service.Repositories);
     }
 
     [Fact]
     public async Task DiscoverLibrariesAsync_WithGitRepo_ReturnsLibraries()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var libraries = await service.DiscoverLibrariesAsync(addResult.Repository!.Id);
+        var libraries = await service.DiscoverLibrariesAsync(SandboxedId(addResult));
 
-            Assert.NotEmpty(libraries);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotEmpty(libraries);
+    }
+
+    /// <summary>
+    /// A Windows-1252 file read out of history comes back as its characters, not as replacement
+    /// characters (B264).
+    /// </summary>
+    /// <remarks>
+    /// The VCS layer returns the bytes that were stored; this is the boundary where MLQT decides
+    /// what they mean, through the same funnel a file on disk goes through. Before it, the diff of
+    /// an accented library against itself was mojibake on both sides.
+    /// </remarks>
+    [Fact]
+    public async Task GetFileContentAtRevision_WithAWindows1252File_KeepsItsCharacters()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var latin1 = System.Text.CodePagesEncodingProvider.Instance.GetEncoding(1252)!;
+        const string source = "package Café \"Température\" end Café;";
+
+        using var library = TempGitLibrary.WithPackage("placeholder");
+        var tempDir = library.Root;
+
+        File.WriteAllBytes(Path.Combine(tempDir, "package.mo"), latin1.GetBytes(source));
+        library.CommitAll("accented");
+
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
+
+        var content = service.GetFileContentAtRevision(SandboxedId(addResult), "package.mo", "HEAD");
+
+        Assert.Equal(source, content);
+        Assert.DoesNotContain('�', content!);
     }
 
     [Fact]
     public async Task GetFileContentAtRevision_WithGitRepo_ReturnsContent()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var content = service.GetFileContentAtRevision(addResult.Repository!.Id, "package.mo", "HEAD");
+        var content = service.GetFileContentAtRevision(SandboxedId(addResult), "package.mo", "HEAD");
 
-            Assert.NotNull(content);
-            Assert.Contains("TestLib", content);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotNull(content);
+        Assert.Contains("TestLib", content);
     }
 
     [Fact]
     public async Task SaveAndLoadRepositorySettings_WithGitRepo_RoundTrips()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var settingsService = new InMemorySettingsService();
-            var service1 = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
-            var addResult = await service1.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var settingsService = new InMemorySettingsService();
+        var service1 = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        var addResult = await service1.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            await service1.SaveRepositorySettingsAsync();
+        await service1.SaveRepositorySettingsAsync();
 
-            // Create new service with same settings store and load
-            var service2 = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
-            await service2.LoadRepositorySettingsAsync();
+        // Create new service with same settings store and load
+        var service2 = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        await service2.LoadRepositorySettingsAsync();
 
-            // Should have restored the repository
-            Assert.Single(service2.Repositories);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        // Should have restored the repository
+        Assert.Single(service2.Repositories);
     }
 
     [Fact]
     public async Task GetChangedFiles_WithGitRepo_ReturnsChangesList()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Get the HEAD revision
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
-            if (!logEntries.Any()) return;
+        // Get the HEAD revision
+        var logEntries = service.GetLogEntries(SandboxedId(addResult));
+        Assert.NotEmpty(logEntries);
 
-            var headRevision = logEntries.First().Revision;
-            var changedFiles = service.GetChangedFiles(addResult.Repository!.Id, headRevision);
+        var headRevision = logEntries.First().Revision;
+        var changedFiles = service.GetChangedFiles(SandboxedId(addResult), headRevision);
 
-            Assert.NotNull(changedFiles);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotNull(changedFiles);
     }
 
     [Fact]
     public async Task RefreshRepositoryAsync_WithGitRepo_DoesNotThrow()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Should not throw
-            await service.RefreshRepositoryAsync(addResult.Repository!.Id);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        // Should not throw
+        await service.RefreshRepositoryAsync(SandboxedId(addResult));
     }
 
     [Fact]
     public async Task GetRepositoryForLibrary_WithGitRepoAndLoadedLibrary_ReturnsRepo()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var libraryDataService = new LibraryDataService();
-            var service = new RepositoryService(libraryDataService, new InMemorySettingsService(), new FileMonitoringService());
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || !addResult.DiscoveredLibraries.Any()) return;
+        var libraryDataService = new LibraryDataService();
+        var service = new RepositoryService(libraryDataService, new InMemorySettingsService(), new FileMonitoringService());
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
+        Assert.NotEmpty(addResult.DiscoveredLibraries);
 
-            // Load a library
-            await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        // Load a library
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-            var libraryId = addResult.Repository.LibraryIds.FirstOrDefault();
-            if (libraryId == null) return;
+        var libraryId = addResult.Repository!.LibraryIds.FirstOrDefault();
+        Assert.NotNull(libraryId);
 
-            var foundRepo = service.GetRepositoryForLibrary(libraryId);
+        var foundRepo = service.GetRepositoryForLibrary(libraryId);
 
-            Assert.NotNull(foundRepo);
-            Assert.Equal(addResult.Repository.Id, foundRepo.Id);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        Assert.NotNull(foundRepo);
+        Assert.Equal(addResult.Repository!.Id, foundRepo.Id);
     }
 
     [Fact]
     public async Task IsBranchPushedAsync_WithGitRepo_ReturnsBool()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Should not throw (no remote means not pushed)
-            var result = await service.IsBranchPushedAsync(addResult.Repository!.Id);
+        // Should not throw (no remote means not pushed)
+        var result = await service.IsBranchPushedAsync(SandboxedId(addResult));
 
-            // Local-only repo with no remote: result depends on implementation
-            Assert.IsType<bool>(result);
-        }
-        finally
-        {
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
+        // Local-only repo with no remote: result depends on implementation
+        Assert.IsType<bool>(result);
     }
 
     [Fact]
@@ -1341,8 +1168,7 @@ public class RepositoryServiceTests
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "LocalRepoVcsTest_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
-        File.WriteAllText(Path.Combine(tempDir, "package.mo"), packageMoContent);
-        return tempDir;
+        File.WriteAllText(Path.Combine(tempDir, "package.mo"), packageMoContent);        return tempDir;
     }
 
     [Fact]
@@ -1353,9 +1179,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.CommitAsync(addResult.Repository!.Id, "test commit");
+            var result = await service.CommitAsync(SandboxedId(addResult), "test commit");
 
             Assert.False(result.Success);
             Assert.NotNull(result.ErrorMessage);
@@ -1371,9 +1198,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.UpdateRepositoryAsync(addResult.Repository!.Id);
+            var result = await service.UpdateRepositoryAsync(SandboxedId(addResult));
 
             Assert.True(result.Success);
             Assert.False(result.HasChanges);
@@ -1389,9 +1217,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.RevertFilesAsync(addResult.Repository!.Id, new[] { "package.mo" });
+            var result = await service.RevertFilesAsync(SandboxedId(addResult), new[] { "package.mo" });
 
             Assert.False(result.Success);
         }
@@ -1406,9 +1235,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var changes = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            var changes = service.GetWorkingCopyChanges(SandboxedId(addResult));
 
             Assert.Empty(changes);
         }
@@ -1423,9 +1253,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var branches = service.GetBranches(addResult.Repository!.Id);
+            var branches = service.GetBranches(SandboxedId(addResult));
 
             Assert.Empty(branches);
         }
@@ -1440,9 +1271,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.SwitchBranchAsync(addResult.Repository!.Id, "main");
+            var result = await service.SwitchBranchAsync(SandboxedId(addResult), "main");
 
             Assert.False(result.Success);
         }
@@ -1457,9 +1289,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.CreateBranchAsync(addResult.Repository!.Id, "feature-branch");
+            var result = await service.CreateBranchAsync(SandboxedId(addResult), "feature-branch");
 
             Assert.False(result.Success);
         }
@@ -1474,9 +1307,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.PushAsync(addResult.Repository!.Id);
+            var result = await service.PushAsync(SandboxedId(addResult));
 
             Assert.False(result.Success);
         }
@@ -1491,9 +1325,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.CleanWorkspaceAsync(addResult.Repository!.Id);
+            var result = await service.CleanWorkspaceAsync(SandboxedId(addResult));
 
             Assert.False(result.Success);
         }
@@ -1508,9 +1343,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.ForcePushAsync(addResult.Repository!.Id);
+            var result = await service.ForcePushAsync(SandboxedId(addResult));
 
             Assert.False(result.Success);
         }
@@ -1525,9 +1361,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.IsBranchPushedAsync(addResult.Repository!.Id);
+            var result = await service.IsBranchPushedAsync(SandboxedId(addResult));
 
             Assert.False(result);
         }
@@ -1542,9 +1379,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.RebaseAsync(addResult.Repository!.Id, "main");
+            var result = await service.RebaseAsync(SandboxedId(addResult), "main");
 
             Assert.False(result.Success);
             Assert.NotNull(result.ErrorMessage);
@@ -1561,9 +1399,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var result = await service.CheckoutRevisionAsync(addResult.Repository!.Id, "HEAD");
+            var result = await service.CheckoutRevisionAsync(SandboxedId(addResult), "HEAD");
 
             Assert.False(result.Success);
         }
@@ -1578,10 +1417,11 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
             // Local repos read the current file directly (no revision needed)
-            var content = service.GetFileContentAtRevision(addResult.Repository!.Id, "package.mo", null);
+            var content = service.GetFileContentAtRevision(SandboxedId(addResult), "package.mo", null);
 
             Assert.NotNull(content);
             Assert.Contains("LocalLib", content);
@@ -1597,9 +1437,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
+            var logEntries = service.GetLogEntries(SandboxedId(addResult));
 
             Assert.Empty(logEntries);
         }
@@ -1614,9 +1455,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var changedFiles = service.GetChangedFiles(addResult.Repository!.Id, "HEAD");
+            var changedFiles = service.GetChangedFiles(SandboxedId(addResult), "HEAD");
 
             Assert.Empty(changedFiles);
         }
@@ -1631,9 +1473,10 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
+            Assert.Equal(RepositoryVcsType.Local, addResult.Repository!.VcsType);
 
-            var url = await service.GetPullRequestUrlAsync(addResult.Repository!.Id);
+            var url = await service.GetPullRequestUrlAsync(SandboxedId(addResult));
 
             Assert.Null(url);
         }
@@ -1643,238 +1486,193 @@ public class RepositoryServiceTests
     [Fact]
     public async Task ContinueRebaseAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // ContinueRebase will fail (no rebase in progress) but covers the code path
-            var result = await service.ContinueRebaseAsync(addResult.Repository!.Id);
+        // ContinueRebase will fail (no rebase in progress) but covers the code path
+        var result = await service.ContinueRebaseAsync(SandboxedId(addResult));
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     [Fact]
     public async Task AbortRebaseAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // AbortRebase will fail (no rebase in progress) but covers the code path
-            var result = await service.AbortRebaseAsync(addResult.Repository!.Id);
+        // AbortRebase will fail (no rebase in progress) but covers the code path
+        var result = await service.AbortRebaseAsync(SandboxedId(addResult));
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     [Fact]
     public async Task CommitAsync_WithGitRepo_CommitsSuccessfully()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Stage a new file
-            File.WriteAllText(Path.Combine(tempDir, "NewFile.mo"), "model NewModel end NewModel;");
-            RunGit(tempDir, "add NewFile.mo");
+        // Stage a new file
+        library.WriteAndStage("NewFile.mo", "model NewModel end NewModel;");
 
-            var result = await service.CommitAsync(addResult.Repository!.Id, "Add new file");
+        var result = await service.CommitAsync(SandboxedId(addResult), "Add new file");
 
-            Assert.True(result.Success);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.True(result.Success);
     }
 
     [Fact]
     public async Task CreateBranchAsync_WithGitRepo_CreatesBranch()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var result = await service.CreateBranchAsync(addResult.Repository!.Id, "feature-branch", switchToBranch: false);
+        var result = await service.CreateBranchAsync(SandboxedId(addResult), "feature-branch", switchToBranch: false);
 
-            Assert.True(result.Success);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.True(result.Success);
     }
 
     [Fact]
     public async Task CreateBranchAsync_WithGitRepo_AndSwitchToBranch_CreatesBranchAndSwitches()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Create and switch to branch (switchToBranch=true covers lines 872-875)
-            var result = await service.CreateBranchAsync(addResult.Repository!.Id, "new-feature", switchToBranch: true);
+        // Create and switch to branch (switchToBranch=true covers lines 872-875)
+        var result = await service.CreateBranchAsync(SandboxedId(addResult), "new-feature", switchToBranch: true);
 
-            Assert.True(result.Success);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.True(result.Success);
     }
 
     [Fact]
     public async Task SwitchBranchAsync_WithGitRepo_SwitchesBranch()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Create a second branch first (without switching)
-            RunGit(tempDir, "branch dev-branch");
+        // Create a second branch first (without switching)
+        library.CreateBranch("dev-branch");
 
-            var result = await service.SwitchBranchAsync(addResult.Repository!.Id, "dev-branch");
+        var result = await service.SwitchBranchAsync(SandboxedId(addResult), "dev-branch");
 
-            Assert.True(result.Success);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.True(result.Success);
     }
 
     [Fact]
     public async Task GetConflictVersionsAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Covers the non-null, non-local path through GetConflictVersionsAsync
-            var (ours, theirs) = await service.GetConflictVersionsAsync(addResult.Repository!.Id, "package.mo");
+        // Covers the non-null, non-local path through GetConflictVersionsAsync
+        var (ours, theirs) = await service.GetConflictVersionsAsync(SandboxedId(addResult), "package.mo");
 
-            // Clean repo → no conflict versions, both null
-            Assert.Null(ours);
-            Assert.Null(theirs);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Clean repo → no conflict versions, both null
+        Assert.Null(ours);
+        Assert.Null(theirs);
     }
 
     [Fact]
     public async Task GetPullRequestUrlAsync_WithGitRepo_ReturnsNullOrUrl()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Covers the non-null, non-local path through GetPullRequestUrlAsync
-            // Local git repo without remote → null
-            var url = await service.GetPullRequestUrlAsync(addResult.Repository!.Id);
+        // Covers the non-null, non-local path through GetPullRequestUrlAsync
+        // Local git repo without remote → null
+        var url = await service.GetPullRequestUrlAsync(SandboxedId(addResult));
 
-            // No remote configured, so null expected
-            Assert.Null(url);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // No remote configured, so null expected
+        Assert.Null(url);
     }
 
     [Fact]
     public async Task ResolveConflictAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Covers the non-null Git path through ResolveConflictAsync
-            // No conflict in clean repo, so it will return false/error but code is covered
-            var result = await service.ResolveConflictAsync(addResult.Repository!.Id, "package.mo", ConflictResolutionChoice.KeepMine);
+        // Covers the non-null Git path through ResolveConflictAsync
+        // No conflict in clean repo, so it will return false/error but code is covered
+        var result = await service.ResolveConflictAsync(SandboxedId(addResult), "package.mo", ConflictResolutionChoice.KeepMine);
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     [Fact]
     public async Task RebaseAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Rebase onto current branch (main/master → itself, may succeed trivially)
-            var branches = service.GetBranches(addResult.Repository!.Id);
-            var currentBranch = branches.FirstOrDefault(b => b.IsCurrent)?.Name ?? "main";
+        // Rebase onto current branch (main/master → itself, may succeed trivially)
+        var branches = service.GetBranches(SandboxedId(addResult));
+        var currentBranch = branches.FirstOrDefault(b => b.IsCurrent)?.Name ?? "main";
 
-            var result = await service.RebaseAsync(addResult.Repository!.Id, currentBranch);
+        var result = await service.RebaseAsync(SandboxedId(addResult), currentBranch);
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     [Fact]
     public async Task RemoveRepository_WithLibraries_UnloadsLibraries()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var libraryDataService = new LibraryDataService();
-            var service = new RepositoryService(libraryDataService, new InMemorySettingsService(), new FileMonitoringService());
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var libraryDataService = new LibraryDataService();
+        var service = new RepositoryService(libraryDataService, new InMemorySettingsService(), new FileMonitoringService());
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            await service.LoadLibrariesAsync(addResult.Repository!.Id);
-            Assert.NotEmpty(libraryDataService.Libraries);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
+        Assert.NotEmpty(libraryDataService.Libraries);
 
-            // Remove with unloadLibraries=true
-            service.RemoveRepository(addResult.Repository!.Id, unloadLibraries: true);
+        // Remove with unloadLibraries=true
+        service.RemoveRepository(SandboxedId(addResult), unloadLibraries: true);
 
-            Assert.Empty(service.Repositories);
-            Assert.Empty(libraryDataService.Libraries);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.Empty(service.Repositories);
+        Assert.Empty(libraryDataService.Libraries);
     }
 
     [Fact]
@@ -1890,32 +1688,28 @@ public class RepositoryServiceTests
     [Fact]
     public async Task LoadRepositorySettingsAsync_WithAutoLoadFalse_SkipsRepo()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
+        var settingsService = new InMemorySettingsService();
+
+        // Save a repo with AutoLoad=false
+        var settings = new RepositorySettingsCollection();
+        settings.Repositories.Add(new RepositorySettingsEntry
         {
-            var settingsService = new InMemorySettingsService();
+            Id = "test-repo-id",
+            Name = "TestRepo",
+            LocalPath = tempDir,
+            VcsType = "Git",
+            AutoLoad = false
+        });
+        await settingsService.SetAsync("Repositories", settings);
 
-            // Save a repo with AutoLoad=false
-            var settings = new RepositorySettingsCollection();
-            settings.Repositories.Add(new RepositorySettingsEntry
-            {
-                Id = "test-repo-id",
-                Name = "TestRepo",
-                LocalPath = tempDir,
-                VcsType = "Git",
-                AutoLoad = false
-            });
-            await settingsService.SetAsync("Repositories", settings);
+        var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
 
-            var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
-            await service.LoadRepositorySettingsAsync();
-
-            // Repo with AutoLoad=false should be skipped
-            Assert.Empty(service.Repositories);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Repo with AutoLoad=false should be skipped
+        Assert.Empty(service.Repositories);
     }
 
     [Fact]
@@ -1955,7 +1749,7 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
 
             Assert.NotEmpty(addResult.DiscoveredLibraries);
             Assert.Contains(addResult.DiscoveredLibraries, l => l.LibraryName == "MyLibrary");
@@ -1975,7 +1769,7 @@ public class RepositoryServiceTests
         {
             var service = CreateService();
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+            Assert.True(addResult.Success, addResult.ErrorMessage);
 
             Assert.NotEmpty(addResult.DiscoveredLibraries);
         }
@@ -1985,26 +1779,22 @@ public class RepositoryServiceTests
     [Fact]
     public async Task OnRepositoryLoadStateChanged_FiredDuringLoadLibraries()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var stateChanges = new List<(string repoId, bool isLoading)>();
-            service.OnRepositoryLoadStateChanged += (repoId, isLoading) =>
-                stateChanges.Add((repoId, isLoading));
+        var stateChanges = new List<(string repoId, bool isLoading)>();
+        service.OnRepositoryLoadStateChanged += (repoId, isLoading) =>
+            stateChanges.Add((repoId, isLoading));
 
-            await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-            // Should have fired started (true) and completed (false)
-            Assert.Contains(stateChanges, s => s.isLoading);
-            Assert.Contains(stateChanges, s => !s.isLoading);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Should have fired started (true) and completed (false)
+        Assert.Contains(stateChanges, s => s.isLoading);
+        Assert.Contains(stateChanges, s => !s.isLoading);
     }
 
     #endregion
@@ -2032,11 +1822,11 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void CreateProject_AddsProjectAndReturnsIt()
+    public async Task CreateProject_AddsProjectAndReturnsIt()
     {
         var service = CreateService();
 
-        var project = service.CreateProject("TestProject");
+        var project = await service.CreateProjectAsync("TestProject");
 
         Assert.NotNull(project);
         Assert.Equal("TestProject", project.Name);
@@ -2044,11 +1834,11 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void CreateProject_ProjectAppearsInGetProjects()
+    public async Task CreateProject_ProjectAppearsInGetProjects()
     {
         var service = CreateService();
 
-        service.CreateProject("Project1");
+        await service.CreateProjectAsync("Project1");
         var projects = service.GetProjects();
 
         Assert.Single(projects);
@@ -2056,24 +1846,24 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void CreateProject_MultipleProjects_AllAppear()
+    public async Task CreateProject_MultipleProjects_AllAppear()
     {
         var service = CreateService();
 
-        service.CreateProject("Project1");
-        service.CreateProject("Project2");
+        await service.CreateProjectAsync("Project1");
+        await service.CreateProjectAsync("Project2");
         var projects = service.GetProjects();
 
         Assert.Equal(2, projects.Count);
     }
 
     [Fact]
-    public void RenameProject_ChangesProjectName()
+    public async Task RenameProject_ChangesProjectName()
     {
         var service = CreateService();
-        var project = service.CreateProject("Original");
+        var project = await service.CreateProjectAsync("Original");
 
-        service.RenameProject(project.Id, "Renamed");
+        await service.RenameProjectAsync(project.Id, "Renamed");
 
         var projects = service.GetProjects();
         Assert.Single(projects);
@@ -2081,50 +1871,534 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void RenameProject_WithInvalidId_DoesNotThrow()
+    public async Task RenameProject_WithInvalidId_DoesNotThrow()
     {
         var service = CreateService();
 
         // Should not throw
-        service.RenameProject("non-existent-id", "NewName");
+        await service.RenameProjectAsync("non-existent-id", "NewName");
     }
 
     [Fact]
-    public void DeleteProject_WithSingleProject_ReturnsFalse()
+    public async Task DeleteProjectAsync_WithSingleProject_ReturnsFalse()
     {
         var service = CreateService();
-        var project = service.CreateProject("OnlyProject");
+        var project = await service.CreateProjectAsync("OnlyProject");
 
-        var result = service.DeleteProject(project.Id);
+        var result = await service.DeleteProjectAsync(project.Id);
 
         Assert.False(result);
         Assert.Single(service.GetProjects());
     }
 
     [Fact]
-    public void DeleteProject_WithMultipleProjects_RemovesProject()
+    public async Task DeleteProjectAsync_WithMultipleProjects_RemovesProject()
     {
         var service = CreateService();
-        var project1 = service.CreateProject("Project1");
-        var project2 = service.CreateProject("Project2");
+        var project1 = await service.CreateProjectAsync("Project1");
+        var project2 = await service.CreateProjectAsync("Project2");
 
-        var result = service.DeleteProject(project1.Id);
+        var result = await service.DeleteProjectAsync(project1.Id);
 
         Assert.True(result);
         Assert.Single(service.GetProjects());
         Assert.Equal("Project2", service.GetProjects()[0].Name);
     }
 
+    /// <summary>
+    /// A settings service over <see cref="InMemorySettingsService"/> whose next write can be held
+    /// until the test releases it, so the order two saves land in is the test's choice (B442).
+    /// </summary>
+    private sealed class HeldSettings
+    {
+        private readonly InMemorySettingsService _store = new();
+        private TaskCompletionSource? _gate;
+
+        public Mock<ISettingsService> Mock { get; } = new();
+        public Exception? FailWrites { get; set; }
+
+        public HeldSettings()
+        {
+            Mock.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<RepositorySettingsCollection>()))
+                .Returns((string key, RepositorySettingsCollection fallback) => _store.GetAsync(key, fallback));
+            Mock.Setup(s => s.SetAsync(It.IsAny<string>(), It.IsAny<RepositorySettingsCollection>()))
+                .Returns(async (string key, RepositorySettingsCollection value) =>
+                {
+                    if (FailWrites is not null)
+                        throw FailWrites;
+                    // Serialised when the write is asked for, as a real store does, and stored when released.
+                    var snapshot = System.Text.Json.JsonSerializer.Serialize(value);
+                    var gate = _gate;
+                    var landed = _landed;
+                    _gate = null;
+                    if (gate is not null)
+                        await gate.Task;
+                    await _store.SetAsync(key, System.Text.Json.JsonSerializer.Deserialize<RepositorySettingsCollection>(snapshot)!);
+                    if (gate is not null)
+                        landed.TrySetResult();
+                });
+        }
+
+        private TaskCompletionSource _landed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes once the write <see cref="HoldNextWrite"/> held has been stored (B447).</summary>
+        public Task HeldWriteLanded => _landed.Task;
+
+        /// <summary>Holds the next write; completing the returned source lets it land.</summary>
+        public TaskCompletionSource HoldNextWrite()
+        {
+            _landed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public Task<RepositorySettingsCollection> SavedAsync() =>
+            _store.GetAsync("Repositories", new RepositorySettingsCollection());
+    }
+
     [Fact]
-    public void DeleteProject_WithInvalidId_ReturnsFalse()
+    public async Task DeleteProjectAsync_TheActiveProject_IsRefused_SoNoSavedActiveIdNamesADeletedProject()
+    {
+        // B442: deleting the active project removed it and started an unawaited save while the
+        // active id still named it; the caller's switch to another project then saved twice, and the
+        // first save could land after both - writing the deleted project's id back as the active one
+        // (confirmed before the fix by holding that save until the switch had finished). And had the
+        // switch thrown, the service was left with an active id naming no project. The panel only
+        // ever offered an inactive project for deletion, so the service now refuses the active one.
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var active = service.GetActiveProject()!;
+        var other = await service.CreateProjectAsync("Other");
+        await service.SaveRepositorySettingsAsync();
+
+        Assert.False(await service.DeleteProjectAsync(active.Id));
+
+        Assert.Equal(active.Id, service.GetActiveProject()?.Id);
+        Assert.Equal(2, service.GetProjects().Count);
+        Assert.Equal(active.Id, (await settings.SavedAsync()).ActiveProjectId);
+
+        // ...and switching away first, the way to get rid of it, leaves every saved id valid.
+        await service.SwitchProjectAsync(other.Id);
+        Assert.True(await service.DeleteProjectAsync(active.Id));
+        var saved = await settings.SavedAsync();
+        Assert.Equal(other.Id, saved.ActiveProjectId);
+        Assert.Equal(other.Id, Assert.Single(saved.Projects).Id);
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_ReturnsOnlyOnceItsSaveHasLanded()
+    {
+        // B442: the save was fire-and-forget, so it could be overtaken by a later save and then
+        // overwrite it. Holding the delete's save must hold the delete.
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var other = await service.CreateProjectAsync("Other");
+        await service.SaveRepositorySettingsAsync();
+
+        var release = settings.HoldNextWrite();
+        var deleting = service.DeleteProjectAsync(other.Id);
+
+        Assert.False(deleting.IsCompleted);
+        Assert.Contains((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+
+        release.SetResult();
+        Assert.True(await deleting);
+        Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_WhenTheSaveFails_KeepsTheProjectAndThrows()
+    {
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var active = service.GetActiveProject()!;
+        var other = await service.CreateProjectAsync("Other");
+        var third = await service.CreateProjectAsync("Third");
+        await service.SaveRepositorySettingsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        await Assert.ThrowsAsync<IOException>(() => service.DeleteProjectAsync(other.Id));
+
+        // Back where it was, so memory and the file still agree and the next save is not a delete.
+        Assert.Equal([active.Id, other.Id, third.Id], service.GetProjects().Select(p => p.Id));
+        Assert.Equal(active.Id, service.GetActiveProject()?.Id);
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_WithInvalidId_ReturnsFalse()
     {
         var service = CreateService();
-        service.CreateProject("Project1");
-        service.CreateProject("Project2");
+        await service.CreateProjectAsync("Project1");
+        await service.CreateProjectAsync("Project2");
 
-        var result = service.DeleteProject("non-existent-id");
+        var result = await service.DeleteProjectAsync("non-existent-id");
 
         Assert.False(result);
+        Assert.Equal(2, service.GetProjects().Count);
+    }
+
+    #endregion
+
+    #region Save ordering (B447)
+
+    private static async Task<(HeldSettings Settings, RepositoryService Service, ProjectProfile Active, ProjectProfile Other)> TwoSavedProjectsAsync()
+    {
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var active = service.GetActiveProject()!;
+        var other = await service.CreateProjectAsync("Other");
+        await service.SaveRepositorySettingsAsync();
+        return (settings, service, active, other);
+    }
+
+    [Fact]
+    public async Task CreatingAProject_ThenSwitchingToIt_SavesTheNewProjectAsTheActiveOne()
+    {
+        // B447: the panel creates a project and switches to it. The create's save was not awaited
+        // and captured the old active id, so held until the switch had saved it landed last and put
+        // the previous project back as the active one (confirmed before the fix, as was each of the
+        // next two).
+        var (settings, service, active, _) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        var creating = service.CreateProjectAsync("New");
+        var switching = Task.Run(async () => await service.SwitchProjectAsync((await creating).Id));
+        await Task.WhenAny(switching, Task.Delay(200));
+        release.SetResult();
+        await switching;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        var created = Assert.Single(saved.Projects, p => p.Name == "New");
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+        Assert.NotEqual(active.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task RenamingAProject_ThenSwitching_SavesTheSwitchedToProjectAsTheActiveOne()
+    {
+        // B447: a rename's unawaited save captured the active id at the time; a switch that followed
+        // saved the new one, and the rename's save landing after it restored the old one.
+        var (settings, service, active, other) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        var renaming = service.RenameProjectAsync(active.Id, "Renamed");
+        var switching = Task.Run(() => service.SwitchProjectAsync(other.Id));
+        await Task.WhenAny(switching, Task.Delay(200));
+        release.SetResult();
+        await renaming;
+        await switching;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        Assert.Equal(other.Id, saved.ActiveProjectId);
+        Assert.Equal("Renamed", Assert.Single(saved.Projects, p => p.Id == active.Id).Name);
+    }
+
+    [Fact]
+    public async Task ASaveStartedWithoutWaiting_NeverLandsAfterALaterSave()
+    {
+        // B447: ClearAllRepositories and RemoveRepository are synchronous and still start a save they
+        // do not await, so the saves themselves are serialised: a later save waits for an earlier one
+        // and takes its contents once it has, so whichever lands last is the newest.
+        var (settings, service, _, other) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        service.ClearAllRepositories();
+        var deleting = Task.Run(() => service.DeleteProjectAsync(other.Id));
+        await Task.WhenAny(deleting, Task.Delay(200));
+        release.SetResult();
+        Assert.True(await deleting);
+        await settings.HeldWriteLanded;
+
+        Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+    }
+
+    [Fact]
+    public async Task CreateProjectAsync_And_RenameProjectAsync_ReturnOnlyOnceTheirSaveHasLanded()
+    {
+        var (settings, service, active, _) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        var creating = service.CreateProjectAsync("New");
+        Assert.False(creating.IsCompleted);
+        release.SetResult();
+        var created = await creating;
+        Assert.Contains((await settings.SavedAsync()).Projects, p => p.Id == created.Id);
+
+        release = settings.HoldNextWrite();
+        var renaming = service.RenameProjectAsync(active.Id, "Renamed");
+        Assert.False(renaming.IsCompleted);
+        release.SetResult();
+        await renaming;
+        Assert.Equal("Renamed", Assert.Single((await settings.SavedAsync()).Projects, p => p.Id == active.Id).Name);
+    }
+
+    [Fact]
+    public async Task CreateProjectAsync_WhenTheSaveFails_KeepsNoProjectAndThrows()
+    {
+        var (settings, service, active, other) = await TwoSavedProjectsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        await Assert.ThrowsAsync<IOException>(() => service.CreateProjectAsync("New"));
+
+        Assert.Equal([active.Id, other.Id], service.GetProjects().Select(p => p.Id));
+    }
+
+    [Fact]
+    public async Task RenameProjectAsync_WhenTheSaveFails_KeepsTheOldNameAndThrows()
+    {
+        var (settings, service, _, other) = await TwoSavedProjectsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        await Assert.ThrowsAsync<IOException>(() => service.RenameProjectAsync(other.Id, "Renamed"));
+
+        Assert.Equal("Other", service.GetProjects().Single(p => p.Id == other.Id).Name);
+    }
+
+    [Fact]
+    public async Task ASaveNobodyWaitsFor_ThatFails_DoesNotStopTheNextSave()
+    {
+        // The gate is released when a save throws, so one failed background save (ClearAllRepositories
+        // is logged, not thrown) cannot leave every later save waiting for ever.
+        var (settings, service, _, other) = await TwoSavedProjectsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        service.ClearAllRepositories();
+        settings.FailWrites = null;
+
+        Assert.True(await service.DeleteProjectAsync(other.Id).WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+    }
+
+    [Fact]
+    public async Task CreateAndSelectProjectAsync_WaitsForASaveQueuedBeforeIt()
+    {
+        // B452: this read-modify-write did not take the save gate, so it read the settings from
+        // under a held background save and wrote at once; the held save then landed last, with a
+        // project list that had never heard of the new project.
+        var (settings, service, _, _) = await TwoSavedProjectsAsync();
+
+        var release = settings.HoldNextWrite();
+        service.ClearAllRepositories();
+        var creating = service.CreateAndSelectProjectAsync("New");
+        await Task.WhenAny(creating, Task.Delay(200, TestContext.Current.CancellationToken));
+        release.SetResult();
+        var created = await creating;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        Assert.Contains(saved.Projects, p => p.Id == created.Id);
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task LoadRepositorySettingsAsync_LegacyMigration_WaitsForASaveQueuedBeforeIt()
+    {
+        // B452: the migration wrote with SetAsync directly. A save queued before the load, held,
+        // landed after the migration's write, so the file held a different project from the one
+        // loaded into memory. With the gate the load reads the file only after that save - which,
+        // since B455, leaves a file it has not loaded alone - and memory and file agree.
+        var settings = new HeldSettings();
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Repositories =
+            {
+                new RepositorySettingsEntry
+                {
+                    Id = "legacy",
+                    Name = "Legacy",
+                    LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b452-" + Guid.NewGuid().ToString("N")),
+                    AutoLoad = true
+                }
+            }
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        var release = settings.HoldNextWrite();
+        var saving = service.SaveRepositorySettingsAsync();
+        var loading = service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await Task.WhenAny(loading, Task.Delay(200, TestContext.Current.CancellationToken));
+        release.SetResult();
+        await saving;
+        await loading;
+        await settings.HeldWriteLanded;
+
+        var saved = await settings.SavedAsync();
+        Assert.Equal(service.GetProjects().Select(p => p.Id), saved.Projects.Select(p => p.Id));
+        Assert.Equal(service.GetActiveProject()!.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task LoadRepositorySettingsAsync_LegacyMigration_SavesTheMigratedProject()
+    {
+        // The migration's write, now inside the gate, still happens - and the gate is released
+        // afterwards, so a save that follows the load is not left waiting.
+        var settings = new HeldSettings();
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Repositories = { new RepositorySettingsEntry { Id = "legacy", Name = "Legacy", LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b452-" + Guid.NewGuid().ToString("N")) } }
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var saved = await settings.SavedAsync();
+        var migrated = Assert.Single(saved.Projects);
+        Assert.Equal("legacy", Assert.Single(migrated.Repositories).Id);
+        Assert.Empty(saved.Repositories);
+        await service.SaveRepositorySettingsAsync().WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ASaveBeforeTheFirstLoad_KeepsUnmigratedLegacyRepositories()
+    {
+        // B455: a save before the first load wrote only Projects - a Default project built from an
+        // empty memory - over a legacy file, so its Repositories list was gone before the load could
+        // migrate it. A save now leaves saved contents it has never loaded alone.
+        var settings = new HeldSettings();
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Repositories = { new RepositorySettingsEntry { Id = "legacy", Name = "Legacy", LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b455-" + Guid.NewGuid().ToString("N")) } }
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        await service.SaveRepositorySettingsAsync();
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var migrated = Assert.Single((await settings.SavedAsync()).Projects);
+        Assert.Equal("legacy", Assert.Single(migrated.Repositories).Id);
+        Assert.Equal(migrated.Id, service.GetActiveProject()?.Id);
+    }
+
+    [Fact]
+    public async Task ASaveBeforeTheFirstLoad_KeepsTheSavedProjects()
+    {
+        // B455's wider case: the same save replaced every saved project with one empty Default.
+        var settings = new HeldSettings();
+        var mine = new ProjectProfile { Name = "Mine" };
+        await settings.Mock.Object.SetAsync("Repositories", new RepositorySettingsCollection
+        {
+            Projects = { mine },
+            ActiveProjectId = mine.Id
+        });
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        await service.CreateProjectAsync("Early");
+
+        var saved = await settings.SavedAsync();
+        Assert.Equal(mine.Id, Assert.Single(saved.Projects).Id);
+        Assert.Equal(mine.Id, saved.ActiveProjectId);
+
+        // ...and once loaded, saves write as they always did.
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var later = await service.CreateProjectAsync("Later");
+        Assert.Contains((await settings.SavedAsync()).Projects, p => p.Id == later.Id);
+    }
+
+    [Fact]
+    public async Task ASaveBeforeTheFirstLoad_OverAnEmptyStore_StillWrites()
+    {
+        // Nothing saved means nothing to lose: a service that never loads (the MCP server, most
+        // tests) still persists what it does, and every save after the first one too.
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+
+        var first = await service.CreateProjectAsync("First");
+        var second = await service.CreateProjectAsync("Second");
+
+        var saved = await settings.SavedAsync();
+        Assert.Contains(saved.Projects, p => p.Id == first.Id);
+        Assert.Contains(saved.Projects, p => p.Id == second.Id);
+    }
+
+    private static RepositorySettingsCollection LegacySettings(string id = "legacy") => new()
+    {
+        Repositories =
+        {
+            new RepositorySettingsEntry
+            {
+                Id = id,
+                Name = "Legacy",
+                LocalPath = Path.Combine(Path.GetTempPath(), "mlqt-b460-" + Guid.NewGuid().ToString("N"))
+            }
+        }
+    };
+
+    [Fact]
+    public async Task CreateAndSelectProjectAsync_OverALegacyFile_KeepsTheLegacyRepositoriesInAProject()
+    {
+        // B460: creating a project on the startup screen over a legacy file (no Projects, a
+        // non-empty Repositories) appended the project, so the load that followed found a project
+        // and skipped the migration, and the next save wrote a collection without Repositories.
+        var store = new InMemorySettingsService();
+        await store.SetAsync("Repositories", LegacySettings());
+        var service = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+
+        var created = await service.CreateAndSelectProjectAsync("New");
+        await service.LoadRepositorySettingsAsync(created.Id, TestContext.Current.CancellationToken);
+        await service.SaveRepositorySettingsAsync();
+
+        var saved = await store.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+        Assert.Equal(created.Id, service.GetActiveProject()?.Id);
+        var holder = Assert.Single(saved.Projects, p => p.Repositories.Any(r => r.Id == "legacy"));
+        Assert.NotEqual(created.Id, holder.Id);
+        Assert.Equal(2, saved.Projects.Count);
+        Assert.Empty(saved.Repositories);
+
+        // ...and a fresh load of the file sees both projects, with no second migration.
+        var reloaded = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+        await reloaded.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(2, reloaded.GetProjects().Count);
+        Assert.Equal(created.Id, reloaded.GetActiveProject()?.Id);
+    }
+
+    [Fact]
+    public async Task CreateAndSelectProjectAsync_NamedDefault_OverALegacyFile_KeepsBoth()
+    {
+        // The startup dialog validates against the saved projects, of which a legacy file has none,
+        // so "Default" is a name it accepts. The migrated project must not take it from the user.
+        var store = new InMemorySettingsService();
+        await store.SetAsync("Repositories", LegacySettings());
+        var service = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+
+        var created = await service.CreateAndSelectProjectAsync("Default");
+
+        var saved = await store.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal("Default", saved.Projects.Single(p => p.Id == created.Id).Name);
+        var holder = Assert.Single(saved.Projects, p => p.Id != created.Id);
+        Assert.Equal("legacy", Assert.Single(holder.Repositories).Id);
+        Assert.True(ProjectNameRules.IsAvailable(holder.Name, [created]));
+        Assert.Equal(created.Id, saved.ActiveProjectId);
+    }
+
+    [Fact]
+    public async Task LoadRepositorySettingsAsync_LegacyRepositoriesBesideProjects_AreMigratedOnce()
+    {
+        // A file the pre-B460 CreateAndSelectProjectAsync already wrote holds both: the projects and
+        // the stranded legacy list. The load recovers them into a project of their own, leaves the
+        // active project as it was, and a second read finds nothing more to migrate.
+        var store = new InMemorySettingsService();
+        var mine = new ProjectProfile { Name = "Mine" };
+        var stranded = LegacySettings();
+        stranded.Projects.Add(mine);
+        stranded.ActiveProjectId = mine.Id;
+        await store.SetAsync("Repositories", stranded);
+        var service = new RepositoryService(new LibraryDataService(), store, new FileMonitoringService());
+
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await service.LoadRepositorySettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var saved = await store.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal(mine.Id, saved.ActiveProjectId);
+        Assert.Equal(mine.Id, service.GetActiveProject()?.Id);
+        Assert.Equal(2, saved.Projects.Count);
+        Assert.Equal("legacy", Assert.Single(saved.Projects.Single(p => p.Id != mine.Id).Repositories).Id);
+        Assert.Empty(saved.Repositories);
         Assert.Equal(2, service.GetProjects().Count);
     }
 
@@ -2153,19 +2427,15 @@ public class RepositoryServiceTests
     [Fact]
     public void FindVcsRoot_WithGitRepo_ReturnsGitRoot()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
+        var service = CreateService();
 
-            var root = service.FindVcsRoot(tempDir);
+        var root = service.FindVcsRoot(tempDir);
 
-            Assert.NotNull(root);
-            Assert.True(Directory.Exists(root));
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(root);
+        Assert.True(Directory.Exists(root));
     }
 
     #endregion
@@ -2175,26 +2445,22 @@ public class RepositoryServiceTests
     [Fact]
     public async Task InvalidateWorkingCopyCache_WithSpecificRepoId_ClearsOnlyThatRepo()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Prime the cache by calling GetWorkingCopyChanges
-            service.GetWorkingCopyChanges(addResult.Repository!.Id);
+        // Prime the cache by calling GetWorkingCopyChanges
+        service.GetWorkingCopyChanges(SandboxedId(addResult));
 
-            // Should not throw
-            service.InvalidateWorkingCopyCache(addResult.Repository!.Id);
+        // Should not throw
+        service.InvalidateWorkingCopyCache(SandboxedId(addResult));
 
-            // Cache is cleared, next call should still work
-            var changes = service.GetWorkingCopyChanges(addResult.Repository!.Id);
-            Assert.NotNull(changes);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Cache is cleared, next call should still work
+        var changes = service.GetWorkingCopyChanges(SandboxedId(addResult));
+        Assert.NotNull(changes);
     }
 
     [Fact]
@@ -2214,24 +2480,20 @@ public class RepositoryServiceTests
     [Fact]
     public async Task GetWorkingCopyChanges_SecondCall_UsesCachedResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // First call populates cache
-            var changes1 = service.GetWorkingCopyChanges(addResult.Repository!.Id);
-            // Second call should use cache (same result object if cache hit)
-            var changes2 = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+        // First call populates cache
+        var changes1 = service.GetWorkingCopyChanges(SandboxedId(addResult));
+        // Second call should use cache (same result object if cache hit)
+        var changes2 = service.GetWorkingCopyChanges(SandboxedId(addResult));
 
-            Assert.NotNull(changes1);
-            Assert.NotNull(changes2);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(changes1);
+        Assert.NotNull(changes2);
     }
 
     #endregion
@@ -2241,21 +2503,17 @@ public class RepositoryServiceTests
     [Fact]
     public async Task UpdateRepositoryAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var result = await service.UpdateRepositoryAsync(addResult.Repository!.Id);
+        var result = await service.UpdateRepositoryAsync(SandboxedId(addResult));
 
-            // Local git with no remote → succeeds but no changes (or may fail gracefully)
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Local git with no remote → succeeds but no changes (or may fail gracefully)
+        Assert.NotNull(result);
     }
 
     #endregion
@@ -2265,23 +2523,19 @@ public class RepositoryServiceTests
     [Fact]
     public async Task RevertFilesAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Modify a file to revert
-            File.WriteAllText(Path.Combine(tempDir, "package.mo"), "package TestLib \"modified\" end TestLib;");
+        // Modify a file to revert
+        File.WriteAllText(Path.Combine(tempDir, "package.mo"), "package TestLib \"modified\" end TestLib;");
 
-            var result = await service.RevertFilesAsync(addResult.Repository!.Id, new[] { "package.mo" });
+        var result = await service.RevertFilesAsync(SandboxedId(addResult), new[] { "package.mo" });
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     #endregion
@@ -2291,25 +2545,21 @@ public class RepositoryServiceTests
     [Fact]
     public async Task CheckoutRevisionAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            // Get current HEAD revision
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
-            if (!logEntries.Any()) return;
+        // Get current HEAD revision
+        var logEntries = service.GetLogEntries(SandboxedId(addResult));
+        Assert.NotEmpty(logEntries);
 
-            var headRevision = logEntries.First().Revision;
-            var result = await service.CheckoutRevisionAsync(addResult.Repository!.Id, headRevision);
+        var headRevision = logEntries.First().Revision;
+        var result = await service.CheckoutRevisionAsync(SandboxedId(addResult), headRevision);
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     #endregion
@@ -2319,38 +2569,34 @@ public class RepositoryServiceTests
     [Fact]
     public async Task LoadRepositorySettingsAsync_WithLegacyRepositories_MigratesToProject()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
+        var settingsService = new InMemorySettingsService();
+
+        // Save legacy format: Repositories at top level (no Projects)
+        var settings = new RepositorySettingsCollection();
+        settings.Repositories.Add(new RepositorySettingsEntry
         {
-            var settingsService = new InMemorySettingsService();
+            Id = "legacy-repo-id",
+            Name = "LegacyRepo",
+            LocalPath = tempDir,
+            VcsType = "Git",
+            AutoLoad = true
+        });
+        // Leave Projects empty to trigger migration
+        await settingsService.SetAsync("Repositories", settings);
 
-            // Save legacy format: Repositories at top level (no Projects)
-            var settings = new RepositorySettingsCollection();
-            settings.Repositories.Add(new RepositorySettingsEntry
-            {
-                Id = "legacy-repo-id",
-                Name = "LegacyRepo",
-                LocalPath = tempDir,
-                VcsType = "Git",
-                AutoLoad = true
-            });
-            // Leave Projects empty to trigger migration
-            await settingsService.SetAsync("Repositories", settings);
+        var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
 
-            var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
-            await service.LoadRepositorySettingsAsync();
+        // Should have migrated and loaded the repository
+        Assert.NotEmpty(service.Repositories);
 
-            // Should have migrated and loaded the repository
-            Assert.NotEmpty(service.Repositories);
-
-            // Should have created a project
-            var projects = service.GetProjects();
-            Assert.NotEmpty(projects);
-            Assert.Equal("Default", projects[0].Name);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Should have created a project
+        var projects = service.GetProjects();
+        Assert.NotEmpty(projects);
+        Assert.Equal("Default", projects[0].Name);
     }
 
     #endregion
@@ -2385,8 +2631,8 @@ public class RepositoryServiceTests
         var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
 
         // Create two projects
-        var project1 = service.CreateProject("Project1");
-        var project2 = service.CreateProject("Project2");
+        var project1 = await service.CreateProjectAsync("Project1");
+        var project2 = await service.CreateProjectAsync("Project2");
 
         string? firedProjectId = null;
         service.OnProjectChanged += id => firedProjectId = id;
@@ -2397,13 +2643,47 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public async Task SwitchProjectAsync_WithInvalidProjectId_ReturnsEarly()
+    public async Task SwitchProjectAsync_ToAProjectThatDoesNotExist_LeavesThePreviousProjectOpen()
     {
-        var settingsService = new InMemorySettingsService();
-        var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        // B440: the switch saved, cleared every repository and the graph, and set the active id to
+        // the requested one before looking the project up - so a switch to a missing project left
+        // nothing loaded, an active id naming no project, and that id written at the next save. It
+        // must look first and change nothing; not raising OnProjectChanged is what tells the caller
+        // (SettingsRepositories.SwitchToProjectAsync, B435) that the switch did not happen.
+        using var library = TempGitLibrary.WithPackage("package TestLib\n  model M\n  end M;\nend TestLib;\n");
+        var tempDir = library.Root;
 
-        // Should not throw
+        var settingsService = new InMemorySettingsService();
+        var libraryData = new LibraryDataService();
+        var service = new RepositoryService(libraryData, settingsService, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var previous = service.GetActiveProject()!;
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
+        var repository = addResult.Repository!;
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
+        Assert.NotEmpty(libraryData.Libraries);
+
+        var projectChanged = false;
+        var repositoriesChanged = false;
+        service.OnProjectChanged += _ => projectChanged = true;
+        service.OnRepositoriesChanged += () => repositoriesChanged = true;
+
         await service.SwitchProjectAsync("non-existent-project-id");
+
+        Assert.False(projectChanged);
+        Assert.False(repositoriesChanged);
+        Assert.Equal(previous.Id, service.GetActiveProject()?.Id);
+        Assert.Equal(repository.Id, Assert.Single(service.Repositories).Id);
+        Assert.NotEmpty(libraryData.Libraries);
+        Assert.NotNull(libraryData.GetModelById("TestLib.M"));
+
+        // ...and the next save writes the project that is open, with its repository.
+        await service.SaveRepositorySettingsAsync();
+        var saved = await settingsService.GetAsync("Repositories", new RepositorySettingsCollection());
+        Assert.Equal(previous.Id, saved.ActiveProjectId);
+        Assert.Equal(repository.Id,
+            Assert.Single(saved.Projects.Single(p => p.Id == previous.Id).Repositories).Id);
     }
 
     [Fact]
@@ -2412,8 +2692,8 @@ public class RepositoryServiceTests
         var settingsService = new InMemorySettingsService();
         var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
 
-        var project1 = service.CreateProject("Project1");
-        var project2 = service.CreateProject("Project2");
+        var project1 = await service.CreateProjectAsync("Project1");
+        var project2 = await service.CreateProjectAsync("Project2");
 
         await service.SwitchProjectAsync(project2.Id);
 
@@ -2429,59 +2709,47 @@ public class RepositoryServiceTests
     [Fact]
     public async Task CleanWorkspaceAsync_WithGitRepo_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var result = await service.CleanWorkspaceAsync(addResult.Repository!.Id);
+        var result = await service.CleanWorkspaceAsync(SandboxedId(addResult));
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     [Fact]
     public async Task PushAsync_WithGitRepo_NoRemote_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var result = await service.PushAsync(addResult.Repository!.Id);
+        var result = await service.PushAsync(SandboxedId(addResult));
 
-            // No remote configured, push should fail
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // No remote configured, push should fail
+        Assert.NotNull(result);
     }
 
     [Fact]
     public async Task ForcePushAsync_WithGitRepo_NoRemote_ReturnsResult()
     {
-        var tempDir = CreateTempGitRepo();
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage();
+        var tempDir = library.Root;
 
-        try
-        {
-            var service = CreateService();
-            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
-            if (!addResult.Success) return;
+        var service = CreateService();
+        var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
 
-            var result = await service.ForcePushAsync(addResult.Repository!.Id);
+        var result = await service.ForcePushAsync(SandboxedId(addResult));
 
-            Assert.NotNull(result);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        Assert.NotNull(result);
     }
 
     #endregion
@@ -2491,49 +2759,45 @@ public class RepositoryServiceTests
     [Fact]
     public async Task LoadRepositorySettingsAsync_WithSpecificProjectId_LoadsThatProject()
     {
-        var tempDir = CreateTempGitRepo("package TestLib end TestLib;");
-        if (tempDir == null) return;
+        using var library = TempGitLibrary.WithPackage("package TestLib end TestLib;");
+        var tempDir = library.Root;
 
-        try
+        var settingsService = new InMemorySettingsService();
+
+        // Save settings with two projects, one with a repo, one without
+        var settings = new RepositorySettingsCollection();
+        var project1 = new ProjectProfile
         {
-            var settingsService = new InMemorySettingsService();
-
-            // Save settings with two projects, one with a repo, one without
-            var settings = new RepositorySettingsCollection();
-            var project1 = new ProjectProfile
+            Name = "WithRepo",
+            Repositories = new List<RepositorySettingsEntry>
             {
-                Name = "WithRepo",
-                Repositories = new List<RepositorySettingsEntry>
+                new()
                 {
-                    new()
-                    {
-                        Id = "repo-1",
-                        Name = "TestRepo",
-                        LocalPath = tempDir,
-                        VcsType = "Git",
-                        AutoLoad = true
-                    }
+                    Id = "repo-1",
+                    Name = "TestRepo",
+                    LocalPath = tempDir,
+                    VcsType = "Git",
+                    AutoLoad = true
                 }
-            };
-            var project2 = new ProjectProfile
-            {
-                Name = "EmptyProject",
-                Repositories = new List<RepositorySettingsEntry>()
-            };
-            settings.Projects.Add(project1);
-            settings.Projects.Add(project2);
-            settings.ActiveProjectId = project2.Id; // Active is empty project
+            }
+        };
+        var project2 = new ProjectProfile
+        {
+            Name = "EmptyProject",
+            Repositories = new List<RepositorySettingsEntry>()
+        };
+        settings.Projects.Add(project1);
+        settings.Projects.Add(project2);
+        settings.ActiveProjectId = project2.Id; // Active is empty project
 
-            await settingsService.SetAsync("Repositories", settings);
+        await settingsService.SetAsync("Repositories", settings);
 
-            // Load specifying the project with the repo
-            var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
-            await service.LoadRepositorySettingsAsync(project1.Id);
+        // Load specifying the project with the repo
+        var service = new RepositoryService(new LibraryDataService(), settingsService, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync(project1.Id);
 
-            // Should have loaded the repo from project1
-            Assert.NotEmpty(service.Repositories);
-        }
-        finally { try { Directory.Delete(tempDir, true); } catch { } }
+        // Should have loaded the repo from project1
+        Assert.NotEmpty(service.Repositories);
     }
 
     #endregion

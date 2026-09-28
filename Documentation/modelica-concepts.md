@@ -110,7 +110,7 @@ The formatting rules **"Imports first"** and **"Components before classes"** con
 
 The formatting rules **"Initial equation first/last"** control where the initial sections appear relative to the main equation/algorithm section.
 
-The style rule **"Don't mix equation and algorithm"** flags classes that have both types of sections.
+The style rule **"A class may only have either an equation or algorithm section, not both"** flags classes that have both types of sections.
 
 ## Annotations
 
@@ -146,7 +146,6 @@ end HeatTransfer;
 The strings `"Simple heat transfer model"`, `"Thermal conductivity"`, and `"Temperature"` are descriptions. They appear in:
 - Tool browsers and documentation
 - Parameter dialogs in simulation tools
-- MLQT's library tree tooltips
 
 MLQT's style rules **"Every class must have a description"**, **"Every public parameter must have a description"**, and **"Every public constant must have a description"** check for the presence of these strings.
 
@@ -178,4 +177,4 @@ In Modelica, components are connected through their connectors:
 connect(resistor.p, ground.p);
 ```
 
-The style rule **"Do not mix connections and equations"** checks that `connect()` statements are kept separate from mathematical equations, improving readability.
+The style rule **"Do not mix connections and equations in the same class"** checks that `connect()` statements are kept separate from mathematical equations, improving readability.

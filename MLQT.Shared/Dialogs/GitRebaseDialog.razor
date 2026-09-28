@@ -74,12 +74,37 @@
             @* ── Conflict resolution ── *@
             @if (_phase == RebasePhase.ConflictResolution)
             {
-                <MudAlert Severity="Severity.Warning" Dense="true">
-                    @_conflictStates.Count(kv => kv.Value == ConflictFileState.Resolved) of @_conflictStates.Count conflict(s) resolved.
-                    Resolve all conflicts before continuing the rebase.
-                </MudAlert>
+                @if (_resumed)
+                {
+                    @* Opened on a rebase nobody finished (B382): say what it is before asking
+                       anything of it, since the user did not just start it. *@
+                    <MudAlert Severity="Severity.Info" Dense="true" data-testid="rebase-left-in-progress">
+                        @if (string.IsNullOrEmpty(_rebasingBranch))
+                        {
+                            <text>A rebase was left in progress.</text>
+                        }
+                        else
+                        {
+                            <text>A rebase of <strong>@_rebasingBranch</strong> was left in progress.</text>
+                        }
+                        Continue it to finish replaying the branch's commits, or abort it to put the branch back as it was before the rebase.
+                    </MudAlert>
+                }
+                @if (_conflictStates.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true">
+                        No files are in conflict. Continue the rebase, or abort it.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">
+                        @_conflictStates.Count(kv => kv.Value == ConflictFileState.Resolved) of @_conflictStates.Count conflict(s) resolved.
+                        Resolve all conflicts before continuing the rebase.
+                    </MudAlert>
+                }
 
-                <MudPaper Outlined="true" Style="max-height: 340px; overflow-y: auto;">
+                <MudPaper Outlined="true" Style="max-height: 340px; overflow-y: auto;" Class="@(_conflictStates.Count == 0 ? "d-none" : null)">
                     <MudList T="string" Dense="true">
                         @foreach (var (filePath, state) in _conflictStates)
                         {
@@ -218,7 +243,7 @@
                 Abort Rebase
             </MudButton>
             <MudButton Color="Color.Primary" Variant="Variant.Filled"
-                       Disabled="_isWorking || !AllResolved"
+                       Disabled="_isWorking || !CanContinue"
                        OnClick="ContinueRebase">
                 @if (_isWorking) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
                 Continue Rebase

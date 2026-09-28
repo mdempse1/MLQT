@@ -19,8 +19,10 @@ public class ModelDefinition
     /// The Modelica source code for this model.
     ///
     /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
-    /// <see cref="Coverage"/> and <see cref="Suppressions"/> all describe code that is no longer
-    /// here.</para>
+    /// <see cref="Coverage"/>, <see cref="Suppressions"/>, <see cref="Imports"/> and
+    /// <see cref="ParserErrors"/> all describe code that is no longer here, and
+    /// <see cref="MayRecordParserErrors"/> is set again so the new code can report its own. The icon is marked to be rendered again rather than dropped -
+    /// see <see cref="IconSvg"/>.</para>
     ///
     /// <para>The tree is on that list, and the comment here used to say it was not — that
     /// <see cref="EnsureParsed"/> handled its own staleness. It does not: it returns
@@ -39,6 +41,15 @@ public class ModelDefinition
             ParsedCode = null;
             Coverage = null;
             Suppressions = null;
+            Imports = null;
+            // A diagnosis of the old source says nothing about the new one, and the rule barring a
+            // class from recording its own was the old file's (B389). Kept, they reported errors a
+            // reformatted class no longer has and hid the ones it does. PackageCodeTrimmer, which
+            // only cuts lines out, puts the load's diagnosis back itself.
+            ParserErrors = new();
+            MayRecordParserErrors = true;
+            // Rendered again when the tree next asks, but not blanked meanwhile (B300).
+            IconRendered = false;
         }
     }
 
@@ -63,6 +74,52 @@ public class ModelDefinition
     public ModelicaParser.StyleRules.SuppressionSet? Suppressions { get; set; }
 
     /// <summary>
+    /// The import statements the class declares, once something has read them. Null until then.
+    /// Kept because every class inside a package asks for the package's imports when it resolves a
+    /// name (B292). Set it through <see cref="ClassImports.For"/> rather than directly.
+    /// </summary>
+    public IReadOnlyList<string>? Imports { get; set; }
+
+    /// <summary>
+    /// The class's icon as SVG, once something has rendered it, and whether that has been tried.
+    ///
+    /// <para><b>Here rather than on the node because it is derived from the code</b>, like
+    /// <see cref="Coverage"/> and <see cref="Suppressions"/> — which means it goes stale exactly
+    /// when they do, and this is the one place that knows. It lived on <c>ModelNode</c>, outside
+    /// that invalidation, so nothing could safely keep it and the library browser re-rendered every
+    /// top-level icon on every tree refresh: resolving each class's base classes, parsing them to do
+    /// it, on the dispatcher. Measured on a real project, one refresh of one repository's tree cost
+    /// **1,477ms of its 1,522ms** in exactly that (B258).</para>
+    ///
+    /// <para><see cref="IconRendered"/> is separate from the SVG being null because <em>most classes
+    /// have no icon</em>, and "asked, and there is none" has to be as cheap to remember as an
+    /// answer.</para>
+    ///
+    /// <para><b>A code change clears <see cref="IconRendered"/> and leaves the SVG alone</b> (B300).
+    /// The library browser draws the SVG straight off the class it already holds, and nothing
+    /// renders the icon again until the tree is refreshed - so when this setter blanked the SVG,
+    /// <b>Format All Files</b>, which sets every class's code without refreshing the tree, turned every
+    /// package on screen into a plain folder until something else rebuilt it. The old icon is
+    /// shown until then instead, which for a reformatted class is the right icon anyway: formatting
+    /// moves text, not graphics.</para>
+    /// </summary>
+    public string? IconSvg { get; set; }
+
+    /// <inheritdoc cref="IconSvg"/>
+    public bool IconRendered { get; set; }
+
+    /// <summary>
+    /// Which generation of the loaded libraries <see cref="IconSvg"/> was rendered against (B349).
+    /// </summary>
+    /// <remarks>
+    /// An icon is drawn from the class's base classes as well as its own code, often in another
+    /// library, so the answer also goes stale when a library arrives or leaves or any class is
+    /// reloaded - which this class's code setter cannot see. The library data service counts those
+    /// and treats an icon stamped with an older count as not rendered.
+    /// </remarks>
+    public int IconGeneration { get; set; }
+
+    /// <summary>
     /// Antlr4 code context for the class definition.
     /// Lazily parsed on first access via <see cref="EnsureParsed"/>.
     /// </summary>
@@ -72,10 +129,16 @@ public class ModelDefinition
     /// Ensures that ParsedCode is populated, parsing ModelicaCode if needed.
     /// Returns the parse tree (never null unless ModelicaCode is empty).
     /// </summary>
+    /// <remarks>
+    /// Reads <see cref="ParsedCode"/> once, and returns the tree it parsed rather than reading the
+    /// property back. Another reader can release the tree at any moment, and reading it twice
+    /// returned null for a class with source whenever that happened in between — which dependency
+    /// analysis took as nothing to analyse, leaving the class with no edges and no message (B291).
+    /// </remarks>
     public modelicaParser.Stored_definitionContext? EnsureParsed()
     {
-        if (ParsedCode != null)
-            return ParsedCode;
+        if (ParsedCode is { } existing)
+            return existing;
 
         if (string.IsNullOrWhiteSpace(ModelicaCode))
             return null;
@@ -93,10 +156,17 @@ public class ModelDefinition
         // file was parsed once and each error attributed to the innermost class whose text it is in;
         // every class enclosing that one fails to parse for the same reason, so letting each record
         // its own copy gives one problem as many owners as it has ancestors.
+        //
+        // What is recorded here was parsed from this class's own source, so its lines count from the
+        // class, not the file - and are marked so, because a report cannot tell by looking (B388).
         if (MayRecordParserErrors && ParserErrors.Count == 0)
+        {
+            foreach (var error in errors)
+                error.LineIsClassRelative = true;
             ParserErrors = errors;
+        }
 
-        return ParsedCode;
+        return parseTree;
     }
 
     /// <summary>
@@ -175,6 +245,10 @@ public class ModelDefinition
     ///
     /// <para>Left set for a class from a file that parsed cleanly: if its own stored source somehow
     /// does not parse, that is news, and it is how a class held only in memory reports at all.</para>
+    ///
+    /// <para>Set again, with <see cref="ParserErrors"/> emptied, whenever <see cref="ModelicaCode"/>
+    /// is replaced: the bar was about the file the class was loaded from, and the new code is not that
+    /// file (B389).</para>
     /// </summary>
     public bool MayRecordParserErrors { get; set; } = true;
 

@@ -7,6 +7,7 @@ namespace OpenModelicaInterface.Tests;
 /// These tests run sequentially and share a single OMC instance.
 /// </summary>
 [Collection("OpenModelica Collection")]
+[Trait("Requires", "OpenModelica")]
 public class LibraryTests
 {
     private readonly OpenModelicaFixture _fixture;
@@ -23,7 +24,7 @@ public class LibraryTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act
-        var result = await _fixture.Omc.LoadModelAsync("Modelica");
+        var result = await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result, "Loading Modelica library should succeed");
@@ -36,7 +37,7 @@ public class LibraryTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act - Load Modelica with version (if available)
-        var result = await _fixture.Omc.LoadModelAsync("Modelica", "4.0.0");
+        var result = await _fixture.Omc.LoadModelAsync("Modelica", "4.0.0", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - May succeed or fail depending on available versions
         // Just verify it returns a boolean
@@ -50,7 +51,7 @@ public class LibraryTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act
-        var result = await _fixture.Omc.LoadModelAsync("NonExistentLibrary");
+        var result = await _fixture.Omc.LoadModelAsync("NonExistentLibrary", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result, "Loading non-existent library should fail");
@@ -63,7 +64,7 @@ public class LibraryTests
         await _fixture.EnsureOmcStartedAsync();
 
         // Act
-        var result = await _fixture.Omc.LoadFileAsync("Invalid/Path/package.mo");
+        var result = await _fixture.Omc.LoadFileAsync("Invalid/Path/package.mo", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result, "Loading invalid path should fail");
@@ -75,7 +76,7 @@ public class LibraryTests
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
         await _fixture.Omc.ClearAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var classes = await _fixture.Omc.GetClassNamesAsync();
@@ -91,7 +92,7 @@ public class LibraryTests
     {
         // Arrange
         await _fixture.EnsureOmcStartedAsync();
-        await _fixture.Omc.LoadModelAsync("Modelica");
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
         var classesBefore = await _fixture.Omc.GetClassNamesAsync();
         Assert.NotEmpty(classesBefore);
 
@@ -112,7 +113,7 @@ public class LibraryTests
         var modelName = "Modelica.Blocks.Examples.PID_Controller";
 
         // Act - Check without library loaded
-        var resultBefore = await _fixture.Omc.CheckModelAsync(modelName);
+        var resultBefore = await _fixture.Omc.CheckModelAsync(modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(resultBefore, "Check model should be successful");
@@ -128,8 +129,8 @@ public class LibraryTests
         var modelName = "Modelica.Blocks.Examples.PID_Controller";
 
         // Load library and check again
-        await _fixture.Omc.LoadModelAsync("Modelica");
-        var resultAfter = await _fixture.Omc.CheckModelAsync(modelName);
+        await _fixture.Omc.LoadModelAsync("Modelica", cancellationToken: TestContext.Current.CancellationToken);
+        var resultAfter = await _fixture.Omc.CheckModelAsync(modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(resultAfter, "Check should succeed with library loaded");

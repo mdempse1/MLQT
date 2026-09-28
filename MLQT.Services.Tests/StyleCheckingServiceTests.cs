@@ -298,6 +298,76 @@ end TestModel;");
         Assert.Empty(findingsReceived);
     }
 
+    /// <summary>
+    /// B390. The app puts parse errors on the findings list by reading them off the classes, and it
+    /// did so before the check - the pass that parses them. A class whose code had been replaced in
+    /// memory (Format All) records its errors when the check first parses it, and those reached the
+    /// list only when something unrelated re-read them later: the tree badge said "1 parser error" and
+    /// the panel it pointed at had none. The same ordering B352 fixed in LibraryCheckSession.
+    /// </summary>
+    [Fact]
+    public async Task AParseErrorRecordedDuringTheCheck_IsOnTheFindingsListWhenItCompletes()
+    {
+        var service = CreateService();
+        var directory = NewTempDirectory();
+        try
+        {
+            await AddRegisteredRepositoryAsync(
+                directory,
+                new StyleCheckingSettings { ClassHasDescription = true },
+                "within;\npackage P \"p\"\n  model M \"m\"\n    Real x;\n  end M;\nend P;\n");
+            var graph = _libraryDataService.CombinedGraph;
+            var model = graph.ModelNodes.Single(m => m.Id == "P.M");
+
+            // What Format All does: new code in memory, nothing reloaded. This code does not parse,
+            // and nothing has parsed it yet.
+            model.Definition.ModelicaCode = "model M \"m\"\n  Real x\n  Real y;\nend M;";
+            Assert.Empty(model.Definition.ParserErrors);
+
+            await service.CheckModelsAsync(["P.M"], graph);
+            await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+            Assert.NotEmpty(model.Definition.ParserErrors);   // the check did record it...
+            var message = Assert.Single(_codeReviewService.LogMessages,
+                m => m.Source == LogMessage.ParserSource && m.ModelName == "P.M");   // ...and reported it
+            Assert.Equal(model.Definition.ParserErrors[0].Line, message.LineNumber);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public async Task ReSurfacingAfterTheCheck_DoesNotDuplicateAParseErrorAlreadyOnTheList()
+    {
+        // The load's own errors were put on the list before the check; reading them again after it
+        // must replace them, not add a second copy.
+        var service = CreateService();
+        var directory = NewTempDirectory();
+        try
+        {
+            await AddRegisteredRepositoryAsync(
+                directory,
+                new StyleCheckingSettings { ClassHasDescription = true },
+                "within;\npackage P \"p\"\n  model M \"m\"\n    Real x\n  end M;\nend P;\n");
+            var graph = _libraryDataService.CombinedGraph;
+            var broken = graph.ModelNodes.Where(m => m.HasParserErrors).ToList();
+            Assert.NotEmpty(broken);
+            _codeReviewService.AddLogMessages(MLQT.Services.Checking.ParserErrorReporter.ToLogMessages(broken));
+            var before = _codeReviewService.LogMessages.Count(m => m.Source == LogMessage.ParserSource);
+
+            await service.CheckModelsAsync(graph.ModelNodes.Select(m => m.Id).ToList(), graph);
+            await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+            Assert.Equal(before, _codeReviewService.LogMessages.Count(m => m.Source == LogMessage.ParserSource));
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
+    }
+
     [Fact]
     public async Task StartBackgroundChecking_Sync_FiresOnProgressChangedEvent()
     {
@@ -351,7 +421,7 @@ end TestModel;");
         service.OnProgressChanged += (allComplete) => completionSignal = allComplete;
 
         var repo = await CreateRepositoryWithModelsAsync(
-            new StyleCheckingSettings(), // all rules disabled
+            StyleCheckingSettings.NothingEnabled(), // all rules disabled, including the default-on one
             ("TestModel", "model TestModel end TestModel;"));
 
         await service.StartBackgroundCheckingAsync(repo);
@@ -371,7 +441,7 @@ end TestModel;");
         service.OnProgressChanged += (allComplete) => completionSignal = allComplete;
 
         var repo = await CreateRepositoryWithModelsAsync(
-            new StyleCheckingSettings(), // all rules disabled
+            StyleCheckingSettings.NothingEnabled(), // all rules disabled, including the default-on one
             ("TestModel", "model TestModel end TestModel;"));
 
         service.StartBackgroundChecking(repo);
@@ -669,7 +739,7 @@ epos\Alpha", new[] { "en_GB" });
         // repository, so measuring its classes would be a tree walk each for a report nobody sees.
         var service = CreateService();
         var repo = await CreateRepositoryWithModelsAsync(
-            new StyleCheckingSettings(),   // nothing enabled
+            StyleCheckingSettings.NothingEnabled(),   // nothing enabled
             ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
 
         var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");

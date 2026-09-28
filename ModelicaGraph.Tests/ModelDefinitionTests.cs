@@ -192,6 +192,65 @@ end ComplexModel;";
         Assert.Null(definition.ParsedCode);
     }
 
+    [Fact]
+    public void EnsureParsed_MarksTheErrorsItRecords_AsCountedFromTheClass()
+    {
+        // B388: parsed from the class's own source, so its lines are the class's, not the file's.
+        var definition = new ModelDefinition("Broken", "model Broken\n  Real x\nend Broken;");
+
+        definition.EnsureParsed();
+
+        Assert.NotEmpty(definition.ParserErrors);
+        Assert.All(definition.ParserErrors, e => Assert.True(e.LineIsClassRelative));
+    }
+
+    [Fact]
+    public void EnsureParsed_LeavesTheErrorsTheLoadRecorded_OnTheirFileLines()
+    {
+        var definition = new ModelDefinition("Broken", "model Broken\n  Real x\nend Broken;");
+        var fromLoad = new ModelicaParser.DataTypes.ParserError { Line = 120, Message = "from the file" };
+        definition.ParserErrors.Add(fromLoad);
+
+        definition.EnsureParsed();
+
+        Assert.Same(fromLoad, Assert.Single(definition.ParserErrors));
+        Assert.False(fromLoad.LineIsClassRelative);
+    }
+
+    [Fact]
+    public void ReplacingTheCode_DropsTheOldCodesParseErrors()
+    {
+        // B389. As Format All does: the class came from a file that failed to parse, so the load
+        // recorded its error and barred it from recording its own. The code is then replaced by code
+        // that parses, and the old error went on being reported against it.
+        var definition = new ModelDefinition("A", "model A\n  Real x\nend A;");
+        definition.ParserErrors.Add(new ModelicaParser.DataTypes.ParserError { Line = 2, Message = "old" });
+        definition.MayRecordParserErrors = false;
+
+        definition.ModelicaCode = "model A\n  Real x;\nend A;";
+        definition.EnsureParsed();
+
+        Assert.Empty(definition.ParserErrors);
+        Assert.True(definition.MayRecordParserErrors);
+    }
+
+    [Fact]
+    public void ReplacingTheCode_LetsTheNewCodeRecordItsOwnErrors()
+    {
+        // The other half: barred by the old file, new code that does not parse recorded nothing, and
+        // with the old error still there it could not have recorded anything anyway.
+        var definition = new ModelDefinition("A", "model A\n  Real x\nend A;");
+        definition.ParserErrors.Add(new ModelicaParser.DataTypes.ParserError { Line = 2, Message = "old" });
+        definition.MayRecordParserErrors = false;
+
+        definition.ModelicaCode = "model A\n  Real y;\n  Real z\nend A;";
+        definition.EnsureParsed();
+
+        var error = Assert.Single(definition.ParserErrors);
+        Assert.NotEqual("old", error.Message);
+        Assert.True(error.LineIsClassRelative);
+    }
+
     #endregion
 
     #region ToString Tests

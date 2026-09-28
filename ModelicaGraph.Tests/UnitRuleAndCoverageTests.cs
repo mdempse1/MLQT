@@ -127,4 +127,52 @@ public class UnitRuleAndCoverageTests
         Assert.Equal(findings.Count, facts.RealTotal - facts.RealWithUnit);
         Assert.Equal(3, facts.RealWithUnit);
     }
+
+    [Fact]
+    public void AGivenLookup_IsTheOneTheMeasurerAnswersThrough()
+    {
+        // B261: the measurer resolved units for itself, with none of the caches B174 gave the rule,
+        // and cost eight times the rule on Claytex for the same questions. It now takes the rule's
+        // lookup. A lookup that calls everything Real-derived makes the proof: every component counts,
+        // Integer and connector included, which the real resolver would never say.
+        var graph = Library();
+        var model = new ModelNode("U.M", "M", UsingModel) { ClassType = "model", ParentModelName = "U" };
+        graph.AddNode(model);
+        var asked = new List<(string ModelId, string TypeName)>();
+
+        var measurer = new CoverageMeasurer(graph, CoverageDimension.Unit, unitLookup: (modelId, typeName) =>
+        {
+            lock (asked) asked.Add((modelId, typeName));
+            return (true, false);
+        });
+        measurer.Measure(model);
+        var facts = model.Definition.Coverage!;
+
+        Assert.Equal(8, facts.RealTotal);       // all eight components, Integer and connector included
+        Assert.Contains(("U.M", "Length"), asked);
+        Assert.All(asked, a => Assert.Equal("U.M", a.ModelId));
+    }
+
+    [Fact]
+    public void SharingTheRulesLookup_GivesTheSameCounts()
+    {
+        // The shared lookup must be an optimisation and nothing else: measured through the rule's
+        // own lookup, after the rule has filled it, the class reads exactly as it does alone.
+        var alone = Library();
+        var aloneModel = new ModelNode("U.M", "M", UsingModel) { ClassType = "model", ParentModelName = "U" };
+        alone.AddNode(aloneModel);
+        new CoverageMeasurer(alone, CoverageDimension.Unit).Measure(aloneModel);
+
+        var shared = Library();
+        var sharedModel = new ModelNode("U.M", "M", UsingModel) { ClassType = "model", ParentModelName = "U" };
+        shared.AddNode(sharedModel);
+        var lookup = StyleChecking.CreateUnitLookup(shared)!;
+        StyleChecking.RunStyleCheckingFindings(
+            new ModelDefinition("M", UsingModel),
+            new StyleCheckingSettings { CheckMissingUnits = true }, "U.M", unitLookup: lookup);
+        new CoverageMeasurer(shared, CoverageDimension.Unit, unitLookup: lookup).Measure(sharedModel);
+
+        Assert.Equal(aloneModel.Definition.Coverage!.RealTotal, sharedModel.Definition.Coverage!.RealTotal);
+        Assert.Equal(aloneModel.Definition.Coverage!.RealWithUnit, sharedModel.Definition.Coverage!.RealWithUnit);
+    }
 }

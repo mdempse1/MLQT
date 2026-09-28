@@ -84,7 +84,7 @@ Updates your working copy to the latest revision from the SVN server. This is eq
 
 Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **directly to the server** — there is no separate push step.
 
-![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional finding ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
+![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional Issue ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
 
 ### Dialog Fields
 
@@ -93,7 +93,7 @@ Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **direc
 | **Commit message** | Required. Describes what you changed. |
 | **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). |
 
-### Finding Number Handling
+### Issue Number Handling
 
 Same as Git — see [Git Operations: Committing Changes](git-operations.md#committing-changes) for details on issue number settings.
 
@@ -260,8 +260,9 @@ If the merge produces conflicts, the dialog shows each conflicted file with reso
 | **Accept Incoming** | Use the version from the branch being merged |
 | **Keep Mine** | Keep your current working copy's version |
 | **Mark as Resolved** | For tree conflicts (file/directory structure conflicts), marks the conflict as resolved without changing content |
-| **Edit Externally** | Open the file in your default editor for manual resolution |
-| **View Conflict** | Opens a side-by-side diff showing "Ours (current branch)" vs "Theirs (incoming)" |
+| **Edit Externally** | Marks the file as being resolved outside MLQT — it does not open an editor. The file's full path is shown with a **Mark as Resolved** button; edit the file in your own editor, then click **Mark as Resolved** |
+
+Click a conflicted file's name to open a side-by-side diff showing "Ours (current branch)" vs "Theirs (incoming)" (not available for a tree conflict). A progress indicator shows how many conflicts have been resolved (e.g., "2 of 5 conflict(s) resolved.").
 
 #### SVN Tree Conflicts
 
@@ -308,11 +309,26 @@ The SVN history view works similarly to the Git version but with some difference
 
 Same as Git — use the date pickers to filter, and the "Load Next 50" / "Load Last 500" buttons to load more history.
 
+The history includes revisions committed to your branch since your last update. If the branch your
+working copy is on has since been deleted or renamed on the server, the history is still shown, up to
+your working copy's revision.
+
 ### Viewing Changed Files and Diffs
 
-Click on any revision row to see the changed files. The **Diff** button shows the file at that revision compared to the current working copy.
+Click on any revision row to see the changed files. Clicking a file shows **what that revision
+changed**: the file at the revision before it on the left, the file at that revision on the right.
 
-MLQT handles SVN path differences automatically — it strips branch prefixes (`trunk/`, `branches/X/`, `tags/X/`) from server-relative paths to correctly match files in your working copy.
+SVN revision numbers are global, so “the revision before” is simply N-1 — the state of the whole
+repository immediately before that commit, whether or not N-1 touched this particular file.
+
+MLQT handles SVN path differences automatically. The changed-file list gives paths as the server
+records them (`trunk/Modelica/Foo.mo`), and MLQT asks the server for those revisions directly — so
+the diff works for a revision **newer than your working copy**, and for a file that has since been
+deleted or moved.
+
+A file can be listed as changed by a revision that changed none of its lines. In SVN that is
+common: a merge records `svn:mergeinfo` on every directory and file it came through, so a merge
+commit lists a great many paths whose content is untouched. The diff says so when it happens.
 
 ### Checking Out a Revision
 
@@ -339,6 +355,20 @@ SVN working copies maintain more state than Git working copies:
 - Mixed-revision working copies are possible (different files at different revisions)
 - `svn update` brings everything to the latest revision
 - `svn switch` changes the branch but preserves local modifications when possible
+
+### A Server That Stops Answering
+
+MLQT stops an svn command that has been silent for too long, and reports that it did:
+
+| Command | Stopped after this long with no output |
+|---------|----------------------------------------|
+| Update, switch, commit, merge, revert, resolve | 10 minutes. svn reports each file as it goes, so a long update that is still working is never stopped |
+| History, where a branch came from, what changed since a revision, which revisions a merge would bring | 2 minutes. A server searching a long history can be quiet for a while between entries |
+| One revision's details, the branch and tag lists, a file's content at a revision | 30 seconds |
+
+An update, switch or other command that writes the working copy and is stopped leaves a lock
+behind. MLQT runs `svn cleanup` straight away and says whether that worked. If it did not, run
+`svn cleanup` on the working copy yourself (TortoiseSVN: **Clean up**) before trying again.
 
 ### Merge Tracking
 

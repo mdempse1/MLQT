@@ -121,5 +121,29 @@ window.spellCheck = (function () {
         requestAnimationFrame(tick);
     }
 
-    return { init, dispose, positionContextMenu, getScroll, setScroll, scrollWordIntoView };
+    // Scrolls the nth line of the code viewer into the middle of it. Retries across animation
+    // frames for the same reason scrollWordIntoView does: clicking a finding can select a different
+    // model, and the lines arrive a beat after the click. `line` is 1-based and is the line as
+    // *displayed*, which is not the line in the class when the viewer is hiding annotations or a
+    // package's nested classes — the caller maps it through SourceElision first. No-ops when the
+    // line does not exist, which is what a finding on something hidden comes down to.
+    function scrollLineIntoView(viewerSelector, line) {
+        let attempts = 0;
+        const tick = function () {
+            const viewer = document.querySelector(viewerSelector);
+            if (viewer) {
+                const lines = viewer.querySelectorAll('.code-line');
+                if (lines.length > 0) {
+                    if (line >= 1 && line <= lines.length) {
+                        lines[line - 1].scrollIntoView({ block: 'center', inline: 'nearest' });
+                    }
+                    return;
+                }
+            }
+            if (++attempts < 30) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }
+
+    return { init, dispose, positionContextMenu, getScroll, setScroll, scrollWordIntoView, scrollLineIntoView };
 })();

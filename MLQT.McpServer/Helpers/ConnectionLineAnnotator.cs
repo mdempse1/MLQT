@@ -22,11 +22,16 @@ internal static class ConnectionLineAnnotator
     /// domain (resolved through the graph). Returns the code unchanged when nothing is routable.
     /// </summary>
     public static string Annotate(ILibraryDataService libraries, string classId, string classCode)
-        => Annotate(
+    {
+        // One router for the whole class: each component is built once, not once per connection
+        // ending on it (B392).
+        var router = new DiagramGeometry.Router(libraries, classId, classCode);
+        return Annotate(
             classCode,
-            (portA, portB) => DiagramGeometry.RouteConnection(libraries, classId, classCode, portA, portB),
+            router.Route,
             (portA, portB) => ConnectorColor.Resolve(libraries, classId, portA)
                               ?? ConnectorColor.Resolve(libraries, classId, portB));
+    }
 
     /// <summary>
     /// Core routine. <paramref name="routeFor"/> returns the poly-line for a connection or null to skip it;

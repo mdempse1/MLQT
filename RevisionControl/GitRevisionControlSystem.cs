@@ -830,6 +830,17 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
+    /// A working-copy status slower than this is taken to have found git's index out of date, and
+    /// the index is refreshed after it (B298).
+    /// </summary>
+    /// <remarks>
+    /// Measured on a clone of MSL, 10,231 files: 200-250 ms with a fresh index, 7 seconds on every
+    /// call once each file's timestamp has moved. Well clear of both, so a large repository's
+    /// ordinary status does not refresh every time, and a stale one is caught on its first query.
+    /// </remarks>
+    internal TimeSpan SlowStatusThreshold { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// Gets the list of files with uncommitted changes in the working copy.
     /// </summary>
     public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryPath)
@@ -844,11 +855,16 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             using var repo = new Repository(repositoryPath);
+            var timer = System.Diagnostics.Stopwatch.StartNew();
             var status = repo.RetrieveStatus(new StatusOptions
             {
                 IncludeUntracked = true,
                 RecurseUntrackedDirs = true
             });
+            timer.Stop();
+
+            if (timer.Elapsed >= SlowStatusThreshold)
+                RefreshIndexTimestamps(repositoryPath, timer.Elapsed);
 
             foreach (var item in status)
             {
@@ -915,6 +931,15 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                         break;
                 }
 
+                // A staged rename is reported at its new path only, and the committed content is at
+                // the old one - so it is carried, or the file reads as new and every class in it as
+                // added (B350).
+                if (item.HeadToIndexRenameDetails is { } rename
+                    && !string.Equals(rename.OldFilePath, item.FilePath, StringComparison.Ordinal))
+                {
+                    file.OldPath = rename.OldFilePath;
+                }
+
                 // Only include files that have actual changes
                 if (item.State != FileStatus.Unaltered && item.State != FileStatus.Ignored)
                 {
@@ -933,6 +958,133 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// <summary>
     /// Gets the list of available branches.
     /// </summary>
+    /// <summary>
+    /// The tag HEAD is on, or a short commit id, when HEAD is not on a branch.
+    /// </summary>
+    /// <remarks>
+    /// The tag is preferred because it is what the user chose: switching to <c>v2.0.0</c> and being
+    /// told the repository is at <c>a1b2c3d</c> is a true statement that answers a question nobody
+    /// asked. Where several tags share a commit, the first is as good an answer as any.
+    /// </remarks>
+    public string? GetDetachedHeadLabel(string repositoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return null;
+
+            using var repo = new Repository(repositoryPath);
+
+            if (!repo.Info.IsHeadDetached)
+                return null;
+
+            var head = repo.Head.Tip;
+            if (head == null)
+                return null;
+
+            var tag = repo.Tags.FirstOrDefault(t => (t.PeeledTarget as Commit)?.Sha == head.Sha);
+            return tag?.FriendlyName ?? head.Sha[..Math.Min(7, head.Sha.Length)];
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetDetachedHeadLabel", ex);
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return null;
+
+            using var repo = new Repository(repositoryPath);
+            if (!IsRebasing(repo))
+                return null;
+
+            return new VcsRebaseInProgress(RebasingBranch(repo), ConflictedFilePaths(repo, repositoryPath));
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetRebaseInProgress", ex);
+            return null;
+        }
+    }
+
+    /// <summary>Whether git is part-way through a rebase, by either of its backends.</summary>
+    private static bool IsRebasing(Repository repo) =>
+        repo.Info.CurrentOperation is CurrentOperation.Rebase or CurrentOperation.RebaseInteractive or CurrentOperation.RebaseMerge;
+
+    /// <summary>
+    /// The branch a stopped rebase is rewriting, as git recorded it when it started: <c>head-name</c>
+    /// in the rebase's state directory, which is all there is while HEAD is detached.
+    /// </summary>
+    private static string? RebasingBranch(Repository repo)
+    {
+        foreach (var dir in new[] { "rebase-merge", "rebase-apply" })
+        {
+            var headName = Path.Combine(repo.Info.Path, dir, "head-name");
+            if (!File.Exists(headName))
+                continue;
+
+            var name = File.ReadAllText(headName).Trim();
+            if (name.Length == 0 || name == "detached HEAD")
+                return null;
+            return name.StartsWith("refs/heads/", StringComparison.Ordinal) ? name["refs/heads/".Length..] : name;
+        }
+        return null;
+    }
+
+    /// <summary>The files git reports in conflict, as full paths under the working copy.</summary>
+    private static List<string> ConflictedFilePaths(Repository repo, string repositoryPath) =>
+        [.. repo.RetrieveStatus(new StatusOptions())
+            .Where(s => s.State == FileStatus.Conflicted)
+            .Select(s => VcsRelativePath.ToFullPath(repositoryPath, s.FilePath))];
+
+    /// <summary>
+    /// The files a merge that stopped on conflicts has already merged: what it staged. A conflicted
+    /// file is <see cref="FileStatus.Conflicted"/> and nothing else, so it cannot match these flags.
+    /// </summary>
+    private static List<string> MergedFilePaths(Repository repo, string repositoryPath) =>
+        [.. repo.RetrieveStatus(new StatusOptions())
+            .Where(s => (s.State & (FileStatus.NewInIndex | FileStatus.ModifiedInIndex | FileStatus.DeletedFromIndex
+                | FileStatus.RenamedInIndex | FileStatus.TypeChangeInIndex)) != 0)
+            .Select(s => VcsRelativePath.ToFullPath(repositoryPath, s.FilePath))];
+
+    public int CountCommitsOnNoBranch(string repositoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return 0;
+
+            using var repo = new Repository(repositoryPath);
+            if (!repo.Info.IsHeadDetached || repo.Head.Tip == null)
+                return 0;
+
+            // Everything HEAD reaches that no branch (local or remote) or tag also reaches.
+            var elsewhere = repo.Refs
+                .Where(r => r.CanonicalName != "HEAD"
+                            && (r.IsLocalBranch || r.IsRemoteTrackingBranch || r.IsTag))
+                .Select(r => r.ResolveToDirectReference()?.Target?.Peel<Commit>())
+                .OfType<Commit>()
+                .ToList();
+
+            return repo.Commits.QueryBy(new CommitFilter
+            {
+                IncludeReachableFrom = repo.Head.Tip,
+                ExcludeReachableFrom = elsewhere,
+            }).Count();
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("CountCommitsOnNoBranch", ex);
+            return 0;
+        }
+    }
+
     public List<VcsBranchInfo> GetBranches(string repositoryPath, bool includeRemote = false)
     {
         var branches = new List<VcsBranchInfo>();
@@ -963,6 +1115,29 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                     LastCommit = branch.Tip?.Sha
                 });
             }
+
+            // Tags, listed beside the branches. A user switching to "the version we shipped" is doing
+            // the same thing either way, and other Git clients offer both in one place - MLQT offered
+            // neither for Git, while SVN's tags arrived for free as tags/* directories (B193).
+            //
+            // IsCurrent when HEAD is sitting on the tag's commit, which is what checking one out
+            // leaves behind: a detached HEAD, on no branch at all.
+            var headSha = repo.Info.IsHeadDetached ? repo.Head.Tip?.Sha : null;
+
+            foreach (var tag in repo.Tags)
+            {
+                var commit = tag.PeeledTarget as Commit;
+                if (commit == null)
+                    continue;   // a tag on a tree or a blob is not somewhere a working copy can go
+
+                branches.Add(new VcsBranchInfo
+                {
+                    Name = tag.FriendlyName,
+                    IsTag = true,
+                    IsCurrent = headSha != null && commit.Sha == headSha,
+                    LastCommit = commit.Sha
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -988,6 +1163,14 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             using var repo = new Repository(repositoryPath);
+
+            // A commit on a detached HEAD belongs to nothing, and the next switch leaves it to the
+            // reflog. Every other client warns; this used to make it without a word (B327).
+            if (repo.Info.IsHeadDetached)
+            {
+                result.ErrorMessage = DetachedHeadRefusal(repo, "commit");
+                return result;
+            }
 
             // Stage files if specific files are provided
             if (filesToCommit != null)
@@ -1146,9 +1329,18 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                     branch = repo.CreateBranch(branchName, remoteBranch.Tip);
                     repo.Branches.Update(branch, b => b.TrackedBranch = remoteBranch.CanonicalName);
                 }
+                else if (repo.Tags[branchName]?.PeeledTarget is Commit tagged)
+                {
+                    // A tag is not a branch and checking one out cannot pretend otherwise: this
+                    // leaves a detached HEAD, which is what every Git client does and what the
+                    // dialog warns about before it gets here (B193).
+                    Commands.Checkout(repo, tagged);
+                    result.Success = true;
+                    return result;
+                }
                 else
                 {
-                    result.ErrorMessage = $"Branch '{branchName}' not found.";
+                    result.ErrorMessage = $"Branch or tag '{branchName}' not found.";
                     return result;
                 }
             }
@@ -1211,7 +1403,34 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// <summary>
     /// Gets the content of a file at a specific revision.
     /// </summary>
-    public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
+    /// <summary>
+    /// The commit's first parent, which is what it changed relative to.
+    /// </summary>
+    /// <remarks>
+    /// First parent rather than all of them: for a merge, that is the branch the merge was made on,
+    /// and diffing a file against the other parent would report the lines the merge brought in as
+    /// though the merge commit had written them. A root commit has no parent, and null says so.
+    /// </remarks>
+    public string? GetPreviousRevision(string repositoryPath, string revision)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return null;
+
+            using var repo = new Repository(repositoryPath);
+
+            var commit = ResolveToCommit(repo, revision);
+            return commit?.Parents.FirstOrDefault()?.Sha;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetPreviousRevision", ex);
+            return null;
+        }
+    }
+
+    public byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
         {
@@ -1243,14 +1462,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return null;
             }
 
-            var blob = (Blob)treeEntry.Target;
-            using var contentStream = blob.GetContentStream();
-            using var reader = new StreamReader(contentStream);
-            return reader.ReadToEnd();
+            // The blob as stored. A StreamReader here decoded it as UTF-8, which is wrong for the
+            // Windows-1252 half of a mixed Modelica library and silently so (B264).
+            return BlobBytes(repo, treeEntry.Target.Id);
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("GetFileContentAtRevision", ex);
+            RevisionControlLogger.Error("GetFileBytesAtRevision", ex);
             return null;
         }
     }
@@ -1271,6 +1489,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 
             using var repo = new Repository(repositoryPath);
 
+            // The merge commit would be made on no branch - the same loss as a commit (B327).
+            if (repo.Info.IsHeadDetached)
+            {
+                result.ErrorMessage = DetachedHeadRefusal(repo, "merge");
+                return result;
+            }
+
             var branch = repo.Branches[sourceBranch];
             if (branch == null)
             {
@@ -1279,6 +1504,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             var sig = new Signature("MLQT User", "user@mlqt.local", DateTimeOffset.Now);
+            var headBefore = repo.Head.Tip;
             var mergeResult = repo.Merge(branch, sig, new MergeOptions
             {
                 FastForwardStrategy = FastForwardStrategy.Default
@@ -1297,20 +1523,18 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 case MergeStatus.NonFastForward:
                     result.Success = true;
                     result.HasChanges = true;
-                    result.ModifiedFiles = repo.RetrieveStatus(new StatusOptions())
-                        .Staged
-                        .Select(s => Path.Combine(repositoryPath, s.FilePath))
-                        .ToList();
+                    // The merge has committed, so nothing is staged: what it changed is the
+                    // difference between the commit it started from and the one it made (B480).
+                    result.ModifiedFiles = [.. repo.Diff.Compare<TreeChanges>(headBefore?.Tree, repo.Head.Tip.Tree)
+                        .Select(c => VcsRelativePath.ToFullPath(repositoryPath, c.Path))];
                     break;
 
                 case MergeStatus.Conflicts:
                     result.Success = true;
                     result.HasConflicts = true;
                     result.HasChanges = true;
-                    result.ConflictedFiles = repo.RetrieveStatus(new StatusOptions())
-                        .Where(s => s.State == FileStatus.Conflicted)
-                        .Select(s => Path.Combine(repositoryPath, s.FilePath.Replace('/', Path.DirectorySeparatorChar)))
-                        .ToList();
+                    result.ConflictedFiles = ConflictedFilePaths(repo, repositoryPath);
+                    result.ModifiedFiles = MergedFilePaths(repo, repositoryPath);
                     break;
             }
         }
@@ -1327,6 +1551,14 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// AcceptIncoming / KeepMine check out the appropriate version and stage it.
     /// MarkResolved stages the manually-edited file as-is.
     /// </summary>
+    /// <remarks>
+    /// <para><b>"Mine" is the user's own branch, in a rebase as in a merge (B418).</b> A rebase
+    /// replays the user's commits onto the other branch, so git's sides are the other way round
+    /// from a merge: HEAD (stage 2, "ours") is the branch being rebased onto, and the user's commit
+    /// being replayed is stage 3 ("theirs"). There is no <c>MERGE_HEAD</c> during one either. Taking
+    /// the merge's answer here made Accept Incoming fail outright and Keep Mine throw the user's
+    /// change away, so during a rebase both are taken from the conflict's index stages instead.</para>
+    /// </remarks>
     public VcsOperationResult ResolveConflict(string repositoryPath, string filePath, ConflictResolutionChoice choice)
     {
         var result = new VcsOperationResult();
@@ -1340,6 +1572,22 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 
             using var repo = new Repository(repositoryPath);
             var relPath = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, filePath));
+
+            if (choice != ConflictResolutionChoice.MarkResolved && IsRebasing(repo))
+            {
+                var conflict = repo.Index.Conflicts[relPath];
+                if (conflict == null)
+                {
+                    result.ErrorMessage = $"{relPath} is not in conflict.";
+                    return result;
+                }
+
+                // Mine = the replayed commit (stage 3); incoming = the branch rebased onto (stage 2).
+                var side = choice == ConflictResolutionChoice.KeepMine ? conflict.Theirs : conflict.Ours;
+                TakeConflictSide(repo, repositoryPath, relPath, side);
+                result.Success = true;
+                return result;
+            }
 
             switch (choice)
             {
@@ -1371,9 +1619,39 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
-    /// Returns the "ours" and "theirs" versions of a conflicted file from the Git index.
+    /// Writes one side of a conflict to the working copy, through the checkout filters so line
+    /// endings come out as a checkout would write them, and stages it. A side with no entry is one
+    /// that deleted the file, so taking it deletes the file.
     /// </summary>
-    public (string? ours, string? theirs) GetConflictVersions(string repositoryPath, string filePath)
+    private static void TakeConflictSide(Repository repo, string repositoryPath, string relPath, IndexEntry? side)
+    {
+        var fullPath = Path.Combine(repositoryPath, relPath);
+        if (side == null)
+        {
+            if (File.Exists(fullPath))
+                File.Delete(fullPath);
+        }
+        else
+        {
+            var blob = repo.Lookup<Blob>(side.Id);
+            using var content = blob.GetContentStream(new FilteringOptions(relPath));
+            using var file = File.Create(fullPath);
+            content.CopyTo(file);
+        }
+        Commands.Stage(repo, relPath);
+    }
+
+    /// <summary>
+    /// Returns the "ours" and "theirs" versions of a conflicted file from the Git index, as the
+    /// bytes they were stored as.
+    /// </summary>
+    /// <remarks>
+    /// <c>Blob.GetContentText()</c> decodes as UTF-8, which is wrong for the Windows-1252 half of a
+    /// mixed Modelica library and silently so - the caller gets replacement characters and no way to
+    /// tell they were not in the file. See the interface for why decoding is not this assembly's
+    /// job at all (B240).
+    /// </remarks>
+    public (byte[]? ours, byte[]? theirs) GetConflictVersions(string repositoryPath, string filePath)
     {
         try
         {
@@ -1386,20 +1664,34 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             if (conflict == null)
                 return (null, null);
 
-            var ours = conflict.Ours != null
-                ? repo.Lookup<Blob>(conflict.Ours.Id)?.GetContentText()
-                : null;
-            var theirs = conflict.Theirs != null
-                ? repo.Lookup<Blob>(conflict.Theirs.Id)?.GetContentText()
-                : null;
+            var ours = BlobBytes(repo, conflict.Ours?.Id);
+            var theirs = BlobBytes(repo, conflict.Theirs?.Id);
 
-            return (ours, theirs);
+            // During a rebase git's "ours" is the branch being rebased onto and "theirs" the user's
+            // replayed commit; "ours" here means the user's side, as it does in a merge (B418).
+            return IsRebasing(repo) ? (theirs, ours) : (ours, theirs);
         }
         catch (Exception ex)
         {
             RevisionControlLogger.Error("GetConflictVersions", ex);
             return (null, null);
         }
+    }
+
+    /// <summary>The blob's contents as stored, or null when there is no blob.</summary>
+    private static byte[]? BlobBytes(Repository repo, ObjectId? id)
+    {
+        if (id is null)
+            return null;
+
+        var blob = repo.Lookup<Blob>(id);
+        if (blob is null)
+            return null;
+
+        using var stream = blob.GetContentStream();
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     /// <summary>
@@ -1418,25 +1710,15 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return result;
             }
 
-            // Determine remote name from LibGit2Sharp so we can pass it explicitly.
-            // Falls back to "origin" if no tracking branch is configured.
-            string remoteName = "origin";
-            string? localBranchName = branchName;
-            using (var repo = new Repository(repositoryPath))
+            if (!TryResolvePushTarget(repositoryPath, branchName, out var remoteName, out var localBranchName, out var refusal))
             {
-                var branch = branchName != null ? repo.Branches[branchName] : repo.Head;
-                if (branch != null)
-                {
-                    remoteName = branch.TrackedBranch?.RemoteName ?? "origin";
-                    localBranchName ??= branch.FriendlyName;
-                }
+                result.ErrorMessage = refusal;
+                return result;
             }
 
             // Shell out to git push — uses the full Git credential stack
             // (GCM, GitHub Desktop, SSH agent, etc.) which LibGit2Sharp bypasses.
-            var args = localBranchName != null
-                ? $"push {remoteName} {localBranchName}"
-                : "push";
+            var args = $"push {remoteName} {localBranchName}";
 
             var (exitCode, stdout, stderr) = RunGitCommand(repositoryPath, args);
 
@@ -1462,6 +1744,57 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
+    /// The remote and local branch a push acts on: the named branch, or with none named, <b>the
+    /// branch HEAD is on now</b>, read from the repository at the moment of the push.
+    /// </summary>
+    /// <remarks>
+    /// Git pushes the branch it is given, not HEAD, so a caller that names a branch from memory
+    /// pushes whatever that memory says. <c>RepositoryService</c> used to pass its stored
+    /// <c>CurrentBranch</c>, which is stale for a second library in the same checkout after the first
+    /// created a branch - and a force push of the stale name rewound the remote's copy of it (B324).
+    /// A detached HEAD is on no branch, and pushing "(no branch)" or guessing one is refused.
+    /// </remarks>
+    private static bool TryResolvePushTarget(string repositoryPath, string? branchName,
+        out string remoteName, out string localBranchName, out string? refusal)
+    {
+        remoteName = "origin";
+        localBranchName = "";
+        refusal = null;
+
+        using var repo = new Repository(repositoryPath);
+        if (branchName == null && repo.Info.IsHeadDetached)
+        {
+            refusal = DetachedHeadRefusal(repo, "push");
+            return false;
+        }
+
+        var branch = branchName != null ? repo.Branches[branchName] : repo.Head;
+        if (branch == null)
+        {
+            refusal = $"Branch '{branchName}' not found.";
+            return false;
+        }
+
+        // Falls back to "origin" if no tracking branch is configured.
+        remoteName = branch.TrackedBranch?.RemoteName ?? "origin";
+        localBranchName = branch.FriendlyName;
+        return true;
+    }
+
+    /// <summary>
+    /// What an operation that needs a branch says when HEAD is on none (B324, B327). One wording,
+    /// so the refusals read alike and a test can recognise any of them.
+    /// </summary>
+    /// <remarks>
+    /// A rebase in progress also leaves HEAD detached, and there the advice to create a branch is
+    /// wrong: the rebase has to be continued or aborted, and says so instead.
+    /// </remarks>
+    private static string DetachedHeadRefusal(Repository repo, string operation) =>
+        IsRebasing(repo)
+            ? $"Cannot {operation}: a rebase is in progress and HEAD is detached until it finishes. Continue or abort the rebase first."
+            : $"Cannot {operation}: HEAD is detached, so it is on no branch. Create a branch here first, or switch to one.";
+
+    /// <summary>
     /// Rebases the current branch onto the given target branch by replaying local commits on top.
     /// Shells out to git.exe. If conflicts occur the rebase is suspended and the conflicted
     /// files are returned; call ContinueRebase or AbortRebase to proceed.
@@ -1475,6 +1808,16 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             {
                 result.ErrorMessage = "Invalid repository path.";
                 return result;
+            }
+
+            // Rebasing a detached HEAD rewrites commits no branch holds, and leaves them on none (B327).
+            using (var repo = new Repository(repositoryPath))
+            {
+                if (repo.Info.IsHeadDetached)
+                {
+                    result.ErrorMessage = DetachedHeadRefusal(repo, "rebase");
+                    return result;
+                }
             }
 
             var (exitCode, stdout, stderr) = RunGitCommand(repositoryPath, $"rebase {targetBranch}");
@@ -1581,21 +1924,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return result;
             }
 
-            string remoteName = "origin";
-            string? localBranchName = branchName;
-            using (var repo = new Repository(repositoryPath))
+            if (!TryResolvePushTarget(repositoryPath, branchName, out var remoteName, out var localBranchName, out var refusal))
             {
-                var branch = branchName != null ? repo.Branches[branchName] : repo.Head;
-                if (branch != null)
-                {
-                    remoteName = branch.TrackedBranch?.RemoteName ?? "origin";
-                    localBranchName ??= branch.FriendlyName;
-                }
+                result.ErrorMessage = refusal;
+                return result;
             }
 
-            var args = localBranchName != null
-                ? $"push --force-with-lease {remoteName} {localBranchName}"
-                : "push --force-with-lease";
+            var args = $"push --force-with-lease {remoteName} {localBranchName}";
 
             var (exitCode, stdout, stderr) = RunGitCommand(repositoryPath, args);
             if (exitCode == 0)
@@ -1786,10 +2121,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             result.HasConflicts = true;
             result.HasChanges = true;
             using var repo = new Repository(repositoryPath);
-            result.ConflictedFiles = repo.RetrieveStatus(new StatusOptions())
-                .Where(s => s.State == FileStatus.Conflicted)
-                .Select(s => Path.Combine(repositoryPath, s.FilePath.Replace('/', Path.DirectorySeparatorChar)))
-                .ToList();
+            result.ConflictedFiles = ConflictedFilePaths(repo, repositoryPath);
         }
         else
         {
@@ -1802,27 +2134,213 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
+    /// Brings git's index up to date with the working copy's timestamps, so the next status is fast
+    /// again (B298).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why a status can be slow for ever.</b> Git's index keeps each file's size and
+    /// timestamp so a status can skip reading any file that matches. Format All and a revert rewrite
+    /// every file with the same content and a new timestamp, and after that nothing matches: each
+    /// file has to be read and hashed to find it unchanged. <c>git status</c> writes what it learns
+    /// back to the index; LibGit2Sharp's <c>RetrieveStatus</c> does not, so every later query pays
+    /// the whole cost again. Measured on MSL: 7 seconds a query, every query, until something else
+    /// rewrote the index - and 22 seconds each for eight at once, which is how 55 of them froze the
+    /// window for minutes (B293).</para>
+    ///
+    /// <para><c>git update-index --refresh</c> is that write-back on its own: 0.9 seconds on MSL, after
+    /// which a status took 232 ms. Only the timestamps change - nothing is staged, and a file that
+    /// really changed is still reported as changed. <c>-q</c> because it exits non-zero when any file
+    /// did change, which is not a failure here; one that does fail - no git on the path, the index
+    /// locked by a commit - costs the next status its speed and nothing else.</para>
+    /// </remarks>
+    private static void RefreshIndexTimestamps(string repositoryPath, TimeSpan statusTook)
+    {
+        try
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var (exitCode, _, stderr) = RunGitCommand(repositoryPath, "update-index -q --refresh", TimeSpan.FromMinutes(2));
+            RevisionControlLogger.Info(
+                $"Working-copy status of {repositoryPath} took {statusTook.TotalSeconds:0.0}s; refreshed git's index " +
+                $"in {timer.Elapsed.TotalSeconds:0.0}s" + (exitCode == 0 || string.IsNullOrWhiteSpace(stderr) ? "" : $" ({stderr.Trim()})"));
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("RefreshIndexTimestamps", ex);
+        }
+    }
+
+    /// <summary>
+    /// How long a git command may run before it is stopped. Generous, because a first fetch of a
+    /// large repository over a slow link is legitimately minutes; the point is that it ends.
+    /// </summary>
+    internal static readonly TimeSpan GitCommandTimeout = TimeSpan.FromMinutes(15);
+
+    /// <summary>
     /// Runs a git command in the specified working directory and returns the exit code,
     /// stdout, and stderr. Shells out to git.exe so that all configured credential helpers
     /// (Git Credential Manager, GitHub Desktop, SSH agent, etc.) are used automatically.
     /// </summary>
-    private static (int ExitCode, string Stdout, string Stderr) RunGitCommand(string workingDirectory, string arguments)
+    /// <remarks>
+    /// <para><b>Nothing here may wait for something that will never come</b> (B295). Each of these
+    /// used to be able to hang the operation - and its dialog - for good:</para>
+    /// <list type="bullet">
+    /// <item><b>Both streams are read at once.</b> Reading stdout to the end before touching stderr
+    /// deadlocks as soon as git writes more to stderr than the pipe holds: git blocks writing, and
+    /// stdout never ends because git never exits. <c>git fetch</c> lists every updated ref on stderr,
+    /// so a fetch bringing in a few dozen tags was enough.</item>
+    /// <item><b>No prompt on a terminal nobody can see.</b> <c>GIT_TERMINAL_PROMPT=0</c> makes a
+    /// missing credential an error instead of a wait. A credential helper with a window of its own,
+    /// Git Credential Manager's, still asks.</item>
+    /// <item><b>No editor.</b> <c>git rebase --continue</c> opens one for the commit message when a
+    /// conflict has been resolved; with no console that is a wait forever. <c>GIT_EDITOR=true</c>
+    /// keeps the message as it stands, which is what the Rebase dialog offers.</item>
+    /// <item><b>Stdin is closed</b>, so anything that reads it sees the end rather than waiting on
+    /// ours.</item>
+    /// <item><b>A time limit</b>, after which git and everything it started are stopped - a remote
+    /// that accepts the connection and then says nothing is otherwise a wait forever too.</item>
+    /// </list>
+    /// </remarks>
+    internal static (int ExitCode, string Stdout, string Stderr) RunGitCommand(
+        string workingDirectory, string arguments, TimeSpan? timeout = null)
     {
+        var limit = timeout ?? GitCommandTimeout;
+
         using var process = new System.Diagnostics.Process();
-        process.StartInfo = new System.Diagnostics.ProcessStartInfo
+        process.StartInfo = GitStartInfo(workingDirectory, arguments);
+
+        // Taken before the start and a little early, so a lock this command creates is certainly
+        // newer - see RemoveLocksLeftBehind.
+        var started = DateTime.UtcNow.AddSeconds(-1);
+        process.Start();
+        process.StandardInput.Close();
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit(limit))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // It finished between the wait giving up and the kill.
+            }
+
+            // Bounded: a descendant that escaped the kill can hold the pipes open.
+            Task.WaitAll([stdoutTask, stderrTask], TimeSpan.FromSeconds(5));
+            var partial = stderrTask.IsCompletedSuccessfully ? stderrTask.Result.Trim() : "";
+            var message = $"git {arguments} did not finish within {limit.TotalMinutes:0.##} minutes and was stopped."
+                + RemoveLocksLeftBehind(workingDirectory, started);
+            return (-1,
+                stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : "",
+                string.IsNullOrEmpty(partial) ? message : $"{message}{Environment.NewLine}{partial}");
+        }
+
+        // The overload without a limit also waits for the redirected streams to be drained.
+        process.WaitForExit();
+        return (process.ExitCode, stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult());
+    }
+
+    /// <summary>
+    /// Removes the lock files a git command stopped by <see cref="RunGitCommand"/> left in the
+    /// repository, and says what it did - or, where it could not, what the user has to do (B330).
+    /// </summary>
+    /// <remarks>
+    /// <para>The stop is a kill - TerminateProcess, SIGKILL - so git gets no chance to remove the
+    /// <c>.lock</c> it writes beside a file it is replacing. A killed <c>update-index --refresh</c>,
+    /// which every slow status runs (B298), left <c>.git/index.lock</c>, and every later commit,
+    /// switch or status refresh failed with "Unable to create '.git/index.lock': File exists" until
+    /// someone found and deleted it by hand.</para>
+    ///
+    /// <para><b>Only a lock written since the command started</b>, in the git directory itself or
+    /// under <c>refs/</c> - which is where index, HEAD, packed-refs and ref locks live. One older
+    /// than that was not this command's, and may be another git's that is still working.</para>
+    /// </remarks>
+    internal static string RemoveLocksLeftBehind(string workingDirectory, DateTime startedUtc)
+    {
+        string? gitDirectory;
+        try
+        {
+            gitDirectory = Repository.Discover(workingDirectory);
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("RemoveLocksLeftBehind", ex);
+            return "";
+        }
+
+        if (string.IsNullOrEmpty(gitDirectory) || !Directory.Exists(gitDirectory))
+            return "";
+
+        List<string> candidates;
+        try
+        {
+            var found = Directory.EnumerateFiles(gitDirectory, "*.lock", SearchOption.TopDirectoryOnly);
+            var refs = Path.Combine(gitDirectory, "refs");
+            if (Directory.Exists(refs))
+                found = found.Concat(Directory.EnumerateFiles(refs, "*.lock", SearchOption.AllDirectories));
+            candidates = found.ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RevisionControlLogger.Error("RemoveLocksLeftBehind", ex);
+            return "";
+        }
+
+        var removed = new List<string>();
+        var left = new List<string>();
+        foreach (var lockFile in candidates)
+        {
+            if (File.GetLastWriteTimeUtc(lockFile) < startedUtc)
+                continue;
+
+            var name = Path.GetRelativePath(gitDirectory, lockFile).Replace('\\', '/');
+            try
+            {
+                File.Delete(lockFile);
+                removed.Add(name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RevisionControlLogger.Error("RemoveLocksLeftBehind", ex);
+                left.Add(lockFile);
+            }
+        }
+
+        if (removed.Count > 0)
+            RevisionControlLogger.Info($"Removed {string.Join(", ", removed)} left in {gitDirectory} by a stopped git command");
+
+        var said = removed.Count == 0 ? "" : $" The lock it left behind ({string.Join(", ", removed)}) was removed.";
+        if (left.Count > 0)
+        {
+            said += $" It left {string.Join(", ", left)} behind, which could not be removed: once no other git " +
+                    "program is running, delete it, or every later git operation will fail.";
+        }
+        return said;
+    }
+
+    /// <summary>
+    /// How <see cref="RunGitCommand"/> starts git: every stream redirected, and told never to prompt
+    /// or open an editor. Set here rather than inherited, because what MLQT was started with is
+    /// not ours to rely on.
+    /// </summary>
+    internal static System.Diagnostics.ProcessStartInfo GitStartInfo(string workingDirectory, string arguments)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "git",
             Arguments = arguments,
             WorkingDirectory = workingDirectory,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        process.Start();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, stdout, stderr);
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["GIT_EDITOR"] = "true";
+        return startInfo;
     }
 }

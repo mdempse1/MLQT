@@ -104,6 +104,82 @@ public class ModelicaPackageSaverTests : IDisposable
             Assert.DoesNotContain("within", node.Definition.ModelicaCode);
     }
 
+    /// <summary>
+    /// A directory where the save means to write a file: stops the write on every platform, where an
+    /// open handle does not (see PackageSplitterTests.Obstruct).
+    /// </summary>
+    private static void Obstruct(string path)
+    {
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "in the way"), "");
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_AClassWhoseFileWasNotWritten_KeepsTheCodeOnDisk()
+    {
+        // B374. The saver stored the rendered text on every class it rendered, written or not, so
+        // after a partial Format All the graph showed - and checked - code that was on no disk.
+        const string original = "model Inner\nReal    y;\nend Inner;";
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", original, "model") });
+        var inner = graph.GetNode<ModelNode>("TestPackage.Inner")!;
+        inner.SourceMatchesFile = true;
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+        Obstruct(Path.Combine(outputDir, "TestPackage", "Inner.mo"));
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        Assert.Contains(result.FailedFiles, f => Path.GetFileName(f) == "Inner.mo");
+        // B441's last line names it too, whatever the reason it went unwritten.
+        Assert.Equal(["TestPackage.Inner"], result.UnplacedModelIds);
+        Assert.Equal(original, inner.Definition.ModelicaCode);
+        Assert.True(inner.SourceMatchesFile);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_AClassInsideAFileThatWasNotWritten_KeepsTheCodeOnDisk()
+    {
+        // The same for a class that lives inline in its package's file (B374).
+        const string nested = "replaceable model Inner\nReal    y;\nend Inner;";
+        var graph = CreateGraphWithPackage("TestPackage",
+            "package TestPackage\n" + nested + "\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", nested, "model") });
+        var inner = graph.GetNode<ModelNode>("TestPackage.Inner")!;
+        inner.CanBeStoredStandalone = false;
+        var package = graph.GetNode<ModelNode>("TestPackage")!;
+        var packageCode = package.Definition.ModelicaCode;
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+        Obstruct(Path.Combine(outputDir, "TestPackage", "package.mo"));
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        Assert.Equal(packageCode, package.Definition.ModelicaCode);
+        Assert.Equal(nested, inner.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_AClassWhoseFileWasWritten_StoresWhatWasWritten()
+    {
+        // ...and the other side of it: a written class carries the text its file now holds.
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", "model Inner\nReal    y;\nend Inner;", "model") });
+        var inner = graph.GetNode<ModelNode>("TestPackage.Inner")!;
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        var file = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
+        Assert.Equal(WithinClause.Strip(ModelicaFileEncoding.ReadAllTextOnly(file)).TrimEnd(),
+            inner.Definition.ModelicaCode.TrimEnd());
+        Assert.False(inner.SourceMatchesFile);
+    }
+
     [Fact]
     public void SaveLibraryToDirectoryWithResult_WritesTheWithinClauseForAModelExcludedFromFormatting()
     {
@@ -117,7 +193,7 @@ public class ModelicaPackageSaverTests : IDisposable
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
             graph, modelIds, outputDir, false, FormattingOptions.None,
-            excludedModelIds: new[] { "TestPackage.Inner" });
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = ["TestPackage.Inner"] });
 
         var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
         Assert.StartsWith("within TestPackage;", ModelicaFileEncoding.ReadAllTextOnly(innerFile));
@@ -136,13 +212,134 @@ public class ModelicaPackageSaverTests : IDisposable
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
             graph, modelIds, outputDir, false, FormattingOptions.None,
-            excludedModelIds: new[] { "TestPackage.Inner" });
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = ["TestPackage.Inner"] });
 
         var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
         var written = ModelicaFileEncoding.ReadAllTextOnly(innerFile);
 
-        Assert.Equal(original, WithinClause.Strip(written));
+        // The file ends with a newline, as every file MLQT writes does (B236). That is the file's
+        // terminator, not the class's content: `original` here deliberately has none and its
+        // irregular spacing is what the exclusion actually protects, which the second assertion
+        // checks. An excluded class still gets written — it is a member of a library being saved —
+        // so it has to end the same way as the files around it or a later save moves it again.
+        Assert.Equal(original + "\n", WithinClause.Strip(written));
         Assert.Contains("Real    y;", written);
+    }
+
+    private const string PackageSource = """
+        package TestPackage
+        end TestPackage;
+        """;
+
+    /// <summary>Two equation sections, which OneOfEachSection merges into one - a change the
+    /// renderer makes structurally, so "was this reformatted?" has a visible answer.</summary>
+    private const string TwoSections = """
+        model Inner
+          Real    y;
+          Real    z;
+        equation
+          y = 1;
+        equation
+          z = 2;
+        end Inner;
+        """;
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_DoesNotReformatAnExcludedModel_EvenWhenFormattingWouldChangeIt()
+    {
+        // The two exclusion tests above pass FormattingOptions.None, so the renderer would have
+        // produced the same text anyway and neither could see whether the exclusion was honoured at
+        // all. This passes options that visibly restructure a class, so the difference between
+        // "excluded" and "reformatted" is something an assertion can detect.
+        //
+        // The early return in the saver's exclusion branch is still not killable, and deliberately
+        // not chased: the line before it releases the parse tree, so the renderer below could not
+        // run even if the return went. Two mechanisms, one observable outcome — which is the right
+        // reading of that survivor, and the reason this test asserts the outcome and not the return.
+        var graph = CreateGraphWithPackage("TestPackage", PackageSource,
+            new List<(string, string, string)> { ("Inner", TwoSections, "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, new FormattingOptions(OneOfEachSection: true),
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = ["TestPackage.Inner"] });
+
+        var written = ModelicaFileEncoding.ReadAllTextOnly(
+            result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
+
+        // The body is untouched, and the file ends with a newline in its own style. Comparing with
+        // the endings normalised keeps this test about the exclusion rather than about how the test
+        // file happens to be stored (B251).
+        Assert.Equal(Lf(TwoSections) + "\n", Lf(WithinClause.Strip(written)));
+
+        // ...and uniformly: a file with one line ending among the others is what B251 was about.
+        //
+        // **Which ending is not named here, and the first version of this named CRLF.** The
+        // fixture's endings are the endings of this source file, so they are CRLF on a Windows
+        // checkout and LF on the Linux runner, where `core.autocrlf` is off. The assertion passed
+        // on every developer machine and failed in CI, which is the worst way round: a test that
+        // only holds where it was written.
+        //
+        // Uniformity is the whole of what B251 claims — the file comes back in the endings it was
+        // handed rather than the platform's. Which one that is on any given checkout is not this
+        // test's business, and naming it is how this got tied to one.
+        AssertOneLineEndingThroughout(written);
+    }
+
+    /// <summary>Line endings normalised, so a comparison is about the text and not about them.</summary>
+    private static string Lf(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>
+    /// Every line in <paramref name="text"/> ends the same way — all CRLF or all LF, with no lone
+    /// carriage return anywhere. Deliberately says nothing about <em>which</em>: that depends on how
+    /// the checkout stored this file, and a test that names one only holds on the platform it was
+    /// written on.
+    /// </summary>
+    private static void AssertOneLineEndingThroughout(string text)
+    {
+        var crlf = 0;
+        var bareLf = 0;
+        var bareCr = 0;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\n')
+            {
+                if (i > 0 && text[i - 1] == '\r') crlf++;
+                else bareLf++;
+            }
+            else if (text[i] == '\r' && (i + 1 == text.Length || text[i + 1] != '\n'))
+            {
+                bareCr++;
+            }
+        }
+
+        Assert.True(crlf == 0 || bareLf == 0,
+            $"the file mixes line endings: {crlf} CRLF and {bareLf} bare LF");
+        Assert.True(bareCr == 0, $"the file has {bareCr} lone carriage returns");
+        Assert.True(crlf + bareLf > 0, "the file has no line endings at all, so this proves nothing");
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_DoesReformatAModelThatIsNotExcluded()
+    {
+        // The positive control, and the reason the test above is worth anything: these same options
+        // on the same source must actually restructure it, or "unchanged" would be true of every
+        // class whether excluded or not.
+        var graph = CreateGraphWithPackage("TestPackage", PackageSource,
+            new List<(string, string, string)> { ("Inner", TwoSections, "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, new FormattingOptions(OneOfEachSection: true));
+
+        var written = ModelicaFileEncoding.ReadAllTextOnly(
+            result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
+
+        Assert.NotEqual(TwoSections, WithinClause.Strip(written));
+        Assert.Equal(1, written.Split("equation").Length - 1);   // the two sections became one
     }
 
     [Fact]
@@ -266,6 +463,84 @@ public class ModelicaPackageSaverTests : IDisposable
             graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.NotEmpty(result.CreatedDirectories);
+    }
+
+    #endregion
+
+    #region A verbatim package and its standalone children (B309)
+
+    private (SaveResult Result, string PackageText) SaveVerbatim(string packageName, string source, bool trim = false)
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, packageName + ".mo", source);
+        if (trim)
+            PackageCodeTrimmer.TrimStandaloneChildren(graph);
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None,
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = [packageName] });
+
+        var packageFile = result.WrittenFiles.Single(f =>
+            Path.GetFileName(f) == "package.mo" && Path.GetFileName(Path.GetDirectoryName(f)) == packageName);
+        return (result, ModelicaFileEncoding.ReadAllTextOnly(packageFile));
+    }
+
+    private static bool Wrote(SaveResult result, string fileName)
+        => result.WrittenFiles.Any(f => Path.GetFileName(f) == fileName);
+
+    [Fact]
+    public void AVerbatimPackage_DoesNotAlsoCarryAChildWrittenAsItsOwnFile()
+    {
+        // A package excluded from formatting bypasses the renderer, which is what removes the
+        // children written separately - so an untrimmed one was written with A inline *and* as A.mo,
+        // a duplicate definition that fails to load.
+        var (result, text) = SaveVerbatim("P", """
+            package P "p"
+              constant Real    k =  1   "loosely spaced";
+              model A "inline"
+              end A;
+            end P;
+            """);
+
+        Assert.True(Wrote(result, "A.mo"));
+        Assert.DoesNotContain("model A", text);
+        Assert.Contains("constant Real    k =  1   \"loosely spaced\";", text);
+    }
+
+    [Fact]
+    public void AVerbatimPackage_TrimmedFirst_DoesNotCarryACaseDifferingPairTwice()
+    {
+        // The row's own case: the trimmer and the saver disagreed about a package and a model whose
+        // names differ only in case, so the trimmed text still carried both and the saver wrote both.
+        var (result, text) = SaveVerbatim("S", """
+            package S "s"
+              model JFET "a model"
+              end JFET;
+              package Jfet "a package"
+              end Jfet;
+            end S;
+            """, trim: true);
+
+        Assert.True(Wrote(result, "JFET.mo"));
+        Assert.DoesNotContain("model JFET", text);
+        Assert.DoesNotContain("package Jfet", text);
+    }
+
+    [Fact]
+    public void AVerbatimPackage_KeepsAChildThatCannotBeCutOut_AndDoesNotWriteItTwice()
+    {
+        // Two classes on one line cannot be cut apart without taking the other's text; they stay
+        // where the user wrote them, and are therefore not also written as files.
+        var (result, text) = SaveVerbatim("Q", """
+            package Q "q"
+              model A end A; model B end B;
+            end Q;
+            """);
+
+        Assert.Contains("model A end A; model B end B;", text);
+        Assert.False(Wrote(result, "A.mo"));
+        Assert.False(Wrote(result, "B.mo"));
     }
 
     #endregion
@@ -901,6 +1176,102 @@ public class ModelicaPackageSaverTests : IDisposable
             once, "Modelica.Blocks.Continuous", FormattingOptions.None);
 
         Assert.Equal(once, twice);
+    }
+
+    // --- B245: the collision test is the directory entry, not the class name ---
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_SplitsAModelAndAPackageWhoseNamesDifferOnlyInCase()
+    {
+        // MSL's Spice3.Internal has four such pairs - MOS/Mos, MOS2/Mos2, DIODE/Diode, JFET/Jfet.
+        // A model is written as JFET.mo and a package as the directory Jfet, and those two entries
+        // cannot collide, so both can be stored separately. Comparing the class names instead kept
+        // both inline in package.mo, which is why Spice3.Internal.JFET is still in there.
+        var packageCode = """
+            package Internal
+              model JFET
+                Real i;
+              end JFET;
+              package Jfet
+                Real c;
+              end Jfet;
+            end Internal;
+            """;
+        var graph = CreateGraphWithPackage("Internal", packageCode, new List<(string, string, string)>
+        {
+            ("JFET", "model JFET Real i; end JFET;", "model"),
+            ("Jfet", "package Jfet Real c; end Jfet;", "package")
+        });
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var packageDir = Path.Combine(outputDir, "Internal");
+        Assert.True(File.Exists(Path.Combine(packageDir, "JFET.mo")), "JFET should be its own file");
+        Assert.True(File.Exists(Path.Combine(packageDir, "Jfet", "package.mo")), "Jfet should be its own directory");
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_KeepsTwoModelsWhoseNamesDifferOnlyInCaseInline()
+    {
+        // The case the rule is actually for: two models would both be written as Jfet.mo on a
+        // case-insensitive filesystem, so neither may be stored separately.
+        var packageCode = """
+            package Internal
+              model JFET
+                Real i;
+              end JFET;
+              model Jfet
+                Real c;
+              end Jfet;
+            end Internal;
+            """;
+        var graph = CreateGraphWithPackage("Internal", packageCode, new List<(string, string, string)>
+        {
+            ("JFET", "model JFET Real i; end JFET;", "model"),
+            ("Jfet", "model Jfet Real c; end Jfet;", "model")
+        });
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var packageDir = Path.Combine(outputDir, "Internal");
+        Assert.False(File.Exists(Path.Combine(packageDir, "JFET.mo")), "JFET must stay in package.mo");
+        Assert.False(File.Exists(Path.Combine(packageDir, "Jfet.mo")), "Jfet must stay in package.mo");
+        var packageMo = File.ReadAllText(Path.Combine(packageDir, "package.mo"));
+        Assert.Contains("model JFET", packageMo);
+        Assert.Contains("model Jfet", packageMo);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_KeepsTwoPackagesWhoseNamesDifferOnlyInCaseInline()
+    {
+        // ...and the same for two packages, which would both want the directory Jfet.
+        var packageCode = """
+            package Internal
+              package JFET
+                Real i;
+              end JFET;
+              package Jfet
+                Real c;
+              end Jfet;
+            end Internal;
+            """;
+        var graph = CreateGraphWithPackage("Internal", packageCode, new List<(string, string, string)>
+        {
+            ("JFET", "package JFET Real i; end JFET;", "package"),
+            ("Jfet", "package Jfet Real c; end Jfet;", "package")
+        });
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var packageDir = Path.Combine(outputDir, "Internal");
+        Assert.False(Directory.Exists(Path.Combine(packageDir, "JFET")), "JFET must stay in package.mo");
+        Assert.False(Directory.Exists(Path.Combine(packageDir, "Jfet")), "Jfet must stay in package.mo");
     }
 
     private static int CountWithinClauses(string code) => CountOccurrences(code, "within ");

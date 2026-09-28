@@ -1,5 +1,7 @@
 using Antlr4.Runtime.Misc;
+using Antlr4.Runtime.Tree;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.StyleRules;
 
@@ -48,14 +50,16 @@ public class OneOfEachSection : VisitorWithModelNameTracking
         for (int i = 0; i < children.Count; i++)
         {
             var child = children[i];
-            var text = child.GetText();
 
-            if (text == "public")
+            // Asked of the node, never of its text - see SectionKeyword. This loop was 59% of coverage
+            // measurement on Claytex and the whole of this rule's cost.
+            var keyword = SectionKeyword.Of(child);
+            if (keyword == "public")
             {
                 CheckPublicSection(context, tracker);
                 tracker.PublicSection++;
             }
-            else if (text == "protected")
+            else if (keyword == "protected")
             {
                 CheckProtectedSection(context, tracker);
                 tracker.ProtectedSection++;
@@ -68,7 +72,7 @@ public class OneOfEachSection : VisitorWithModelNameTracking
             {
                 CheckAlgorithmSection(context, tracker, child.GetChild(0).GetText() == "initial");
             }
-            else if (child is modelicaParser.Element_listContext && text.Length > 0 &&
+            else if (child is modelicaParser.Element_listContext elements && HasAnyToken(elements) &&
                      tracker.PublicSection == 0 && tracker.ProtectedSection == 0)
             {
                 tracker.PublicSection++;
@@ -76,6 +80,23 @@ public class OneOfEachSection : VisitorWithModelNameTracking
         }
 
         return base.VisitComposition(context);
+    }
+
+    /// <summary>
+    /// Whether any token was matched under <paramref name="node"/> — what <c>GetText().Length &gt; 0</c>
+    /// answered, without building the text. Stops at the first token, so an element list costs one
+    /// step, not its whole length. An element list of comments alone still counts, as it did.
+    /// </summary>
+    private static bool HasAnyToken(IParseTree node)
+    {
+        if (node is ITerminalNode)
+            return true;
+
+        for (var i = 0; i < node.ChildCount; i++)
+            if (HasAnyToken(node.GetChild(i)))
+                return true;
+
+        return false;
     }
 
     private void CheckPublicSection(modelicaParser.CompositionContext context, SectionTracker tracker)

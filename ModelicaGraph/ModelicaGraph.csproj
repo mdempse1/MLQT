@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ModelicaGraph.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ModelicaParser\ModelicaParser.csproj" />
     <ProjectReference Include="..\RevisionControl\RevisionControl.csproj" />
   </ItemGroup>

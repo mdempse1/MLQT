@@ -13,6 +13,7 @@ ModelicaParser uses ANTLR to generate a C# parser from the Modelica grammar file
 - **Style Checking** - Validate Modelica code against configurable style rules
 - **Spell Checking** - Hunspell-based spell checking for description strings and documentation annotations
 - **External Resource Extraction** - Detect references to external files and libraries
+- **Change Comparison** - Compare two versions of a class and say whether the difference can affect simulation
 
 ## Key Concepts
 
@@ -323,6 +324,49 @@ and `preserveOrder=true` / `format=false` for a class whose declaration order is
 optional `reason="…"` records why. The writer merges into an existing annotation rather than adding
 a second one, and the caller is expected to persist through a path that re-parses, so a malformed
 splice is caught rather than written.
+
+### Comparing Two Versions of a Class
+
+Telling an edit that changes what is simulated from one that only changes how it looks is a question
+about **classes, not text** — a diff cannot answer it, because reformatting, a re-worded description
+and a component dragged across a diagram all show up as changed lines.
+
+```csharp
+using ModelicaParser.Comparison;
+
+// One file's two versions, compared class by class.
+IReadOnlyDictionary<string, ClassChangeKind> kinds =
+    ClassChangeClassifier.Compare(committedText, workingCopyText);
+
+// Keyed by full Modelica name - the same string GraphBuilder.GenerateModelId produces.
+kinds["MyLib.Components.Resistor"];   // AffectsSimulation
+kinds["MyLib.Components"];            // Unchanged - the package's own text did not move
+```
+
+| Kind | Meaning |
+|------|---------|
+| `Unchanged` | The class's own text is identical to the committed version |
+| `Cosmetic` | The text changed but the meaning did not: layout, comments, descriptions, documentation, graphics |
+| `AffectsSimulation` | An equation, a declaration, a modification, or an annotation a translator acts on |
+| `Added` | No committed version of this class |
+| `Unknown` | Either version could not be parsed, or there is nothing to compare against |
+
+Three properties of the comparison are worth knowing before relying on it:
+
+- **A class's signature excludes its nested classes**, which appear only as their name. Each nested
+  class has an answer of its own, so editing one class in a package leaves the package `Unchanged`
+  rather than marking every package above it. Renaming, adding or removing one *does* change the
+  parent, because the placeholder carries the name.
+- **Annotations are filtered, not ignored.** `SimulationAnnotations` lists the display-only names —
+  `Icon`, `Diagram`, `Placement`, `Documentation`, `Dialog`, `choices` and the rest — and
+  **everything else is significant**, including every vendor annotation the list does not name. So
+  `Evaluate`, `Inline`, `smoothOrder`, `experiment`, `uses` and the external-function annotations
+  are all changes that affect simulation, and an unrecognised `__SomeVendor_x` is treated as one
+  too. The two mistakes are not symmetric: calling a graphical edit significant costs a second look,
+  while calling a simulation change graphical hides it from someone relying on the answer.
+- **An unparseable version yields `Unknown` for every class**, not a partial answer. A signature
+  built from a half-recovered parse tree could be missing an equation, and would then report a real
+  change as no change at all.
 
 ### File Encoding
 

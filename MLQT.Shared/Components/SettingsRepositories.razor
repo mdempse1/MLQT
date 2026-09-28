@@ -24,11 +24,13 @@
                         <span @onclick:stopPropagation="true">
                             <MudTextField @bind-Value="_renameInput" Variant="Variant.Outlined"
                                 Margin="Margin.Dense" Immediate="true"
-                                Style="max-width: 250px;" />
+                                Style="max-width: 250px;"
+                                Error="@(RenameError is not null)" ErrorText="@RenameError" />
                         </span>
                         <span @onclick:stopPropagation="true">
                             <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
-                                OnClick="ConfirmRename" Disabled="@(string.IsNullOrWhiteSpace(_renameInput))" />
+                                aria-label="Confirm rename"
+                                OnClick="ConfirmRename" Disabled="@(RenameError is not null)" />
                         </span>
                         <span @onclick:stopPropagation="true">
                             <MudIconButton  Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" 
@@ -43,7 +45,15 @@
                         @if (isActive)
                         {
                             <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Class="ml-2">Active</MudChip>
-                        } 
+                            @if (CanReloadActiveProject)
+                            {
+                                <MudTooltip Text="Load project again - a repository has been removed since it was loaded">
+                                    <MudIconButton Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" Color="Color.Primary"
+                                        aria-label="Load project again"
+                                        OnClick="() => LoadProject(project.Id)" />
+                                </MudTooltip>
+                            }
+                        }
                         else
                         {
                             <MudTooltip Text="Load project">
@@ -51,12 +61,14 @@
                             </MudTooltip>
                         }
                         <MudTooltip Text="Rename project">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => StartRenameProject(project)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" aria-label="Rename project" OnClick="() => StartRenameProject(project)" />
                         </MudTooltip>
-                        @if (_projects.Count > 1 && !isActive) 
+                        @if (_projects.Count > 1 && !isActive)
                         {
                             <MudTooltip Text="Delete project">
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteProject(project)" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                    aria-label="Delete project"
+                                    OnClick="() => DeleteProject(project)" />
                             </MudTooltip>
                         }
                     }
@@ -70,11 +82,27 @@
                         OnRowClick="OnRepoRowClick" RowClass="cursor-pointer"
                         Style="background: transparent;" Class="mb-0">
                         <HeaderContent>
+                            <MudTh Style="width: 1%; white-space: nowrap;">Order</MudTh>
                             <MudTh>Repository Name</MudTh>
                             <MudTh>VCS Type</MudTh>
                             <MudTh>Local Path</MudTh>
                         </HeaderContent>
                         <RowTemplate>
+                            @* ClickPropagation is stated rather than left to its default, because the
+                               row's own click opens the edit dialog and reordering a repository is not
+                               a request to edit it. *@
+                            <MudTd DataLabel="Order" Style="white-space: nowrap;">
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                                    ClickPropagation="false"
+                                    Disabled="@(!CanMove(context, -1))"
+                                    aria-label="@($"Move {context.Name} up")"
+                                    OnClick="@(() => MoveRepositoryAsync(context, -1))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                                    ClickPropagation="false"
+                                    Disabled="@(!CanMove(context, 1))"
+                                    aria-label="@($"Move {context.Name} down")"
+                                    OnClick="@(() => MoveRepositoryAsync(context, 1))" />
+                            </MudTd>
                             <MudTd DataLabel="Repository Name"><MudText Typo="Typo.body1">@context.Name</MudText></MudTd>
                             <MudTd DataLabel="VCS Type"><MudText Typo="Typo.body1">@context.VcsType</MudText></MudTd>
                             <MudTd DataLabel="Local Path"><MudText Typo="Typo.body1">@context.LocalPath</MudText></MudTd>
@@ -119,9 +147,11 @@
         {
             <MudTextField @bind-Value="_projectNameInput" Label="@_projectNameLabel"
                 Variant="Variant.Outlined" Margin="Margin.Dense"
-                Immediate="true" Style="max-width: 400px;" />
+                Immediate="true" Style="max-width: 400px;"
+                Error="@(NewProjectNameError is not null)" ErrorText="@NewProjectNameError" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
-                OnClick="ConfirmProjectName" Disabled="@(string.IsNullOrWhiteSpace(_projectNameInput))" />
+                aria-label="Confirm new project name"
+                OnClick="ConfirmProjectName" Disabled="@(NewProjectNameError is not null)" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
                 OnClick="CancelProjectName" />
         }
@@ -213,9 +243,10 @@
             }
             @* Bound to what is *configured*, not to what currently takes effect. SeverityFor reports an
                ordering rule as Off while the prerequisite is off, so binding these to the rule facades
-               redrew them as unticked - which reads as MLQT having switched four of the user's settings
-               off, and disagreed with the components-before-classes switch beside them, which is a plain
-               bool and had nothing to mask it. Nothing is lost either way; this just says so. *@
+               redrew them as unticked - which reads as MLQT having switched the user's settings off.
+               Nothing is lost either way; this just says so. All five switches here are the same now:
+               components-before-classes was the exception while it was a plain formatter bool with
+               nothing to mask it, and B181 made it a rule like the rest. *@
             <MudSwitch T="bool" Color="Color.Primary" Size="Size.Small"
                 Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"
                 ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.ImportStatementsFirst, v))"
@@ -230,10 +261,23 @@
                IsRuleSwitchedOn rather than the ImportStatementsFirst facade, for the reason the other
                three switches here give: a facade reports its rule off while OneOfEachSection is off,
                so a gate drawn from it would disable this switch for a second, invisible reason. *@
-            <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
+            <MudSwitch T="bool" Color="Color.Primary" Size="Size.Small"
+                Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.ComponentsBeforeClasses)"
+                ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.ComponentsBeforeClasses, v))"
                 Disabled="!SelectedSettings.OneOfEachSection
                           || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"
                 Label="Composition must have components before classes" />
+            @* And this refines that one the same way again, so it is gated on the whole chain:
+               inputs and outputs, constants, parameters, variables, components is the finer order
+               inside the group components-before-classes puts ahead of nested classes, and the
+               renderer reads it only inside that branch. *@
+            <MudSwitch T="bool" Color="Color.Primary" Size="Size.Small"
+                Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.DeclarationOrder)"
+                ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.DeclarationOrder, v))"
+                Disabled="!SelectedSettings.OneOfEachSection
+                          || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)
+                          || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ComponentsBeforeClasses)"
+                Label="Declarations in order: inputs and outputs, constants, parameters, variables, components" />
             <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Color="Color.Primary" Size="Size.Small"
                 Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.InitialEqAlgoFirst)"
                 Disabled="!SelectedSettings.OneOfEachSection"
@@ -412,7 +456,8 @@
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Static analysis</MudText>
             <MudText Typo="Typo.body1" Class="mb-1">
-                Structural checks (all off by default). Pick a severity per rule — <b>Error</b> fails the CI
+                Structural checks, all off by default except <b>Packages are stored as directories</b>,
+                which reports a package that another tool saved as a single file. Pick a severity per rule — <b>Error</b> fails the CI
                 quality gate, <b>Warning</b>/<b>Info</b> are reported only. The uses and unused-class checks
                 require dependency analysis to have run; they appear in Code Review, and in
                 <code>mlqt check</code> / the MCP server.
@@ -427,6 +472,23 @@
                 <RuleSeverityRow RuleId="@rule.Id" Label="@rule.Description"
                     Value="@SelectedSettings.SeverityFor(rule.Id)"
                     ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
+            }
+
+            @* A modifier on one rule rather than a rule of its own, so it is a switch rather than a
+               severity picker and sits below the rules instead of among them. Shown only while
+               package.order checking is on, because that is the only thing it changes. *@
+            @if (SelectedSettings.CheckPackageOrder)
+            {
+                <MudSwitch @bind-Value="SelectedSettings.PackageOrderMatchesDymola" Color="Color.Primary" Size="Size.Small"
+                    Label="Report only the package.order problems Dymola would warn about" />
+                <MudText Typo="Typo.caption" Class="mb-1">
+                    Dymola warns that a package.order is incomplete only for a class stored where it looks
+                    — <code>Package/Name.mo</code> or <code>Package/Name/package.mo</code> — and says nothing
+                    about an entry naming a class that is not there. Switch this on for a repository whose
+                    standard is "no warnings on load in Dymola"; leave it off for MLQT's fuller answer,
+                    which also reports stale entries and classes stored in a file Dymola could not load
+                    them from.
+                </MudText>
             }
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Excluded libraries</MudText>

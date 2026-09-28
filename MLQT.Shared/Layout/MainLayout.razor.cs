@@ -58,6 +58,12 @@ public partial class MainLayout : IDisposable
     private bool _step5deferred = false;
     private bool _runningDeferredStep = false;
     private bool _showStyleCheckingCompleteMessage = false;
+    /// <summary>
+    /// Set when this instance skipped startup because an earlier one - replaced by a reload - had
+    /// already begun it (B270). That run goes on to the end (B357); this instance shows its progress
+    /// from <see cref="AppState.StartupStep"/>, which is all it has of it (B407).
+    /// </summary>
+    private bool _watchingEarlierStartup = false;
     /// <summary>Tracks files that have been formatted, keyed by path with the file's LastWriteTimeUtc at format time.</summary>
     private bool _isDarkMode = false;
     private MudTheme _myTheme = MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
@@ -97,9 +103,13 @@ public partial class MainLayout : IDisposable
         ApplyThemeFromSettings(_settings.UI);
 
         NavState.OnRepositorySettingsApplied += OnRepositorySettingsApplied;
+        _vcsPipelines = new VcsPipelineQueue(NavState);
         NavState.OnVcsFilesChanged += OnVcsFilesChanged;
         NavState.OnVcsModelsChanged += OnVcsModelsChanged;
+        NavState.OnVcsWorkChanged += OnVcsWorkChanged;
+        NavState.OnStartupProgressChanged += OnStartupProgressChanged;
         NavState.OnProjectSwitchStarting += OnProjectSwitchStarting;
+        NavState.OnProjectSwitchAbandoned += OnProjectSwitchAbandoned;
         RepositoryService.OnProjectChanged += OnProjectChanged;
         NavState.OnThemeChanged += OnThemeChangedHandler;
         NavState.OnRunDeferredDependencies += RunDeferredDependenciesOnlyAsync;
@@ -123,13 +133,87 @@ public partial class MainLayout : IDisposable
     }
 
 
+    /// <summary>
+    /// Whether the startup sequence has already run in this process, so a fresh
+    /// <see cref="MainLayout"/> must not run it again.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A reload restarts the UI, not the application.</b> Blazor's own error banner offers
+    /// "Reload" for any unhandled exception, and in a webview host that re-creates the component
+    /// tree while the services stay exactly where they were — they are singletons registered by
+    /// <c>AddMlqtCore</c> in the host's <c>Program.cs</c>. So <see cref="RunStartUpAsync"/> ran a
+    /// second time against a process that already had a project open: the user was asked to select
+    /// a project while the previous one's packages were still in the library browser behind the
+    /// dialog, and answering would have loaded a second copy of everything into one graph.</para>
+    ///
+    /// <para><b>Loaded repositories is the right question</b>, rather than a flag this component
+    /// sets. A flag would live on the component, and the component is the thing that was just
+    /// replaced. The repositories are in the service that survived, which is the same place the
+    /// browser behind the dialog was reading from — so this asks what the user can already see.</para>
+    ///
+    /// <para>Zero is a genuine first run <i>or</i> a reload of a session that had nothing open, and
+    /// re-running startup is the right answer to both: there is nothing to load twice.</para>
+    ///
+    /// <para><b>Except while a run is still loading them</b> (B422). Startup publishes its first
+    /// step before <c>LoadRepositorySettingsAsync</c> has added a single repository, and a project
+    /// switch empties the list before adding the new project's back one at a time (B423), so a reload
+    /// in either window found none, and started a second load beside the first into one graph. A run in
+    /// progress says so on <see cref="AppState.StartupStep"/>, which survives the reload as the
+    /// repositories do.</para>
+    /// </remarks>
+    internal static bool StartupAlreadyRan(int loadedRepositoryCount, string? startupStep)
+        => loadedRepositoryCount > 0 || startupStep is not null;
+
+    /// <summary>
+    /// Whether to show the progress of a startup begun by an earlier instance of this layout: only
+    /// in an instance that skipped startup, and only while that run is still going (B407).
+    /// </summary>
+    /// <remarks>
+    /// A project switch publishes its steps the same way (B423), and is the one run such an instance
+    /// can also be showing in its own six-step dialog - it takes over a switch whose
+    /// <c>OnProjectChanged</c> arrives after the reload, and it runs any switch the user starts in it
+    /// later. While its own dialog is up, that is the one shown.
+    /// </remarks>
+    internal static bool ShowsEarlierStartup(bool watchingEarlierStartup, string? startupStep, bool ownProgressShowing)
+        => watchingEarlierStartup && startupStep is not null && !ownProgressShowing;
+
+    private bool EarlierStartupVisible =>
+        ShowsEarlierStartup(_watchingEarlierStartup, NavState.StartupStep, _startupProcessRunning);
+
+    private void OnStartupProgressChanged()
+    {
+        // A reload early in step 1 reaches this instance before the run it skipped for has opened a
+        // project (B422), so the title is taken again as the run moves on rather than only once.
+        if (_watchingEarlierStartup)
+            _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     private async Task RunStartUpAsync()
     {
         LogProcessStart("MainLayout", "Application startup sequence");
+        // Whether this run has published a step, and so must say when it ends. The skipped run below
+        // must not: it would clear the progress of the run it skipped for.
+        var reportedProgress = false;
         try
         {
             // Configure snackbar position
             Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomRight;
+
+            // Nothing below this runs twice in one process. See StartupAlreadyRan: a reload rebuilds
+            // the component tree and leaves the services standing, so without this the user is asked
+            // to choose a project while the one they have open is still in the browser behind the
+            // dialog.
+            if (StartupAlreadyRan(RepositoryService.Repositories.Count, NavState.StartupStep))
+            {
+                _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+                _watchingEarlierStartup = true;
+                await InvokeAsync(StateHasChanged);
+                Info("MainLayout",
+                    "The UI was reloaded and the project is still open; skipping the startup sequence");
+                LogProcessEnd("MainLayout", "Application startup sequence");
+                return;
+            }
 
             Thread.Sleep(200);
 
@@ -166,27 +250,44 @@ public partial class MainLayout : IDisposable
                 });
             }
 
-            // If the user requested a new project, load settings first (so existing projects
-            // are in memory), then create the new project and use its real ID.
+            // The user asked for a new project. Create it, load it, and stop: a project created a
+            // moment ago has no repositories, so there is nothing for the startup sequence below to
+            // load and nothing for its progress dialog to report.
+            //
+            // This used to call LoadRepositorySettingsAsync() with no argument first, to get the
+            // saved project list into memory so the new project could be appended to it. That call
+            // also opens every repository of the *currently active* project and loads their
+            // libraries — so choosing "New Project" quietly opened the previous session's work, and
+            // nothing then unloaded it: that method never clears the loaded repositories or the
+            // graph, and only SwitchProjectAsync does. The new project came up holding the old
+            // project's repositories, with no progress dialog, a UI still busy finishing the old
+            // project's analysis, and a stale title (B192).
+            //
+            // CreateAndSelectProjectAsync is the settings edit on its own, with nothing loaded.
             if (newProjectName != null)
             {
-                await RepositoryService.LoadRepositorySettingsAsync();
-                var newProject = RepositoryService.CreateProject(newProjectName);
-                selectedProjectId = newProject.Id;
+                var newProject = await RepositoryService.CreateAndSelectProjectAsync(newProjectName);
+                await OpenProjectWithNothingToAnalyseAsync(newProject.Id);
+                return;
             }
 
             // Check if the selected project has repositories before showing the startup dialog.
             // If it has none, load settings silently (handles migration etc.) and skip the dialog.
             {
                 var checkId = selectedProjectId ?? savedSettings.ActiveProjectId ?? savedSettings.Projects.FirstOrDefault()?.Id;
-                var checkProject = savedSettings.Projects.FirstOrDefault(p => p.Id == checkId)
-                                   ?? savedSettings.Projects.FirstOrDefault();
+
+                // No `?? Projects.FirstOrDefault()` here (B192). Falling back to "some project" when
+                // the named one was not found is what let a brand-new project be judged by the
+                // repositories of the previously selected one: the new project is empty, so the
+                // silent-load shortcut below should have been taken, and instead the first existing
+                // project answered for it, reported repositories, and startup went on to load them.
+                // An id that names nothing is a null project, which the condition below already
+                // treats as "nothing to load".
+                var checkProject = savedSettings.Projects.FirstOrDefault(p => p.Id == checkId);
                 bool hasLegacyRepos = savedSettings.Projects.Count == 0 && savedSettings.Repositories.Count > 0;
                 if (!hasLegacyRepos && (checkProject == null || checkProject.Repositories.Count == 0))
                 {
-                    await RepositoryService.LoadRepositorySettingsAsync(selectedProjectId);
-                    _currentProjectName = RepositoryService.GetActiveProject()?.Name;
-                    await InvokeAsync(StateHasChanged);
+                    await OpenProjectWithNothingToAnalyseAsync(selectedProjectId);
                     return;
                 }
             }
@@ -199,6 +300,8 @@ public partial class MainLayout : IDisposable
             _startupHadLoadWarning = false;
             _step1running = true;
             _step1color = Color.Success;
+            reportedProgress = true;
+            NavState.StartupProgress("Loading libraries from repositories");
             await InvokeAsync(StateHasChanged);
 
             // Step 1: Load saved repositories and libraries
@@ -226,6 +329,14 @@ public partial class MainLayout : IDisposable
                 // references first meant the encrypted build got there first, and for a nested class —
                 // which, like a stub, cannot be stored standalone — the graph had no rule that
                 // preferred the real source.
+                //
+                // This rule is narrower than it looks, and B268 is what that costs. It covers the
+                // ReferenceLibraries *setting* and nothing else. A reference-only **repository**
+                // configured in the project is loaded by LoadRepositorySettingsAsync above, in the
+                // same parallel pass as the user's own checkout, so its encrypted build can and does
+                // reach the graph first — 737 classes of one library, in the session B268 was found
+                // in. AddNode then resolves each of those in favour of the source that arrives
+                // later, and nothing tells the encrypted library's index.
                 await LoadReferenceLibrariesAsync();
             }
             finally
@@ -279,6 +390,7 @@ public partial class MainLayout : IDisposable
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
             _step2color = Color.Success;
+            NavState.StartupProgress("Formatting modified files");
             LogProcessStart("MainLayout", "Rendering after load");
             await InvokeAsync(StateHasChanged);
             LogProcessEnd("MainLayout", "Rendering after load");
@@ -319,6 +431,7 @@ public partial class MainLayout : IDisposable
                 if (!shouldDefer)
                 {
                     // Steps 3 & 4: Analyze dependencies and start style checking in parallel
+                    NavState.StartupProgress("Analysing dependencies");
                     LogProcessStart("MainLayout", "Analyzing dependencies and starting style checking");
 
                     // Style checking's graph analyses need these edges, and join this same run rather
@@ -349,6 +462,7 @@ public partial class MainLayout : IDisposable
                     await InvokeAsync(StateHasChanged);
 
                     // Step 5: Analyze external resource references and start monitoring
+                    NavState.StartupProgress("Analysing external resources");
                     LogProcessStart("MainLayout", "Analyzing external resources");
                     await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
                     ExternalResourceService.StartMonitoringResources();
@@ -359,6 +473,7 @@ public partial class MainLayout : IDisposable
                 // Step 6: Start file monitoring
                 _step6running = true;
                 _step6color = Color.Success;
+                NavState.StartupProgress("Setting up file system monitors");
                 await InvokeAsync(StateHasChanged);
 
                 LogProcessEnd("MainLayout", "Application startup sequence (style checking continues in background)");
@@ -380,6 +495,9 @@ public partial class MainLayout : IDisposable
             // Re-enable system sleep now that startup analysis is complete
             // (style checking may still be running but it's not CPU-intensive enough to warrant blocking sleep)
             PowerManagementService.AllowSleep();
+
+            if (reportedProgress)
+                NavState.StartupProgress(null);
         }
         // In deferred mode, keep the dialog open to show deferred steps with Run Now buttons.
         // In normal mode, close when style checking is done (or immediately if it already finished).
@@ -393,6 +511,27 @@ public partial class MainLayout : IDisposable
             _startupProcessRunning = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// Opens a project that has no repositories - a new one, or an empty one - without the startup
+    /// dialog, since there is nothing to format or analyse.
+    /// </summary>
+    /// <remarks>
+    /// The Reference Libraries setting belongs to no project, so it is loaded here too (B355). These
+    /// two paths returned before the main path reached it, and adding a repository afterwards does
+    /// not load it, so an empty project resolved nothing against them all session - B280's symptom on
+    /// the sibling path, while switching <i>to</i> the same project did load them.
+    /// </remarks>
+    private async Task OpenProjectWithNothingToAnalyseAsync(string? projectId)
+    {
+        await RepositoryService.LoadRepositorySettingsAsync(projectId);
+        using (LibraryDataService.SuppressTreeDataChanged())
+        {
+            await LoadReferenceLibrariesAsync();
+        }
+        _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>
@@ -444,7 +583,23 @@ public partial class MainLayout : IDisposable
         _startupProcessRunning = true;
         _step1running = true;
         _step1color = Color.Success;
+        // Published as startup publishes its steps, so a window reloaded during the switch shows it
+        // (B423) and does not start a second load of its own (B422). Cleared by OnProjectChanged,
+        // in whichever instance is subscribed when the switch raises it.
+        NavState.StartupProgress("Loading libraries from repositories");
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Closes the dialog <see cref="OnProjectSwitchStarting"/> opened, for a switch that ended without
+    /// <c>OnProjectChanged</c> - which is what would otherwise have closed it (B435). The published
+    /// step has already been cleared by <see cref="AppState.ProjectSwitchAbandoned"/>.
+    /// </summary>
+    private void OnProjectSwitchAbandoned()
+    {
+        ResetStartupSteps();
+        _startupProcessRunning = false;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async void OnProjectChanged(string projectId)
@@ -452,6 +607,7 @@ public partial class MainLayout : IDisposable
         PowerManagementService.PreventSleep();
         try
         {
+            NavState.StartupProgress("Loading libraries from repositories");
             LogProcessStart("MainLayout", $"Project changed to: {projectId}");
 
             // Clear style checking findings from the previous project
@@ -469,6 +625,16 @@ public partial class MainLayout : IDisposable
             // Update the project name in the title bar
             var project = RepositoryService.GetActiveProject();
             _currentProjectName = project?.Name;
+
+            // The Reference Libraries setting is not part of any project, and the switch has just
+            // cleared the whole graph, those libraries included. Only startup loaded them, so every
+            // project switch - and every reload of the active project - carried on without them until
+            // the application was restarted (B280). After the project's own libraries, as at startup,
+            // and announced to the tree once.
+            using (LibraryDataService.SuppressTreeDataChanged())
+            {
+                await LoadReferenceLibrariesAsync();
+            }
 
             // Compact the LOH + trim packages after loading
             var totalModelCount = LibraryDataService.TotalModelCount;
@@ -507,6 +673,7 @@ public partial class MainLayout : IDisposable
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
             _step2color = Color.Success;
+            NavState.StartupProgress("Formatting modified files");
             LogProcessStart("MainLayout", "Rendering after load");
             await InvokeAsync(() =>
             {
@@ -548,6 +715,7 @@ public partial class MainLayout : IDisposable
                 if (!shouldDefer)
                 {
                     // Steps 3 & 4: Analyze dependencies and start style checking
+                    NavState.StartupProgress("Analysing dependencies");
                     // Style checking's graph analyses need these edges, and join this same run rather
                     // than starting a competing one — see ILibraryDataService.EnsureDependenciesAnalyzedAsync.
                     var dependencyTask = LibraryDataService.EnsureDependenciesAnalyzedAsync(
@@ -571,6 +739,7 @@ public partial class MainLayout : IDisposable
                     await InvokeAsync(StateHasChanged);
 
                     // Step 5: Analyze external resources
+                    NavState.StartupProgress("Analysing external resources");
                     await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
                     ExternalResourceService.StartMonitoringResources();
                     _step5running = false;
@@ -579,6 +748,7 @@ public partial class MainLayout : IDisposable
                 // Step 6: Start file monitoring
                 _step6running = true;
                 _step6color = Color.Success;
+                NavState.StartupProgress("Setting up file system monitors");
                 await InvokeAsync(StateHasChanged);
                 RepositoryService.StartMonitoringAllRepositories();
                 _step6running = false;
@@ -611,6 +781,7 @@ public partial class MainLayout : IDisposable
         finally
         {
             PowerManagementService.AllowSleep();
+            NavState.StartupProgress(null);
         }
     }
 
@@ -739,11 +910,22 @@ public partial class MainLayout : IDisposable
     /// 3. Deletes orphaned files that are no longer part of the new structure
     /// 4. Updates FileNodes in the graph with new file paths
     /// </summary>
-    private Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
-        => FormattingPipeline.SaveAllLibrariesWithFormattingAsync(
+    private async Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
+    {
+        var skipped = await FormattingPipeline.SaveAllLibrariesWithFormattingAsync(
             filterRepositoryId,
             onLibraryFailed: (name, ex) =>
                 _ = InvokeAsync(() => Snackbar.Add($"Failed to format {name}: {ex.Message}", Severity.Warning)));
+
+        // A file with syntax errors was left as it is (B414); say which, or the user reads the
+        // completion message as every file having been formatted.
+        if (skipped.Count > 0)
+        {
+            var root = filterRepositoryId is null ? null : RepositoryService.GetRepository(filterRepositoryId)?.LocalPath;
+            var message = FormattingPipelineReport.SkippedForSyntaxErrors(skipped, root);
+            await InvokeAsync(() => Snackbar.Add(message, Severity.Warning, o => o.RequireInteraction = true));
+        }
+    }
 
     private static bool SkipReferenceOnly(Repository repository, string what)
     {
@@ -838,15 +1020,18 @@ public partial class MainLayout : IDisposable
     private async Task RunDeferredDependenciesAsync(bool combineStyleChecking = false)
     {
         if (NavState.HasDependencyAnalysisRun) return;
+
+        // Whether style checking really is carried by this pass - asked for, and not already done -
+        // decided once, so the log and the messages cannot describe a different pass from the one
+        // that runs (B257).
+        var combined = combineStyleChecking && !NavState.HasStyleCheckingRun;
+        var step = DeferredDependencyStep.For(combined);
+
         PowerManagementService.PreventSleep();
         try
         {
-            LogProcessStart("MainLayout", combineStyleChecking
-                ? "Running deferred dependency analysis + style checking (combined)"
-                : "Running deferred dependency analysis");
-            await InvokeAsync(() => Snackbar.Add(
-                combineStyleChecking ? "Analysing dependencies and checking style..." : "Analysing dependencies...",
-                Severity.Normal));
+            LogProcessStart("MainLayout", step.ProcessName);
+            await InvokeAsync(() => Snackbar.Add(step.Starting, Severity.Normal));
 
             var libraryInfos = GetLibraryInfos();
 
@@ -856,7 +1041,7 @@ public partial class MainLayout : IDisposable
             Action<ModelNode>? postAnalysisAction = null;
             ConcurrentBag<LogMessage>? combinedFindings = null;
 
-            if (combineStyleChecking && !NavState.HasStyleCheckingRun)
+            if (combined)
             {
                 // Build model-to-settings lookup: each model belongs to a library with a repository
                 var modelToSettings = BuildModelToStyleSettingsMap();
@@ -900,6 +1085,11 @@ public partial class MainLayout : IDisposable
             if (!analysisFailures.IsEmpty)
                 CodeReviewService.AddLogMessages(analysisFailures.ToList());
 
+            // Read again now the pass has parsed every class: one nothing had parsed records its
+            // errors when this pass first does, after any read made before it (B390). This pass does
+            // not go through the style check's workers, which read them again when they finish.
+            SurfaceParserErrors();
+
             // Compact the LOH after dependency analysis released all parse trees
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
@@ -908,10 +1098,9 @@ public partial class MainLayout : IDisposable
             NavState.DependencyAnalysisCompleted();
             _step3deferred = false;
             _step3color = Color.Success;
-            LogProcessEnd("MainLayout", "Running deferred dependency analysis");
 
             // If style checking was combined, report findings and mark as complete
-            if (combineStyleChecking && combinedFindings != null)
+            if (combined && combinedFindings != null)
             {
                 var findingsList = combinedFindings.ToList();
                 if (findingsList.Count > 0)
@@ -927,12 +1116,17 @@ public partial class MainLayout : IDisposable
                 _step4deferred = false;
                 _step4color = Color.Success;
                 _showStyleCheckingCompleteMessage = true;
-                LogProcessEnd("MainLayout", "Running deferred style checking (combined with dependency analysis)");
             }
+
+            // One end, under the name the start was logged with, after both halves are done. It was
+            // two: "dependency analysis" completing after the combined pass - so read against its
+            // start it carried the whole of style checking - and a "style checking" completion a
+            // moment later that had no start at all, which read as style checking taking no time.
+            LogProcessEnd("MainLayout", step.ProcessName);
 
             await InvokeAsync(() =>
             {
-                Snackbar.Add("Dependency analysis complete.", Severity.Success);
+                Snackbar.Add(step.Finished, Severity.Success);
                 StateHasChanged();
             });
         }
@@ -1100,8 +1294,34 @@ public partial class MainLayout : IDisposable
 
     // ========== Startup Dialog Deferred Button Handlers ==========
 
+    /// <summary>
+    /// Whether a deferred startup step the user just clicked should actually be started.
+    /// </summary>
+    /// <param name="stepIsDeferred">
+    /// Whether this step is still waiting to be run. False once it has been started or has finished,
+    /// and a click on such a row must do nothing rather than run it a second time.
+    /// </param>
+    /// <param name="anyStepRunning">
+    /// Whether some deferred step is already running. This is the state the play buttons express by
+    /// being disabled; the row has to honour it too.
+    /// </param>
+    /// <remarks>
+    /// <para>Static and taking both flags so the decision can be tested without rendering
+    /// <c>MainLayout</c>, which is the part of this change with any logic in it.</para>
+    ///
+    /// <para><b>Why it is needed at all (B194).</b> The startup dialog's rows became clickable as well
+    /// as their play buttons, and a click on a button bubbles to the row, so both handlers fire for
+    /// one press. Each wrapper below sets <c>_runningDeferredStep</c> before its first <c>await</c>,
+    /// so the second arrival sees it here and stops — the work is started once however the user
+    /// pressed it.</para>
+    /// </remarks>
+    internal static bool ShouldStartDeferredStep(bool stepIsDeferred, bool anyStepRunning) =>
+        stepIsDeferred && !anyStepRunning;
+
     private async Task RunDeferredDependenciesFromDialogAsync()
     {
+        if (!ShouldStartDeferredStep(_step3deferred, _runningDeferredStep)) return;
+
         _runningDeferredStep = true;
         _step3running = true;
         _step3deferred = false;
@@ -1118,6 +1338,8 @@ public partial class MainLayout : IDisposable
 
     private async Task RunDeferredStyleCheckingFromDialogAsync()
     {
+        if (!ShouldStartDeferredStep(_step4deferred, _runningDeferredStep)) return;
+
         _runningDeferredStep = true;
         _step4running = true;
         _step4deferred = false;
@@ -1147,6 +1369,8 @@ public partial class MainLayout : IDisposable
 
     private async Task RunDeferredExternalResourcesFromDialogAsync()
     {
+        if (!ShouldStartDeferredStep(_step5deferred, _runningDeferredStep)) return;
+
         _runningDeferredStep = true;
         _step5running = true;
         _step5deferred = false;
@@ -1163,6 +1387,8 @@ public partial class MainLayout : IDisposable
 
     private async Task RunAllDeferredFromDialogAsync()
     {
+        if (_runningDeferredStep) return;
+
         _runningDeferredStep = true;
         StateHasChanged();
 
@@ -1234,7 +1460,8 @@ public partial class MainLayout : IDisposable
         }
 
         LogProcessStart("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
-        FileMonitoringService.StopMonitoring(repositoryId);
+        // Every repository in the working copy, not only this one (B416): see ProcessRepositorySettingsAsync.
+        var pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
         try
         {
             await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
@@ -1242,8 +1469,7 @@ public partial class MainLayout : IDisposable
         finally
         {
             FileMonitoringService.ClearPendingChanges(repositoryId);
-            if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+            pause.Dispose();
         }
         LogProcessEnd("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
     }
@@ -1253,8 +1479,11 @@ public partial class MainLayout : IDisposable
         NavState.OnThemeChanged -= OnThemeChangedHandler;
         NavState.OnRepositorySettingsApplied -= OnRepositorySettingsApplied;
         NavState.OnProjectSwitchStarting -= OnProjectSwitchStarting;
+        NavState.OnProjectSwitchAbandoned -= OnProjectSwitchAbandoned;
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
         NavState.OnVcsModelsChanged -= OnVcsModelsChanged;
+        NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
+        NavState.OnStartupProgressChanged -= OnStartupProgressChanged;
         NavState.OnRunDeferredDependencies -= RunDeferredDependenciesOnlyAsync;
         NavState.OnRunDeferredStyleChecking -= RunDeferredStyleCheckingFromEventAsync;
         NavState.OnRunDeferredExternalResources -= RunDeferredExternalResourcesAsync;
@@ -1270,8 +1499,22 @@ public partial class MainLayout : IDisposable
 
     // Route background style-checking findings into the persistent CodeReviewService. Lives in the
     // layout (always mounted) so delivery never depends on which tab is currently open.
+    /// <summary>
+    /// Findings from the background check, handed straight to the service on the worker's own
+    /// thread.
+    ///
+    /// <para><b>This used to go through <c>InvokeAsync</c>, and that was the freeze.</b> The store
+    /// is already thread-safe — it locks around its list — so marshalling only bought one queued
+    /// work item per class with findings, on the one thread that has to stay free. For Claytex,
+    /// 21,673 classes checked: the log shows the workers finishing at 17:20:28 and the run being
+    /// declared complete at 17:21:40, **72 seconds later**, which is the dispatcher draining that
+    /// queue while the window ignored clicks (B190).</para>
+    ///
+    /// <para>Nothing needs the UI thread here. What does need it — the re-render — is raised by the
+    /// store, coalesced, and marshalled by whichever component is listening.</para>
+    /// </summary>
     private void OnStyleFindingsFound(List<LogMessage> findings)
-        => InvokeAsync(() => CodeReviewService.AddLogMessages(findings));
+        => CodeReviewService.AddLogMessages(findings);
 
     /// <summary>
     /// Re-derives the Parser-sourced findings for <paramref name="modelIds"/> (all models when null)
@@ -1289,18 +1532,11 @@ public partial class MainLayout : IDisposable
         var models = modelIds is null
             ? LibraryDataService.GetAllModels().ToList()
             : modelIds.Select(LibraryDataService.GetModelById).Where(m => m is not null).Cast<ModelNode>().ToList();
-        if (models.Count == 0)
-            return;
 
-        // Drop the previous parser findings for exactly these models before re-adding, so repeated
-        // re-analysis can neither duplicate them nor leave behind ones the file no longer has.
-        var ids = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
-        CodeReviewService.RemoveLogMessagesByPredicate(
-            m => m.Source == ParserErrorReporter.SourceName && ids.Contains(m.ModelName));
-
-        var messages = ParserErrorReporter.ToLogMessages(models);
-        if (messages.Count > 0)
-            CodeReviewService.AddLogMessages(messages);
+        // Replaces the previous parser findings for exactly these models, so repeated re-analysis
+        // can neither duplicate them nor leave behind ones the file no longer has. The style check
+        // reads them again when it finishes, because it is what parses a class nothing had (B390).
+        ParserErrorReporter.Refresh(CodeReviewService, models);
     }
 
     /// <summary>
@@ -1343,94 +1579,119 @@ public partial class MainLayout : IDisposable
 
     private void OnRepositorySettingsApplied(string repositoryId, bool formattingChanged, bool styleSettingsChanged)
     {
-        _ = Task.Run(async () =>
+        if (!formattingChanged)
         {
-            try
+            _ = Task.Run(() => ProcessRepositorySettingsAsync(repositoryId, false, styleSettingsChanged));
+            return;
+        }
+
+        // Rewriting every file is VCS work (B385): counted from here, behind any analysis pipeline
+        // already queued, so no VCS operation starts under it - and refused while one runs, because
+        // an operation in flight holds no place in the queue and would be written over.
+        if (_vcsPipelines.TryEnqueue(() => ProcessRepositorySettingsAsync(repositoryId, true, styleSettingsChanged)) is not null)
+            return;
+
+        Warn("MainLayout", "Full format refused: a version-control operation or its analysis is running");
+        _ = InvokeAsync(() => Snackbar.Add(
+            "Files were not reformatted: a version-control operation or its analysis is running. " +
+            "Use Format All Files in repository settings when it has finished.", Severity.Warning));
+
+        // The findings still follow the new rules; only the rewrite waits for the user.
+        _ = Task.Run(() => ProcessRepositorySettingsAsync(repositoryId, false, styleSettingsChanged: true));
+    }
+
+    private async Task ProcessRepositorySettingsAsync(string repositoryId, bool formattingChanged, bool styleSettingsChanged)
+    {
+        try
+        {
+            var repository = RepositoryService.GetRepository(repositoryId);
+            if (repository == null) return;
+
+            if (formattingChanged)
             {
-                var repository = RepositoryService.GetRepository(repositoryId);
-                if (repository == null) return;
+                // Clear cached timestamps since formatting rules changed
+                FormattingPipeline.ClearWrittenFileTimestamps();
 
-                if (formattingChanged)
+                // Show progress dialog — full formatting can take several minutes
+                _fullFormatStatusMessage = $"Formatting all files in {repository.Name}...";
+                _fullFormatRunning = true;
+                await InvokeAsync(StateHasChanged);
+
+                // Pause monitoring to suppress the thousands of change events that
+                // formatting generates; clear any events that slipped through afterwards.
+                //
+                // Every repository in the working copy (B416, as B325 found for the VCS pipeline):
+                // the watcher is shared, so a sibling left watching recorded this formatter's writes
+                // as its own pending changes. A pause (B296), which starts again only what was being
+                // watched, however the format ends.
+                var pause = MonitorPause.Begin(FileMonitoringService,
+                    RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
+                try
                 {
-                    // Clear cached timestamps since formatting rules changed
-                    FormattingPipeline.ClearWrittenFileTimestamps();
+                    await SaveAllLibrariesWithFormattingAsync(repositoryId);
+                }
+                finally
+                {
+                    FileMonitoringService.ClearPendingChanges(repositoryId);
+                    pause.Dispose();
 
-                    // Show progress dialog — full formatting can take several minutes
-                    _fullFormatStatusMessage = $"Formatting all files in {repository.Name}...";
-                    _fullFormatRunning = true;
+                    // Invalidate working copy cache and notify the library browser
+                    // so it picks up the thousands of files modified by formatting
+                    RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+                    FileMonitoringService.NotifyFileActivity(repositoryId);
+
+                    _fullFormatRunning = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                await InvokeAsync(() => Snackbar.Add("Code formatting complete.", Severity.Success));
+            }
+
+            if (formattingChanged || styleSettingsChanged)
+            {
+                var repositoryModelIds = LibraryDataService.Libraries
+                    .Where(l => l.RepositoryId == repositoryId)
+                    .SelectMany(l => l.ModelIds)
+                    .ToHashSet();
+
+                // Decide there is work before showing the progress dialog, not after. It is
+                // modal and cannot be dismissed, and the only thing that closes it is the
+                // completion event — so opening it on a path that then starts nothing leaves the
+                // application wedged with no way out and nothing further in the log.
+                if (repositoryModelIds.Count > 0)
+                {
+                    _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
+                    _styleCheckRunning = true;
                     await InvokeAsync(StateHasChanged);
 
-                    // Pause monitoring to suppress the thousands of change events that
-                    // formatting generates; clear any events that slipped through afterwards
-                    FileMonitoringService.StopMonitoring(repositoryId);
                     try
                     {
-                        await SaveAllLibrariesWithFormattingAsync(repositoryId);
+                        CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
+                        // The clear above takes the parser findings with it — put them back.
+                        SurfaceParserErrors(repositoryModelIds);
+                        await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
+                        _showStyleCheckingCompleteMessage = true;
+
+                        // Signals completion itself even when it finds nothing to do (no rules
+                        // enabled), which is what closes the dialog.
+                        StyleCheckingService.StartBackgroundChecking(repository);
                     }
-                    finally
+                    catch
                     {
-                        FileMonitoringService.ClearPendingChanges(repositoryId);
-                        if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                            FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
-
-                        // Invalidate working copy cache and notify the library browser
-                        // so it picks up the thousands of files modified by formatting
-                        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
-                        FileMonitoringService.NotifyFileActivity(repositoryId);
-
-                        _fullFormatRunning = false;
+                        // Nothing will signal completion now, so close the dialog here rather
+                        // than leaving it up for a run that never started.
+                        _styleCheckRunning = false;
                         await InvokeAsync(StateHasChanged);
-                    }
-
-                    await InvokeAsync(() => Snackbar.Add("Code formatting complete.", Severity.Success));
-                }
-
-                if (formattingChanged || styleSettingsChanged)
-                {
-                    var repositoryModelIds = LibraryDataService.Libraries
-                        .Where(l => l.RepositoryId == repositoryId)
-                        .SelectMany(l => l.ModelIds)
-                        .ToHashSet();
-
-                    // Decide there is work before showing the progress dialog, not after. It is
-                    // modal and cannot be dismissed, and the only thing that closes it is the
-                    // completion event — so opening it on a path that then starts nothing leaves the
-                    // application wedged with no way out and nothing further in the log.
-                    if (repositoryModelIds.Count > 0)
-                    {
-                        _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
-                        _styleCheckRunning = true;
-                        await InvokeAsync(StateHasChanged);
-
-                        try
-                        {
-                            CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
-                            // The clear above takes the parser findings with it — put them back.
-                            SurfaceParserErrors(repositoryModelIds);
-                            await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
-                            _showStyleCheckingCompleteMessage = true;
-
-                            // Signals completion itself even when it finds nothing to do (no rules
-                            // enabled), which is what closes the dialog.
-                            StyleCheckingService.StartBackgroundChecking(repository);
-                        }
-                        catch
-                        {
-                            // Nothing will signal completion now, so close the dialog here rather
-                            // than leaving it up for a run that never started.
-                            _styleCheckRunning = false;
-                            await InvokeAsync(StateHasChanged);
-                            throw;
-                        }
+                        throw;
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                Error("MainLayout", "Error applying repository settings", ex);
-                await InvokeAsync(() => Snackbar.Add($"Error applying settings: {ex.Message}", Severity.Error));
-            }
-        });
+        }
+        catch (Exception ex)
+        {
+            Error("MainLayout", "Error applying repository settings", ex);
+            await InvokeAsync(() => Snackbar.Add($"Error applying settings: {ex.Message}", Severity.Error));
+        }
     }
 
     /// <summary>
@@ -1449,129 +1710,149 @@ public partial class MainLayout : IDisposable
     /// </summary>
     private void OnVcsFilesChanged(string repositoryId)
     {
-        _ = Task.Run(async () =>
+        // One run at a time (B301), and counted as VCS work from here until it has finished, so no
+        // other VCS operation can start under it (B326). See VcsPipelineQueue.
+        _ = _vcsPipelines.Enqueue(() => ProcessVcsFilesChangedAsync(repositoryId));
+    }
+
+    private VcsPipelineQueue _vcsPipelines = null!;
+
+    // The Refresh button is off while VCS work runs, like the Library Browser's VCS actions (B326).
+    private void OnVcsWorkChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task ProcessVcsFilesChangedAsync(string repositoryId)
+    {
+        var repository = RepositoryService.GetRepository(repositoryId);
+        if (repository == null || SkipReferenceOnly(repository, "the VCS-change pipeline")) return;
+
+        try
         {
-            var repository = RepositoryService.GetRepository(repositoryId);
-            if (repository == null || SkipReferenceOnly(repository, "the VCS-change pipeline")) return;
+            await InvokeAsync(() => Snackbar.Add("Processing VCS file changes...", Severity.Normal));
+            LogProcessStart("MainLayout", $"Processing VCS changes for repository {repository.Name}");
 
-            try
+            var graph = LibraryDataService.CombinedGraph;
+
+            // The fallback chain lives in VcsChangeResolver: pending monitor changes, then VCS
+            // status, then the whole repository — and the last of those deliberately gives the
+            // formatter nothing, so a branch switch does not rewrite the working copy.
+            var pendingChanges = FileMonitoringService.GetPendingChangesForRepository(repositoryId);
+
+            var changes = VcsChangeResolver.Resolve(
+                pendingChanges,
+                () => GetModifiedFilePathsFromVcs(repository),
+                () => LibraryDataService.Libraries
+                    .Where(l => l.RepositoryId == repositoryId)
+                    .SelectMany(l => l.ModelIds),
+                filePath => graph.GetModelsInFile(GraphBuilder.GenerateFileId(filePath)).Select(m => m.Id));
+
+            // Cleared whenever there were any, not only when they answered: pending changes that
+            // resolved to nothing are still handled, and leaving them queued makes the Refresh
+            // button report work that is already done.
+            if (pendingChanges.Count > 0)
+                FileMonitoringService.ClearPendingChanges(repositoryId);
+
+            var affectedModelIds = changes.AffectedModelIds;
+            var changedFilePaths = changes.ChangedFilePaths;
+
+            if (affectedModelIds.Count == 0)
             {
-                await InvokeAsync(() => Snackbar.Add("Processing VCS file changes...", Severity.Normal));
-                LogProcessStart("MainLayout", $"Processing VCS changes for repository {repository.Name}");
-
-                var graph = LibraryDataService.CombinedGraph;
-
-                // The fallback chain lives in VcsChangeResolver: pending monitor changes, then VCS
-                // status, then the whole repository — and the last of those deliberately gives the
-                // formatter nothing, so a branch switch does not rewrite the working copy.
-                var pendingChanges = FileMonitoringService.GetPendingChangesForRepository(repositoryId);
-
-                var changes = VcsChangeResolver.Resolve(
-                    pendingChanges,
-                    () => GetModifiedFilePathsFromVcs(repository),
-                    () => LibraryDataService.Libraries
-                        .Where(l => l.RepositoryId == repositoryId)
-                        .SelectMany(l => l.ModelIds),
-                    filePath => graph.GetModelsInFile(GraphBuilder.GenerateFileId(filePath)).Select(m => m.Id));
-
-                // Cleared whenever there were any, not only when they answered: pending changes that
-                // resolved to nothing are still handled, and leaving them queued makes the Refresh
-                // button report work that is already done.
-                if (pendingChanges.Count > 0)
-                    FileMonitoringService.ClearPendingChanges(repositoryId);
-
-                var affectedModelIds = changes.AffectedModelIds;
-                var changedFilePaths = changes.ChangedFilePaths;
-
-                if (affectedModelIds.Count == 0)
-                {
-                    await InvokeAsync(() => Snackbar.Add("No changes to process.", Severity.Info));
-                    if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                        FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
-                    return;
-                }
-
-                // Get per-repository style settings for formatting
-                var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
-
-                // Pause monitor and apply formatting. StopMonitoring is idempotent — safe to call
-                // even if the caller already paused it (e.g., for update/checkout operations).
-                try
-                {
-                    FileMonitoringService.StopMonitoring(repositoryId);
-
-                    if (changedFilePaths.Count > 0)
-                    {
-                        await InvokeAsync(() => Snackbar.Add($"Applying code formatting to {changedFilePaths.Count} changed file(s)...", Severity.Normal));
-                        await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
-                    }
-                }
-                finally
-                {
-                    // Clear any change events that slipped through or were generated by formatting,
-                    // then restart monitoring so future user edits are tracked again.
-                    FileMonitoringService.ClearPendingChanges(repositoryId);
-                    if (!string.IsNullOrEmpty(repository.VcsRootPath))
-                        FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
-                }
-
-                // Re-analyse whenever the graph has edges to maintain (see RefreshLibrariesAsync).
-                if (LibraryDataService.CombinedGraph.DependenciesAnalyzed)
-                {
-                    await InvokeAsync(() => Snackbar.Add("Analyzing dependencies...", Severity.Normal));
-                    var libraryInfos = GetLibraryInfos();
-                    await Task.Run(async () =>
-                    {
-                        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
-                            LibraryDataService.CombinedGraph, affectedModelIds, libraryInfos);
-                        LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
-                    });
-                }
-
-                // Re-run style checking for affected models (skip if deferred and not yet run)
-                if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
-                {
-                    CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
-                    // The clear above takes the parser findings with it — put them back.
-                    SurfaceParserErrors(affectedModelIds);
-                    await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
-                    await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
-                    await InvokeAsync(() => Snackbar.Add("Style checking complete.", Severity.Success));
-                }
-
-                // Re-analyze external resources for affected models (skip if deferred and not yet run)
-                if (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed)
-                {
-                    await ExternalResourceService.AnalyzeResourcesForModelsAsync(
-                        affectedModelIds, LibraryDataService.CombinedGraph);
-                }
-
-                // If the currently selected model was affected, invalidate its render cache and
-                // refresh the model viewer so it re-reads fresh content from the graph.
-                if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))
-                    await InvokeAsync(() =>
-                    {
-                        NavState.ModelContentChanged(affectedModelIds.ToList());
-                        NavState.ChangeModelID(NavState.ModelID);
-                    });
-
-                await InvokeAsync(() => Snackbar.Add("VCS changes processed successfully.", Severity.Success));
-                LogProcessEnd("MainLayout", $"Processing VCS changes for repository {repository.Name}");
-            }
-            catch (Exception ex)
-            {
-                Error("MainLayout", "Error processing VCS changes", ex);
-                await InvokeAsync(() => Snackbar.Add($"Error processing VCS changes: {ex.Message}", Severity.Error));
-                // Always restart monitor on error so future edits are tracked
+                await InvokeAsync(() => Snackbar.Add("No changes to process.", Severity.Info));
                 if (!string.IsNullOrEmpty(repository.VcsRootPath))
                     FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+                return;
             }
-        });
+
+            // Get per-repository style settings for formatting
+            var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
+
+            // Pause monitor and apply formatting. StopMonitoring is idempotent — safe to call
+            // even if the caller already paused it (e.g., for update/checkout operations).
+            //
+            // The rest of the working copy is held off too (B325): the watcher is shared, so with
+            // only this repository stopped a sibling still watching the tree recorded this
+            // formatter's writes as its own pending changes. A sibling whose pipeline is still
+            // queued is already stopped and is left for that pipeline to start again.
+            MonitorPause? siblings = null;
+            try
+            {
+                FileMonitoringService.StopMonitoring(repositoryId);
+                siblings = MonitorPause.Begin(FileMonitoringService,
+                    RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId).Where(r => r.Id != repositoryId));
+
+                if (changedFilePaths.Count > 0)
+                {
+                    await InvokeAsync(() => Snackbar.Add($"Applying code formatting to {changedFilePaths.Count} changed file(s)...", Severity.Normal));
+                    await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
+                }
+            }
+            finally
+            {
+                // Clear any change events that slipped through or were generated by formatting,
+                // then restart monitoring so future user edits are tracked again.
+                FileMonitoringService.ClearPendingChanges(repositoryId);
+                if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                    FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+                siblings?.Dispose();
+            }
+
+            // Re-analyse whenever the graph has edges to maintain (see RefreshLibrariesAsync).
+            if (LibraryDataService.CombinedGraph.DependenciesAnalyzed)
+            {
+                await InvokeAsync(() => Snackbar.Add("Analyzing dependencies...", Severity.Normal));
+                var libraryInfos = GetLibraryInfos();
+                await Task.Run(async () =>
+                {
+                    await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                        LibraryDataService.CombinedGraph, affectedModelIds, libraryInfos);
+                    LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
+                });
+            }
+
+            // Re-run style checking for affected models (skip if deferred and not yet run)
+            if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
+            {
+                CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                // The clear above takes the parser findings with it — put them back.
+                SurfaceParserErrors(affectedModelIds);
+                await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
+                await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
+                await InvokeAsync(() => Snackbar.Add("Style checking complete.", Severity.Success));
+            }
+
+            // Re-analyze external resources for affected models (skip if deferred and not yet run)
+            if (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed)
+            {
+                await ExternalResourceService.AnalyzeResourcesForModelsAsync(
+                    affectedModelIds, LibraryDataService.CombinedGraph);
+            }
+
+            // If the currently selected model was affected, invalidate its render cache and
+            // refresh the model viewer so it re-reads fresh content from the graph.
+            if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))
+                await InvokeAsync(() =>
+                {
+                    NavState.ModelContentChanged(affectedModelIds.ToList());
+                    NavState.ChangeModelID(NavState.ModelID);
+                });
+
+            await InvokeAsync(() => Snackbar.Add("VCS changes processed successfully.", Severity.Success));
+            LogProcessEnd("MainLayout", $"Processing VCS changes for repository {repository.Name}");
+        }
+        catch (Exception ex)
+        {
+            Error("MainLayout", "Error processing VCS changes", ex);
+            await InvokeAsync(() => Snackbar.Add($"Error processing VCS changes: {ex.Message}", Severity.Error));
+            // Always restart monitor on error so future edits are tracked
+            if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+        }
     }
 
     private void OnVcsModelsChanged(string repositoryId, IReadOnlyList<string> modelIds)
     {
-        _ = Task.Run(async () =>
+        // Through the same queue as the pipeline after any other VCS operation: a revert's analysis
+        // re-analyses the same graph, and ran beside one, and under the next operation (B326).
+        _ = _vcsPipelines.Enqueue(async () =>
         {
             var repository = RepositoryService.GetRepository(repositoryId);
             if (repository == null) return;
@@ -1623,12 +1904,12 @@ public partial class MainLayout : IDisposable
                         NavState.ChangeModelID(NavState.ModelID);
                     });
 
-                await InvokeAsync(() => Snackbar.Add("Revert analysis complete.", Severity.Success));
+                await InvokeAsync(() => Snackbar.Add("Analysis of the changed classes is complete.", Severity.Success));
             }
             catch (Exception ex)
             {
                 Error("MainLayout", "Error processing reverted models", ex);
-                await InvokeAsync(() => Snackbar.Add($"Error after revert: {ex.Message}", Severity.Error));
+                await InvokeAsync(() => Snackbar.Add($"Error re-analysing the changed classes: {ex.Message}", Severity.Error));
             }
         });
     }
@@ -1676,9 +1957,20 @@ public partial class MainLayout : IDisposable
         if (_isRefreshing)
             return;
 
+        // Not over a VCS operation or the pipeline one started (B326): both reload and format the
+        // same files. The button is disabled while one runs; this is for the click that beats the
+        // render.
+        if (NavState.IsVcsWorkInProgress)
+        {
+            Snackbar.Add("Wait for the version-control operation and its analysis to finish, then refresh.", Severity.Info);
+            return;
+        }
+
         _isRefreshing = true;
         StateHasChanged();
 
+        // Counted as VCS work while it runs, so no VCS operation starts under it either.
+        using var work = NavState.BeginVcsWork();
         try
         {
             var pendingChanges = FileMonitoringService.PendingChanges.ToList();
@@ -1694,9 +1986,14 @@ public partial class MainLayout : IDisposable
             // Pause file monitoring for affected repositories to prevent file writes
             // (from formatting) generating new pending changes and triggering cascading
             // VCS status queries via OnRepositoryFileActivity.
+            //
+            // Every repository in each affected working copy, not only the ones with changes: the
+            // watcher is shared, and a sibling left watching recorded the formatter's writes as its
+            // own (B325). A pause, so an exception on the way does not leave them all unwatched.
             var affectedRepoIds = pendingChanges.Select(c => c.RepositoryId).Distinct().ToList();
-            foreach (var repoId in affectedRepoIds)
-                FileMonitoringService.StopMonitoring(repoId);
+            using var pause = MonitorPause.Begin(FileMonitoringService, affectedRepoIds
+                .SelectMany(id => RepositoryService.GetRepositoriesSharingWorkingCopy(id))
+                .DistinctBy(r => r.Id));
 
             // Collect all changed file paths (deletions, renames, modifications, additions)
             var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1710,7 +2007,9 @@ public partial class MainLayout : IDisposable
 
             Info("MainLayout", $"Processing {changedFilePaths.Count} changed Modelica files from {pendingChanges.Count} pending changes");
 
-            // Determine root path from the first affected repository
+            // One root for every change, although they may span several working copies: it only
+            // anchors the relative paths, and the reload resolves each back to its full path, so a
+            // file in another working copy keeps its own (B384).
             var firstRepo = RepositoryService.GetRepository(pendingChanges[0].RepositoryId);
             var rootPath = firstRepo?.VcsRootPath ?? Path.GetDirectoryName(pendingChanges[0].FilePath) ?? "";
 
@@ -1797,12 +2096,7 @@ public partial class MainLayout : IDisposable
             // Clear pending changes (including any generated by formatting file writes)
             // and restart file monitoring for affected repositories.
             FileMonitoringService.ClearPendingChanges();
-            foreach (var repoId in affectedRepoIds)
-            {
-                var repo = RepositoryService.GetRepository(repoId);
-                if (repo != null && !string.IsNullOrEmpty(repo.VcsRootPath))
-                    FileMonitoringService.StartMonitoring(repoId, repo.VcsRootPath);
-            }
+            pause.Dispose();
 
             LogProcessEnd("MainLayout", $"Processing {pendingChanges.Count} file changes");
             Snackbar.Add($"Successfully processed {pendingChanges.Count} file changes", Severity.Success);

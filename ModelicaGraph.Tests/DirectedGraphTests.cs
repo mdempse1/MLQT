@@ -463,6 +463,22 @@ public class DirectedGraphTests
     }
 
     [Fact]
+    public void GetUsedByModelIds_IsACopy_AndEmptyForAnUnknownModel()
+    {
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("a", "A"));
+        graph.AddNode(new ModelNode("b", "B"));
+        graph.AddModelUsesModel("a", "b");
+
+        var users = graph.GetUsedByModelIds("b");
+        graph.RemoveModelDependencyEdges("a");
+
+        Assert.Equal(["a"], users);
+        Assert.Empty(graph.GetUsedByModelIds("b"));
+        Assert.Empty(graph.GetUsedByModelIds("missing"));
+    }
+
+    [Fact]
     public void Clear_RemovesAllNodesAndEdges()
     {
         // Arrange
@@ -539,6 +555,40 @@ public class DirectedGraphTests
         graph.InvalidateDependencyAnalysis();
 
         Assert.False(graph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task AnInvalidationDuringAnAnalysis_IsNotOverwrittenByItsCompletion()
+    {
+        // A library loaded while a full analysis runs is not in the set that analysis took at its
+        // start. Marking the graph analysed at the end claimed edges the new classes do not have, and
+        // nothing re-ran it (B352).
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("A", "A", "model A\nend A;"));
+        var invalidated = false;
+
+        await GraphBuilder.AnalyzeDependenciesAsync(graph, progressLog: message =>
+        {
+            if (!invalidated && message.StartsWith("Phase 1+2:", StringComparison.Ordinal))
+            {
+                graph.InvalidateDependencyAnalysis();
+                invalidated = true;
+            }
+        });
+
+        Assert.True(invalidated);   // otherwise the assertion below proves nothing
+        Assert.False(graph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task AnAnalysisWithNoInvalidation_StillMarksTheGraph()
+    {
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("A", "A", "model A\nend A;"));
+
+        await GraphBuilder.AnalyzeDependenciesAsync(graph);
+
+        Assert.True(graph.DependenciesAnalyzed);
     }
 
     [Fact]

@@ -25,6 +25,14 @@ public class MetricsCommandTests
         end B;
         """;
 
+    /// <summary>A file with a syntax error. The parser recovers, so the class still loads - it is
+    /// described on purpose, so the only finding it can produce is the diagnostic itself.</summary>
+    private const string Unparseable = """
+        model C "described"
+          this is not Modelica
+        end C;
+        """;
+
     private sealed class TempLibrary : IDisposable
     {
         private readonly TempWorkspace _workspace = new("mlqt-metrics");
@@ -148,6 +156,26 @@ public class MetricsCommandTests
         using var lib = Fixture(TwoClassesPlusUndocumented);
         Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
+        var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
+        Assert.Equal(1, point.GetProperty("Findings").GetInt32());
+    }
+
+    [Fact]
+    public void Metrics_DoesNotCountAParseDiagnosticAsStyleDebt()
+    {
+        // A diagnostic says the results are incomplete, not that the library got worse. Counting one
+        // would make the trend jump on a syntax error - or on a defect in MLQT - rather than on the
+        // library's quality moving, which is the one thing the trend is for. The guard was there and
+        // nothing held it: the mutation audit turned the `&&` into `||`, which counts every
+        // diagnostic in scope, and no test objected because no test had a diagnostic in the set
+        // (B221).
+        using var lib = Fixture(TwoClassesPlusUndocumented);
+        lib.WithModel("Broken.mo", Unparseable);
+
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
+
+        // Two findings are reported - the undescribed class and the syntax error - and exactly one
+        // of them is style debt.
         var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
         Assert.Equal(1, point.GetProperty("Findings").GetInt32());
     }

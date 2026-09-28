@@ -227,6 +227,35 @@ public class BaselineTests
     }
 
     [Fact]
+    public void ADependencyNotLoadedThisTime_IsReportedMissing()
+    {
+        var settings = Rules(RuleIds.ClassDescription);
+        var baseline = Baseline.FromFindings(
+            [F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings, ["Modelica", "Claytex"]);
+
+        var drift = baseline.DriftFrom(settings, ["Modelica"]);
+
+        Assert.Equal(["Claytex"], drift.DependenciesMissing);
+        Assert.True(drift.HasDrifted);
+    }
+
+    [Fact]
+    public void ADependencyWhoseSourceIsLoaded_IsNotMissing()
+    {
+        // B268: an encrypted dependency is no longer loaded when readable source for it is, so a
+        // baseline taken before that names it and this run does not. References into it resolve,
+        // against the source - "not loaded this time, pass --dependency" would be false advice.
+        var settings = Rules(RuleIds.ClassDescription);
+        var baseline = Baseline.FromFindings(
+            [F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings, ["Modelica", "Claytex"]);
+
+        var drift = baseline.DriftFrom(settings, ["Modelica"], loadedFromSource: ["Claytex"]);
+
+        Assert.Empty(drift.DependenciesMissing);
+        Assert.False(drift.HasDrifted);
+    }
+
+    [Fact]
     public void RuleEnabledSince_IsReported()
     {
         var baseline = BaselinedWith(Rules(RuleIds.ClassDescription));

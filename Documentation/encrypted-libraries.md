@@ -61,8 +61,8 @@ certainty.
 
 ### In the application
 
-Add the folder your libraries are installed in under **Settings → Reference Libraries**. For Dymola
-that is typically:
+Add the folder your libraries are installed in under **Settings → Reference Libraries**, with
+**Add folder**. For Dymola that is typically:
 
 ```
 C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library
@@ -70,11 +70,23 @@ C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library
 
 MLQT scans the folder, finds every library beneath it — encrypted or not — and loads them read-only
 at startup, before your own libraries are analysed. The table shows how many libraries each folder
-contributes and how many of those are encrypted, so a mistyped or moved path is obvious immediately
-rather than surfacing later as unresolved references.
+contributes and how many of those are encrypted (the **Libraries found** column), so a mistyped or
+moved path is obvious immediately rather than surfacing later as unresolved references. Changes take
+effect the next time the project is loaded.
+
+Recovery is controlled by **Recover encrypted libraries from their documentation**, above the table.
+It is on by default; turn it off and an encrypted library's namespace is left opaque, so references
+into it are not resolved.
 
 Reference libraries are **never checked, formatted, committed or written to**. They appear in the
 library browser so you can read them, and nothing more.
+
+**If you also have the library's source checked out**, MLQT uses the source and does not load the
+encrypted copy at all — not even the classes the source lacks. The installed copy is often an older
+release, and mixing the two would put classes your checkout has deleted back into your library. The
+application log records each encrypted library left out this way and where its source is. If you
+remove the repository holding that source, choose **Load project** on the active project in
+**Settings → Manage Repositories** to bring the encrypted copy back.
 
 The paths are stored in your application settings rather than in the repository's
 `.mlqt/settings.json`, because an install location is a property of your machine — a colleague's
@@ -121,6 +133,28 @@ is never reported on — there is no source in it to have an opinion about.
 
 `load_library` accepts an encrypted library directory and loads it the same way, returning the usual
 library summary.
+
+An agent gets more back than the synthesized declaration shows. The vendor's help lists each class's
+parameters, connectors and, for a function, its inputs and outputs, and `get_class_interface` and
+`list_class_elements` return them with the description and the unit the vendor published:
+
+```json
+{
+  "id": "Battery.BMS.CurrentRestrictor",
+  "recoveredFromDocumentation": true,
+  "parameters": [
+    { "name": "iMax", "type": null, "description": "Maximum current", "unit": "A" }
+  ],
+  "connectors": [
+    { "name": "p", "type": null, "description": "Positive pin" }
+  ]
+}
+```
+
+Every `type` is `null` and always will be: the generator does not publish declared types, and a
+guessed one would be indistinguishable from a real one everywhere downstream.
+`recoveredFromDocumentation` is what says so — it appears on `get_class_info`,
+`get_class_interface` and `list_class_elements`, and a class carrying it is never writable.
 
 ---
 

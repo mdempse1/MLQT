@@ -30,6 +30,18 @@ public class ParserError
     public int Line { get; set; }
 
     /// <summary>
+    /// Whether <see cref="Line"/> counts from the first line of one class's own stored source rather
+    /// than from the start of the file it came from.
+    ///
+    /// <para>The parser only knows the text it was handed. Loading reads whole files, so an error
+    /// recorded then is on a file line; a class parsed on its own later — its stored source, which
+    /// starts at the class's declaration — reports lines within that class. The two differ by the
+    /// class's start line, and a report that subtracted it from a line already inside the class put
+    /// every such error in a nested class on line 1 (B388).</para>
+    /// </summary>
+    public bool LineIsClassRelative { get; set; }
+
+    /// <summary>
     /// Character position within the line where the error occurred.
     /// </summary>
     public int CharPosition { get; set; }

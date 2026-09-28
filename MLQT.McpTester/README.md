@@ -48,12 +48,20 @@ keeps its independence from MLQT's service layer.
      the server's defaults. Leaving a boolean on (default) omits it entirely, which matters for tri-state
      `boolean|null` parameters (e.g. `create_class`'s `standalone`) where sending `false` is not the same
      as omitting it.
-5. **Call tool** — the result (text content, pretty-printed if JSON, plus any `structuredContent`)
-   is shown, with an `ok` / `isError` badge.
+5. **Call tool** — the result is shown with an `ok` / `isError` badge: text content, pretty-printed
+   if it is JSON, plus any `structuredContent`.
+   - **Image content is displayed, not described.** A tool that returns an image — MLQT's
+     `get_diagram_image` renders a class's diagram as a PNG — shows the picture above the text, on a
+     transparency checkerboard so the edge of the image is visible against the card, with its media
+     type and size beneath. **Actual size** switches between fitting the panel and one image pixel
+     per screen pixel. Nothing here is MLQT-specific: any server's image content, and any embedded
+     resource whose media type is an image, is shown the same way.
 
 ## Layout
 
 - `Components/Pages/Home.razor` — the whole tester UI.
 - `Services/McpClientService.cs` — holds the live `McpClient` connection (connect / list / call).
+- `Services/ToolResultView.cs` — splits a call result into the part that is read and the part that is
+  looked at, turning image content into a `data:` URI the page can put in an `img` tag.
 - `Services/ToolSchema.cs` — parses a tool's JSON Schema into editable fields and converts them back
   to a typed argument dictionary.

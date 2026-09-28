@@ -41,6 +41,22 @@ opposite of the shared-pipeline principle that keeps GUI, CLI and MCP reporting 
 The cost is that a stub looks like an ordinary node to code that **writes**, and that is bought off
 with exactly one flag.
 
+### The one exception, and why it is not a crack in the rule
+
+**A class's members cannot be synthesized**, because a Modelica declaration needs a *type* and the
+generator does not publish one. `parameter Real k` is a fabrication that feeds `TypeResolver` and
+`UnitResolver` looking exactly like something read from source, and a connector written as a
+component would be wrong for every class that has one. So the parameters, connectors, inputs,
+outputs and record contents stay as metadata: `ExternalStubBuilder` keeps the whole
+`DocumentedClass` on `ModelNode.RecoveredFromDocumentation`, and **nothing that checks, resolves or
+writes reads it** — only the surfaces that *report* a class do (B179).
+
+The rule above is unchanged and the reason is the same one that produced it: the stub route is taken
+wherever a truthful declaration can be written, and here there is none to write. They were parsed
+and dropped for a year, so `get_class_interface` answered "no parameters" for a vendor class with a
+dozen. It now returns them with `recoveredFromDocumentation: true` and **`type: null`**, which says
+*not published* rather than *not worked out*.
+
 ## `IsExternalStub` — the write-path guards must be exhaustive
 
 The highest-severity failure mode is MLQT rewriting a vendor library it cannot read, in the user's
@@ -64,6 +80,32 @@ editable and inviting the attempt.
 ones; a plain-source library loaded for reference needed `LoadedLibrary.IsReferenceOnly` of its own
 (backlog B80), and that is what keeps it out of the checks, the coverage figures and the metrics
 trend.
+
+## Source for the same library wins whole, not class by class
+
+A tool's library folder ships the encrypted build of libraries a user may also have checked out as
+source, and the two are routinely **different releases**. They are never both loaded:
+`SourceSupersedesEncrypted` (exact top-level name; an unknown name matches nothing) decides, and it is
+applied twice (B268, WP15):
+
+- `RepositoryService.LoadLibrariesAsync` skips the encrypted build **before reading it**, from the
+  names each repository's discovery already has — discovery runs for every repository before any
+  library loads, so this takes the parallel-load race out without serialising anything;
+- `LibraryDataService.Register`, which every load path goes through, retires whichever copy
+  registers second under the same lock — the reference-library setting, a library added mid-session,
+  and a folder not named after its library all arrive that way.
+
+**Why whole.** Merged per class, the encrypted build kept a stub for every class the newer source
+had deleted — in either arrival order, because the stub builder adds whatever the source lacks — so
+the user's library showed vendor classes it did not have, and a reference to a deleted class resolved
+instead of being reported. Both copies' indexes also claimed the same ids, which is what three
+separate callers had to be taught to read around.
+
+**What it does not do.** Nothing reloads the encrypted build if the source goes away mid-session;
+the Manage Repositories tab offers **Load project** on the active project after a repository is
+removed, and that path loads it. `DirectedGraph.AddNode`'s stub-versus-source rule and
+`LibraryOwnership.Owner` are still there, now as safety nets, and `LibraryOwnershipPolicyTests`
+holds every read of a library's `ModelIds` to a ledger so the list search does not come back.
 
 ## What the HTML gives, and what it does not
 

@@ -626,4 +626,187 @@ end Demo;");
         // Assert
         Assert.Contains("Lib.Examples.Demo.PointMass", analyzer.ReferencedModels);
     }
+
+    // --- B246: the language's own names, and annotation content, are not library references ---
+    //
+    // Every one of these fails only because the offending name is IN the graph as a node. That is
+    // the whole mechanism behind "every library reports a missing uses(Line)": ReferenceResolver
+    // binds a bare name to any node it happens to find, and nothing told it that a graphical
+    // primitive inside an annotation is not a class at all. Putting the node there is therefore not
+    // a contrivance - it is the reproduction.
+
+    /// <summary>The reference text a model contains, resolved against a graph holding the named nodes.</summary>
+    private static HashSet<string> ReferencesOf(string modelId, string code, params string[] otherNodeIds)
+    {
+        var graph = new DirectedGraph();
+        foreach (var id in otherNodeIds)
+            graph.AddNode(new ModelNode(id, id[(id.LastIndexOf('.') + 1)..], $"model {id} end {id};"));
+        var node = new ModelNode(modelId, modelId[(modelId.LastIndexOf('.') + 1)..], code);
+        graph.AddNode(node);
+
+        var analyzer = new ModelAnalyzer(modelId, graph);
+        analyzer.Visit(ModelicaParserHelper.Parse(code));
+        return analyzer.ReferencedModels;
+    }
+
+    [Fact]
+    public void AnalyzeCode_GraphicalPrimitiveInAnnotation_IsNotADependency()
+    {
+        // Line, Rectangle and the rest are annotation grammar, not classes. Collected as references
+        // they made every library report 'uses(Line)' - the finding that made the rule unusable.
+        var references = ReferencesOf("MyLib.M",
+            """
+            model M
+              annotation (Icon(graphics={Line(points={{0,0},{1,1}}), Rectangle(extent={{0,0},{1,1}})}));
+            end M;
+            """,
+            "Line", "Rectangle");
+
+        Assert.DoesNotContain("Line", references);
+        Assert.DoesNotContain("Rectangle", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_UsesAnnotation_IsNotADependency()
+    {
+        // The library a uses(...) declares is named BY the annotation, not referenced by any code.
+        // Counted as a reference it makes every declared library look used, which is what left
+        // MLQT.Structure.UsesDeclaredUnused unable to fire on a root package at all.
+        var references = ReferencesOf("MyLib",
+            """
+            package MyLib
+              annotation (uses(Modelica(version="4.0.0")));
+            end MyLib;
+            """,
+            "Modelica");
+
+        Assert.DoesNotContain("Modelica", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_AnnotationKeyMatchingAClassName_IsNotADependency()
+    {
+        // 'Placement' and 'Dialog' are annotation keys. A library with a class of the same name -
+        // and there are such libraries - would otherwise pick up an edge from every component in it.
+        var references = ReferencesOf("MyLib.M",
+            """
+            model M
+              Real x annotation (Dialog(group="Data"), Placement(transformation(extent={{0,0},{1,1}})));
+            end M;
+            """,
+            "Dialog", "Placement");
+
+        Assert.DoesNotContain("Dialog", references);
+        Assert.DoesNotContain("Placement", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_DerivativeAnnotation_IsStillADependency()
+    {
+        // The exception that stops this being a blanket exclusion: a function's derivative and
+        // inverse annotations name real functions the translator calls. Dropping those edges would
+        // report every _der function as unused.
+        var references = ReferencesOf("MyLib.f",
+            """
+            function f
+              input Real x;
+              output Real y;
+            algorithm
+              y := x;
+              annotation (derivative=MyLib.f_der, inverse(x=MyLib.f_inv(y)));
+            end f;
+            """,
+            "MyLib.f_der", "MyLib.f_inv");
+
+        Assert.Contains("MyLib.f_der", references);
+        Assert.Contains("MyLib.f_inv", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_ChoicesAnnotation_IsStillADependency()
+    {
+        // Same exception: a choices(choice(redeclare ...)) names a class the user can select, and
+        // nothing outside the annotation mentions it.
+        var references = ReferencesOf("MyLib.M",
+            """
+            model M
+              replaceable MyLib.Media.Base medium constrainedby MyLib.Media.Base
+                annotation (choices(choice(redeclare MyLib.Media.Air medium "Air")));
+            end M;
+            """,
+            "MyLib.Media.Base", "MyLib.Media.Air");
+
+        Assert.Contains("MyLib.Media.Air", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_ConnectionsOperators_AreNotDependencies()
+    {
+        // Connections is a pseudo-package the language defines; no uses(...) can ever declare it.
+        var references = ReferencesOf("MyLib.M",
+            """
+            model M
+              Boolean b;
+            equation
+              Connections.branch(b, b);
+              b = Connections.rooted(b) or rooted(b);
+            end M;
+            """,
+            "Connections", "rooted");
+
+        Assert.DoesNotContain("Connections", references);
+        Assert.DoesNotContain("rooted", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_ExternalObject_IsNotADependency()
+    {
+        // ExternalObject is the language's own base class for an external object, not a library.
+        var references = ReferencesOf("MyLib.Table",
+            """
+            class Table
+              extends ExternalObject;
+            end Table;
+            """,
+            "ExternalObject");
+
+        Assert.DoesNotContain("ExternalObject", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_ClassNameDifferingOnlyInCase_IsStillADependency()
+    {
+        // Modelica is case-sensitive and the built-in list was not: Modelica.Blocks.Math.Sum, Max,
+        // Abs, Sign, Sqrt, Sin, Cos and Exp all collide case-insensitively with a built-in function,
+        // so a component typed by one of them lost its edge.
+        var references = ReferencesOf("MyLib.M",
+            """
+            model M
+              import Modelica.Blocks.Math.*;
+              Sum sum1;
+              Max max1;
+            end M;
+            """,
+            "Modelica.Blocks.Math.Sum", "Modelica.Blocks.Math.Max");
+
+        Assert.Contains("Modelica.Blocks.Math.Sum", references);
+        Assert.Contains("Modelica.Blocks.Math.Max", references);
+    }
+
+    [Fact]
+    public void AnalyzeCode_BuiltInFunction_IsStillNotADependency()
+    {
+        // ...and the lower-case built-ins they collide with stay suppressed.
+        var references = ReferencesOf("MyLib.M",
+            """
+            model M
+              Real x;
+            equation
+              x = sum({1, 2}) + abs(-1) + sqrt(2);
+            end M;
+            """,
+            "sum", "abs", "sqrt");
+
+        Assert.Empty(references);
+    }
 }

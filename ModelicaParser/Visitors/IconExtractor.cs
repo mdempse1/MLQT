@@ -13,10 +13,20 @@ namespace ModelicaParser.Visitors;
 /// </summary>
 public class IconExtractor : modelicaBaseVisitor<object?>
 {
+    /// <summary>The annotation holding a class's own graphics — the layer a diagram is drawn in.</summary>
+    public const string DiagramLayer = "Diagram";
+
+    /// <summary>The annotation holding the graphics a class shows when it is used inside another.</summary>
+    public const string IconLayer = "Icon";
+
+    private readonly string _layer;
     private readonly List<string> _extendsClasses = new();
+    private readonly Dictionary<string, ExtendsMap> _maps = new(StringComparer.Ordinal);
     private IconData? _currentIcon;
     private int _classDepth = 0;
     private string? _withinPackage;
+
+    private IconExtractor(string layer) => _layer = layer;
 
     /// <summary>
     /// Extracts Icon data from a Modelica class definition string.
@@ -28,6 +38,28 @@ public class IconExtractor : modelicaBaseVisitor<object?>
         var result = ExtractIconWithInheritance(modelicaCode);
         return result?.Icon;
     }
+
+    /// <summary>
+    /// Extracts the <c>Diagram</c> layer instead of the <c>Icon</c> layer — the graphics a class
+    /// draws on its own diagram, and the coordinate system its components are placed in.
+    ///
+    /// <para><b>This is the class's own layer only.</b> Modelica inherits the Diagram layer as it
+    /// inherits the Icon layer - a base's diagram graphics are drawn beneath the derived class's, and
+    /// a class that states no coordinate system uses its base's - so a caller drawing a whole
+    /// diagram merges this over the class's bases, as the MCP server's <c>DiagramImage</c> does
+    /// (B316). It is a separate entry point because the two layers are separate questions, not
+    /// because only one of them is inherited.</para>
+    /// </summary>
+    public static IconData? ExtractDiagram(modelicaParser.Stored_definitionContext parseTree)
+        => ExtractLayer(parseTree, DiagramLayer)?.Icon;
+
+    /// <summary>
+    /// The <c>Diagram</c> layer with the class's extends clauses, including which of them map their
+    /// base into a region with <c>DiagramMap(extent=...)</c> - what resolving an inherited coordinate
+    /// system needs to know (B394).
+    /// </summary>
+    public static IconExtractionResult? ExtractDiagramWithInheritance(modelicaParser.Stored_definitionContext parseTree)
+        => ExtractLayer(parseTree, DiagramLayer);
 
     /// <summary>
     /// Extracts Icon data from a pre-parsed Modelica parse tree.
@@ -67,15 +99,20 @@ public class IconExtractor : modelicaBaseVisitor<object?>
     /// <param name="parseTree">The pre-parsed ANTLR4 parse tree.</param>
     /// <returns>IconExtractionResult containing icon and extends information.</returns>
     public static IconExtractionResult? ExtractIconWithInheritance(modelicaParser.Stored_definitionContext parseTree)
+        => ExtractLayer(parseTree, IconLayer);
+
+    private static IconExtractionResult? ExtractLayer(
+        modelicaParser.Stored_definitionContext parseTree, string layer)
     {
         try
         {
-            var extractor = new IconExtractor();
+            var extractor = new IconExtractor(layer);
             extractor.Visit(parseTree);
             return new IconExtractionResult
             {
                 Icon = extractor._currentIcon,
                 ExtendsClasses = extractor._extendsClasses,
+                ExtendsMaps = extractor._maps,
                 WithinPackage = extractor._withinPackage
             };
         }
@@ -122,9 +159,54 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             if (!string.IsNullOrEmpty(baseClassName))
             {
                 _extendsClasses.Add(baseClassName);
+                if (MapOf(context.annotation()) is { } map)
+                    _maps[baseClassName] = map;
             }
         }
         return base.VisitExtends_clause(context);
+    }
+
+    /// <summary>
+    /// An extends clause's <c>IconMap</c> / <c>DiagramMap</c> (whichever is this layer's), or null
+    /// when it has none or states only the defaults (MLS 3.6 §18.6.3). An extent other than the null
+    /// region <c>{{0,0},{0,0}}</c> maps the base into that region, and such a base does not lend the
+    /// class its coordinate system (§18.6.1.1); <c>primitivesVisible=false</c> hides the base's
+    /// graphics (B394, B420).
+    /// </summary>
+    private ExtendsMap? MapOf(modelicaParser.AnnotationContext? annotation)
+    {
+        var arguments = annotation?.class_modification()?.argument_list()?.argument();
+        if (arguments is null)
+            return null;
+
+        foreach (var arg in arguments)
+        {
+            var map = arg.element_modification_or_replaceable()?.element_modification();
+            if (map?.name()?.GetText() != _layer + "Map")
+                continue;
+
+            double[]? region = null;
+            var primitivesVisible = true;
+            foreach (var inner in map.modification()?.class_modification()?.argument_list()?.argument() ?? [])
+            {
+                var attribute = inner.element_modification_or_replaceable()?.element_modification();
+                var value = attribute?.modification()?.modification_expression()?.expression()?.GetText();
+                switch (attribute?.name()?.GetText())
+                {
+                    case "extent":
+                        var e = ParseExtent(value);
+                        region = e[0] != e[2] || e[1] != e[3] ? e : null;
+                        break;
+                    case "primitivesVisible":
+                        primitivesVisible = value != "false";
+                        break;
+                }
+            }
+
+            return region is null && primitivesVisible ? null : new ExtendsMap(region, primitivesVisible);
+        }
+
+        return null;
     }
 
     public override object? VisitAnnotation(modelicaParser.AnnotationContext context)
@@ -153,7 +235,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             if (elementMod != null)
             {
                 var name = elementMod.name()?.GetText();
-                if (name == "Icon")
+                if (name == _layer)
                 {
                     _currentIcon = new IconData();
                     var modification = elementMod.modification();
@@ -216,13 +298,18 @@ public class IconExtractor : modelicaBaseVisitor<object?>
                 {
                     case "extent":
                         _currentIcon.CoordinateExtent = ParseExtent(exprText);
+                        _currentIcon.DeclaresExtent = true;
                         break;
                     case "preserveAspectRatio":
                         _currentIcon.PreserveAspectRatio = exprText?.ToLower() == "true";
+                        _currentIcon.DeclaresPreserveAspectRatio = true;
                         break;
                     case "initialScale":
                         if (double.TryParse(exprText, NumberStyles.Float, CultureInfo.InvariantCulture, out var scale))
+                        {
                             _currentIcon.InitialScale = scale;
+                            _currentIcon.DeclaresInitialScale = true;
+                        }
                         break;
                 }
             }

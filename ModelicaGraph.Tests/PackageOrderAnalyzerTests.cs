@@ -79,7 +79,9 @@ public class PackageOrderAnalyzerTests
     public void DisabledByDefault_NoFindings()
     {
         var graph = Build(new[] { "Ghost" }, "A");
-        var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings(), graph.ModelNodes.ToList());
+        // NothingEnabled() rather than a fresh object: MLQT.Structure.SingleFilePackage is on by
+        // default and would report this fixture, which is about package.order and not about it.
+        var ctx = new GraphAnalysisContext(graph, StyleCheckingSettings.NothingEnabled(), graph.ModelNodes.ToList());
         Assert.Empty(GraphAnalysisRunner.Run(ctx));
     }
 }

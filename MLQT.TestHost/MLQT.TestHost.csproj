@@ -13,4 +13,10 @@
     <ProjectReference Include="..\MLQT.Shared\MLQT.Shared.csproj" />
   </ItemGroup>
 
+  <!-- The one settings double, linked rather than copied, so what every journey runs on is the
+       implementation SettingsServiceContract holds (B365). -->
+  <ItemGroup>
+    <Compile Include="../TestSupport/InMemorySettingsService.cs" Link="TestSupport/InMemorySettingsService.cs" />
+  </ItemGroup>
+
 </Project>

@@ -18,23 +18,40 @@ public partial class SettingsRepositories : IDisposable
     /// Marking a repository reference only takes it out of checking, coverage and formatting, and
     /// stops MLQT writing into it. Applied to the live repository at once so the rest of the app stops
     /// treating it as the user's own code without waiting for Apply — which is also what makes the
-    /// panel below it disappear.
+    /// panel below it disappear. Through the service, which starts or stops the repository's file
+    /// monitoring with the flag and has its browser ask for its status again (B354).
     /// </summary>
-    private void OnReferenceOnlyChanged(bool value)
+    internal void OnReferenceOnlyChanged(bool value)
     {
         if (_selectedItem is null)
             return;
 
+        RepositoryService.SetReferenceOnly(_selectedItem.Id, value);
         _selectedItem.IsReferenceOnly = value;
         StateHasChanged();
     }
 
-    private List<Repository> _repositories = new();
+    /// <summary>
+    /// The active project's repositories, in the order they are shown and saved in (B188).
+    /// Internal so the reorder guards can be tested without rendering the panel.
+    /// </summary>
+    internal List<Repository> _repositories = new();
     private Repository _selectedItem = null!;
     private Repository _backupItem = null!;
     private StyleCheckingSettings SelectedSettings => _selectedItem.StyleSettings ??= new StyleCheckingSettings();
-    private bool _editRepository = false;
-    private readonly DialogOptions _dialogOptions = new() { FullWidth = false };
+    /// <summary>
+    /// Whether the edit dialog is open. Internal because the reorder arrows sit inside a row whose
+    /// own click opens it, and "the arrow did not also open the dialog" is only answerable here —
+    /// the dialog renders into the provider's portal, not into this component's markup.
+    /// </summary>
+    internal bool _editRepository = false;
+    /// <summary>
+    /// The Edit Repository dialog's options. Neither a backdrop click nor Escape may close it: its
+    /// edits are made to the live repository and only <c>CancelChanges</c> puts them back, so a close
+    /// by either kept them without Apply. Said here rather than left to the provider it is shown
+    /// through, which happens to say the same (B425).
+    /// </summary>
+    private readonly DialogOptions _dialogOptions = new() { FullWidth = false, BackdropClick = false, CloseOnEscapeKey = false };
     private List<DictionaryInfo> _availableDictionaries = new();
     private string _newRepoExceptionName = "";
     private string _newBranchDirectory = "";
@@ -121,23 +138,101 @@ public partial class SettingsRepositories : IDisposable
         _showProjectNameInput = true;
     }
 
+    /// <summary>
+    /// Why the name being typed for a new project cannot be used, or <c>null</c> when it can.
+    /// Same rule as the startup selector applies — see <see cref="ProjectNameRules"/>.
+    /// </summary>
+    internal string? NewProjectNameError =>
+        _showProjectNameInput ? ProjectNameRules.Validate(_projectNameInput, _projects) : null;
+
+    /// <summary>
+    /// Why the name being typed for a rename cannot be used, or <c>null</c> when it can. The project
+    /// being renamed is excluded, so confirming without changing the name is not a clash with itself.
+    /// </summary>
+    internal string? RenameError =>
+        _renamingProjectId is null
+            ? null
+            : ProjectNameRules.Validate(_renameInput, _projects, ignoringProjectId: _renamingProjectId);
+
     private async Task ConfirmProjectName()
     {
+        // The confirm button is disabled while this is non-null.
+        if (NewProjectNameError is not null)
+            return;
+
         _showProjectNameInput = false;
 
         if (string.IsNullOrWhiteSpace(_projectNameInput))
             return;
 
-        var newProject = RepositoryService.CreateProject(_projectNameInput.Trim());
+        // Awaited, so its save has landed before the switch below saves (B447): unawaited, the
+        // create's save could land last and put the previous project back as the active one.
+        ProjectProfile newProject;
+        try
+        {
+            newProject = await RepositoryService.CreateProjectAsync(_projectNameInput.Trim());
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(SettingsRepositories), "Creating a project failed", ex);
+            await InvokeAsync(() => Snackbar.Add($"The project could not be created: {ex.Message}", Severity.Error));
+            RefreshProjects();
+            StateHasChanged();
+            return;
+        }
         RefreshProjects();
         StateHasChanged();
 
         // Automatically load the new empty project
-        NavState.ProjectSwitchStarting();
-        await RepositoryService.SwitchProjectAsync(newProject.Id);
+        var switched = await SwitchToProjectAsync(newProject.Id);
         RefreshProjects();
-        await InvokeAsync(() => Snackbar.Add($"Project '{newProject.Name}' created and loaded", Severity.Success));
+        if (switched)
+            await InvokeAsync(() => Snackbar.Add($"Project '{newProject.Name}' created and loaded", Severity.Success));
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Switches to a project the way every switch on this panel does: announces it, so the layout
+    /// shows its progress, and awaits it. Returns whether the project changed.
+    /// </summary>
+    /// <remarks>
+    /// The progress the announcement opens is closed by the handler of <c>OnProjectChanged</c>, so a
+    /// switch that throws before raising it, or returns early because the project is not found, left
+    /// the six-step dialog open and its step published for the rest of the session (B435). Whether
+    /// it was raised is the one thing that says the switch happened, so that is what this watches;
+    /// when it was not, the switch is abandoned on <see cref="AppState"/> and the user told why.
+    /// </remarks>
+    internal async Task<bool> SwitchToProjectAsync(string projectId)
+    {
+        var changed = false;
+        void OnChanged(string _) => changed = true;
+
+        RepositoryService.OnProjectChanged += OnChanged;
+        string? failure = null;
+        try
+        {
+            NavState.ProjectSwitchStarting();
+            await RepositoryService.SwitchProjectAsync(projectId);
+            if (!changed)
+                failure = "the project was not found";
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(SettingsRepositories), $"Switching to project {projectId} failed", ex);
+            failure = ex.Message;
+        }
+        finally
+        {
+            RepositoryService.OnProjectChanged -= OnChanged;
+        }
+
+        if (failure is null)
+            return true;
+
+        if (!changed)
+            NavState.ProjectSwitchAbandoned();
+        await InvokeAsync(() => Snackbar.Add($"The project could not be loaded: {failure}", Severity.Error));
+        return changed;
     }
 
     private void CancelProjectName()
@@ -151,11 +246,24 @@ public partial class SettingsRepositories : IDisposable
         _renameInput = project.Name;
     }
 
-    private void ConfirmRename()
+    private async Task ConfirmRename()
     {
+        // The confirm button is disabled while this is non-null.
+        if (RenameError is not null)
+            return;
+
         if (_renamingProjectId != null && !string.IsNullOrWhiteSpace(_renameInput))
         {
-            RepositoryService.RenameProject(_renamingProjectId, _renameInput.Trim());
+            // Awaited, so no later save can be overtaken by this one (B447).
+            try
+            {
+                await RepositoryService.RenameProjectAsync(_renamingProjectId, _renameInput.Trim());
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Error(nameof(SettingsRepositories), $"Renaming project {_renamingProjectId} failed", ex);
+                await InvokeAsync(() => Snackbar.Add($"The project could not be renamed: {ex.Message}", Severity.Error));
+            }
             RefreshProjects();
         }
         _renamingProjectId = null;
@@ -168,11 +276,18 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Whether to offer <b>Load project</b> for the project that is already active: only once a
+    /// repository has been removed from it. Removing one can leave a library unloaded that it was
+    /// standing in for — an encrypted build whose source it held (B268) — and loading the project
+    /// again is the existing path that puts that right.
+    /// </summary>
+    internal bool CanReloadActiveProject => RepositoryService.RepositoryRemovedSinceProjectLoad;
+
     private async Task LoadProject(string projectId)
     {
         // Signal MainLayout to show progress dialog immediately before loading starts
-        NavState.ProjectSwitchStarting();
-        await RepositoryService.SwitchProjectAsync(projectId);
+        await SwitchToProjectAsync(projectId);
         RefreshProjects();
         StateHasChanged();
     }
@@ -193,33 +308,64 @@ public partial class SettingsRepositories : IDisposable
         if (result == null || result.Canceled)
             return;
 
-        var wasActive = project.Id == _activeProjectId;
-        var deleted = RepositoryService.DeleteProject(project.Id);
-        if (!deleted)
-            return;
-
-        if (wasActive)
+        // Only an inactive project is offered for deletion, and the service refuses the active one
+        // (B442), so deleting never switches project. It used to carry a branch that switched to the
+        // first remaining project after deleting the active one, which no button could reach.
+        bool deleted;
+        try
         {
-            // Switch to the first remaining project
-            RefreshProjects();
-            var firstProject = _projects.FirstOrDefault();
-            if (firstProject != null)
-            {
-                NavState.ProjectSwitchStarting();
-                await RepositoryService.SwitchProjectAsync(firstProject.Id);
-                RefreshProjects();
-            }
+            deleted = await RepositoryService.DeleteProjectAsync(project.Id);
         }
-        else
+        catch (Exception ex)
         {
-            RefreshProjects();
+            LoggingService.Error(nameof(SettingsRepositories), $"Deleting project {project.Id} failed", ex);
+            await InvokeAsync(() => Snackbar.Add($"The project could not be deleted: {ex.Message}", Severity.Error));
+            deleted = false;
         }
 
-        await InvokeAsync(() => Snackbar.Add("Project deleted", Severity.Success));
+        RefreshProjects();
+        if (deleted)
+            await InvokeAsync(() => Snackbar.Add("Project deleted", Severity.Success));
         StateHasChanged();
     }
 
     // ========== Repository Management ==========
+
+    /// <summary>
+    /// Whether <see cref="MoveRepositoryAsync"/> would move this repository — the arrow buttons'
+    /// enabled state, and the same range the service enforces.
+    /// </summary>
+    /// <remarks>
+    /// In the code-behind rather than inline in the markup so it can be asserted on without
+    /// rendering the panel, and so both arrows ask one question rather than two expressions that
+    /// can drift apart.
+    /// </remarks>
+    internal bool CanMove(Repository repository, int delta)
+    {
+        var index = _repositories.IndexOf(repository);
+        if (index < 0)
+            return false;
+
+        var target = index + delta;
+        return delta != 0 && target >= 0 && target < _repositories.Count;
+    }
+
+    /// <summary>
+    /// Moves a repository up or down the project's list, and persists the new order.
+    /// </summary>
+    /// <remarks>
+    /// <para>Saved immediately rather than on a Save button, because this tab has none — the
+    /// Settings page hides its action buttons for the Manage Repositories panel, and every other
+    /// change made here writes itself out the same way. An order that survived until the window
+    /// closed and then reverted would be worse than no ordering at all (B188).</para>
+    /// </remarks>
+    internal async Task MoveRepositoryAsync(Repository repository, int delta)
+    {
+        if (!RepositoryService.MoveRepository(repository.Id, delta))
+            return;
+
+        await RepositoryService.SaveRepositorySettingsAsync();
+    }
 
     private void OnRepoRowClick(TableRowClickEventArgs<Repository> args)
     {
@@ -227,7 +373,7 @@ public partial class SettingsRepositories : IDisposable
             OnRepoClick(args.Item);
     }
 
-    private void OnRepoClick(Repository repo)
+    internal void OnRepoClick(Repository repo)
     {
         _selectedItem = repo;
         _ = SelectedSettings; // ensure StyleSettings is initialized before CloneDeep
@@ -266,7 +412,7 @@ public partial class SettingsRepositories : IDisposable
         var (formattingChanged, styleSettingsChanged) = EffectOfEdit(oldSettings, SelectedSettings);
 
         _editRepository = false;
-        await RepositoryService.SaveRepositorySettingsAsync();
+        await RepositoryService.ApplyRepositorySettingsAsync(_selectedItem.Id);
 
         if (styleSettingsChanged || formattingChanged)
             NavState.RepositorySettingsApplied(_selectedItem.Id, formattingChanged, styleSettingsChanged);
@@ -282,13 +428,20 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
-    private void CancelChanges()
+    /// <summary>
+    /// Puts back everything the dialog changed. "Reference only" too, and <b>through the service</b>
+    /// as the toggle went (B405): it takes effect at once rather than on Apply, starting or stopping
+    /// the repository's file monitoring (B354), so restoring the flag alone would leave that behind.
+    /// </summary>
+    internal void CancelChanges()
     {
         _editRepository = false;
         _selectedItem.Name = _backupItem.Name;
         _selectedItem.RemotePath = _backupItem.RemotePath;
         _selectedItem.LocalPath = _backupItem.LocalPath;
         _selectedItem.StyleSettings = _backupItem.StyleSettings;
+        if (_selectedItem.IsReferenceOnly != _backupItem.IsReferenceOnly)
+            OnReferenceOnlyChanged(_backupItem.IsReferenceOnly);
         StateHasChanged();
     }
 
