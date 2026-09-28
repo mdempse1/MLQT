@@ -80,6 +80,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // (B489).
     private bool _innermostIfBreaks;
     private int _equationContinuationIndent = 0;
+    // Whether the condition of an if, when or while equation or statement is being written (B491):
+    // its continuation lines are a level further in, past the column of what it guards.
+    private bool _inControlCondition;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
     private int _equalsLine = -1;
@@ -2758,12 +2761,31 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         return null;
     }
 
+    /// <summary>
+    /// Writes the condition of an if, elseif, when, elsewhen or while, wrapped for length as an
+    /// equation's expression is, with its continuation lines a level past the column of what it
+    /// guards (B491). The continuation was set only by the equation or statement the construct is,
+    /// and cleared by the first one nested in it, so a condition wrapped only in the first branch,
+    /// and there at the column of the body; B489 did not wrap a condition at 'and' or 'or' for that
+    /// reason, and MSL's IF97 kept its long 'if ... then' headers on one line.
+    /// </summary>
+    private void VisitControlCondition(IParseTree condition)
+    {
+        int enclosingIndent = _equationContinuationIndent;
+        bool enclosingCondition = _inControlCondition;
+        _equationContinuationIndent = 1;
+        _inControlCondition = true;
+        Visit(condition);
+        _equationContinuationIndent = enclosingIndent;
+        _inControlCondition = enclosingCondition;
+    }
+
     public override object? VisitIf_equation([NotNull] modelicaParser.If_equationContext context)
     {
         // if
         Write(Keyword("if"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -2783,7 +2805,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elseif"));
                 Space();
-                Visit(elseif.expression());
+                VisitControlCondition(elseif.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -2919,7 +2941,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         Space();
 
         if (context.expression() != null)
-            Visit(context.expression());
+            VisitControlCondition(context.expression());
 
         Space();
         Write(Keyword("loop"));
@@ -2947,7 +2969,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         Write(Keyword("when"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -2966,7 +2988,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elsewhen"));
                 Space();
-                Visit(elsewhen.expression());
+                VisitControlCondition(elsewhen.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -2992,7 +3014,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         Write(Keyword("when"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -3011,7 +3033,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elsewhen"));
                 Space();
-                Visit(elsewhen.expression());
+                VisitControlCondition(elsewhen.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -3038,7 +3060,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // if
         Write(Keyword("if"));
         Space();
-        Visit(context.expression());
+        VisitControlCondition(context.expression());
         Space();
         Write(Keyword("then"));
         EmitLine();
@@ -3056,7 +3078,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             {
                 Write(Keyword("elseif"));
                 Space();
-                Visit(elseif.expression());
+                VisitControlCondition(elseif.expression());
                 Space();
                 Write(Keyword("then"));
                 EmitLine();
@@ -3300,15 +3322,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// where a '+' does not wrap either, nor inside a first argument that may still be moved to a
     /// line of its own (B464, B487), nor in an if-expression that does not start its branches on
     /// lines of their own - one inside another's condition or 'then' (B487) - nor in an annotation,
-    /// nor in the condition of an if, when or while, whose continuation would start at the column of
-    /// the statements it guards. With <paramref name="always"/>, it starts a line wherever it may,
-    /// whether or not what it joins fits.
+    /// nor in a for loop's range. The condition of an if, when or while wraps too, a level past the
+    /// column of what it guards (B491). With <paramref name="always"/>, it starts a line wherever it
+    /// may, whether or not what it joins fits.
     /// </summary>
     private void WriteLogicalOperator(string op, IParseTree operand, bool always)
     {
         int length = op.Length + 1 + EstimatedLength(operand);
         if (_bracketDepth == 0 && _equationContinuationIndent > 0 && _firstArgumentLine != _code.Count
-            && !_inAnnotation && (!_inIfExpression || _innermostIfBreaks) && !InControlCondition(operand)
+            && !_inAnnotation && (!_inIfExpression || _innermostIfBreaks) && !InForRange(operand)
             && (always || GetCurrentLinePlainTextLength() + 1 + length > _maxLineLength - 3
                 && length <= _maxLineLength - 3))
             StartContinuationLine(branchLine: false);
@@ -3319,20 +3341,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     }
 
     /// <summary>
-    /// Whether an expression is part of the condition of an if, when or while - of the equation or
-    /// statement itself, not of an if-expression inside one - or of a for loop's range.
+    /// Whether an expression is part of a for loop's range - of the equation or statement itself,
+    /// not of an expression inside one.
     /// </summary>
-    private static bool InControlCondition(IParseTree node)
+    private static bool InForRange(IParseTree node)
     {
         for (var parent = node.Parent; parent != null; parent = parent.Parent)
         {
             switch (parent)
             {
-                case modelicaParser.If_equationContext or modelicaParser.Elseif_equationContext
-                    or modelicaParser.If_statementContext or modelicaParser.Elseif_statementContext
-                    or modelicaParser.When_equationContext or modelicaParser.Elsewhen_equationContext
-                    or modelicaParser.When_statementContext or modelicaParser.Elsewhen_statementContext
-                    or modelicaParser.While_statementContext or modelicaParser.For_indexContext:
+                case modelicaParser.For_indexContext:
                     return true;
                 case modelicaParser.EquationContext or modelicaParser.StatementContext:
                     return false;
@@ -3460,6 +3478,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // A term continuing a branch that starts a line of its own is a level in from the
         // 'else' that starts it (B487).
         if (_inBrokenChain && !branchLine)
+            _currentLineMinimumIndent += IndentSpaces;
+        // A condition's continuation is a level past the equations or statements it guards, so
+        // that it is not read as one of them (B491).
+        if (_inControlCondition)
             _currentLineMinimumIndent += IndentSpaces;
         // Remove the continuation indent
         for (int j = 0; j < _equationContinuationIndent; j++)

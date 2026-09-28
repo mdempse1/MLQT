@@ -85,7 +85,10 @@ namespace ModelicaParser.Tests;
 ///
 /// <para>B491 - shapes B489 left. A <c>+</c> or <c>-</c> inside a subscript is not wrapped:
 /// Buildings' ElectricalLoad ended a line with <c>TOutFut_in_internal[m</c> and started the next
-/// with <c>- 1]</c>.</para>
+/// with <c>- 1]</c>. The condition of an if, elseif, when, elsewhen or while wraps in every branch,
+/// before an <c>and</c> or <c>or</c> as well as a <c>+</c>, a level past what it guards: the
+/// continuation was cleared by the first equation nested in it, so only the first branch's wrapped,
+/// at the column of its body, and B489 left conditions unwrapped for that reason.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1096,7 +1099,8 @@ public class ContinuationIndentTests
           fstatus[2] = if IN_con.target == TYP.UndevOne or IN_con.target == TYP.UndevBoth then if Pr > prandtlMax or Pr < prandtlMin then 1 else 0
               else 0;
           ok = aaaaaaaaaaaaaaaaaaaaaaa or bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
-          if (p < triple.ptriple) or (p > data.PLIMIT1) or (h < hlowerofp1(p)) or ((p < 10.0e6) and (h > hupperofp5(p))) then
+          if (p < triple.ptriple) or (p > data.PLIMIT1) or (h < hlowerofp1(p))
+              or ((p < 10.0e6) and (h > hupperofp5(p))) then
             y = 1;
           end if;
           connect(valIso.port_bChiWat, inlPumChiWatPri.port_a)
@@ -1132,8 +1136,8 @@ public class ContinuationIndentTests
         // starts a line, so what it joins is not read as part of the 'and' before it; Dissipation - an
         // 'or' whose term fits after it stays; an if-expression inside another's 'then' does not wrap
         // its condition (B487); a term too long for a line of its own stays where it is; an
-        // if-equation's condition does not wrap, since its continuation would start at the column of
-        // the equations it guards; nor does an annotation's. In a function: a declaration's binding is
+        // if-equation's condition wraps a level past the equations it guards (B491); an annotation's
+        // does not wrap. In a function: a declaration's binding is
         // not wrapped; nothing inside a first argument that may still be moved to a line of its own
         // wraps (B464); nor does anything inside parentheses, as a '+' does not (B489).
         TestHelpers.AssertClass(
@@ -1289,6 +1293,88 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(SubscriptsNotWrapped));
     }
 
+    private const string ControlConditionsWrapped = """
+        model M
+          Real y;
+
+        equation
+          if not ATotExt > 0 and not ATotWin > 0 and not AInt > 0 and AFloor > 0 then
+            connect(thermSplitterIntGains.portOut[1], floorRC.port_a);
+          elseif ATotExt > 0 and not ATotWin > 0 and not AInt > 0 and AFloor > 0
+              or not ATotExt > 0 and ATotWin > 0 and not AInt > 0 and AFloor > 0
+              or not ATotExt > 0 and not ATotWin > 0 and AInt > 0 and AFloor > 0 then
+            connect(thermSplitterIntGains.portOut[2], floorRC.port_a);
+          end if;
+          if Modelica.Math.isEqual(eta_mf1, 1.0, Modelica.Constants.eps)
+              and Modelica.Math.isEqual(eta_mf2, 1.0, Modelica.Constants.eps) then
+            y = 1;
+          end if;
+          when Modelica.Math.BooleanVectors.anyTrue({u[i] <> pre(y[i]) for i in 1:nin})
+              and time - time_change > holdDuration then
+            y = 2;
+          end when;
+
+        algorithm
+          if (p < triple.ptriple) or (p > data.PLIMIT1) or (h < hlowerofp1(p))
+              or ((p < 10.0e6) and (h > hupperofp5(p))) or ((p >= 10.0e6) and (h > hupperofp2(p))) then
+            y := 1;
+          elseif aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb > 0 then
+            y := 2;
+          end if;
+          while aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > 0
+              and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb > 0 loop
+            y := 3;
+          end while;
+          for i in aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb loop
+            y := 4;
+          end for;
+        end M;
+        """;
+
+    [Fact]
+    public void AControlConditionWrapsALevelPastWhatItGuardsInEveryBranch()
+    {
+        // In order: Buildings' ThreeElements - an elseif's condition wraps, where the continuation
+        // was cleared by the first equation nested in the if and it never wrapped; MSL's LossyGear -
+        // an if's condition wraps before 'and' rather than between a call's arguments; Buildings'
+        // IntegerArrayHold - a when's before 'and' rather than at a '-'; MSL's IF97 region_ph - an
+        // if statement's condition wraps; an elseif statement's at a '+'; a while's. Each
+        // continuation is a level past the body, so it is not read as one of its statements (B491).
+        // A for loop's range is not wrapped before an 'and' or 'or'.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  if not ATotExt > 0 and not ATotWin > 0 and not AInt > 0 and AFloor > 0 then
+                    connect(thermSplitterIntGains.portOut[1], floorRC.port_a);
+                  elseif ATotExt > 0 and not ATotWin > 0 and not AInt > 0 and AFloor > 0 or not ATotExt > 0 and ATotWin > 0 and not AInt > 0 and AFloor > 0 or not ATotExt > 0 and not ATotWin > 0 and AInt > 0 and AFloor > 0 then
+                    connect(thermSplitterIntGains.portOut[2], floorRC.port_a);
+                  end if;
+                  if Modelica.Math.isEqual(eta_mf1, 1.0, Modelica.Constants.eps) and Modelica.Math.isEqual(eta_mf2, 1.0, Modelica.Constants.eps) then
+                    y = 1;
+                  end if;
+                  when Modelica.Math.BooleanVectors.anyTrue({u[i] <> pre(y[i]) for i in 1:nin}) and time - time_change > holdDuration then
+                    y = 2;
+                  end when;
+                algorithm
+                  if (p < triple.ptriple) or (p > data.PLIMIT1) or (h < hlowerofp1(p)) or ((p < 10.0e6) and (h > hupperofp5(p))) or ((p >= 10.0e6) and (h > hupperofp2(p))) then
+                    y := 1;
+                  elseif aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb > 0 then
+                    y := 2;
+                  end if;
+                  while aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > 0 and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb > 0 loop
+                    y := 3;
+                  end while;
+                  for i in aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb loop
+                    y := 4;
+                  end for;
+                end M;
+                """),
+            expectedOutput: Normalise(ControlConditionsWrapped));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1332,6 +1418,7 @@ public class ContinuationIndentTests
     [InlineData(ArgumentsAfterBranchesStartLines, 100)]
     [InlineData(NamedArgumentsEstimatedAsWritten, 100)]
     [InlineData(SubscriptsNotWrapped, 100)]
+    [InlineData(ControlConditionsWrapped, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

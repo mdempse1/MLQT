@@ -423,9 +423,8 @@ is not read as part of the `and` before it:
 ```
 
 As with a `+`, nothing inside parentheses wraps, so a long parenthesised condition stays on its line.
-Nor does the condition of an `if`, `when` or `while` equation or statement, whose continuation would
-start at the column of what it guards, nor one inside another if-expression's condition or `then`,
-nor an annotation's. Earlier versions never wrapped a logical expression: the condition above was
+Nor does one inside another if-expression's condition or `then`, nor an annotation's, nor a `for`
+loop's range. The condition of an `if`, `when` or `while` does, a level past what it guards (below). Earlier versions never wrapped a logical expression: the condition above was
 left whole on one line and the line broke inside `abs(u1 - u2)`. Over the Modelica Standard Library
 and Buildings, 31 files are written differently from before (15 MSL, 16 Buildings), only in line
 breaks and indentation - most of them an `assert` condition.
@@ -469,6 +468,26 @@ before (1 MSL, 3 Buildings), only in line breaks and indentation. In one of them
 `Fluid.Pipes.BaseClasses.FlowModels.PartialGenericPipeFlow`, the break inside a subscript was the
 only thing that split a long first argument - `actual=WallFriction.massFlowRate_dp_staticHead(...)`
 - over lines; without it the argument is moved whole to a line of its own, which it does not fit.
+
+**The condition of an `if`, `elseif`, `when`, `elsewhen` or `while` wraps as an equation does**,
+before an `and`, `or`, `+` or `-`, in every branch, with its continuation lines a level past the
+equations or statements it guards, so they are not read as one of them:
+
+```modelica
+  if not ATotExt > 0 and not ATotWin > 0 and not AInt > 0 and AFloor > 0 then
+    connect(thermSplitterIntGains.portOut[1], floorRC.port_a);
+  elseif ATotExt > 0 and not ATotWin > 0 and not AInt > 0 and AFloor > 0
+      or not ATotExt > 0 and ATotWin > 0 and not AInt > 0 and AFloor > 0
+      or not ATotExt > 0 and not ATotWin > 0 and AInt > 0 and AFloor > 0 then
+    connect(thermSplitterIntGains.portOut[2], floorRC.port_a);
+```
+
+Earlier versions wrapped only the first branch's condition, only at a `+` or `-` or between a call's
+arguments, and at the column of its body; an `elseif`'s was never wrapped, nor was any condition at
+an `and` or `or`. A condition that is all one parenthesised expression, or a single comparison,
+still stays on its line. Over the Modelica Standard Library and Buildings, 40 files are written
+differently from before (10 MSL, 30 Buildings), only in line breaks and indentation; lines over 100
+characters in them go from 2,722 to 2,620, and conditions over 100 characters from 145 to 39.
 
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
