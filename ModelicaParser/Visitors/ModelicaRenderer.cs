@@ -1987,7 +1987,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // modification_expression can be either expression or 'break'
         if (context.expression() != null)
         {
+            // A component's binding is wrapped for length as an equation's right-hand side is
+            // (B491): with no continuation set, a declaration's expression never wrapped at an
+            // operator, and Buildings' BuildingTimeSeriesAtETS had 'dh_nominal=...' past 125
+            // characters. Only the binding of the declaration itself, not a modification's.
+            int enclosingIndent = _equationContinuationIndent;
+            if (context.Parent?.Parent is modelicaParser.DeclarationContext)
+                _equationContinuationIndent = 1;
             Visit(context.expression());
+            _equationContinuationIndent = enclosingIndent;
         }
         else if (context.GetText() == "break")
         {

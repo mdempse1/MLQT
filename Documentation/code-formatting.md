@@ -489,6 +489,26 @@ still stays on its line. Over the Modelica Standard Library and Buildings, 40 fi
 differently from before (10 MSL, 30 Buildings), only in line breaks and indentation; lines over 100
 characters in them go from 2,722 to 2,620, and conditions over 100 characters from 145 to 39.
 
+**A component's binding wraps as an equation's right-hand side does** - before a `+`, `-`, `and`
+or `or`, at an if-expression's branches, and between a call's arguments - and its description
+follows the last line:
+
+```modelica
+  parameter SI.Voltage ViNominal=VaNominal
+    - Machines.Thermal.convertResistance(Ra, TaRef, alpha20a, TaNominal)*IaNominal
+    - Machines.Losses.DCMachines.brushVoltageDrop(brushParameters, IaNominal)
+    "Induced voltage at nominal operating point";
+  parameter Modelica.Units.SI.MassFlowRate m_flow_nominal=m0_flow_cor + m0_flow_sou + m0_flow_eas
+    + m0_flow_nor + m0_flow_wes "Nominal air mass flow rate";
+```
+
+Earlier versions never wrapped a declaration's expression at an operator, so a long binding stayed
+on the declaration's line, or wrapped only where it held a list of named arguments. Only the binding
+after the component's own `=`: a modification's value - `x(start=...)` - is laid out as before.
+Over the Modelica Standard Library and Buildings, 371 files are written differently from before (93
+MSL, 278 Buildings), only in line breaks and indentation; lines over 100 characters in them go from
+9,263 to 8,816.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

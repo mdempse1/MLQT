@@ -88,7 +88,9 @@ namespace ModelicaParser.Tests;
 /// with <c>- 1]</c>. The condition of an if, elseif, when, elsewhen or while wraps in every branch,
 /// before an <c>and</c> or <c>or</c> as well as a <c>+</c>, a level past what it guards: the
 /// continuation was cleared by the first equation nested in it, so only the first branch's wrapped,
-/// at the column of its body, and B489 left conditions unwrapped for that reason.</para>
+/// at the column of its body, and B489 left conditions unwrapped for that reason. A component's
+/// binding wraps as an equation's right-hand side does, where a declaration's expression never
+/// wrapped at an operator.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -837,8 +839,9 @@ public class ContinuationIndentTests
           parameter String filNam[2]={Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos"),
             Modelica.Utilities.Files.loadResource("modelica://Buildings/Resources/Data/DHC/Loads/Examples/MediumOffice.mos")};
           parameter Real x[3]={ // comment
-            Some.Long.Package.Function.name(aaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),
-              Other.fn(ccccccccccccccccc), Other.fn(dddddddddd)};
+            Some.Long.Package.Function.name(aaaaaaaaaaaaaaaaaaaaaaaaa,
+              bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), Other.fn(ccccccccccccccccc),
+              Other.fn(dddddddddd)};
         end G;
         """;
 
@@ -851,7 +854,8 @@ public class ContinuationIndentTests
         // 109 characters. The array moves to a line of its own after the '=' (B484) - as
         // Buildings' PartialDamperExponential 'cL=' does - but not when what it has written would
         // not fit there either: a string that long cannot be helped by moving it. Nor when a
-        // comment after the '{' has ended the line the array opened on.
+        // comment after the '{' has ended the line the array opened on - where, in a component's
+        // binding, a call's positional argument that does not fit starts a line (B487, B491).
         TestHelpers.AssertClass(
             Normalise("""
                 record G "Grid"
@@ -1114,7 +1118,8 @@ public class ContinuationIndentTests
 
     private const string LogicalOperatorsInAFunction = """
         function f
-          input Boolean b=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccc;
+          input Boolean b=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccc;
           output Rec r;
 
         algorithm
@@ -1137,8 +1142,8 @@ public class ContinuationIndentTests
         // 'or' whose term fits after it stays; an if-expression inside another's 'then' does not wrap
         // its condition (B487); a term too long for a line of its own stays where it is; an
         // if-equation's condition wraps a level past the equations it guards (B491); an annotation's
-        // does not wrap. In a function: a declaration's binding is
-        // not wrapped; nothing inside a first argument that may still be moved to a line of its own
+        // does not wrap. In a function: a declaration's binding wraps as an equation does (B491);
+        // nothing inside a first argument that may still be moved to a line of its own
         // wraps (B464); nor does anything inside parentheses, as a '+' does not (B489).
         TestHelpers.AssertClass(
             Normalise("""
@@ -1221,8 +1226,8 @@ public class ContinuationIndentTests
     private const string NamedArgumentsEstimatedAsWritten = """
         function f
           input Real p;
-          input Real xxxxxxxxxxxx=Buildings.Utilities.Math.Functions.cubicHermite(x=u, x1=xd[i], x2=xd[i + 1],
-            y1=yd[i]);
+          input Real xxxxxxxxxxxx=Buildings.Utilities.Math.Functions.cubicHermite(x=u, x1=xd[i],
+            x2=xd[i + 1], y1=yd[i]);
           output State state;
 
         algorithm
@@ -1241,8 +1246,8 @@ public class ContinuationIndentTests
         // named argument in a statement fits after its ',' is judged by its length as written, with
         // its spaces, as a positional argument's is (B487), where it was judged from its text alone
         // and left 'X=cat(1, X,' and 'x2=xd[i' ending lines they did not fit, their argument wrapped
-        // inside. A declaration's modifications are judged as they were, so 'x2=xd[i + 1],' stays
-        // (B489).
+        // inside. A declaration's binding is judged the same way (B491), so 'x2=xd[i + 1],' starts a
+        // line there too; a declaration's modifications are judged as they were (B489).
         TestHelpers.AssertClass(
             Normalise("""
                 function f
@@ -1375,6 +1380,38 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(ControlConditionsWrapped));
     }
 
+    private const string DeclarationBindingsWrapped = """
+        model M
+          parameter SI.Voltage ViNominal=VaNominal
+            - Machines.Thermal.convertResistance(Ra, TaRef, alpha20a, TaNominal)*IaNominal
+            - Machines.Losses.DCMachines.brushVoltageDrop(brushParameters, IaNominal) "Voltage";
+          parameter Modelica.Units.SI.MassFlowRate m_flow_nominal=m0_flow_cor + m0_flow_sou + m0_flow_eas
+            + m0_flow_nor + m0_flow_wes "Nominal air mass flow rate";
+          final parameter Boolean is_twoWay=typ == Buildings.Templates.Components.Types.Valve.TwoWayModulating
+            or typ == Buildings.Templates.Components.Types.Valve.TwoWayTwoPosition;
+          Real x(start=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb);
+        end M;
+        """;
+
+    [Fact]
+    public void ADeclarationsBindingWrapsAsAnEquationDoes()
+    {
+        // In order: MSL's DcPermanentMagnetData - a binding wraps before a '-' as an equation's
+        // right-hand side does, where a declaration's expression never wrapped at an operator;
+        // Buildings' ClosedLoop - the description follows the last line; Buildings' Templates Valve -
+        // before an 'or'. A modification's own value is not wrapped (B491).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  parameter SI.Voltage ViNominal=VaNominal - Machines.Thermal.convertResistance(Ra, TaRef, alpha20a, TaNominal)*IaNominal - Machines.Losses.DCMachines.brushVoltageDrop(brushParameters, IaNominal) "Voltage";
+                  parameter Modelica.Units.SI.MassFlowRate m_flow_nominal=m0_flow_cor + m0_flow_sou + m0_flow_eas + m0_flow_nor + m0_flow_wes "Nominal air mass flow rate";
+                  final parameter Boolean is_twoWay=typ == Buildings.Templates.Components.Types.Valve.TwoWayModulating or typ == Buildings.Templates.Components.Types.Valve.TwoWayTwoPosition;
+                  Real x(start=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb);
+                end M;
+                """),
+            expectedOutput: Normalise(DeclarationBindingsWrapped));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1419,6 +1456,7 @@ public class ContinuationIndentTests
     [InlineData(NamedArgumentsEstimatedAsWritten, 100)]
     [InlineData(SubscriptsNotWrapped, 100)]
     [InlineData(ControlConditionsWrapped, 100)]
+    [InlineData(DeclarationBindingsWrapped, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
