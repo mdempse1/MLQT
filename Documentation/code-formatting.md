@@ -456,6 +456,20 @@ the end of the line and `+ 1], y1=...` at the start of the next. A declaration's
 judged as before. Over the Modelica Standard Library and Buildings, 8 files are written differently
 from before (2 MSL, 6 Buildings), only in line breaks and indentation.
 
+**Nothing inside a subscript is wrapped**, as nothing inside parentheses is: a subscript's `+` or
+`-` stays with the index it is part of, and the statement wraps elsewhere or not at all:
+
+```modelica
+  kOpa[i + nConExt + 2*nConPar] = Modelica.Constants.sigma*epsConBou[i]*AOpa[i + nConExt + 2*nConPar];
+```
+
+Earlier versions wrote `AOpa[i + nConExt` at the end of the line and `+ 2*nConPar];` at the start
+of the next. Over the Modelica Standard Library and Buildings, 4 files are written differently from
+before (1 MSL, 3 Buildings), only in line breaks and indentation. In one of them, MSL's
+`Fluid.Pipes.BaseClasses.FlowModels.PartialGenericPipeFlow`, the break inside a subscript was the
+only thing that split a long first argument - `actual=WallFriction.massFlowRate_dp_staticHead(...)`
+- over lines; without it the argument is moved whole to a line of its own, which it does not fit.
+
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its
 siblings - `nomVal=` two spaces right of `spe=` and `perCur=`:

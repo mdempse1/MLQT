@@ -82,6 +82,10 @@ namespace ModelicaParser.Tests;
 /// after the first's last branch, on its line. Whether a named argument in a statement fits after
 /// its <c>,</c> is judged by its length as written, as a positional argument's is: MSL's
 /// ReferenceMoistAir left <c>X=cat(1, X,</c> ending a line it did not fit.</para>
+///
+/// <para>B491 - shapes B489 left. A <c>+</c> or <c>-</c> inside a subscript is not wrapped:
+/// Buildings' ElectricalLoad ended a line with <c>TOutFut_in_internal[m</c> and started the next
+/// with <c>- 1]</c>.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1249,6 +1253,42 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(NamedArgumentsEstimatedAsWritten));
     }
 
+    private const string SubscriptsNotWrapped = """
+        function f
+          input Integer m;
+
+        algorithm
+          PPre[m] := Buildings.Controls.Predictors.BaseClasses.weatherRegression(
+            TCur=if m == 1 then TOut_in_internal else TOutFut_in_internal[m - 1],
+            T={T[_typeOfDay[m], iSam[m], i] for i in 1:nHis},
+            P={P[_typeOfDay[m], iSam[m], i] for i in 1:nHis});
+          kOpa[i + nConExt + 2*nConPar] := Modelica.Constants.sigma*epsConBou[i]*AOpa[i + nConExt + 2*nConPar];
+          x := aaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            + ccccccccccc[dddddddddddddddd + eeeeeeeee];
+        end f;
+        """;
+
+    [Fact]
+    public void APlusOrMinusInsideASubscriptIsNotWrapped()
+    {
+        // In order: Buildings' ElectricalLoad, which ended a line with 'TOutFut_in_internal[m' and
+        // started the next with '- 1], T=...', so its first argument, now on one line, is moved to a
+        // line of its own (B464); Buildings' InfraredRadiationExchange, which ended one with
+        // 'AOpa[i + nConExt' and started the next with '+ 2*nConPar];'; and a '+' outside the
+        // subscript still wraps, taking the subscripted term with it (B491).
+        TestHelpers.AssertClass(
+            Normalise("""
+                function f
+                  input Integer m;
+                algorithm
+                  PPre[m] := Buildings.Controls.Predictors.BaseClasses.weatherRegression(TCur=if m == 1 then TOut_in_internal else TOutFut_in_internal[m - 1], T={T[_typeOfDay[m], iSam[m], i] for i in 1:nHis}, P={P[_typeOfDay[m], iSam[m], i] for i in 1:nHis});
+                  kOpa[i + nConExt + 2*nConPar] := Modelica.Constants.sigma*epsConBou[i]*AOpa[i + nConExt + 2*nConPar];
+                  x := aaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + ccccccccccc[dddddddddddddddd + eeeeeeeee];
+                end f;
+                """),
+            expectedOutput: Normalise(SubscriptsNotWrapped));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1291,6 +1331,7 @@ public class ContinuationIndentTests
     [InlineData(LogicalOperatorsInAFunction, 100)]
     [InlineData(ArgumentsAfterBranchesStartLines, 100)]
     [InlineData(NamedArgumentsEstimatedAsWritten, 100)]
+    [InlineData(SubscriptsNotWrapped, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

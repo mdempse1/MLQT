@@ -2413,7 +2413,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitArray_subscripts([NotNull] modelicaParser.Array_subscriptsContext context)
     {
+        // A subscript is counted as a bracket, as parentheses and a matrix's brackets are, so a '+'
+        // or '-' inside one is not wrapped for length (B491): Buildings' ElectricalLoad ended a line
+        // with 'TOutFut_in_internal[m' and started the next with '- 1]'.
         Write("[");
+        _bracketDepth++;
         var subscripts = context.subscript_();
         if (subscripts != null)
         {
@@ -2427,6 +2431,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 Visit(subscripts[i]);
             }
         }
+        _bracketDepth--;
         Write("]");
         return null;
     }
