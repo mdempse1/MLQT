@@ -387,7 +387,8 @@ jobs:
 
       # Only on failure, which is the only time anybody opens one. A trace carries the DOM at each
       # step, screenshots, the console and the network log; a trx carries an assertion and a stack.
-      # Open one with `npx playwright show-trace <file>`.
+      # Open one with `npx playwright show-trace <file>`. Beside them, chromium-netlog.json has the
+      # socket-level errors a trace does not (open it at https://netlog-viewer.appspot.com).
       - name: Upload Playwright traces
         uses: actions/upload-artifact@v6
         if: failure()

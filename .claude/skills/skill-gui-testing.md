@@ -185,7 +185,11 @@ building it **before** a migration rather than during one:
   stay on Git, which CI runners can build without any tool installed.
 - **Traces are how a headless failure is debuggable at all.** `--trace on-first-retry`, uploaded as an
   artifact. It was asked for in the plan, not implemented, and the first defect it was turned on for
-  (B154) was named by it immediately.
+  (B154) was named by it immediately. **A trace cannot say why a connection failed**, only that it
+  did: for that the traced Chromium run also writes `chromium-netlog.json` into the same directory
+  (the OS error under a `net::ERR_CONNECTION_*`), and the host logs Kestrel's connection events at
+  Debug (was the connection ever accepted?). Both were added after run 36398522354 lost one
+  navigation to `ERR_CONNECTION_FAILED` between two good requests and neither log could say where.
 - **An unrecognised `MLQT_JOURNEY_BROWSER` throws rather than falling back**, because a typo that
   silently reverts to Chromium produces a green run that tested nothing.
 - **The journeys share one host, and `AppState` is a singleton across all of them.** Every fixture

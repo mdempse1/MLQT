@@ -81,7 +81,7 @@ public sealed class TestHostFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _app = TestHostFactory.Build();
+        _app = TestHostFactory.Build(ConnectionLogging);
         _app.Urls.Add("http://127.0.0.1:0");
         await _app.StartAsync();
 
@@ -99,7 +99,44 @@ public sealed class TestHostFixture : IAsyncLifetime
                 $"MLQT_JOURNEY_BROWSER={other} is not a browser Playwright ships; use chromium, webkit or firefox"),
         };
 
-        Browser = await type.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        Browser = await type.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true,
+            Args = BrowserName == "chromium" && TraceDirectory is not null ? [.. NetLogArgs(TraceDirectory)] : [],
+        });
+    }
+
+    /// <summary>
+    /// Kestrel's connection-level events, which the request log does not show: a connection
+    /// accepted, reset or ended without a request.
+    /// </summary>
+    /// <remarks>
+    /// <para>Run 36398522354 lost a navigation to <c>net::ERR_CONNECTION_FAILED</c> ten
+    /// milliseconds after it began, between two successful requests to the same host on the same
+    /// port - and the request log could not say whether the browser's connection ever arrived.
+    /// Chromium reports that error for an operating-system connect failure it has no name for,
+    /// so the two halves of the question are here and in <see cref="NetLogArgs"/>.</para>
+    /// </remarks>
+    private static readonly string[] ConnectionLogging =
+    [
+        "--Logging:LogLevel:Microsoft.AspNetCore.Server.Kestrel.Connections=Debug",
+        "--Logging:LogLevel:Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets=Debug",
+    ];
+
+    /// <summary>
+    /// Chromium's own network log, written beside the traces - the one record of which
+    /// operating-system error a failed connect met (see <see cref="ConnectionLogging"/>).
+    /// </summary>
+    /// <remarks>
+    /// Only with a trace directory, and so only in CI, where the directory is uploaded when the job
+    /// failed and discarded when it did not. A Playwright trace has the failed request but not
+    /// the socket error beneath it.
+    /// </remarks>
+    private static IEnumerable<string> NetLogArgs(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        yield return $"--log-net-log={Path.Combine(directory, "chromium-netlog.json")}";
+        yield return "--net-log-capture-mode=Default";
     }
 
     /// <summary>A page with the console wired to the test output, and a sane default timeout.</summary>
