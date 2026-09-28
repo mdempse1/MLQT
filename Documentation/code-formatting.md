@@ -774,6 +774,29 @@ length, as before. Over the Modelica Standard Library and Buildings, 22 files ar
 differently from before, only in line breaks and indentation - among them MSL's `Blocks.Interfaces`
 and Buildings' CDL connectors.
 
+## Section keywords
+
+`public`, `protected`, `equation`, `algorithm` and `external` are written at the column of the class
+they belong to - the column of its `model` (or `function`, `package`, ...) and `end` lines - with the
+section's contents a level in. A top-level class's are at column 0; a class nested inside another in
+the same file has them at its own indentation:
+
+```modelica
+      function kc_evenGapLaminar "Mean heat transfer coefficient of even gap | laminar flow regime | ..."
+        ...
+        output Real failureStatus
+          "0== boundary conditions fulfilled | 1== failure >> check if still meaningful results"
+          annotation (Dialog(group="Output"));
+      protected
+        type TYP = Modelica.Fluid.Dissipation.Utilities.Types.kc_evenGap;
+```
+
+Earlier versions wrote a nested class's `public` and `protected` at column 0, under correctly
+indented elements - MSL's `Modelica.Fluid.Dissipation.HeatTransfer.Channel.kc_evenGapLaminar` above
+among 79 in that file. Over the Modelica Standard Library and Buildings (8,899 files), 75 files are
+written differently from before (68 MSL, 7 Buildings), only in indentation, and 978 `public` and
+`protected` lines move to their class's column.
+
 ## Matrices and data tables
 
 **A matrix keeps its rows where you wrote them.** Where a row starts a new line in the source, it

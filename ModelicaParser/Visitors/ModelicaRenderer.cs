@@ -516,6 +516,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _noPostIndentLines.Add(idx);
     }
 
+    /// <summary>
+    /// The <c>public</c> or <c>protected</c> line that announces an element list, at the level of
+    /// the class it belongs to - the level the list's elements were written at, before
+    /// <see cref="AddIndentAtLineStart"/> moves them a level in. Inserted with no indentation, it
+    /// stood at column 0 in any class nested inside another in the same file (B498); an enclosing
+    /// section's own post-indent still reaches it, as it reaches the class's other lines.
+    /// </summary>
+    private string SectionKeywordLine(string keyword)
+        => new string(' ', _indentLevel * IndentSpaces) + Keyword(keyword);
+
     private void AddIndentAtLineStart(int lineNumber)
     {
         if (lineNumber < 0 || lineNumber >= _code.Count)
@@ -966,7 +976,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 _sectionIndents--;
                 if (_code.Count > numberOfLines) {
                     if (section != CodeSection.Public) {
-                        InsertLineAt(Keyword("public"), numberOfLines);
+                        InsertLineAt(SectionKeywordLine("public"), numberOfLines);
                         numberOfLines++;
                     }
                     for (int j=numberOfLines; j < _code.Count; j++) {
@@ -991,7 +1001,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 _sectionIndents--;
                 if (_code.Count > numberOfLines) {
                     if (section==CodeSection.Any || !alreadyWrittenSectionMarker) {
-                        InsertLineAt(Keyword("protected"), numberOfLines);
+                        InsertLineAt(SectionKeywordLine("protected"), numberOfLines);
                         numberOfLines++;
                         alreadyWrittenSectionMarker = true;
                     }
