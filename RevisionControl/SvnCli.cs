@@ -263,8 +263,8 @@ internal static class SvnCli
 
             using var stdout = new MemoryStream();
             using var stderr = new MemoryStream();
-            var stdoutTask = Drain(process.StandardOutput.BaseStream, stdout, Touched);
-            var stderrTask = Drain(process.StandardError.BaseStream, stderr, Touched);
+            var stdoutTask = DrainOnItsOwnThread(process.StandardOutput.BaseStream, stdout, Touched);
+            var stderrTask = DrainOnItsOwnThread(process.StandardError.BaseStream, stderr, Touched);
 
             try
             {
@@ -309,16 +309,28 @@ internal static class SvnCli
         }
     }
 
-    private static async Task Drain(Stream source, MemoryStream into, Action onRead)
-    {
-        var buffer = new byte[16 * 1024];
-        int read;
-        while ((read = await source.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+    /// <summary>
+    /// Reads a stream to its end on a thread of its own, recording each read as a sign of life.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>ReadAsync</c> on the thread pool. There, each read's continuation queues behind
+    /// whatever else the pool is doing, so on a busy machine the output sat unread in the pipe and
+    /// the idle clock was never reset. A command that wrote every quarter of a second was stopped as
+    /// silent, and its last line, drained after the kill, had been written 0.28s before. That
+    /// happened on a 4-core CI runner with other test classes blocking pool threads. How recently a
+    /// command spoke has to be measured by something that is never kept waiting.
+    /// </remarks>
+    private static Task DrainOnItsOwnThread(Stream source, MemoryStream into, Action onRead) =>
+        Task.Factory.StartNew(() =>
         {
-            into.Write(buffer, 0, read);
-            onRead();
-        }
-    }
+            var buffer = new byte[16 * 1024];
+            int read;
+            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                into.Write(buffer, 0, read);
+                onRead();
+            }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     // UTF-8, with a byte order mark taken as one rather than kept as a character - which is what
     // reading StandardOutput through its reader used to do.

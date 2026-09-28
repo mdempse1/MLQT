@@ -164,7 +164,10 @@ a defect:
 
 - **The svn limit watches output, so never make an svn command quiet.** `svn update --quiet` on a
   large working copy prints nothing and looked exactly like a stalled server (B383).
-  `SvnCommandRunnerTests.NoSvnCommandIsMadeQuiet` reads RevisionControl's source for it.
+  `SvnCommandRunnerTests.NoSvnCommandIsMadeQuiet` reads RevisionControl's source for it. **For the
+  same reason, the output is read on threads of its own, not with `ReadAsync` on the pool.** On a busy
+  pool the reads queue behind other work, output sits unread in the pipe, and a command that is still
+  writing looks silent. `SvnCommandRunnerStarvationTests` fills a capped pool to hold that.
 - **A stop is a kill, and a killed command leaves its lock.** Git leaves `.git/index.lock` (a killed
   `update-index --refresh` is enough), and every later operation fails with "File exists". svn leaves
   the working copy locked (E155004). `RunGitCommand` removes only the `*.lock` files written since the
