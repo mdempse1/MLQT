@@ -719,6 +719,28 @@ before (25 MSL, 76 Buildings), only in line breaks and indentation, and lines ov
 them fall from 2,569 to 2,429 - each one left over is part of a longer line it was split from, most
 of them a description longer than the limit on its own.
 
+Whether a description fits is judged by **the line as it will be written**: its indentation - a
+`protected` section's included - and the `;` after the description (an annotation after it starts a
+line of its own, so there is none to count). A declaration nested a few classes down, or the last
+line of a binding moved to a line of its own, no longer ends past the limit because of its
+description:
+
+```modelica
+  parameter Modelica.Units.SI.SpecificHeatCapacity cpDom_default=
+    MediumDom.specificHeatCapacityCp(MediumDom.setState_pTX(MediumDom.p_default, MediumDom.T_default,
+      MediumDom.X_default))
+    "Specific heat capacity of domestic hot water medium at default medium state";
+```
+
+Earlier versions measured the line without its indentation or its `;`, so Buildings'
+`DHC.Loads.HotWater.StorageTankWithExternalHeatExchanger` ended `MediumDom.X_default)) "Specific
+heat capacity ..."` at 106 characters, and MSL's
+`Fluid.Dissipation.HeatTransfer.General.kc_approxForcedConvection`, eight spaces in, had
+`SI.Diameter d_hyd=... "Hydraulic diameter";` at 102. Only this decision counts the indentation:
+where an expression wraps is still judged without it. Over the Modelica Standard Library and
+Buildings (8,899 files), 972 files are written differently from before (209 MSL, 763 Buildings),
+only in line breaks and indentation; lines over 100 characters in them go from 13,804 to 11,980.
+
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
 Buildings (8,367 files), 1,017 files are written differently from before, every one only in line

@@ -66,6 +66,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private bool _suppressNextIndentation = false;
     private bool _inDocumentationAnnotation = false;
     private readonly HashSet<int> _noPostIndentLines = new(); // Lines exempt from public/protected post-processing indent
+    // How many element lists after a 'public' or 'protected' keyword the line being written is in:
+    // each moves its lines a level in only once they are written (AddIndentAtLineStart), so
+    // CurrentLineIndent adds them to the level being written at (B497).
+    private int _sectionIndents;
     private int _bracketDepth = 0;
     // Whether the expression being written is inside an if-expression or an array constructor,
     // at any depth (B485).
@@ -385,6 +389,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private int GetCurrentLinePlainTextLength()
     {
         return GetCurrentLinePlainText().TrimStart().Length;
+    }
+
+    /// <summary>
+    /// The indentation, in spaces, the line being written will have once it is written: its level
+    /// and its own leading spaces, no less than the least indent <see cref="EmitLine"/> keeps it at
+    /// (B465), and a level for each <c>public</c> or <c>protected</c> element list it is in, which
+    /// is added after (B497). EmitLine's other adjustments - the deepest level (B467) and a line
+    /// after a multi-line string - never changed where a description went over the 8,899 files of
+    /// MSL and Buildings, so they are not repeated here.
+    /// </summary>
+    private int CurrentLineIndent()
+    {
+        var text = GetCurrentLinePlainText();
+        int leading = text.Length - text.TrimStart(' ').Length;
+        return Math.Max(_indentLevel * IndentSpaces + leading, _currentLineMinimumIndent) + _sectionIndents * IndentSpaces;
     }
 
     /// <summary>
@@ -942,7 +961,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 //There might not be if we are excluding class definitions from the code generation
                 //We also don't want the public keyword if we are forcing the code order
                 int numberOfLines = _code.Count;
+                _sectionIndents++;
                 Visit(elementList[elementCounter]);
+                _sectionIndents--;
                 if (_code.Count > numberOfLines) {
                     if (section != CodeSection.Public) {
                         InsertLineAt(Keyword("public"), numberOfLines);
@@ -965,7 +986,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 //We should only write protected if there are elements in the protected section
                 //There might not be if we are excluding class definitions from the code generation
                 int numberOfLines = _code.Count;
+                _sectionIndents++;
                 Visit(elementList[elementCounter]);
+                _sectionIndents--;
                 if (_code.Count > numberOfLines) {
                     if (section==CodeSection.Any || !alreadyWrittenSectionMarker) {
                         InsertLineAt(Keyword("protected"), numberOfLines);
@@ -1900,7 +1923,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// <summary>
     /// Ends the line before a description that would take it past the maximum length, or that
     /// follows a line already past it, and starts the description a level in - for a component and
-    /// for a short class definition alike (B482). Only the description is measured: an annotation
+    /// for a short class definition alike (B482). The line is measured as it will be written,
+    /// indentation included (B497). Only the description is measured: an annotation
     /// always starts a line of its own. A short class's description was always left on the line, so
     /// once its modification's array wrapped (B474) the closing argument joined the short last line
     /// and the description ran past the limit.
@@ -1910,8 +1934,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (comment == null || string.IsNullOrWhiteSpace(comment.GetText()))
             return;
         var description = DescriptionText(comment.string_comment());
+        // Measured as the line will be written (B497): its indentation, and the ';', ',' or ')' that
+        // follows the description unless an annotation does, which starts a line of its own. A
+        // declaration nested a few levels down, or the last line of a wrapped binding, fitted by
+        // the unindented measure and was written past the limit. Only this decision counts the
+        // indentation; the wraps inside an expression measure without it (B462-B494).
+        int terminator = comment.annotation() == null ? 1 : 0;
         bool willBeTooLong = !_inDocumentationAnnotation
-            && GetCurrentLinePlainTextLength() + 1 + description.Length > _maxLineLength;
+            && CurrentLineIndent() + GetCurrentLinePlainTextLength() + 1 + description.Length + terminator
+                > _maxLineLength;
         if (IsLineTooLong() || willBeTooLong)
         {
             EmitLine();

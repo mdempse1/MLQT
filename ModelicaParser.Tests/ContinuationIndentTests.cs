@@ -101,6 +101,13 @@ namespace ModelicaParser.Tests;
 /// <c>hlowerofp1</c> was a staircase eleven levels deep. A component's binding whose first line
 /// would end past the limit starts a line of its own after its <c>=</c>, a level in: Buildings'
 /// Templates heat pump had <c>cpSou_default=if ... then ...</c> at 152 characters.</para>
+///
+/// <para>B497 - whether a description fits on the line it would join is measured as the line will
+/// be written: its indentation, a protected section's included, and the <c>;</c> after it. It was
+/// measured without either, so a declaration nested a few levels down, or the last line of a moved
+/// binding, ran past the limit: Buildings' <c>StorageTankWithExternalHeatExchanger</c> ended
+/// <c>cpDom_default</c> at 106 characters. The wraps inside an expression still measure without
+/// the indentation.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1713,6 +1720,87 @@ public class ContinuationIndentTests
             """));
     }
 
+    private const string DescriptionsMeasuredAsWritten = """
+        model M
+          Real a "Fits with its indentation and semicolon xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+          Real b
+            "One more and the semicolon takes it past xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+          Real c "An annotation follows so no semicolon xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            annotation (Dialog(group="G"));
+          parameter SingleReferenceType refType=
+            Modelica.Electrical.PowerConverters.Types.SingleReferenceType.Sawtooth
+            "Type of reference signal";
+          parameter Buildings.Fluid.HeatExchangers.ThermalWheels.Data.Characteristics.MotorEfficiency relMotEff
+            (uSpe={0}, eta={0.7})
+            "Ratio of the motor efficiency at give speed to the one when the speed is 1"
+            annotation (Dialog(group="Power computation"));
+
+          package Q
+
+            package R
+
+              model S
+                SI.Diameter d_hyd=max(MIN, 4*IN_con.A_cross/max(MIN, IN_con.perimeter))
+                  "Hydraulic diameter";
+              end S;
+            end R;
+            type SpecificHeat = Real(final quantity="SpecificHeatCapacity", final unit="J/(kg.K)")
+              "Heat xxxxx";
+          end Q;
+        protected
+          Real d "A protected section is a level in xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+          Real e
+            "A protected section is one level in xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+          parameter Modelica.Units.SI.SpecificHeatCapacity cpDom_default=
+            MediumDom.specificHeatCapacityCp(MediumDom.setState_pTX(MediumDom.p_default, MediumDom.T_default,
+              MediumDom.X_default))
+            "Specific heat capacity of domestic hot water medium at default medium state";
+        end M;
+        """;
+
+    [Fact]
+    public void ADescriptionThatWouldTakeTheLineAsWrittenPastTheLimitStartsALineOfItsOwn()
+    {
+        // The line is measured as it will be written: its indentation and the ';' after the
+        // description. In order: 'a' is 100 characters written and stays; 'b' is 101 - 99 without
+        // its indentation and 100 without its ';', so it needs both - and moves its description.
+        // 'c' is 100 and an annotation follows, which starts a line of its own, so there is no ';'
+        // to count and it stays. MSL's PowerConverters.DCDC.Control.SignalPWM - 'refType', its
+        // binding moved to a line of its own (B494) and written at that line's continuation indent,
+        // was 101 characters with the description. Buildings' ThermalWheels.Data.Generic -
+        // 'relMotEff', its modification moved to a line of its own, which carries its own indent, was
+        // 103. MSL's
+        // Dissipation.HeatTransfer.General.kc_approxForcedConvection -
+        // 'd_hyd' eight spaces in, 94 characters unindented, was written at 102. A short class's
+        // description is measured the same way (B482). A protected section's lines are moved a level
+        // in only after they are written, which counts too: 'd' stays and 'e' moves. Buildings'
+        // DHC.Loads.HotWater.StorageTankWithExternalHeatExchanger - 'cpDom_default', a binding
+        // moved to a line of its own (B494), ended its last line at 106 with the description (B497).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real a "Fits with its indentation and semicolon xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+                  Real b "One more and the semicolon takes it past xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+                  Real c "An annotation follows so no semicolon xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" annotation (Dialog(group="G"));
+                  parameter SingleReferenceType refType=Modelica.Electrical.PowerConverters.Types.SingleReferenceType.Sawtooth "Type of reference signal";
+                  parameter Buildings.Fluid.HeatExchangers.ThermalWheels.Data.Characteristics.MotorEfficiency relMotEff(uSpe={0}, eta={0.7}) "Ratio of the motor efficiency at give speed to the one when the speed is 1" annotation (Dialog(group="Power computation"));
+                  package Q
+                    package R
+                      model S
+                        SI.Diameter d_hyd=max(MIN, 4*IN_con.A_cross/max(MIN, IN_con.perimeter)) "Hydraulic diameter";
+                      end S;
+                    end R;
+                    type SpecificHeat = Real(final quantity="SpecificHeatCapacity", final unit="J/(kg.K)") "Heat xxxxx";
+                  end Q;
+                protected
+                  Real d "A protected section is a level in xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+                  Real e "A protected section is one level in xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+                  parameter Modelica.Units.SI.SpecificHeatCapacity cpDom_default=MediumDom.specificHeatCapacityCp(MediumDom.setState_pTX(MediumDom.p_default, MediumDom.T_default, MediumDom.X_default)) "Specific heat capacity of domestic hot water medium at default medium state";
+                end M;
+                """),
+            expectedOutput: Normalise(DescriptionsMeasuredAsWritten));
+    }
+
     [Theory]
     [InlineData(GraphicsLineWrapped, 100)]
     [InlineData(CallWrappedInAnExpression, 60)]
@@ -1749,6 +1837,7 @@ public class ContinuationIndentTests
     [InlineData(FlagsKeptWithTheirConditions, 100)]
     [InlineData(NestedChainsFlat, 100)]
     [InlineData(LongBindingsMoved, 100)]
+    [InlineData(DescriptionsMeasuredAsWritten, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
