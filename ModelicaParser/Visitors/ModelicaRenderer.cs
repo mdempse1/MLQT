@@ -83,6 +83,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // Whether the condition of an if, when or while equation or statement is being written (B491):
     // its continuation lines are a level further in, past the column of what it guards.
     private bool _inControlCondition;
+    // The line the '(' of the innermost parentheses being wrapped inside is on (B491), or -1.
+    private int _parenthesesLine = -1;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
     private int _equalsLine = -1;
@@ -3491,6 +3493,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // that it is not read as one of them (B491).
         if (_inControlCondition)
             _currentLineMinimumIndent += IndentSpaces;
+        // Inside parentheses wrapped for length, at least a level in from the line the '(' is on,
+        // and a term continuing a branch a level in from that (B491).
+        if (_parenthesesLine >= 0 && _parenthesesLine < _code.Count)
+        {
+            var opening = _code[_parenthesesLine];
+            int floor = opening.Length - opening.TrimStart(' ').Length + IndentSpaces;
+            if (_inBrokenChain && !branchLine)
+                floor += IndentSpaces;
+            _currentLineMinimumIndent = Math.Max(_currentLineMinimumIndent, floor);
+        }
         // Remove the continuation indent
         for (int j = 0; j < _equationContinuationIndent; j++)
             Dedent();
@@ -3631,10 +3643,39 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         {
             // Parenthesized expression or output expression list
             Write("(");
-            _bracketDepth++;
+            // One expression in parentheses that does not fit on the line it starts on is wrapped
+            // inside them, its continuation a level further in (B491): nothing inside parentheses
+            // wrapped, so MSL's MassWithStopAndFriction had a 300-character 'else (if ... )'.
+            // An if-expression in them is not one inside another's branch: the parentheses say where
+            // it ends, so it breaks at its own branches as one standing alone does (B487).
+            bool wrapsInside = WrapsInsideParentheses(context);
+            bool enclosingNested = _inBranchOrArray;
+            bool enclosingIf = _inIfExpression;
+            bool enclosingBreaks = _innermostIfBreaks;
+            bool enclosingBroken = _inBrokenChain;
+            int enclosingLine = _parenthesesLine;
+            if (wrapsInside)
+            {
+                _inBranchOrArray = true;
+                _inIfExpression = false;
+                _innermostIfBreaks = false;
+                _inBrokenChain = false;
+                _parenthesesLine = _code.Count;
+            }
+            else
+                _bracketDepth++;
             if (context.output_expression_list() != null)
                 Visit(context.output_expression_list());
-            _bracketDepth--;
+            if (wrapsInside)
+            {
+                _inBranchOrArray = enclosingNested;
+                _inIfExpression = enclosingIf;
+                _innermostIfBreaks = enclosingBreaks;
+                _inBrokenChain = enclosingBroken;
+                _parenthesesLine = enclosingLine;
+            }
+            else
+                _bracketDepth--;
             Write(")");
             if (context.array_arguments() != null) {
                 Write("[");
@@ -3764,6 +3805,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether a parenthesised expression is wrapped inside its parentheses, as one outside them
+    /// would be: one too long for a line of its own (B491). Not inside a first argument that may
+    /// yet be moved to a line of its own (B464), nor in an annotation. Outside an equation or a
+    /// statement, or inside other brackets, nothing inside would wrap anyway.
+    /// </summary>
+    private bool WrapsInsideParentheses(modelicaParser.PrimaryContext context)
+    {
+        if (_firstArgumentLine == _code.Count || _inAnnotation)
+            return false;
+        // Too long for a line of its own too: a shorter one is left whole, for whatever is outside
+        // it to wrap before.
+        return EstimatedLength(context) > _maxLineLength - 3;
     }
 
     public override object? VisitComponent_reference([NotNull] modelicaParser.Component_referenceContext context)

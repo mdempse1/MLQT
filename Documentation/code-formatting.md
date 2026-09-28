@@ -422,9 +422,10 @@ is not read as part of the `and` before it:
     or Modelica.Math.BooleanVectors.anyTrue(resume.set) or outerState.subgraphStatePort.resume;
 ```
 
-As with a `+`, nothing inside parentheses wraps, so a long parenthesised condition stays on its line.
-Nor does one inside another if-expression's condition or `then`, nor an annotation's, nor a `for`
-loop's range. The condition of an `if`, `when` or `while` does, a level past what it guards (below). Earlier versions never wrapped a logical expression: the condition above was
+As with a `+`, nothing inside parentheses wraps unless they are too long for a line of their own
+(below). Nor does one inside another if-expression's condition or `then`, nor an annotation's, nor a
+`for` loop's range. The condition of an `if`, `when` or `while` does, a level past what it guards
+(below). Earlier versions never wrapped a logical expression: the condition above was
 left whole on one line and the line broke inside `abs(u1 - u2)`. Over the Modelica Standard Library
 and Buildings, 31 files are written differently from before (15 MSL, 16 Buildings), only in line
 breaks and indentation - most of them an `assert` condition.
@@ -455,7 +456,7 @@ the end of the line and `+ 1], y1=...` at the start of the next. A declaration's
 judged as before. Over the Modelica Standard Library and Buildings, 8 files are written differently
 from before (2 MSL, 6 Buildings), only in line breaks and indentation.
 
-**Nothing inside a subscript is wrapped**, as nothing inside parentheses is: a subscript's `+` or
+**Nothing inside a subscript is wrapped**, as nothing inside a matrix's brackets is: a subscript's `+` or
 `-` stays with the index it is part of, and the statement wraps elsewhere or not at all:
 
 ```modelica
@@ -484,8 +485,8 @@ equations or statements it guards, so they are not read as one of them:
 
 Earlier versions wrapped only the first branch's condition, only at a `+` or `-` or between a call's
 arguments, and at the column of its body; an `elseif`'s was never wrapped, nor was any condition at
-an `and` or `or`. A condition that is all one parenthesised expression, or a single comparison,
-still stays on its line. Over the Modelica Standard Library and Buildings, 40 files are written
+an `and` or `or`. A condition that is a single comparison still stays on its line. Over the
+Modelica Standard Library and Buildings, 40 files are written
 differently from before (10 MSL, 30 Buildings), only in line breaks and indentation; lines over 100
 characters in them go from 2,722 to 2,620, and conditions over 100 characters from 145 to 39.
 
@@ -508,6 +509,32 @@ after the component's own `=`: a modification's value - `x(start=...)` - is laid
 Over the Modelica Standard Library and Buildings, 371 files are written differently from before (93
 MSL, 278 Buildings), only in line breaks and indentation; lines over 100 characters in them go from
 9,263 to 8,816.
+
+**An expression in parentheses too long for a line of its own wraps inside them**, as it would
+outside them, with its continuation lines a level in from the line the `(` is on. A parenthesised
+if-expression breaks at its own branches, as one standing alone does:
+
+```modelica
+  startForward = pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2)
+      or pre(startForward) and sa > f0/unitForce and s < (smax - L/2));
+  mode = if (pre(mode) == Backward or startBackward) and v_relfric > 0 then Forward
+      else (if (pre(mode) == Forward or pre(mode) == Free or startForward) and v_relfric > 0
+          and s < (smax - L/2) then Forward
+        else if (pre(mode) == Backward or pre(mode) == Free or startBackward) and v_relfric < 0
+          and s > (smin + L/2) then Backward
+        else Stuck);
+```
+
+Parentheses that would fit on a line of their own are left whole, for whatever is outside them to
+wrap before, and nothing inside a matrix's brackets, a subscript or an annotation wraps. A
+polynomial written in nested form - `a*(b + x*(c + x*(d + ...)))` - steps a level in at each `(`.
+Earlier versions never wrapped inside parentheses, so MSL's `MassWithStopAndFriction` had an
+`else (if ... )` of 300 characters, and `Media.Water.IF97_Utilities` lines of over 3,000. Over the
+Modelica Standard Library and Buildings, 103 files are written differently from before (57 MSL, 46
+Buildings), only in line breaks and indentation; their lines longer than 100 characters, not counting
+indentation, go from 4,689 to 4,553, and the text past the hundredth column falls by 9%. Counting
+indentation, lines over 100 characters rise from 5,855 to 6,006: a nested polynomial's inner steps
+are indented past the column where their text would have started.
 
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its

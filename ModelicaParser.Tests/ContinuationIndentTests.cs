@@ -90,7 +90,9 @@ namespace ModelicaParser.Tests;
 /// continuation was cleared by the first equation nested in it, so only the first branch's wrapped,
 /// at the column of its body, and B489 left conditions unwrapped for that reason. A component's
 /// binding wraps as an equation's right-hand side does, where a declaration's expression never
-/// wrapped at an operator.</para>
+/// wrapped at an operator. An expression in parentheses too long for a line of its own wraps inside
+/// them, a level in from the line its <c>(</c> is on, where nothing inside parentheses wrapped: MSL's
+/// MassWithStopAndFriction had a 300-character <c>else (if ... )</c>.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1126,7 +1128,8 @@ public class ContinuationIndentTests
           r := Some.Package.Record(
             isOn=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb and ccccccccccccccccc,
             y=1);
-          startForward := pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2) or pre(startForward) and sa > f0/unitForce and s < (smax - L/2))
+          startForward := pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2)
+              or pre(startForward) and sa > f0/unitForce and s < (smax - L/2))
             or pre(mode) == Backward and v_relfric > v_small;
         end f;
         """;
@@ -1144,7 +1147,8 @@ public class ContinuationIndentTests
         // if-equation's condition wraps a level past the equations it guards (B491); an annotation's
         // does not wrap. In a function: a declaration's binding wraps as an equation does (B491);
         // nothing inside a first argument that may still be moved to a line of its own
-        // wraps (B464); nor does anything inside parentheses, as a '+' does not (B489).
+        // wraps (B464); parentheses too long for a line of their own wrap inside, a level in from
+        // their '(' line (B491).
         TestHelpers.AssertClass(
             Normalise("""
                 model M
@@ -1412,6 +1416,73 @@ public class ContinuationIndentTests
             expectedOutput: Normalise(DeclarationBindingsWrapped));
     }
 
+    private const string ParenthesesWrappedInside = """
+        model M
+          Real y;
+
+        equation
+          startForward = pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2)
+              or pre(startForward) and sa > f0/unitForce and s < (smax - L/2));
+          mode = if (pre(mode) == Backward or startBackward) and v_relfric > 0 then Forward
+              else (if (pre(mode) == Forward or pre(mode) == Free or startForward) and v_relfric > 0
+                  and s < (smax - L/2) then Forward
+                else if (pre(mode) == Backward or pre(mode) == Free or startBackward) and v_relfric < 0
+                  and s > (smin + L/2) then Backward
+                else Stuck);
+          y = offset
+            + (if time < startTime then 0
+              else if time < (startTime + duration) then (time - startTime)*height/duration
+              else height);
+          h = 639675.036*(0.173379420894777
+              + pi1*(-0.022914084306349
+                + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7)))));
+          z = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*(bbbbbbbbbbbbbbbbbbbbbbbbbbbb + ccccccccccccc);
+          y = f((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), c);
+          y = g(
+            x=(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),
+            c=1);
+          y = [(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)];
+          connect(valIso.port_bChiWat, inlPumChiWatPri.port_a)
+            annotation (Line(
+              points={{-60, 80}, {-40, 80}},
+              color={0, 0, 0},
+              rotation=(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+            ));
+        end M;
+        """;
+
+    [Fact]
+    public void AParenthesisedExpressionTooLongForALineWrapsInsideItsParentheses()
+    {
+        // In order, from MSL's MassWithStopAndFriction: a parenthesised logical expression wraps
+        // before its 'or', a level in from the line its '(' is on; a parenthesised if-expression
+        // breaks at its own branches, a level in from the '(' line, as one standing alone does -
+        // where nothing inside parentheses wrapped and the 'else (if ... )' ran to 300 characters;
+        // MSL's Blocks.Sources.Ramp - the same after a wrapped '+'; MSL's IF97 - nested parentheses
+        // too long for a line wrap inside each, a level further in each time; a parenthesised
+        // expression that would fit on a line of its own is left whole, as before; one in a call's
+        // first positional argument wraps, but one in a first named argument that may yet be moved
+        // (B464) does not, nor one inside a matrix's brackets or in an annotation (B491).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  startForward = pre(mode) == Stuck and (sa > f0_max/unitForce and s < (smax - L/2) or pre(startForward) and sa > f0/unitForce and s < (smax - L/2));
+                  mode = if (pre(mode) == Backward or startBackward) and v_relfric > 0 then Forward else (if (pre(mode) == Forward or pre(mode) == Free or startForward) and v_relfric > 0 and s < (smax - L/2) then Forward else if (pre(mode) == Backward or pre(mode) == Free or startBackward) and v_relfric < 0 and s > (smin + L/2) then Backward else Stuck);
+                  y = offset + (if time < startTime then 0 else if time < (startTime + duration) then (time - startTime)*height/duration else height);
+                  h = 639675.036*(0.173379420894777 + pi1*(-0.022914084306349 + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7)))));
+                  z = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*(bbbbbbbbbbbbbbbbbbbbbbbbbbbb + ccccccccccccc);
+                  y = f((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), c);
+                  y = g(x=(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), c=1);
+                  y = [(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)];
+                  connect(valIso.port_bChiWat, inlPumChiWatPri.port_a) annotation (Line(points={{-60, 80}, {-40, 80}}, color={0, 0, 0}, rotation=(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)));
+                end M;
+                """),
+            expectedOutput: Normalise(ParenthesesWrappedInside));
+    }
+
     [Fact]
     public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
     {
@@ -1457,6 +1528,7 @@ public class ContinuationIndentTests
     [InlineData(SubscriptsNotWrapped, 100)]
     [InlineData(ControlConditionsWrapped, 100)]
     [InlineData(DeclarationBindingsWrapped, 100)]
+    [InlineData(ParenthesesWrappedInside, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
