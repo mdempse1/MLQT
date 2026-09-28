@@ -46,19 +46,43 @@ public class SvnCommandRunnerTests
     public async Task ACommandStillWriting_IsNotStopped_HoweverLongItRuns()
     {
         // The limit is on silence, not on running time: a checkout of a large repository runs for as
-        // long as it runs, and reports each file as it goes. This one runs three times the limit.
+        // long as it runs, and reports each file as it goes. This one runs three times the limit,
+        // writing every quarter of a second.
         //
-        // Each gap is a twelfth of the limit, not half of it. A gap is the sleep plus starting a
-        // process for it - an MSYS fork on Windows, and the first gap also starts git and its shell -
-        // and on a loaded coverage runner that start-up ate the second a 1s sleep left under a 2s
-        // limit, so the command was stopped for a silence it never kept. Silence longer than one
-        // gap is still stopped, which is what makes this a test of the limit and not of nothing.
+        // Every tick is a fork - of the shell for `date` and for `sleep`, an MSYS fork emulation on
+        // Windows - and on a loaded machine the shell itself can fall silent for longer than the
+        // limit between two of them: measured at up to 12s here with every core busy, and on a
+        // 4-core Windows runner, with other test classes starting git beside it, it was stopped
+        // after a real three-second silence (CI run 36398522354). Widening the margin only moved
+        // that (it had already been widened once). So each tick carries the time the shell wrote
+        // it, and a stop is judged against what the command actually did: stopped within the limit
+        // of its last line is the defect this test is for, and fails; stopped after the shell
+        // really was silent for the limit is the runner doing its job, and says this run could not
+        // test anything.
         const int Ticks = 36;
+        var limit = TimeSpan.FromSeconds(3);
+        var started = DateTimeOffset.UtcNow;
         var result = await RunAlias(
-            $"for i in $(seq {Ticks}); do echo tick; sleep 0.25; done", idleLimit: TimeSpan.FromSeconds(3));
+            $"for i in $(seq {Ticks}); do date +%s%N; sleep 0.25; done", idleLimit: limit);
+        var returned = DateTimeOffset.UtcNow;
+
+        var written = Text(result.StdOut).Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(line.Trim()) / 1_000_000))
+            .ToList();
+
+        if (result.Stopped)
+        {
+            var lastSignOfLife = written.Count > 0 ? written[^1] : started;
+            var silence = returned - lastSignOfLife;
+            Assert.True(silence >= limit,
+                $"stopped {silence.TotalSeconds:0.00}s after the command last wrote, under the {limit.TotalSeconds}s limit - " +
+                $"it was stopped while still writing ({written.Count} of {Ticks} lines arrived)");
+            Assert.Skip($"The shell itself wrote nothing for {silence.TotalSeconds:0.0}s on a loaded machine, after " +
+                $"{written.Count} of {Ticks} lines, so it was rightly stopped and this run tested nothing.");
+        }
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal(Ticks, Text(result.StdOut).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.Equal(Ticks, written.Count);
     }
 
     [Fact]
