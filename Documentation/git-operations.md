@@ -355,6 +355,18 @@ The dialog includes a branch selector where you choose the **base branch** — t
 
 ---
 
+## A Git Command That Stops Answering
+
+MLQT stops a git command that runs far longer than it should — a fetch, push or rebase after 15
+minutes, a status refresh after 2 — and reports that it did. Git writes a `.lock` file beside anything it is changing, and a
+stopped command gets no chance to remove it, so every later commit, switch or refresh would fail with
+"Unable to create '.git/index.lock': File exists". MLQT removes the lock files the stopped command
+left and says which. It never removes one that was there before the command started, because that
+one may belong to another git program that is still working. If it could not remove a lock, the
+message names the file to delete by hand, once no other git program is running, before you try again.
+
+---
+
 ## Browsing History
 
 **Button:** List icon in the repository header (top right, visible for all VCS repositories)

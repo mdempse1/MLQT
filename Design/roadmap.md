@@ -1,8 +1,8 @@
 # MLQT Roadmap — Future Developments
 
-The forward plan: candidate work grouped by theme, and the agreed order of the phases still to come.
-The working list of individual items is [backlog.md](backlog.md); this document holds sequencing and
-the reasons behind it.
+The forward plan: candidate work grouped by theme, the agreed order of the phases still to come, the
+reasons behind both, and the few issues still open. There is no separate working list any more — see
+[Item ids](#item-ids) at the end.
 
 **Guiding scope:** MLQT's mission is to improve and test the *quality* of Modelica models through
 **style checking and static analysis**. Features that require model **translation** (flattening to
@@ -15,7 +15,7 @@ Dymola/OpenModelica remains the only touch-point with those tools, and it stays 
 
 ---
 
-## Where we are (2026-09-25)
+## Where we are (2026-09-28)
 
 **Phase 1, release feedback, has shipped.** It took the first end-to-end use of the Photino release
 (B168–B203) and everything that working on it opened (B204–B301), grouped into work packages WP0–WP16
@@ -33,9 +33,21 @@ by shared root cause; all sixteen are complete. What it delivered:
 | **MCP** | `get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `get_class_source` elides rather than re-renders, so its lines match the findings |
 | **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
 
-**Then the end-of-branch review of 2026-09-25 opened B302–B369** — eight reviewers reading the whole
-branch against `main`, one per area. Those items are being worked through now, before the branch
-merges; the list and each item's state are in [backlog.md](backlog.md).
+**Then the end-of-branch review of 2026-09-25 opened B302–B369**, with eight reviewers each reading
+the whole branch against `main` for one area. Working through those found B370–B498. By 2026-09-28
+every item was closed except the two intermittent failures under
+[Known open issues](#known-open-issues), and the backlog file was retired (see [Item ids](#item-ids)).
+What the round changed, by area:
+
+| Area | What it means now |
+|---|---|
+| **Writes to the user's files** | Format All, Split into files and the incremental formatter all leave a file's header and trailing comments where they were. They keep a file's encoding and line endings. They write nothing of a library they could not place completely, and leave a file with syntax errors as it is, naming it. Format All splits a single-file repository library into a directory and re-registers it as that directory. It refuses a directory whose `package.mo` is not a package, and says which class to change. Comments in modifications, arrays, enumerations and after the `within` clause now parse and are kept on save |
+| **Formatter layout** | Matrices keep the rows their author wrote. Long arguments, bindings, if-expressions and conditions wrap at stated points and at stated columns (see `code-formatting.md`), so a line the formatter produces does not pass the limit when a break can prevent it. The shapes that are a matter of taste are [left alone](#decided-against-for-now) |
+| **Revision control** | A VCS operation reaches every repository in its working copy and holds off the whole working copy's monitor. No VCS operation starts while the pipeline an earlier one started is still running. A stalled git or svn command is stopped by an idle limit and releases the lock it left. Detached HEAD refuses what it cannot do. A rebase left in progress can be continued or aborted from the dialog |
+| **External tools** | One checking base class for both tools. Starting, stopping, cancelling, a tool that dies and a timeout are each reported as what they are, never as a problem with the model. Dymola and omc are auto-detected and can be browsed to on Linux as well. On exit, omc is ended with its process tree and Dymola is left running, by decision |
+| **Diagrams (MCP)** | Connection lines end on the connector drawn. Bases' connections and graphics are drawn through their `IconMap`/`DiagramMap`. Text, Bitmap and inherited coordinate systems follow the specification |
+| **Code Review and the browser** | The diff diffs once, off the UI thread, against the class of the same full name. Renders land only if they are still the one asked for. A large class waits for its parse instead of flashing. A project switch or a reload during startup shows the work still going and never starts it twice |
+| **Tests and CI** | A warning fails a CI build. CI runs the Dymola and OpenModelica suites without the classes that need the tool, and both assemblies are under the coverage ratchet. Every SVN test builds its own repository. Every documentation image is generated or listed as a photograph, and the SVN shots are now generated. Every workflow `dotnet` command is a step of its own |
 
 **Phases 1–7 of the original sequencing shipped before that.** The CI/CD toolchain is finished and
 the desktop host migration is done:
@@ -52,10 +64,9 @@ the desktop host migration is done:
 | **Photino desktop host** | MLQT runs on **Windows and Linux** from one `net10.0` project with no .NET workload; MAUI is deleted; one installer per platform carries the GUI, the CLI and the MCP server |
 
 Seventeen end-to-end reviews of the CI/CD work and the two phase-7 branches opened and closed
-**B1–B167**. Two of those ids are carried forward in [backlog.md](backlog.md) — B152 (the
-screenshots that stay photographs) and B166 (a finding-count variance that has not recurred) — and
-everything else is done. From phase 1, only B198 (a repository that once did not load until restart,
-not reproduced since) is still open. The per-phase design notes were retired on 2026-09-17 once every
+**B1–B167**, and all of them are closed. The last two carried forward (B152, the screenshots that were
+still photographs, and B166, a finding-count variance) closed on 2026-09-27. The same day B198, the
+last phase-1 item, was reproduced and fixed. The per-phase design notes were retired on 2026-09-17 once every
 phase they described had shipped, and phase 1's plan and its viewer-fidelity analysis followed on
 2026-09-25 — git history has both. What outlives them is in the code, in
 [CODING_GUIDELINES.md](../CODING_GUIDELINES.md) (its Testing and Working a Defect sections), and in
@@ -80,9 +91,9 @@ slice of work in time, a theme is a place to file a candidate.
 Taken before the Wave-2 analyses deliberately, for the reason that put the CI toolchain ahead of the
 migration: finish what is in front of the user before adding to it. A new analysis wave would have
 landed on a Code Review page whose findings list ran off the screen, did not scroll to the line it
-named and could not be filtered by rule. What it delivered is summarised under *Where we are*; the
-items are in [backlog.md](backlog.md), and the plan that grouped them into WP0–WP16 was retired on
-2026-09-25 (git history has it).
+named and could not be filtered by rule. What it delivered is summarised under *Where we are*. The
+plan that grouped the items into WP0–WP16 was retired on 2026-09-25, and the items themselves on
+2026-09-28. Git history has both.
 
 What it leaves as candidates rather than work:
 
@@ -94,6 +105,17 @@ What it leaves as candidates rather than work:
   marker; the pull-request review, the CLI and the MCP server are the obvious next ones.
 - **The peek half of B197** — hovering an identifier to see its class. The classifier's `TYPE` and
   `NAME` tags make it possible; nothing resolves a token to a class yet.
+- **Going back from tabs other than Code Review.** By the user's decision the back and forward
+  arrows sit on the Code Review toolbar beside *Go to a class this one uses*. That leaves
+  Dependencies, External Resources, Metrics and Settings with no way back. The history itself is
+  shared, on `AppState`. If this becomes a problem, the other direction is to bring the
+  used-classes menu up beside the class name, rather than to move the arrows back down (B249).
+- **Units and truncation in diagram labels.** `get_diagram_image` substitutes `%parameter` values but
+  writes no unit and does not cut text to the icon's width. The unit needs unit resolution and a
+  decision about how to show it (B278).
+- **Server GC in the desktop app over a long session.** It was measured in the CLI, where a Claytex
+  check fell from 242 s to 70.5 s. The desktop host is set the same way, but nobody has measured its
+  memory and responsiveness over a long session. Confirm it on the next long Claytex session (B281).
 
 **How a phase is kept whole**, which this one learned twice: every open item names a work package or
 is a roadmap candidate. An item filed as "separable at any point" is never scheduled once the package
@@ -103,8 +125,7 @@ closes.
 
 ### 2. Wave-2 analyses — next
 
-**The next phase**, once the review items opened on 2026-09-25 (B302–B369) are worked through and
-the branch has merged.
+**The next phase**, once the `backlog` branch has merged.
 
 The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage,
 cyclic-dependency detection and external-resource validation. See §2 below for the three-state
@@ -126,6 +147,62 @@ structural equation-balance checks. See §4 and §2.
 
 **macOS.** Photino supports it and the intent predates the migration, but nothing depends on it and
 there is no machine. Size it when a reason to do it appears.
+
+**Wider incremental re-analysis when a class appears in an enclosing package.** When a package gains
+or loses a class, the classes below it in other files are re-analysed if their own text names that
+class (`EnclosingImportChanges`, B387). A class that only *inherits* a component of the captured type
+can keep a stale cached resolution until a full re-analysis. Its base, which names the type, is
+re-analysed. No report has shown this. Widen it if one does.
+
+---
+
+## Decided against, for now
+
+Each of these was looked at and deliberately left alone. Reopen one only with what the entry asks for.
+
+- **Formatter layouts that are a matter of taste.** The formatter fixes clear layout defects: a line
+  it takes past the limit, or a wrap that makes code read as something else. It records debatable
+  shapes rather than chasing them, because engineers would not agree on the better layout and every
+  change rewrites hundreds of files in real libraries. By the user's decision (2026-09-28), the shapes
+  listed in `Documentation/code-formatting.md` under *Layouts the formatter leaves as they are* stay
+  as they are (B494 a/b, B495, B497 1/2). Reopen one with a concrete preferred layout for a named
+  class.
+- **A directory whose `package.mo` defines a class that is not a package.** MLS 13.4.1 allows it.
+  Format All refuses it cleanly: it touches nothing and says which class to declare as a `package`
+  (B443, B448). Reopen if a real library turns up with this layout.
+- **A Linux Dymola launcher that starts Dymola in the background and exits.** MLQT would take the
+  live session as gone and start a second Dymola. Detection picks `bin64/dymola`, which runs as a
+  direct child of MLQT, so the case does not arise (B427). Reopen if a user points MLQT at such a
+  launcher.
+
+---
+
+## Known open issues
+
+These are intermittent journey failures, each seen once and not reproduced since. **If one recurs,
+find the cause from its evidence. Never add a retry.**
+
+| # | Issue | What to do if it recurs |
+|---|-------|-------------------------|
+| B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
+| B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
+
+---
+
+## Item ids
+
+Individual work items were tracked in `Design/backlog.md` as **B1–B498** until 2026-09-28. Every item
+was then closed or moved into this file: candidates under their phase or theme, deliberate
+omissions under *Decided against*, and the open two under *Known open issues*. The file was then
+deleted. **The ids are cited throughout the code, tests, scripts and workflows**, and they keep
+their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
+its parent has the full record, including each item's closing note.
+
+**An id is never reused.** A new item that needs one continues from **B499**. It goes under *Known
+open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
+reads the next id from the sentence above. It checks that every item id in this file's tables is
+unique and below that number. When you add an item, move the number up with it. A closed item's row
+is then removed and its id is retired.
 
 ---
 
@@ -192,9 +269,9 @@ Shipped first, so MLQT earned trust in CI before attempting resolution-dependent
 | **Unused-class detection** | ⭐⭐⭐ | M | **✅ shipped** — `UnusedClassAnalyzer`, with the "possibly unused API" Info case for public top-level classes |
 | **Duplicate / shadowing declarations** | ⭐⭐ | S | **✅ shipped** — `DuplicateDeclarations` rule + `ShadowingAnalyzer` |
 | **`uses` annotation hygiene** | ⭐⭐⭐ | M | **✅ shipped** — `UsesHygieneAnalyzer`, conservative both ways |
-| **`package.order` / file-structure consistency** | ⭐⭐⭐ | M | **✅ shipped** — `PackageOrderAnalyzer`. Aligning its `package.order` half with Dymola's own warning is backlog **B195**; the stray-file half has no upstream equivalent |
+| **`package.order` / file-structure consistency** | ⭐⭐⭐ | M | **✅ shipped** — `PackageOrderAnalyzer`, with an option that aligns its `package.order` half with Dymola's own warning (B195). The stray-file half has no upstream equivalent |
 | **Missing-units presence check** | ⭐⭐⭐ | M | **✅ shipped (plain `Real` only)** — `MLQT.Units.MissingUnit`. A user type that aliases `Real` without a unit is still missed, though the Unit coverage dimension resolves those |
-| **Single-file package warning** | ⭐⭐ | M | **Not built** — backlog **B177**. A package held entirely in one `.mo` file rather than as a directory of standalone classes, as a switchable rule with a finding |
+| **Single-file package warning** | ⭐⭐ | M | **✅ shipped** — `MLQT.Structure.SingleFilePackage`, the first rule on by default, with a **Split into files** fix on the finding (B177) |
 
 ### Wave 2 — resolution-dependent (built on the confidence-aware resolver) — **phase 2**
 
@@ -246,7 +323,7 @@ directly: warnings report but do not fail, errors fail.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | **✅ shipped** — `RuleSeverities`, with per-repository Off/Info/Warning/Error selectors in the settings UI |
-| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`. Also the rename-safe replacement for the name-based `FormattingExcludedModels` list — which the exclusion button does not yet write (backlog **B175**) |
+| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`. Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
 | **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | **✅ shipped** — see §5 |
 | **Custom-rule authoring — declarative tier** (config-driven shape checks) | ⭐⭐ | L | **Phase 3.** The 80%: annotation-present, identifier-regex, banned-`extends`. No compilation; CI-safe. Registers a rule id + severity |
 | **Custom-rule authoring — compiled-plugin tier** (`VisitorWithModelNameTracking`) | ⭐⭐ | XL | **Phase 3.** Full parse-tree power escape hatch. ⚠ Loading compiled code in CI is a supply-chain consideration |
@@ -262,7 +339,7 @@ Machine-readable output *is* the integration.
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Baseline / ratchet mode** (new-vs-existing, warn on touched debt) | ⭐⭐⭐ | M | **✅ shipped** — `mlqt baseline create/update/prune`, `--changed-from`, `--touched-debt warn\|fail\|ignore`. Making a changed-from run *check* only what changed is backlog **B184** |
+| **Baseline / ratchet mode** (new-vs-existing, warn on touched debt) | ⭐⭐⭐ | M | **✅ shipped** — `mlqt baseline create/update/prune`, `--changed-from`, `--touched-debt warn\|fail\|ignore`. A changed-from run checks only the models that changed (B184) |
 | **CLI + JUnit/exit-code contract** | ⭐⭐⭐ | M | **✅ shipped** — `--format junit`, `--fail-on off\|warning\|error`, documented exit codes |
 | **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | **✅ shipped**, and validated against the SARIF 2.1.0 schema on every push, with a confirmed GitHub ingest |
 | **Pre-commit hook / commit gate** | ⭐⭐ | S | **✅ shipped** — `mlqt hook install` writes a git pre-commit hook running the same check |

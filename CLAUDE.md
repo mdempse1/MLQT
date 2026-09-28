@@ -236,7 +236,7 @@ var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 
 **Key subsystems:**
 - **ModelicaParserHelper** - Parsing and model extraction
-- **ModelicaRenderer** (`Visitors/`) - Code formatting with configurable rules. **A save-path tool**: it rebuilds the text, so anything that only needs to *show* code uses the two below instead
+- **ModelicaRenderer** (`Visitors/`) - Code formatting with configurable rules. **A save-path tool**: it rebuilds the text, so anything that only needs to *show* code uses the two below instead. Its tag-emitting mode (`renderForCodeEditor: true`) has no production caller now; it survives as the independent implementation the classifier's colour agreement is measured against, so fix its colouring rather than delete it
 - **ModelicaTokenClassifier** (`Visitors/`) - **Syntax highlighting that does not rewrite the code.** Emits the source verbatim with each token wrapped in the same `<CATEGORY>` tag the renderer would have given it, driven by character offsets so the output is the file character for character (measured exact over 8,367 files / 1.1M lines, and agreeing with the renderer's colours on 99.998% of 2.2M word tokens). Three tiers — parse tree, lexer only, verbatim — so a class that will not parse is still coloured. Text inside a tag is raw for `CodeViewer` to encode; everything outside one is encoded here
 - **SourceElision** (`Helpers/`) / **ElisionFinder** (`Visitors/`) - **Hiding part of a class without rebuilding the rest.** Ordered, non-overlapping line ranges, each optionally replaced by one marker line, plus `ToSourceLine`/`ToDisplayLine` — monotone, so inverting it is arithmetic. One mechanism for the four things that hide something: hide-annotations, hiding a package's nested classes (on for every package), the MCP annotation strip, and the package trimmer. `ElisionFinder` elides a construct **as a unit or not at all** — one sharing a line with real code is left alone rather than leaving a fragment on screen
 - **IconExtractor** (`Visitors/`) / **IconSvgRenderer** (`Icons/`) - Modelica icon annotation to SVG. `IconExtractor.ExtractDiagram` reads the *Diagram* layer with the same machinery
@@ -249,6 +249,7 @@ var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 - **WithinClause** (`Helpers/`) - **The only place that adds or removes a leading `within ...;` clause.** A within clause belongs to a *file*, not a class: a `ModelNode`'s stored `ModelicaCode` never carries one, while text written to a `.mo` file always must (or the file re-parses with no package context and its classes come back with detached IDs). Use `Ensure` when rendering to disk and `Strip` before storing rendered text back on a node. Never hand-roll the check — the versions drifted, some guarding against a clause that was already there and some not, and a formatter that assumed a model's code had none wrote a second clause into every file it touched. The grammar accepts at most one clause, so a duplicate is a syntax error, not a silent corruption. **The same goes for the rest of a file's text outside the class** (B445) — a licence header above `within`, a comment after the clause or after the last `end X;`: `FileLevelText` (`Helpers/`) reads it **once at load**, onto `ModelNode.FileText` of the class that heads the file (null everywhere else), and it is **never** in `ModelicaCode`. A writer rebuilding a file from stored source passes it to `WithinClause.Ensure(source, parent, owner.FileText)` / `Set(...)`, which put it back exactly as written; a writer that *renders* uses `FileText.Formatted().ApplyTo(rendered)`, which is the renderer's own output for those comments, so Format All and the incremental formatter (which renders the file from disk) write the same file. It stays with its class: a rename keeps it, a move takes it along, and a split puts it on the new `package.mo`
 - **ModelicaLanguage** (`Helpers/`) - **The language's own names, written down once**: the predefined types, the built-in operators and functions, `Connections` and unqualified `rooted`. Checked *before* a name is looked up in the graph, because resolution binds a simple name to any node it finds - so a library holding a class called `rooted` collected an edge to it from every model calling the operator, and `MLQT.Structure.UsesUndeclared` then reported a library of that name as undeclared (B246). **Ordinal, because Modelica is**: comparing case-insensitively dropped `Modelica.Blocks.Math.Sum`, `Max`, `Abs`, `Sign`, `Sqrt`, `Sin`, `Cos`, `Exp` and `Log` out of the graph. `PredefinedTypes` is the narrower question a resolver asks, and is where `TypeResolver` and `DymolaHelpParser` now get theirs
 - **CompositionAnnotations** (`Helpers/`) - **Which of a class body's annotations is which**: the leading class annotation, the external clause's, and the trailing class annotation. All three are direct children of `composition`, so `composition.annotation()` lists whichever are present and **an index says nothing about which one an entry is** - `[0]` taken as the external clause's gave a function's leading `annotation(Inline=true)` to its clause and moved `Library="lib"` to the class on save (B446). Ask `Of(...)`/`External(...)`/`ClassLevel(...)` instead; never index `annotation()` on a composition
+- **`GetText()` drops the whitespace between tokens** - harmless for a name or a number, and it destroys an expression: `use_reset and use_set` comes back as the single identifier `use_resetanduse_set`, which resolves to nothing and reads as "undecidable" rather than as a bug (B277, B317). Read any expression, condition, binding or modification value by rebuilding it from its tokens with the spaces between them, as `ClassInterfaceExtractor.SourceText` does, never with `GetText()`
 - **ModelicaFileEncoding** (`Helpers/`) - **All `.mo`/`package.order` reads and writes must go through this**, and `ModelicaFileAccessPolicyTests` now holds the line: every raw `File.ReadAllText`/`WriteAllText` in production code has to be in its ledger with a reason saying what it reads or writes, so a new one fails until somebody says which it is. Modelica files declare no encoding and the population is mixed: older libraries use single-byte Windows-1252, most files are BOM-less UTF-8. Encoding is detected per file (BOM → strict UTF-8 → Latin-1 fallback, which cannot fail) and **written back in the encoding it was read in**. A read here paired with a plain `File.WriteAllText` re-encodes the decoded characters and corrupts the file, progressively, on every save. It also owns **how a file ends and what its line endings are**: `EnsureFinalNewline` is applied by every write and is public so a caller comparing "what is on disk" against "what we would write" can compare like with like, and `ForFile` writes the text back with the endings the file already had. The renderer joins with a line feed, so without that every save rewrote a CRLF library as LF — invisible to `git diff`, which normalises it away, and reported by LibGit2Sharp, which does not, as every file modified (B251). That rule is here because the alternative was tried — the incremental formatter appended `"\n"` from the initial commit and the full library save did not, so which path last touched a file decided how it ended, and a user who ran **Format All Files** over a library the incremental path had formatted got every file back modified with nothing changed in any of them (B236)
 
 **Grammar modification**: Edit `modelica.g4`, then `dotnet build` to regenerate parser code.
@@ -409,19 +410,23 @@ committing from the merge dialog's own dirty phase. `skill-gui-testing.md` has t
 ## Planning and Design Notes
 
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
-forward plan and the working list. **Read both before starting anything substantial.** These three
-are the whole of `Design/` — no phase is being planned in a note of its own at present.
+forward plan and what a release needs beyond CI. **Read the roadmap before starting anything
+substantial.** These two are the whole of `Design/`, and no phase is being planned in a note of its
+own at present.
 
 | Document | Covers |
 |----------|--------|
-| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and where the project is |
-| `Design/backlog.md` | The working list: every open item, with an id (`B1`–`Bnn`) that is never reused |
+| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, what was *decided against*, the *known open issues*, and the item-id rule |
 | `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity corpus (opt-in, so an ordinary run says nothing about it), the nightly WebKit rehearsal, and the `.deb` job that only a tag exercises. Adding to it is a decision that something *cannot* be a gate on every push |
 
-**Backlog ids are permanent.** They are cited from code comments, test summaries, build scripts and
-CI workflows, so a retired id is never given to a new item — new items continue from the highest
-number ever issued, whatever has since been closed. `MLQT.Cli.Tests/MarkdownTableTests.cs` holds the
-file's table structure and id uniqueness.
+**A `Bnnn` in a comment, a test or a script is a backlog id.** They were issued, B1–B498, in
+`Design/backlog.md`, the working list until 2026-09-28. That file was retired once every item was
+closed or carried into the roadmap, and what it knew that outlives the fix went into the docs,
+skills and guidelines. The ids keep their meaning: `git log --diff-filter=D -- Design/backlog.md`
+finds the commit that deleted it, and **its parent holds each item's full record**, including how it
+was closed. **An id is never reused.** A new item continues from the number the roadmap's *Item ids*
+section states, and `MLQT.Cli.Tests/MarkdownTableTests.cs` holds that every id in the roadmap is
+unique and below it.
 
 **The per-phase design notes were retired on 2026-09-17**, once phases 1–7 had all shipped. What
 they held that outlives them is now in the code, in `CODING_GUIDELINES.md`, and in the skill files —
@@ -446,12 +451,12 @@ Update this file when:
 - Modifying service interfaces
 - Adding/removing NuGet packages
 
-Update `Design/backlog.md` when:
-- A backlog item is finished, or a new one is found — it is the working list, and an item that is
-  done but still open reads as outstanding work to whoever picks it up next
-
 Update `Design/roadmap.md` when:
 - A phase ships, or a decision changes the agreed sequencing
+- A defect is found that is not fixed at once (add it under *Known open issues* with the next id),
+  or one there is fixed (remove its row, and put anything durable it taught into the docs, a skill
+  or the guidelines)
+- Something is deliberately not done (*Decided against, for now*, with what would reopen it)
 
 Update relevant skill files for specialized subsystem changes.
 
@@ -749,6 +754,27 @@ with no specification alone** — or write the specification down first.
 are in code nobody should test (an entry in a literal list of C header names). Read the survivors, not
 the score.
 
+**Two survivor shapes are equivalent mutants, not missing tests**, and each is easily reported as a
+gap before it is understood: a short-circuit in front of a slower answer that agrees with it (forcing
+the slow path changes nothing), and the first of two filters for the same thing (removing it changes
+no observable result while the second, downstream, still runs). **Nor is a ratio a finding** — the
+two worst files of the 2026-09-22 run were theme hex-colour literals and a colour table. Read what
+survived before opening an item on a score.
+
+**The last whole-solution run, for comparison** (2026-09-22, post-B267, 52m 53s, 24,901 mutants).
+*Unreached* is code no test runs, which is the coverage ratchet's business. *Kill on reached* is what
+a suite does with the code it does execute, and it is the number to compare:
+
+| Project | Mutants | Unreached | Survived | Kill on reached |
+|---------|--------:|----------:|---------:|----------------:|
+| ModelicaParser | 7,034 | 250 | 1,229 | 81.9% |
+| ModelicaGraph | 2,512 | 196 | 620 | 73.2% |
+| RevisionControl | 1,606 | 340 | 383 | 69.7% |
+| MLQT.Cli | 1,360 | 0 | 438 | 67.8% |
+| MLQT.Services | 3,756 | 535 | 1,039 | 67.7% |
+| MLQT.McpServer | 2,630 | 356 | 847 | 62.8% |
+| MLQT.Shared | 6,003 | 4,375 | 735 | 54.9% |
+
 **`DymolaInterface` and `OpenModelicaInterface` stay out of `-All`, by decision (B453).** The
 coverage gate measures them from their suites filtered with B399's `Requires!=Dymola` /
 `Requires!=OpenModelica`, but that filter cannot reach Stryker's MTP runner: Stryker 5.0.0's
@@ -781,4 +807,4 @@ Three things about it are not discoverable and cost an afternoon between them:
 
 It exists because phase 1 produced six tests that asserted something they could not see, each found
 by accident. Pointed at its first file it immediately found two real gaps: a public method with no
-test at all, and a user-facing message that could be emptied unnoticed. See `Design/backlog.md` B212.
+test at all, and a user-facing message that could be emptied unnoticed (B212).

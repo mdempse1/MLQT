@@ -85,6 +85,13 @@ dotnet build MLQT.slnx -c Release
 or omc add to the two tool interfaces - the gate measures those assemblies from their tool-free tests
 only (B438) - and the points the browser journeys add to `MLQT.Shared` by exercising the real UI.
 
+The per-assembly figures either script prints are reportgenerator's whole-assembly averages, not what
+the gate judges. The gate judges each class. An assembly figure well below its bar beside a passing
+gate — `MLQT.Shared` and `RevisionControl` are the usual ones — is normal: it is dominated by large
+classes the baseline already accepts, such as `MainLayout`, `CodeReview` and
+`SvnRevisionControlSystem`. Windows PowerShell 5.1 and pwsh 7 give the same figures, and the scripts
+run under either (B371).
+
 ## Bundling the SVN client
 
 All SVN operations go through the `svn` command-line client; there is no managed fallback. On
@@ -148,6 +155,13 @@ the moment it is being merged.
 | **Desktop Self-Test** | Publishes the real Photino host on each platform, runs its 16 `/selftest` probes and diffs them against the committed baseline. The parity gate |
 | **Code Coverage** | Runs the suites with coverage collection and gates on the per-class ratchet |
 
+**Every `dotnet` command in a workflow is a step of its own.** A multi-line pwsh `run:` takes the exit
+code of its last command only, so a failing suite or project in the middle of one does not fail the
+step (B362, B370). Test steps run under `if: '!cancelled()'` so one failure does not hide the rest,
+and every later step keeps `success()`. `TestRunnerScriptTests.EveryDotnetCommandIsAStepOfItsOwn`
+finds every workflow file itself (it keeps no list) and fails on any `dotnet test`, `build`, `restore`
+or `publish` that shares a step.
+
 `.github/workflows/nightly-webkit.yml` runs the whole journey suite under Playwright's WebKit at
 02:00 UTC — the only automated thing that drives MLQT's real UI on a WebKit core, and the rehearsal
 for WebKitGTK. It cannot be dispatched from a branch: `workflow_dispatch` resolves a workflow on the
@@ -159,6 +173,6 @@ generated from `TestFixtures/SarifSmoke/` against the SARIF 2.1.0 schema.
 ## Project documentation
 
 Each project has a README with API documentation. Architectural conventions for contributors are in
-[CLAUDE.md](CLAUDE.md) and [CODING_GUIDELINES.md](CODING_GUIDELINES.md); the forward plan and the
-working list of open items are in [Design/roadmap.md](Design/roadmap.md) and
-[Design/backlog.md](Design/backlog.md).
+[CLAUDE.md](CLAUDE.md) and [CODING_GUIDELINES.md](CODING_GUIDELINES.md). The forward plan, the
+decisions against, and the open issues are in [Design/roadmap.md](Design/roadmap.md), and what a
+release needs beyond CI is in [Design/release-checklist.md](Design/release-checklist.md).

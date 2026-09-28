@@ -168,6 +168,14 @@ Two deliberate differences from a Modelica tool's diagram window:
 - **A component whose type is not loaded is still drawn**, as a dashed box carrying its name. "This
   library is not loaded" and "there is no component here" must not look the same.
 
+Labels differ from a Modelica tool's in two smaller ways: a `%parameter` value is shown **without
+its unit** (`J=1` where Dymola writes `J=1 kg m2`), and text is **not truncated** to the icon's
+width. Otherwise they read as a tool's do. A value naming a constant or an enumeration literal is shown by its last segment —
+`controllerType=Modelica.Blocks.Types.SimpleController.PI` reads `PI`, as it does in Dymola — while a
+reference to another component's variable, such as `pulse.y`, is shown whole. A reference MLQT cannot
+resolve is left as written (`%J`) rather than blanked, so a missing value cannot be mistaken for an
+empty one.
+
 `get_guidance("diagrams")` carries the conventions to lay out by — sizes, the grid, left-to-right
 signal flow, and which edge a connector sits on.
 

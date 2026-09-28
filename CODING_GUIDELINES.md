@@ -972,13 +972,13 @@ nothing is reported" is satisfied by a fixture that reports nothing either way. 
 **Hold two lists together in both directions.** "Everything measured is built" and "everything built
 is measured" are different assertions and a defect hides in whichever one you left out.
 
-### Three ways a test is written that cannot fail
+### Four ways a test is written that cannot fail
 
 Phase 1 found six tests that asserted something they could not see, every one by accident, and four
 of them were written by whoever had just made the fix: writing the test after the change makes it
 easy to assert the behaviour you just built rather than the one that was missing. **A test that
-cannot fail is worse than no test, because it is counted.** They came in three shapes, and each needs
-a different defence:
+cannot fail is worse than no test, because it is counted.** They came in three shapes, a fourth has
+been found since, and each needs a different defence:
 
 - **A conditional assertion** — `if (placeholder != null) { assert }`. The excused branch is usually
   the defect: the placeholder test for unparseable files carried a comment saying that producing
@@ -993,6 +993,12 @@ a different defence:
   one fine, so a test that fetched "the" node by name got whichever came first and passed either way.
   **Assert the count, not the contents**, whenever the failure mode is a duplicate rather than a
   wrong value.
+- **A method that falls back to a safe answer when it fails.** `ModelicaTokenClassifier.Highlight`
+  catches any exception and returns `Plain(source)` — the source untagged, which passes a round-trip
+  test perfectly, so a fault that made the emit loop throw passed over 8,367 files as easily as over
+  eight (B234). Test the path with no catch around it, assert the thing the fallback cannot produce
+  (here, that the output is *tagged*), and keep a control showing the fallback passes the weaker
+  assertion, so the stronger one is not later removed as redundant.
 
 Two signals worth treating as defect reports rather than noise:
 
@@ -1034,6 +1040,21 @@ rather than that it looks a particular way.
 
 **Do not write test source through a shell heredoc.** It turns backslashes into escapes silently,
 and the failure is invisible in exactly the cases where the result still compiles.
+
+**`FileShare.None` blocks a read on both platforms and a delete on only one.** .NET implements it on
+Unix as an advisory lock other .NET `FileStream`s honour, so holding a file open is a portable way to
+make a *read* fail — but `unlink` ignores advisory locks, so on Linux the delete simply succeeds
+(B255). To make `File.Delete` fail everywhere, put a directory where the file should be.
+
+### A test that writes proves where it is writing
+
+A test that does VCS or file work builds its repository under `Path.GetTempPath()` and **asserts that
+the path it is about to use is still under it before every call** that names it — not merely by being
+correct. Under `run-mutation.ps1`, a path in the code under test mutated to `""` sent git to the
+process working directory, which is the MLQT checkout, and the run created branches in it, committed
+to them and discarded every uncommitted change (B224). `RepositoryServiceTests.SandboxedId` is the
+pattern: route reads through it as well as writes, because a read that has strayed is the warning
+that the next write will.
 
 ### A growth test counts work, it does not time it
 
@@ -1137,3 +1158,4 @@ Before committing code, verify:
 | 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the workspace `Claytex.Net` guidelines for phase 7a |
 | 2026-09-17 | 1.3 | - | Added to Testing: verify by mutation rather than by going green, positive controls beside guards, guard tests for stated-but-unenforced rules, and cross-platform path assertions. Distilled from the phase 7a/7b design notes before those notes were retired |
 | 2026-09-25 | 1.4 | - | Added "Three ways a test is written that cannot fail" to Testing, and a Working a Defect section (establishing the mechanism, measuring performance, judging renderer-output changes over a library). Distilled from the phase 1 plan before it was retired |
+| 2026-09-28 | 1.5 | - | Added to Testing: a fourth way a test cannot fail (a method that falls back to a safe answer), `FileShare.None` across platforms, and "A test that writes proves where it is writing". Distilled from the backlog before it was retired |

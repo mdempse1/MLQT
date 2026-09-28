@@ -46,8 +46,7 @@ namespace MLQT.Journeys;
 /// size, a native file dialog — needs a photograph of the real Photino host, because nothing can
 /// drive that automatically - a CDP-driven WebView2 is work that cannot be carried to WebKitGTK. Nor
 /// does it produce the two Dymola pictures (a check caught part way, and a finding only a failed
-/// check carries). Those stay photographs; <c>Design/backlog.md</c> B152 lists them, and so does
-/// CLAUDE.md. The SVN pictures used to be on that list and are not: an SVN repository needs no
+/// check carries). Those stay photographs, and CLAUDE.md lists them. The SVN pictures used to be on that list and are not: an SVN repository needs no
 /// server, only <c>svnadmin create</c>, so this run needs <c>svn</c> and <c>svnadmin</c> installed.</para>
 /// </remarks>
 [Collection(JourneyCollection.Name)]

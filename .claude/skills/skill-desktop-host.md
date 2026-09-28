@@ -81,6 +81,17 @@ one that was running on the UI thread. The corollary B299 found: wrapping a hand
 waits for the work, inline or through `SendMessage` — so work that is slow as well goes to `Task.Run`
 first and only its result is applied through `InvokeAsync`.
 
+**Never marshal each unit of background work onto the UI thread.** On Windows the window's message
+pump is the thread Blazor renders on, so a queue of `InvokeAsync` work items shows up as a window
+that will not drag or take focus long after the work itself has finished — a Claytex check of 21,673
+classes, queued one work item per class with findings, left the window ignoring clicks for 72 seconds
+after the workers had completed (B190). A store that is thread-safe (`CodeReviewService` locks its
+list) is called directly from the worker, and it raises a **coalesced** change notification — the
+first change at once, anything within 250 ms folded into one trailing notification, and the trailing
+one always sent — so only the listening component marshals its render. A throttle that drops the
+trailing edge swaps a stutter for a view that is quietly wrong. A notification can then arrive after
+its component is disposed, so subscribers catch `ObjectDisposedException` around their `InvokeAsync`.
+
 **Webview chrome settings go in before `Run`.** `SetContextMenuEnabled(false)` and
 `SetDevToolsEnabled(...)` turn off the engine's own right-click menu and its **Inspect** entry, which
 were on in both release builds. Reading them *during* `RegisterWindowCreatedHandler` segfaults the

@@ -142,6 +142,45 @@ string? revNum = svn.ResolveRevision("http://svn.example.com/repo/trunk", "HEAD"
 bool success = svn.CheckoutRevision("http://svn.example.com/repo/trunk", "100", @"C:\Temp\svn_checkout");
 ```
 
+**Two path spaces reach the SVN layer, and nothing about a path says which it is in.** `svn log`
+reports repository-root-relative paths (`trunk/Modelica/Foo.mo`); everything that works from the
+checkout uses paths relative to the working copy. A repository registered at a library *inside* the
+checkout has a `LocalPath` (the library) that differs from its `VcsRootPath` (the checkout), so
+converting between the two by stripping a prefix and testing against the wrong root fails every time.
+`GetFileBytesAtRevision` does not guess: when the working copy cannot answer it asks the server —
+the repository root first, then the working copy's own URL (`ContentUrlCandidates`), pegged at the
+revision asked for — which also covers a revision newer than the working copy and a file deleted
+since (B265). `svn cat` is the only command read through `SvnCli.RunForBytes`, because it writes a
+file whose encoding is the file's own; every other command's output is text svn generated itself,
+which is UTF-8 (B264).
+
+### Commands that stall, and what a stopped one leaves behind
+
+An svn command MLQT runs is stopped when it has been silent for its limit: 10 minutes for anything
+that writes the working copy (`SvnCli.IdleTimeout`), 2 minutes for history walks
+(`HistoryIdleTimeout`), 30 seconds for small queries (`QueryIdleTimeout`). A git command is stopped
+when it has run for `GitCommandTimeout` (15 minutes) in all. Three things follow, and each has cost
+a defect:
+
+- **The svn limit watches output, so never make an svn command quiet.** `svn update --quiet` on a
+  large working copy prints nothing and looked exactly like a stalled server (B383).
+  `SvnCommandRunnerTests.NoSvnCommandIsMadeQuiet` reads RevisionControl's source for it.
+- **A stop is a kill, and a killed command leaves its lock.** Git leaves `.git/index.lock` (a killed
+  `update-index --refresh` is enough), and every later operation fails with "File exists". svn leaves
+  the working copy locked (E155004). `RunGitCommand` removes only the `*.lock` files written since the
+  command started (`RemoveLocksLeftBehind`), because an older one may belong to another git that is
+  still working. Every svn command that writes the working copy goes through `SvnCli.RunOnWorkingCopy`,
+  which follows a stopped command with `svn cleanup`. A new writing command must use it too (B330).
+- **Report svn's own words.** A failure message is `SvnCli.Result.FailureMessage(fallback)`: stderr
+  when there is any, the fallback only when there is none. Authentication errors and "run 'svn cleanup'"
+  reach the user only this way (B329).
+
+Where a changed-files lookup pegs its URL is a trade-off (`PegForChangedFiles`, B386). Unpegged, the
+URL is pegged at HEAD, and a working copy whose branch has since been deleted or renamed has nothing
+at its URL there. Pegged at the revision asked for, svn cannot follow copy history back to a revision
+from before the branch existed. So the URL is pegged at the later of the working copy's revision and
+the one asked for.
+
 ### Supported SVN Revision Formats
 - Revision numbers (e.g., 123)
 - Keywords: HEAD, BASE, COMMITTED, PREV

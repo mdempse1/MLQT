@@ -295,6 +295,11 @@ a nested modification written an argument a line, or a data table (below) — ke
 so do the lists of a graphics annotation and a list inside one already written an argument a line,
 which have layouts of their own. A comment after the `(` already ends that line.
 
+Earlier versions measured only the later arguments, so a first argument like the one above stayed
+on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
+Buildings (8,367 files), 1,017 files are written differently from before, every one only in line
+breaks and indentation.
+
 **"A level in" is measured from the line the list opens on**, which is not always the line the
 statement starts on. A call that itself starts a continuation line has its arguments a level in
 from that line, and so does a graphics element written after `graphics={`:
@@ -741,11 +746,6 @@ where an expression wraps is still judged without it. Over the Modelica Standard
 Buildings (8,899 files), 972 files are written differently from before (209 MSL, 763 Buildings),
 only in line breaks and indentation; lines over 100 characters in them go from 13,804 to 11,980.
 
-Earlier versions measured only the later arguments, so a first argument like the one above stayed
-on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
-Buildings (8,367 files), 1,017 files are written differently from before, every one only in line
-breaks and indentation.
-
 **Graphics are laid out the same wherever the annotation is.** A class's `Icon` and `Diagram`
 graphics are written an element a line, with each element's arguments a line each a level in. The
 annotation of a short class definition - `connector RealInput = input Real annotation (...)` - and a
@@ -773,6 +773,42 @@ Earlier versions wrote `fillColor=` and the arguments after it at the column of
 length, as before. Over the Modelica Standard Library and Buildings, 22 files are written
 differently from before, only in line breaks and indentation - among them MSL's `Blocks.Interfaces`
 and Buildings' CDL connectors.
+
+### Layouts the formatter leaves as they are
+
+The rules above fix layouts that are clearly wrong: a line the formatter takes past the limit when a
+break could have kept it inside, or a wrap that makes code read as something it is not. A few shapes
+remain where engineers would disagree about the better layout, and these are left as they are on
+purpose. Each one names a class where you can see it:
+
+- **A first argument too long for any line is moved whole, never wrapped inside.** MSL's
+  `Fluid.Pipes.BaseClasses.FlowModels.PartialGenericPipeFlow` has
+  `actual=WallFriction.massFlowRate_dp_staticHead(...)` on a line of about 330 characters, and
+  Buildings' `Fluid.DXSystems.Cooling.BaseClasses.Evaporation` has `pos=if ...` at 122.
+- **A `+` or `-` in an array comprehension's `for` range can still wrap.** Buildings'
+  `Controls.Predictors.ElectricalLoad` ends a line with `for i in iDayOf_start:iDayOf_end` and
+  starts the next with `- 1}) then`.
+- **An if-expression's `then` value never starts a line of its own.** A long `if cond then value`
+  therefore stays whole. Buildings' `Templates.Components.Data.HeatPump` `cpSou_default` is 118
+  characters, and in `Fluid.Movers.BaseClasses.FlowMachineInterface`, `etaDer=` ends its line in
+  `zeros(size(`.
+- **A call's first argument, moved to a line of its own after `then`, can sit left of the `else`
+  below it.** For example, Buildings' `Fluid.FixedResistances.BaseClasses.PlugFlowTransportDelay`
+  (`then min(` / `length/m_flow_start*..., 0)` / `else 0`).
+- **A binding that is a call, moved after its `=`, can leave a line holding only the call's name and
+  `(`.** For example, MSL's `Blocks.Sources.CombiTimeTable` (`tableID=` /
+  `Modelica.Blocks.Types.ExternalCombiTimeTable(` / its arguments), and the `CombiTable1D*` and
+  `CombiTable2D*` tables.
+- **An `or` after a lone flag and before an `and` group keeps the flag at the end of its line**
+  (`if have_pumChiWatPriDed` / `or have_chiWat and ...`, in Buildings'
+  `Templates.Plants.HeatPumps.Interfaces.PartialHeatPumpPlant`). The only other break is before the
+  `and`, and that would make the code look as if `and` binds more loosely than `or`.
+- **A nested polynomial whose links alternate between two and three terms is only partly flat.** It
+  steps in at each three-term link and is flat between them (MSL's
+  `Media.Water.IF97_Utilities.BaseIF97.Basic.g2`, Buildings' `Media.Steam.g2`).
+
+If one of these matters in a class of yours, keep your own layout with `__MLQT(format=false)` (see
+[Excluding Models from Formatting](#excluding-models-from-formatting)).
 
 ## Section keywords
 

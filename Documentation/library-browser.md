@@ -37,6 +37,10 @@ The tree mirrors the Modelica package structure:
 
 **Single click** on any node to select it. The selected model's code appears in the Code Review tab, and its name is shown in the "Current class" text field above the tab bar.
 
+Opening a class from somewhere else — a finding, the used-classes menu, Back or Forward — expands
+the tree down to it and selects it, so you can see where it sits. A class you clicked in the tree
+yourself is left as it is.
+
 ### Multi-Selection Mode
 
 When you switch to the Dependencies tab, the tree automatically enters multi-selection mode:

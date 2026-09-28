@@ -17,6 +17,17 @@ The Code Review tab is divided into two areas:
 
 Click on any model in the library tree (left panel) to view its code. The current model name is shown in the text field above the tab bar. For packages, the code viewer shows the package definition excluding nested class definitions (since those are separate nodes in the tree).
 
+**The viewer shows the class as you wrote it.** Nothing is reformatted for display: every line on
+screen is a line of your file, with the same text and layout, and lines are numbered from the start
+of the class — the numbering a finding's line uses — so a finding points at the text your editor
+shows. Only the colouring is added, and whatever you choose to hide is taken out by whole lines.
+
+**A very large class appears before it has finished parsing.** Above 64 KB, a class with nothing to
+hide is coloured from the lexer straight away, and the full colouring replaces it once the parse
+finishes — the only visible difference in the meantime is that a name is not yet told apart as a type
+or a function call. A package whose nested classes must be hidden, or a class shown with annotations
+hidden, waits for the parse, so what should be hidden never appears.
+
 ## Code Viewer Toolbar
 
 The toolbar above the code viewer provides two groups of buttons:
@@ -85,6 +96,10 @@ The box is disabled until a class is open, and the count appears only once you h
 It is also disabled while a diff view is showing: it searches the single view, so switch back to
 that to use it. Clicking a finding while the diff is showing does the same — the line it names is
 scrolled to when you switch back.
+
+Matches are tinted inside the code's own colouring, one token at a time, so a match that spans
+several tokens — `der(y)` is three — is not tinted, though its line is still counted and stepped to
+by the arrows.
 
 ### External Tool Checking
 
@@ -199,7 +214,9 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 ### Interacting with Findings
 
-- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code and scrolls to the line the finding names (a finding with no line leaves the viewer at the top of the class).
+- **The order is stable**: by class, then by line within the class, then by rule — the order a reader
+  works through a class, and the same order each time the same library is reviewed.
+- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code and scrolls to the line the finding names (a finding with no line leaves the viewer at the top of the class). A finding inside a nested class the viewer has hidden scrolls to the marker line that stands in for that class.
 - If the finding has **additional details**, clicking the row opens an **Finding Details dialog** showing the full summary, severity, line number, and detailed description.
 - In the Finding Details dialog, click **Resolve** to remove the finding from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the finding. 
 
