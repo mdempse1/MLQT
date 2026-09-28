@@ -549,7 +549,7 @@ if-expression breaks at its own branches, as one standing alone does:
 
 Parentheses that would fit on a line of their own are left whole, for whatever is outside them to
 wrap before, and nothing inside a matrix's brackets, a subscript or an annotation wraps. A
-polynomial written in nested form - `a*(b + x*(c + x*(d + ...)))` - steps a level in at each `(`.
+polynomial written in nested form is written flat (below).
 Earlier versions never wrapped inside parentheses, so MSL's `MassWithStopAndFriction` had an
 `else (if ... )` of 300 characters, and `Media.Water.IF97_Utilities` lines of over 3,000. Over the
 Modelica Standard Library and Buildings, 103 files are written differently from before (57 MSL, 46
@@ -557,6 +557,30 @@ Buildings), only in line breaks and indentation; their lines longer than 100 cha
 indentation, go from 4,689 to 4,553, and the text past the hundredth column falls by 9%. Counting
 indentation, lines over 100 characters rise from 5,855 to 6,006: a nested polynomial's inner steps
 are indented past the column where their text would have started.
+
+**A polynomial written in nested form is written a link a line, at one column** - `a*(b + x*(c +
+x*(d + ...)))`, where each pair of parentheses holds a term and a `+` before the next. The closing
+parentheses end the last line:
+
+```modelica
+    h := 639675.036*(0.173379420894777
+        + pi1*(-0.022914084306349
+        + pi1*(-0.00017146768241932
+        + pi1*(-4.18695814670391e-6
+        ...
+        + o[1]*o[2]*(-1.43870236842915e-44
+        + pi1*(1.73894459122923e-45 + (-7.06381628462585e-47 + 9.64504638626269e-49*pi1)*pi1)))))))))));
+```
+
+Only a chain of such links is written flat: each holds two terms, the first short enough for a line
+of its own, and ends the parentheses around it after a `+` and a coefficient of names and numbers,
+and there are at least two in a row. Anything else in parentheses - a sum of more terms, a term after
+a `-` or a parenthesised factor, one raised to a power - still steps a level in, so that its terms are
+not read as the ones around it, and a chain continues flat after it. Earlier versions stepped a level
+in at each `(`, so MSL's `Media.Water.IF97_Utilities.BaseIF97.Regions.hlowerofp1` was a staircase
+eleven levels deep. Over the Modelica Standard Library and Buildings, 4 files are written differently
+from before (2 MSL, 2 Buildings), only in indentation; lines over 100 characters in them go from 638
+to 616.
 
 **The arguments of a wrapped list start at one column**, whether or not an argument's own list
 wraps in turn. Earlier versions wrote an argument whose own list wrapped a level deeper than its

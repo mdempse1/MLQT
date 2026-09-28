@@ -96,7 +96,9 @@ namespace ModelicaParser.Tests;
 ///
 /// <para>B494 - shapes B491 left. A condition does not wrap after a first operand that is a lone
 /// Boolean name: MSL's CombiTable1Ds ended a line with <c>if tableOnFile</c> and started the next
-/// with <c>and fileName &lt;&gt; "NoName" ...</c>.</para>
+/// with <c>and fileName &lt;&gt; "NoName" ...</c>. The links of a polynomial in nested form are
+/// wrapped at one column, one a line, where each stepped a level further in: MSL's IF97
+/// <c>hlowerofp1</c> was a staircase eleven levels deep.</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -1439,7 +1441,7 @@ public class ContinuationIndentTests
               else height);
           h = 639675.036*(0.173379420894777
               + pi1*(-0.022914084306349
-                + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7)))));
+              + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7)))));
           z = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa*(bbbbbbbbbbbbbbbbbbbbbbbbbbbb + ccccccccccccc);
           y = f((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
               + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), c);
@@ -1464,7 +1466,7 @@ public class ContinuationIndentTests
         // breaks at its own branches, a level in from the '(' line, as one standing alone does -
         // where nothing inside parentheses wrapped and the 'else (if ... )' ran to 300 characters;
         // MSL's Blocks.Sources.Ramp - the same after a wrapped '+'; MSL's IF97 - nested parentheses
-        // too long for a line wrap inside each, a level further in each time; a parenthesised
+        // too long for a line wrap inside each, a chain of them at one column (B494); a parenthesised
         // expression that would fit on a line of its own is left whole, as before; one in a call's
         // first positional argument wraps, but one in a first named argument that may yet be moved
         // (B464) does not, nor one inside a matrix's brackets or in an annotation (B491).
@@ -1485,6 +1487,97 @@ public class ContinuationIndentTests
                 end M;
                 """),
             expectedOutput: Normalise(ParenthesesWrappedInside));
+    }
+
+    private const string NestedChainsFlat = """
+        model M
+          Real y;
+
+        equation
+          h = 639675.036*(0.173379420894777
+              + pi1*(-0.022914084306349
+              + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7)))));
+          h = 639675.036*(0.173379420894777
+              + pi1*(-0.022914084306349
+              + pi1*(-0.00017146768241932
+              + pi1*(-4.18695814670391e-6
+              + pi1*(-2.41630417490008e-7
+              + pi1*(1.73545618580828e-11
+              + o[1]*pi1*(8.43755552264362e-14
+              + o[2]*o[3]*pi1*(5.35429206228374e-35 + (-7.06381628462585e-47 + 9.64504638626269e-49*pi1)*pi1))))))));
+          h = 639675.036*(0.173379420894777
+              - pi1*(-0.022914084306349
+                + pi1*(-0.00017146768241932
+                + pi1*(-4.18695814670391e-6
+                + pi1*(-2.41630417490008e-7 + pi1*(1.73545618580828e-11 + o[1]*pi1*(8.43755552264362e-14)))))));
+          h = 639675.036*(0.173379420894777
+              + (pi1 + 1)*(-0.022914084306349
+                + pi1*(-0.00017146768241932
+                + pi1*(-4.18695814670391e-6
+                + pi1*(-2.41630417490008e-7 + pi1*(1.73545618580828e-11 + o[1]*pi1*(8.43755552264362e-14)))))));
+          f_rod = (-revolute.tau
+              - revolute.e*(frame_ib.t + frame_im.t + cross(rRod2_ib, frame_im.f)
+                - cross(rRod2_ib, Frames.resolveRelative(rod1.f_b_a1, rod1.frame_a.R, rod1.frame_b.R))))/aux;
+          dh = R*(1/MMX[Water]*(Utilities.smoothMax_der(X[Water], 0.0, 1e-9, dX[Water], 0.0, 0.0)
+              + dp/p*Utilities.smoothMax(X[Water], 0.0, 1e-9))
+              + 1/MMX[Air]*(Utilities.smoothMax_der(X[Air], 0.0, 1e-9, dX[Air], 0.0, 0.0)
+                + dp/p*Utilities.smoothMax(X[Air], 0.0, 1e-9)));
+          g = 1.5*(0.1
+              + x*((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                + cccccccccccccccccccccccc)
+                + x*(0.2
+                + x*(0.3 + x*(0.4 + x*(0.5 + x*(0.6 + x*(0.7 + x*(0.8 + x*(0.9 + x*(1.0 + x*(1.1 + x*(1.2 + x*(1.3 + x*1.4))))))))))))));
+          h = 2.5*(0.1
+              + (0.2
+                + x*(0.3 + x*(0.4 + x*(0.5 + x*(0.6 + x*(0.7 + x*(0.8 + x*(0.9 + x*(1.0 + x*(1.1 + x*(1.2 + x*(1.3 + x*1.4)))))))))))));
+          h = 3.5*(0.1
+              + x*(0.2
+              + x*(0.3
+              + x*(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                + cccccccccccccccccccccc))));
+          h = 4.5*(0.1
+              + x*(0.2
+              + x*(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)));
+          h = 5.5*(0.1
+              + x*(0.2
+                + x*(0.3
+                + x*(0.4
+                + x*(0.5 + x*(0.6 + x*(0.7 + x*(0.8 + x*(0.9 + x*(1.0 + x*(1.1 + x*(1.2 + x*(1.3 + x*(1.4 + x*(1.5 + x*1.6))))))))))))))^2);
+        end M;
+        """;
+
+    [Fact]
+    public void ALinkOfANestedPolynomialIsWrappedAtTheColumnOfTheOneItEnds()
+    {
+        // In order: MSL's IF97 hlowerofp1 - a polynomial in nested form, each link two terms ending
+        // in the next after a '+' and a coefficient of names and numbers, is written a link a line at
+        // one column, where each stepped a level further in (B491); the same at any length; a chain
+        // whose first link follows a '-', or a parenthesised coefficient, steps once there and is flat
+        // after it; MSL's JointSSR - the last parentheses holding more than two terms step in, or their
+        // terms would read as the outer ones; MSL's MoistAir - a chain of one link steps in; a link whose
+        // first term wraps steps in, and the chain after it is flat; so does one with no coefficient;
+        // a chain's last parentheses of more than two terms step in, and of two are a link; a link
+        // raised to a power steps in (B494).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Real y;
+                equation
+                  h = 639675.036*(0.173379420894777 + pi1*(-0.022914084306349 + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7)))));
+                  h = 639675.036*(0.173379420894777 + pi1*(-0.022914084306349 + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7 + pi1*(1.73545618580828e-11 + o[1]*pi1*(8.43755552264362e-14 + o[2]*o[3]*pi1*(5.35429206228374e-35 + (-7.06381628462585e-47 + 9.64504638626269e-49*pi1)*pi1))))))));
+                  h = 639675.036*(0.173379420894777 - pi1*(-0.022914084306349 + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7 + pi1*(1.73545618580828e-11 + o[1]*pi1*(8.43755552264362e-14)))))));
+                  h = 639675.036*(0.173379420894777 + (pi1 + 1)*(-0.022914084306349 + pi1*(-0.00017146768241932 + pi1*(-4.18695814670391e-6 + pi1*(-2.41630417490008e-7 + pi1*(1.73545618580828e-11 + o[1]*pi1*(8.43755552264362e-14)))))));
+                  f_rod = (-revolute.tau - revolute.e*(frame_ib.t + frame_im.t + cross(rRod2_ib, frame_im.f) - cross(rRod2_ib, Frames.resolveRelative(rod1.f_b_a1, rod1.frame_a.R, rod1.frame_b.R))))/aux;
+                  dh = R*(1/MMX[Water]*(Utilities.smoothMax_der(X[Water], 0.0, 1e-9, dX[Water], 0.0, 0.0) + dp/p*Utilities.smoothMax(X[Water], 0.0, 1e-9)) + 1/MMX[Air]*(Utilities.smoothMax_der(X[Air], 0.0, 1e-9, dX[Air], 0.0, 0.0) + dp/p*Utilities.smoothMax(X[Air], 0.0, 1e-9)));
+                  g = 1.5*(0.1 + x*((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + cccccccccccccccccccccccc) + x*(0.2 + x*(0.3 + x*(0.4 + x*(0.5 + x*(0.6 + x*(0.7 + x*(0.8 + x*(0.9 + x*(1.0 + x*(1.1 + x*(1.2 + x*(1.3 + x*1.4))))))))))))));
+                  h = 2.5*(0.1 + (0.2 + x*(0.3 + x*(0.4 + x*(0.5 + x*(0.6 + x*(0.7 + x*(0.8 + x*(0.9 + x*(1.0 + x*(1.1 + x*(1.2 + x*(1.3 + x*1.4)))))))))))));
+                  h = 3.5*(0.1 + x*(0.2 + x*(0.3 + x*(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + cccccccccccccccccccccc))));
+                  h = 4.5*(0.1 + x*(0.2 + x*(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)));
+                  h = 5.5*(0.1 + x*(0.2 + x*(0.3 + x*(0.4 + x*(0.5 + x*(0.6 + x*(0.7 + x*(0.8 + x*(0.9 + x*(1.0 + x*(1.1 + x*(1.2 + x*(1.3 + x*(1.4 + x*(1.5 + x*1.6))))))))))))))^2);
+                end M;
+                """),
+            expectedOutput: Normalise(NestedChainsFlat));
     }
 
     private const string FlagsKeptWithTheirConditions = """
@@ -1592,6 +1685,7 @@ public class ContinuationIndentTests
     [InlineData(DeclarationBindingsWrapped, 100)]
     [InlineData(ParenthesesWrappedInside, 100)]
     [InlineData(FlagsKeptWithTheirConditions, 100)]
+    [InlineData(NestedChainsFlat, 100)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);

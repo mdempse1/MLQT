@@ -88,6 +88,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private IParseTree? _operandAfterFlag;
     // The line the '('of the innermost parentheses being wrapped inside is on (B491), or -1.
     private int _parenthesesLine = -1;
+    // The innermost parentheses being wrapped inside (B494), or null.
+    private modelicaParser.PrimaryContext? _parenthesesContext;
     // The line an equation's right-hand side starts on after a wrapped '=', and the level it is
     // written at (B475), or -1 when the equation being written did not wrap at its '='.
     private int _equalsLine = -1;
@@ -3702,13 +3704,18 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             bool enclosingBreaks = _innermostIfBreaks;
             bool enclosingBroken = _inBrokenChain;
             int enclosingLine = _parenthesesLine;
+            var enclosingParentheses = _parenthesesContext;
             if (wrapsInside)
             {
                 _inBranchOrArray = true;
                 _inIfExpression = false;
                 _innermostIfBreaks = false;
                 _inBrokenChain = false;
-                _parenthesesLine = _code.Count;
+                // The next link of a nested chain - a(b + x*(c + x*(d + ...))) - is wrapped at the
+                // column of the one it ends, not a level further in at each '(' (B494).
+                if (!ContinuesNestedChain(context, enclosingParentheses))
+                    _parenthesesLine = _code.Count;
+                _parenthesesContext = context;
             }
             else
                 _bracketDepth++;
@@ -3721,6 +3728,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 _innermostIfBreaks = enclosingBreaks;
                 _inBrokenChain = enclosingBroken;
                 _parenthesesLine = enclosingLine;
+                _parenthesesContext = enclosingParentheses;
             }
             else
                 _bracketDepth--;
@@ -3869,6 +3877,69 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // it to wrap before.
         return EstimatedLength(context) > _maxLineLength - 3;
     }
+
+    /// <summary>
+    /// Whether parentheses wrapped inside are a link of a polynomial in nested form,
+    /// <c>a*(b + x*(c + x*(d + ...)))</c>, in the parentheses they are in, which are wrapped inside
+    /// too. Each link stepped a level further in than the last (B491), so MSL's IF97
+    /// <c>hlowerofp1</c> was a staircase eleven levels deep; its links are written at one column,
+    /// one a line (B494). A link holds two terms, the first short enough for a line of its own, and
+    /// ends the parentheses it is in after a '+' and nothing but names and numbers; and it opens
+    /// another link or is in one, so that a chain has at least two. Held that tightly so that
+    /// nothing but a chain is flattened: a wrapped sum of several terms, a term after a
+    /// parenthesised factor, after a '-' or after a first term that wraps, would otherwise start at
+    /// the column of the terms around its parentheses and read as one of them.
+    /// </summary>
+    private bool ContinuesNestedChain(modelicaParser.PrimaryContext context,
+        modelicaParser.PrimaryContext? enclosing)
+        => enclosing != null && LinkIn(context) == enclosing
+           && EstimatedLength(ArithmeticIn(context)!.term(0)) <= _maxLineLength - 3
+           && (OpensLink(context) || LinkIn(enclosing) != null);
+
+    /// <summary>
+    /// The parentheses a link ends, or null when it is not one: <paramref name="link"/> holds two
+    /// terms, and is the last factor of the last term of the parentheses it is in, after a '+' and
+    /// other factors that are all names or numbers - <c>(b + x*(c + ...))</c>.
+    /// </summary>
+    private static modelicaParser.PrimaryContext? LinkIn(modelicaParser.PrimaryContext link)
+    {
+        if (ArithmeticIn(link) is not { } inner || inner.term().Length != 2
+            || link.Parent is not modelicaParser.FactorContext { Parent: modelicaParser.TermContext term } factor
+            || factor.primary().Length != 1 || term.factor().Length < 2 || term.factor()[^1] != factor
+            || term.factor().Any(f => f != factor && !IsPlain(f))
+            || term.Parent is not modelicaParser.Arithmetic_expressionContext outer
+            || outer.term().Length < 2 || outer.term()[^1] != term || outer.add_op()[^1].GetText() != "+")
+            return null;
+        for (IParseTree? node = outer.Parent; node != null; node = node.Parent)
+            if (node is modelicaParser.PrimaryContext enclosing)
+                return ArithmeticIn(enclosing) == outer ? enclosing : null;
+        return null;
+    }
+
+    /// <summary>
+    /// Whether parentheses end with another link - <c>(b + x*(c + ...))</c>.
+    /// </summary>
+    private static bool OpensLink(modelicaParser.PrimaryContext parentheses)
+        => ArithmeticIn(parentheses)?.term()[^1].factor()[^1].primary() is [{ } last]
+           && LinkIn(last) == parentheses;
+
+    /// <summary>
+    /// A factor that is a name or a number: a single primary that is not a call, parentheses or an
+    /// array.
+    /// </summary>
+    private static bool IsPlain(modelicaParser.FactorContext factor)
+        => factor.primary() is [{ ChildCount: 1 }];
+
+    /// <summary>
+    /// The arithmetic expression parentheses hold, when that is all they hold - no comparison,
+    /// no 'and' or 'or', no if-expression - or null.
+    /// </summary>
+    private static modelicaParser.Arithmetic_expressionContext? ArithmeticIn(modelicaParser.PrimaryContext parentheses)
+        => parentheses.output_expression_list()?.expression() is [{ } expression]
+           && expression.simple_expression()?.logical_expression() is [{ } logical]
+           && logical.logical_term() is [{ } logicalTerm] && logicalTerm.logical_factor() is [{ ChildCount: 1 } logicalFactor]
+           && logicalFactor.relation()?.arithmetic_expression() is [{ } arithmetic]
+               ? arithmetic : null;
 
     public override object? VisitComponent_reference([NotNull] modelicaParser.Component_referenceContext context)
     {
