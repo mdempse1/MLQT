@@ -17,8 +17,12 @@ namespace ModelicaGraph;
 /// <c>Modelica.Units.SI</c>, <c>Modelica.Units.SI.*</c>, <c>Modelica.Units.SI.{Time, Length}</c> — so
 /// there is one interpretation of what an import makes visible.</para>
 ///
-/// <para>Not locked, for the reason <see cref="ClassSuppressions"/> gives: the answer is a pure
-/// function of the source, two threads computing it agree, and the assignment is atomic.
+/// <para><b>Read once, however many threads ask at once.</b> The classes nested in a package ask it
+/// for its imports from every worker of a parallel pass, and all of them arrive before any has an
+/// answer. Unlocked, each parsed the class for itself - and <c>Borrow</c> threw each tree away, so
+/// later arrivals parsed it again. For a Dymola FMU import model of 6 MB with 4,478 classes inside it,
+/// that was about 280 parses of the model, 88% of a 25-second dependency refresh. So a miss takes a
+/// lock on the class and looks again; a hit, which is nearly every call, takes none.
 /// <see cref="ModelDefinition.ModelicaCode"/> clears it.</para>
 /// </summary>
 public static class ClassImports
@@ -32,6 +36,15 @@ public static class ClassImports
         if (definition.Imports is { } cached)
             return cached;
 
+        // Nothing else locks a definition, and nothing below asks about another class.
+        lock (definition)
+        {
+            return definition.Imports ?? Read(definition);
+        }
+    }
+
+    private static IReadOnlyList<string> Read(ModelDefinition definition)
+    {
         IReadOnlyList<string> found;
         try
         {

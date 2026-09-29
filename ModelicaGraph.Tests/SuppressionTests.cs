@@ -278,6 +278,50 @@ public class SuppressionTests
         Assert.Null(definition.ParsedCode);
     }
 
+    // ---- read once, however many threads ask ---------------------------------------------------
+    // Every class nested in a package asks it, from every worker of a parallel pass at once. Each
+    // used to parse the package for itself: about 280 parses of a 6 MB Dymola FMU import model,
+    // 88% of a 25-second dependency refresh.
+
+    /// <summary>Asks <paramref name="ask"/> of one class from 32 threads released together.</summary>
+    private static void AskAtOnce(Action ask)
+    {
+        using var start = new Barrier(32);
+        var threads = Enumerable.Range(0, 32)
+            .Select(_ => new Thread(() => { start.SignalAndWait(); ask(); }))
+            .ToList();
+        threads.ForEach(t => t.Start());
+        threads.ForEach(t => t.Join());
+    }
+
+    /// <summary>Big enough that a parse is still running when the other threads arrive.</summary>
+    private static readonly string LargePackage =
+        "package P\n  import Modelica.Units.SI;\n"
+        + string.Concat(Enumerable.Range(0, 2000).Select(i => $"  constant Real c{i} = {i} \"Constant {i}\";\n"))
+        + "  annotation(__MLQT(suppress=\"*\"));\nend P;\n";
+
+    [Fact]
+    public void ManyThreadsAskingForADirective_ParseTheClassOnce()
+    {
+        var definition = new ModelDefinition("P", LargePackage);
+
+        AskAtOnce(() => ClassSuppressions.For(definition, "P"));
+
+        Assert.Equal(1, definition.TimesParsed);
+        Assert.False(definition.Suppressions!.IsEmpty);
+    }
+
+    [Fact]
+    public void ManyThreadsAskingForImports_ParseTheClassOnce()
+    {
+        var definition = new ModelDefinition("P", LargePackage);
+
+        AskAtOnce(() => ClassImports.For(definition));
+
+        Assert.Equal(1, definition.TimesParsed);
+        Assert.Equal(["Modelica.Units.SI"], definition.Imports);
+    }
+
     // ---- a class-level waiver reaches the classes nested in it ---------------------------------
     // What makes a sub-package of generated code (Dymola's _fmu import models) one annotation rather
     // than one per class.

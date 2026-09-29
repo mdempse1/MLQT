@@ -135,6 +135,13 @@ public class ModelDefinition
     /// returned null for a class with source whenever that happened in between — which dependency
     /// analysis took as nothing to analyse, leaving the class with no edges and no message (B291).
     /// </remarks>
+    /// <summary>
+    /// How many times this class has been parsed. For tests: a cache that several threads fill at
+    /// once is right when this is one, and every other way of telling needs a stopwatch.
+    /// </summary>
+    internal int TimesParsed => Volatile.Read(ref _timesParsed);
+    private int _timesParsed;
+
     public modelicaParser.Stored_definitionContext? EnsureParsed()
     {
         if (ParsedCode is { } existing)
@@ -145,6 +152,7 @@ public class ModelDefinition
 
         var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(ModelicaCode);
         ParsedCode = parseTree;
+        Interlocked.Increment(ref _timesParsed);
 
         // Keep whatever the load path already recorded. Those errors came from parsing the whole
         // file, so they carry real file line numbers and the lexer's diagnosis (e.g. "unterminated

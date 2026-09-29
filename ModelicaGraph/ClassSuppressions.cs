@@ -19,11 +19,12 @@ namespace ModelicaGraph;
 /// of classes costs a reference each rather than a set each. <see cref="ModelDefinition.ModelicaCode"/>
 /// clears it, so an edited class is read again.</para>
 ///
-/// <para>Style checking runs per class in parallel, so two threads can reach the same class at once
-/// and both do the work. That is fine and deliberately not locked: the answer is a pure function of
-/// the source, so the two agree, and the reference assignment is atomic — the cost of the race is one
-/// wasted walk, against a lock taken tens of thousands of times. Same shape as
-/// <see cref="ModelDefinition.Coverage"/>.</para>
+/// <para><b>Read once, however many threads ask at once.</b> This used to be deliberately unlocked,
+/// on the grounds that a race cost one wasted walk. Since a class-level waiver reaches the classes
+/// nested in it (<see cref="Enclosing"/>), every one of those classes asks its enclosing classes too,
+/// from every worker of a parallel check at the same moment - and for a Dymola FMU import model of
+/// 6 MB, the same stampede made <see cref="ClassImports"/> parse it about 280 times. A miss takes a lock
+/// on the class and looks again; a hit, which is nearly every call, takes none.</para>
 /// </summary>
 public static class ClassSuppressions
 {
@@ -43,6 +44,15 @@ public static class ClassSuppressions
         if (definition.Suppressions is { } cached)
             return cached;
 
+        // Nothing else locks a definition, and nothing below asks about another class.
+        lock (definition)
+        {
+            return definition.Suppressions ?? Read(definition, modelId);
+        }
+    }
+
+    private static SuppressionSet Read(ModelDefinition definition, string modelId)
+    {
         SuppressionSet extracted;
         try
         {
