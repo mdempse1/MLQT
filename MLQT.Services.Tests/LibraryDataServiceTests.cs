@@ -1214,6 +1214,26 @@ end TestPkg;
         service.CombinedGraph.GetUsedModels(id).Select(m => m.Id).ToList();
 
     [Fact]
+    public async Task RefreshingDependencies_DoesNotRunOnTheCallersThread()
+    {
+        // Code Review awaits this from a button handler. Run on the caller's thread, the analysis of
+        // a 4,478-class Dymola FMU import model froze the app for 39 s. So the call has to hand back
+        // before the work is done - which it cannot, if it did the work itself before returning.
+        var service = new LibraryDataService();
+        var classes = string.Concat(Enumerable.Range(0, 200).Select(i =>
+            $"  model M{i}\n    Real x;\n    M{(i + 1) % 200} next;\n  end M{i};\n"));
+        await service.AddLibraryFromFileAsync("P.mo", $"package P\n{classes}end P;\n");
+        await service.EnsureDependenciesAnalyzedAsync();
+        var ids = service.CombinedGraph.ModelNodes.Select(m => m.Id).ToList();
+
+        var refresh = service.RefreshDependenciesAsync(ids);
+
+        Assert.False(refresh.IsCompleted, "the analysis ran on the caller's thread before returning");
+        await refresh;
+        Assert.Contains("P.M1", Uses(service, "P.M0"));
+    }
+
+    [Fact]
     public async Task AReloadedClass_HasNoEdgesUntilRefreshed()
     {
         var (service, root, derFile) = await AnalysedLibraryAsync();

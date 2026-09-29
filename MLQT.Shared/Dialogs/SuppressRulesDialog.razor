@@ -6,7 +6,7 @@
     </TitleContent>
     <DialogContent>
         <MudStack Spacing="1" Style="min-width: 520px; max-width: 720px;">
-            <MudText Typo="Typo.caption">
+            <MudText Typo="Typo.body1">
                 Applies to <strong>@ClassId</strong> and every class nested in it. Written into its
                 source as <code>__MLQT(suppress=…)</code>, so the desktop app, <code>mlqt check</code>
                 and the MCP server all honour it.
@@ -27,7 +27,7 @@
 
             @if (_everyRule)
             {
-                <MudText Typo="Typo.caption">
+                <MudText Typo="Typo.body1">
                     Every rule is suppressed while this is on. The rules ticked below are kept, so turning
                     it off again leaves them suppressed.
                 </MudText>
@@ -49,15 +49,12 @@
                         if (choice.Category != category)
                         {
                             category = choice.Category;
-                            <MudText Typo="Typo.subtitle2" Class="mt-1">@category</MudText>
+                            <MudText Typo="Typo.subtitle2" Class="mt-1">@choice.Category</MudText>
                         }
                         <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center" Class="mlqt-suppress-rule">
                             <MudCheckBox T="bool" Value="@_ticked.Contains(choice.Id)" ValueChanged="@(on => SetTicked(choice.Id, on))"
                                          Size="Size.Small" Dense="true" Color="Color.Primary" />
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.body1">@choice.Title</MudText>
-                                <MudText Typo="Typo.caption">@choice.Id</MudText>
-                            </MudStack>
+                            <MudText Typo="Typo.body1">@choice.Id - @choice.Title</MudText>
                             <MudSpacer />
                             @if (choice.Findings > 0)
                             {

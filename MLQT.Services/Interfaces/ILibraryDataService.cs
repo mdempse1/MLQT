@@ -196,6 +196,9 @@ public interface ILibraryDataService
     /// (B290). Separate from the reload, rather than part of it, because an edit that moves a class
     /// between files reloads both, and analysing after the first would resolve the moved class while
     /// it was in neither.
+    ///
+    /// <para>The work runs on the thread pool, so a UI caller can await it without freezing the
+    /// page: a file of thousands of classes takes tens of seconds.</para>
     /// </remarks>
     Task RefreshDependenciesAsync(IReadOnlyCollection<string> modelIds);
 

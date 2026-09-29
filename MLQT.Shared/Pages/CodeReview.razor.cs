@@ -2777,7 +2777,9 @@ document.head.appendChild(style);
                     .ToList();
                 CodeReviewService.RemoveLogMessagesByPredicate(f =>
                     f.RuleId is { } rule && !RuleIds.IsParseDiagnostic(rule) && ModelicaName.IsInSubtree(f.ModelName, classId));
-                _ = StyleCheckingService.CheckModelsAsync(subtree, LibraryDataService.CombinedGraph)
+                // On the pool: CheckModelsAsync prepares every class it is given before its first
+                // await, and an FMU import model is thousands of them.
+                _ = Task.Run(() => StyleCheckingService.CheckModelsAsync(subtree, LibraryDataService.CombinedGraph))
                     .ContinueWith(t => LoggingService.Error("CodeReview",
                             $"Re-checking {classId} after its suppressions changed failed", t.Exception!),
                         TaskContinuationOptions.OnlyOnFaulted);

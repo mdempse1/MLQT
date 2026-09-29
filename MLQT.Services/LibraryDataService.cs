@@ -762,9 +762,17 @@ public class LibraryDataService : ILibraryDataService
         if (modelIds.Count == 0 || !_combinedGraph.DependenciesAnalyzed)
             return;
 
-        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
-            _combinedGraph, modelIds.ToHashSet(StringComparer.Ordinal), GetLibraryInfos());
-        _combinedGraph.ReconcileDependencyEdges();
+        // On the pool, whoever the caller is. AnalyzeDependenciesForModelsAsync is async in name
+        // only - its Parallel.ForEach blocks the thread that calls it - and Code Review calls this
+        // from a button handler, on the UI thread. Suppressing rules on a Dymola FMU import model
+        // reloads its 4,478 classes, and the app stopped responding for the 39 s this took.
+        var libraries = GetLibraryInfos();
+        await Task.Run(async () =>
+        {
+            await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                _combinedGraph, modelIds.ToHashSet(StringComparer.Ordinal), libraries);
+            _combinedGraph.ReconcileDependencyEdges();
+        });
     }
 
     /// <inheritdoc/>
