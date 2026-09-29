@@ -37,7 +37,9 @@ public sealed class SuppressionTools
                 "survives reformatting, and is honoured by both 'mlqt check' and the desktop app. Pass the " +
                 "ruleId exactly as reported (e.g. 'MLQT.Doc.ParameterDescription'; the short form " +
                 "without the 'MLQT.' prefix and the wildcard '*' are also accepted). Give 'component' to scope " +
-                "the waiver to a single component (e.g. a parameter) rather than the whole class. An optional " +
+                "the waiver to a single component (e.g. a parameter) rather than the whole class. A class-level " +
+                "waiver also covers every class nested in it, so suppressing on a package waives the rule for " +
+                "the whole sub-package (useful for generated code such as Dymola's _fmu import models). An optional " +
                 "'reason' is recorded as 'reason=\"…\"' alongside the suppression. Merges into any existing " +
                 "'__MLQT' annotation rather than duplicating it. Fails if the class/component is not found or " +
                 "the result would not parse. Set preview=true to see the file text without writing.")]
@@ -112,7 +114,8 @@ public sealed class SuppressionTools
     [Description("Accept a word as correctly spelled in one class by adding a " +
                 "'__MLQT(spelling=\"<word>\")' vendor annotation to its source. Use this for a term that is " +
                 "right here but is not the library's vocabulary generally — it silences the spelling findings " +
-                "for that word in that class only, and leaves every other misspelling in the class reported. " +
+                "for that word in that class (and any class nested in it) only, and leaves every other misspelling " +
+                "reported. " +
                 "For a term the whole repository uses, add it to the repository's accepted spellings " +
                 "(.mlqt/dictionary.txt) instead; to waive spelling for a class entirely, suppress " +
                 "'MLQT.Spelling.Description' / 'MLQT.Spelling.Documentation' with suppress_rule. The possessive " +

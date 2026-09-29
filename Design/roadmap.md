@@ -179,12 +179,14 @@ Each of these was looked at and deliberately left alone. Reopen one only with wh
 
 ## Known open issues
 
-These are intermittent journey failures, each seen once and not reproduced since. **If one recurs,
-find the cause from its evidence. Never add a retry.**
+B492 and B496 are intermittent journey failures, each seen once and not reproduced since. **If one
+recurs, find the cause from its evidence. Never add a retry.** B499 is a known gap in a shipped
+feature.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
+| B499 | **The desktop app does not re-check the classes below a package whose `__MLQT` waiver changed.** A class-level `suppress`/`spelling` reaches every nested class (`ClassSuppressions.Enclosing`), but after a file change the GUI re-checks only the classes in that file. Adding `suppress="*"` to a `package.mo` therefore leaves the findings of the classes below it that are stored in files of their own on screen until the next full check or restart. The CLI and MCP check everything each run, so they are unaffected | Widen the re-checked set in `MainLayout`'s three `CheckModelsAsync` call sites to the descendants of any changed class whose class-level directives differ from before. Compare the directive sets, not the file, or every edit to a top-level `package.mo` re-checks the whole library |
 | B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
 
 ---
@@ -198,7 +200,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B499**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B500**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
@@ -323,7 +325,7 @@ directly: warnings report but do not fail, errors fail.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | **✅ shipped** — `RuleSeverities`, with per-repository Off/Info/Warning/Error selectors in the settings UI |
-| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`. Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
+| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`; a class-level `suppress`/`spelling` reaches every class nested in it, so one annotation waives a sub-package (Dymola's `_fmu` import models were ~65% of a Claytex check). Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
 | **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | **✅ shipped** — see §5 |
 | **Custom-rule authoring — declarative tier** (config-driven shape checks) | ⭐⭐ | L | **Phase 3.** The 80%: annotation-present, identifier-regex, banned-`extends`. No compilation; CI-safe. Registers a rule id + severity |
 | **Custom-rule authoring — compiled-plugin tier** (`VisitorWithModelNameTracking`) | ⭐⭐ | XL | **Phase 3.** Full parse-tree power escape hatch. ⚠ Loading compiled code in CI is a supply-chain consideration |

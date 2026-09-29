@@ -69,6 +69,25 @@ public class GraphAnalysisRunnerTests
     }
 
     [Fact]
+    public void AGraphFindingOnANestedClass_IsDroppedByItsEnclosingPackagesWaiver()
+    {
+        // The class is a node of its own, so its tree does not hold the package's annotation.
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Stub"] = RuleSeverity.Warning;
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("P", "P", "package P\n  annotation(__MLQT(suppress=\"MLQT.Test.Stub\"));\nend P;"));
+        graph.AddNode(new ModelNode("P.Sub.M", "M", "model M\nend M;"));
+        graph.AddNode(new ModelNode("Q.M", "M", "model M\nend M;"));
+        var ctx = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
+        var stub = new StubAnalyzer(
+            new Finding { RuleId = "MLQT.Test.Stub", ModelId = "P.Sub.M", Message = "hi" },
+            new Finding { RuleId = "MLQT.Test.Stub", ModelId = "Q.M", Message = "hi" });
+
+        var kept = Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { stub }, honorSuppressions: true));
+        Assert.Equal("Q.M", kept.ModelId);
+    }
+
+    [Fact]
     public void SuppressionNotHonoured_WhenDisabled()
     {
         var settings = new StyleCheckingSettings();

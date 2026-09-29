@@ -65,4 +65,36 @@ public static class ClassSuppressions
         definition.Suppressions = extracted.IsEmpty ? SuppressionSet.Empty : extracted;
         return definition.Suppressions;
     }
+
+    /// <summary>
+    /// The directives of every class in <paramref name="graph"/> that <paramref name="modelId"/> is
+    /// nested in, innermost first, leaving out those that carry none.
+    ///
+    /// <para>What lets one <c>__MLQT(suppress=…)</c> on a package reach a class stored in a file of
+    /// its own: that class's tree does not contain the package's annotation, so its own set cannot
+    /// answer. Ask each of these, as well as the class's own set, whether a finding is waived —
+    /// <see cref="SuppressionSet.IsSuppressed"/> matches a finding against the class-level
+    /// <c>suppress</c> of any class enclosing it.</para>
+    ///
+    /// <para>Cheap after the first ask: each enclosing class's answer is kept on it by
+    /// <see cref="For"/>, so a library's packages are each read once however many classes sit in
+    /// them. A class the graph does not hold — a package that was never loaded — is skipped.</para>
+    /// </summary>
+    public static IReadOnlyList<SuppressionSet> Enclosing(DirectedGraph graph, string modelId)
+    {
+        List<SuppressionSet>? sets = null;
+        for (var enclosing = ModelicaName.EnclosingPackageOf(modelId);
+             enclosing.Length > 0;
+             enclosing = ModelicaName.EnclosingPackageOf(enclosing))
+        {
+            if (graph.GetNode<ModelNode>(enclosing)?.Definition is not { } definition)
+                continue;
+
+            var set = For(definition, enclosing);
+            if (!set.IsEmpty)
+                (sets ??= []).Add(set);
+        }
+
+        return sets ?? (IReadOnlyList<SuppressionSet>)[];
+    }
 }

@@ -1,5 +1,7 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
+using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
 using Xunit;
 
@@ -274,5 +276,153 @@ public class SuppressionTests
         ClassSuppressions.For(definition, "TestModel");
 
         Assert.Null(definition.ParsedCode);
+    }
+
+    // ---- a class-level waiver reaches the classes nested in it ---------------------------------
+    // What makes a sub-package of generated code (Dymola's _fmu import models) one annotation rather
+    // than one per class.
+
+    private static Finding FindingOn(string modelId, string ruleId = RuleIds.ParameterDescription,
+        string? element = null, string message = "m") =>
+        new() { RuleId = ruleId, ModelId = modelId, ElementPath = element, Message = message };
+
+    private static SuppressionSet SetOn(string packageId, string annotation) =>
+        ClassSuppressions.For(
+            new ModelDefinition(packageId, $"package {packageId}\n  annotation({annotation});\nend {packageId};"),
+            packageId);
+
+    [Fact]
+    public void AClassLevelSuppress_ReachesEveryClassNestedInIt()
+    {
+        var set = SetOn("P", "__MLQT(suppress=\"Doc.ParameterDescription\")");
+
+        Assert.True(set.IsSuppressed(FindingOn("P")));
+        Assert.True(set.IsSuppressed(FindingOn("P.Inner")));
+        Assert.True(set.IsSuppressed(FindingOn("P.Sub.Deep.Inner", element: "x")));
+    }
+
+    [Fact]
+    public void AClassLevelSuppress_WaivesOnlyTheRulesItNames_InNestedClassesToo()
+    {
+        var set = SetOn("P", "__MLQT(suppress=\"Doc.ParameterDescription\")");
+
+        Assert.False(set.IsSuppressed(FindingOn("P.Inner", RuleIds.ClassDescription)));
+    }
+
+    [Fact]
+    public void AClassLevelSuppress_DoesNotReachANamesake()
+    {
+        // PX is not inside P, however the names line up.
+        var set = SetOn("P", "__MLQT(suppress=\"*\")");
+
+        Assert.False(set.IsSuppressed(FindingOn("PX.Inner")));
+        Assert.False(set.IsSuppressed(FindingOn("Q.P")));
+    }
+
+    [Fact]
+    public void AComponentLevelSuppress_StaysWithItsComponent()
+    {
+        var set = ClassSuppressions.For(new ModelDefinition("P", """
+            package P
+              constant Real x = 1 annotation(__MLQT(suppress="*"));
+            end P;
+            """), "P");
+
+        Assert.True(set.IsSuppressed(FindingOn("P", element: "x")));
+        Assert.False(set.IsSuppressed(FindingOn("P.Inner", element: "x")));
+    }
+
+    [Fact]
+    public void AFormattingOptOut_StaysWithItsClass()
+    {
+        // format=false is how the formatter writes that class. A nested class in a file of its own is
+        // still formatted, so waiving its layout rules would stop reporting what the formatter changes.
+        var set = SetOn("P", "__MLQT(format=false)");
+
+        Assert.True(set.IsSuppressed(FindingOn("P", RuleIds.ImportStatementsFirst)));
+        Assert.False(set.IsSuppressed(FindingOn("P.Inner", RuleIds.ImportStatementsFirst)));
+        Assert.False(set.PreservesFormatting("P.Inner"));
+    }
+
+    [Fact]
+    public void AnAcceptedSpelling_ReachesEveryClassNestedInIt()
+    {
+        var set = SetOn("P", "__MLQT(spelling=\"Fmu\")");
+        Finding Misspelt(string modelId, string word) =>
+            FindingOn(modelId, RuleIds.SpellingDescription, message: SpellingMessage.For(word, "the description"));
+
+        Assert.True(set.IsSuppressed(Misspelt("P.Sub.Inner", "Fmu")));
+        Assert.True(set.IsSuppressed(Misspelt("P.Sub.Inner", "Fmu's")));
+        Assert.False(set.IsSuppressed(Misspelt("P.Sub.Inner", "Fmi")));
+        Assert.False(set.IsSuppressed(Misspelt("Q.Inner", "Fmu")));
+    }
+
+    [Fact]
+    public void ANestedClassInTheSameTree_IsWaivedByItsParentsAnnotation()
+    {
+        // A replaceable class is checked inside its parent's tree, so the parent's own set is the one
+        // asked about it: the nesting has to be recognised there, not only across the graph.
+        var findings = Check("""
+            model TestModel
+              replaceable model Inner
+                parameter Real k = 1;
+              end Inner;
+              annotation(__MLQT(suppress="Doc.ParameterDescription"));
+            end TestModel;
+            """, ParamRule);
+
+        Assert.DoesNotContain(findings, f => f.ModelId == "TestModel.Inner");
+    }
+
+    // ---- ...across the graph, to a class in a node of its own ---------------------------------
+
+    private static DirectedGraph Graph(params (string Id, string Code)[] classes)
+    {
+        var graph = new DirectedGraph();
+        foreach (var (id, code) in classes)
+            graph.AddNode(new ModelNode(id, ModelicaName.LeafOf(id), code));
+        return graph;
+    }
+
+    [Fact]
+    public void Enclosing_IsEveryAnnotatedClassAClassIsNestedIn_InnermostFirst()
+    {
+        var graph = Graph(
+            ("P", "package P\n  annotation(__MLQT(suppress=\"A\"));\nend P;"),
+            ("P.Sub", "package Sub\nend Sub;"),
+            ("P.Sub.Deeper", "package Deeper\n  annotation(__MLQT(suppress=\"B\"));\nend Deeper;"),
+            ("P.Sub.Deeper.M", "model M\nend M;"));
+
+        var enclosing = ClassSuppressions.Enclosing(graph, "P.Sub.Deeper.M");
+
+        Assert.Equal(2, enclosing.Count);
+        Assert.True(enclosing[0].IsSuppressed(FindingOn("P.Sub.Deeper.M", "B")));
+        Assert.True(enclosing[1].IsSuppressed(FindingOn("P.Sub.Deeper.M", "A")));
+    }
+
+    [Fact]
+    public void Enclosing_SkipsAPackageTheGraphDoesNotHold_AndLeavesOutTheClassItself()
+    {
+        var graph = Graph(
+            ("P", "package P\n  annotation(__MLQT(suppress=\"*\"));\nend P;"),
+            ("P.Missing.M", "model M\n  annotation(__MLQT(suppress=\"*\"));\nend M;"));
+
+        var enclosing = Assert.Single(ClassSuppressions.Enclosing(graph, "P.Missing.M"));
+        Assert.Same(ClassSuppressions.For(graph.GetNode<ModelNode>("P")!.Definition, "P"), enclosing);
+        Assert.Empty(ClassSuppressions.Enclosing(graph, "P"));
+    }
+
+    [Fact]
+    public void TheChecker_HonoursAnEnclosingPackagesWaiver_WhenGivenThem()
+    {
+        var graph = Graph(("P", "package P\n  annotation(__MLQT(suppress=\"Doc.ParameterDescription\"));\nend P;"));
+        var inner = new ModelDefinition("M", "model M\n  parameter Real k = 1;\nend M;");
+
+        Assert.Empty(StyleChecking.RunStyleCheckingFindings(inner, ParamRule, "P.M",
+            enclosingSuppressions: id => ClassSuppressions.Enclosing(graph, id)));
+        Assert.Single(StyleChecking.RunStyleCheckingFindings(inner, ParamRule, "Q.M",
+            enclosingSuppressions: id => ClassSuppressions.Enclosing(graph, id)));
+        Assert.Single(StyleChecking.RunStyleCheckingFindings(inner, ParamRule, "P.M", honorSuppressions: false,
+            enclosingSuppressions: id => ClassSuppressions.Enclosing(graph, id)));
     }
 }

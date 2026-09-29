@@ -140,7 +140,7 @@ public static class GraphAnalysisRunner
         var kept = new List<Finding>();
         foreach (var group in findings.GroupBy(f => f.ModelId, StringComparer.Ordinal))
         {
-            var suppressions = BuildSuppressions(graph, group.Key);
+            var suppressions = SuppressionsFor(graph, group.Key);
             foreach (var finding in group)
                 // A diagnostic is never waived. RuleIds.IsDiagnostic is the set that says "the
                 // results you are reading are incomplete", and an annotation that could hide one
@@ -148,30 +148,34 @@ public static class GraphAnalysisRunner
                 // nowhere else, so the same MLQT.Check.Failed was waivable or not depending on which
                 // pass had produced it.
                 if (RuleIds.IsDiagnostic(finding.RuleId)
-                    || suppressions is null || !suppressions.IsSuppressed(finding))
+                    || !suppressions.Any(s => s.IsSuppressed(finding)))
                     kept.Add(finding);
         }
         return kept;
     }
 
     /// <summary>
-    /// The suppression directives on one class, or null when there are none. Per-model on purpose: a
-    /// class that will not parse costs its own waivers and no one else's, and its findings come
-    /// through unsuppressed — visible rather than silently dropped, which is the safe direction for a
-    /// check to fail in.
+    /// The suppression directives that reach one class: its own, then those of every class it is
+    /// nested in (<see cref="ClassSuppressions.Enclosing"/>), leaving out any that carry none.
+    /// Per-model on purpose: a class that will not parse costs its own waivers and no one else's, and
+    /// its findings come through unsuppressed — visible rather than silently dropped, which is the
+    /// safe direction for a check to fail in. A package that will not parse likewise waives nothing
+    /// for the classes inside it.
     ///
     /// <para>Through <see cref="ClassSuppressions"/>, which keeps the answer on the class and borrows
     /// the tree to get it. This phase runs after the per-class check has released every class it
     /// read, so without the shared answer it re-parsed each class carrying a graph finding to ask
     /// what the checker had already asked of the same class minutes earlier.</para>
     /// </summary>
-    private static SuppressionSet? BuildSuppressions(DirectedGraph graph, string modelId)
+    private static IReadOnlyList<SuppressionSet> SuppressionsFor(DirectedGraph graph, string modelId)
     {
+        var enclosing = ClassSuppressions.Enclosing(graph, modelId);
+
         var definition = graph.GetNode<ModelNode>(modelId)?.Definition;
         if (definition is null)
-            return null;
+            return enclosing;
 
-        var set = ClassSuppressions.For(definition, modelId);
-        return set.IsEmpty ? null : set;
+        var own = ClassSuppressions.For(definition, modelId);
+        return own.IsEmpty ? enclosing : [own, .. enclosing];
     }
 }

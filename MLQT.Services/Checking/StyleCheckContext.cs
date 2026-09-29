@@ -48,6 +48,13 @@ public sealed class StyleCheckContext
     public Func<string, string, bool>? IsSimpleType { get; private init; }
 
     /// <summary>
+    /// The <c>__MLQT</c> directives of the classes a class is nested in, so a class-level
+    /// <c>suppress</c> on a package reaches the classes stored in files of their own below it. Null
+    /// when there is no graph (a snippet), where only the class's own tree can say anything.
+    /// </summary>
+    public Func<string, IReadOnlyList<SuppressionSet>>? EnclosingSuppressions { get; private init; }
+
+    /// <summary>
     /// Measures each class's coverage contribution as it is checked, or null when the caller does not
     /// want coverage collected.
     ///
@@ -150,6 +157,7 @@ public sealed class StyleCheckContext
             // and the dashboard describe the same gaps.
             UnitLookup = settings.CheckMissingUnits ? unitLookup : null,
             IsSimpleType = settings.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null,
+            EnclosingSuppressions = id => ClassSuppressions.Enclosing(graph, id),
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
             // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
             // per class for a row the report will not show. Deliberately the repository-wide answer

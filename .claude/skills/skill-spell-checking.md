@@ -358,7 +358,7 @@ assembly, where it is not an embedded resource of ModelicaParser and never loads
 
 | Scope | Where it lives | Written by |
 |-------|----------------|------------|
-| One class | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `accept_spelling_in_class` |
+| One class, and the classes nested in it | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `accept_spelling_in_class` |
 | One repository | `<repo>/.mlqt/dictionary.txt` | Code Review's **Add to Dictionary**, the repository dictionary settings page |
 | Every check, every repository | `modelica_terms.txt` (+ the dialect list for the chosen language) | Editing ModelicaParser |
 
@@ -366,6 +366,10 @@ assembly, where it is not an embedded resource of ModelicaParser and never loads
 into `SuppressionSet` and applied in `StyleChecking.RunStyleCheckingFindings`'s suppression pass —
 so the GUI, the CLI and MCP all honour it, and `mlqt check --no-suppress` audits past it.
 
+- **Reaches nested classes**, as a class-level `suppress` does: `SuppressionSet` matches a finding
+  against the words of its class and of every class enclosing it, and `ClassSuppressions.Enclosing`
+  supplies the enclosing packages' sets for a class stored in a file of its own. A word written on a
+  package is accepted throughout it.
 - **Word-scoped, not rule-scoped.** Suppressing `MLQT.Spelling.Description` for the class would
   silence every other misspelling in it. `spelling` waives only the listed words.
 - **The word comes from the finding's message** (`SpellingMessage.WordFrom`), not its

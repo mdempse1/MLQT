@@ -98,7 +98,8 @@ public static class StyleChecking
         Func<string, IReadOnlySet<string>>? inheritedElementNames = null,
         Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null,
         CheckTimings? timings = null,
-        Func<string, string, bool>? isSimpleType = null)
+        Func<string, string, bool>? isSimpleType = null,
+        Func<string, IReadOnlyList<SuppressionSet>>? enclosingSuppressions = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -233,11 +234,16 @@ public static class StyleChecking
         // Drop findings the author has intentionally waived via __MLQT annotations. Read through
         // ClassSuppressions so the coverage measurer and the graph analyses, which want the same
         // answer about the same class in the same run, find it done rather than walking again.
+        // A class-level suppress on an enclosing package waives the rule here too; with no graph to
+        // find those packages in (a snippet), only what is nested in this class's own tree is.
         if (honorSuppressions && findings.Count > 0)
         {
             var suppressions = ClassSuppressions.For(_currentModel, fullModelId);
             if (!suppressions.IsEmpty)
                 findings = findings.Where(f => !suppressions.IsSuppressed(f)).ToList();
+
+            if (findings.Count > 0 && enclosingSuppressions?.Invoke(fullModelId) is { Count: > 0 } enclosing)
+                findings = findings.Where(f => !enclosing.Any(s => s.IsSuppressed(f))).ToList();
         }
 
         // Collapse exact-duplicate findings. Some visitors emit the same finding more than once — e.g. a

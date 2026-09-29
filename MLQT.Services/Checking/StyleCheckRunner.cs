@@ -39,7 +39,8 @@ public static class StyleCheckRunner
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
             baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions,
             namingConfig: context.NamingConfig, inheritedElementNames: context.InheritedElementNames,
-            unitLookup: context.UnitLookup, timings: context.Timings, isSimpleType: context.IsSimpleType));
+            unitLookup: context.UnitLookup, timings: context.Timings, isSimpleType: context.IsSimpleType,
+            enclosingSuppressions: context.EnclosingSuppressions));
 
         // While the tree is still here. The dashboard would otherwise parse this class again to ask
         // the same questions, once for every scope it appears in.

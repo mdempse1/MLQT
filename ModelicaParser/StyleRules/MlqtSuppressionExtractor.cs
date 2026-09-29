@@ -13,6 +13,7 @@ namespace ModelicaParser.StyleRules;
 public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
 {
     private readonly Dictionary<string, HashSet<string>> _classLevel = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _inherited = new(StringComparer.Ordinal);
     private readonly Dictionary<(string, string), HashSet<string>> _componentLevel = new();
     private readonly HashSet<string> _preserveFormatting = new(StringComparer.Ordinal);
     // Case-insensitive, as the repository's accepted spellings are: a word accepted in one casing is
@@ -21,7 +22,7 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
 
     public MlqtSuppressionExtractor(string basePackage = "") : base(basePackage) { }
 
-    public SuppressionSet Build() => new(_classLevel, _componentLevel, _preserveFormatting, _spellingWords);
+    public SuppressionSet Build() => new(_classLevel, _inherited, _componentLevel, _preserveFormatting, _spellingWords);
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
@@ -80,8 +81,12 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
                 var value = m.modification()?.modification_expression()?.GetText();
                 switch (key)
                 {
+                    // A class-level list also reaches every class nested in this one (SuppressionSet).
                     case "suppress":
-                        AddTokens(component, ParseList(value));
+                        var tokens = ParseList(value).ToList();
+                        AddTokens(component, tokens);
+                        if (component is null)
+                            AddTo(_inherited, CurrentModelName, tokens);
                         break;
                     // Recorded against the class even when written on a component: a spelling finding
                     // names no element, so a component-scoped word list would match nothing and would
@@ -129,18 +134,17 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
 
     private void AddTokens(string? component, IEnumerable<string> tokens)
     {
-        HashSet<string> set;
         if (component is null)
-        {
-            if (!_classLevel.TryGetValue(CurrentModelName, out set!))
-                _classLevel[CurrentModelName] = set = new HashSet<string>(StringComparer.Ordinal);
-        }
+            AddTo(_classLevel, CurrentModelName, tokens);
         else
-        {
-            var key = (CurrentModelName, component);
-            if (!_componentLevel.TryGetValue(key, out set!))
-                _componentLevel[key] = set = new HashSet<string>(StringComparer.Ordinal);
-        }
+            AddTo(_componentLevel, (CurrentModelName, component), tokens);
+    }
+
+    private static void AddTo<TKey>(Dictionary<TKey, HashSet<string>> map, TKey key, IEnumerable<string> tokens)
+        where TKey : notnull
+    {
+        if (!map.TryGetValue(key, out var set))
+            map[key] = set = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var token in tokens)
             set.Add(token);
