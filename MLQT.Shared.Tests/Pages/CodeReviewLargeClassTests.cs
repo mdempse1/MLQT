@@ -182,6 +182,64 @@ public class CodeReviewLargeClassTests
         Assert.True(Annotated.Length < CodeReview.PaintBeforeParsingAbove);
     }
 
+    // ---- a class too long for the browser to lay out -------------------------------------------
+    // A 106,354-line Dymola FMU import model left the webview's renderer at a full core for over
+    // five minutes, with the app frozen behind it; MLQT's own part took 1.7 s.
+
+    /// <summary>A model of <paramref name="lines"/> lines: its header, declarations, and its end.</summary>
+    private static (ModelNode Model, DirectedGraph Graph) OfLines(int lines) =>
+        Load("model Big\n"
+             + string.Concat(Enumerable.Range(0, lines - 2).Select(i => $"  Real x{i};\n"))
+             + "end Big;\n");
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AClassPastTheLimit_IsCutToItsFirstLines_AndSaysHowManyWereLeftOff(bool parse)
+    {
+        // Both paths: the first paint puts the class on screen too, and it was the first of the two
+        // renders the stalled class went through.
+        var (model, graph) = OfLines(CodeReview.MaxShownLines + 25);
+
+        var shown = CodeReview.Show(model, graph, true, true, false, parse);
+
+        Assert.Equal(CodeReview.MaxShownLines, shown.Lines.Count);
+        Assert.Equal(25, shown.OmittedLines);
+        // The first lines, still where they were: a finding's line maps to the same place.
+        Assert.Equal("model Big", Strip([shown.Lines[0]])[0].Trim());
+        Assert.Equal($"Real x{CodeReview.MaxShownLines - 2};", Strip([shown.Lines[^1]])[0].Trim());
+    }
+
+    [Fact]
+    public void AClassAtTheLimit_IsShownWhole()
+    {
+        var (model, graph) = OfLines(CodeReview.MaxShownLines);
+
+        var shown = CodeReview.Show(model, graph, true, true, false, parse: false);
+
+        Assert.Equal(CodeReview.MaxShownLines, shown.Lines.Count);
+        Assert.Equal(0, shown.OmittedLines);
+        Assert.Equal("end Big;", Strip([shown.Lines[^1]])[0].Trim());
+    }
+
+    [Fact]
+    public void TheNotice_SaysHowLongTheClassIsAndWhereTheRestIs()
+    {
+        var notice = CodeReview.OmittedLinesNotice(5_000, 101_354, "Engines/Examples/Big_fmu.mo");
+
+        Assert.NotNull(notice);
+        Assert.Contains($"{106_354:N0} lines", notice);   // in the reader's own number format
+        Assert.Contains($"first {5_000:N0}", notice);
+        Assert.Contains("Engines/Examples/Big_fmu.mo", notice);
+    }
+
+    [Fact]
+    public void TheNotice_IsOnlyForAClassThatWasCutShort()
+    {
+        Assert.Null(CodeReview.OmittedLinesNotice(500, 0, "Big.mo"));
+        Assert.Contains("the file", CodeReview.OmittedLinesNotice(5_000, 1, null));
+    }
+
     private static List<string> Strip(List<string> lines) =>
         [.. lines.Select(l => System.Text.RegularExpressions.Regex.Replace(
             l, @"</?(KEYWORD|TYPE|IDENT|NAME|FUNCTION|OPERATOR|NUMBER|STRING|COMMENT)>", ""))];

@@ -255,6 +255,16 @@ Each style-rule finding row has a **Suppress** button at the end of the row — 
 
 Because the waiver lives in the source, it survives re-formatting and is honoured everywhere findings are produced — the desktop app, the [`mlqt check` CLI](cli.md), and the [MCP server](mcp-server.md). This is the same suppression mechanism a reviewer or agent can apply headlessly; see the CI walk-through's suppression section in [CI Quality Gate](ci-quality-gate.md). `__MLQT` is a spec-sanctioned vendor annotation, so Dymola and OpenModelica ignore it.
 
+### Very Large Classes
+
+The viewer shows at most the first **5,000 lines** of a class. Longer ones are mostly generated,
+such as the models Dymola writes when it imports an FMU, which can run past 100,000 lines. A notice
+above the code then gives the class's full length and its file. Findings and search matches past
+line 5,000 can't be scrolled to; open the file in your editor to see them. A package counts only
+the lines left after its nested classes are hidden, so a large package of small classes shows in
+full. The limit is there because the browser slows sharply with length: 5,000 lines take about two
+seconds, and a 100,000-line class used to freeze the app.
+
 ### Spelling Findings
 
 Spelling findings from the spell checker (findings starting with "Misspelled word") are handled differently from other findings. Clicking a spelling finding navigates to the model and scrolls the code viewer so the misspelled word is brought into view, **highlighted inline** with a wavy red underline. To act on the word, **right-click the underlined word** in the code viewer.

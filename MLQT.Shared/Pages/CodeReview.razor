@@ -209,8 +209,21 @@
         }
         else
         {
+            @if (OmittedLinesNotice(_highlightedCode?.Count ?? 0, _omittedLines, CurrentFilePath) is { } omittedNotice)
+            {
+                @* A class cut short by MaxShownLines. The viewer goes in a flex box beside the notice,
+                   as the diff does, or its height of 100% pushes its last lines out of the pane. *@
+                <MudAlert Severity="MudBlazor.Severity.Warning" Dense="true" Class="ma-1 mlqt-lines-omitted">@omittedNotice</MudAlert>
+                <div style="flex: 1; min-height: 0; overflow: hidden;">
+                    <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords"
+                                SearchTerm="@_codeSearch" Height="100%" />
+                </div>
+            }
+            else
+            {
                 <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords"
                             SearchTerm="@_codeSearch" Height="100%" />
+            }
         }
         </MudPaper>
                 </MudExSplitPanelItem>

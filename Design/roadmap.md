@@ -154,6 +154,18 @@ class (`EnclosingImportChanges`, B387). A class that only *inherits* a component
 can keep a stale cached resolution until a full re-analysis. Its base, which names the type, is
 re-analysed. No report has shown this. Widen it if one does.
 
+**B500 — a code viewer that lays out only the lines in view.** `CodeViewer` puts every line into
+the page as an element with a span per token, and the browser's cost grows faster than the line
+count: 0.6 s for 2,000 lines, 2.1 s for 5,000, 6.9 s for 10,000, and at 20,000 the page blocked
+long enough for its Blazor connection to drop (`LargeClassLineLimitJourney`). A 106,354-line Dymola
+FMU import model froze the app for more than five minutes. `CodeReview.MaxShownLines` (5,000) now
+shows the first part of such a class with a notice, which stops the hang but leaves the rest
+unreachable from the viewer. Virtualising the viewer (fixed line height, `white-space: pre` already
+holds) would show all of it. What finds a line in the page by querying it has to learn to scroll to
+a computed offset instead: `spellCheck.scrollLineIntoView`, `scrollWordIntoView`, the code search
+match offsets and the spelling underline. Browser find (Ctrl+F) and select-all only reach rendered
+lines, which is acceptable because the page has its own search. Size M. Then remove the cap.
+
 ---
 
 ## Decided against, for now
@@ -200,7 +212,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B500**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B501**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row

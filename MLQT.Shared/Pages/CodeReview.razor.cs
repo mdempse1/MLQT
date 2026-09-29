@@ -140,8 +140,29 @@ public partial class CodeReview : IAsyncDisposable
     internal record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
 
     /// <summary>The lines on screen and what was hidden to produce them — one without the other
-    /// cannot answer which line of the class a displayed line is.</summary>
-    internal record ShownClass(List<string> Lines, SourceElision Elision);
+    /// cannot answer which line of the class a displayed line is. <paramref name="OmittedLines"/> is
+    /// how many were left off the end by <see cref="MaxShownLines"/>.</summary>
+    internal record ShownClass(List<string> Lines, SourceElision Elision, int OmittedLines = 0);
+
+    /// <summary>
+    /// The most lines the viewer is given, beyond which the rest of the class is left off and the
+    /// page says so.
+    ///
+    /// <para><b>The browser's limit, not MLQT's.</b> The viewer puts every line into the page as an
+    /// element of its own with a span per token, and a Dymola FMU import model of 106,354 lines
+    /// (<c>Engines.Examples.CAREM.I2.I2SiNa900ccInterface_fmu</c>, 6.1 MB) left the webview's
+    /// renderer at a full core for more than five minutes with the app frozen behind it. MLQT's own
+    /// part of that render, parse and colouring included, took 1.7 s. The real fix is a viewer that
+    /// only lays out the lines in view; until then this keeps one class from hanging the app.</para>
+    ///
+    /// <para><b>Measured, in Chromium through <c>LargeClassLineLimitJourney</c></b>, from clicking a
+    /// finding to the class coloured on screen: 2,000 lines in 0.6 s, 5,000 in 2.1 s, 10,000 in
+    /// 6.9 s — worse than linear — and at 20,000 the page was blocked for so long that its Blazor
+    /// connection dropped. 5,000 is the most that still opens in about two seconds. A package hides
+    /// its nested classes before this counts, so a large package of small classes rarely meets it;
+    /// the Claytex files that did at the time were 17k–242k lines, all generated.</para>
+    /// </summary>
+    internal const int MaxShownLines = 5_000;
 
     private readonly Dictionary<RenderCacheKey, ShownClass> _renderCache = new();
 
@@ -160,6 +181,27 @@ public partial class CodeReview : IAsyncDisposable
     /// hiding needs the tree too.
     /// </summary>
     private bool _showingQuickPaint;
+
+    /// <summary>How many lines of the class on screen were left off by <see cref="MaxShownLines"/>.</summary>
+    private int _omittedLines;
+
+    /// <summary>The file the class on screen is in, or null for a class with none.</summary>
+    private string? CurrentFilePath =>
+        _currentModelNode?.ContainingFileId is { Length: > 0 } fileId
+            ? LibraryDataService.CombinedGraph.GetNode<FileNode>(fileId)?.FilePath
+            : null;
+
+    /// <summary>What the page says above a class it has cut short, or null when it has not.</summary>
+    internal static string? OmittedLinesNotice(int shown, int omitted, string? file)
+    {
+        if (omitted <= 0)
+            return null;
+
+        var where = string.IsNullOrEmpty(file) ? "the file" : file;
+        return $"This class is {shown + omitted:N0} lines long, too many for the viewer to lay out. " +
+               $"Only the first {shown:N0} are shown: findings and search matches after that cannot " +
+               $"be scrolled to. Open {where} in your editor to see the rest.";
+    }
 
     /// <summary>
     /// Whether the class on screen is laid out as it will stay, so a pending scroll can be aimed
@@ -200,6 +242,7 @@ public partial class CodeReview : IAsyncDisposable
     {
         _highlightedCode = shown.Lines;
         _elision = shown.Elision;
+        _omittedLines = shown.OmittedLines;
         _isLoadingCode = false;
         _showingQuickPaint = false;
         RecomputeCodeMatches();
@@ -218,6 +261,7 @@ public partial class CodeReview : IAsyncDisposable
 
         _highlightedCode = quick.Lines;
         _elision = quick.Elision;
+        _omittedLines = quick.OmittedLines;
 
         // Clearing this is the point of the exercise: while it is set the page shows a spinner in
         // place of the viewer, so painting the lines without it would change nothing the user can
@@ -1404,7 +1448,13 @@ public partial class CodeReview : IAsyncDisposable
         // The class slice excludes `replaceable` / `redeclare`, which sit before it in the file.
         PrependElementPrefix(display, model.ElementPrefix, showHighlighted);
 
-        return new ShownClass(display, elision);
+        // Off the end, so every line still shown keeps its number and a finding's line still maps
+        // through the elision to the right place.
+        var omitted = Math.Max(0, display.Count - MaxShownLines);
+        if (omitted > 0)
+            display.RemoveRange(MaxShownLines, omitted);
+
+        return new ShownClass(display, elision, omitted);
     }
 
     /// <summary>
