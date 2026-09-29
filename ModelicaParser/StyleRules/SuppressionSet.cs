@@ -35,16 +35,19 @@ public sealed class SuppressionSet
     private readonly Dictionary<(string Model, string Component), HashSet<string>> _componentLevel;
     private readonly HashSet<string> _preserveFormatting;
     private readonly Dictionary<string, HashSet<string>> _spellingWords;
+    private readonly Dictionary<string, string> _reasons;
 
-    public static readonly SuppressionSet Empty = new(new(), new(), new(), new(), new());
+    public static readonly SuppressionSet Empty = new(new(), new(), new(), new(), new(), new());
 
     internal SuppressionSet(
         Dictionary<string, HashSet<string>> classLevel,
         Dictionary<string, HashSet<string>> inherited,
         Dictionary<(string, string), HashSet<string>> componentLevel,
         HashSet<string> preserveFormatting,
-        Dictionary<string, HashSet<string>> spellingWords)
+        Dictionary<string, HashSet<string>> spellingWords,
+        Dictionary<string, string> reasons)
     {
+        _reasons = reasons;
         _classLevel = classLevel;
         _inherited = inherited;
         _componentLevel = componentLevel;
@@ -123,6 +126,23 @@ public sealed class SuppressionSet
             yield return enclosing;
     }
 
+    /// <summary>
+    /// The entries of the class-level <c>suppress</c> list written on <paramref name="modelId"/>, as
+    /// written — a full rule id, a short one, or <c>*</c>. Empty when it carries none. Not the rules
+    /// <c>preserveOrder</c>/<c>format=false</c> waive, which are not in any list the user wrote.
+    /// </summary>
+    public IReadOnlyCollection<string> SuppressListOf(string modelId) =>
+        _inherited.TryGetValue(modelId, out var tokens) ? tokens : [];
+
+    /// <summary>The class-level <c>reason</c> written on <paramref name="modelId"/>, or null.</summary>
+    public string? ReasonFor(string modelId) => _reasons.GetValueOrDefault(modelId);
+
+    /// <summary>
+    /// Whether a <c>suppress</c> list entry names <paramref name="ruleId"/>: the id itself, the id
+    /// without its <c>MLQT.</c> prefix, or the wildcard <c>*</c>.
+    /// </summary>
+    public static bool Names(string token, string ruleId) => Matches([token], ruleId);
+
     /// <summary>True if the class opted out of formatting/reordering (<c>preserveOrder</c> / <c>format=false</c>).</summary>
     public bool PreservesFormatting(string modelId) => _preserveFormatting.Contains(modelId);
 
@@ -131,7 +151,7 @@ public sealed class SuppressionSet
 
     // A token matches a rule id if it equals it, equals it minus the "MLQT." prefix
     // (so "Naming.Convention" and "MLQT.Naming.Convention" both work), or is the wildcard "*".
-    private static bool Matches(HashSet<string> tokens, string ruleId)
+    private static bool Matches(IReadOnlyCollection<string> tokens, string ruleId)
     {
         if (tokens.Contains("*") || tokens.Contains(ruleId))
             return true;

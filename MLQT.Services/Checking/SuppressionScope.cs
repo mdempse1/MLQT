@@ -1,4 +1,6 @@
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
+using ModelicaParser.StyleRules;
 
 namespace MLQT.Services.Checking;
 
@@ -36,17 +38,31 @@ public static class SuppressionScope
     /// <paramref name="modelId"/>, scoped to <paramref name="component"/> when there is one.
     /// </summary>
     /// <remarks>
-    /// <para>Scoped to the model, because a class-level waiver is written into that class and says
-    /// nothing about its siblings — including a class of the same name in another library, which is
-    /// why the comparison is ordinal and exact rather than by leaf name.</para>
+    /// <para>A class-level waiver reaches the class and <b>every class nested in it</b>, as the checker
+    /// honours it (<c>SuppressionSet</c>), and nothing beside it — not its siblings, and not a class of
+    /// the same name in another library, which is why the comparison is on the full name.</para>
     ///
-    /// <para>And scoped to the component when the annotation named one: suppressing a rule on
+    /// <para>A component waiver is scoped to that class and component: suppressing a rule on
     /// <c>gain</c> must not clear the same rule on <c>offset</c> two lines below.</para>
     /// </remarks>
     public static bool Waives(LogMessage finding, string modelId, string ruleId, string? component) =>
-        string.Equals(finding.ModelName, modelId, StringComparison.Ordinal)
-        && string.Equals(finding.RuleId, ruleId, StringComparison.Ordinal)
-        && (component is null || string.Equals(finding.ElementPath, component, StringComparison.Ordinal));
+        string.Equals(finding.RuleId, ruleId, StringComparison.Ordinal)
+        && (component is null
+            ? ModelicaName.IsInSubtree(finding.ModelName, modelId)
+            : string.Equals(finding.ModelName, modelId, StringComparison.Ordinal)
+              && string.Equals(finding.ElementPath, component, StringComparison.Ordinal));
+
+    /// <summary>
+    /// A predicate for the findings a class-level <c>suppress</c> list of <paramref name="entries"/>
+    /// on <paramref name="modelId"/> waives: those in the class or nested in it whose rule an entry
+    /// names, with the checker's matching (<see cref="SuppressionSet.Names"/>). Never a diagnostic,
+    /// which no annotation waives.
+    /// </summary>
+    public static Func<LogMessage, bool> WaivedByClassList(string modelId, IReadOnlyCollection<string> entries) =>
+        finding => finding.RuleId is { } ruleId
+            && !RuleIds.IsDiagnostic(ruleId)
+            && ModelicaName.IsInSubtree(finding.ModelName, modelId)
+            && entries.Any(entry => SuppressionSet.Names(entry, ruleId));
 
     /// <summary>A predicate for removing the findings a waiver has just made obsolete.</summary>
     public static Func<LogMessage, bool> WaivedBy(string modelId, string ruleId, string? component) =>

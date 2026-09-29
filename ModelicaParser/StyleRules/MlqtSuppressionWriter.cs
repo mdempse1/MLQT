@@ -79,7 +79,126 @@ public static class MlqtSuppressionWriter
         out string newContent, out string? error)
         => EditFile(fileContent, classPath, component, SuppressArgument, ruleId, reason, out newContent, out error);
 
+    /// <summary>
+    /// Make the class-level <c>suppress</c> list of the class located by <paramref name="classPath"/>
+    /// exactly <paramref name="entries"/>, in a whole <em>file's</em> text — for an editor that turns
+    /// rules on and off, where adding one at a time cannot take one away.
+    ///
+    /// <para>An empty list removes the argument, and tidies up as removing <c>format=false</c> does:
+    /// an <c>__MLQT</c> left holding only its <c>reason</c> goes too, since a reason for nothing is not
+    /// something anyone would write. A non-empty <paramref name="reason"/> replaces the class's
+    /// reason; a blank one leaves an existing reason where it is.</para>
+    ///
+    /// <para>A file with a syntax error is refused, and so is a result that has one: the result is
+    /// re-parsed before it is returned. The file's line endings are kept.</para>
+    /// </summary>
+    public static bool TrySetClassSuppressionsToFile(
+        string fileContent, string[]? classPath, IReadOnlyCollection<string> entries, string? reason,
+        out string newContent, out string? error)
+    {
+        newContent = fileContent;
+        error = null;
+
+        // No backslash either: no rule id has one, and the list is read back without unescaping.
+        if (entries.FirstOrDefault(e => !IsRecordableWord(e) || e.Contains('\\')) is { } bad)
+        {
+            error = $"'{bad}' cannot be recorded in an annotation (it is empty, or contains a quote, comma or backslash)";
+            return false;
+        }
+
+        var usedCrlf = fileContent.Contains("\r\n");
+        var code = fileContent.Replace("\r\n", "\n").Replace("\r", "\n");
+
+        // Errors, not a null tree: the parser recovers from a syntax error and still returns one,
+        // whose offsets are no basis for a splice into the user's file.
+        if (ModelicaParserHelper.ParseWithErrors(code).errors.Count > 0)
+        {
+            error = "could not parse the source";
+            return false;
+        }
+
+        // The list, then its reason: set beside a list, or dropped with the last entry.
+        var list = entries.Count == 0 ? null : string.Join(",", entries.Select(e => e.Trim()));
+        if (!TrySetArgument(ref code, classPath, SuppressArgument, list, out error)
+            || (list is not null && !string.IsNullOrWhiteSpace(reason)
+                && !TrySetArgument(ref code, classPath, ReasonArgument, reason.Trim(), out error))
+            || (list is null && !TryDropLoneReason(ref code, classPath, out error)))
+            return false;
+
+        if (ModelicaParserHelper.ParseWithErrors(code).errors.Count > 0)
+        {
+            error = "the change would have left the file unparseable, so it was not made";
+            return false;
+        }
+
+        newContent = usedCrlf ? code.Replace("\n", "\r\n") : code;
+        return true;
+    }
+
+    /// <summary>
+    /// Sets a quoted <c>__MLQT</c> argument on the class to <paramref name="value"/>, or removes it
+    /// when that is null. Works in LF.
+    /// </summary>
+    private static bool TrySetArgument(
+        ref string code, string[]? classPath, string argument, string? value, out string? error)
+    {
+        if (!TryLocateClass(code, classPath, argument, out var target, out error))
+            return false;
+
+        if (value is null)
+        {
+            code = target.Removal(code) ?? code;
+            return true;
+        }
+
+        if (target.ValueSpan is { } span)
+        {
+            code = code[..span.Start] + Quoted(value) + code[(span.Stop + 1)..];
+            return true;
+        }
+
+        code = target.Apply(code, argument, Escaped(value), reason: null);
+        return true;
+    }
+
+    /// <summary>Removes the class's <c>reason</c> when it is all its <c>__MLQT</c> still holds.</summary>
+    private static bool TryDropLoneReason(ref string code, string[]? classPath, out string? error)
+    {
+        if (!TryLocateClass(code, classPath, ReasonArgument, out var target, out error))
+            return false;
+
+        if (target.ArgumentSpan is not null && target.MlqtArgCount == 1)
+            code = target.Removal(code) ?? code;
+        return true;
+    }
+
+    private static bool TryLocateClass(
+        string code, string[]? classPath, string argument, out Target target, out string? error)
+    {
+        target = null!;
+        error = null;
+
+        var locator = new Locator(classPath, component: null, argument);
+        locator.Visit(ModelicaParserHelper.Parse(code));
+        if (locator.ClassTarget is not { } found)
+        {
+            error = classPath is { Length: > 0 }
+                ? $"could not locate the class '{string.Join('.', classPath)}' in the source"
+                : "could not locate the class body";
+            return false;
+        }
+
+        target = found;
+        return true;
+    }
+
+    // A Modelica string escapes a backslash as well as a quote: `"a\"` is an unterminated string.
+    private static string Escaped(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    private static string Quoted(string value) => "\"" + Escaped(value) + "\"";
+
     private const string SuppressArgument = "suppress";
+    private const string ReasonArgument = "reason";
     private const string SpellingArgument = "spelling";
     private const string FormatArgument = "format";
 
@@ -225,6 +344,7 @@ public static class MlqtSuppressionWriter
         public int? AnnotationArgsStart;     // start of an existing annotation's argument list (no __MLQT yet)
         public int? MlqtArgsStart;           // start of an existing __MLQT argument list (argument not there yet)
         public int? ValueStop;               // stop index of an existing suppress/spelling value (append here)
+        public (int Start, int Stop)? ValueSpan;       // the whole existing value, quotes included
 
         // Spans, for removing an argument again rather than adding one (B175).
         public (int Start, int Stop)? ArgumentSpan;    // the whole `format=false` argument
@@ -482,7 +602,10 @@ public static class MlqtSuppressionWriter
                     // The value expression's last token is the closing quote of "a,b".
                     var expr = m.modification()?.modification_expression();
                     if (expr is not null)
+                    {
                         target.ValueStop = expr.Stop.StopIndex;
+                        target.ValueSpan = (expr.Start.StartIndex, expr.Stop.StopIndex);
+                    }
                 }
                 return;
             }

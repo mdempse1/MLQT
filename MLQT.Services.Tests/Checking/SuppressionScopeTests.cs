@@ -63,13 +63,53 @@ public class SuppressionScopeTests
     [Fact]
     public void ItNeverReachesAnotherClass()
     {
-        // A waiver is written into one class's source and says nothing about any other — including a
-        // class of the same leaf name in another library, which is why the match is on the full id.
+        // A waiver is written into one class's source and says nothing about any class beside it —
+        // including one of the same leaf name in another library, which is why the match is on the
+        // full id.
         var waived = SuppressionScope.WaivedBy("Lib.Model", "R", component: null);
 
         Assert.False(waived(Finding("Lib.Other", "R")));
         Assert.False(waived(Finding("OtherLib.Model", "R")));
-        Assert.False(waived(Finding("Lib.Model.Nested", "R")));
+        Assert.False(waived(Finding("Lib.ModelX", "R")));
+        Assert.False(waived(Finding("Lib", "R")));
+    }
+
+    [Fact]
+    public void AClassLevelWaiverReachesTheClassesNestedInIt_AsTheCheckerHonoursIt()
+    {
+        var waived = SuppressionScope.WaivedBy("Lib.Model", "R", component: null);
+
+        Assert.True(waived(Finding("Lib.Model.Nested", "R")));
+        Assert.True(waived(Finding("Lib.Model.Nested.Deeper", "R", "k")));
+    }
+
+    [Fact]
+    public void AComponentWaiverStaysInItsOwnClass()
+    {
+        var waived = SuppressionScope.WaivedBy("Lib.Model", "R", component: "gain");
+
+        Assert.False(waived(Finding("Lib.Model.Nested", "R", "gain")));
+    }
+
+    [Fact]
+    public void AClassList_WaivesWhatItsEntriesName_InTheClassAndBelow()
+    {
+        var waived = SuppressionScope.WaivedByClassList("Lib.Fmu", ["Doc.ClassDescription", "MLQT.Units.MissingUnit"]);
+
+        Assert.True(waived(Finding("Lib.Fmu", "MLQT.Doc.ClassDescription")));
+        Assert.True(waived(Finding("Lib.Fmu.Types.T", "MLQT.Units.MissingUnit", "x")));
+        Assert.False(waived(Finding("Lib.Fmu", "MLQT.Doc.ParameterDescription")));
+        Assert.False(waived(Finding("Lib.Other", "MLQT.Doc.ClassDescription")));
+    }
+
+    [Fact]
+    public void AWildcardList_WaivesEveryRule_ButNeverADiagnostic()
+    {
+        var waived = SuppressionScope.WaivedByClassList("Lib.Fmu", ["*"]);
+
+        Assert.True(waived(Finding("Lib.Fmu.Inner", "MLQT.Doc.ClassDescription")));
+        Assert.False(waived(Finding("Lib.Fmu", ModelicaParser.StyleRules.RuleIds.CheckFailed)));
+        Assert.False(waived(new LogMessage("Lib.Fmu", "warning", 1, "no rule id")));
     }
 
     [Fact]

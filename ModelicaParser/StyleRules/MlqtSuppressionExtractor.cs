@@ -19,10 +19,11 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
     // Case-insensitive, as the repository's accepted spellings are: a word accepted in one casing is
     // accepted in any.
     private readonly Dictionary<string, HashSet<string>> _spellingWords = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _reasons = new(StringComparer.Ordinal);
 
     public MlqtSuppressionExtractor(string basePackage = "") : base(basePackage) { }
 
-    public SuppressionSet Build() => new(_classLevel, _inherited, _componentLevel, _preserveFormatting, _spellingWords);
+    public SuppressionSet Build() => new(_classLevel, _inherited, _componentLevel, _preserveFormatting, _spellingWords, _reasons);
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
@@ -100,6 +101,10 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
                     case "format":
                         if (component is null && IsFalse(value)) MarkPreserveFormatting();
                         break;
+                    // Kept so the dialog that edits a class's list can show what it already says.
+                    case "reason":
+                        if (component is null && value is not null) _reasons[CurrentModelName] = Unescape(StripQuotes(value));
+                        break;
                 }
             }
         }
@@ -154,6 +159,11 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
         => string.IsNullOrEmpty(quoted)
             ? []
             : StripQuotes(quoted).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    // The two escapes the writer makes - a backslash and a quote - read back in one pass, so an
+    // escaped backslash is never mistaken for the start of an escaped quote.
+    private static string Unescape(string s) =>
+        System.Text.RegularExpressions.Regex.Replace(s, @"\\([""\\])", "$1");
 
     private static bool IsTrue(string? v) => string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
     private static bool IsFalse(string? v) => string.Equals(v, "false", StringComparison.OrdinalIgnoreCase);

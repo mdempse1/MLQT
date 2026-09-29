@@ -45,6 +45,12 @@
                                 OnClick="ToggleFormattingExclusionAsync" Size="Size.Small"
                                 Disabled="@(_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))" />
                 </MudTooltip>
+                <MudTooltip Text="@SuppressRulesTooltip(_classSuppressList)" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.PlaylistRemove" Color="@(_classSuppressList.Count > 0 ? Color.Warning : Color.Primary)"
+                                Variant="@(_classSuppressList.Count > 0 ? Variant.Filled : Variant.Outlined)"
+                                OnClick="OpenSuppressRulesDialogAsync" Size="Size.Small" Class="mlqt-suppress-rules-button"
+                                Disabled="@(_currentModelNode == null || _currentModelNode.IsExternalStub || _suppressing)" />
+                </MudTooltip>
             </MudButtonGroup>
             <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="Run Style Checking on ALL classes" Arrow="true" Placement="Placement.Bottom">

@@ -907,9 +907,16 @@ public partial class CodeReview : IAsyncDisposable
         _currentRepositoryId = null;
         _currentRelativeFilePath = null;
         _isExcludedFromFormatting = false;
+        _classSuppressList = [];
 
         if (_currentModelNode == null)
             return;
+
+        // Before the repository checks below: a waiver works in a library under no revision control
+        // too. On this background thread because reading it can mean parsing the class.
+        if (!_currentModelNode.IsExternalStub)
+            _classSuppressList = ClassSuppressions.For(_currentModelNode.Definition, _currentModelNode.Id)
+                .SuppressListOf(_currentModelNode.Id);
 
         // Find the file containing this model
         var fileId = _currentModelNode.ContainingFileId;
@@ -2315,6 +2322,20 @@ document.head.appendChild(style);
     }
 
     private bool _suppressing;
+
+    /// <summary>
+    /// The class-level <c>suppress</c> list the class on screen carries, read in the background with
+    /// the rest of its status. What the toolbar's suppress button shows as its state.
+    /// </summary>
+    private IReadOnlyCollection<string> _classSuppressList = [];
+
+    /// <summary>What the suppress button says it will do, given the class's list.</summary>
+    internal static string SuppressRulesTooltip(IReadOnlyCollection<string> list) =>
+        list.Count == 0
+            ? "Suppress rules in this class and the classes nested in it"
+            : list.Contains("*")
+                ? "Every rule is suppressed in this class and the classes nested in it - change"
+                : $"{list.Count} rule(s) suppressed in this class and the classes nested in it - change";
     private bool _splitting;
 
     /// <summary>
@@ -2676,6 +2697,129 @@ document.head.appendChild(style);
         NavState.ModelContentChanged(affected);
         _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
         return true;
+    }
+
+    /// <summary>
+    /// Opens the dialog that sets which rules the class on screen suppresses — for itself and every
+    /// class nested in it — and writes what the user chose into its <c>__MLQT(suppress=…)</c> list.
+    ///
+    /// <para>The row action waives one finding's rule on one class. This is for a class whose
+    /// findings are in the classes nested in it, such as a Dymola <c>_fmu</c> import model, where the
+    /// rules worth waiving are not in the table while the class is selected.</para>
+    ///
+    /// <para>Rows it has waived are removed at once, as the row action does. A rule it has
+    /// <em>stopped</em> waiving has no rows left to show, so the class and the classes nested in it
+    /// are checked again to bring them back — unless no check has run yet, in which case the next one
+    /// finds them.</para>
+    /// </summary>
+    private async Task OpenSuppressRulesDialogAsync()
+    {
+        if (_currentModelNode is not { IsExternalStub: false } model || _suppressing)
+            return;
+
+        var classId = model.Id;
+        var target = ResolveClassSourceTarget(classId);
+        if (target is null)
+            return;
+
+        var graph = LibraryDataService.CombinedGraph;
+        var (currentList, currentReason, enclosingNotes) = await Task.Run(() =>
+        {
+            var own = ClassSuppressions.For(model.Definition, classId);
+            return (own.SuppressListOf(classId).ToList(), own.ReasonFor(classId), EnclosingSuppressionNotes(graph, classId));
+        });
+
+        var parameters = new DialogParameters<SuppressRulesDialog>
+        {
+            { x => x.ClassId, classId },
+            { x => x.ClassName, ModelicaName.LeafOf(classId) },
+            { x => x.Findings, CodeReviewService.LogMessages.ToList() },
+            { x => x.CurrentList, currentList },
+            { x => x.CurrentReason, currentReason },
+            { x => x.EnclosingNotes, enclosingNotes },
+        };
+        var dialog = await DialogService.ShowAsync<SuppressRulesDialog>(
+            "Suppress rules", parameters,
+            new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium });
+        var result = await dialog.Result;
+        if (result is not { Canceled: false, Data: SuppressRulesDialog.Choice choice })
+            return;
+
+        _suppressing = true;
+        try
+        {
+            var fileContent = await ReadTargetFileAsync(target);
+            if (fileContent is null)
+                return;
+
+            if (!MlqtSuppressionWriter.TrySetClassSuppressionsToFile(
+                    fileContent, target.ClassPath, choice.List, choice.Reason, out var newContent, out var error))
+            {
+                Snackbar.Add($"Could not change the suppressions: {error}", MudBlazor.Severity.Error);
+                return;
+            }
+
+            if (string.Equals(newContent, fileContent, StringComparison.Ordinal))
+                return;
+
+            if (!await SaveAnnotatedFileAsync(target, newContent))
+                return;
+
+            CodeReviewService.RemoveLogMessagesByPredicate(SuppressionScope.WaivedByClassList(classId, choice.List));
+
+            // Anything no longer waived: check the class and what is nested in it again.
+            if (currentList.Except(choice.List, StringComparer.Ordinal).Any()
+                && (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun))
+            {
+                var subtree = LibraryDataService.CombinedGraph.ModelNodes
+                    .Where(n => ModelicaName.IsInSubtree(n.Id, classId))
+                    .Select(n => n.Id)
+                    .ToList();
+                CodeReviewService.RemoveLogMessagesByPredicate(f =>
+                    f.RuleId is { } rule && !RuleIds.IsParseDiagnostic(rule) && ModelicaName.IsInSubtree(f.ModelName, classId));
+                _ = StyleCheckingService.CheckModelsAsync(subtree, LibraryDataService.CombinedGraph)
+                    .ContinueWith(t => LoggingService.Error("CodeReview",
+                            $"Re-checking {classId} after its suppressions changed failed", t.Exception!),
+                        TaskContinuationOptions.OnlyOnFaulted);
+            }
+
+            OnModelSelected();   // re-render the annotated class and refresh the toolbar
+            Snackbar.Add(SuppressionListChanged(choice.List), MudBlazor.Severity.Success);
+        }
+        finally
+        {
+            _suppressing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>How the dialog's save describes itself.</summary>
+    internal static string SuppressionListChanged(IReadOnlyList<string> list) =>
+        list.Count == 0
+            ? "No rules are suppressed in this class now."
+            : list.Contains("*")
+                ? "Every rule is suppressed in this class and the classes nested in it."
+                : $"{list.Count} rule(s) suppressed in this class and the classes nested in it.";
+
+    /// <summary>
+    /// One line per enclosing class whose own list already reaches <paramref name="classId"/>, so the
+    /// dialog does not offer to suppress what a package above has.
+    /// </summary>
+    internal static IReadOnlyList<string> EnclosingSuppressionNotes(DirectedGraph graph, string classId)
+    {
+        var notes = new List<string>();
+        for (var enclosing = ModelicaName.EnclosingPackageOf(classId);
+             enclosing.Length > 0;
+             enclosing = ModelicaName.EnclosingPackageOf(enclosing))
+        {
+            if (graph.GetNode<ModelNode>(enclosing)?.Definition is not { } definition)
+                continue;
+
+            var list = ClassSuppressions.For(definition, enclosing).SuppressListOf(enclosing);
+            if (list.Count > 0)
+                notes.Add($"{enclosing} already suppresses here: {string.Join(", ", list)}");
+        }
+        return notes;
     }
 
     /// <summary>

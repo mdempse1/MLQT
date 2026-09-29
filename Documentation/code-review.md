@@ -69,6 +69,7 @@ and removed and suggests an external diff tool, instead of rendering every row.
 |--------|------|-------------|
 | **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the findings table with the results. Always available. |
 | **Exclude from auto-formatting** / **Include in auto-formatting** | FormatClear | Toggles formatting exclusion (the tooltip names what a click will do) for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes that are only formatting, the file is reverted first to undo it; a new file, or one with any other uncommitted edit, is left as it is. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes `__MLQT(format=false)` into the class itself, so the exclusion travels with it when it is renamed or moved and is committed alongside the code it applies to; toggling off removes the directive again. Write the annotation by hand if you want to record a `reason` for it. |
+| **Suppress rules in this class** | PlaylistRemove | Opens a dialog that sets which rules the selected class suppresses, for itself **and every class nested in it** — see [Suppressing Rules for a Whole Class](#suppressing-rules-for-a-whole-class). When the class already suppresses something (yellow/orange, filled), the tooltip says how many rules. Disabled when no class is selected. |
 | **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, `Placement`, `Line`) can be verbose — hiding them lets you focus on the functional code. **Every annotation goes, including the ones written on the same line as code** — so a `connect(...)` in an equation section comes back as just the connection. Nothing is left in their place: the button is filled while annotations are shown and outlined while they are hidden, and that is the only marker. Line numbers are unaffected, so a finding still points at the right line. The diff views always show the full source, annotations included, whatever this is set to. |
 | **Check this class using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools, and disabled when no class is selected. |
 | **Check this class using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools, and disabled when no class is selected. |
@@ -254,6 +255,33 @@ Each style-rule finding row has a **Suppress** button at the end of the row — 
 - The file is re-formatted and **saved to disk immediately**, then re-parsed, and the resolved finding is removed. If the result would fail to parse, the change is aborted and the file is left unchanged.
 
 Because the waiver lives in the source, it survives re-formatting and is honoured everywhere findings are produced — the desktop app, the [`mlqt check` CLI](cli.md), and the [MCP server](mcp-server.md). This is the same suppression mechanism a reviewer or agent can apply headlessly; see the CI walk-through's suppression section in [CI Quality Gate](ci-quality-gate.md). `__MLQT` is a spec-sanctioned vendor annotation, so Dymola and OpenModelica ignore it.
+
+#### Suppressing Rules for a Whole Class
+
+**Suppress** on a row waives one finding's rule on one class. That isn't enough for generated code
+such as the models Dymola writes when it imports an FMU, whose findings are almost all in the
+records and types nested inside the model: with the model selected, those findings aren't the ones
+the table shows.
+
+The **Suppress rules in this class** button on the toolbar opens a dialog for the selected class:
+
+- It lists every rule with a finding in the class **or any class nested in it**, with how many.
+  **Show every rule** lists the whole catalogue instead.
+- Tick the rules to suppress. **All rules (\*)** suppresses every rule; the rules ticked underneath
+  are kept, so turning it off again leaves them suppressed.
+- **Reason** is written beside the list, for whoever reviews the change.
+- The dialog opens with what the class already says ticked. If a package above the class already
+  suppresses something here, the dialog says so.
+
+**Save** writes the choice into the class's source as `__MLQT(suppress="…", reason="…")`, replacing
+the list it had. The rows it waived leave the table at once. If you turned a rule *off*, the class
+and the classes nested in it are checked again so its findings come back. As with the row action,
+the waiver lives in the source, so `mlqt check` and the MCP server honour it too, and
+`mlqt check --no-suppress` shows everything it hides.
+
+For an FMU import, consider suppressing on the **package** that holds the `_fmu` models rather than
+on each model: Dymola rewrites a model when the FMU is imported again, and the annotation goes with
+it.
 
 ### Very Large Classes
 
