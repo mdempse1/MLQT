@@ -45,6 +45,9 @@ public class RepositoryService : IRepositoryService
     // GetWorkingCopyChanges (B293).
     private readonly Dictionary<string, (Task<List<VcsWorkingCopyFile>> Query, long Generation)> _workingCopyQueries = new();
     private readonly Dictionary<string, long> _workingCopyGenerations = new();
+
+    // What each repository's last reload changed, until the VCS pipeline takes it (B499). Guarded by _lock.
+    private readonly Dictionary<string, HashSet<string>> _changedByReload = new();
     private long _allWorkingCopiesGeneration;
 
     /// <summary>
@@ -654,6 +657,7 @@ public class RepositoryService : IRepositoryService
                 return;
 
             _repositories.Remove(repository);
+            _changedByReload.Remove(repositoryId);
         }
 
         // Stop file monitoring for this repository, and forget it
@@ -705,8 +709,15 @@ public class RepositoryService : IRepositoryService
         // announced on its own, and every open tree answered each with a working-copy status query
         // and a rebuild - sixteen of them for MSL's eight libraries, on top of everything else a VCS
         // operation sets off.
+        //
+        // Which classes the reload changed is kept for the VCS pipeline, which cannot otherwise tell
+        // (B499, see ReloadedClassChanges): taken before the old classes go, answered once the new
+        // ones are in.
+        ReloadedClassChanges changes;
         using (_libraryDataService.SuppressTreeDataChanged())
         {
+            changes = ReloadedClassChanges.Capture(_libraryDataService.CombinedGraph, ModelIdsOf(repository));
+
             foreach (var libraryId in repository.LibraryIds)
             {
                 _libraryDataService.RemoveLibrary(libraryId);
@@ -715,7 +726,34 @@ public class RepositoryService : IRepositoryService
             await LoadLibrariesAsync(repositoryId, repository.DiscoveredLibraries.Keys.ToList(), cancellationToken);
         }
 
+        var changed = await Task.Run(() =>
+            changes.ClassesToReanalyse(_libraryDataService.CombinedGraph, ModelIdsOf(repository)), cancellationToken);
+        lock (_lock)
+        {
+            if (!_changedByReload.TryGetValue(repositoryId, out var pending))
+                _changedByReload[repositoryId] = pending = new HashSet<string>(StringComparer.Ordinal);
+            pending.UnionWith(changed);
+        }
+
         OnRepositoriesChanged?.Invoke();
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> TakeClassesChangedByReload(string repositoryId)
+    {
+        lock (_lock)
+            return _changedByReload.Remove(repositoryId, out var changed) ? changed : [];
+    }
+
+    // Every class of the repository's libraries, as the library index has them now.
+    private List<string> ModelIdsOf(Repository repository)
+    {
+        List<string> libraryIds;
+        lock (_lock)
+            libraryIds = [.. repository.LibraryIds];
+        return [.. _libraryDataService.Libraries
+            .Where(library => libraryIds.Contains(library.Id))
+            .SelectMany(library => library.ModelIds)];
     }
 
     public Repository? GetRepository(string repositoryId)
@@ -1429,6 +1467,7 @@ public class RepositoryService : IRepositoryService
         lock (_lock)
         {
             _repositories.Clear();
+            _changedByReload.Clear();
         }
 
         _fileMonitoringService.StopAllMonitoring();
@@ -1546,6 +1585,7 @@ public class RepositoryService : IRepositoryService
         {
             repositoriesToClear = _repositories.ToList();
             _repositories.Clear();
+            _changedByReload.Clear();
         }
 
         // Stop all file monitoring

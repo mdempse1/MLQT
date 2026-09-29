@@ -812,9 +812,9 @@ public class LibraryDataService : ILibraryDataService
         }
 
         // Before the old classes go: what they import on behalf of classes below them in other files.
-        EnclosingImportChanges enclosingImports;
+        EnclosingScopeChanges enclosingImports;
         lock (_lock)
-            enclosingImports = EnclosingImportChanges.Capture(_combinedGraph, [fileId]);
+            enclosingImports = EnclosingScopeChanges.Capture(_combinedGraph, [fileId]);
 
         // Remove old models from this file
         var removedIds = RemoveModelsFromFile(filePath);

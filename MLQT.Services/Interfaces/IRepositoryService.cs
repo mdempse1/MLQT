@@ -115,6 +115,18 @@ public interface IRepositoryService
     Task RefreshRepositoryAsync(string repositoryId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The classes <see cref="RefreshRepositoryAsync"/> found changed since the reload before it, and
+    /// forgets them: those whose source is new or different, and those below a class whose
+    /// class-level <c>__MLQT</c> waivers or imports now reach them differently (B499). Every reload
+    /// not yet taken is included, so an update and a branch switch in a row lose neither.
+    /// </summary>
+    /// <remarks>
+    /// For the VCS pipeline, which re-analyses what changed and cannot otherwise tell: the monitor
+    /// was paused through the operation, and the VCS status names only what is not committed.
+    /// </remarks>
+    IReadOnlyCollection<string> TakeClassesChangedByReload(string repositoryId);
+
+    /// <summary>
     /// Gets a repository by its ID.
     /// </summary>
     Repository? GetRepository(string repositoryId);

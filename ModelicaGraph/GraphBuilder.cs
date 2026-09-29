@@ -1571,7 +1571,7 @@ public static class GraphBuilder
     /// resolved to a full one, so a file outside the root is still stored under its own path (B384).</param>
     /// <returns>List of model IDs that were affected (removed or added), and the classes in other
     /// files below a class whose imports changed, or that name a class added or removed below their
-    /// parent (see <see cref="EnclosingImportChanges"/>).</returns>
+    /// parent (see <see cref="EnclosingScopeChanges"/>).</returns>
     public static List<string> UpdateGraphForChangedFiles(
         DirectedGraph graph,
         string rootPath,
@@ -1590,7 +1590,7 @@ public static class GraphBuilder
 
         // Before anything is removed: what the files' classes import on behalf of the classes below
         // them that live elsewhere (B347).
-        var enclosingImports = EnclosingImportChanges.Capture(graph, changedMoFiles.Select(relativePath =>
+        var enclosingImports = EnclosingScopeChanges.Capture(graph, changedMoFiles.Select(relativePath =>
             GenerateFileId(ResolveChangedFile(rootPath, relativePath))));
 
         // Step 1: Remove models from changed/deleted .mo files

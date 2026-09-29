@@ -638,9 +638,9 @@ end Foo;
 
   A waiver on a package reaches down, never up or sideways: a class elsewhere in the library is
   still reported, and `mlqt check --no-suppress` shows everything the package annotation hides.
-  In the desktop app, adding or changing a package's waiver re-checks only the classes in that
-  package's own file. Classes below it in files of their own still show their old findings until
-  the next full check, for example after a restart.
+  In the desktop app, adding, changing or removing a package's waiver re-checks every class below
+  it, including those in files of their own, whether the edit arrives by saving the file, by
+  **Refresh** or through a VCS update. Any other edit to the package re-checks only its own file.
 - **`preserveOrder=true`** (or `format=false`) on a class does three things, not one: it waives the
   ordering/formatting rules, it stops the **formatter** rewriting the class (including under
   **Format All Files**), and it takes the class off the layout coverage dimensions so the dashboard

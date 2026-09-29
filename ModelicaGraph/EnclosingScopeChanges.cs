@@ -1,10 +1,11 @@
 using ModelicaGraph.DataTypes;
+using ModelicaParser.StyleRules;
 
 namespace ModelicaGraph;
 
 /// <summary>
 /// Which classes outside a set of reloaded files have to be re-analysed because a class in those
-/// files, enclosing them, now declares different imports.
+/// files, enclosing them, now declares different imports, classes or waivers.
 ///
 /// <para>Since B292 a name is looked up through every enclosing scope's imports, so
 /// <c>import Modelica.Units.SI;</c> in <c>P/package.mo</c> is what <c>SI.Time</c> means in
@@ -23,46 +24,62 @@ namespace ModelicaGraph;
 /// re-analyse every class in a package each time a file was added to it. A class with no parent is
 /// a library of its own, which is a load rather than a reload, and widens nothing.</para>
 ///
+/// <para><b>So is what a scope waives (B499).</b> A class-level <c>__MLQT(suppress=…)</c> or
+/// <c>spelling</c> reaches every class nested in the one carrying it (<see cref="ClassSuppressions.Enclosing"/>),
+/// so adding <c>suppress="*"</c> to <c>P/package.mo</c> changes which findings <c>P/Child.mo</c> has.
+/// A reloaded scope whose waivers reach its nested classes differently widens the set to the whole
+/// subtree in other files, as a changed import does - every class below it filtered its findings
+/// through them. Only the waivers that reach are compared
+/// (<see cref="ModelicaParser.StyleRules.SuppressionSet.ReachesNestedClassesAs"/>), so an edit to a
+/// top-level <c>package.mo</c> that leaves them alone re-checks nothing below it.</para>
+///
 /// <para>Use it in two steps around the reload: <see cref="Capture"/> before the old classes are
 /// removed, <see cref="DescendantsToReanalyse"/> once the new ones are in.</para>
 /// </summary>
-public sealed class EnclosingImportChanges
+public sealed class EnclosingScopeChanges
 {
     private readonly HashSet<string> _fileIds;
     private readonly Dictionary<string, IReadOnlyList<string>> _importsBefore;
+    private readonly Dictionary<string, SuppressionSet> _waiversBefore;
     private readonly Dictionary<string, List<string>> _descendantsBefore;
     private readonly HashSet<string> _classesBefore;
 
-    private EnclosingImportChanges(
+    private EnclosingScopeChanges(
         HashSet<string> fileIds,
         Dictionary<string, IReadOnlyList<string>> importsBefore,
+        Dictionary<string, SuppressionSet> waiversBefore,
         Dictionary<string, List<string>> descendantsBefore,
         HashSet<string> classesBefore)
     {
         _fileIds = fileIds;
         _importsBefore = importsBefore;
+        _waiversBefore = waiversBefore;
         _descendantsBefore = descendantsBefore;
         _classesBefore = classesBefore;
     }
 
     /// <summary>
-    /// Records the imports of every class in <paramref name="fileIds"/> that encloses a class kept in
-    /// another file. Call before the files' classes are removed from <paramref name="graph"/>.
+    /// Records the imports and waivers of every class in <paramref name="fileIds"/> that encloses a
+    /// class kept in another file. Call before the files' classes are removed from <paramref name="graph"/>.
     /// </summary>
-    public static EnclosingImportChanges Capture(DirectedGraph graph, IEnumerable<string> fileIds)
+    public static EnclosingScopeChanges Capture(DirectedGraph graph, IEnumerable<string> fileIds)
     {
         var files = new HashSet<string>(fileIds, StringComparer.Ordinal);
         var descendants = OutsideDescendants(graph, files);
         var imports = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var waivers = new Dictionary<string, SuppressionSet>(StringComparer.Ordinal);
         foreach (var scopeId in descendants.Keys)
             if (graph.GetNode<ModelNode>(scopeId) is { } scope)
+            {
                 imports[scopeId] = ClassImports.For(scope.Definition);
-        return new EnclosingImportChanges(files, imports, descendants, ClassesIn(graph, files));
+                waivers[scopeId] = ClassSuppressions.For(scope.Definition, scopeId);
+            }
+        return new EnclosingScopeChanges(files, imports, waivers, descendants, ClassesIn(graph, files));
     }
 
     /// <summary>
-    /// The classes in other files below a reloaded class whose imports differ from what
-    /// <see cref="Capture"/> recorded - including a scope that appeared or disappeared with imports -
+    /// The classes in other files below a reloaded class whose imports or reaching waivers differ from
+    /// what <see cref="Capture"/> recorded - including a scope that appeared or disappeared with them -
     /// and the classes in other files below the parent of a class that appeared or disappeared in the
     /// reloaded files, where they mention its name. Only classes still in the graph are returned.
     /// </summary>
@@ -75,12 +92,17 @@ public sealed class EnclosingImportChanges
 
         foreach (var scopeId in _descendantsBefore.Keys.Union(descendantsAfter.Keys, StringComparer.Ordinal))
         {
-            var before = _importsBefore.GetValueOrDefault(scopeId) ?? [];
-            var after = graph.GetNode<ModelNode>(scopeId) is { } scope
+            var reloaded = graph.GetNode<ModelNode>(scopeId) is { } scope
                 && scope.ContainingFileId is { } fileId && _fileIds.Contains(fileId)
-                    ? ClassImports.For(scope.Definition)
-                    : [];
-            if (before.SequenceEqual(after, StringComparer.Ordinal))
+                    ? scope
+                    : null;
+
+            var importsBefore = _importsBefore.GetValueOrDefault(scopeId) ?? [];
+            var importsAfter = reloaded is null ? [] : ClassImports.For(reloaded.Definition);
+            var waiversBefore = _waiversBefore.GetValueOrDefault(scopeId) ?? SuppressionSet.Empty;
+            var waiversAfter = reloaded is null ? SuppressionSet.Empty : ClassSuppressions.For(reloaded.Definition, scopeId);
+            if (importsBefore.SequenceEqual(importsAfter, StringComparer.Ordinal)
+                && waiversBefore.ReachesNestedClassesAs(waiversAfter))
                 continue;
 
             foreach (var id in _descendantsBefore.GetValueOrDefault(scopeId) ?? [])

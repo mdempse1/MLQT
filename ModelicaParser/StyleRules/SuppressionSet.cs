@@ -134,6 +134,25 @@ public sealed class SuppressionSet
     public IReadOnlyCollection<string> SuppressListOf(string modelId) =>
         _inherited.TryGetValue(modelId, out var tokens) ? tokens : [];
 
+    /// <summary>
+    /// Whether this set waives the same things as <paramref name="other"/> for the classes nested in
+    /// the ones it was read from: the same class-level <c>suppress</c> lists and the same
+    /// <c>spelling</c> words, on the same classes.
+    ///
+    /// <para>What a reload asks of a package that encloses classes kept in files of their own: those
+    /// classes' findings were filtered through this set, so when it waives something different they
+    /// have to be checked again (B499). Nothing else takes part — component-level waivers and
+    /// <c>preserveOrder</c>/<c>format=false</c> stay with their own class, and a <c>reason</c> waives
+    /// nothing — so an edit to those, like any other edit to the package, re-checks no class below
+    /// it.</para>
+    /// </summary>
+    public bool ReachesNestedClassesAs(SuppressionSet other) =>
+        SameEntries(_inherited, other._inherited) && SameEntries(_spellingWords, other._spellingWords);
+
+    private static bool SameEntries(Dictionary<string, HashSet<string>> a, Dictionary<string, HashSet<string>> b) =>
+        a.Count == b.Count
+        && a.All(entry => b.TryGetValue(entry.Key, out var tokens) && tokens.SetEquals(entry.Value));
+
     /// <summary>The class-level <c>reason</c> written on <paramref name="modelId"/>, or null.</summary>
     public string? ReasonFor(string modelId) => _reasons.GetValueOrDefault(modelId);
 

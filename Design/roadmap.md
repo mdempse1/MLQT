@@ -125,7 +125,7 @@ closes.
 
 ### 2. Wave-2 analyses — next
 
-**The next phase**, once the `backlog` branch has merged.
+**The next phase.** The `backlog` branch merged on 2026-09-28 (PR #10), so nothing is ahead of it.
 
 The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage,
 cyclic-dependency detection and external-resource validation. See §2 below for the three-state
@@ -150,7 +150,7 @@ there is no machine. Size it when a reason to do it appears.
 
 **Wider incremental re-analysis when a class appears in an enclosing package.** When a package gains
 or loses a class, the classes below it in other files are re-analysed if their own text names that
-class (`EnclosingImportChanges`, B387). A class that only *inherits* a component of the captured type
+class (`EnclosingScopeChanges`, B387). A class that only *inherits* a component of the captured type
 can keep a stale cached resolution until a full re-analysis. Its base, which names the type, is
 re-analysed. No report has shown this. Widen it if one does.
 
@@ -192,13 +192,11 @@ Each of these was looked at and deliberately left alone. Reopen one only with wh
 ## Known open issues
 
 B492 and B496 are intermittent journey failures, each seen once and not reproduced since. **If one
-recurs, find the cause from its evidence. Never add a retry.** B499 is a known gap in a shipped
-feature.
+recurs, find the cause from its evidence. Never add a retry.**
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
-| B499 | **The desktop app does not re-check the classes below a package whose `__MLQT` waiver changed.** A class-level `suppress`/`spelling` reaches every nested class (`ClassSuppressions.Enclosing`), but after a file change the GUI re-checks only the classes in that file. Adding `suppress="*"` to a `package.mo` therefore leaves the findings of the classes below it that are stored in files of their own on screen until the next full check or restart. The CLI and MCP check everything each run, so they are unaffected | Widen the re-checked set in `MainLayout`'s three `CheckModelsAsync` call sites to the descendants of any changed class whose class-level directives differ from before. Compare the directive sets, not the file, or every edit to a top-level `package.mo` re-checks the whole library |
 | B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
 
 ---

@@ -79,6 +79,9 @@ public class RepositoryServiceTests
         public static TempGitLibrary WithPackage(string packageMoContent = "package TestLib end TestLib;") =>
             new(new[] { ("package.mo", packageMoContent) });
 
+        /// <summary>Exactly these files, committed.</summary>
+        public static TempGitLibrary WithFiles(params (string Path, string Content)[] files) => new(files);
+
         /// <summary>Stages every change in the working copy and commits it.</summary>
         public void CommitAll(string message)
         {
@@ -912,6 +915,115 @@ public class RepositoryServiceTests
 
         // Should not throw
         await service.RefreshRepositoryAsync(SandboxedId(addResult));
+    }
+
+    // ── what a reload changed, for the VCS pipeline (B499) ──
+
+    private const string UnwaivedPackage = "package TestLib \"The library\"\nend TestLib;\n";
+    private const string WaivedPackage =
+        "package TestLib \"The library\"\n  annotation(__MLQT(suppress=\"*\"));\nend TestLib;\n";
+
+    /// <summary>
+    /// A library with two classes in files of their own below its package, loaded, with the package's
+    /// waivers read - as a style check reads them for every class below it.
+    /// </summary>
+    private static async Task<(TempGitLibrary Library, RepositoryService Service, string Id)> LoadWithChildrenAsync(
+        string package)
+    {
+        var library = TempGitLibrary.WithFiles(
+            ("package.mo", package),
+            ("Child.mo", "within TestLib;\nmodel Child\nend Child;\n"),
+            ("Other.mo", "within TestLib;\nmodel Other\nend Other;\n"));
+        var data = new LibraryDataService();
+        var service = new RepositoryService(data, new InMemorySettingsService(), new FileMonitoringService());
+        var addResult = await service.AddRepositoryAsync(library.Root, startMonitoring: false);
+        Assert.True(addResult.Success, addResult.ErrorMessage);
+        var id = SandboxedId(addResult);
+        await service.LoadLibrariesAsync(id);
+        ModelicaGraph.ClassSuppressions.For(
+            data.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("TestLib")!.Definition, "TestLib");
+        return (library, service, id);
+    }
+
+    [Fact]
+    public async Task RefreshRepository_AWaiverAddedToAPackage_ReportsEveryClassBelowIt()
+    {
+        var (library, service, id) = await LoadWithChildrenAsync(UnwaivedPackage);
+        using var _ = library;
+
+        // What an update leaves: committed, so the VCS status names nothing.
+        File.WriteAllText(Path.Combine(library.Root, "package.mo"), WaivedPackage);
+        library.CommitAll("Waive everything");
+        await service.RefreshRepositoryAsync(id);
+
+        Assert.Equal(["TestLib", "TestLib.Child", "TestLib.Other"], service.TakeClassesChangedByReload(id));
+        Assert.Empty(service.TakeClassesChangedByReload(id));   // taken once
+    }
+
+    [Fact]
+    public async Task RefreshRepository_AWaiverRemoved_ReportsEveryClassBelowIt()
+    {
+        var (library, service, id) = await LoadWithChildrenAsync(WaivedPackage);
+        using var _ = library;
+
+        File.WriteAllText(Path.Combine(library.Root, "package.mo"), UnwaivedPackage);
+        await service.RefreshRepositoryAsync(id);
+
+        Assert.Equal(["TestLib", "TestLib.Child", "TestLib.Other"], service.TakeClassesChangedByReload(id));
+    }
+
+    [Fact]
+    public async Task RefreshRepository_AnEditLeavingTheWaiversAlone_ReportsOnlyTheEditedClasses()
+    {
+        var (library, service, id) = await LoadWithChildrenAsync(WaivedPackage);
+        using var _ = library;
+
+        File.WriteAllText(Path.Combine(library.Root, "package.mo"),
+            "package TestLib \"Described again\"\n  annotation(__MLQT(suppress=\"*\"));\nend TestLib;\n");
+        File.WriteAllText(Path.Combine(library.Root, "Other.mo"), "within TestLib;\nmodel Other \"Described\"\nend Other;\n");
+        await service.RefreshRepositoryAsync(id);
+
+        Assert.Equal(["TestLib", "TestLib.Other"], service.TakeClassesChangedByReload(id));
+    }
+
+    [Fact]
+    public async Task RefreshRepository_WithNothingChanged_ReportsNothing()
+    {
+        var (library, service, id) = await LoadWithChildrenAsync(WaivedPackage);
+        using var _ = library;
+
+        await service.RefreshRepositoryAsync(id);
+
+        Assert.Empty(service.TakeClassesChangedByReload(id));
+    }
+
+    [Fact]
+    public async Task RefreshRepository_TwoReloadsBeforeAPipeline_ReportBoth()
+    {
+        // An update and then a branch switch, say, with one pipeline run queued behind both.
+        var (library, service, id) = await LoadWithChildrenAsync(UnwaivedPackage);
+        using var _ = library;
+
+        File.WriteAllText(Path.Combine(library.Root, "Child.mo"), "within TestLib;\nmodel Child \"One\"\nend Child;\n");
+        await service.RefreshRepositoryAsync(id);
+        File.WriteAllText(Path.Combine(library.Root, "Other.mo"), "within TestLib;\nmodel Other \"Two\"\nend Other;\n");
+        await service.RefreshRepositoryAsync(id);
+
+        Assert.Equal(["TestLib.Child", "TestLib.Other"],
+            service.TakeClassesChangedByReload(id).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task RemovingARepository_ForgetsWhatItsReloadChanged()
+    {
+        var (library, service, id) = await LoadWithChildrenAsync(UnwaivedPackage);
+        using var _ = library;
+
+        File.WriteAllText(Path.Combine(library.Root, "Child.mo"), "within TestLib;\nmodel Child \"One\"\nend Child;\n");
+        await service.RefreshRepositoryAsync(id);
+        service.RemoveRepository(id);
+
+        Assert.Empty(service.TakeClassesChangedByReload(id));
     }
 
     [Fact]

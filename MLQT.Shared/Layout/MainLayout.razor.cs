@@ -1751,7 +1751,14 @@ public partial class MainLayout : IDisposable
             if (pendingChanges.Count > 0)
                 FileMonitoringService.ClearPendingChanges(repositoryId);
 
-            var affectedModelIds = changes.AffectedModelIds;
+            // Taken whatever the source, so a later run is not handed this one's. Added to what the
+            // monitor or the VCS status named: neither can see what the operation itself changed once
+            // it is committed - an update's own changes, or a waiver or import it brought to a
+            // package above classes in files of their own (B499). The whole repository has them all.
+            var changedByReload = RepositoryService.TakeClassesChangedByReload(repositoryId);
+            var affectedModelIds = changes.Source is VcsChangeSource.PendingChanges or VcsChangeSource.VcsStatus
+                ? changes.AffectedModelIds.Union(changedByReload, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal)
+                : changes.AffectedModelIds;
             var changedFilePaths = changes.ChangedFilePaths;
 
             if (affectedModelIds.Count == 0)
