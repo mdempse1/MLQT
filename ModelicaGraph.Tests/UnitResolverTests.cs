@@ -105,6 +105,18 @@ public class UnitResolverTests
         Assert.Equal(new UnitAttributes(true, "", null, null), Attributes(graph, "Bare"));
     }
 
+    [Theory]
+    [InlineData("(\"m\")", "m")]
+    [InlineData("((\"m\"))", "m")]
+    [InlineData("(\"a\") + (\"b\")", "(\"a\") + (\"b\")")]   // the brackets do not wrap the value
+    [InlineData("(\"a\" + \"b\")", "(\"a\" + \"b\")")]       // they do, but what they wrap is no literal
+    public void ALiteralInParentheses_IsStillALiteral(string value, string expected)
+    {
+        var graph = Library(("T", $"type T = Real(unit={value});", "type"));
+
+        Assert.Equal(expected, Attributes(graph, "T").Unit);
+    }
+
     [Fact]
     public void Resolve_IsTheYesOrNoViewOfTheSameAnswer_AndSharesTheCache()
     {

@@ -6,33 +6,6 @@ using ModelicaGraph.DataTypes;
 namespace ModelicaGraph.Analysis;
 
 /// <summary>
-/// What a type's short-class chain fixes about a <see cref="Real"/>-derived quantity: whether it is
-/// one at all, and the <c>unit</c>, <c>displayUnit</c> and <c>quantity</c> it carries. Each attribute
-/// is taken from the <b>nearest</b> definition along the chain that sets it, so
-/// <c>type Torque = Real(unit="N.m", quantity="Torque")</c> followed by
-/// <c>type MyTorque = Torque(displayUnit="kN.m")</c> answers all three for <c>MyTorque</c>, and an
-/// alias that sets <c>unit</c> again overrides the one below it.
-///
-/// <para>A value written as a string literal is that string, unquoted and unescaped (<c>"N.m"</c> is
-/// <c>N.m</c>). A value that is any other expression — a parameter, a concatenation — is its source
-/// text rebuilt from the tokens, because the attribute is still fixed there and a caller asking
-/// <see cref="HasUnit"/> must not be told otherwise; a units check reading it will find it is not a
-/// unit string and can say so. Every attribute is null when <see cref="IsRealDerived"/> is false.</para>
-/// </summary>
-public readonly record struct UnitAttributes(
-    bool IsRealDerived, string? Unit, string? DisplayUnit, string? Quantity)
-{
-    /// <summary>Not a Real quantity, or not resolvable: nothing is known.</summary>
-    public static readonly UnitAttributes None = new(false, null, null, null);
-
-    /// <summary>A plain <c>Real</c>: Real-derived, with nothing fixed at type level.</summary>
-    public static readonly UnitAttributes PlainReal = new(true, null, null, null);
-
-    /// <summary>Whether a unit is fixed anywhere in the type chain.</summary>
-    public bool HasUnit => Unit is not null;
-}
-
-/// <summary>
 /// Determines whether a component's declared type is a <see cref="Real"/>-derived numeric quantity and,
 /// if so, what its type chain fixes about it (<see cref="UnitAttributes"/>). This is what makes unit coverage
 /// meaningful for real libraries: a variable typed <c>Modelica.Units.SI.Length</c> carries a unit even
@@ -179,40 +152,54 @@ public static class UnitResolver
     }
 
     // The value a modification binds: a string literal's contents, or any other expression's source
-    // text. Never GetText(), which drops the spaces between tokens. A modification with no binding
-    // (`unit(...)`) or `break` still fixes nothing, but is written, so it reads as an empty string
-    // rather than as absent — which keeps HasUnit what it always was: whether `unit` is modified.
+    // text. Never GetText(), which drops the spaces between tokens. A literal in parentheses is still
+    // a literal - `unit=("m")` is `m` - so the pairs wrapping the whole value are removed first; one
+    // that does not wrap all of it, as in `("a") + ("b")`, leaves more than one token and is source
+    // text. A modification with no binding (`unit(...)`) or `break` still fixes nothing, but is
+    // written, so it reads as an empty string rather than as absent - which keeps HasUnit what it
+    // always was: whether `unit` is modified.
     private static string ValueOf(modelicaParser.ModificationContext? modification)
     {
-        var expression = modification?.modification_expression();
-        if (expression?.Start is null || expression.Stop is null)
-            return string.Empty;
+        var tokens = new List<IToken>();
+        if (modification?.modification_expression() is { } expression)
+            CollectTokens(expression, tokens);
 
-        if (expression.Start == expression.Stop && expression.Start.Type == modelicaParser.STRING)
-            return Unescape(expression.Start.Text);
+        var first = 0;
+        var last = tokens.Count - 1;
+        while (last - first >= 2 && tokens[first].Text == "(" && tokens[last].Text == ")")
+        {
+            first++;
+            last--;
+        }
+        if (first == last && tokens[first].Type == modelicaParser.STRING)
+            return Unescape(tokens[first].Text);
 
         var text = new StringBuilder();
         IToken? previous = null;
-        AppendTokens(expression, text, ref previous);
-        return text.ToString();
-    }
-
-    private static void AppendTokens(IParseTree node, StringBuilder text, ref IToken? previous)
-    {
-        if (node is ITerminalNode terminal)
+        foreach (var token in tokens)
         {
-            var token = terminal.Symbol;
-            if (token.Type is TokenConstants.EOF or modelicaParser.COMMENT or modelicaParser.LINE_COMMENT)
-                return;
             if (previous is not null && token.StartIndex > previous.StopIndex + 1)
                 text.Append(' ');
             text.Append(token.Text);
             previous = token;
+        }
+        return text.ToString();
+    }
+
+    // The tokens of a value in source order, without comments - a comment is a token of its own in
+    // this grammar, and it is no part of the value.
+    private static void CollectTokens(IParseTree node, List<IToken> tokens)
+    {
+        if (node is ITerminalNode terminal)
+        {
+            var token = terminal.Symbol;
+            if (token.Type is not (TokenConstants.EOF or modelicaParser.COMMENT or modelicaParser.LINE_COMMENT))
+                tokens.Add(token);
             return;
         }
 
         for (var i = 0; i < node.ChildCount; i++)
-            AppendTokens(node.GetChild(i), text, ref previous);
+            CollectTokens(node.GetChild(i), tokens);
     }
 
     // A Modelica string literal's contents: the quotes removed and each escape (\" \\ \n …) undone.
