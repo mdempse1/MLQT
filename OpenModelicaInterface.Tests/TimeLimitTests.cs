@@ -21,7 +21,7 @@ namespace OpenModelicaInterface.Tests;
 [Trait("Requires", "OpenModelica")]
 public class TimeLimitTests
 {
-    private const string OmcPath = @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe";
+    private static readonly string OmcPath = OpenModelicaSettings.FindInstalledOmc();
     private static CancellationToken Test => TestContext.Current.CancellationToken;
 
     /// <summary>A command that keeps omc busy for half a minute whatever it has cached - loading the
@@ -30,9 +30,9 @@ public class TimeLimitTests
         ? "system(\"ping -n 30 127.0.0.1\")"
         : "system(\"sleep 30\")";
 
-    private static async Task<OpenModelicaInterface> StartedAsync(int port)
+    private static async Task<OpenModelicaInterface> StartedAsync()
     {
-        var omc = new OpenModelicaInterface(OmcPath, port) { StartupTimeout = TimeSpan.FromSeconds(30) };
+        var omc = new OpenModelicaInterface(OmcPath) { StartupTimeout = TimeSpan.FromSeconds(30) };
         await omc.StartAsync();
         return omc;
     }
@@ -43,7 +43,7 @@ public class TimeLimitTests
         // The two-second sleep is gone; start-up takes as long as omc does, and a session that has
         // started answers at once.
         var clock = Stopwatch.StartNew();
-        using var omc = await StartedAsync(13131);
+        using var omc = await StartedAsync();
         clock.Stop();
 
         Assert.True(omc.IsConnected);
@@ -53,7 +53,7 @@ public class TimeLimitTests
     [Fact]
     public async Task ACommandThatRunsOutOfTime_ClosesTheSession()
     {
-        using var omc = await StartedAsync(13132);
+        using var omc = await StartedAsync();
         omc.CommandTimeout = TimeSpan.FromMilliseconds(200);
 
         var clock = Stopwatch.StartNew();
@@ -70,7 +70,7 @@ public class TimeLimitTests
     [Fact]
     public async Task CancellingACommandInFlight_ClosesTheSession()
     {
-        using var omc = await StartedAsync(13133);
+        using var omc = await StartedAsync();
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Test);
         cancel.CancelAfter(TimeSpan.FromMilliseconds(200));
 
@@ -83,7 +83,7 @@ public class TimeLimitTests
     [Fact]
     public async Task AStartThatRunsOutOfTime_IsReportedAndLeavesNothingRunning()
     {
-        using var omc = new OpenModelicaInterface(OmcPath, 13134) { StartupTimeout = TimeSpan.FromMilliseconds(1) };
+        using var omc = new OpenModelicaInterface(OmcPath) { StartupTimeout = TimeSpan.FromMilliseconds(1) };
 
         await Assert.ThrowsAsync<TimeoutException>(() => omc.StartAsync(cancellationToken: TestContext.Current.CancellationToken));
 
@@ -96,7 +96,6 @@ public class TimeLimitTests
         var factory = new OpenModelicaInterfaceFactory();
         factory.UpdateSettings(new OpenModelicaSettings(OmcPath)
         {
-            PortNumber = 13135,
             CommandTimeoutMs = 200,
             StartupTimeoutMs = 30_000,
         });
@@ -123,7 +122,6 @@ public class TimeLimitTests
         var factory = new OpenModelicaInterfaceFactory();
         factory.UpdateSettings(new OpenModelicaSettings(OmcPath)
         {
-            PortNumber = 13136,
             CommandTimeoutMs = 45_000,
             StartupTimeoutMs = 20_000,
         });
@@ -175,7 +173,7 @@ public class TimeLimitTests
     [Fact]
     public async Task DisposingWithACommandInFlight_StopsTheCommandFirst()
     {
-        var omc = await StartedAsync(13140);
+        var omc = await StartedAsync();
         omc.CommandTimeout = Timeout.InfiniteTimeSpan;
         var command = omc.SendCommandAsync(LongCommand, Test);
         await Task.Delay(200, Test);
@@ -201,7 +199,7 @@ public class TimeLimitTests
     [Fact]
     public async Task OmcExitingUnderACommand_EndsTheWaitAndSaysSo()
     {
-        using var omc = await StartedAsync(13137);
+        using var omc = await StartedAsync();
         omc.CommandTimeout = Timeout.InfiniteTimeSpan;
         var pid = omc.ProcessId ?? throw new InvalidOperationException("omc has no process");
 

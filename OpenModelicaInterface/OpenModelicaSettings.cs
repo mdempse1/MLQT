@@ -14,10 +14,11 @@ public class OpenModelicaSettings : IJsonOnDeserialized
     public string OmcPath { get; set; } = string.Empty;
 
     /// <summary>
-    /// Port number used to communicate with OpenModelica
-    /// Default: 13027
+    /// Port omc listens on for MLQT's commands, or <see cref="OpenModelicaInterface.AnyPort"/> (0, the
+    /// default) to let omc take any free port and say which - so two sessions, the GUI's and the MCP
+    /// server's, never contend for one.
     /// </summary>
-    public int PortNumber { get; set; } = 13027;
+    public int PortNumber { get; set; } = OpenModelicaInterface.AnyPort;
 
     /// <summary>
     /// Default integration method for simulations.

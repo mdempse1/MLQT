@@ -88,6 +88,10 @@ public class ModelicaFileAccessPolicyTests
         // Streams rather than paths: there is no file here to have an encoding.
         ["ModelicaParser/SpellChecking/SpellChecker.cs"] = (1, "wraps an embedded dictionary resource stream"),
 
+        // omc plumbing.
+        ["OpenModelicaInterface/OpenModelicaInterface.cs"] = (1, "reads omc's ZeroMQ port file, the "
+            + "tcp:// address it chose to listen on"),
+
         // Git plumbing.
         ["RevisionControl/GitRevisionControlSystem.cs"] = (1, "reads git's own rebase state file head-name, "
             + "the ref a stopped rebase is rewriting, to name it to the user (B382)"),

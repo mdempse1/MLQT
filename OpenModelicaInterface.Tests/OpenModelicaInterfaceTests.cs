@@ -22,10 +22,7 @@ public class OpenModelicaInterfaceTests
     public void Constructor_WithValidPath_CreatesInstance()
     {
         // Arrange & Act
-        using var omc = new OpenModelicaInterface(
-            @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe",
-            port: 13028  // Use different port to avoid conflict with shared fixture
-        );
+        using var omc = new OpenModelicaInterface(OpenModelicaSettings.FindInstalledOmc());
 
         // Assert
         Assert.NotNull(omc);
@@ -35,10 +32,7 @@ public class OpenModelicaInterfaceTests
     public async Task StartAsync_WithValidPath_StartsOmc()
     {
         // Arrange
-        using var omc = new OpenModelicaInterface(
-            @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe",
-            port: 13029  // Use different port to avoid conflict with shared fixture
-        );
+        using var omc = new OpenModelicaInterface(OpenModelicaSettings.FindInstalledOmc());
 
         // Act
         await omc.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
@@ -53,10 +47,7 @@ public class OpenModelicaInterfaceTests
     public void IsConnected_WhenOmcNotStarted_ReturnsFalse()
     {
         // Arrange
-        using var omc = new OpenModelicaInterface(
-            @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe",
-            port: 13030  // Use different port to avoid conflict with shared fixture
-        );
+        using var omc = new OpenModelicaInterface(OpenModelicaSettings.FindInstalledOmc());
 
         // Act & Assert
         Assert.False(omc.IsConnected);

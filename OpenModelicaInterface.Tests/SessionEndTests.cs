@@ -174,13 +174,12 @@ public sealed class LiveSessionEndTests : IDisposable
         try { Directory.Delete(_folder, recursive: true); } catch { /* temp */ }
     }
 
-    private static async Task<(OpenModelicaInterfaceFactory Factory, OpenModelicaInterface Session, Process Omc)> StartAsync(int port)
+    private static async Task<(OpenModelicaInterfaceFactory Factory, OpenModelicaInterface Session, Process Omc)> StartAsync()
     {
         var factory = new OpenModelicaInterfaceFactory();
         factory.UpdateSettings(new OpenModelicaSettings
         {
             OmcPath = OpenModelicaSettings.FindInstalledOmc(),
-            PortNumber = port,
             StartupTimeoutMs = 30_000,
         });
 
@@ -192,7 +191,7 @@ public sealed class LiveSessionEndTests : IDisposable
     [Fact]
     public async Task ShuttingDown_EndsOmc()
     {
-        var (factory, _, omc) = await StartAsync(13141);
+        var (factory, _, omc) = await StartAsync();
         using (omc)
         {
             factory.Shutdown();
@@ -214,7 +213,7 @@ public sealed class LiveSessionEndTests : IDisposable
             ? $"system(\"powershell -NoProfile -NonInteractive -Command \\\"[IO.File]::WriteAllText('{pidFile}', $PID); Start-Sleep -Seconds 120\\\"\")"
             : $"system(\"sh -c 'echo $$ > {pidFile}; exec sleep 120'\")";
 
-        var (factory, session, omc) = await StartAsync(13142);
+        var (factory, session, omc) = await StartAsync();
         using (omc)
         {
             var busy = session.SendCommandAsync(command, cancellationToken: TestContext.Current.CancellationToken);
