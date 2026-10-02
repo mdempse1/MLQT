@@ -51,6 +51,19 @@ public class ClassBodyLocatorTests
         Assert.Equal("u", conn.PortA);
         Assert.Equal("y", conn.PortB);
         Assert.Equal("connect(u, y)", code.Substring(conn.Start, conn.Stop - conn.Start + 1));
+        Assert.False(conn.IsNested);
+    }
+
+    [Fact]
+    public void AConnectInsideAnIf_IsAConnection_WithItsBranch()
+    {
+        const string code =
+            "model M\n  Pin p, q;\nequation\n  if use then\n    connect(p, q);\n  end if;\nend M;";
+
+        var conn = Assert.Single(ClassBodyLocator.Analyze(code).Connections);
+
+        Assert.Equal(new[] { "if use" }, conn.Within);
+        Assert.Equal("connect(p, q)", code[conn.Start..(conn.Stop + 1)]);
     }
 
     [Fact]

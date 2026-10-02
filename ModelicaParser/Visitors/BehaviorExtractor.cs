@@ -4,10 +4,11 @@ using ModelicaParser.Helpers;
 namespace ModelicaParser.Visitors;
 
 /// <summary>
-/// Extracts the top-level behaviour a class declares in its own body: the equations, connect()
-/// statements and algorithm statements directly in its equation/algorithm sections (not those nested
-/// inside if/for/when, which are part of an outer equation, and not inherited behaviour). Text is sliced
-/// verbatim from the source. Only the outermost class is examined.
+/// Extracts the behaviour a class declares in its own body: the equations and algorithm statements
+/// directly in its equation/algorithm sections (one nested inside if/for/when is part of the outer
+/// equation's text), and every connect() from <see cref="ConnectClauses"/>, nested ones included - a
+/// connect in a for loop is how an array of components is wired, and is still a connection. Not
+/// inherited behaviour. Text is sliced verbatim from the source. Only the outermost class is examined.
 /// </summary>
 public static class BehaviorExtractor
 {
@@ -24,7 +25,6 @@ public static class BehaviorExtractor
             return ClassBehavior.Empty;
 
         var equations = new List<BehaviorLine>();
-        var connections = new List<ConnectionPair>();
         var statements = new List<BehaviorLine>();
         var hasEquation = false;
         var hasAlgorithm = false;
@@ -49,12 +49,8 @@ public static class BehaviorExtractor
                         var equation = eoc.equation();
                         if (equation is null)
                             continue;
-                        if (equation.connect_clause() is { } connect && connect.component_reference().Length >= 2)
-                        {
-                            var refs = connect.component_reference();
-                            connections.Add(new ConnectionPair(refs[0].GetText(), refs[1].GetText()));
-                        }
-                        else
+                        // A connect is reported in Connections, not here.
+                        if (equation.connect_clause() is null)
                         {
                             equations.Add(new BehaviorLine(
                                 Slice(classCode, equation.Start.StartIndex, equation.Stop.StopIndex),
@@ -86,7 +82,7 @@ public static class BehaviorExtractor
             }
         }
 
-        return new ClassBehavior(equations, connections, statements, hasEquation, hasAlgorithm);
+        return new ClassBehavior(equations, ConnectClauses.In(composition), statements, hasEquation, hasAlgorithm);
     }
 
     private static string Slice(string code, int start, int stop)

@@ -45,6 +45,27 @@ public class DiagramToolsTests
     }
 
     [Fact]
+    public void GetLayout_ReportsAConnectInALoop_AndTheLoop()
+    {
+        // An array of components is wired in a for loop. The layout read only an equation section's
+        // direct children and reported this model as having no connections, while list_connections,
+        // reading the same class, found it.
+        using var host = new TestHost();
+        var path = host.WriteMoFile("N.mo",
+            "within;\nmodel N\n  Real a[3], b[3];\nequation\n  connect(a[1], b[1]);\n"
+            + "  for i in 2:3 loop\n    connect(a[i], b[i]);\n  end for;\nend N;");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var tools = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        var layout = ToolAssert.Ok<DiagramLayoutResult>(tools.GetDiagramLayout("N"));
+
+        Assert.Equal(2, layout.Connections.Count);
+        Assert.Null(layout.Connections[0].Within);
+        Assert.Equal("a[i]", layout.Connections[1].PortA);
+        Assert.Equal(new[] { "for i in 2:3" }, layout.Connections[1].Within);
+    }
+
+    [Fact]
     public async Task SetPlacement_AddsToComponentWithoutAnnotation()
     {
         using var host = new TestHost();

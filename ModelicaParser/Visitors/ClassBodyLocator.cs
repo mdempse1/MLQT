@@ -30,7 +30,6 @@ public static class ClassBodyLocator
         int? lastAlgorithmEnd = null;
         int? tailStart = null;
         var components = new List<ClassBodyComponent>();
-        var connections = new List<ClassBodyConnection>();
 
         var sawFirstList = false;
         var currentPublic = true;
@@ -64,7 +63,6 @@ public static class ClassBodyLocator
                 case modelicaParser.Equation_sectionContext eq:
                     if (eq.Stop is not null)
                         lastEquationEnd = eq.Stop.StopIndex + 1;
-                    CollectConnections(eq, connections);
                     break;
 
                 case modelicaParser.Algorithm_sectionContext alg:
@@ -102,7 +100,7 @@ public static class ClassBodyLocator
             BodyEndOffset: insertBoundary,
             Indent: indent,
             Components: components,
-            Connections: connections);
+            Connections: ConnectClauses.In(composition));
     }
 
     private static void CaptureComponent(
@@ -142,22 +140,6 @@ public static class ClassBodyLocator
                 sole, modStart, modStop,
                 BindingInsertOffset: declaration.Stop.StopIndex + 1));
         }
-    }
-
-    private static void CollectConnections(IParseTree node, List<ClassBodyConnection> connections)
-    {
-        if (node is modelicaParser.Connect_clauseContext connect)
-        {
-            var refs = connect.component_reference();
-            if (refs.Length >= 2)
-                connections.Add(new ClassBodyConnection(
-                    refs[0].GetText(), refs[1].GetText(),
-                    connect.Start.StartIndex, connect.Stop.StopIndex));
-            return;
-        }
-
-        for (var i = 0; i < node.ChildCount; i++)
-            CollectConnections(node.GetChild(i), connections);
     }
 
     private static int? FindEndOffset(modelicaParser.Long_class_specifierContext longSpec)

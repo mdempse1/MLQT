@@ -473,7 +473,9 @@ public sealed class StructureEditTools
     }
 
     [McpServerTool(Name = "list_connections")]
-    [Description("List the connect(a, b) equations declared in a class. Also lists base classes that " +
+    [Description("List the connect(a, b) equations declared in a class, including those inside a " +
+                "for/if/when equation - each of those carries 'within', the branches it is in, outermost " +
+                "first (a loop's connect names its ports with the loop's index, e.g. 'a[i]'). Also lists base classes that " +
                 "themselves contain connections (their connections are NOT merged in — query those base " +
                 "classes directly if you need the full wiring picture). Read-only.")]
     public object ListConnections(
@@ -483,7 +485,7 @@ public sealed class StructureEditTools
         if (error is not null)
             return error!;
 
-        var connections = ctx!.Layout.Connections.Select(c => new ConnectionView(c.PortA, c.PortB)).ToList();
+        var connections = ctx!.Layout.Connections.Select(ConnectionView.Of).ToList();
         return new ConnectionsResult(classId, connections, CollectBasesWithConnections(classId));
     }
 

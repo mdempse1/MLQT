@@ -13,13 +13,6 @@ public sealed record ClassBodyComponent(
     int? ModStop,
     int BindingInsertOffset); // where to insert a modifier when the component has none (after name/subscripts)
 
-/// <summary>A connect(a, b) equation in a class body.</summary>
-public sealed record ClassBodyConnection(
-    string PortA,
-    string PortB,
-    int Start,
-    int Stop);
-
 /// <summary>
 /// The structural layout of a class body (from <see cref="Visitors.ClassBodyLocator"/>): the character
 /// offsets a surgical edit needs — where to append a public element, an equation or a statement, where
@@ -36,8 +29,8 @@ public sealed record ClassBodyLayout(
     int BodyEndOffset,            // offset of the class's closing 'end' (create new sections before it)
     string Indent,                // the body's detected indentation, for inserted lines
     IReadOnlyList<ClassBodyComponent> Components,
-    IReadOnlyList<ClassBodyConnection> Connections)
+    IReadOnlyList<ConnectClause> Connections)
 {
     public static ClassBodyLayout NotFound { get; } =
-        new(false, 0, null, null, null, null, 0, "  ", Array.Empty<ClassBodyComponent>(), Array.Empty<ClassBodyConnection>());
+        new(false, 0, null, null, null, null, 0, "  ", Array.Empty<ClassBodyComponent>(), Array.Empty<ConnectClause>());
 }

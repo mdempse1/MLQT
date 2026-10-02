@@ -35,7 +35,8 @@ public sealed class DiagramTools
 
     [McpServerTool(Name = "get_diagram_layout")]
     [Description("Get a class's diagram layout: each component's name, type and Placement extent " +
-                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. " +
+                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections - " +
+                "those inside a for/if/when equation too, each with 'within' naming its branches. " +
                 "INHERITED components are included, marked with the base class they come from - most " +
                 "blocks declare no connector of their own and get their ports from a base class - and " +
                 "so are PROTECTED ones, which are hidden from the class's users but not from its diagram. An " +
@@ -71,7 +72,7 @@ public sealed class DiagramTools
             .ToList();
 
         var connections = BehaviorExtractor.ExtractFromCode(code).Connections
-            .Select(x => new ConnectionView(x.PortA, x.PortB)).ToList();
+            .Select(ConnectionView.Of).ToList();
 
         return new DiagramLayoutResult(classId, components, connections);
     }

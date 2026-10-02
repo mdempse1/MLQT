@@ -32,6 +32,31 @@ public class BehaviorExtractorTests
     }
 
     [Fact]
+    public void AConnectInAForLoop_IsAConnection()
+    {
+        // How an array of components is wired. This came back as one opaque equation and no
+        // connections, so get_diagram_layout reported such a model as unwired.
+        const string code = """
+            model N
+              Pin a[3], b[3];
+            equation
+              for i in 1:3 loop
+                connect(a[i], b[i]);
+              end for;
+            end N;
+            """;
+
+        var b = BehaviorExtractor.ExtractFromCode(code);
+
+        var connection = Assert.Single(b.Connections);
+        Assert.Equal("a[i]", connection.PortA);
+        Assert.Equal("b[i]", connection.PortB);
+        Assert.Equal(new[] { "for i in 1:3" }, connection.Within);
+        // The loop is still an equation of the class, verbatim - its text is where the connect is.
+        Assert.Contains("connect(a[i], b[i]);", Assert.Single(b.Equations).Text);
+    }
+
+    [Fact]
     public void CapturesLeadingComments_OnEquations()
     {
         const string code = """
