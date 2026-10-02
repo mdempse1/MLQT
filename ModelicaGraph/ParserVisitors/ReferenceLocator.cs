@@ -57,6 +57,9 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
 
     /// <param name="graph">The graph used to resolve references.</param>
     /// <param name="targetIds">Only record references resolving to these ids; null records all resolvable references.</param>
+    // One walk over one tree asks about the same few scopes many times.
+    private readonly Analysis.TypeResolver.AncestorCache _ancestors = new();
+
     public ReferenceLocator(DirectedGraph graph, IEnumerable<string>? targetIds = null)
     {
         _graph = graph;
@@ -127,7 +130,7 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             return;
 
         var frame = _scopes.Peek();
-        var targetId = ReferenceResolver.Resolve(_graph, frame.ClassId, frame.Imports, reference);
+        var targetId = ReferenceResolver.Resolve(_graph, frame.ClassId, frame.Imports, reference, _ancestors);
         if (targetId is null || (_targets is not null && !_targets.Contains(targetId)))
             return;
 

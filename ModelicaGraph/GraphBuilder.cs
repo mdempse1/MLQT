@@ -538,6 +538,10 @@ public static class GraphBuilder
         var modelResources = new Dictionary<string, List<ExternalResourceInfo>>();
         int totalProcessed = 0;
 
+        // Every reference is looked for among its scopes' inherited classes, so each class's bases
+        // are kept for the pass rather than worked out again for every name in every class below it.
+        var ancestors = new Analysis.TypeResolver.AncestorCache();
+
         foreach (var batch in Batch(allModels, batchSize))
         {
             var batchResults = new ConcurrentBag<(string sourceId, HashSet<string> dependencies, List<ExternalResourceInfo> resources)>();
@@ -549,7 +553,7 @@ public static class GraphBuilder
                     var parseTree = model.Definition.EnsureParsed();
                     if (parseTree == null) return;
 
-                    var analyzer = new ModelAnalyzer(model.Id, graph);
+                    var analyzer = new ModelAnalyzer(model.Id, graph, ancestors);
                     analyzer.Visit(parseTree);
 
                     // Run the post-analysis callback while the parse tree is still available, under
@@ -797,6 +801,7 @@ public static class GraphBuilder
         // Phase 1: Parallel analysis — same as AnalyzeDependenciesAsync but scoped to target models.
         // Parse trees are released immediately after each model to minimize memory usage.
         var analysisResults = new ConcurrentBag<(string sourceId, HashSet<string> dependencies, List<ExternalResourceInfo> resources)>();
+        var ancestors = new Analysis.TypeResolver.AncestorCache();
 
         Parallel.ForEach(models, model =>
         {
@@ -805,7 +810,7 @@ public static class GraphBuilder
                 var parseTree = model.Definition.EnsureParsed();
                 if (parseTree == null) return;
 
-                var analyzer = new ModelAnalyzer(model.Id, graph);
+                var analyzer = new ModelAnalyzer(model.Id, graph, ancestors);
                 analyzer.Visit(parseTree);
 
                 // Its own guard — see the full-graph pass above.

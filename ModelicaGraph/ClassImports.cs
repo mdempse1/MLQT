@@ -3,9 +3,9 @@ using ModelicaGraph.DataTypes;
 namespace ModelicaGraph;
 
 /// <summary>
-/// The import statements a class declares, and whether it is <c>encapsulated</c>: the two things name
-/// lookup asks of every class it passes on its way out, read once per class and kept on its
-/// <see cref="ModelDefinition"/>.
+/// The import statements a class declares, whether it is <c>encapsulated</c>, and the bases it
+/// extends: the three things name lookup asks of every class it passes on its way out, read once per
+/// class, in one pass, and kept on its <see cref="ModelDefinition"/>.
 ///
 /// <para>Name lookup has to see them from the classes <em>inside</em> it, not only from the class
 /// itself. MSL declares <c>import Modelica.Units.SI;</c> once, in <c>Modelica.Blocks</c>, and every
@@ -61,27 +61,59 @@ public static class ClassImports
         }
     }
 
+    /// <summary>
+    /// The bases <paramref name="definition"/> names, as written - each <c>extends</c> clause's, or a
+    /// short class's one - reading them if nobody has yet. Never null and never throws.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Kept because inheritance is part of every lookup.</b> A name is looked for among a
+    /// class's inherited classes before its imports and enclosing packages (MLS §5.3.1), so every
+    /// name dependency analysis resolves asks each scope on its way out what that scope extends.
+    /// Read from the interface each time, that was a parse of every base class per lookup.</para>
+    /// <para>Read through <see cref="Analysis.ClassElementResolver.Bases"/>, so what a class extends has one
+    /// reading, the one <see cref="Analysis.ClassElementResolver.Collect"/> walks.</para>
+    /// </remarks>
+    public static IReadOnlyList<string> BasesOf(ModelDefinition definition)
+    {
+        if (definition.Bases is { } cached)
+            return cached;
+
+        lock (definition)
+        {
+            if (definition.Bases is null)
+                Read(definition);
+            return definition.Bases!;
+        }
+    }
+
     private static IReadOnlyList<string> Read(ModelDefinition definition)
     {
-        (IReadOnlyList<string> Imports, bool Encapsulated) found;
+        (IReadOnlyList<string> Imports, bool Encapsulated, IReadOnlyList<string> Bases) found;
         try
         {
             // Borrowed: a package asked about by the classes inside it is usually not parsed at the
             // time, and nothing else wants its tree.
-            found = definition.Borrow<(IReadOnlyList<string>, bool)>(
-                tree => (Extract(tree), IsEncapsulated(tree)), ([], false));
+            found = definition.Borrow<(IReadOnlyList<string>, bool, IReadOnlyList<string>)>(
+                tree => (Extract(tree), IsEncapsulated(tree), BaseNames(tree)), ([], false, []));
         }
         catch
         {
-            found = ([], false);
+            found = ([], false, []);
         }
 
-        // The flag before the imports: For's unlocked hit is on Imports, and a reader that sees them
-        // must find the flag already there.
+        // The flag and the bases before the imports: For's unlocked hit is on Imports, and a reader
+        // that sees them must find the rest already there.
         definition.IsEncapsulated = found.Encapsulated;
+        definition.Bases = found.Bases.Count == 0 ? [] : found.Bases;
         definition.Imports = found.Imports.Count == 0 ? [] : found.Imports;
         return definition.Imports;
     }
+
+    private static IReadOnlyList<string> BaseNames(modelicaParser.Stored_definitionContext tree)
+        => [.. Analysis.ClassElementResolver.Bases(ModelicaParser.Visitors.ClassInterfaceExtractor.Extract(tree))
+            .Select(b => b.Type)
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Select(t => t!)];
 
     private static bool IsEncapsulated(modelicaParser.Stored_definitionContext tree) =>
         tree.class_definition().FirstOrDefault()?.GetChild(0)?.GetText() == "encapsulated";

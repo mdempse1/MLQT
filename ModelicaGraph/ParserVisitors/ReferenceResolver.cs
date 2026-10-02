@@ -19,15 +19,23 @@ public sealed class ImportInfo
 /// it refers to, or null. Extracted from <see cref="ModelAnalyzer"/> so dependency analysis and the
 /// reference-locating used by rename resolve by the SAME rules.
 ///
-/// Known limitation (shared with dependency analysis, by design): it does not model names inherited
-/// into scope via <c>extends</c>. A null result therefore means "not resolvable by these rules", not a
-/// guarantee the name is undefined.
+/// Classes inherited through <c>extends</c> are in scope, before the class's imports and enclosing
+/// packages, as Modelica has them. A <c>redeclare</c> is not modelled, so a null result means "not
+/// resolvable by these rules", not a guarantee the name is undefined.
 /// </summary>
 public static class ReferenceResolver
 {
     /// <summary>Resolve <paramref name="reference"/> as written in <paramref name="ownerModelId"/>.</summary>
+    /// <remarks>
+    /// <b>Inherited classes are in scope</b>, where Modelica puts them: before the class's imports and
+    /// its enclosing packages. A model extending a base that declares <c>Medium</c> uses that
+    /// <c>Medium</c>, and without inheritance its edge went to whatever <c>Medium</c> the package
+    /// held, or nowhere.
+    /// </remarks>
+    /// <param name="ancestors">Each scope's bases, kept for the run; pass one per analysis.</param>
     public static string? Resolve(
-        DirectedGraph graph, string ownerModelId, IReadOnlyList<ImportInfo> imports, string reference)
+        DirectedGraph graph, string ownerModelId, IReadOnlyList<ImportInfo> imports, string reference,
+        Analysis.TypeResolver.AncestorCache? ancestors = null)
     {
         if (string.IsNullOrWhiteSpace(reference))
             return null;
@@ -43,7 +51,8 @@ public static class ReferenceResolver
         // `SIx` would have matched an alias `SI` - and neither looked at the imports of enclosing
         // packages, which is where MSL declares `SI` for every block (B292).
         return TypeResolver.ResolveName(
-            graph, ownerModelId, name, imports.Select(Describe).ToList(), global: reference.StartsWith('.'))?.Id;
+            graph, ownerModelId, name, imports.Select(Describe).ToList(), global: reference.StartsWith('.'),
+            inherited: true, ancestors)?.Id;
     }
 
     /// <summary>An import in the string form <see cref="TypeResolver"/> reads.</summary>

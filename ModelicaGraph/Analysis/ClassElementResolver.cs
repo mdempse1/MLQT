@@ -257,7 +257,7 @@ public static partial class ClassElementResolver
     // What a class inherits from, with the modifications it applies: each extends clause, or - for
     // `model R2 = Resistor(R = 2)`, which has no elements of its own - the short class's base, which
     // is an extends clause in all but syntax (MLS §4.5.1).
-    private static IEnumerable<(string? Type, IReadOnlyDictionary<string, string>? Modifications)> Bases(
+    internal static IEnumerable<(string? Type, IReadOnlyDictionary<string, string>? Modifications)> Bases(
         ClassInterface iface)
     {
         if (iface.ShortClassBase is { } shortBase)
@@ -314,18 +314,13 @@ public static partial class ClassElementResolver
     /// </summary>
     public static List<(string Written, ModelNode Base)> DirectBases(DirectedGraph graph, ModelNode node)
     {
+        // Read once per class and kept on it (ClassImports), because name lookup asks every scope it
+        // passes what that scope inherits: parsing a class to answer was a parse per lookup.
         var result = new List<(string, ModelNode)>();
-        if (InterfaceCache.Extract(node) is not { } iface)
-            return result;
-
-        var imports = iface.Elements
-            .Where(e => e.Kind == ClassElementKind.Import)
-            .Select(e => e.Name)
-            .ToList();
-
-        foreach (var (baseType, _) in Bases(iface))
+        var imports = ClassImports.For(node.Definition);
+        foreach (var baseType in ClassImports.BasesOf(node.Definition))
             if (TypeResolver.Resolve(graph, node.Id, baseType, imports) is { } baseNode)
-                result.Add((baseType ?? string.Empty, baseNode));
+                result.Add((baseType, baseNode));
 
         return result;
     }

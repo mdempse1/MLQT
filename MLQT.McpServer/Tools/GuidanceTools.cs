@@ -159,8 +159,9 @@ public sealed class GuidanceTools
               the base classes that declare behaviour, query those directly for the full picture.
             - validate_class_references(classId): lists referenced types (component types + extends) that do
               not resolve to a loaded class — catches typos and missing dependencies after writing/editing.
-              Best-effort: it does not model names inherited via extends, so treat hits as candidates and
-              make sure referenced libraries are loaded.
+              Classes a base declares (a replaceable Medium, say) are found as Modelica finds them; a
+              redeclare is not modelled, so treat hits as candidates and make sure referenced libraries
+              are loaded.
             """,
 
         ["editing"] = """

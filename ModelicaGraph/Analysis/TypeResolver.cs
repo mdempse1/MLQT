@@ -7,12 +7,13 @@ namespace ModelicaGraph.Analysis;
 
 /// <summary>
 /// Best-effort resolution of a type name written inside a class to the <see cref="ModelNode"/> it
-/// refers to in a <see cref="DirectedGraph"/>. Tries an exact match, then the class's own imports, then
-/// a relative lookup up the package hierarchy — mirroring how the dependency analyzer resolves
-/// references. <see cref="Resolve"/> intentionally does NOT model names inherited through <c>extends</c>
-/// (a documented limitation shared with dependency analysis), so an unresolved result is "not found by
-/// these rules", not a guarantee the type is undefined; <see cref="ResolveWithInheritance"/> adds the
-/// ancestor scopes. Shared by the analyses (metrics, shadowing) and the MCP tooling.
+/// refers to in a <see cref="DirectedGraph"/>: scope by scope from the class outward, each scope's
+/// classes and then its imports, the root last. <see cref="Resolve"/> does not look among inherited
+/// classes - it is the lookup for an <c>extends</c> clause's own base name, which may not use what that
+/// clause brings in - and <see cref="ResolveWithInheritance"/>, which dependency analysis uses for every
+/// other name, does. Either way an unresolved result is "not found by these rules", not a guarantee the
+/// type is undefined: a <c>redeclare</c> is not modelled. Shared by the analyses (metrics, shadowing)
+/// and the MCP tooling.
 /// </summary>
 public static class TypeResolver
 {
@@ -74,20 +75,36 @@ public static class TypeResolver
     /// Modelica looks up from the top and nowhere else. Now that the root is tried last, losing the
     /// dot would let a nearer class of the same name answer for it.
     /// </param>
+    /// <param name="inherited">
+    /// True to look among each scope's <b>inherited</b> classes too, between its own and its imports,
+    /// which is where Modelica looks (MLS §5.3.1): the replaceable <c>Medium</c> a base declares is
+    /// what <c>Medium</c> means in a model extending it, whatever its package holds. False for an
+    /// <c>extends</c> clause's own base name, which is looked up without the inherited elements it is
+    /// about to bring in.
+    /// </param>
+    /// <param name="ancestors">Where <paramref name="inherited"/> lookups keep each scope's bases for
+    /// the run; see <see cref="ResolveWithInheritance"/>.</param>
     internal static ModelNode? ResolveName(
-        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports, bool global = false)
+        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports, bool global = false,
+        bool inherited = false, AncestorCache? ancestors = null)
     {
         if (global)
             return graph.GetNode<ModelNode>(name);
 
         // Start in the class's own scope and walk outward through the enclosing packages, trying
-        // each one's classes and then its imports; the root - the name as written - comes last.
+        // each one's classes - its own, then the ones it inherits - and then its imports; the root -
+        // the name as written - comes last.
         var parts = ownerId.Split('.');
         for (var take = parts.Length; take > 0; take--)
         {
             var prefix = string.Join('.', parts.Take(take));
             if (graph.GetNode<ModelNode>($"{prefix}.{name}") is { } node)
                 return node;
+
+            if (inherited)
+                foreach (var ancestorId in AncestorsOf(graph, prefix, ancestors))
+                    if (graph.GetNode<ModelNode>($"{ancestorId}.{name}") is { } inheritedClass)
+                        return inheritedClass;
 
             // The owner's own imports are the ones it was given, or - given none - its own, read once;
             // an enclosing package's are read from it. Null was once "no imports", which cost nothing
@@ -123,10 +140,11 @@ public static class TypeResolver
     }
 
     /// <summary>
-    /// Like <see cref="Resolve"/> but also finds the classes a class inherits: after its own scope,
-    /// each ancestor's <b>nested classes</b> - <c>Medium.ThermodynamicState</c> written in a model
-    /// whose base declares <c>Medium</c>. Used so an inherited type name is not wrongly reported as
-    /// unresolved.
+    /// Like <see cref="Resolve"/> but also finds the classes a class inherits - each ancestor's
+    /// <b>nested classes</b>, as <c>Medium.ThermodynamicState</c> written in a model whose base
+    /// declares <c>Medium</c> - and finds them <b>where Modelica looks</b>: after the class's own
+    /// classes and before its imports and enclosing packages, at every scope on the way out. Looked
+    /// for last, a package's own <c>Medium</c> answered for the one the base declares.
     /// </summary>
     /// <remarks>
     /// <para><b>An ancestor's nested classes, and nothing else of its scope.</b> A class inherits its
@@ -155,25 +173,23 @@ public static class TypeResolver
         DirectedGraph graph, string classId, string? typeText, IReadOnlyList<string>? imports,
         AncestorCache? ancestors = null)
     {
-        if (Resolve(graph, classId, typeText, imports) is { } direct)
-            return direct;
-        if (string.IsNullOrWhiteSpace(typeText) || IsPredefined(typeText))
+        if (string.IsNullOrWhiteSpace(typeText))
             return null;
 
-        // A global name was answered from the top, or not at all.
-        var name = typeText.Trim();
-        if (name.StartsWith('.'))
+        var trimmed = typeText.Trim();
+        var name = trimmed.TrimStart('.');
+        if (name.Length == 0 || IsPredefined(name))
             return null;
 
-        var chain = ancestors is null
-            ? CollectAncestors(graph, classId)
-            : ancestors.GetOrAdd(classId, id => CollectAncestors(graph, id));
-
-        foreach (var ancestorId in chain)
-            if (graph.GetNode<ModelNode>($"{ancestorId}.{name}") is { } inherited)
-                return inherited;
-        return null;
+        return ResolveName(graph, classId, name, imports, global: trimmed.StartsWith('.'), inherited: true, ancestors);
     }
+
+    // A scope's ancestors, through the run's cache when there is one. Cheap without it too: what each
+    // class extends is read once and kept on the class (ClassImports.BasesOf).
+    private static IReadOnlyList<string> AncestorsOf(DirectedGraph graph, string scopeId, AncestorCache? ancestors)
+        => ancestors is null
+            ? CollectAncestors(graph, scopeId)
+            : ancestors.GetOrAdd(scopeId, id => CollectAncestors(graph, id));
 
     // The class's ancestors, nearest first down each extends clause in turn, so a class a nearer base
     // redeclares is found before the one it replaces. Built on ClassElementResolver.DirectBases, the

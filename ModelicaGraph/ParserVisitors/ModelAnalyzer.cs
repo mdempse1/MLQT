@@ -69,11 +69,16 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public List<ExternalResourceInfo> Resources => _resources;
 
-    public ModelAnalyzer(string modelId, DirectedGraph graph)
+    /// <param name="ancestors">Each class's bases, kept for the run: name lookup asks every scope
+    /// what it inherits. Share one across the analyzers of one pass.</param>
+    public ModelAnalyzer(string modelId, DirectedGraph graph, Analysis.TypeResolver.AncestorCache? ancestors = null)
     {
         _modelId = modelId;
         _graph = graph;
+        _ancestors = ancestors;
     }
+
+    private readonly Analysis.TypeResolver.AncestorCache? _ancestors;
 
     #region Dependency Analysis (from DependencyAnalyzer)
 
@@ -428,7 +433,7 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         if (_annotationDepth > 0 && _annotationCodeDepth == 0)
             return;
 
-        var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference);
+        var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference, _ancestors);
         if (resolvedId != null && resolvedId != _modelId)
         {
             var referencedModel = _graph.GetNode<ModelNode>(resolvedId);
