@@ -24,7 +24,7 @@ public sealed record ResolvedElement(
 /// diamond inheritance is visited once. Imports and extends clauses themselves are reported only for
 /// the queried class (they are not "inherited members"). Shared by the analyses and the MCP tooling.
 /// </summary>
-public static class ClassElementResolver
+public static partial class ClassElementResolver
 {
     private const int MaxDepth = 32;
 
@@ -105,6 +105,21 @@ public static class ClassElementResolver
         /// </remarks>
         public int Count => _interfaces.Count;
 
+        private readonly ConcurrentDictionary<string, string?> _shortBases = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The base a short class definition names (<c>model R2 = Resistor(R = 2)</c> gives
+        /// <c>Resistor</c>), or null for any other class. Kept for the run: a short class's interface
+        /// is empty, so a member looked for in one is looked for in its base, every time.
+        /// </summary>
+        internal string? ShortBaseOf(ModelNode node) =>
+            _shortBases.GetOrAdd(node.Id, static (_, n) => ReadShortBase(n), node);
+
+        internal static string? ReadShortBase(ModelNode node) =>
+            node.Definition.Borrow<string?>(tree => tree.class_definition() is { Length: > 0 } defs
+                ? defs[0].class_specifier()?.short_class_specifier()?.type_specifier()?.GetText()
+                : null);
+
         internal static ClassInterface? Extract(ModelNode node) =>
             node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
     }
@@ -117,7 +132,20 @@ public static class ClassElementResolver
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var visited = new HashSet<string>(StringComparer.Ordinal);
         Walk(graph, node, includeProtected, includeInherited, origin: null, NoMods, result, seen, visited,
-             depth: 0, interfaces);
+             depth: 0, interfaces, rememberRoot: false);
+        return result;
+    }
+
+    // Collect, for a class that is about to be asked again: a reference's intermediate types
+    // (Inertia, Flange_a) are walked once for every reference that passes through them, so unlike
+    // the class a caller asks about directly, they are worth keeping.
+    private static List<ResolvedElement> CollectRemembered(
+        DirectedGraph graph, ModelNode node, bool includeProtected, InterfaceCache? interfaces)
+    {
+        var result = new List<ResolvedElement>();
+        Walk(graph, node, includeProtected, includeInherited: true, origin: null, NoMods, result,
+             new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal),
+             depth: 0, interfaces, rememberRoot: true);
         return result;
     }
 
@@ -125,7 +153,7 @@ public static class ClassElementResolver
         DirectedGraph graph, ModelNode node, bool includeProtected, bool includeInherited,
         string? origin, IReadOnlyDictionary<string, string> mods,
         List<ResolvedElement> result, HashSet<string> seen, HashSet<string> visited, int depth,
-        InterfaceCache? interfaces)
+        InterfaceCache? interfaces, bool rememberRoot)
     {
         if (depth > MaxDepth || !visited.Add(node.Id))
             return;
@@ -136,7 +164,7 @@ public static class ClassElementResolver
         // one costs a fraction of what re-deriving it does.
         var iface = interfaces is null
             ? InterfaceCache.Extract(node)
-            : interfaces.Of(node, remember: origin is not null);
+            : interfaces.Of(node, remember: rememberRoot || origin is not null);
         if (iface is null)
             return;
 
@@ -179,7 +207,8 @@ public static class ClassElementResolver
             var baseNode = TypeResolver.Resolve(graph, node.Id, ext.Type, imports);
             if (baseNode is not null)
                 Walk(graph, baseNode, includeProtected, includeInherited, baseNode.Id,
-                    MergeMods(ext.Modifications, mods), result, seen, visited, depth + 1, interfaces);
+                    MergeMods(ext.Modifications, mods), result, seen, visited, depth + 1, interfaces,
+                    rememberRoot);
         }
     }
 
