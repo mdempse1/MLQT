@@ -146,4 +146,48 @@ public class UnitResolverTests
 
         Assert.Equal(UnitAttributes.None, Attributes(graph, "A"));
     }
+
+    private const string Angle = "type Angle = Real(final quantity=\"Angle\", final unit=\"rad\", displayUnit=\"deg\");";
+
+    [Fact]
+    public void ALongFormType_IsAnAliasOfTheClassItExtends()
+    {
+        // The only way to give a type an equalityConstraint is to write it in the long form, which is
+        // how Buildings' ReferenceAngle and MultiBody's Orientation are written. Following only the
+        // short form left them with no unit and not counted as Real at all.
+        var graph = Library(
+            ("Angle", Angle, "type"),
+            ("ReferenceAngle",
+                "type ReferenceAngle \"reference angle\"\n  extends Angle;\n" +
+                "  function equalityConstraint\n    input ReferenceAngle theta1[:];\n    input ReferenceAngle theta2[:];\n" +
+                "    output Real residue[0];\n  algorithm\n  end equalityConstraint;\nend ReferenceAngle;", "type"));
+
+        Assert.Equal(new UnitAttributes(true, "rad", "deg", "Angle"), Attributes(graph, "ReferenceAngle"));
+    }
+
+    [Fact]
+    public void ALongFormType_TakesWhatItsExtendsClauseSets_AsTheNearestDefinition()
+    {
+        var graph = Library(
+            ("Angle", Angle, "type"),
+            ("Bearing", "type Bearing\n  extends Angle(displayUnit=\"rev\", quantity=\"Bearing\");\nend Bearing;", "type"),
+            ("Ratio", "type Ratio\n  extends Real(unit=\"1\");\nend Ratio;", "type"));
+
+        Assert.Equal(new UnitAttributes(true, "rad", "rev", "Bearing"), Attributes(graph, "Bearing"));
+        Assert.Equal(new UnitAttributes(true, "1", null, null), Attributes(graph, "Ratio"));
+    }
+
+    [Theory]
+    // A model extending a quantity is a model, not a quantity.
+    [InlineData("model Holder\n  extends Angle;\nend Holder;", "model")]
+    // Nothing a type is allowed to be; not guessed at.
+    [InlineData("type Two\n  extends Angle;\n  extends Angle;\nend Two;", "type")]
+    [InlineData("type Bare\nend Bare;", "type")]
+    public void ALongClassThatIsNotATypeExtendingOneBase_IsNone(string code, string classType)
+    {
+        var name = code.Split(' ', '\n')[1];
+        var graph = Library(("Angle", Angle, "type"), (name, code, classType));
+
+        Assert.Equal(UnitAttributes.None, Attributes(graph, name));
+    }
 }

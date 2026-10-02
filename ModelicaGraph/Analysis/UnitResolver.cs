@@ -10,9 +10,12 @@ namespace ModelicaGraph.Analysis;
 /// if so, what its type chain fixes about it (<see cref="UnitAttributes"/>). This is what makes unit coverage
 /// meaningful for real libraries: a variable typed <c>Modelica.Units.SI.Length</c> carries a unit even
 /// though it never writes <c>unit=</c> itself, because <c>type Length = Real(unit="m")</c> does — and
-/// aliases chain (<c>type Molarity = MolarDensity = Real(unit=…)</c>). Follows the short-class chain to
-/// its predefined base, resolving each hop with the shared <see cref="TypeResolver"/>. Depth- and
-/// cycle-guarded; results memoised per resolved class id.
+/// aliases chain (<c>type Molarity = MolarDensity = Real(unit=…)</c>). Follows the chain to its predefined
+/// base, resolving each hop with the shared <see cref="TypeResolver"/>. A hop is a short class or a
+/// <c>type</c> written in the long form around one <c>extends</c> clause, which is how a type that needs
+/// an <c>equalityConstraint</c> has to be written (<c>type ReferenceAngle extends SI.Angle; function
+/// equalityConstraint ... end ReferenceAngle;</c>). Depth- and cycle-guarded; results memoised per
+/// resolved class id.
 /// </summary>
 public static class UnitResolver
 {
@@ -81,7 +84,8 @@ public static class UnitResolver
         // Borrowed: the answer is what gets cached, not the tree, so handing it back costs nothing —
         // a type already resolved is never re-parsed. Every class reached here is a type alias
         // somewhere up a chain, not the class being checked. See ModelDefinition.Borrow.
-        if (node.Definition.Borrow<(string? Base, UnitAttributes Own)?>(ShortClassBase) is { } alias)
+        var isType = node.ClassType == "type";
+        if (node.Definition.Borrow<(string? Base, UnitAttributes Own)?>(tree => AliasOf(tree, isType)) is { } alias)
         {
             var baseName = (alias.Base ?? string.Empty).TrimStart('.').Trim();
             if (baseName == "Real")
@@ -114,31 +118,48 @@ public static class UnitResolver
         return result;
     }
 
-    // For a short class definition `type X = Base(mods)`, returns Base and the attributes mods sets
-    // (IsRealDerived left false: that depends on Base). Null when the class is not a short class alias
-    // (a long class, enumeration, or der class).
-    private static (string? Base, UnitAttributes Own)? ShortClassBase(modelicaParser.Stored_definitionContext tree)
+    // The base a type names and the attributes it sets on it (IsRealDerived left false: that depends on
+    // the base), from either form: a short class `type X = Base(mods)`, or - for a `type` - the long
+    // form `type X extends Base(mods); ... end X;`, which MLS §4.7 allows a type to be and which is the
+    // only way to give one an equalityConstraint. Null for anything else: an enumeration, a der class,
+    // and a long class that is not a type - a model extending a base is no quantity, and following its
+    // chain would cost a walk of every component type reached for nothing.
+    private static (string? Base, UnitAttributes Own)? AliasOf(modelicaParser.Stored_definitionContext tree, bool isType)
     {
         var classDefs = tree.class_definition();
         if (classDefs is null || classDefs.Length == 0)
             return null;
 
-        var shortSpec = classDefs[0].class_specifier()?.short_class_specifier();
-        var typeSpec = shortSpec?.type_specifier();   // null for the enumeration form
-        if (typeSpec is null)
+        var spec = classDefs[0].class_specifier();
+        if (spec?.short_class_specifier() is { } shortSpec)
+        {
+            var typeSpec = shortSpec.type_specifier();   // null for the enumeration form
+            return typeSpec is null
+                ? null
+                : (typeSpec.GetText(), ModifierAttributes(shortSpec.class_modification()?.argument_list()?.argument()));
+        }
+
+        if (!isType || spec?.long_class_specifier()?.composition() is not { } composition)
             return null;
 
-        return (typeSpec.GetText(), ModifierAttributes(shortSpec!.class_modification()));
+        // A type extends exactly one class; anything else is not a quantity's definition.
+        var bases = composition.element_list()
+            .SelectMany(list => list.element())
+            .Select(element => element.extends_clause())
+            .Where(clause => clause is not null)
+            .ToList();
+        return bases is [{ } only] && only.type_specifier() is { } baseSpec
+            ? (baseSpec.GetText(), ModifierAttributes(only.class_or_inheritence_modification()?.argument_or_inheritence_list()?.argument()))
+            : null;
     }
 
-    private static UnitAttributes ModifierAttributes(modelicaParser.Class_modificationContext? modification)
+    private static UnitAttributes ModifierAttributes(IEnumerable<modelicaParser.ArgumentContext>? arguments)
     {
-        var args = modification?.argument_list();
-        if (args is null)
+        if (arguments is null)
             return UnitAttributes.None;
 
         string? unit = null, displayUnit = null, quantity = null;
-        foreach (var arg in args.argument())
+        foreach (var arg in arguments)
         {
             var elemMod = arg.element_modification_or_replaceable()?.element_modification();
             switch (elemMod?.name()?.GetText())

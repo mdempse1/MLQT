@@ -186,6 +186,17 @@ Each of these was looked at and deliberately left alone. Reopen one only with wh
   live session as gone and start a second Dymola. Detection picks `bin64/dymola`, which runs as a
   direct child of MLQT, so the case does not arise (B427). Reopen if a user points MLQT at such a
   launcher.
+- **Resolving a component's type through the redeclarations its instance is given.** A unit check
+  needs the unit of `Medium.AbsolutePressure` inside a pipe; MLQT resolves it to the constraining
+  `PartialMedium` member, and a pipe given `redeclare package Medium = Water` could in principle mean
+  something else. Measured on 2026-10-02: every component type of MSL 4.1.0 resolves (29,463 in its
+  models, blocks, connectors and records), as does every one of Buildings 13 (70,230); and over every
+  package redeclaration on an instance - 316 in MSL, 5,920 in Buildings - the 2,189 and 23,936
+  `Medium.X` members they reach have **the same unit** from the constraining type as from the
+  redeclared one, with no exception. A redeclared medium extends `PartialMedium` and does not redefine
+  its types. The extractor records the redeclarations (`ClassElement.Redeclarations`) so nothing need
+  be re-read if this is reopened; reopen with a library whose redeclared package gives one of its
+  types a different unit.
 
 ---
 
@@ -282,7 +293,7 @@ Shipped first, so MLQT earned trust in CI before attempting resolution-dependent
 | **Duplicate / shadowing declarations** | ⭐⭐ | S | **✅ shipped** — `DuplicateDeclarations` rule + `ShadowingAnalyzer` |
 | **`uses` annotation hygiene** | ⭐⭐⭐ | M | **✅ shipped** — `UsesHygieneAnalyzer`, conservative both ways |
 | **`package.order` / file-structure consistency** | ⭐⭐⭐ | M | **✅ shipped** — `PackageOrderAnalyzer`, with an option that aligns its `package.order` half with Dymola's own warning (B195). The stray-file half has no upstream equivalent |
-| **Missing-units presence check** | ⭐⭐⭐ | M | **✅ shipped (plain `Real` only)** — `MLQT.Units.MissingUnit`. A user type that aliases `Real` without a unit is still missed, though the Unit coverage dimension resolves those |
+| **Missing-units presence check** | ⭐⭐⭐ | M | **✅ shipped** — `MLQT.Units.MissingUnit`, following each type through its alias chain, short aliases and long-form `type ... extends` both (the long form was missed until 2026-10-02, which hid 145 unitless components in MSL behind `Modelica.Icons.TypeReal` and MultiBody's `Orientation`) |
 | **Single-file package warning** | ⭐⭐ | M | **✅ shipped** — `MLQT.Structure.SingleFilePackage`, the first rule on by default, with a **Split into files** fix on the finding (B177) |
 
 ### Wave 2 — resolution-dependent (built on the confidence-aware resolver) — **phase 2**
@@ -305,7 +316,7 @@ to files instead of classes.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Structural equation-balance check** ⚠ | ⭐⭐⭐ | XL | Count equations vs. unknowns (locally balanced). Needs flattening-lite semantics |
-| **Unit / dimensional consistency** ⚠ | ⭐⭐⭐ | XL | Full dimensional analysis on equations (distinct from the Wave-1 presence check) |
+| **Unit / dimensional consistency** ⚠ | ⭐⭐⭐ | XL | Full dimensional analysis on equations (distinct from the Wave-1 presence check). Its inputs are in place: every component type of MSL and Buildings resolves, `UnitResolver.ResolveAttributes` gives each its unit, and the interface carries dimensions and redeclarations - which, measured, change no unit (see *Decided against*) |
 
 ---
 
