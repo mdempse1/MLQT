@@ -277,7 +277,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 
 **`Analysis/` — the whole-graph half (phase 6):**
 - `IGraphAnalyzer` / `GraphAnalysisContext` / `GraphAnalysisRunner` - Analyses that need the graph rather than one class: `PackageOrderAnalyzer`, `UsesHygieneAnalyzer`, `UnusedClassAnalyzer`, `UnusedImportAnalyzer`, `UnusedMembersAnalyzer`, `ShadowingAnalyzer`. `RequiresDependencyAnalysis(settings)` says whether the edges are needed first
-- `TypeResolver` / `ClassElementResolver` / `UnitResolver` - Inheritance- and import-aware resolution. They cache **the answer, not the tree**
+- `TypeResolver` / `ClassElementResolver` / `UnitResolver` - Inheritance- and import-aware resolution. They cache **the answer, not the tree**. `UnitResolver.ResolveAttributes` gives the `unit`/`displayUnit`/`quantity` strings a type chain fixes (`UnitAttributes`, nearest definition winning per attribute); `Resolve` is its yes/no view and shares its cache
 - `MetricsCalculator` / `CoverageMeasurer` - The dashboard's figures, and the per-class measurement the checker triggers while it still holds the tree
 - `CoverageDimensions` - `TrackedFor(settings)` for a repository, `ForClass(...)` for one class. **`ForClass` is the single narrowing**: every way of taking a class out of scope (`ExcludedLibraries`, `FormattingExcludedModels`, `__MLQT(format=false)`) is asked there, because each arrived separately and each was taught to the checker before anything asked what it meant for the report
 
