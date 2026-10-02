@@ -104,8 +104,9 @@ public class BehaviorExtractorTests
     [Fact]
     public void AClassWithNoBody_HasNoBehaviour()
     {
-        // A short class definition (`type Gain = Real`) has no composition to read at all, and the
-        // renderer must not be handed a null to guard against on every call.
+        // A short class definition (`type Gain = Real`) has no composition to read at all. The answer
+        // is the empty behaviour, not a null: get_class_behavior and get_diagram_layout read its lists
+        // directly, and get_class_behavior asks HasAny of every base class it walks, short ones included.
         Assert.False(BehaviorExtractor.ExtractFromCode("type Gain = Real;").HasAny);
     }
 
@@ -118,8 +119,9 @@ public class BehaviorExtractorTests
     [Fact]
     public void ABlockCommentAboveAStatement_StaysWithIt()
     {
-        // The formatter rewrites the algorithm section from what comes back here. A comment that got
-        // dropped would be deleted from the file on the next save.
+        // get_class_behavior hands each statement to an agent with the comments above it, in place of
+        // the source. A comment dropped here is one the agent never sees - often the reason the
+        // statement is written the way it is.
         const string code = """
             model M
               Real x;
