@@ -50,13 +50,22 @@ public sealed record ResolvedReference(IReadOnlyList<ResolvedElement> Path, Mode
 public sealed record ReferenceStart(ModelNode Scope, int QualifierSegments)
 {
     /// <summary>
+    /// The id of the class each leading segment names, one per <see cref="QualifierSegments"/> - empty
+    /// when the first segment is a component.
+    /// </summary>
+    public IReadOnlyList<string> QualifierPath { get; init; } = [];
+
+    /// <summary>How the first leading segment was found, or null when there is no qualifier.</summary>
+    public NameBinding? QualifierBinding { get; init; }
+
+    /// <summary>
     /// True when the leading segments name <see cref="Scope"/> only because the class inherits it -
     /// <c>Medium</c> in <c>Medium.p</c>, written in a model whose base declares a replaceable
     /// <c>Medium</c>. Such a name means whatever that inherited class is in the instance, so it is
     /// never to be rewritten as <see cref="Scope"/>'s full name: that would fix it to the base's
     /// default and undo every <c>redeclare</c>.
     /// </summary>
-    public bool ThroughInheritance { get; init; }
+    public bool ThroughInheritance => QualifierBinding == NameBinding.Inherited;
 }
 
 /// <summary>
@@ -152,31 +161,24 @@ public sealed class ComponentReferences
         if (Locate(parsed.Segments, parsed.Global) is { } start)
             return new ReferenceStart(start.Scope, start.Qualifier)
             {
-                ThroughInheritance = start.Qualifier > 0
-                    && IsInherited(string.Join('.', parsed.Segments.Take(start.Qualifier)), parsed.Global)
+                QualifierPath = start.Qualifying?.Path ?? [],
+                QualifierBinding = start.Qualifying?.Binding,
             };
         if (!parsed.Global
             && (ModelicaLanguage.IsBuiltInName(parsed.Segments[0]) || StartsWithComponent(parsed.Segments[0])))
             return null;
 
         // A class by its whole name is not a reference through one.
-        if (QualifyingClass(string.Join('.', parsed.Segments), parsed.Global) is not null)
+        if (QualifyingClass(ModelicaName.Join(parsed.Segments), parsed.Global) is not null)
             return null;
 
         var take = parsed.Segments.Count - 1;
         if (take == 0)
             return null;
-        var prefix = string.Join('.', parsed.Segments.Take(take));
-        return QualifyingClass(prefix, parsed.Global) is { } scope
-            ? new ReferenceStart(scope, take) { ThroughInheritance = IsInherited(prefix, parsed.Global) }
+        return QualifyingClass(ModelicaName.Join(parsed.Segments.Take(take)), parsed.Global) is { } scope
+            ? new ReferenceStart(scope.Node, take) { QualifierPath = scope.Path, QualifierBinding = scope.Binding }
             : null;
     }
-
-    // Whether a class name means what it does only through inheritance: the lookup without inherited
-    // classes answers differently, or not at all.
-    private bool IsInherited(string prefix, bool global)
-        => !global && TypeResolver.Resolve(_graph, _class.Id, prefix, _own.Value.Imports)?.Id
-                      != QualifyingClass(prefix, global)?.Id;
 
     // Whether a reference's first segment is a component in reach - the class's own, inherited ones
     // included, or one an enclosing class declares.
@@ -190,20 +192,21 @@ public sealed class ComponentReferences
         return false;
     }
 
-    // The class a reference's leading segments name, found as a type name is.
-    private ModelNode? QualifyingClass(string prefix, bool global) => global
-        ? _graph.GetNode<ModelNode>(prefix)
-        : TypeResolver.ResolveWithInheritance(_graph, _class.Id, prefix, _own.Value.Imports, _ancestors);
+    // The class a reference's leading segments name, found as a type name is - and how.
+    private NameResolution? QualifyingClass(string prefix, bool global)
+        => TypeResolver.ResolveNamePath(_graph, _class.Id, prefix.TrimStart('.'), _own.Value.Imports, global,
+            inherited: true, _ancestors);
 
-    // The scope a reference's first component is found in, that component, and how many leading
-    // segments named the scope.
-    private (ModelNode Scope, ResolvedElement First, int Qualifier)? Locate(List<string> segments, bool global)
+    // The scope a reference's first component is found in, that component, how many leading segments
+    // named the scope, and how they were resolved.
+    private (ModelNode Scope, ResolvedElement First, int Qualifier, NameResolution? Qualifying)? Locate(
+        List<string> segments, bool global)
     {
         if (!global)
         {
             if (_own.Value.Members.TryGetValue(segments[0], out var own))
                 return own.Element.Kind == ClassElementKind.Component
-                    ? (_class, own, 0)
+                    ? (_class, own, 0, null)
                     : LocateQualified(segments, global);
 
             // The language's own names - `time`, `Connections.branch` - are no class's elements, and
@@ -214,18 +217,63 @@ public sealed class ComponentReferences
             if (ModelicaLanguage.IsBuiltInName(segments[0]))
                 return null;
 
+            // The class's own imports come straight after its elements (MLS §5.3.1): `import
+            // Modelica.Constants.pi;` makes `pi` that constant.
+            if (ImportedComponent(_own.Value.Imports, segments[0]) is { } imported)
+                return (imported.Scope, imported.Element, 0, null);
+
             foreach (var scope in EnclosingScopes())
             {
-                if (!Members(scope, includeProtected: true).TryGetValue(segments[0], out var found))
-                    continue;
-                if (found.Element.Kind != ClassElementKind.Component)
-                    break;
-                // An enclosing class lends its constants and nothing else (MLS §5.3.1).
-                return found.Element.Variability == "constant" ? (scope, found, 0) : null;
+                if (Members(scope, includeProtected: true).TryGetValue(segments[0], out var found))
+                {
+                    if (found.Element.Kind != ClassElementKind.Component)
+                        break;
+                    // An enclosing class lends its constants and nothing else (MLS §5.3.1).
+                    return found.Element.Variability == "constant" ? (scope, found, 0, null) : null;
+                }
+
+                if (ImportedComponent(ClassImports.For(scope.Definition), segments[0]) is { } lent)
+                    return (lent.Scope, lent.Element, 0, null);
             }
         }
 
         return LocateQualified(segments, global);
+    }
+
+    // A component one of these imports brings in by the name `first` - an imported constant - and the
+    // class it is declared in. Qualified and alias imports before wildcards, as for classes.
+    private (ModelNode Scope, ResolvedElement Element)? ImportedComponent(IReadOnlyList<string> imports, string first)
+    {
+        foreach (var import in imports.Where(i => !TypeResolver.IsWildcard(i)).Concat(imports.Where(TypeResolver.IsWildcard)))
+        {
+            if (ImportedPath(import, first) is not { } path
+                || TypeResolver.ResolveGlobal(_graph, ModelicaName.EnclosingPackageOf(path), _ancestors) is not { } owner)
+                continue;
+            if (Members(owner, includeProtected: false).TryGetValue(ModelicaName.LeafOf(path), out var element)
+                && element.Element.Kind == ClassElementKind.Component)
+                return (owner, element);
+        }
+        return null;
+    }
+
+    // The full name an import clause would give `first`, or null when the clause does not bring it in.
+    private static string? ImportedPath(string import, string first)
+    {
+        var statement = import.Trim();
+        var eq = statement.IndexOf('=');
+        if (eq >= 0)
+            return string.Equals(statement[..eq].Trim(), first, StringComparison.Ordinal)
+                ? statement[(eq + 1)..].Trim()
+                : null;
+        if (statement.EndsWith(".*", StringComparison.Ordinal))
+            return $"{statement[..^2]}.{first}";
+        var list = statement.IndexOf(".{", StringComparison.Ordinal);
+        if (list >= 0)
+            return statement[(list + 2)..].TrimEnd('}').Split(',', StringSplitOptions.TrimEntries)
+                .Contains(first, StringComparer.Ordinal)
+                ? $"{statement[..list]}.{first}"
+                : null;
+        return string.Equals(ModelicaName.LeafOf(statement), first, StringComparison.Ordinal) ? statement : null;
     }
 
     // The classes enclosing this one, innermost first, as far as the first encapsulated one -
@@ -235,10 +283,9 @@ public sealed class ComponentReferences
         if (IsEncapsulated(_class))
             yield break;
 
-        var parts = _class.Id.Split('.');
-        for (var take = parts.Length - 1; take > 0; take--)
+        foreach (var enclosingId in ModelicaName.EnclosingNamesOf(_class.Id))
         {
-            if (_graph.GetNode<ModelNode>(string.Join('.', parts.Take(take))) is not { } enclosing)
+            if (_graph.GetNode<ModelNode>(enclosingId) is not { } enclosing)
                 continue;
             yield return enclosing;
             if (IsEncapsulated(enclosing))
@@ -251,16 +298,17 @@ public sealed class ComponentReferences
     private static bool IsEncapsulated(ModelNode node) => ClassImports.IsEncapsulated(node.Definition);
 
     // A class-qualified reference: the longest prefix that names a class, then its members.
-    private (ModelNode Scope, ResolvedElement First, int Qualifier)? LocateQualified(List<string> segments, bool global)
+    private (ModelNode Scope, ResolvedElement First, int Qualifier, NameResolution? Qualifying)? LocateQualified(
+        List<string> segments, bool global)
     {
         for (var take = segments.Count - 1; take > 0; take--)
         {
-            if (QualifyingClass(string.Join('.', segments.Take(take)), global) is not { } scope)
+            if (QualifyingClass(ModelicaName.Join(segments.Take(take)), global) is not { } scope)
                 continue;
 
-            return Members(scope, includeProtected: false).TryGetValue(segments[take], out var first)
+            return Members(scope.Node, includeProtected: false).TryGetValue(segments[take], out var first)
                    && first.Element.Kind == ClassElementKind.Component
-                ? (scope, first, take)
+                ? (scope.Node, first, take, scope)
                 : null;
         }
 

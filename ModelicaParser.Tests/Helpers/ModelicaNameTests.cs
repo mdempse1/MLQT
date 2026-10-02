@@ -110,4 +110,63 @@ public class ModelicaNameTests
         Assert.Equal(id, $"{ModelicaName.EnclosingPackageOf(id)}.{ModelicaName.LeafOf(id)}");
         Assert.StartsWith(ModelicaName.RootLibraryOf(id), ModelicaName.EnclosingPackageOf(id), StringComparison.Ordinal);
     }
+    // A quoted identifier may contain a dot (MLS 2.3.1), and every one of these took Lib.'a.b'.C for
+    // four segments before ModelicaName knew about quotes - each place that split a name differently.
+    [Theory]
+    [InlineData("Lib.'a.b'.C", new[] { "Lib", "'a.b'", "C" })]
+    [InlineData("'x.y'", new[] { "'x.y'" })]
+    [InlineData(".Lib.M", new[] { "Lib", "M" })]
+    [InlineData(@"Lib.'it\'s.odd'.M", new[] { "Lib", @"'it\'s.odd'", "M" })]
+    [InlineData("A", new[] { "A" })]
+    public void Segments_KeepAQuotedIdentifierWhole(string name, string[] expected) =>
+        Assert.Equal(expected, ModelicaName.Segments(name));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Segments_OfNothing_IsEmpty(string? name) =>
+        Assert.Empty(ModelicaName.Segments(name));
+
+    [Fact]
+    public void Join_IsTheInverseOfSegments()
+    {
+        const string name = "Lib.'a.b'.C";
+        Assert.Equal(name, ModelicaName.Join(ModelicaName.Segments(name)));
+    }
+
+    [Theory]
+    [InlineData("Lib.'a.b'.C", "Lib.'a.b'", "C", "Lib")]
+    [InlineData("Lib.'a.b'", "Lib", "'a.b'", "Lib")]
+    [InlineData("'a.b'.C", "'a.b'", "C", "'a.b'")]
+    [InlineData("'a.b'", "", "'a.b'", "'a.b'")]
+    public void QuotedDots_AreNotSeparators(string id, string enclosing, string leaf, string root)
+    {
+        Assert.Equal(enclosing, ModelicaName.EnclosingPackageOf(id));
+        Assert.Equal(leaf, ModelicaName.LeafOf(id));
+        Assert.Equal(root, ModelicaName.RootLibraryOf(id));
+    }
+
+    [Theory]
+    [InlineData("a.b", 1, 1)]
+    [InlineData("'a.b'", -1, -1)]
+    [InlineData("'a.b'.c.d", 5, 7)]
+    [InlineData("", -1, -1)]
+    [InlineData(null, -1, -1)]
+    public void Separators(string? name, int first, int last)
+    {
+        Assert.Equal(first, ModelicaName.FirstSeparator(name));
+        Assert.Equal(last, ModelicaName.LastSeparator(name));
+    }
+
+    [Fact]
+    public void EnclosingNames_AreInnermostFirst_AndExcludeTheClass() =>
+        Assert.Equal(["Lib.'a.b'.C", "Lib.'a.b'", "Lib"], ModelicaName.EnclosingNamesOf("Lib.'a.b'.C.D"));
+
+    [Theory]
+    [InlineData("Lib")]
+    [InlineData("'a.b'")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ATopLevelName_HasNoEnclosingNames(string? name) =>
+        Assert.Empty(ModelicaName.EnclosingNamesOf(name));
 }

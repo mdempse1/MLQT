@@ -1,5 +1,6 @@
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Services.Helpers;
 
@@ -38,11 +39,10 @@ public static class LibraryRootFile
 
         var ownFile = FileOf(graph, model.Id);
 
-        var dot = model.Id.IndexOf('.');
-        if (dot <= 0)
+        var rootId = ModelicaName.RootLibraryOf(model.Id);
+        if (rootId == model.Id)
             return ownFile;   // already top level
 
-        var rootId = model.Id[..dot];
         return FileOf(graph, rootId) ?? ownFile;
     }
 

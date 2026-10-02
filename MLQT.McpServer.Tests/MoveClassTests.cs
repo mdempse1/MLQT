@@ -51,7 +51,8 @@ public class MoveClassTests
         """;
 
     // Moving Root.Src.Widget writes Root.Dst.Widget wherever Widget is used. Shadow declares a component
-    // called Root; Sealed is encapsulated and uses Widget through an import; OnlyImports just imports it.
+    // called Root; Sealed is encapsulated and reaches Widget through a wildcard import, which stays
+    // behind when Widget moves; OnlyImports just imports it.
     private const string FullNamePackage = """
         within;
         package Root "root"
@@ -63,7 +64,7 @@ public class MoveClassTests
               Widget w;
             end Shadow;
             encapsulated model Sealed
-              import Root.Src.Widget;
+              import Root.Src.*;
               Widget w;
             end Sealed;
             encapsulated model OnlyImports
@@ -86,8 +87,10 @@ public class MoveClassTests
     [Fact]
     public async Task Move_IsRefused_WhereTheFullNameItWritesWouldNotMeanTheClass()
     {
-        // In Shadow, Root is the component, so `Root.Dst.Widget w` would not parse as the class at all;
-        // in Sealed, nothing outside is visible, so it would resolve to nothing.
+        // In Shadow, Root is the component, so `Root.Dst.Widget w` would not parse as the class at all.
+        // In Sealed, `import Root.Src.*` no longer brings Widget in once it has moved, so the name has to
+        // be written in full - and nothing outside an encapsulated class is visible, so it would
+        // resolve to nothing.
         using var host = new TestHost();
         var edit = await LoadFullNames(host, FullNamePackage);
         var before = host.Libraries.GetModelById("Root.Src.Shadow")!.Definition.ModelicaCode;
@@ -109,7 +112,7 @@ public class MoveClassTests
         // Normalised first: a raw string literal carries the checkout's line endings.
         var package = FullNamePackage.Replace("\r\n", "\n")
             .Replace("      Real Root;\n      Widget w;\n", "")
-            .Replace("      import Root.Src.Widget;\n      Widget w;\n", "");
+            .Replace("      import Root.Src.*;\n      Widget w;\n", "");
         Assert.DoesNotContain("Real Root;", package);
         Assert.DoesNotContain("Widget w;", package);
         var edit = await LoadFullNames(host, package);
@@ -118,6 +121,70 @@ public class MoveClassTests
 
         Assert.Contains("import Root.Dst.Widget;",
             host.Libraries.GetModelById("Root.Src.OnlyImports")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public async Task Move_LeavesANameAnImportBringsIn_AsWritten_InAnEncapsulatedClassToo()
+    {
+        // `import Root.Src.Widget; Widget w;` - the import clause names the moved class and is
+        // re-qualified with it, so `Widget w` still means it. Written in full instead, it was refused
+        // in every encapsulated class that imports what it uses: the usual style.
+        using var host = new TestHost();
+        var edit = await LoadFullNames(host, """
+            within;
+            package Root "root"
+              package Src
+                model Widget
+                end Widget;
+                encapsulated model Named
+                  import Root.Src.Widget;
+                  import W = Root.Src.Widget;
+                  Widget w;
+                  W v;
+                end Named;
+              end Src;
+              package Dst
+              end Dst;
+            end Root;
+            """);
+
+        ToolAssert.Ok<MoveClassResult>(await edit.MoveClass("Root.Src.Widget", "Root.Dst"));
+
+        var named = host.Libraries.GetModelById("Root.Src.Named")!.Definition.ModelicaCode;
+        Assert.Contains("import Root.Dst.Widget;", named);
+        Assert.Contains("import W = Root.Dst.Widget;", named);
+        Assert.Contains("Widget w;", named);
+        Assert.Contains("W v;", named);
+    }
+
+    [Fact]
+    public async Task Move_RewritesAnInheritedNameWhoseClassLeavesTheBase()
+    {
+        // Plant extends PartialPlant and writes `Params p`. Moving PartialPlant.Params out of the base
+        // leaves the extends clause where it was, so `Params` no longer means it - it is re-qualified.
+        // Left as written (it was reached through inheritance), it named a class that no longer existed.
+        using var host = new TestHost();
+        var edit = await LoadFullNames(host, """
+            within;
+            package Root "root"
+              package Src
+                partial model PartialPlant
+                  record Params
+                  end Params;
+                end PartialPlant;
+                model Plant
+                  extends PartialPlant;
+                  Params p;
+                end Plant;
+              end Src;
+              package Dst
+              end Dst;
+            end Root;
+            """);
+
+        ToolAssert.Ok<MoveClassResult>(await edit.MoveClass("Root.Src.PartialPlant.Params", "Root.Dst"));
+
+        Assert.Contains("Root.Dst.Params p;", host.Libraries.GetModelById("Root.Src.Plant")!.Definition.ModelicaCode);
     }
 
     private static async Task<EditTools> LoadInherited(TestHost h)

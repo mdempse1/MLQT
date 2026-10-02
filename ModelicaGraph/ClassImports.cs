@@ -57,7 +57,7 @@ public static class ClassImports
         {
             if (definition.IsEncapsulated is null)
                 Read(definition);
-            return definition.IsEncapsulated!.Value;
+            return definition.IsEncapsulated ?? false;
         }
     }
 
@@ -82,7 +82,7 @@ public static class ClassImports
         {
             if (definition.Bases is null)
                 Read(definition);
-            return definition.Bases!;
+            return definition.Bases ?? [];
         }
     }
 

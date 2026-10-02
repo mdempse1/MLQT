@@ -2621,7 +2621,7 @@ document.head.appendChild(style);
                     MudBlazor.Severity.Warning);
                 return null;
             }
-            classPath = targetNode.Id[prefix.Length..].Split('.');
+            classPath = [.. ModelicaName.Segments(targetNode.Id[prefix.Length..])];
         }
 
         return new ClassSourceTarget(targetNode, fileOwner, fileNode.FilePath, classPath);

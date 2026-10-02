@@ -644,13 +644,12 @@ public partial class MetricsDashboard : IDisposable
         }
         else
         {
-            var roots = packages.Where(id => !id.Contains('.')).ToList();
+            var roots = packages.Where(id => ModelicaName.EnclosingPackageOf(id).Length == 0).ToList();
             parent = roots.Count == 1 ? roots[0] : "";
         }
         IEnumerable<string> children = parent.Length == 0
-            ? packages.Where(id => !id.Contains('.'))
-            : packages.Where(id => ModelicaName.IsStrictlyInside(id, parent)
-                                   && id.IndexOf('.', parent.Length + 1) < 0);
+            ? packages.Where(id => ModelicaName.EnclosingPackageOf(id).Length == 0)
+            : packages.Where(id => ModelicaName.EnclosingPackageOf(id) == parent);
         return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
     }
 

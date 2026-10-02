@@ -1,5 +1,6 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph;
 
@@ -127,12 +128,12 @@ public sealed class EnclosingScopeChanges
             if (_classesBefore.Contains(id) && classesAfter.Contains(id))
                 continue;
 
-            var dot = id.LastIndexOf('.');
-            if (dot <= 0)
+            var parent = ModelicaName.EnclosingPackageOf(id);
+            if (parent.Length == 0)
                 continue;
-            if (!namesByParent.TryGetValue(id[..dot], out var names))
-                namesByParent[id[..dot]] = names = new HashSet<string>(StringComparer.Ordinal);
-            names.Add(id[(dot + 1)..]);
+            if (!namesByParent.TryGetValue(parent, out var names))
+                namesByParent[parent] = names = new HashSet<string>(StringComparer.Ordinal);
+            names.Add(ModelicaName.LeafOf(id));
         }
         if (namesByParent.Count == 0)
             return;
@@ -142,13 +143,12 @@ public sealed class EnclosingScopeChanges
             if (model.ContainingFileId is { } fileId && _fileIds.Contains(fileId))
                 continue;
 
-            var id = model.Id;
-            for (var dot = id.IndexOf('.'); dot > 0; dot = id.IndexOf('.', dot + 1))
+            foreach (var enclosing in ModelicaName.EnclosingNamesOf(model.Id))
             {
-                if (namesByParent.TryGetValue(id[..dot], out var names)
+                if (namesByParent.TryGetValue(enclosing, out var names)
                     && names.Any(name => Mentions(model.Definition.ModelicaCode, name)))
                 {
-                    result.Add(id);
+                    result.Add(model.Id);
                     break;
                 }
             }
@@ -194,15 +194,13 @@ public sealed class EnclosingScopeChanges
             if (model.ContainingFileId is { } fileId && fileIds.Contains(fileId))
                 continue;
 
-            var id = model.Id;
-            for (var dot = id.IndexOf('.'); dot > 0; dot = id.IndexOf('.', dot + 1))
+            foreach (var prefix in ModelicaName.EnclosingNamesOf(model.Id))
             {
-                var prefix = id[..dot];
                 if (!inFiles.Contains(prefix))
                     continue;
                 if (!result.TryGetValue(prefix, out var list))
                     result[prefix] = list = [];
-                list.Add(id);
+                list.Add(model.Id);
             }
         }
         return result;

@@ -1,5 +1,6 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph.Analysis;
 
@@ -59,9 +60,8 @@ public sealed class NameCapture
         _graph = graph;
         _newName = newName;
         _renamedId = renamedId;
-        var dot = renamedId.LastIndexOf('.');
-        _parent = dot >= 0 ? renamedId[..dot] : string.Empty;
-        _oldName = renamedId[(dot + 1)..];
+        _parent = ModelicaName.EnclosingPackageOf(renamedId);
+        _oldName = ModelicaName.LeafOf(renamedId);
         _interfaces = interfaces ?? new ClassElementResolver.InterfaceCache();
     }
 
@@ -86,12 +86,17 @@ public sealed class NameCapture
     /// <paramref name="scopeId"/> - something of that name found first, or an encapsulated class the
     /// lookup cannot get past - or null when it does. For a checker made by <see cref="ForFullNames"/>.
     /// </summary>
-    public string? FullNameProblemAt(string scopeId)
+    /// <param name="currentIdOf">
+    /// For a reference inside a class that is moving: maps an id along the chain it will sit in to the
+    /// id that class has now. A class's answer does not depend on where it is, so the moved classes are
+    /// asked as they are and the classes around them where they are going - looked up from where it
+    /// used to be, a move into an encapsulated package went unnoticed and a move out of one was refused.
+    /// </param>
+    public string? FullNameProblemAt(string scopeId, Func<string, string>? currentIdOf = null)
     {
-        var parts = scopeId.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        for (var take = parts.Length; take > 0; take--)
+        foreach (var scope in ScopesOf(scopeId))
         {
-            var verdict = VerdictOf(string.Join('.', parts.Take(take)));
+            var verdict = VerdictOf(currentIdOf?.Invoke(scope) ?? scope);
             if (verdict.Encapsulated is { } sealedClass)
                 return $"{sealedClass} is encapsulated, so nothing outside it - {_newName} included - is visible there";
             if (verdict.Ends)
@@ -106,10 +111,9 @@ public sealed class NameCapture
     /// </summary>
     public string? CapturedAt(string scopeId)
     {
-        var parts = scopeId.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        for (var take = parts.Length; take > 0; take--)
+        foreach (var scope in ScopesOf(scopeId))
         {
-            var verdict = VerdictOf(string.Join('.', parts.Take(take)));
+            var verdict = VerdictOf(scope);
             if (verdict.Ends)
                 return verdict.CapturedBy;
         }
@@ -118,6 +122,11 @@ public sealed class NameCapture
         // way, and the rename does not change what this reference finds.
         return null;
     }
+
+    // A class and the classes enclosing it, innermost first - split where Modelica splits a name, so a
+    // quoted identifier with a dot in it is one scope.
+    private static IEnumerable<string> ScopesOf(string scopeId)
+        => scopeId.Length == 0 ? [] : ModelicaName.EnclosingNamesOf(scopeId).Prepend(scopeId);
 
     private Verdict VerdictOf(string scopeId)
     {
@@ -145,7 +154,9 @@ public sealed class NameCapture
 
         // 3. Its imports: one that brings in the renamed class is where it is found - its own clause is
         //    renamed with it - and one that brings in the new name is a capture.
-        foreach (var import in ClassImports.For(scope.Definition))
+        //    Qualified and alias imports before wildcards, as the lookup orders them (MLS §5.3.1).
+        var imports = ClassImports.For(scope.Definition);
+        foreach (var import in imports.Where(i => !TypeResolver.IsWildcard(i)).Concat(imports.Where(TypeResolver.IsWildcard)))
         {
             if (TypeResolver.ResolveViaImport(_graph, import, _oldName)?.Id == _renamedId)
                 return NotCaptured;

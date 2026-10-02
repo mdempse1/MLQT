@@ -2,6 +2,7 @@ using Antlr4.Runtime.Misc;
 using ModelicaParser;
 using ModelicaParser.DataTypes;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph;
 
@@ -278,12 +279,10 @@ public class LoadSelectorModificationAnalyzer : modelicaBaseVisitor<object?>
         if (_graph.GetNode<ModelNode>(typeName) != null)
             return typeName;
 
-        if (_modelId.Contains('.'))
+        if (ModelicaName.LastSeparator(_modelId) > 0)
         {
-            var parts = _modelId.Split('.');
-            for (int i = parts.Length - 1; i >= 1; i--)
+            foreach (var packagePath in ModelicaName.EnclosingNamesOf(_modelId))
             {
-                var packagePath = string.Join(".", parts.Take(i));
                 var candidate = $"{packagePath}.{typeName}";
                 if (_graph.GetNode<ModelNode>(candidate) != null)
                     return candidate;

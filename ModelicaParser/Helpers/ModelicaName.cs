@@ -10,8 +10,116 @@ namespace ModelicaParser.Helpers;
 /// because a base package is what the suppression extractor and every rule visitor are told the class
 /// sits in, and a wrong one silently changes which annotations are read.</para>
 /// </summary>
+/// <para><b>A quoted identifier may contain a dot</b> - <c>Lib.'a.b'.C</c> is three segments, not four -
+/// so nothing here, or anywhere else, takes a name apart with <c>Split('.')</c> or
+/// <c>LastIndexOf('.')</c>. <see cref="Segments"/> is the one splitter, and every other method is built
+/// on <see cref="LastSeparator"/>/<see cref="FirstSeparator"/>, which skip the dots inside quotes.</para>
 public static class ModelicaName
 {
+    /// <summary>
+    /// The segments of a dotted name, a quoted identifier kept whole (<c>'a.b'</c>, with its quotes and
+    /// any backslash escape in it). Empty for an empty name; a leading dot is not a segment.
+    /// </summary>
+    public static IReadOnlyList<string> Segments(string? name)
+    {
+        var segments = new List<string>();
+        if (string.IsNullOrEmpty(name))
+            return segments;
+
+        var start = name[0] == '.' ? 1 : 0;
+        var quoted = false;
+        for (var i = start; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (quoted)
+            {
+                if (c == '\\')
+                    i++;
+                else if (c == '\'')
+                    quoted = false;
+            }
+            else if (c == '\'')
+                quoted = true;
+            else if (c == '.')
+            {
+                segments.Add(name[start..i]);
+                start = i + 1;
+            }
+        }
+        segments.Add(name[start..]);
+        return segments;
+    }
+
+    /// <summary>The segments of <paramref name="name"/> joined back with dots.</summary>
+    public static string Join(IEnumerable<string> segments) => string.Join('.', segments);
+
+    /// <summary>
+    /// The index of the last dot that separates segments - not one inside a quoted identifier - or -1.
+    /// </summary>
+    public static int LastSeparator(string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return -1;
+        var last = -1;
+        var quoted = false;
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (quoted)
+            {
+                if (c == '\\')
+                    i++;
+                else if (c == '\'')
+                    quoted = false;
+            }
+            else if (c == '\'')
+                quoted = true;
+            else if (c == '.')
+                last = i;
+        }
+        return last;
+    }
+
+    /// <summary>
+    /// The index of the first dot that separates segments, after any leading dot, or -1.
+    /// </summary>
+    public static int FirstSeparator(string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return -1;
+        var quoted = false;
+        for (var i = name[0] == '.' ? 1 : 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (quoted)
+            {
+                if (c == '\\')
+                    i++;
+                else if (c == '\'')
+                    quoted = false;
+            }
+            else if (c == '\'')
+                quoted = true;
+            else if (c == '.')
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Every enclosing name of <paramref name="fullName"/>, innermost first: <c>A.B.C</c> gives
+    /// <c>A.B</c>, <c>A</c>. Not the name itself.
+    /// </summary>
+    public static IEnumerable<string> EnclosingNamesOf(string? fullName)
+    {
+        var name = EnclosingPackageOf(fullName);
+        while (name.Length > 0)
+        {
+            yield return name;
+            name = EnclosingPackageOf(name);
+        }
+    }
+
     /// <summary>
     /// The package a class sits in — everything before the last dot — or empty for a top-level name.
     ///
@@ -24,7 +132,7 @@ public static class ModelicaName
         if (string.IsNullOrEmpty(fullName))
             return string.Empty;
 
-        var lastDot = fullName.LastIndexOf('.');
+        var lastDot = LastSeparator(fullName);
         return lastDot > 0 ? fullName[..lastDot] : string.Empty;
     }
 
@@ -34,7 +142,7 @@ public static class ModelicaName
         if (string.IsNullOrEmpty(fullName))
             return string.Empty;
 
-        var lastDot = fullName.LastIndexOf('.');
+        var lastDot = LastSeparator(fullName);
         return lastDot >= 0 ? fullName[(lastDot + 1)..] : fullName;
     }
 
@@ -86,7 +194,7 @@ public static class ModelicaName
         if (string.IsNullOrEmpty(fullName))
             return string.Empty;
 
-        var firstDot = fullName.IndexOf('.');
+        var firstDot = FirstSeparator(fullName);
         return firstDot > 0 ? fullName[..firstDot] : fullName;
     }
 }

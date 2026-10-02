@@ -188,7 +188,7 @@ public sealed class SuppressionTools
         if (!node.Id.StartsWith(prefix, StringComparison.Ordinal))
             return new LocatedClass(null, null, new ToolError($"Could not locate '{classId}' within '{owner.FilePath}'."));
 
-        return new LocatedClass(owner, node.Id[prefix.Length..].Split('.'), null);
+        return new LocatedClass(owner, [.. ModelicaName.Segments(node.Id[prefix.Length..])], null);
     }
 
     private readonly record struct LocatedClass(ModelFilePersistence.FileOwnerContext? Owner, string[]? ClassPath, ToolError? Error);

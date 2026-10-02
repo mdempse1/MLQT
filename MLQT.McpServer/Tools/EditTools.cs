@@ -207,7 +207,7 @@ public sealed class EditTools
         IReadOnlyList<string> packageMembers, bool preview)
     {
         var dir = Path.GetDirectoryName(packageMoPath)!;
-        var parentId = newId[..newId.LastIndexOf('.')];
+        var parentId = ModelicaName.EnclosingPackageOf(newId);
 
         // newId decides where the class lands, so the file's clause names its parent — replacing any
         // the caller sent with the source rather than adding a second one beside it.
@@ -390,9 +390,10 @@ public sealed class EditTools
                 "storage and re-qualifying references to it (and its nested classes) across the loaded " +
                 "files. Requires analyze_dependencies. The class is placed under the target the same way " +
                 "create_class chooses (standalone file in a directory package, else nested). References that " +
-                "resolve to the class are rewritten to the new fully-qualified name - except one reached " +
-                "through inheritance (Medium.State under a base's replaceable Medium), which is left as " +
-                "written: the extends clause is re-qualified, and the full name would undo every redeclare. " +
+                "resolve to the class are rewritten to the new fully-qualified name - except one that still " +
+                "means the class as written: a name reached through inheritance (Medium.State under a base's " +
+                "replaceable Medium, where the full name would undo every redeclare) while the class stays in " +
+                "the base, and a name an import brings in, whose import clause is re-qualified instead. " +
                 "If a full name would not mean the class where it is written - a class there declares " +
                 "something of the library's top-level name, or the reference is inside an encapsulated " +
                 "class - the move is refused, the references are listed, and nothing is changed. A whole directory " +
@@ -472,8 +473,8 @@ public sealed class EditTools
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
-            var edits = RequalifyingEdits(locator.Sites, MapId);
-            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames));
+            var edits = RequalifyingEdits(locator.Sites, MapId, classId);
+            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames, classId, newId));
             if (edits.Count == 0)
                 continue;
 
@@ -592,8 +593,8 @@ public sealed class EditTools
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
-            var edits = RequalifyingEdits(locator.Sites, MapId);
-            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames));
+            var edits = RequalifyingEdits(locator.Sites, MapId, classId);
+            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames, classId, newId));
             if (edits.Count > 0)
             {
                 text = ApplyReplacements(text, edits);
@@ -692,8 +693,8 @@ public sealed class EditTools
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
-            var edits = RequalifyingEdits(locator.Sites, MapId);
-            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames));
+            var edits = RequalifyingEdits(locator.Sites, MapId, classId);
+            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames, classId, newId));
             if (edits.Count > 0)
             {
                 text = ApplyReplacements(text, edits);
@@ -769,18 +770,42 @@ public sealed class EditTools
         return text[..g.Index] + replacement + text[(g.Index + name.Length)..];
     }
 
+    private static string TopLevelOf(string id) => ModelicaName.RootLibraryOf(id);
+
     /// <summary>
-    /// The edits that re-qualify a moved class's references: each site's whole dotted name replaced by
-    /// the class's new id - <b>except a site reached through inheritance</b>.
+    /// Whether <paramref name="site"/> still means its class, as written, once <paramref name="movedId"/>
+    /// and everything inside it has moved - in which case a re-qualifying edit leaves it alone.
     /// </summary>
     /// <remarks>
-    /// <c>Medium.State</c> in a model whose base declares a replaceable <c>Medium</c> means whatever
-    /// <c>Medium</c> the instance has. Moving the base rewrites the model's extends clause, so the
-    /// name still resolves as written; replacing it with <c>NewPackage.Base.Medium.State</c> fixed it
-    /// to the base's default and undid every <c>redeclare</c> - silently, since the result compiles.
-    /// One helper, so the three operations that re-qualify cannot disagree about it.
+    /// <para>Each segment of the reference names a class. One that does not move, or moves along with
+    /// the class it is declared in, is still found the same way. One that moves away from the class it
+    /// is declared in - the moved class itself, seen from outside - is not, unless an import clause
+    /// brought it in: that clause names the moved class and is re-qualified with it.</para>
+    /// <para>So <c>Medium.State</c> under a base's replaceable <c>Medium</c> is left as written when
+    /// the base moves (its extends clause is re-qualified, and the full name would fix it to the
+    /// base's default, undoing every <c>redeclare</c>), but <c>Params p</c> in a model extending
+    /// <c>PartialPlant</c> is re-qualified when <c>PartialPlant.Params</c> moves out of it - left as
+    /// written, it named a class that no longer existed. And <c>Widget w</c> under <c>import
+    /// Root.Src.Widget;</c> is left as it is, where re-qualifying it refused every move into an
+    /// encapsulated class that imports what it uses.</para>
+    /// <para>One helper, so the three operations that re-qualify cannot disagree about it.</para>
     /// </remarks>
-    private static string TopLevelOf(string id) => id.Split('.')[0];
+    private static bool StillMeansItsClass(ReferenceSite site, string movedId)
+    {
+        if (site.SegmentIds.Count == 0)
+            return false;
+        for (var i = 0; i < site.SegmentIds.Count; i++)
+        {
+            var id = site.SegmentIds[i];
+            if (!ModelicaName.IsInSubtree(id, movedId)
+                || ModelicaName.IsInSubtree(ModelicaName.EnclosingPackageOf(id), movedId))
+                continue;
+            if (i == 0 && site.FirstSegmentBinding is NameBinding.Import or NameBinding.AliasImport)
+                continue;
+            return false;
+        }
+        return true;
+    }
 
     /// <summary>
     /// The sites among <paramref name="sites"/> where the full name a re-qualifying edit writes would
@@ -790,14 +815,17 @@ public sealed class EditTools
     /// A move writes <c>Root.Dst.Widget</c>, which is looked up from where it is written like any
     /// name: if that class declares something called <c>Root</c>, that is what it means, and inside
     /// an <c>encapsulated</c> class it means nothing at all. Skipped are the sites no edit touches
-    /// (reached through inheritance), an import clause's name, which is always looked up from the
-    /// top, and a global name, whose leading dot the edit keeps.
+    /// (<see cref="StillMeansItsClass"/>), an import clause's name, which is always looked up from
+    /// the top, and a global name, whose leading dot the edit keeps. A reference inside the moving
+    /// class is looked up from where it is going, not where it was.
     /// </remarks>
     private static IEnumerable<string> FullNameProblems(
-        IEnumerable<ReferenceSite> sites, string path, NameCapture fullNames)
+        IEnumerable<ReferenceSite> sites, string path, NameCapture fullNames, string movedId, string newId)
         => sites
-            .Where(s => !s.ThroughInheritance && !s.InImport && !s.Text.StartsWith('.') && s.ScopeId.Length > 0)
-            .Select(s => fullNames.FullNameProblemAt(s.ScopeId) is { } problem
+            .Where(s => !StillMeansItsClass(s, movedId) && !s.InImport && !s.Text.StartsWith('.') && s.ScopeId.Length > 0)
+            .Select(s => fullNames.FullNameProblemAt(
+                    ModelicaName.ReRoot(s.ScopeId, movedId, newId) ?? s.ScopeId,
+                    id => ModelicaName.ReRoot(id, newId, movedId) ?? id) is { } problem
                 ? $"line {s.Line} of {Path.GetFileName(path)}, in {s.ScopeId}: {problem}"
                 : null)
             .OfType<string>();
@@ -812,9 +840,14 @@ public sealed class EditTools
             ". Nothing was changed. Rename the conflicting element, or add an import, first.");
     }
 
+    /// <summary>
+    /// The edits that re-qualify a moved class's references: each site's whole dotted name replaced by
+    /// its target's new id - except a site that still means its class as written
+    /// (<see cref="StillMeansItsClass"/>).
+    /// </summary>
     private static List<(int StartIndex, int StopIndex, string Replacement)> RequalifyingEdits(
-        IEnumerable<ReferenceSite> sites, Func<string, string> mapId)
-        => [.. sites.Where(s => !s.ThroughInheritance).Select(s => (s.StartIndex, s.StopIndex, mapId(s.TargetId)))];
+        IEnumerable<ReferenceSite> sites, Func<string, string> mapId, string movedId)
+        => [.. sites.Where(s => !StillMeansItsClass(s, movedId)).Select(s => (s.StartIndex, s.StopIndex, mapId(s.TargetId)))];
 
     // Rename a class's own declaration name tokens (package X ... end X) to newLeaf.
     private static string RenameDefinitionTokens(string text, string classId, string newLeaf, DirectedGraph graph)
@@ -1030,8 +1063,10 @@ public sealed class EditTools
                 "if any would no longer parse, nothing is written. Set preview=true to see the planned " +
                 "per-file changes first. References to what is INSIDE the class are rewritten too - " +
                 "OldName.Child, Pkg.OldName.someConstant, an import of OldName.Child - wherever they spell " +
-                "the class's name; a relative name inside the class, or one through an import alias, does " +
-                "not and is left as it is. Names inside strings (modelica:// links in documentation) are " +
+                "the class's name; a relative name inside the class, or one through an import alias or a local " +
+                "short class - even one called after the class - does not and is left as it is. Renaming a " +
+                "replaceable class renames every redeclare of it too (redeclare package Medium = ... in a " +
+                "modification, or in the body of a class extending it). Names inside strings (modelica:// links in documentation) are " +
                 "not rewritten — review those. A reference is renamed in place, so Pkg.State becomes " +
                 "Box.State; renaming a whole directory package instead writes each reference to its " +
                 "subtree as the new full name (Root.Box.State). If the new name is already taken where a " +
@@ -1098,16 +1133,22 @@ public sealed class EditTools
         // `Root.Pkg.State` - so every class below it is a target, and every class using one of them is
         // a file to edit. Only the class itself was, which left each such reference naming a class
         // that no longer existed.
-        var renamedPrefix = classId + ".";
+        //
+        // A replaceable class is renamed with everything that redeclares it: every class derived from
+        // its parent that declares one of the same name (`redeclare package Medium = ...`), and every
+        // `redeclare` in a modification of such a class. Left as they were, they redeclared an
+        // element that no longer existed, and the files still parsed.
+        var (renamed, derivedFromParent) = RenamedWithRedeclarations(graph, classId);
         var targets = graph.ModelNodes
-            .Where(m => m.Id == classId || m.Id.StartsWith(renamedPrefix, StringComparison.Ordinal))
+            .Where(m => renamed.Any(r => ModelicaName.IsInSubtree(m.Id, r)))
             .Select(m => m.Id)
             .ToHashSet(StringComparer.Ordinal);
 
         var fileIds = new HashSet<string>(StringComparer.Ordinal);
-        if (node.ContainingFileId is not null)
-            fileIds.Add(node.ContainingFileId);
-        foreach (var target in targets)
+        foreach (var r in renamed)
+            if (graph.GetNode<ModelNode>(r)?.ContainingFileId is { } own)
+                fileIds.Add(own);
+        foreach (var target in targets.Concat(derivedFromParent))
             foreach (var dependent in graph.GetModelUsedBy(target))
                 if (dependent.ContainingFileId is not null)
                     fileIds.Add(dependent.ContainingFileId);
@@ -1124,10 +1165,16 @@ public sealed class EditTools
         // Plan the precise edits per file: the declaration name tokens + resolved usage leaf tokens.
         var planned = new List<(string path, string newContent, int count)>();
         var shared = new ReferenceLocator.Shared();
-        // One checker for the rename: it remembers what each class on the way out answers, and most
+        // One checker per renamed class: it remembers what each class on the way out answers, and most
         // references share the packages around them.
-        var capture = new NameCapture(graph, newName, classId);
-        var clash = string.IsNullOrEmpty(parent) ? null : capture.CapturedAt(parent);
+        var checkers = renamed.ToDictionary(r => r, r => new NameCapture(graph, newName, r), StringComparer.Ordinal);
+        var clashes = renamed
+            .Select(r => (Parent: ModelicaName.EnclosingPackageOf(r), Checker: checkers[r]))
+            .Where(c => c.Parent.Length > 0)
+            .Select(c => c.Checker.CapturedAt(c.Parent) is { } clash ? $"{c.Parent} already has {clash}" : null)
+            .OfType<string>()
+            .Distinct()
+            .ToList();
         var captured = new List<string>();
         foreach (var path in paths)
         {
@@ -1141,22 +1188,27 @@ public sealed class EditTools
 
             var spans = new List<(int start, int stop)>();
             foreach (var def in locator.Definitions)
-                if (def.Id == classId)
+                if (renamed.Contains(def.Id))
                     foreach (var token in def.NameTokens)
                         spans.Add((token.StartIndex, token.StopIndex));
             foreach (var site in locator.Sites)
             {
-                if (RenamedSegment(site, classId, oldLeaf) is not { } segment)
+                if (RenamedSegment(site, renamed, oldLeaf) is not { } segment)
                     continue;
-                spans.Add((segment.StartIndex, segment.StopIndex));
+                spans.Add((segment.Name.StartIndex, segment.Name.StopIndex));
 
                 // A reference that starts with the new name is looked up from where it is written:
-                // something of that name met first takes it over (NameCapture).
-                if (ReferenceEquals(segment, site.Segments[0]) && !site.Text.StartsWith('.') &&
-                    capture.CapturedAt(site.ScopeId) is { } capturer)
+                // something of that name met first takes it over (NameCapture). Not an import clause's
+                // name, nor a global one: both are looked up from the top.
+                if (segment.Index == 0 && !site.InImport && !site.Text.StartsWith('.') &&
+                    checkers[segment.Renamed].CapturedAt(site.ScopeId) is { } capturer)
                     captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}: {newName} " +
                                  $"would mean {capturer}");
             }
+            foreach (var redeclaration in locator.Redeclarations)
+                if (renamed.Contains(redeclaration.TargetId)
+                    && string.Equals(redeclaration.Name.Text, oldLeaf, StringComparison.Ordinal))
+                    spans.Add((redeclaration.Name.StartIndex, redeclaration.Name.StopIndex));
 
             if (spans.Count == 0)
                 continue;
@@ -1172,12 +1224,12 @@ public sealed class EditTools
             planned.Add((path, newContent, spans.Count));
         }
 
-        if (clash is not null || captured.Count > 0)
+        if (clashes.Count > 0 || captured.Count > 0)
         {
             var references = captured.Distinct().ToList();
             var problems = new List<string>();
-            if (clash is not null)
-                problems.Add($"{parent} already has {clash}, which the renamed class would sit beside");
+            if (clashes.Count > 0)
+                problems.Add(string.Join("; ", clashes) + ", which the renamed class would sit beside");
             if (references.Count > 0)
                 problems.Add($"{references.Count} reference(s) would change meaning, because something already " +
                              "called that is found first where they are written: " +
@@ -1193,8 +1245,9 @@ public sealed class EditTools
         var total = planned.Sum(p => p.count);
         var note = $"Precise rename of the declaration and of every reference that spells '{oldLeaf}' as " +
                    "the class's name - its own, and those to the classes and components inside it " +
-                   $"({oldLeaf}.Child, {oldLeaf}.constant). Names inside strings, such as modelica:// links in " +
-                   "documentation, are not rewritten; review those and verify with a model checker.";
+                   $"({oldLeaf}.Child, {oldLeaf}.constant) - and, for a replaceable class, every redeclaration " +
+                   "of it. Names inside strings, such as modelica:// links in documentation, are not " +
+                   "rewritten; review those and verify with a model checker.";
         if (renamedFile is not null)
             note = $"The file '{Path.GetFileName(ownFile)}' is renamed to '{Path.GetFileName(renamedFile)}' with its class. " + note;
 
@@ -1232,25 +1285,64 @@ public sealed class EditTools
     }
 
     /// <summary>
-    /// The segment of <paramref name="site"/> that names the renamed class <paramref name="classId"/>, or
-    /// null when the reference does not spell it.
+    /// The segment of <paramref name="site"/> that names one of the <paramref name="renamed"/> classes -
+    /// its position and which one - or null when the reference does not spell it.
     /// </summary>
     /// <remarks>
-    /// A reference to a class <c>k</c> levels below the renamed one names the renamed one <c>k</c>
-    /// segments before its last: <c>Pkg</c> in <c>Pkg.State</c> and in <c>Root.Pkg.State</c>. It is
-    /// rewritten only if that segment reads the old name, which is how the two that must be left alone
-    /// are told apart: a relative name inside the package (<c>State</c>, too short to reach it), and an
-    /// alias (<c>P.State</c> under <c>import P = Root.Pkg</c>, whose import clause is what renames).
+    /// Decided by the class each segment names (<see cref="ReferenceSite.SegmentIds"/>), not by its
+    /// text: <c>Pkg</c> in <c>Pkg.State</c> and in <c>Root.Pkg.State</c> names the renamed class,
+    /// while <c>Interfaces</c> in <c>Interfaces.RealInput</c> under <c>import Interfaces =
+    /// Lib.Blocks.Interfaces;</c> is an alias - the import clause is what is renamed, and rewriting the
+    /// alias's use too left a name nothing defined. A short class of the same name declared locally
+    /// names that short class, which is not renamed.
     /// </remarks>
-    private static NameSegment? RenamedSegment(ReferenceSite site, string classId, string oldLeaf)
+    private static (NameSegment Name, int Index, string Renamed)? RenamedSegment(
+        ReferenceSite site, IReadOnlySet<string> renamed, string oldLeaf)
     {
-        var depth = site.TargetId.Length == classId.Length
-            ? 0
-            : site.TargetId[(classId.Length + 1)..].Count(c => c == '.') + 1;
-        var index = site.Segments.Count - 1 - depth;
-        return index >= 0 && string.Equals(site.Segments[index].Text, oldLeaf, StringComparison.Ordinal)
-            ? site.Segments[index]
-            : null;
+        for (var i = 0; i < site.Segments.Count && i < site.SegmentIds.Count; i++)
+        {
+            if (!renamed.Contains(site.SegmentIds[i])
+                || !string.Equals(site.Segments[i].Text, oldLeaf, StringComparison.Ordinal))
+                continue;
+            if (i == 0 && site.FirstSegmentBinding == NameBinding.AliasImport)
+                return null;
+            return (site.Segments[i], i, site.SegmentIds[i]);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The classes renamed with <paramref name="classId"/> - itself, and each class of the same name
+    /// that a class derived from its parent declares (a redeclaration of it) - and those derived
+    /// classes, whose users may redeclare it in a modification.
+    /// </summary>
+    private static (HashSet<string> Renamed, HashSet<string> DerivedFromParent) RenamedWithRedeclarations(
+        DirectedGraph graph, string classId)
+    {
+        var renamed = new HashSet<string>(StringComparer.Ordinal) { classId };
+        var derived = new HashSet<string>(StringComparer.Ordinal);
+        var parentId = ModelicaName.EnclosingPackageOf(classId);
+        if (parentId.Length == 0 || graph.GetNode<ModelNode>(parentId) is not { } parentNode)
+            return (renamed, derived);
+
+        var leaf = ModelicaName.LeafOf(classId);
+        derived.Add(parentNode.Id);
+        var frontier = new Queue<ModelNode>([parentNode]);
+        while (frontier.Count > 0)
+        {
+            var current = frontier.Dequeue();
+            foreach (var user in graph.GetModelUsedBy(current.Id))
+            {
+                if (derived.Contains(user.Id)
+                    || !ClassElementResolver.DirectBases(graph, user).Any(b => b.Base.Id == current.Id))
+                    continue;
+                derived.Add(user.Id);
+                frontier.Enqueue(user);
+                if (graph.GetNode<ModelNode>($"{user.Id}.{leaf}") is { } redeclared)
+                    renamed.Add(redeclared.Id);
+            }
+        }
+        return (renamed, derived);
     }
 
     // Replace each [start, stop] span (inclusive) with 'replacement', applying right-to-left so earlier

@@ -30,7 +30,20 @@ public sealed record ReferenceSite(
     /// the target's full name would fix it to the base's default and undo every <c>redeclare</c>. A
     /// rename, which rewrites only the leaf, rewrites it like any other.
     /// </summary>
-    public bool ThroughInheritance { get; init; }
+    public bool ThroughInheritance => FirstSegmentBinding == Analysis.NameBinding.Inherited;
+
+    /// <summary>
+    /// The id of the class each segment in <see cref="Segments"/> names, one per segment - what a
+    /// rename asks to find the segment that names the renamed class, rather than trusting its text.
+    /// </summary>
+    public IReadOnlyList<string> SegmentIds { get; init; } = [];
+
+    /// <summary>
+    /// How the first segment was found: the class's own, inherited, through a plain or alias import, a
+    /// wildcard, or from the top. An alias is a name the author chose, and a move leaves a name an
+    /// import or inheritance already reaches as it is.
+    /// </summary>
+    public Analysis.NameBinding? FirstSegmentBinding { get; init; }
 
     /// <summary>
     /// The class the reference is written in - where a name in it is looked up from. Empty for one
@@ -44,6 +57,13 @@ public sealed record ReferenceSite(
     /// </summary>
     public bool InImport { get; init; }
 }
+
+/// <summary>
+/// A <c>redeclare</c> in a modification that replaces a target class: <c>Medium</c> in
+/// <c>extends Base(redeclare package Medium = Water)</c> or <c>Base b(redeclare package Medium = Water)</c>.
+/// <see cref="Name"/> is the redeclared name's token, which a rename of the class rewrites.
+/// </summary>
+public sealed record RedeclarationSite(string TargetId, NameSegment Name, int Line);
 
 /// <summary>
 /// A target class's own definition: the name identifier tokens (e.g. the opening and closing IDENT of
@@ -117,6 +137,11 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
 
     public IReadOnlyList<ReferenceSite> Sites => _sites;
 
+    /// <summary>The <c>redeclare</c>s in modifications that replace a target class.</summary>
+    public IReadOnlyList<RedeclarationSite> Redeclarations => _redeclarations;
+
+    private readonly List<RedeclarationSite> _redeclarations = new();
+
     /// <summary>Definition sites of the target classes encountered (their declaration name tokens).</summary>
     public IReadOnlyList<DefinitionSite> Definitions => _definitions;
 
@@ -167,6 +192,72 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
         return base.VisitName(context);
     }
 
+    /// <summary>
+    /// A <c>redeclare</c> in a modification names the class it replaces by its simple name, as an
+    /// element of the class being modified - an extends clause's base, a component's type, or a short
+    /// class's base, followed down any nested modification (<c>b(sub(redeclare package Medium = W))</c>).
+    /// </summary>
+    public override object? VisitElement_redeclaration(modelicaParser.Element_redeclarationContext context)
+    {
+        var spec = (context.short_class_definition() ?? context.element_replaceable()?.short_class_definition())
+            ?.short_class_specifier();
+        if (_scopes.Count > 0 && spec?.IDENT() is { } ident && ModifiedClass(context) is { } modified
+            && Analysis.TypeResolver.MemberClass(_graph, modified, ident.GetText(), _shared.Ancestors) is { } replaced
+            && (_targets is null || _targets.Contains(replaced.Id)))
+            _redeclarations.Add(new RedeclarationSite(
+                replaced.Id, new NameSegment(ident.GetText(), ident.Symbol.StartIndex, ident.Symbol.StopIndex),
+                ident.Symbol.Line));
+        return base.VisitElement_redeclaration(context);
+    }
+
+    // The class a modification holding `redeclaration` modifies: walk out through any nested element
+    // modifications to the declaration, extends clause or short class it belongs to, resolve that
+    // type, then follow the nested names down as components of it.
+    private DataTypes.ModelNode? ModifiedClass(modelicaParser.Element_redeclarationContext redeclaration)
+    {
+        var nested = new List<string>();
+        modelicaParser.Type_specifierContext? typeSpecifier = null;
+        for (Antlr4.Runtime.Tree.IParseTree? node = redeclaration.Parent; node is not null && typeSpecifier is null; node = node.Parent)
+        {
+            switch (node)
+            {
+                case modelicaParser.Element_modificationContext modification:
+                    nested.Insert(0, modification.name().GetText());
+                    break;
+                case modelicaParser.Extends_clauseContext extendsClause:
+                    typeSpecifier = extendsClause.type_specifier();
+                    break;
+                case modelicaParser.Component_clauseContext component:
+                    typeSpecifier = component.type_specifier();
+                    break;
+                case modelicaParser.Component_clause1Context component1:
+                    typeSpecifier = component1.type_specifier();
+                    break;
+                case modelicaParser.Short_class_specifierContext shortClass:
+                    typeSpecifier = shortClass.type_specifier();
+                    break;
+                case modelicaParser.Class_definitionContext:
+                    return null;
+            }
+        }
+
+        if (typeSpecifier?.name() is not { } typeName)
+            return null;
+        var frame = _scopes.Peek();
+        var modified = ReferenceResolver.ResolvePath(
+            _graph, frame.ClassId, frame.Imports, ReferenceResolver.GetQualifiedName(typeName), _shared.Ancestors)?.Node;
+
+        foreach (var component in nested)
+        {
+            if (modified is null)
+                return null;
+            modified = Analysis.ClassElementResolver
+                .ReferencesIn(_graph, modified, _shared.Interfaces, _shared.Ancestors)
+                .Resolve(component)?.Type;
+        }
+        return modified;
+    }
+
     public override object? VisitComponent_reference(modelicaParser.Component_referenceContext context)
     {
         Record(ReferenceResolver.GetComponentReferenceName(context), context.IDENT());
@@ -180,8 +271,10 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             return;
 
         var frame = _scopes.Peek();
-        var targetId = ReferenceResolver.Resolve(_graph, frame.ClassId, frame.Imports, reference, _shared.Ancestors);
-        bool? inherited = null;
+        var resolved = ReferenceResolver.ResolvePath(_graph, frame.ClassId, frame.Imports, reference, _shared.Ancestors);
+        var targetId = resolved?.Node.Id;
+        var segmentIds = resolved?.Path ?? [];
+        var binding = resolved?.Binding;
 
         // Not a class by its whole name: a component reached through one (Modelica.Constants.pi).
         // The site is the leading segments that name the class - renaming Constants rewrites them,
@@ -190,22 +283,36 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             && start.QualifierSegments <= idents.Length)
         {
             targetId = start.Scope.Id;
-            inherited = start.ThroughInheritance;
+            segmentIds = start.QualifierPath;
+            binding = start.QualifierBinding;
             idents = idents[..start.QualifierSegments];
         }
 
-        if (targetId is null || (_targets is not null && !_targets.Contains(targetId)))
+        if (targetId is null)
             return;
 
-        // Asked only of a site that is kept: it is a second lookup of the name.
-        inherited ??= ReferenceResolver.ResolveWithoutInheritance(_graph, frame.ClassId, frame.Imports, reference) != targetId;
+        // A name whose leading segments go through a target and whose last does not - `Medium.State`,
+        // where Medium is a short class for Water and the target is Medium - is a site for those leading
+        // segments, as a component reached through a class is: renaming Medium rewrites `Medium`.
+        if (_targets is not null && !_targets.Contains(targetId))
+        {
+            var through = -1;
+            for (var i = Math.Min(segmentIds.Count, idents.Length) - 1; i >= 0 && through < 0; i--)
+                if (_targets.Contains(segmentIds[i]))
+                    through = i;
+            if (through < 0)
+                return;
+            targetId = segmentIds[through];
+            segmentIds = [.. segmentIds.Take(through + 1)];
+            idents = idents[..(through + 1)];
+        }
 
         var segments = idents
             .Select(t => new NameSegment(t.GetText(), t.Symbol.StartIndex, t.Symbol.StopIndex))
             .ToList();
         _sites.Add(new ReferenceSite(
             targetId, idents[0].Symbol.StartIndex, idents[^1].Symbol.StopIndex, reference, segments,
-            idents[0].Symbol.Line) { ThroughInheritance = inherited.Value, ScopeId = frame.ClassId, InImport = inImport });
+            idents[0].Symbol.Line) { SegmentIds = segmentIds, FirstSegmentBinding = binding, ScopeId = frame.ClassId, InImport = inImport });
     }
 
     private static string? ClassLeafName(modelicaParser.Class_definitionContext context)

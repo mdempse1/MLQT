@@ -312,14 +312,17 @@ public static partial class ClassElementResolver
     /// <para>For a question the first clause answers differently from the others: which base lends
     /// a class its coordinate system (MLS 3.6 §18.6.1.1, B394).</para>
     /// </summary>
-    public static List<(string Written, ModelNode Base)> DirectBases(DirectedGraph graph, ModelNode node)
+    /// <param name="ancestors">The run's ancestor cache, when there is one: resolving a base name looks
+    /// at what the scopes around the class inherit.</param>
+    public static List<(string Written, ModelNode Base)> DirectBases(
+        DirectedGraph graph, ModelNode node, TypeResolver.AncestorCache? ancestors = null)
     {
         // Read once per class and kept on it (ClassImports), because name lookup asks every scope it
         // passes what that scope inherits: parsing a class to answer was a parse per lookup.
         var result = new List<(string, ModelNode)>();
         var imports = ClassImports.For(node.Definition);
         foreach (var baseType in ClassImports.BasesOf(node.Definition))
-            if (TypeResolver.Resolve(graph, node.Id, baseType, imports) is { } baseNode)
+            if (TypeResolver.ResolveBase(graph, node.Id, baseType, imports, ancestors) is { } baseNode)
                 result.Add((baseType, baseNode));
 
         return result;

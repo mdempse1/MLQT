@@ -36,20 +36,16 @@ public static class ReferenceResolver
     public static string? Resolve(
         DirectedGraph graph, string ownerModelId, IReadOnlyList<ImportInfo> imports, string reference,
         Analysis.TypeResolver.AncestorCache? ancestors = null)
-        => Resolve(graph, ownerModelId, imports, reference, inherited: true, ancestors);
+        => ResolvePath(graph, ownerModelId, imports, reference, ancestors)?.Node.Id;
 
     /// <summary>
-    /// What <paramref name="reference"/> resolves to without looking among inherited classes - the
-    /// answer to compare with <see cref="Resolve(DirectedGraph, string, IReadOnlyList{ImportInfo}, string, Analysis.TypeResolver.AncestorCache?)"/>
-    /// to tell a name that means what it does only because the class inherits it.
+    /// What <paramref name="reference"/> resolves to, saying how: the class each segment names and how
+    /// the first was found - an alias, an import, inheritance - which the reference locator records so
+    /// a rename and a move know what they may rewrite.
     /// </summary>
-    public static string? ResolveWithoutInheritance(
-        DirectedGraph graph, string ownerModelId, IReadOnlyList<ImportInfo> imports, string reference)
-        => Resolve(graph, ownerModelId, imports, reference, inherited: false, ancestors: null);
-
-    private static string? Resolve(
+    public static Analysis.NameResolution? ResolvePath(
         DirectedGraph graph, string ownerModelId, IReadOnlyList<ImportInfo> imports, string reference,
-        bool inherited, Analysis.TypeResolver.AncestorCache? ancestors)
+        Analysis.TypeResolver.AncestorCache? ancestors = null)
     {
         if (string.IsNullOrWhiteSpace(reference))
             return null;
@@ -64,9 +60,9 @@ public static class ReferenceResolver
         // `import A.B.C;` made nothing visible here - only an aliased one did, matched by prefix, so
         // `SIx` would have matched an alias `SI` - and neither looked at the imports of enclosing
         // packages, which is where MSL declares `SI` for every block (B292).
-        return TypeResolver.ResolveName(
+        return TypeResolver.ResolveNamePath(
             graph, ownerModelId, name, imports.Select(Describe).ToList(), global: reference.StartsWith('.'),
-            inherited, ancestors)?.Id;
+            inherited: true, ancestors);
     }
 
     /// <summary>An import in the string form <see cref="TypeResolver"/> reads.</summary>

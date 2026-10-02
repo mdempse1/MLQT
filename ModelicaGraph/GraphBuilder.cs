@@ -1197,7 +1197,7 @@ public static class GraphBuilder
 
         // The library identifier may contain dots (e.g., "Modelica.Blocks")
         // The first part before the dot is the library name
-        var libraryName = libraryIdentifier.Split('.')[0];
+        var libraryName = ModelicaName.RootLibraryOf(libraryIdentifier);
 
         // Find the library
         var library = SelectLibrary(libraries, libraryName, referencingFilePath);
@@ -1213,9 +1213,9 @@ public static class GraphBuilder
 
         // If the library identifier has sub-package parts (e.g., "Modelica.Blocks"),
         // these map to subdirectories
-        var subPackageParts = libraryIdentifier.Split('.');
+        var subPackageParts = ModelicaName.Segments(libraryIdentifier);
         var basePath = libraryRoot;
-        for (int i = 1; i < subPackageParts.Length; i++)
+        for (int i = 1; i < subPackageParts.Count; i++)
         {
             basePath = Path.Combine(basePath, subPackageParts[i]);
         }

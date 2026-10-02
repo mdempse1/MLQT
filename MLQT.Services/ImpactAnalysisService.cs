@@ -2,6 +2,7 @@ using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Services;
 
@@ -197,8 +198,7 @@ public class ImpactAnalysisService : IImpactAnalysisService
 
     private string GetShortName(string fullName)
     {
-        var parts = fullName.Split('.');
-        var lastName = parts[^1];
+        var lastName = ModelicaName.LeafOf(fullName);
         if (lastName.Length > 8)
             return lastName.Substring(0, 7) + "..";
         return lastName;

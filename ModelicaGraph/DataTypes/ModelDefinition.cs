@@ -38,22 +38,31 @@ public class ModelDefinition
         get => _modelicaCode;
         set
         {
-            _modelicaCode = value;
-            ParsedCode = null;
-            Coverage = null;
-            Suppressions = null;
-            Imports = null;
-            IsEncapsulated = null;
-            Bases = null;
-            // A diagnosis of the old source says nothing about the new one, and the rule barring a
-            // class from recording its own was the old file's (B389). Kept, they reported errors a
-            // reformatted class no longer has and hid the ones it does. PackageCodeTrimmer, which
-            // only cuts lines out, puts the load's diagnosis back itself.
-            ParserErrors = new();
-            MayRecordParserErrors = true;
-            // Rendered again when the tree next asks, but not blanked meanwhile (B300).
-            IconRendered = false;
+            // Under the lock the cached readers take (ClassImports, ClassSuppressions): a read already
+            // under way finishes from the old source and is then cleared, rather than publishing its
+            // answer after the clearing - which left the old source's imports and bases on the class.
+            lock (this)
+                ReplaceSource(value);
         }
+    }
+
+    private void ReplaceSource(string value)
+    {
+        _modelicaCode = value;
+        ParsedCode = null;
+        Coverage = null;
+        Suppressions = null;
+        Imports = null;
+        IsEncapsulated = null;
+        Bases = null;
+        // A diagnosis of the old source says nothing about the new one, and the rule barring a
+        // class from recording its own was the old file's (B389). Kept, they reported errors a
+        // reformatted class no longer has and hid the ones it does. PackageCodeTrimmer, which
+        // only cuts lines out, puts the load's diagnosis back itself.
+        ParserErrors = new();
+        MayRecordParserErrors = true;
+        // Rendered again when the tree next asks, but not blanked meanwhile (B300).
+        IconRendered = false;
     }
 
     /// <summary>

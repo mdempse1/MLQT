@@ -87,7 +87,8 @@ public sealed class GuidanceTools
             Rename a class (updates references too):
               analyze_dependencies (once) -> rename_class(classId, newName) [preview first] -> the
               declaration and every resolved reference are rewritten and dependencies refreshed. Precise:
-              a same-named unrelated class is not touched. A class in a file of its own name takes the
+              a same-named unrelated class is not touched, nor an alias that shares the name; every
+              redeclare of a replaceable class is renamed with it. A class in a file of its own name takes the
               file with it, and package.order follows. Read-only files abort the rename.
 
             Start a new library/project:
@@ -133,7 +134,7 @@ public sealed class GuidanceTools
             Restructure a library:
               analyze_dependencies (once) -> move_class(classId, newParentId) re-qualifies references to the
               moved class (its own refs to former siblings are reported, not auto-fixed; a name reached
-              through inheritance is left as written; a full name that would mean something else where it
+              through inheritance or an import is left as written; a full name that would mean something else where it
               is written refuses the move, listing the references); delete_class(classId)
               removes a class and reports what still references it. Use preview=true first.
             """,
@@ -185,8 +186,8 @@ public sealed class GuidanceTools
               analyze_dependencies.
             - move_class(classId, newParentId): move to a new parent and re-qualify references (whole
               directory packages too). Needs analyze_dependencies. The moved class's own references to
-              former siblings are reported, not auto-fixed. Names reached through inheritance are left as
-              written; if a full name would not mean the class where it is written (a nearer element of
+              former siblings are reported, not auto-fixed. Names reached through inheritance or an import
+              are left as written; if a full name would not mean the class where it is written (a nearer element of
               the top-level name, or an encapsulated class) the move is refused and nothing changes.
             - delete_class(classId): remove a class (or a whole directory package) and report what still
               references it.
