@@ -973,8 +973,11 @@ public sealed class EditTools
                 "its subtree's ids re-qualified, and package.order updated; a class stored in a file of its " +
                 "own name has that file renamed with it (and its package.order entry). Each changed file is re-parsed; " +
                 "if any would no longer parse, nothing is written. Set preview=true to see the planned " +
-                "per-file changes first. Note: deep member accesses like Pkg.OldName.someConstant are not " +
-                "rewritten (consistent with dependency analysis) — review those.")]
+                "per-file changes first. References to what is INSIDE the class are rewritten too - " +
+                "OldName.Child, Pkg.OldName.someConstant, an import of OldName.Child - wherever they spell " +
+                "the class's name; a relative name inside the class, or one through an import alias, does " +
+                "not and is left as it is. Names inside strings (modelica:// links in documentation) are " +
+                "not rewritten — review those.")]
     public async Task<object> RenameClass(
         [Description("Fully-qualified id of the class to rename, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -1032,12 +1035,23 @@ public sealed class EditTools
         var graph = _libraries.CombinedGraph;
 
         // Files to edit: the class's own file (its declaration) + the file of every class that uses it.
+        // A reference to a class inside the renamed one spells the renamed name too - `Pkg.State`,
+        // `Root.Pkg.State` - so every class below it is a target, and every class using one of them is
+        // a file to edit. Only the class itself was, which left each such reference naming a class
+        // that no longer existed.
+        var renamedPrefix = classId + ".";
+        var targets = graph.ModelNodes
+            .Where(m => m.Id == classId || m.Id.StartsWith(renamedPrefix, StringComparison.Ordinal))
+            .Select(m => m.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
         var fileIds = new HashSet<string>(StringComparer.Ordinal);
         if (node.ContainingFileId is not null)
             fileIds.Add(node.ContainingFileId);
-        foreach (var dependent in graph.GetModelUsedBy(classId))
-            if (dependent.ContainingFileId is not null)
-                fileIds.Add(dependent.ContainingFileId);
+        foreach (var target in targets)
+            foreach (var dependent in graph.GetModelUsedBy(target))
+                if (dependent.ContainingFileId is not null)
+                    fileIds.Add(dependent.ContainingFileId);
 
         var paths = fileIds
             .Select(id => graph.GetNode<FileNode>(id)?.FilePath)
@@ -1058,7 +1072,7 @@ public sealed class EditTools
             var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
 
-            var locator = new ReferenceLocator(graph, new[] { classId }, shared);
+            var locator = new ReferenceLocator(graph, targets, shared);
             locator.Visit(tree);
 
             var spans = new List<(int start, int stop)>();
@@ -1067,8 +1081,8 @@ public sealed class EditTools
                     foreach (var token in def.NameTokens)
                         spans.Add((token.StartIndex, token.StopIndex));
             foreach (var site in locator.Sites)
-                if (site.TargetId == classId && string.Equals(site.Leaf.Text, oldLeaf, StringComparison.Ordinal))
-                    spans.Add((site.Leaf.StartIndex, site.Leaf.StopIndex));
+                if (RenamedSegment(site, classId, oldLeaf) is { } segment)
+                    spans.Add((segment.StartIndex, segment.StopIndex));
 
             if (spans.Count == 0)
                 continue;
@@ -1089,9 +1103,10 @@ public sealed class EditTools
                 $"No references to '{classId}' were found to rename. (Has analyze_dependencies run since the class was loaded?)");
 
         var total = planned.Sum(p => p.count);
-        var note = $"Precise rename of the declaration and resolved references. Deep member accesses " +
-                   $"(e.g. Pkg.{oldLeaf}.someMember) are not rewritten — consistent with dependency " +
-                   "analysis; review those and verify with a model checker.";
+        var note = $"Precise rename of the declaration and of every reference that spells '{oldLeaf}' as " +
+                   "the class's name - its own, and those to the classes and components inside it " +
+                   $"({oldLeaf}.Child, {oldLeaf}.constant). Names inside strings, such as modelica:// links in " +
+                   "documentation, are not rewritten; review those and verify with a model checker.";
         if (renamedFile is not null)
             note = $"The file '{Path.GetFileName(ownFile)}' is renamed to '{Path.GetFileName(renamedFile)}' with its class. " + note;
 
@@ -1126,6 +1141,28 @@ public sealed class EditTools
         var changes = planned.Select(p => new RenameFileChange(WrittenTo(p.path), p.count, null)).ToList();
         return new RenameClassResult(classId, newId, PreviewOnly: false, Changed: true,
             planned.Count, total, changes, note);
+    }
+
+    /// <summary>
+    /// The segment of <paramref name="site"/> that names the renamed class <paramref name="classId"/>, or
+    /// null when the reference does not spell it.
+    /// </summary>
+    /// <remarks>
+    /// A reference to a class <c>k</c> levels below the renamed one names the renamed one <c>k</c>
+    /// segments before its last: <c>Pkg</c> in <c>Pkg.State</c> and in <c>Root.Pkg.State</c>. It is
+    /// rewritten only if that segment reads the old name, which is how the two that must be left alone
+    /// are told apart: a relative name inside the package (<c>State</c>, too short to reach it), and an
+    /// alias (<c>P.State</c> under <c>import P = Root.Pkg</c>, whose import clause is what renames).
+    /// </remarks>
+    private static NameSegment? RenamedSegment(ReferenceSite site, string classId, string oldLeaf)
+    {
+        var depth = site.TargetId.Length == classId.Length
+            ? 0
+            : site.TargetId[(classId.Length + 1)..].Count(c => c == '.') + 1;
+        var index = site.Segments.Count - 1 - depth;
+        return index >= 0 && string.Equals(site.Segments[index].Text, oldLeaf, StringComparison.Ordinal)
+            ? site.Segments[index]
+            : null;
     }
 
     // Replace each [start, stop] span (inclusive) with 'replacement', applying right-to-left so earlier
