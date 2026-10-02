@@ -221,7 +221,7 @@ otherwise specify `InvariantCulture`) rather than calling `.ToString()` directly
 - ZeroMQ (ZMQ) messaging via NetMQ library
 - Process-based: Starts OMC as child process with `--interactive=zmq` flag
 - REQ-REP pattern for communication
-- Default port: 13027 (configurable)
+- Port: any free one by default (`PortNumber = 0`); omc announces it through a port file named after the `-z` suffix, found via the `Dumped server port in file:` line on stdout (no trailing newline - read stdout in chunks, never by line). See `OmcPortAnnouncement`
 - Responses in various formats: boolean, string, JSON, array
 
 ### Basic Usage
@@ -364,9 +364,9 @@ interpolate numbers must do the same (wrap the interpolated string in
 | Feature | DymolaInterface | OpenModelicaInterface |
 |---------|-----------------|----------------------|
 | **Protocol** | HTTP JSON-RPC | ZeroMQ REQ-REP |
-| **Port Configuration** | Required (e.g., 8082) | Required (default: 13027) |
+| **Port Configuration** | Required (e.g., 8082) | Optional (default 0: omc chooses) |
 | **Process Management** | Manual or automatic | Automatic |
-| **Multiple Instances** | Requires different ports | Requires different ports |
+| **Multiple Instances** | Requires different ports | Each takes its own free port |
 | **Response Format** | Consistent JSON | Mixed (bool, string, JSON) |
 | **License** | Commercial (Dymola) | Open source (OpenModelica) |
 | **Dependencies** | System.Text.Json | NetMQ (ZeroMQ) |

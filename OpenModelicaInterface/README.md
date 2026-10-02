@@ -109,7 +109,7 @@ var classes = await omc.GetClassNamesAsync();
 Unlike Dymola's HTTP JSON-RPC protocol, OpenModelica uses **ZeroMQ (ZMQ) with REQ-REP pattern**:
 
 - **Protocol**: TCP sockets via ZMQ
-- **Default Port**: 13027
+- **Port**: any free one by default (`OpenModelicaInterface.AnyPort`, `0`). omc is started with `-z=mlqt-<guid>` and without `--interactivePort`; it binds a free port, writes the address to a port file named after that suffix in the temp directory, and prints the file's path on stdout - with no newline after it, so stdout is read in chunks. `OmcPortAnnouncement` finds the path, the address is read and the file deleted, and `Port` says which port it was. A fixed port is still passed on when one is set; omc exits at once if it is taken, and the start fails with what omc said
 - **Pattern**: Request-Reply (REQ-REP)
 - **Commands**: Sent as text strings via ZMQ frames
 - **Responses**: Returned as complete ZMQ message frames, which may be:
@@ -207,9 +207,9 @@ await Examples.Example3_SimulateModel();
 | Feature | DymolaInterface | OpenModelicaInterface |
 |---------|-----------------|----------------------|
 | **Protocol** | HTTP JSON-RPC | ZeroMQ (ZMQ) REQ-REP |
-| **Port** | Configured (e.g., 8082) | 13027 (default) |
+| **Port** | Configured (e.g., 8082) | Any free one (default), or configured |
 | **Process Start** | Manual or automatic | Automatic |
-| **Parallel Instances** | Requires different ports | Multiple instances possible (different ports) |
+| **Parallel Instances** | Requires different ports | Any number, each on the port omc chose |
 | **Response Format** | Consistent JSON | Mixed (boolean, string, JSON) |
 | **Command Format** | JSON method calls | Text commands via ZMQ frames |
 | **Message Boundaries** | HTTP request/response | ZMQ message frames |

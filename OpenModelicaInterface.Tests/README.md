@@ -31,10 +31,10 @@ This test project contains unit and integration tests for the OpenModelicaInterf
 The test suite uses a **shared OMC instance** managed by the `OpenModelicaFixture` class:
 
 - **Automatic startup**: The fixture automatically starts OMC the first time it's needed
-- **Single instance**: All tests share the same OMC process on port 13027
+- **Single instance**: All tests share the same OMC process, on whichever port omc chose
 - **Sequential execution**: Tests run one at a time to avoid port conflicts
 - **Automatic cleanup**: OMC exits when all tests complete
-- **Port isolation**: Tests that create separate OMC instances use different ports (13028-13030) to avoid conflicts
+- **Port isolation**: Tests that create separate OMC instances let omc choose a free port, so they cannot collide
 
 ## Running the Tests
 
@@ -307,7 +307,7 @@ public class MyTests
 
 ### Why Sequential Execution?
 
-OpenModelicaInterface talks to OMC over ZeroMQ on a configurable port (default 13027), so instances are effectively limited to one per port. We use sequential execution because:
+OpenModelicaInterface talks to OMC over ZeroMQ, on a port omc chooses unless one is configured, so port conflicts are not the reason. We use sequential execution because:
 
 - **Consistent test results**: Tests don't interfere with each other
 - **Faster execution**: OMC starts once, not per test
@@ -319,7 +319,7 @@ OpenModelicaInterface talks to OMC over ZeroMQ on a configurable port (default 1
 | Feature | DymolaInterface.Tests | OpenModelicaInterface.Tests |
 |---------|----------------------|----------------------------|
 | **Process Management** | External (manual start) | Automatic (fixture starts) |
-| **Port Configuration** | Required (8082) | Required (default 13027) |
+| **Port Configuration** | Required (8082) | Optional (default: omc chooses) |
 | **Startup Time** | ~15 seconds | ~1 second |
 | **Communication** | HTTP JSON-RPC | ZeroMQ (NetMQ REQ/REP) |
 | **Response Parsing** | Consistent JSON | Mixed formats |

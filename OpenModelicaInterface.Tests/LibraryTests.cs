@@ -66,6 +66,11 @@ public class LibraryTests
         // Act
         var result = await _fixture.Omc.LoadFileAsync("Invalid/Path/package.mo", cancellationToken: TestContext.Current.CancellationToken);
 
+        // Drained: from omc 1.27 a missing file leaves an error in the buffer, and the session is
+        // shared by the whole collection, so a later test that reads it without draining first would
+        // be reading this test's failure.
+        await _fixture.Omc.GetErrorStringAsync();
+
         // Assert
         Assert.False(result, "Loading invalid path should fail");
     }
