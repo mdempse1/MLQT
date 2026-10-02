@@ -85,6 +85,15 @@ public class ConnectClausesTests
     }
 
     [Fact]
+    public void AConditionWrittenAcrossLines_IsOneLineInItsHeader()
+    {
+        const string code =
+            "model M\nequation\n  if use_a and\n     use_b then\n    connect(a, p);\n  end if;\nend M;";
+
+        Assert.Equal(new[] { "if use_a and use_b" }, Assert.Single(Read(code)).Within);
+    }
+
+    [Fact]
     public void AWhenAndItsElsewhen_AreScopesToo()
     {
         // A connect is not legal in a when equation, but the grammar takes one, and a reader that

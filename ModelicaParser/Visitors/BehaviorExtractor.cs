@@ -49,8 +49,10 @@ public static class BehaviorExtractor
                         var equation = eoc.equation();
                         if (equation is null)
                             continue;
-                        // A connect is reported in Connections, not here.
-                        if (equation.connect_clause() is null)
+                        // A connect is reported in Connections, not here. One the parser recovered
+                        // with a port missing is not one ConnectClauses reports, so it stays here
+                        // rather than vanishing from both.
+                        if (equation.connect_clause()?.component_reference() is not { Length: >= 2 })
                         {
                             equations.Add(new BehaviorLine(
                                 Slice(classCode, equation.Start.StartIndex, equation.Stop.StopIndex),

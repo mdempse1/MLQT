@@ -57,6 +57,17 @@ public class BehaviorExtractorTests
     }
 
     [Fact]
+    public void AConnectMissingAPort_IsStillShown_AsAnEquation()
+    {
+        // The parser recovers `connect(a)` into a connect clause with one port. It is not a
+        // connection, and it must not disappear from the class's behaviour either.
+        var b = BehaviorExtractor.ExtractFromCode("model M\nequation\n  connect(a);\n  x = 1;\nend M;");
+
+        Assert.Empty(b.Connections);
+        Assert.Contains(b.Equations, e => e.Text.StartsWith("connect(a", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CapturesLeadingComments_OnEquations()
     {
         const string code = """

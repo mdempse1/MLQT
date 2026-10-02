@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Antlr4.Runtime;
 using Antlr4.Runtime.Misc;
 using ModelicaParser.DataTypes;
@@ -89,9 +90,13 @@ public static class ConnectClauses
         IReadOnlyList<ConnectScope> outer, ConnectScopeKind kind, string header, IReadOnlyList<string>? indices = null)
         => [.. outer, new ConnectScope(kind, header, indices ?? [])];
 
-    // The text as written, spaces included - GetText() would join `i in 1:n` into `iin1:n`.
+    // The text as written, spaces included - GetText() would join `i in 1:n` into `iin1:n`. A
+    // condition written across lines becomes one line: a header is a label, read on one.
     private static string Text(ParserRuleContext? context)
         => context?.Start is null || context.Stop is null || context.Stop.StopIndex < context.Start.StartIndex
             ? string.Empty
-            : context.Start.InputStream.GetText(Interval.Of(context.Start.StartIndex, context.Stop.StopIndex));
+            : LineBreak.Replace(
+                context.Start.InputStream.GetText(Interval.Of(context.Start.StartIndex, context.Stop.StopIndex)), " ");
+
+    private static readonly Regex LineBreak = new(@"[ \t]*\n[ \t]*", RegexOptions.Compiled);
 }
