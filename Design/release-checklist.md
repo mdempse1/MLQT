@@ -56,7 +56,9 @@ an instance gives every member the unit the constraining type does** (26,145 mem
 redeclarations). About a minute. **With the variable unset both tests return immediately.**
 
 Name each library's own directory, not a repository root: MSL's holds `ModelicaTestConversion4`,
-written against 3.2.3, whose names rightly do not resolve against 4.1.0.
+written against 3.2.3, whose names rightly do not resolve against 4.1.0. Buildings 13 declares MSL
+4.0.0 and the figures above are for it beside 4.1.0, the version on the development machine; the
+tests load whatever they are given and do not check that a library's `uses` matches.
 
 **Required whenever the release carries a change to `TypeResolver`, `ClassElementResolver` or
 `UnitResolver`.** Taking away the lookup among inherited classes (`inherited: false` in

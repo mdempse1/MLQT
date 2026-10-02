@@ -22,10 +22,10 @@ false positives takes the coverage loss.
 
 | Need | Where it is | State |
 |------|-------------|-------|
-| The type of every component an equation names | `TypeResolver.ResolveWithInheritance` | **Complete for MSL and Buildings**: 0 unresolved of 29,463 component types in MSL 4.1.0's models, blocks, connectors and records, and of 70,230 in Buildings 13 |
-| The unit that type fixes | `UnitResolver.ResolveAttributes` | Short aliases and, since `e0fda85`, long-form `type ... extends` |
+| The type of every component an equation names | `TypeResolver.ResolveWithInheritance` | **Complete for MSL and Buildings**: 0 unresolved of 29,463 component types in MSL 4.1.0's models, blocks, connectors and records, and of 70,230 in Buildings 13 - which declares MSL 4.0.0 and was measured against 4.1.0, the version on the machine |
+| The unit that type fixes | `UnitResolver.ResolveAttributes` | Short aliases and long-form `type ... extends` (the latter since 2026-10-02), each read through the shared `ClassElementResolver.Bases` |
 | A component reference's element and type, segment by segment (`inertia1.flange_b.tau`) | `ClassElementResolver.ReferencesIn` | In place, with instance modifications applied to defaults |
-| What an instance's modification changes | `ClassElement.Modifications` / `Redeclarations` (`4e77137`) | Recorded; see the next row |
+| What an instance's modification changes | `ClassElement.Modifications` / `Redeclarations` (the latter since 2026-10-02) | Recorded; see the next row |
 | Whether a redeclaration changes a unit | `ResolutionCorpusTests` (opt-in, `MLQT_RESOLUTION_CORPUS`), which also holds the first row | **It does not, in either library.** Over 316 package redeclarations in MSL and 5,920 in Buildings, the 2,189 and 23,936 `Medium.X` members they reach have the same unit from the constraining type as from the redeclared one. So the check resolves against the constraining type and needs no redeclaration-aware resolution (roadmap, *Decided against*) |
 | Array dimensions | `ClassElement.ArraySubscripts` | Recorded; the check does not need them (see *Not in scope*) |
 | A finding, its severity and waiver | `Finding`, `RuleCatalog`, `__MLQT(suppress=...)` | In place; a new rule id brings the settings dialog entry, the Code Review filter and the baseline with it |

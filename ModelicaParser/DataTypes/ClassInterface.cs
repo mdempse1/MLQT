@@ -67,6 +67,11 @@ public sealed record ClassElement
     /// sub-component; it is not a value the component takes, which is why it is kept apart from
     /// <see cref="DefaultValue"/> — a declaration can carry both. For a nested short class it is what
     /// the class applies to its base: <c>(unit = "N.m")</c> in <c>type Torque = Real(unit = "N.m")</c>.
+    ///
+    /// <para>"As written" is the tokens with one space wherever the source had whitespace or a comment
+    /// between them, and the comments themselves left out - a comment is no part of the modification.
+    /// Until 2026-10-02 this was <c>GetText()</c>, which ran the tokens together and kept the comments
+    /// (<c>(min=0)</c>, and <c>(start=pandq)</c> for <c>start = p and q</c>).</para>
     /// </summary>
     public string? TypeModification { get; init; }
 

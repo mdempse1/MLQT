@@ -92,22 +92,45 @@ public class UnitResolverTests
     {
         var graph = Library(
             ("Quoted", "type Quoted = Real(unit=\"a\\\"b\\\\c\");", "type"),
-            ("Joined", "type Joined = Real(unit=\"N\" + \".m\", quantity=Q.name);", "type"),
-            ("Bare", "type Bare = Real(unit);", "type"));
+            ("Joined", "type Joined = Real(unit=\"N\" + \".m\", quantity=Q.name);", "type"));
 
         Assert.Equal("a\"b\\c", Attributes(graph, "Quoted").Unit);
         var joined = Attributes(graph, "Joined");
         Assert.Equal("\"N\" + \".m\"", joined.Unit);   // spaces kept: never GetText()
         Assert.Equal("Q.name", joined.Quantity);       // and none added between adjacent tokens
         Assert.True(joined.HasUnit);
+    }
 
-        // A unit modified with no value is still modified, as Resolve has always counted it.
-        Assert.Equal(new UnitAttributes(true, "", null, null), Attributes(graph, "Bare"));
+    [Theory]
+    [InlineData("type Bare = Real(unit);")]
+    [InlineData("type Nested = Real(unit(x = 1));")]
+    public void AUnitWrittenWithNoValue_FixesNothing(string code)
+    {
+        // It is no value of `unit`, which is how the interface every reader shares reads it. It once
+        // read as an empty string and so counted as a unit; no library in MSL 4.1.0 or Buildings 13
+        // writes it.
+        var name = code.Split(' ')[1];
+        var graph = Library((name, code, "type"));
+
+        Assert.Equal(UnitAttributes.PlainReal, Attributes(graph, name));
+    }
+
+    [Fact]
+    public void AShortAlias_ResolvesItsBaseAsAnExtendsClauseDoes()
+    {
+        // A short class's base is its extends clause in all but syntax, and is now looked up the same
+        // way (ClassElementResolver.ResolveBaseOf): from the alias's own scope outward.
+        var graph = Library(
+            ("Angle", Angle, "type"),
+            ("Heading", "type Heading = Angle(displayUnit=\"rev\");", "type"));
+
+        Assert.Equal(new UnitAttributes(true, "rad", "rev", "Angle"), Attributes(graph, "Heading"));
     }
 
     [Theory]
     [InlineData("(\"m\")", "m")]
     [InlineData("((\"m\"))", "m")]
+    [InlineData("( \"m\" )", "m")]   // the spaces between the tokens are not tokens of the value
     [InlineData("(\"a\") + (\"b\")", "(\"a\") + (\"b\")")]   // the brackets do not wrap the value
     [InlineData("(\"a\" + \"b\")", "(\"a\" + \"b\")")]       // they do, but what they wrap is no literal
     public void ALiteralInParentheses_IsStillALiteral(string value, string expected)
