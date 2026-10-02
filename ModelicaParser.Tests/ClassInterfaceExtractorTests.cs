@@ -15,21 +15,14 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
-    public void AnEncapsulatedClass_SaysSo()
-    {
-        Assert.True(Extract("encapsulated package P\nend P;").IsEncapsulated);
-        Assert.False(Extract("package P\nend P;").IsEncapsulated);
-    }
-
-    [Fact]
     public void AShortClass_NamesItsBase_AndTheModificationsItApplies()
     {
         var iface = Extract("model Big = Lib.Inertia(J = 10, w(start = 1)) \"a big one\";");
 
         Assert.Empty(iface.Elements);
         Assert.Equal("Lib.Inertia", iface.ShortClassBase);
-        // Nested modifications are not scalar defaults, as for an extends clause.
-        Assert.Equal(new Dictionary<string, string> { ["J"] = "10" }, iface.ShortClassModifications);
+        // A nested modification is keyed by the path it reaches, as for an extends clause.
+        Assert.Equal(new Dictionary<string, string> { ["J"] = "10", ["w.start"] = "1" }, iface.ShortClassModifications);
         Assert.Equal("a big one", iface.Description);
     }
 

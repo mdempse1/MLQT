@@ -140,12 +140,9 @@ public sealed class ComponentReferences
         }
     }
 
-    // The class itself is read without being remembered; an enclosing package is shared by every
-    // class inside it, so it is.
-    private bool IsEncapsulated(ModelNode node) =>
-        (_interfaces is null
-            ? ClassElementResolver.InterfaceCache.Extract(node)
-            : _interfaces.Of(node, remember: node != _class))?.IsEncapsulated == true;
+    // Read once per class and kept on it, as its imports are: every reference that leaves the class
+    // asks this of the class and of each package around it.
+    private static bool IsEncapsulated(ModelNode node) => ClassImports.IsEncapsulated(node.Definition);
 
     // A class-qualified reference: the longest prefix that names a class, then its members.
     private ResolvedReference? ResolveQualified(List<string> segments, bool global)
@@ -202,24 +199,26 @@ public sealed class ComponentReferences
 
     // A modification written on a component further out sets this element's default: in
     // `Inertia inertia1(J = 2)`, `inertia1.J` defaults to 2 whatever Inertia declares. The outermost
-    // modification wins, as it does in the language, and is an expression in the class that declared
-    // the component it was written on.
+    // modification wins, as it does in the language. At each component, what a more-derived extends
+    // clause set below it (`extends Base(inertia1.J = 9)`) outranks what its own declaration says,
+    // and each is an expression in the class that wrote it.
     private static ResolvedElement WithInstanceModification(
         ResolvedElement element, List<ResolvedElement> outer, IReadOnlyList<string> segments, int index)
     {
         for (var j = 0; j < outer.Count; j++)
         {
             var key = string.Join('.', segments.Skip(j + 1).Take(index - j));
+            if (outer[j].ModificationsBelow?.TryGetValue(key, out var derived) == true)
+                return Modified(element, derived.Value, derived.Scope);
             if (outer[j].Element.Modifications?.TryGetValue(key, out var value) == true)
-                return element with
-                {
-                    Element = element.Element with { DefaultValue = value },
-                    ModifiedIn = outer[j].OwnerId
-                };
+                return Modified(element, value, outer[j].OwnerId);
         }
 
         return element;
     }
+
+    private static ResolvedElement Modified(ResolvedElement element, string value, string scope) =>
+        element with { Element = element.Element with { DefaultValue = value }, ModifiedIn = scope };
 }
 
 public static partial class ClassElementResolver

@@ -27,6 +27,14 @@ public sealed record ResolvedElement(
     /// looking it up in <see cref="OwnerId"/> (<c>Inertia</c>) finds nothing, or something else.</para>
     /// </summary>
     public string? ModifiedIn { get; init; }
+
+    /// <summary>
+    /// What a more-derived class's <c>extends</c> clause - or a short class definition - sets
+    /// <em>below</em> this component, keyed by the path from it: <c>extends Base(inertia1.J = 9)</c>
+    /// gives <c>inertia1</c> {"J" =&gt; ("9", the deriving class)}. Null when there is none. Read when a
+    /// reference goes through the component, where it outranks the component's own declaration.
+    /// </summary>
+    internal IReadOnlyDictionary<string, (string Value, string Scope)>? ModificationsBelow { get; init; }
 }
 
 /// <summary>
@@ -207,10 +215,13 @@ public static partial class ClassElementResolver
                         break;
                     // A modification from a more-derived extends clause overrides this inherited
                     // default, and is an expression in the class that wrote it.
-                    result.Add(e.Kind == ClassElementKind.Component && mods.TryGetValue(e.Name, out var m)
+                    var resolved = e.Kind == ClassElementKind.Component && mods.TryGetValue(e.Name, out var m)
                         ? new ResolvedElement(e with { DefaultValue = m.Value }, origin, node.Id, imports)
                             { ModifiedIn = m.Scope }
-                        : new ResolvedElement(e, origin, node.Id, imports));
+                        : new ResolvedElement(e, origin, node.Id, imports);
+                    result.Add(e.Kind == ClassElementKind.Component && Below(mods, e.Name) is { } below
+                        ? resolved with { ModificationsBelow = below }
+                        : resolved);
                     break;
             }
         }
@@ -226,6 +237,21 @@ public static partial class ClassElementResolver
                     MergeMods(baseMods, node.Id, mods), result, seen, visited, depth + 1, interfaces,
                     rememberRoot);
         }
+    }
+
+    // The modifications reaching below a component, keyed by the path from it.
+    private static Dictionary<string, (string Value, string Scope)>? Below(
+        IReadOnlyDictionary<string, (string Value, string Scope)> mods, string component)
+    {
+        if (mods.Count == 0)
+            return null;
+
+        Dictionary<string, (string, string)>? below = null;
+        var prefix = component + ".";
+        foreach (var (key, value) in mods)
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+                (below ??= new Dictionary<string, (string, string)>(StringComparer.Ordinal))[key[prefix.Length..]] = value;
+        return below;
     }
 
     // What a class inherits from, with the modifications it applies: each extends clause, or - for
@@ -275,7 +301,13 @@ public static partial class ClassElementResolver
 
     /// <summary>
     /// The classes <paramref name="node"/>'s own <c>extends</c> clauses name, in clause order, each
-    /// with the name as written in the clause. A clause whose base is not loaded is skipped.
+    /// with the name as written in the clause - or, for a short class (<c>model R2 = Resistor(R = 2)</c>),
+    /// the one base it names. A clause whose base is not loaded is skipped.
+    ///
+    /// <para><b>A short class is followed here as <see cref="Collect"/> follows it.</b> A diagram
+    /// takes its components from one and its connections, Diagram layer and coordinate system from
+    /// the other; following the short class in only one of them drew a short class's diagram as its
+    /// base's components with no wires and no background, which is what B316 was.</para>
     ///
     /// <para>For a question the first clause answers differently from the others: which base lends
     /// a class its coordinate system (MLS 3.6 §18.6.1.1, B394).</para>
@@ -291,9 +323,9 @@ public static partial class ClassElementResolver
             .Select(e => e.Name)
             .ToList();
 
-        foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
-            if (TypeResolver.Resolve(graph, node.Id, ext.Type, imports) is { } baseNode)
-                result.Add((ext.Type ?? string.Empty, baseNode));
+        foreach (var (baseType, _) in Bases(iface))
+            if (TypeResolver.Resolve(graph, node.Id, baseType, imports) is { } baseNode)
+                result.Add((baseType ?? string.Empty, baseNode));
 
         return result;
     }

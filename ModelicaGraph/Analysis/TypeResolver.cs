@@ -65,6 +65,8 @@ public static class TypeResolver
     /// <c>Constants.pi</c> means <c>Lib.Constants</c> when there is one, even if a top-level
     /// <c>Constants</c> is loaded too; trying the name as written first answered with the top-level
     /// one. Within each scope its own classes come before its imports, as the language has them.</para>
+    /// <para><b>Lookup stops at an <c>encapsulated</c> class</b>, after its own classes and imports:
+    /// nothing outside it, the root included, is visible from inside it.</para>
     /// </remarks>
     /// <param name="global">
     /// True for a name written with a leading dot (<paramref name="name"/> is without it), which
@@ -88,13 +90,20 @@ public static class TypeResolver
 
             // The owner's own imports are the ones it was given; an enclosing package's are read
             // from it, once.
+            var scope = graph.GetNode<ModelNode>(prefix);
             var scopeImports = take == parts.Length
                 ? imports
-                : graph.GetNode<ModelNode>(prefix) is { } scope ? ClassImports.For(scope.Definition) : null;
+                : scope is not null ? ClassImports.For(scope.Definition) : null;
             if (scopeImports is not null)
                 foreach (var import in scopeImports)
                     if (ResolveViaImport(graph, import, name) is { } viaImport)
                         return viaImport;
+
+            // An encapsulated class is as far as lookup goes - not even the root is tried - which is
+            // why such a class imports what it uses (MLS §5.3.1). The predefined types it may still
+            // name were answered before the lookup began.
+            if (scope is not null && ClassImports.IsEncapsulated(scope.Definition))
+                return null;
         }
 
         return graph.GetNode<ModelNode>(name);

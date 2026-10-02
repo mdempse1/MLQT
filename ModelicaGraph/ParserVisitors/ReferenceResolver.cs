@@ -56,7 +56,20 @@ public static class ReferenceResolver
     public static bool IsBuiltInType(string name) => ModelicaLanguage.IsBuiltInName(name);
 
     /// <summary>The reference text of a name context (matches ModelAnalyzer).</summary>
-    public static string GetQualifiedName(modelicaParser.NameContext context) => context.GetText().Trim();
+    /// <remarks>
+    /// <b>With the leading dot of a global name</b>, which the grammar keeps outside <c>name</c>, in
+    /// the <c>type_specifier</c> around it (<c>.Modelica.Blocks.Gain</c>). Dropped, the name was
+    /// looked up from the class outward and a nearer class of the same name answered for it - or,
+    /// inside an encapsulated class, nothing did.
+    /// </remarks>
+    public static string GetQualifiedName(modelicaParser.NameContext context)
+    {
+        var text = context.GetText().Trim();
+        return context.Parent is modelicaParser.Type_specifierContext specifier
+               && specifier.GetChild(0) is Antlr4.Runtime.Tree.ITerminalNode { Symbol.Text: "." }
+            ? "." + text
+            : text;
+    }
 
     /// <summary>The reference text of a component reference, minus any call arguments.</summary>
     public static string GetComponentReferenceName(modelicaParser.Component_referenceContext context)

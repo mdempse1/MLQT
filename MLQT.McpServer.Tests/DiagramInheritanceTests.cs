@@ -48,6 +48,8 @@ public class DiagramInheritanceTests
             extends PartialSys;
           end Sys;
 
+          model Short = PartialSys "the same, as a short class";
+
           block Gain "ports it does not place"
             input Real u;
             output Real y;
@@ -73,7 +75,7 @@ public class DiagramInheritanceTests
         var dir = host.WriteLibraryDir(new Dictionary<string, string>
         {
             ["package.mo"] = Package,
-            ["package.order"] = "Pin\nPart\nRoot\nPartialSys\nSys\nGain\nPartialChain\nChain\n",
+            ["package.order"] = "Pin\nPart\nRoot\nPartialSys\nSys\nShort\nGain\nPartialChain\nChain\n",
         });
         host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
         return host;
@@ -119,6 +121,17 @@ public class DiagramInheritanceTests
         using var host = Load();
 
         Assert.Contains("viewBox=\"-300 -150 600 300\"", Svg(host, "I.Sys"));
+    }
+
+    [Fact]
+    public void AShortClassDrawsItsBasesDiagram_WiresAndBackgroundIncluded()
+    {
+        // `model Short = PartialSys` is an extends clause in all but syntax. Its components came
+        // through the element walk and its wiring and graphics did not, which drew the picture B316
+        // was about: the base's parts, unconnected, on nothing.
+        using var host = Load();
+
+        Assert.Equal(Svg(host, "I.Sys"), Svg(host, "I.Short"));
     }
 
     [Fact]

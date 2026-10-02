@@ -197,6 +197,59 @@ public class ClassElementResolverReferenceTests
         Assert.Equal("'a. b'", resolved?.Element.Element.Name);
     }
 
+    [Theory]
+    [InlineData("extends Lib.Examples.Drive(inertia1.J = 9);")]
+    [InlineData("extends Lib.Examples.Drive(inertia1(J = 9));")]
+    public void AnExtendsClauseReachingBelowAComponent_SetsItsMembersDefault(string extendsClause)
+    {
+        // Drive declares `Inertia inertia1(J = 2)`; a class extending it with a modification of
+        // inertia1.J outranks that, being more derived - in either spelling.
+        var graph = Rotational();
+        graph.AddNode(Node("Derived", "model", $"model Derived\n  {extendsClause}\nend Derived;"));
+
+        var j = ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("Derived")!, "inertia1.J")?.Element;
+
+        Assert.Equal("9", j?.Element.DefaultValue);
+        Assert.Equal("Derived", j?.ModifiedIn);
+    }
+
+    [Fact]
+    public void SeveralModificationsBelowOneComponent_AreAllKept()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Derived", "model", "model Derived\n  extends Lib.Examples.Drive(inertia1(J = 9, w = 3));\nend Derived;"));
+        var derived = ClassElementResolver.ReferencesIn(graph, graph.GetNode<ModelNode>("Derived")!);
+
+        Assert.Equal("9", derived.Resolve("inertia1.J")?.Element.Element.DefaultValue);
+        Assert.Equal("3", derived.Resolve("inertia1.w")?.Element.Element.DefaultValue);
+    }
+
+    [Fact]
+    public void AnInstanceFurtherOut_StillOutranksAnExtendsClauseInsideIt()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Derived", "model", "model Derived\n  extends Lib.Examples.Drive(inertia1.J = 9);\nend Derived;"));
+        graph.AddNode(Node("Top", "model", "model Top\n  Derived d(inertia1.J = 12);\nend Top;"));
+
+        var j = ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("Top")!, "d.inertia1.J")?.Element;
+
+        Assert.Equal("12", j?.Element.DefaultValue);
+        Assert.Equal("Top", j?.ModifiedIn);
+    }
+
+    [Fact]
+    public void AShortClassesNestedModification_ReachesTheMemberItNames()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Lib.Preset", "model", "model Preset = Inertia(flange_a(phi = 4));"));
+        graph.AddNode(Node("UsesPreset", "model", "model UsesPreset\n  Lib.Preset p;\nend UsesPreset;"));
+
+        var phi = ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("UsesPreset")!, "p.flange_a.phi")?.Element;
+
+        Assert.Equal("4", phi?.Element.DefaultValue);
+        Assert.Equal("Lib.Preset", phi?.ModifiedIn);
+    }
+
     [Fact]
     public void AnElementTheClassDeclaresItself_IsNotInherited()
     {

@@ -84,8 +84,11 @@ public sealed record ClassElement
     public int Line { get; init; }
 
     /// <summary>
-    /// The scalar modifications this element applies, or null when there are none. Non-scalar
-    /// (nested) modifications are omitted.
+    /// The scalar modifications this element applies, or null when there are none. A nested
+    /// modification is keyed by the path it reaches, as the dotted spelling of it would be:
+    /// <c>flange_a(phi = 0)</c> and <c>flange_a.phi = 0</c> both give {"flange_a.phi" =&gt; "0"}.
+    /// What is not a value - a modification with a class modification and no binding, or a
+    /// redeclaration - is omitted.
     ///
     /// <para>For an <see cref="ClassElementKind.Extends"/> element these are what the base class was
     /// given: <c>extends Base(k = 5)</c> yields {"k" =&gt; "5"}, and they override inherited
@@ -110,12 +113,6 @@ public sealed record ClassInterface
     public IReadOnlyList<ClassElement> Elements { get; init; } = Array.Empty<ClassElement>();
 
     /// <summary>
-    /// True for an <c>encapsulated</c> class, from which name lookup does not continue into the
-    /// enclosing classes (MLS §5.3.1).
-    /// </summary>
-    public bool IsEncapsulated { get; init; }
-
-    /// <summary>
     /// The base a short class definition names, as written - <c>model R2 = Resistor(R = 2)</c> gives
     /// <c>Resistor</c> - or null for a long class, a <c>der</c> class or an enumeration. A short class
     /// has no <see cref="Elements"/> of its own: its members are its base's.
@@ -125,7 +122,7 @@ public sealed record ClassInterface
     /// <summary>
     /// The scalar modifications a short class definition applies to its base (<c>{"R" =&gt; "2"}</c>
     /// above), or null when there are none. They override the base's defaults, as an
-    /// <c>extends</c> clause's do; nested modifications and redeclarations are omitted.
+    /// <c>extends</c> clause's do, and are keyed as <see cref="ClassElement.Modifications"/> are.
     /// </summary>
     public IReadOnlyDictionary<string, string>? ShortClassModifications { get; init; }
 }

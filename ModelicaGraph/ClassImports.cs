@@ -3,7 +3,8 @@ using ModelicaGraph.DataTypes;
 namespace ModelicaGraph;
 
 /// <summary>
-/// The import statements a class declares, read once per class and kept on its
+/// The import statements a class declares, and whether it is <c>encapsulated</c>: the two things name
+/// lookup asks of every class it passes on its way out, read once per class and kept on its
 /// <see cref="ModelDefinition"/>.
 ///
 /// <para>Name lookup has to see them from the classes <em>inside</em> it, not only from the class
@@ -43,23 +44,47 @@ public static class ClassImports
         }
     }
 
+    /// <summary>
+    /// Whether <paramref name="definition"/> is <c>encapsulated</c>, so that name lookup stops at it
+    /// (MLS §5.3.1), reading it if nobody has yet. False for a class that will not parse.
+    /// </summary>
+    public static bool IsEncapsulated(ModelDefinition definition)
+    {
+        if (definition.IsEncapsulated is { } cached)
+            return cached;
+
+        lock (definition)
+        {
+            if (definition.IsEncapsulated is null)
+                Read(definition);
+            return definition.IsEncapsulated!.Value;
+        }
+    }
+
     private static IReadOnlyList<string> Read(ModelDefinition definition)
     {
-        IReadOnlyList<string> found;
+        (IReadOnlyList<string> Imports, bool Encapsulated) found;
         try
         {
             // Borrowed: a package asked about by the classes inside it is usually not parsed at the
             // time, and nothing else wants its tree.
-            found = definition.Borrow<IReadOnlyList<string>>(Extract, []);
+            found = definition.Borrow<(IReadOnlyList<string>, bool)>(
+                tree => (Extract(tree), IsEncapsulated(tree)), ([], false));
         }
         catch
         {
-            found = [];
+            found = ([], false);
         }
 
-        definition.Imports = found.Count == 0 ? [] : found;
+        // The flag before the imports: For's unlocked hit is on Imports, and a reader that sees them
+        // must find the flag already there.
+        definition.IsEncapsulated = found.Encapsulated;
+        definition.Imports = found.Imports.Count == 0 ? [] : found.Imports;
         return definition.Imports;
     }
+
+    private static bool IsEncapsulated(modelicaParser.Stored_definitionContext tree) =>
+        tree.class_definition().FirstOrDefault()?.GetChild(0)?.GetText() == "encapsulated";
 
     /// <summary>The imports of the outermost class in <paramref name="tree"/> - its own, not those
     /// of classes nested in it, which are scopes of their own.</summary>
