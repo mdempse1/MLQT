@@ -158,6 +158,47 @@ public class NameBindingTests
         Assert.Equal(["Q.PartialThing"], bases.Select(b => b.Base.Id));
     }
 
+    [Fact]
+    public void AClassesOwnInheritedClasses_AreHiddenFromItsExtendsClause()
+    {
+        // M extends A, which declares a B; M's `extends B` is still Lib.B - the elements an extends
+        // clause brings in are not there to look the class's own base names up in.
+        var graph = Graph(
+            ("Lib", "package Lib\nend Lib;"),
+            ("Lib.B", "model B\nend B;"),
+            ("Lib.A", "model A\n  model B\n  end B;\nend A;"),
+            ("Lib.A.B", "model B\nend B;"),
+            ("Lib.M", "model M\n  extends A;\n  extends B;\nend M;"));
+
+        var bases = ClassElementResolver.DirectBases(graph, graph.GetNode<ModelNode>("Lib.M")!, new TypeResolver.AncestorCache());
+
+        Assert.Equal(["Lib.A", "Lib.B"], bases.Select(b => b.Base.Id));
+    }
+
+    [Fact]
+    public void AnImportThroughAnInheritedMember_IsBoundToTheClassItReaches()
+    {
+        // Water declares no ThermodynamicState; it inherits PartialMedium's. The import names the class
+        // that exists, not an id nothing in the graph has.
+        var graph = Media();
+        graph.AddNode(Node("Lib.User", "model User\n  import Lib.Water.ThermodynamicState;\n  ThermodynamicState s;\nend User;"));
+
+        var resolved = Lookup(graph, "Lib.User", "ThermodynamicState");
+
+        Assert.Equal("Lib.Interfaces.PartialMedium.ThermodynamicState", resolved?.Node.Id);
+        Assert.Equal(NameBinding.Import, resolved?.Binding);
+    }
+
+    [Fact]
+    public void AGraphWithoutItsPackages_StillResolvesANameByItsWholeId()
+    {
+        // A graph built from some files only - no Lib or Lib.Sub node - cannot be walked segment by
+        // segment, and a name it holds whole is still found from the class outward.
+        var graph = Graph(("Lib.M", "model M\n  Sub.X x;\nend M;"), ("Lib.Sub.X", "model X\nend X;"));
+
+        Assert.Equal("Lib.Sub.X", Lookup(graph, "Lib.M", "Sub.X")?.Node.Id);
+    }
+
     // ---- quoted identifiers ---------------------------------------------------------------------
 
     [Fact]

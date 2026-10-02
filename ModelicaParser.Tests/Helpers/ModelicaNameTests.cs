@@ -150,6 +150,8 @@ public class ModelicaNameTests
     [InlineData("a.b", 1, 1)]
     [InlineData("'a.b'", -1, -1)]
     [InlineData("'a.b'.c.d", 5, 7)]
+    // A leading dot is a global marker, not a separator.
+    [InlineData(".a.b", 2, 2)]
     [InlineData("", -1, -1)]
     [InlineData(null, -1, -1)]
     public void Separators(string? name, int first, int last)
