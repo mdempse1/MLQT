@@ -977,7 +977,11 @@ public sealed class EditTools
                 "OldName.Child, Pkg.OldName.someConstant, an import of OldName.Child - wherever they spell " +
                 "the class's name; a relative name inside the class, or one through an import alias, does " +
                 "not and is left as it is. Names inside strings (modelica:// links in documentation) are " +
-                "not rewritten — review those.")]
+                "not rewritten — review those. A reference is renamed in place, so Pkg.State becomes " +
+                "Box.State; renaming a whole directory package instead writes each reference to its " +
+                "subtree as the new full name (Root.Box.State). If the new name is already taken where a " +
+                "renamed reference is written - a nearer class or component of that name would answer for " +
+                "it - the rename is refused and nothing is changed.")]
     public async Task<object> RenameClass(
         [Description("Fully-qualified id of the class to rename, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -1065,6 +1069,11 @@ public sealed class EditTools
         // Plan the precise edits per file: the declaration name tokens + resolved usage leaf tokens.
         var planned = new List<(string path, string newContent, int count)>();
         var shared = new ReferenceLocator.Shared();
+        var interfaces = new ClassElementResolver.InterfaceCache();
+        var captured = new List<string>();
+        if (!string.IsNullOrEmpty(parent) &&
+            NameCapture.CapturedBy(graph, parent, newName, classId, interfaces) is { } clash)
+            captured.Add($"{parent} already has {clash}");
         foreach (var path in paths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
@@ -1081,8 +1090,18 @@ public sealed class EditTools
                     foreach (var token in def.NameTokens)
                         spans.Add((token.StartIndex, token.StopIndex));
             foreach (var site in locator.Sites)
-                if (RenamedSegment(site, classId, oldLeaf) is { } segment)
-                    spans.Add((segment.StartIndex, segment.StopIndex));
+            {
+                if (RenamedSegment(site, classId, oldLeaf) is not { } segment)
+                    continue;
+                spans.Add((segment.StartIndex, segment.StopIndex));
+
+                // A reference that starts with the new name is looked up from where it is written:
+                // something of that name met first takes it over (NameCapture).
+                if (ReferenceEquals(segment, site.Segments[0]) && !site.Text.StartsWith('.') &&
+                    NameCapture.CapturedBy(graph, site.ScopeId, newName, classId, interfaces) is { } capturer)
+                    captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}: {newName} " +
+                                 $"would mean {capturer}");
+            }
 
             if (spans.Count == 0)
                 continue;
@@ -1097,6 +1116,13 @@ public sealed class EditTools
 
             planned.Add((path, newContent, spans.Count));
         }
+
+        if (captured.Count > 0)
+            return new ToolError(
+                $"Renaming '{classId}' to '{newName}' would change what {captured.Count} reference(s) mean, " +
+                "because something already called that is found first where they are written: " +
+                string.Join("; ", captured.Distinct().Take(10)) + (captured.Distinct().Count() > 10 ? "; ..." : "") +
+                ". Nothing was changed. Choose another name.");
 
         if (planned.Count == 0)
             return new ToolError(

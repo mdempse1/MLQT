@@ -52,9 +52,66 @@ public class RenameClassContentsTests
         end Root;
         """;
 
-    private static async Task<EditTools> Load(TestHost h)
+    // Other declares a Box of its own and a component called Box2; a top-level Box3 is further out
+    // than Pkg; Src holds a constant Box4.
+    private const string Shadowed = """
+        within;
+        package Root "root"
+          package Src
+            constant Real Box4 = 1;
+            package Pkg
+              record State
+              end State;
+            end Pkg;
+            model Other
+              package Box
+                record State
+                end State;
+              end Box;
+              Real Box2;
+              Pkg.State u;
+            end Other;
+          end Src;
+          package Box3
+          end Box3;
+        end Root;
+        """;
+
+    [Theory]
+    [InlineData("Box", "Root.Src.Other.Box")]
+    [InlineData("Box2", "component Box2 of Root.Src.Other")]
+    [InlineData("Box4", "component Box4 of Root.Src")]
+    public async Task ANewNameTakenWhereAReferenceIsWritten_IsRefused_AndNothingChanges(string newName, string capturer)
     {
-        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
+        // `Pkg.State u` would become `<newName>.State u`, and in Other that name already means
+        // something else: the file would parse, the rename succeed, and u change type.
+        using var host = new TestHost();
+        var edit = await Load(host, Shadowed);
+        var before = Code(host, "Root.Src.Other");
+
+        var error = Assert.IsType<ToolError>(await edit.RenameClass("Root.Src.Pkg", newName));
+
+        Assert.Contains(capturer, error.Error);
+        Assert.Contains("Nothing was changed", error.Error);
+        Assert.NotNull(host.Libraries.GetModelById("Root.Src.Pkg"));
+        Assert.Equal(before, Code(host, "Root.Src.Other"));
+    }
+
+    [Fact]
+    public async Task ANewNameTakenOnlyFurtherOut_IsNoObstacle()
+    {
+        // Root.Box3 is further out than Root.Src, where the renamed class is found first.
+        using var host = new TestHost();
+        var edit = await Load(host, Shadowed);
+
+        ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("Root.Src.Pkg", "Box3"));
+
+        Assert.Contains("Box3.State u;", Code(host, "Root.Src.Other"));
+    }
+
+    private static async Task<EditTools> Load(TestHost h, string package = Package)
+    {
+        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = package });
         await h.Libraries.AddLibraryFromDirectoryAsync(dir);
         await new DependencyTools(h.Libraries, h.Impact, h.Resources, h.Session).AnalyzeDependencies();
         return new EditTools(h.Libraries, h.Resources, h.Session);

@@ -31,6 +31,12 @@ public sealed record ReferenceSite(
     /// rename, which rewrites only the leaf, rewrites it like any other.
     /// </summary>
     public bool ThroughInheritance { get; init; }
+
+    /// <summary>
+    /// The class the reference is written in - where a name in it is looked up from. Empty for one
+    /// outside any class.
+    /// </summary>
+    public string ScopeId { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -192,7 +198,7 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             .ToList();
         _sites.Add(new ReferenceSite(
             targetId, idents[0].Symbol.StartIndex, idents[^1].Symbol.StopIndex, reference, segments,
-            idents[0].Symbol.Line) { ThroughInheritance = inherited.Value });
+            idents[0].Symbol.Line) { ThroughInheritance = inherited.Value, ScopeId = frame.ClassId });
     }
 
     private static string? ClassLeafName(modelicaParser.Class_definitionContext context)
