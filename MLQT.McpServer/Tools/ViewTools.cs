@@ -229,7 +229,9 @@ public sealed class ViewTools
     [McpServerTool(Name = "get_class_behavior")]
     [Description("Get the behavior a class declares itself: its top-level equations, connect() statements " +
                 "and algorithm statements (each equation/statement carries any leadingComments written " +
-                "above it). Unlike the interface views, inherited behavior is NOT merged in (equations " +
+                "above it). connections includes those inside a for/if/when equation, each with 'within' " +
+                "naming the branches it is in (e.g. ['for i in 1:n']) - such an equation is also listed, " +
+                "verbatim, in equations. Unlike the interface views, inherited behavior is NOT merged in (equations " +
                 "reference their own class's scope) — instead basesWithBehavior lists the base classes that " +
                 "declare behavior, which you can query directly for the full picture. Read-only.")]
     public object GetClassBehavior(
@@ -239,7 +241,7 @@ public sealed class ViewTools
             return error!;
 
         var behavior = BehaviorExtractor.ExtractFromCode(node!.Definition.ModelicaCode ?? string.Empty);
-        var connections = behavior.Connections.Select(c => new ConnectionView(c.PortA, c.PortB)).ToList();
+        var connections = behavior.Connections.Select(ConnectionView.Of).ToList();
         BehaviorLineView ToLine(ModelicaParser.DataTypes.BehaviorLine l) => new(l.Text, l.LeadingComments);
         return new ClassBehaviorResult(
             classId,

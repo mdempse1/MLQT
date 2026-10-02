@@ -133,8 +133,14 @@ public sealed record DiagramLayoutResult(
     IReadOnlyList<DiagramComponent> Components,
     IReadOnlyList<ConnectionView> Connections);
 
-/// <summary>A connect(a, b) equation.</summary>
-public sealed record ConnectionView(string PortA, string PortB);
+/// <summary>A connect(a, b) equation. <paramref name="Within"/> is null for one written directly in an
+/// equation section, and otherwise the for/if/when branches it is inside, outermost first
+/// (<c>["for i in 1:n"]</c>) - the ports of a connect in a loop are subscripted by its indices.</summary>
+public sealed record ConnectionView(string PortA, string PortB, IReadOnlyList<string>? Within = null)
+{
+    public static ConnectionView Of(ModelicaParser.DataTypes.ConnectClause clause)
+        => new(clause.PortA, clause.PortB, clause.IsNested ? clause.Within : null);
+}
 
 /// <summary>The connections in a class: its own, plus base classes that themselves contain connections
 /// (behavior is not merged — query those bases directly to see their connections).</summary>

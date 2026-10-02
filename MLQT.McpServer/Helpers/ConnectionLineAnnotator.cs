@@ -44,27 +44,19 @@ internal static class ConnectionLineAnnotator
     {
         var composition = ModelicaParserHelper.Parse(classCode)?.class_definition()?.FirstOrDefault()
             ?.class_specifier()?.long_class_specifier()?.composition();
-        if (composition?.children is null)
-            return classCode;
 
         var edits = new List<(int Start, int Length, string Text)>();
 
-        foreach (var section in composition.children.OfType<modelicaParser.Equation_sectionContext>())
-        foreach (var eoc in section.equation_or_comment())
+        foreach (var (equation, clause) in ConnectClauses.WithEquations(composition))
         {
-            var equation = eoc.equation();
-            if (equation?.connect_clause() is not { } connect)
+            // A nested connect is the user's, not the tool's: one Line in a loop body cannot be each
+            // index's wiring, and one in an if branch is drawn whether or not the branch applies.
+            if (clause.IsNested)
                 continue;
-            var refs = connect.component_reference();
-            if (refs.Length < 2)
-                continue;
-
-            var portA = refs[0].GetText();
-            var portB = refs[1].GetText();
-            if (routeFor(portA, portB) is not { Count: >= 2 } route)
+            if (routeFor(clause.PortA, clause.PortB) is not { Count: >= 2 } route)
                 continue;
 
-            var line = BuildLine(route, colorFor(portA, portB));
+            var line = BuildLine(route, colorFor(clause.PortA, clause.PortB));
             if (PlanEdit(classCode, equation, line) is { } edit)
                 edits.Add(edit);
         }

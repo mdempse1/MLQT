@@ -35,7 +35,8 @@ public sealed class DiagramTools
 
     [McpServerTool(Name = "get_diagram_layout")]
     [Description("Get a class's diagram layout: each component's name, type and Placement extent " +
-                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. " +
+                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections - " +
+                "those inside a for/if/when equation too, each with 'within' naming its branches. " +
                 "INHERITED components are included, marked with the base class they come from - most " +
                 "blocks declare no connector of their own and get their ports from a base class - and " +
                 "so are PROTECTED ones, which are hidden from the class's users but not from its diagram. An " +
@@ -71,7 +72,7 @@ public sealed class DiagramTools
             .ToList();
 
         var connections = BehaviorExtractor.ExtractFromCode(code).Connections
-            .Select(x => new ConnectionView(x.PortA, x.PortB)).ToList();
+            .Select(ConnectionView.Of).ToList();
 
         return new DiagramLayoutResult(classId, components, connections);
     }
@@ -139,7 +140,8 @@ public sealed class DiagramTools
                 "iconTransformation (where it sits on the class's icon) and visible. Any connection to this component whose other end is " +
                 "also placed automatically gets (or has refreshed) an orthogonal diagram Line routed between " +
                 "the connector positions, so positioned components appear wired up — no separate call " +
-                "needed. Fails if the component doesn't exist or the result would not parse. Set " +
+                "needed. A connect inside a for/if/when equation is left as written. Fails if the " +
+                "component doesn't exist or the result would not parse. Set " +
                 "preview=true to see the file text.")]
     public async Task<object> SetComponentPlacement(
         [Description("Fully-qualified class id containing the component.")] string classId,

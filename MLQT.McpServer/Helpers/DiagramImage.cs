@@ -463,18 +463,12 @@ internal static class DiagramImage
 
         var composition = ModelicaParserHelper.Parse(source)?.class_definition()?.FirstOrDefault()
             ?.class_specifier()?.long_class_specifier()?.composition();
-        if (composition?.children is null)
-            return connections;
 
-        foreach (var section in composition.children.OfType<modelicaParser.Equation_sectionContext>())
-        foreach (var equation in section.equation_or_comment().Select(e => e.equation()))
+        // Nested connects too: one inside a for, if or when carries its Line annotation like any other,
+        // and a tool draws it. Unannotated, one in a loop names `a[i]`, which the router finds no
+        // component for, so it is not drawn rather than drawn at a guessed element.
+        foreach (var (equation, clause) in ConnectClauses.WithEquations(composition))
         {
-            if (equation?.connect_clause() is not { } connect)
-                continue;
-            var refs = connect.component_reference();
-            if (refs.Length < 2)
-                continue;
-
             var annotated = FromAnnotation(source, equation);
             if (annotated is not null)
             {
@@ -484,11 +478,11 @@ internal static class DiagramImage
                 continue;
             }
 
-            var route = router.Route(refs[0].GetText(), refs[1].GetText());
+            var route = router.Route(clause.PortA, clause.PortB);
             if (route is { Count: >= 2 })
                 connections.Add(new DiagramConnection(
                     [.. route.Select(p => new[] { p.X, p.Y })],
-                    ConnectorColor.Resolve(libraries, classId, refs[0].GetText()) is { } literal
+                    ConnectorColor.Resolve(libraries, classId, clause.PortA) is { } literal
                         ? ParseColor(literal)
                         : null));
         }

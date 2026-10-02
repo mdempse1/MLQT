@@ -129,6 +129,10 @@ The server exposes 66 tools. The full list is in [MLQT.McpServer/README.md](../M
 
 When you position components on the diagram with `set_component_placement`, the server automatically draws the connection lines: any `connect(...)` whose two components are both placed gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. It is enough to position the components — no separate call is needed, and moving a component re-routes the lines that touch it.
 
+This applies to a `connect(...)` written directly in an equation section. One inside a `for`, `if` or `when` equation is left exactly as you wrote it: one line in a loop body cannot stand for every index's wiring, and one in an `if` branch would be drawn whether or not the branch applies. If such a connect carries a `Line` of its own, `get_diagram_image` still draws it. `list_connections`, `get_class_behavior` and `get_diagram_layout` all report nested connects, each with `within` naming the branches it is in (for example `["for i in 1:n"]`).
+
+Removing a component with `remove_component` also removes every `connect(...)` that names it, nested ones included, and lists them in the result's note — left behind, they would name nothing and the model would no longer translate. Other equations that use the component are left for you to change.
+
 ## Looking at a diagram
 
 An agent laying out a model places components and wires them up, and is then told in coordinates what

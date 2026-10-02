@@ -32,6 +32,42 @@ public class BehaviorExtractorTests
     }
 
     [Fact]
+    public void AConnectInAForLoop_IsAConnection()
+    {
+        // How an array of components is wired. This came back as one opaque equation and no
+        // connections, so get_diagram_layout reported such a model as unwired.
+        const string code = """
+            model N
+              Pin a[3], b[3];
+            equation
+              for i in 1:3 loop
+                connect(a[i], b[i]);
+              end for;
+            end N;
+            """;
+
+        var b = BehaviorExtractor.ExtractFromCode(code);
+
+        var connection = Assert.Single(b.Connections);
+        Assert.Equal("a[i]", connection.PortA);
+        Assert.Equal("b[i]", connection.PortB);
+        Assert.Equal(new[] { "for i in 1:3" }, connection.Within);
+        // The loop is still an equation of the class, verbatim - its text is where the connect is.
+        Assert.Contains("connect(a[i], b[i]);", Assert.Single(b.Equations).Text);
+    }
+
+    [Fact]
+    public void AConnectMissingAPort_IsStillShown_AsAnEquation()
+    {
+        // The parser recovers `connect(a)` into a connect clause with one port. It is not a
+        // connection, and it must not disappear from the class's behaviour either.
+        var b = BehaviorExtractor.ExtractFromCode("model M\nequation\n  connect(a);\n  x = 1;\nend M;");
+
+        Assert.Empty(b.Connections);
+        Assert.Contains(b.Equations, e => e.Text.StartsWith("connect(a", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CapturesLeadingComments_OnEquations()
     {
         const string code = """
@@ -68,8 +104,9 @@ public class BehaviorExtractorTests
     [Fact]
     public void AClassWithNoBody_HasNoBehaviour()
     {
-        // A short class definition (`type Gain = Real`) has no composition to read at all, and the
-        // renderer must not be handed a null to guard against on every call.
+        // A short class definition (`type Gain = Real`) has no composition to read at all. The answer
+        // is the empty behaviour, not a null: get_class_behavior and get_diagram_layout read its lists
+        // directly, and get_class_behavior asks HasAny of every base class it walks, short ones included.
         Assert.False(BehaviorExtractor.ExtractFromCode("type Gain = Real;").HasAny);
     }
 
@@ -82,8 +119,9 @@ public class BehaviorExtractorTests
     [Fact]
     public void ABlockCommentAboveAStatement_StaysWithIt()
     {
-        // The formatter rewrites the algorithm section from what comes back here. A comment that got
-        // dropped would be deleted from the file on the next save.
+        // get_class_behavior hands each statement to an agent with the comments above it, in place of
+        // the source. A comment dropped here is one the agent never sees - often the reason the
+        // statement is written the way it is.
         const string code = """
             model M
               Real x;

@@ -87,7 +87,8 @@ const string serverInstructions =
         to a new parent + re-qualify references), delete_class (remove a class, reports dangling references).
       * Element-level (surgical, no need to resend the whole class): add_component / remove_component /
         set_component_modifier, add_extends, add_import, add_equation, add_statement (algorithm),
-        add_connection / remove_connection / list_connections. add_connection refuses incompatible connectors.
+        add_connection / remove_connection / list_connections. add_connection refuses incompatible connectors;
+        remove_component takes the component's connections with it.
         The add_* tools take an optional comment (a // line above the element).
       * Documentation: set_class_description, set_component_description (the "..." strings) and
         set_class_documentation (the Documentation(info/revisions) HTML); read with get_class_documentation.

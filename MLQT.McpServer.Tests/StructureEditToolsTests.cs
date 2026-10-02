@@ -531,6 +531,22 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public void ListConnections_SaysWhichBranchANestedConnectIsIn()
+    {
+        using var host = new TestHost();
+        var path = host.WriteMoFile("C.mo",
+            "within;\nmodel C\n  Real u, y, z;\nequation\n  connect(u, y);\n"
+            + "  if useZ then\n    connect(u, z);\n  end if;\nend C;");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+
+        var list = ToolAssert.Ok<ConnectionsResult>(tools.ListConnections("C"));
+
+        Assert.Null(list.Connections.Single(c => c.PortB == "y").Within);
+        Assert.Equal(new[] { "if useZ" }, list.Connections.Single(c => c.PortB == "z").Within);
+    }
+
+    [Fact]
     public async Task RemoveConnection_Missing_Rejected()
     {
         using var host = new TestHost();
