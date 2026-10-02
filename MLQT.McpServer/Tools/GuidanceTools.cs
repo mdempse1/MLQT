@@ -132,7 +132,9 @@ public sealed class GuidanceTools
 
             Restructure a library:
               analyze_dependencies (once) -> move_class(classId, newParentId) re-qualifies references to the
-              moved class (its own refs to former siblings are reported, not auto-fixed); delete_class(classId)
+              moved class (its own refs to former siblings are reported, not auto-fixed; a name reached
+              through inheritance is left as written; a full name that would mean something else where it
+              is written refuses the move, listing the references); delete_class(classId)
               removes a class and reports what still references it. Use preview=true first.
             """,
 
@@ -183,7 +185,9 @@ public sealed class GuidanceTools
               analyze_dependencies.
             - move_class(classId, newParentId): move to a new parent and re-qualify references (whole
               directory packages too). Needs analyze_dependencies. The moved class's own references to
-              former siblings are reported, not auto-fixed.
+              former siblings are reported, not auto-fixed. Names reached through inheritance are left as
+              written; if a full name would not mean the class where it is written (a nearer element of
+              the top-level name, or an encapsulated class) the move is refused and nothing changes.
             - delete_class(classId): remove a class (or a whole directory package) and report what still
               references it.
 

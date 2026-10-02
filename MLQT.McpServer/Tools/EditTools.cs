@@ -390,7 +390,12 @@ public sealed class EditTools
                 "storage and re-qualifying references to it (and its nested classes) across the loaded " +
                 "files. Requires analyze_dependencies. The class is placed under the target the same way " +
                 "create_class chooses (standalone file in a directory package, else nested). References that " +
-                "resolve to the class are rewritten to the new fully-qualified name. A whole directory " +
+                "resolve to the class are rewritten to the new fully-qualified name - except one reached " +
+                "through inheritance (Medium.State under a base's replaceable Medium), which is left as " +
+                "written: the extends clause is re-qualified, and the full name would undo every redeclare. " +
+                "If a full name would not mean the class where it is written - a class there declares " +
+                "something of the library's top-level name, or the reference is inside an encapsulated " +
+                "class - the move is refused, the references are listed, and nothing is changed. A whole directory " +
                 "package can also be moved (into another directory package): its folder is relocated and " +
                 "its subtree re-qualified. LIMITATION (single class): the moved class's OWN references to its " +
                 "former siblings are not re-qualified — any that no longer resolve are reported in " +

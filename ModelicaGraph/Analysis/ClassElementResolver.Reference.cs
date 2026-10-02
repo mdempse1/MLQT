@@ -136,12 +136,14 @@ public sealed class ComponentReferences
     /// built-in one. Found exactly as <see cref="Resolve"/> finds it, but without walking the rest.
     /// </summary>
     /// <remarks>
-    /// <b>A class followed by something that is not one of its components still starts there</b>:
-    /// the longest prefix naming a class is the start. <c>Types.Init.SteadyState</c> is an
-    /// enumeration literal, which no interface lists, and it uses <c>Types.Init</c> all the same -
-    /// renaming <c>Init</c> has to rewrite it. Never when the first segment is a component, of the
-    /// class or lent by an enclosing one: <c>inertia1.phi</c> does not become a use of a class that
-    /// happens to be called <c>inertia1</c>.
+    /// <b>A class followed by one name that is not one of its components still starts there</b>.
+    /// <c>Types.Init.SteadyState</c> is an enumeration literal, which no interface lists, and it uses
+    /// <c>Types.Init</c> all the same - renaming <c>Init</c> has to rewrite it. Only the last segment
+    /// may be unknown: <c>Lib.Typo.X</c> is a broken reference, not a use of <c>Lib</c>, and taking
+    /// the longest prefix that names a class gave a typo a dependency on the package above it. Never
+    /// when the first segment is a component, of the class or lent by an enclosing one:
+    /// <c>inertia1.phi</c> does not become a use of a class that happens to be called
+    /// <c>inertia1</c>.
     /// </remarks>
     public ReferenceStart? Start(string reference)
     {
@@ -161,13 +163,13 @@ public sealed class ComponentReferences
         if (QualifyingClass(string.Join('.', parsed.Segments), parsed.Global) is not null)
             return null;
 
-        for (var take = parsed.Segments.Count - 1; take > 0; take--)
-        {
-            var prefix = string.Join('.', parsed.Segments.Take(take));
-            if (QualifyingClass(prefix, parsed.Global) is { } scope)
-                return new ReferenceStart(scope, take) { ThroughInheritance = IsInherited(prefix, parsed.Global) };
-        }
-        return null;
+        var take = parsed.Segments.Count - 1;
+        if (take == 0)
+            return null;
+        var prefix = string.Join('.', parsed.Segments.Take(take));
+        return QualifyingClass(prefix, parsed.Global) is { } scope
+            ? new ReferenceStart(scope, take) { ThroughInheritance = IsInherited(prefix, parsed.Global) }
+            : null;
     }
 
     // Whether a class name means what it does only through inheritance: the lookup without inherited

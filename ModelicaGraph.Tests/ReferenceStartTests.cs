@@ -66,6 +66,8 @@ public class ReferenceStartTests
     [InlineData("Connections.branch")]     // the operator, though a Lib.Connections is in scope
     [InlineData("nothing.here")]
     [InlineData("Lib.Constants")]          // a class, not a reference through one
+    [InlineData("Lib.Typo.X")]             // broken: two unknown names are no enumeration literal
+    [InlineData("Types.Init.Nope.More")]   // nor is a literal with something after it
     public void SomeReferencesStartNowhere(string reference)
     {
         Assert.Null(References(Graph()).Start(reference));
@@ -133,6 +135,21 @@ public class ReferenceStartTests
         Assert.Contains("Lib", used);                 // for g
         Assert.Contains("Lib.Part", used);            // the declaration, as before
         Assert.DoesNotContain("Lib.part", used);      // the component is not the class
+    }
+
+    [Fact]
+    public void DependencyAnalysis_DoesNotLinkABrokenReferenceToThePackageAboveIt()
+    {
+        // `Lib.Typo.X` names nothing. Taken as a use of Lib - the longest prefix that is a class - it
+        // linked a typo to the package, and could hide a library declared in uses but never used.
+        var graph = Graph();
+        const string code = "model Broken\n  Real x = Lib.Typo.X;\nend Broken;";
+        graph.AddNode(new ModelNode("Lib.Broken", "Broken", code));
+        var analyzer = new ModelAnalyzer("Lib.Broken", graph, new TypeResolver.AncestorCache(),
+            new ClassElementResolver.InterfaceCache());
+        analyzer.Visit(ModelicaParserHelper.Parse(code));
+
+        Assert.DoesNotContain("Lib", analyzer.ReferencedModels);
     }
 
     [Fact]
