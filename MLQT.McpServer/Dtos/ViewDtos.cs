@@ -66,7 +66,9 @@ public sealed record FunctionSignatureView(
 /// <summary>One raw element from list_class_elements. InheritedFrom is the base class id it comes from,
 /// or null if declared in the class itself. Condition is the expression a conditional component is
 /// declared with, and such a component exists only where that expression is true. ModifiedIn is the
-/// class whose modification set Default, or null when it is the declaration's own binding.</summary>
+/// class whose modification set Default, or null when it is the declaration's own binding.
+/// ArraySubscripts are the element's dimensions as written; Redeclarations are what its modification
+/// replaces, keyed by the path to the element replaced.</summary>
 public sealed record ClassElementView(
     string Kind,
     string Name,
@@ -84,7 +86,17 @@ public sealed record ClassElementView(
     int Line,
     string? Condition,
     string? InheritedFrom,
-    string? ModifiedIn = null);
+    string? ModifiedIn = null,
+    string? ArraySubscripts = null,
+    IReadOnlyDictionary<string, RedeclarationView>? Redeclarations = null);
+
+/// <summary>What a redeclaration replaces an element with: ClassType is null when a component is
+/// redeclared, and Type is null for a redeclared enumeration.</summary>
+public sealed record RedeclarationView(
+    string? ClassType,
+    string? Type,
+    string? TypeModification,
+    string? ArraySubscripts);
 
 /// <summary>Full element listing for a class.</summary>
 public sealed record ClassElementsResult(

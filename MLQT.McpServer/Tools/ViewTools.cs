@@ -36,7 +36,7 @@ public sealed class ViewTools
                 "type resolves to a loaded connector class. A connector carrying a 'condition' is " +
                 "CONDITIONAL - it exists only where that expression is true, so an instance that leaves it " +
                 "false has no such port and connecting to it is an error. A parameter's default is the value it takes; a " +
-                "typeModification (e.g. \"(min=0)\") constrains its type and is reported apart from the " +
+                "typeModification (e.g. \"(min = 0)\") constrains its type and is reported apart from the " +
                 "default, since a declaration can carry both. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, " +
                 "recoveredFromDocumentation is true and the members come from the vendor's generated " +
                 "help: names, descriptions and units, with no types, defaults or inheritance - that is " +
@@ -116,8 +116,12 @@ public sealed class ViewTools
                 "include_protected=true to also include protected ones. Each element also carries any " +
                 "leadingComments (the // or /* */ comments written just above it). This is the granular " +
                 "data behind get_class_interface. A component's default is the value it is bound to; its " +
-                "typeModification is any modification written on its type (e.g. \"(min=0)\" or \"(k=2)\"), " +
-                "which is not a value. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, recoveredFromDocumentation " +
+                "typeModification is any modification written on its type, as written (e.g. \"(min = 0)\" or \"(k = 2)\"), " +
+                "which is not a value. arraySubscripts are its dimensions as written, the declaration's before the type's " +
+                "(Real[2] x[3] gives \"[3, 2]\"). redeclarations lists each redeclare (or replaceable) its modification makes, " +
+                "keyed by the path to the element replaced (\"Medium\", or \"b.Medium\" for b(redeclare package Medium = W)), " +
+                "with the replacing type - so Medium.T in that instance means the redeclared medium's T. A nested short class " +
+                "(type Torque = Real(unit = \"N.m\")) carries the base it names in type and what it applies in typeModification. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, recoveredFromDocumentation " +
                 "is true and its members come from the vendor's generated help - name, description, " +
                 "unit and which table they were in (parameter / connector / input / output), with no " +
                 "type, no default and line 0; one it inherits from a readable base is listed once, marked " +
@@ -201,7 +205,11 @@ public sealed class ViewTools
         m.Element.Line,
         m.Element.Condition,
         m.InheritedFrom,
-        m.ModifiedIn);
+        m.ModifiedIn,
+        m.Element.ArraySubscripts,
+        m.Element.Redeclarations?.ToDictionary(
+            r => r.Key,
+            r => new RedeclarationView(r.Value.ClassType, r.Value.Type, r.Value.TypeModification, r.Value.ArraySubscripts)));
 
     [McpServerTool(Name = "get_class_documentation")]
     [Description("Get a class's documentation without its code: its description string plus the " +

@@ -431,7 +431,7 @@ public class ClassInterfaceExtractorTests
 
         var length = Assert.Single(iface.Elements);
         Assert.Equal("1", length.DefaultValue);
-        Assert.Equal("(min=0)", length.TypeModification);
+        Assert.Equal("(min = 0)", length.TypeModification);   // as written
     }
 
     [Fact]
@@ -441,7 +441,7 @@ public class ClassInterfaceExtractorTests
             "model M\n  parameter Real k(min = 0, max = 1) = 0.5;\nend M;").Elements);
 
         Assert.Equal("0.5", k.DefaultValue);
-        Assert.Equal("(min=0,max=1)", k.TypeModification);
+        Assert.Equal("(min = 0, max = 1)", k.TypeModification);
     }
 
     [Fact]
@@ -450,7 +450,7 @@ public class ClassInterfaceExtractorTests
         var x = Assert.Single(Extract("model M\n  Real x(unit = \"m\");\nend M;").Elements);
 
         Assert.Null(x.DefaultValue);
-        Assert.Equal("(unit=\"m\")", x.TypeModification);
+        Assert.Equal("(unit = \"m\")", x.TypeModification);
     }
 
     [Fact]
@@ -472,5 +472,208 @@ public class ClassInterfaceExtractorTests
 
         Assert.Equal("{1, 2, 3}", n.DefaultValue);   // as written (B317)
         Assert.Null(n.TypeModification);
+    }
+
+    [Fact]
+    public void ATypeModification_IsReadAsWritten_NotRunTogether()
+    {
+        // GetText() drops the spaces between tokens, which turned `p and q` into the single
+        // identifier `pandq` (B277, B317).
+        var b = Assert.Single(Extract("model M\n  Boolean b(start = p and q);\nend M;").Elements);
+
+        Assert.Equal("(start = p and q)", b.TypeModification);
+    }
+
+    [Theory]
+    [InlineData("Real x;", null)]
+    [InlineData("Real x[3];", "[3]")]
+    [InlineData("Real x[:, 2];", "[:, 2]")]
+    [InlineData("Real x[n + 1];", "[n + 1]")]
+    [InlineData("Real[2] x;", "[2]")]
+    // The type's dimensions come after the declaration's (MLS §10.1).
+    [InlineData("Real[2] x[3];", "[3, 2]")]
+    public void ArrayDimensions_AreReadAsWritten_DeclarationFirst(string declaration, string? expected)
+    {
+        var x = Assert.Single(Extract($"model M\n  {declaration}\nend M;").Elements);
+
+        Assert.Equal(expected, x.ArraySubscripts);
+        Assert.Equal("Real", x.Type);   // the type never carries them
+    }
+
+    [Fact]
+    public void ArrayDimensionsOnTheType_AreSharedByEveryComponentOfTheClause()
+    {
+        var elements = Extract("model M\n  Real[2] a, b[3];\nend M;").Elements;
+
+        Assert.Equal("[2]", elements.Single(e => e.Name == "a").ArraySubscripts);
+        Assert.Equal("[3, 2]", elements.Single(e => e.Name == "b").ArraySubscripts);
+    }
+
+    [Fact]
+    public void ANestedShortClass_NamesItsBase_AndWhatItApplies()
+    {
+        // What a unit check needs from `type Torque = Real(unit = "N.m")` without asking the graph.
+        var torque = Assert.Single(Extract(
+            "package P\n  type Torque = Real(unit = \"N.m\", min = 0) \"torque\";\nend P;").Elements);
+
+        Assert.Equal(ClassElementKind.Class, torque.Kind);
+        Assert.Equal("type", torque.ClassType);
+        Assert.Equal("Real", torque.Type);
+        Assert.Equal("(unit = \"N.m\", min = 0)", torque.TypeModification);
+        Assert.Equal(new Dictionary<string, string> { ["unit"] = "\"N.m\"", ["min"] = "0" }, torque.Modifications);
+        Assert.Null(torque.ArraySubscripts);
+        Assert.Equal("torque", torque.Description);
+    }
+
+    [Fact]
+    public void ANestedShortClass_KeepsItsDimensions()
+    {
+        var vector = Assert.Single(Extract("package P\n  type Vector3 = Real[3](each unit = \"m\");\nend P;").Elements);
+
+        Assert.Equal("Real", vector.Type);
+        Assert.Equal("[3]", vector.ArraySubscripts);
+        Assert.Equal("(each unit = \"m\")", vector.TypeModification);
+    }
+
+    [Theory]
+    [InlineData("package P\n  type Colour = enumeration(Red, Green);\nend P;")]
+    [InlineData("package P\n  model Inner\n    Real x;\n  end Inner;\nend P;")]
+    [InlineData("package P\n  function df = der(f, x);\nend P;")]
+    public void ANestedClassNamingNoBase_HasNoType(string code)
+    {
+        var nested = Assert.Single(Extract(code).Elements);
+
+        Assert.Null(nested.Type);
+        Assert.Null(nested.TypeModification);
+        Assert.Null(nested.Modifications);
+        Assert.Null(nested.Redeclarations);
+    }
+
+    [Theory]
+    [InlineData("replaceable package Medium = Modelica.Media.Interfaces.PartialMedium", "Modelica.Media.Interfaces.PartialMedium")]
+    [InlineData("redeclare package Medium = Modelica.Media.Water.StandardWater", "Modelica.Media.Water.StandardWater")]
+    public void AReplaceableOrRedeclaredPackageInTheBody_NamesWhatItIs(string declaration, string expected)
+    {
+        var medium = Assert.Single(Extract($"model Pipe\n  {declaration};\nend Pipe;").Elements);
+
+        Assert.Equal("Medium", medium.Name);
+        Assert.Equal("package", medium.ClassType);
+        Assert.Equal(expected, medium.Type);
+    }
+
+    [Fact]
+    public void AComponentsRedeclaration_IsKeyedByTheElementItReplaces()
+    {
+        var pipe = Assert.Single(Extract(
+            "model M\n  Pipe pipe(redeclare package Medium = Water(x = 1), L = 2);\nend M;").Elements);
+
+        var medium = Assert.Single(pipe.Redeclarations!);
+        Assert.Equal("Medium", medium.Key);
+        Assert.Equal("Medium", medium.Value.Name);
+        Assert.Equal("package", medium.Value.ClassType);
+        Assert.Equal("Water", medium.Value.Type);
+        Assert.Equal("(x = 1)", medium.Value.TypeModification);
+        Assert.Empty(medium.Value.Prefixes);
+        // The value beside it is still a value, and the redeclaration is not one.
+        Assert.Equal(new Dictionary<string, string> { ["L"] = "2" }, pipe.Modifications);
+    }
+
+    [Fact]
+    public void ARedeclarationInANestedModification_IsKeyedByItsPath()
+    {
+        // As a nested value is: b(redeclare package Medium = W) replaces b.Medium.
+        var h = Assert.Single(Extract(
+            "model M\n  Holder h(b(redeclare package Medium = W, k = 1));\nend M;").Elements);
+
+        Assert.Equal("W", Assert.Single(h.Redeclarations!, r => r.Key == "b.Medium").Value.Type);
+        Assert.Equal(new Dictionary<string, string> { ["b.k"] = "1" }, h.Modifications);
+    }
+
+    [Fact]
+    public void ARedeclaredComponent_HasNoClassType_AndKeepsItsTypeAndDimensions()
+    {
+        var b = Assert.Single(Extract(
+            "model M\n  Base b(redeclare Real x[2](unit = \"m\"));\nend M;").Elements);
+
+        var x = Assert.Single(b.Redeclarations!).Value;
+        Assert.Equal("x", x.Name);
+        Assert.Null(x.ClassType);
+        Assert.Equal("Real", x.Type);
+        Assert.Equal("(unit = \"m\")", x.TypeModification);
+        Assert.Equal("[2]", x.ArraySubscripts);
+    }
+
+    [Theory]
+    [InlineData("redeclare package Medium = W", new string[0])]
+    [InlineData("redeclare final package Medium = W", new[] { "final" })]
+    [InlineData("redeclare each Real Medium", new[] { "each" })]
+    [InlineData("redeclare replaceable package Medium = W", new[] { "replaceable" })]
+    // A replaceable written in a modification replaces the element as a redeclare does (MLS §7.3).
+    [InlineData("replaceable package Medium = W", new[] { "replaceable" })]
+    [InlineData("final replaceable package Medium = W", new[] { "final", "replaceable" })]
+    public void EveryFormOfRedeclaration_IsListed_WithItsPrefixes(string argument, string[] prefixes)
+    {
+        var p = Assert.Single(Extract($"model M\n  Pipe p({argument});\nend M;").Elements);
+
+        var medium = Assert.Single(p.Redeclarations!);
+        Assert.Equal("Medium", medium.Key);
+        Assert.Equal(prefixes, medium.Value.Prefixes);
+    }
+
+    [Fact]
+    public void AnExtendsClausesRedeclaration_IsListedBesideItsValues()
+    {
+        var ext = Assert.Single(Extract(
+            "model M\n  extends PartialPipe(redeclare package Medium = Water, L = 1);\nend M;").Elements);
+
+        Assert.Equal("Water", Assert.Single(ext.Redeclarations!).Value.Type);
+        Assert.Equal(new Dictionary<string, string> { ["L"] = "1" }, ext.Modifications);
+    }
+
+    [Fact]
+    public void AShortClassRedeclaration_IsOnTheInterface()
+    {
+        var iface = Extract("model WaterPipe = Pipe(redeclare package Medium = Water, L = 1);");
+
+        Assert.Equal("Water", Assert.Single(iface.ShortClassRedeclarations!).Value.Type);
+        Assert.Equal(new Dictionary<string, string> { ["L"] = "1" }, iface.ShortClassModifications);
+    }
+
+    [Fact]
+    public void ANestedShortClassRedeclaration_IsOnItsElement()
+    {
+        var waterPipe = Assert.Single(Extract(
+            "package P\n  model WaterPipe = Pipe(redeclare package Medium = Water);\nend P;").Elements);
+
+        Assert.Equal("Pipe", waterPipe.Type);
+        Assert.Equal("Water", Assert.Single(waterPipe.Redeclarations!).Value.Type);
+    }
+
+    [Fact]
+    public void ARedeclaration_CarriesItsOwnLine()
+    {
+        var pipe = Assert.Single(Extract(
+            "model M\n  Pipe pipe(\n    L = 2,\n    redeclare package Medium = Water);\nend M;").Elements);
+
+        Assert.Equal(2, pipe.Line);
+        Assert.Equal(4, Assert.Single(pipe.Redeclarations!).Value.Line);
+    }
+
+    [Theory]
+    [InlineData("Inertia i(J = 1);")]
+    [InlineData("Inertia i;")]
+    public void AModificationWithNoRedeclaration_HasNone(string declaration)
+    {
+        Assert.Null(Assert.Single(Extract($"model M\n  {declaration}\nend M;").Elements).Redeclarations);
+    }
+
+    [Fact]
+    public void AnAttributeInANestedModification_IsAlreadyAValue()
+    {
+        // The static unit check reads `J(unit = "kg.m2")` here; it needs no field of its own.
+        var i = Assert.Single(Extract("model M\n  Inertia i(J(unit = \"kg.m2\"));\nend M;").Elements);
+
+        Assert.Equal(new Dictionary<string, string> { ["J.unit"] = "\"kg.m2\"" }, i.Modifications);
+        Assert.Null(i.Redeclarations);
     }
 }
