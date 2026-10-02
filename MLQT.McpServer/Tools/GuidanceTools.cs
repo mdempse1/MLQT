@@ -158,7 +158,9 @@ public sealed class GuidanceTools
             - get_class_documentation(classId, format=text|html): the class description plus the
               Documentation(info/revisions) prose. text strips HTML; html returns it raw.
             - get_class_behavior(classId): the class's OWN equations, connect() statements and algorithm
-              statements. Inherited behaviour is NOT merged (unlike members) — basesWithBehavior points to
+              statements. connections includes those inside a for/if/when equation, each with 'within'
+              naming its branches (e.g. ['for i in 1:n']); that equation is also in equations, verbatim.
+              Inherited behaviour is NOT merged (unlike members) — basesWithBehavior points to
               the base classes that declare behaviour, query those directly for the full picture.
             - validate_class_references(classId): lists referenced types (component types + extends) that do
               not resolve to a loaded class — catches typos and missing dependencies after writing/editing.
@@ -194,6 +196,8 @@ public sealed class GuidanceTools
 
             Element-level (surgical — change one thing without resending the class):
             - add_component / remove_component / set_component_modifier (components, parameters, connectors).
+              remove_component also removes every connect() naming the component (nested ones included)
+              and lists them in its note; other equations using it are left for you to change.
               add_component covers the full declaration: visibility='protected' (a protected section is
               created if absent); prefix for keywords like 'parameter', 'constant', 'replaceable', 'final',
               'inner'/'outer', 'flow'/'stream' (space-separated in Modelica order); constrainedBy for a
@@ -208,7 +212,9 @@ public sealed class GuidanceTools
             - add_equation / add_statement (algorithm section).
             - add_connection(classId, portA, portB) / remove_connection / list_connections. add_connection
               resolves both ports' connector types and REFUSES incompatible ones (RealOutput->RealInput is
-              fine; a signal port to a physical Pin is not).
+              fine; a signal port to a physical Pin is not). list_connections includes connects inside a
+              for/if/when equation, each with 'within'; remove_connection removes one of those by its ports
+              as listed (e.g. 'a[i]'), leaving the loop or branch in place.
             - The add_* tools take an optional comment placed as a // line above the element.
 
             Build a whole model atomically:
@@ -279,6 +285,7 @@ public sealed class GuidanceTools
 
             Connections. add_connection and set_component_placement route the line for you, orthogonally,
             from the real connector positions — so position the components first and the wiring follows.
+            A connect inside a for/if/when equation is left as you wrote it, Line or no Line.
             Modelica diagrams use horizontal and vertical segments, not diagonals; if a route looks wrong in
             the image, the fix is almost always to move a component rather than to hand-write points.
 

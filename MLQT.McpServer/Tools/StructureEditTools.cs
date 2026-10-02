@@ -481,8 +481,10 @@ public sealed class StructureEditTools
     }
 
     [McpServerTool(Name = "remove_connection")]
-    [Description("Remove a connect(a, b) equation from a class by its two ports (order-insensitive). Fails " +
-                "if no matching connection exists. Set preview=true to see the file text.")]
+    [Description("Remove a connect(a, b) equation from a class by its two ports (order-insensitive). A " +
+                "connect inside a for/if/when equation is found too - give its ports as list_connections " +
+                "shows them, e.g. 'a[i]'; the loop or branch is left in place. Fails if no matching " +
+                "connection exists. Set preview=true to see the file text.")]
     public async Task<object> RemoveConnection(
         [Description("Fully-qualified id of the class.")] string classId,
         [Description("One port of the connection, e.g. 'sine1.y'.")] string portA,
