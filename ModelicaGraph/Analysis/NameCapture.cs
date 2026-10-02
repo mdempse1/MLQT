@@ -25,6 +25,12 @@ namespace ModelicaGraph.Analysis;
 /// around them. Asked afresh, every reference re-read every class on its way out - 67 ms each over
 /// MSL's Blocks, so a package used from a few thousand places spent minutes on this before a rename
 /// wrote anything.</para>
+/// <para><b>One per rename, and not shared across threads</b>: what it remembers is kept in a plain
+/// dictionary.</para>
+/// <para><b>It also answers for a full name a move writes</b> (<see cref="ForFullNames"/>): there the
+/// "renamed class" is the top-level class the name starts with, so anything of that name met on the
+/// way out captures it - and an <c>encapsulated</c> class on the way out is a problem too, since
+/// the name cannot reach the top through it.</para>
 /// </remarks>
 public sealed class NameCapture
 {
@@ -37,8 +43,8 @@ public sealed class NameCapture
     private readonly Dictionary<string, Verdict> _byScope = new(StringComparer.Ordinal);
 
     // What one class says on the way out: something of the new name (captured), the renamed class
-    // (found), the end of the lookup (stop), or nothing - look further out.
-    private readonly record struct Verdict(bool Ends, string? CapturedBy);
+    // (found), an encapsulated class (the lookup stops there), or nothing - look further out.
+    private readonly record struct Verdict(bool Ends, string? CapturedBy, string? Encapsulated = null);
 
     private static readonly Verdict LookFurther = new(Ends: false, CapturedBy: null);
     private static readonly Verdict NotCaptured = new(Ends: true, CapturedBy: null);
@@ -68,6 +74,31 @@ public sealed class NameCapture
         DirectedGraph graph, string scopeId, string newName, string renamedId,
         ClassElementResolver.InterfaceCache? interfaces = null)
         => new NameCapture(graph, newName, renamedId, interfaces).CapturedAt(scopeId);
+
+    /// <summary>
+    /// A checker for full names starting with the top-level class <paramref name="topLevel"/> -
+    /// what <c>move_class</c> writes - to ask with <see cref="FullNameProblemAt"/>.
+    /// </summary>
+    public static NameCapture ForFullNames(DirectedGraph graph, string topLevel) => new(graph, topLevel, topLevel);
+
+    /// <summary>
+    /// Why a full name starting with this checker's top-level class would not mean it at
+    /// <paramref name="scopeId"/> - something of that name found first, or an encapsulated class the
+    /// lookup cannot get past - or null when it does. For a checker made by <see cref="ForFullNames"/>.
+    /// </summary>
+    public string? FullNameProblemAt(string scopeId)
+    {
+        var parts = scopeId.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        for (var take = parts.Length; take > 0; take--)
+        {
+            var verdict = VerdictOf(string.Join('.', parts.Take(take)));
+            if (verdict.Encapsulated is { } sealedClass)
+                return $"{sealedClass} is encapsulated, so nothing outside it - {_newName} included - is visible there";
+            if (verdict.Ends)
+                return verdict.CapturedBy;
+        }
+        return null;
+    }
 
     /// <summary>
     /// What the new name would mean at <paramref name="scopeId"/> instead of the renamed class - an id,
@@ -122,7 +153,9 @@ public sealed class NameCapture
                 return new Verdict(Ends: true, imported.Id);
         }
 
-        return ClassImports.IsEncapsulated(scope.Definition) ? NotCaptured : LookFurther;
+        return ClassImports.IsEncapsulated(scope.Definition)
+            ? new Verdict(Ends: true, CapturedBy: null, Encapsulated: scopeId)
+            : LookFurther;
     }
 
     // An element of the class called the new name, declared or inherited - a component, or a nested

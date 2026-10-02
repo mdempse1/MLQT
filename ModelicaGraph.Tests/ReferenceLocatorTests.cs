@@ -65,6 +65,18 @@ public class ReferenceLocatorTests
     }
 
     [Fact]
+    public void AnImportClausesName_IsMarkedAsOne_AndKnowsWhereItIsWritten()
+    {
+        var graph = GraphWith("P.Base", "P.User");
+        const string code = "within P;\nmodel User\n  import P.Base;\n  P.Base b;\nend User;";
+
+        var sites = Locate(code, graph, "P.Base");
+
+        Assert.Equal([true, false], sites.Select(s => s.InImport));
+        Assert.All(sites, s => Assert.Equal("P.User", s.ScopeId));
+    }
+
+    [Fact]
     public void LocatesExtendsReference()
     {
         var graph = GraphWith("P.Base", "P.User");

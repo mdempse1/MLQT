@@ -94,6 +94,23 @@ public static class ReferenceResolver
             : text;
     }
 
+    /// <summary>
+    /// The name to <b>resolve</b> for a name context: <see cref="GetQualifiedName"/>, and for the name
+    /// in an <c>import</c> clause, that as a global name.
+    /// </summary>
+    /// <remarks>
+    /// An import clause's name is always looked up from the top (MLS §13.2.1). Resolved like any other
+    /// name, from the class outward, it reached nothing in an <c>encapsulated</c> class - which is
+    /// exactly where imports are needed - so the class's imports linked to nothing, and a move left
+    /// them naming the class where it used to be. Not for building the class's import list
+    /// (<see cref="CollectClassImports"/>): that is the import's own text, which the lookup expands.
+    /// </remarks>
+    public static string GetReferenceName(modelicaParser.NameContext context)
+    {
+        var name = GetQualifiedName(context);
+        return context.Parent is modelicaParser.Import_clauseContext && !name.StartsWith('.') ? "." + name : name;
+    }
+
     /// <summary>The reference text of a component reference, minus any call arguments.</summary>
     public static string GetComponentReferenceName(modelicaParser.Component_referenceContext context)
         => context.GetText().Split('(')[0].Trim();

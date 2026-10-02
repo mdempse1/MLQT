@@ -130,7 +130,7 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public override object? VisitName([NotNull] modelicaParser.NameContext context)
     {
-        var reference = GetQualifiedName(context);
+        var reference = ReferenceResolver.GetReferenceName(context);
         if (!string.IsNullOrWhiteSpace(reference))
         {
             ResolveAndAddDependency(reference);

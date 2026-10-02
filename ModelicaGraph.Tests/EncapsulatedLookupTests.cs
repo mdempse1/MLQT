@@ -114,6 +114,21 @@ public class EncapsulatedLookupTests
     }
 
     [Fact]
+    public void DependencyAnalysis_LinksAnEncapsulatedClassesImports_WhichAreLookedUpFromTheTop()
+    {
+        // An import clause's name is global (MLS 13.2.1). Resolved from the class outward it reached
+        // nothing in an encapsulated class - the one place imports are required - so the link was lost.
+        var graph = Graph(Sealed);
+        graph.AddNode(new ModelNode("Lib.Sealed.User", "User",
+            "encapsulated model User\n  import Lib.Near;\n  import C = Lib.Constants;\n  Near n;\nend User;"));
+
+        var used = Dependencies(graph, "Lib.Sealed.User");
+
+        Assert.Contains("Lib.Near", used);
+        Assert.Contains("Lib.Constants", used);
+    }
+
+    [Fact]
     public void DependencyAnalysis_TakesAGlobalTypeNameFromTheTop()
     {
         // Lib.Target is nearer; `.Target` is the top-level one, in a declaration and an extends clause.

@@ -457,6 +457,8 @@ public sealed class EditTools
         var requalified = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var requalCount = 0;
         var shared = new ReferenceLocator.Shared();
+        var fullNames = NameCapture.ForFullNames(graph, TopLevelOf(newId));
+        var blocked = new List<string>();
         foreach (var path in refPaths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
@@ -466,12 +468,16 @@ public sealed class EditTools
             var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
             var edits = RequalifyingEdits(locator.Sites, MapId);
+            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames));
             if (edits.Count == 0)
                 continue;
 
             requalified[path] = ApplyReplacements(text, edits);
             requalCount += edits.Count;
         }
+
+        if (blocked.Count > 0)
+            return FullNameRefusal($"Moving '{classId}' to '{newId}'", newId, blocked);
 
         var allWritePaths = new HashSet<string>(requalified.Keys, StringComparer.OrdinalIgnoreCase)
         {
@@ -571,6 +577,8 @@ public sealed class EditTools
         var changed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var requalCount = 0;
         var shared = new ReferenceLocator.Shared();
+        var fullNames = NameCapture.ForFullNames(graph, TopLevelOf(newId));
+        var blocked = new List<string>();
         foreach (var path in refPaths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
@@ -580,6 +588,7 @@ public sealed class EditTools
             var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
             var edits = RequalifyingEdits(locator.Sites, MapId);
+            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames));
             if (edits.Count > 0)
             {
                 text = ApplyReplacements(text, edits);
@@ -598,6 +607,9 @@ public sealed class EditTools
             if (errs.Count > 0)
                 return new ToolError($"Moving would leave '{path}' unparseable ({DescribeErrors(errs)}). Nothing was changed.");
         }
+
+        if (blocked.Count > 0)
+            return FullNameRefusal($"Moving '{classId}' to '{newId}'", newId, blocked);
 
         var note = $"Moved package directory '{oldLeaf}' from '{oldParent}' to '{newParentId}', re-qualifying " +
                    $"{requalCount} reference(s). Verify with a model checker.";
@@ -665,6 +677,8 @@ public sealed class EditTools
         var changed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var requalCount = 0;
         var shared = new ReferenceLocator.Shared();
+        var fullNames = NameCapture.ForFullNames(graph, TopLevelOf(newId));
+        var blocked = new List<string>();
         foreach (var path in refPaths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
@@ -674,6 +688,7 @@ public sealed class EditTools
             var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
             var edits = RequalifyingEdits(locator.Sites, MapId);
+            blocked.AddRange(FullNameProblems(locator.Sites, path, fullNames));
             if (edits.Count > 0)
             {
                 text = ApplyReplacements(text, edits);
@@ -697,6 +712,9 @@ public sealed class EditTools
             if (errs.Count > 0)
                 return new ToolError($"Renaming would leave '{path}' unparseable ({DescribeErrors(errs)}). Nothing was changed.");
         }
+
+        if (blocked.Count > 0)
+            return FullNameRefusal($"Renaming '{classId}' to '{newId}'", newId, blocked);
 
         var note = $"Renamed the package directory '{Path.GetFileName(dir)}' -> '{newLeaf}' and re-qualified " +
                    $"{requalCount} reference(s). Verify with a model checker.";
@@ -757,6 +775,38 @@ public sealed class EditTools
     /// to the base's default and undid every <c>redeclare</c> - silently, since the result compiles.
     /// One helper, so the three operations that re-qualify cannot disagree about it.
     /// </remarks>
+    private static string TopLevelOf(string id) => id.Split('.')[0];
+
+    /// <summary>
+    /// The sites among <paramref name="sites"/> where the full name a re-qualifying edit writes would
+    /// not mean its target - described for a refusal - from <see cref="NameCapture.ForFullNames"/>.
+    /// </summary>
+    /// <remarks>
+    /// A move writes <c>Root.Dst.Widget</c>, which is looked up from where it is written like any
+    /// name: if that class declares something called <c>Root</c>, that is what it means, and inside
+    /// an <c>encapsulated</c> class it means nothing at all. Skipped are the sites no edit touches
+    /// (reached through inheritance), an import clause's name, which is always looked up from the
+    /// top, and a global name, whose leading dot the edit keeps.
+    /// </remarks>
+    private static IEnumerable<string> FullNameProblems(
+        IEnumerable<ReferenceSite> sites, string path, NameCapture fullNames)
+        => sites
+            .Where(s => !s.ThroughInheritance && !s.InImport && !s.Text.StartsWith('.') && s.ScopeId.Length > 0)
+            .Select(s => fullNames.FullNameProblemAt(s.ScopeId) is { } problem
+                ? $"line {s.Line} of {Path.GetFileName(path)}, in {s.ScopeId}: {problem}"
+                : null)
+            .OfType<string>();
+
+    private static ToolError FullNameRefusal(string operation, string newId, List<string> blocked)
+    {
+        var sites = blocked.Distinct().ToList();
+        return new ToolError(
+            $"{operation} is refused: {sites.Count} reference(s) would be written as '{newId}' (or a name " +
+            $"below it), which would not mean it where they are written: " +
+            string.Join("; ", sites.Take(10)) + (sites.Count > 10 ? "; ..." : "") +
+            ". Nothing was changed. Rename the conflicting element, or add an import, first.");
+    }
+
     private static List<(int StartIndex, int StopIndex, string Replacement)> RequalifyingEdits(
         IEnumerable<ReferenceSite> sites, Func<string, string> mapId)
         => [.. sites.Where(s => !s.ThroughInheritance).Select(s => (s.StartIndex, s.StopIndex, mapId(s.TargetId)))];

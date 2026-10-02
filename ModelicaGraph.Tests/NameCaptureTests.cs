@@ -178,6 +178,31 @@ public class NameCaptureTests
     }
 
     [Fact]
+    public void AFullName_MeansTheTopLevelClassUnlessSomethingNearerHasItsName()
+    {
+        // What a move writes - Root.Dst.Widget - starts with the top-level Root, and means it unless a
+        // class on the way out declares a Root of its own.
+        var graph = Graph(("Root.Src.Other", "model Other\n  Real Root;\nend Other;"),
+                          ("Root.Src.Other.Inner", "model Inner\nend Inner;"));
+        var fullNames = NameCapture.ForFullNames(graph, "Root");
+
+        Assert.Null(fullNames.FullNameProblemAt("Root.Src.Plain"));
+        Assert.Equal("component Root of Root.Src.Other", fullNames.FullNameProblemAt("Root.Src.Other"));
+        Assert.Equal("component Root of Root.Src.Other", fullNames.FullNameProblemAt("Root.Src.Other.Inner"));
+    }
+
+    [Fact]
+    public void AFullName_InsideAnEncapsulatedClass_ReachesNothing_UnlessItIsImported()
+    {
+        var graph = Graph(("Root.Src.Sealed", "encapsulated model Sealed\nend Sealed;"),
+                          ("Root.Src.Importing", "encapsulated model Importing\n  import Root;\nend Importing;"));
+        var fullNames = NameCapture.ForFullNames(graph, "Root");
+
+        Assert.Contains("Root.Src.Sealed is encapsulated", fullNames.FullNameProblemAt("Root.Src.Sealed"));
+        Assert.Null(fullNames.FullNameProblemAt("Root.Src.Importing"));
+    }
+
+    [Fact]
     public void AnEncapsulatedClassEndsTheSearch()
     {
         // Mid's Box is between Sealed and Root.Src, and lookup never gets past Sealed to reach it.

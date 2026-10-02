@@ -37,6 +37,12 @@ public sealed record ReferenceSite(
     /// outside any class.
     /// </summary>
     public string ScopeId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// True for the name in an <c>import</c> clause, which is always looked up from the top (MLS
+    /// §13.2.1) - so, unlike any other reference, nothing where it is written can change what it means.
+    /// </summary>
+    public bool InImport { get; init; }
 }
 
 /// <summary>
@@ -156,7 +162,8 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
 
     public override object? VisitName(modelicaParser.NameContext context)
     {
-        Record(ReferenceResolver.GetQualifiedName(context), context.IDENT());
+        Record(ReferenceResolver.GetReferenceName(context), context.IDENT(),
+            inImport: context.Parent is modelicaParser.Import_clauseContext);
         return base.VisitName(context);
     }
 
@@ -166,7 +173,7 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
         return base.VisitComponent_reference(context);
     }
 
-    private void Record(string reference, ITerminalNode[] idents)
+    private void Record(string reference, ITerminalNode[] idents, bool inImport = false)
     {
         // Only inside a class scope, and only for genuine dotted-name references.
         if (_scopes.Count == 0 || string.IsNullOrWhiteSpace(reference) || idents is not { Length: > 0 })
@@ -198,7 +205,7 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             .ToList();
         _sites.Add(new ReferenceSite(
             targetId, idents[0].Symbol.StartIndex, idents[^1].Symbol.StopIndex, reference, segments,
-            idents[0].Symbol.Line) { ThroughInheritance = inherited.Value, ScopeId = frame.ClassId });
+            idents[0].Symbol.Line) { ThroughInheritance = inherited.Value, ScopeId = frame.ClassId, InImport = inImport });
     }
 
     private static string? ClassLeafName(modelicaParser.Class_definitionContext context)
