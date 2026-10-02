@@ -316,7 +316,7 @@ to files instead of classes.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Structural equation-balance check** ⚠ | ⭐⭐⭐ | XL | Count equations vs. unknowns (locally balanced). Needs flattening-lite semantics |
-| **Unit / dimensional consistency** ⚠ | ⭐⭐⭐ | XL | Full dimensional analysis on equations (distinct from the Wave-1 presence check). Its inputs are in place: every component type of MSL and Buildings resolves, `UnitResolver.ResolveAttributes` gives each its unit, and the interface carries dimensions and redeclarations - which, measured, change no unit (see *Decided against*) |
+| **Unit / dimensional consistency** ⚠ | ⭐⭐⭐ | XL | Full dimensional analysis on equations (distinct from the Wave-1 presence check). Its inputs are in place: every component type of MSL and Buildings resolves, `UnitResolver.ResolveAttributes` gives each its unit, and the interface carries dimensions and redeclarations - which, measured, change no unit (see *Decided against*). **Design: `Design/unit-consistency.md`** |
 
 ---
 

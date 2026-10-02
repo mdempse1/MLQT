@@ -611,6 +611,7 @@ public class ClassInterfaceExtractorTests
     // A replaceable written in a modification replaces the element as a redeclare does (MLS §7.3).
     [InlineData("replaceable package Medium = W", new[] { "replaceable" })]
     [InlineData("final replaceable package Medium = W", new[] { "final", "replaceable" })]
+    [InlineData("each replaceable Real Medium", new[] { "each", "replaceable" })]
     public void EveryFormOfRedeclaration_IsListed_WithItsPrefixes(string argument, string[] prefixes)
     {
         var p = Assert.Single(Extract($"model M\n  Pipe p({argument});\nend M;").Elements);
@@ -618,6 +619,16 @@ public class ClassInterfaceExtractorTests
         var medium = Assert.Single(p.Redeclarations!);
         Assert.Equal("Medium", medium.Key);
         Assert.Equal(prefixes, medium.Value.Prefixes);
+    }
+
+    [Fact]
+    public void EveryRedeclarationInOneModification_IsKept()
+    {
+        var p = Assert.Single(Extract(
+            "model M\n  Pipe p(redeclare package Medium = W, redeclare Real x, b(redeclare package Medium = V));\nend M;").Elements);
+
+        Assert.Equal(["Medium", "b.Medium", "x"], p.Redeclarations!.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal("V", p.Redeclarations["b.Medium"].Type);
     }
 
     [Fact]

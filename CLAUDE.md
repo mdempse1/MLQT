@@ -413,12 +413,13 @@ committing from the merge dialog's own dirty phase. `skill-gui-testing.md` has t
 
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
 forward plan and what a release needs beyond CI. **Read the roadmap before starting anything
-substantial.** These two are the whole of `Design/`, and no phase is being planned in a note of its
-own at present.
+substantial.** These three are the whole of `Design/`; the one phase being planned in a note of its own
+is the unit-consistency flagship, which has not started.
 
 | Document | Covers |
 |----------|--------|
 | `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, what was *decided against*, the *known open issues*, and the item-id rule |
+| `Design/unit-consistency.md` | **The design for the phase-3 unit / dimensional consistency check, not started**: what it builds on (measured), the unit algebra, three-state typing of an equation, the finding, the increments, and the questions the user decides first. Retire it when the check ships |
 | `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity corpus (opt-in, so an ordinary run says nothing about it), the nightly WebKit rehearsal, and the `.deb` job that only a tag exercises. Adding to it is a decision that something *cannot* be a gate on every push |
 
 **A `Bnnn` in a comment, a test or a script is a backlog id.** They were issued, B1–B498, in
