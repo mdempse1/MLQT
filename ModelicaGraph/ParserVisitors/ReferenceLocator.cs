@@ -59,6 +59,22 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
     /// <param name="targetIds">Only record references resolving to these ids; null records all resolvable references.</param>
     // One walk over one tree asks about the same few scopes many times.
     private readonly Analysis.TypeResolver.AncestorCache _ancestors = new();
+    private readonly Analysis.ClassElementResolver.InterfaceCache _interfaces = new();
+    private readonly Dictionary<string, Analysis.ComponentReferences?> _references = new(StringComparer.Ordinal);
+
+    // One resolver per class the walk is inside, made the first time one of its references is not a
+    // class by its whole name.
+    private Analysis.ComponentReferences? ReferencesIn(string classId)
+    {
+        if (!_references.TryGetValue(classId, out var references))
+        {
+            references = _graph.GetNode<DataTypes.ModelNode>(classId) is { } node
+                ? Analysis.ClassElementResolver.ReferencesIn(_graph, node, _interfaces, _ancestors)
+                : null;
+            _references[classId] = references;
+        }
+        return references;
+    }
 
     public ReferenceLocator(DirectedGraph graph, IEnumerable<string>? targetIds = null)
     {
@@ -131,6 +147,17 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
 
         var frame = _scopes.Peek();
         var targetId = ReferenceResolver.Resolve(_graph, frame.ClassId, frame.Imports, reference, _ancestors);
+
+        // Not a class by its whole name: a component reached through one (Modelica.Constants.pi).
+        // The site is the leading segments that name the class - renaming Constants rewrites them,
+        // and leaves `pi` alone.
+        if (targetId is null && ReferencesIn(frame.ClassId)?.Start(reference) is { QualifierSegments: > 0 } start
+            && start.QualifierSegments <= idents.Length)
+        {
+            targetId = start.Scope.Id;
+            idents = idents[..start.QualifierSegments];
+        }
+
         if (targetId is null || (_targets is not null && !_targets.Contains(targetId)))
             return;
 

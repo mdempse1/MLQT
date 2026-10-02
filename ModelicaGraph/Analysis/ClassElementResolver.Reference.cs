@@ -28,7 +28,26 @@ public sealed record ResolvedReference(IReadOnlyList<ResolvedElement> Path, Mode
 {
     /// <summary>The element the reference names - its last segment.</summary>
     public ResolvedElement Element => Path[^1];
+
+    /// <summary>
+    /// How many leading segments of the reference name <see cref="Scope"/>: 2 for
+    /// <c>Modelica.Constants.pi</c>, 0 when the first segment is itself a component.
+    /// </summary>
+    public int QualifierSegments { get; init; }
 }
+
+/// <summary>
+/// Where a component reference starts: the class its first component was found in, and how many
+/// leading segments of the reference named that class - 0 when the first segment is a component of
+/// the class the reference is written in, or a constant an enclosing class lends it.
+/// </summary>
+/// <remarks>
+/// <b>A use of the class even when the rest goes nowhere.</b> <c>Modelica.Constants.pi</c> uses
+/// <c>Modelica.Constants</c> whatever <c>pi</c>'s type turns out to be, which is why dependency
+/// analysis and the reference locator ask this rather than <see cref="ComponentReferences.Resolve"/>:
+/// it never walks a component's type, and it answers where the whole reference would not.
+/// </remarks>
+public sealed record ReferenceStart(ModelNode Scope, int QualifierSegments);
 
 /// <summary>
 /// Resolves the component references written in one class. Make one per class and ask it about every
@@ -92,20 +111,82 @@ public sealed class ComponentReferences
     /// </remarks>
     public ResolvedReference? Resolve(string reference)
     {
+        if (ClassElementResolver.ReferenceSegments(reference) is not { } parsed
+            || Locate(parsed.Segments, parsed.Global) is not { } start)
+            return null;
+
+        return Follow(start.Scope, start.First, parsed.Segments.Skip(start.Qualifier).ToList()) is { } resolved
+            ? resolved with { QualifierSegments = start.Qualifier }
+            : null;
+    }
+
+    /// <summary>
+    /// Where <paramref name="reference"/> starts - the class its first component is found in, and how
+    /// many leading segments named that class - or null when it starts nowhere: an unknown name or a
+    /// built-in one. Found exactly as <see cref="Resolve"/> finds it, but without walking the rest.
+    /// </summary>
+    /// <remarks>
+    /// <b>A class followed by something that is not one of its components still starts there</b>:
+    /// the longest prefix naming a class is the start. <c>Types.Init.SteadyState</c> is an
+    /// enumeration literal, which no interface lists, and it uses <c>Types.Init</c> all the same -
+    /// renaming <c>Init</c> has to rewrite it. Never when the first segment is a component, of the
+    /// class or lent by an enclosing one: <c>inertia1.phi</c> does not become a use of a class that
+    /// happens to be called <c>inertia1</c>.
+    /// </remarks>
+    public ReferenceStart? Start(string reference)
+    {
         if (ClassElementResolver.ReferenceSegments(reference) is not { } parsed)
             return null;
-        var (segments, global) = parsed;
+        if (Locate(parsed.Segments, parsed.Global) is { } start)
+            return new ReferenceStart(start.Scope, start.Qualifier);
+        if (!parsed.Global
+            && (ModelicaLanguage.IsBuiltInName(parsed.Segments[0]) || StartsWithComponent(parsed.Segments[0])))
+            return null;
 
+        // A class by its whole name is not a reference through one.
+        if (QualifyingClass(string.Join('.', parsed.Segments), parsed.Global) is not null)
+            return null;
+
+        for (var take = parsed.Segments.Count - 1; take > 0; take--)
+            if (QualifyingClass(string.Join('.', parsed.Segments.Take(take)), parsed.Global) is { } scope)
+                return new ReferenceStart(scope, take);
+        return null;
+    }
+
+    // Whether a reference's first segment is a component in reach - the class's own, inherited ones
+    // included, or one an enclosing class declares.
+    private bool StartsWithComponent(string first)
+    {
+        if (_own.Value.Members.TryGetValue(first, out var own))
+            return own.Element.Kind == ClassElementKind.Component;
+        foreach (var scope in EnclosingScopes())
+            if (Members(scope, includeProtected: true).TryGetValue(first, out var found))
+                return found.Element.Kind == ClassElementKind.Component;
+        return false;
+    }
+
+    // The class a reference's leading segments name, found as a type name is.
+    private ModelNode? QualifyingClass(string prefix, bool global) => global
+        ? _graph.GetNode<ModelNode>(prefix)
+        : TypeResolver.ResolveWithInheritance(_graph, _class.Id, prefix, _own.Value.Imports, _ancestors);
+
+    // The scope a reference's first component is found in, that component, and how many leading
+    // segments named the scope.
+    private (ModelNode Scope, ResolvedElement First, int Qualifier)? Locate(List<string> segments, bool global)
+    {
         if (!global)
         {
             if (_own.Value.Members.TryGetValue(segments[0], out var own))
                 return own.Element.Kind == ClassElementKind.Component
-                    ? Follow(_class, own, segments)
-                    : ResolveQualified(segments, global);
+                    ? (_class, own, 0)
+                    : LocateQualified(segments, global);
 
-            // `time` is no class's element, and walking every enclosing package to find that out
-            // is the cost of the commonest reference in an equation.
-            if (segments.Count == 1 && ModelicaLanguage.IsBuiltInName(segments[0]))
+            // The language's own names - `time`, `Connections.branch` - are no class's elements, and
+            // the first segment decides, as it does for whole-name lookup: a class that happens to be
+            // called Connections is not what `Connections.branch` uses. Asked before the enclosing
+            // packages, because walking them to find that out was the cost of the commonest
+            // reference in an equation.
+            if (ModelicaLanguage.IsBuiltInName(segments[0]))
                 return null;
 
             foreach (var scope in EnclosingScopes())
@@ -115,11 +196,11 @@ public sealed class ComponentReferences
                 if (found.Element.Kind != ClassElementKind.Component)
                     break;
                 // An enclosing class lends its constants and nothing else (MLS §5.3.1).
-                return found.Element.Variability == "constant" ? Follow(scope, found, segments) : null;
+                return found.Element.Variability == "constant" ? (scope, found, 0) : null;
             }
         }
 
-        return ResolveQualified(segments, global);
+        return LocateQualified(segments, global);
     }
 
     // The classes enclosing this one, innermost first, as far as the first encapsulated one -
@@ -145,20 +226,16 @@ public sealed class ComponentReferences
     private static bool IsEncapsulated(ModelNode node) => ClassImports.IsEncapsulated(node.Definition);
 
     // A class-qualified reference: the longest prefix that names a class, then its members.
-    private ResolvedReference? ResolveQualified(List<string> segments, bool global)
+    private (ModelNode Scope, ResolvedElement First, int Qualifier)? LocateQualified(List<string> segments, bool global)
     {
         for (var take = segments.Count - 1; take > 0; take--)
         {
-            var prefix = string.Join('.', segments.Take(take));
-            var scope = global
-                ? _graph.GetNode<ModelNode>(prefix)
-                : TypeResolver.ResolveWithInheritance(_graph, _class.Id, prefix, _own.Value.Imports, _ancestors);
-            if (scope is null)
+            if (QualifyingClass(string.Join('.', segments.Take(take)), global) is not { } scope)
                 continue;
 
             return Members(scope, includeProtected: false).TryGetValue(segments[take], out var first)
                    && first.Element.Kind == ClassElementKind.Component
-                ? Follow(scope, first, segments.Skip(take).ToList())
+                ? (scope, first, take)
                 : null;
         }
 

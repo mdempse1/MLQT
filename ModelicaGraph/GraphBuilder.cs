@@ -541,6 +541,7 @@ public static class GraphBuilder
         // Every reference is looked for among its scopes' inherited classes, so each class's bases
         // are kept for the pass rather than worked out again for every name in every class below it.
         var ancestors = new Analysis.TypeResolver.AncestorCache();
+        var interfaces = new Analysis.ClassElementResolver.InterfaceCache();
 
         foreach (var batch in Batch(allModels, batchSize))
         {
@@ -553,7 +554,7 @@ public static class GraphBuilder
                     var parseTree = model.Definition.EnsureParsed();
                     if (parseTree == null) return;
 
-                    var analyzer = new ModelAnalyzer(model.Id, graph, ancestors);
+                    var analyzer = new ModelAnalyzer(model.Id, graph, ancestors, interfaces);
                     analyzer.Visit(parseTree);
 
                     // Run the post-analysis callback while the parse tree is still available, under
@@ -802,6 +803,7 @@ public static class GraphBuilder
         // Parse trees are released immediately after each model to minimize memory usage.
         var analysisResults = new ConcurrentBag<(string sourceId, HashSet<string> dependencies, List<ExternalResourceInfo> resources)>();
         var ancestors = new Analysis.TypeResolver.AncestorCache();
+        var interfaces = new Analysis.ClassElementResolver.InterfaceCache();
 
         Parallel.ForEach(models, model =>
         {
@@ -810,7 +812,7 @@ public static class GraphBuilder
                 var parseTree = model.Definition.EnsureParsed();
                 if (parseTree == null) return;
 
-                var analyzer = new ModelAnalyzer(model.Id, graph, ancestors);
+                var analyzer = new ModelAnalyzer(model.Id, graph, ancestors, interfaces);
                 analyzer.Visit(parseTree);
 
                 // Its own guard — see the full-graph pass above.
