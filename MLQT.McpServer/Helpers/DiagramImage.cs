@@ -209,7 +209,7 @@ internal static class DiagramImage
                 return false;
             var prefix = value[..dot];
             return TypeResolver.Resolve(libraries.CombinedGraph, declaringId, prefix, imports) is not null
-                || (type is not null && TypeResolver.Resolve(libraries.CombinedGraph, type.Id, prefix, []) is not null);
+                || (type is not null && TypeResolver.Resolve(libraries.CombinedGraph, type.Id, prefix, null) is not null);
         };
 
     /// <summary>
@@ -431,7 +431,7 @@ internal static class DiagramImage
     internal const int MaxInheritanceDepth = 32;
 
     private static ModelNode? Resolve(ILibraryDataService libraries, string fromId, string name)
-        => TypeResolver.Resolve(libraries.CombinedGraph, fromId, name, []);
+        => TypeResolver.Resolve(libraries.CombinedGraph, fromId, name, null);
 
     private static IReadOnlyList<string> Imports(ModelNode node)
     {

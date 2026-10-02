@@ -32,7 +32,8 @@ public static class TypeResolver
     /// <summary>
     /// Resolve <paramref name="typeText"/> (as written in class <paramref name="ownerId"/>) to a class in
     /// the graph, or null if these rules cannot resolve it. <paramref name="imports"/> are the class's
-    /// import statements (from the interface extractor), used to expand aliases/wildcards.
+    /// import statements (from the interface extractor), used to expand aliases/wildcards; null reads
+    /// the class's own, so pass them only when you have them already.
     /// </summary>
     public static ModelNode? Resolve(
         DirectedGraph graph, string ownerId, string? typeText, IReadOnlyList<string>? imports = null)
@@ -88,10 +89,12 @@ public static class TypeResolver
             if (graph.GetNode<ModelNode>($"{prefix}.{name}") is { } node)
                 return node;
 
-            // The owner's own imports are the ones it was given; an enclosing package's are read
-            // from it, once.
+            // The owner's own imports are the ones it was given, or - given none - its own, read once;
+            // an enclosing package's are read from it. Null was once "no imports", which cost nothing
+            // while the root was tried first, and since an encapsulated class stops the lookup it
+            // turned every name such a class imports into an unresolved one.
             var scope = graph.GetNode<ModelNode>(prefix);
-            var scopeImports = take == parts.Length
+            var scopeImports = take == parts.Length && imports is not null
                 ? imports
                 : scope is not null ? ClassImports.For(scope.Definition) : null;
             if (scopeImports is not null)
@@ -112,20 +115,28 @@ public static class TypeResolver
     /// <summary>The ancestors of a class, as <see cref="ResolveWithInheritance"/> caches them.</summary>
     public sealed class AncestorCache
     {
-        private readonly System.Collections.Concurrent.ConcurrentDictionary
-            <string, List<(string Id, IReadOnlyList<string> Imports)>> _byClass = new(StringComparer.Ordinal);
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<string>> _byClass =
+            new(StringComparer.Ordinal);
 
-        internal List<(string Id, IReadOnlyList<string> Imports)> GetOrAdd(
-            string classId, Func<string, List<(string Id, IReadOnlyList<string> Imports)>> collect)
+        internal IReadOnlyList<string> GetOrAdd(string classId, Func<string, IReadOnlyList<string>> collect)
             => _byClass.GetOrAdd(classId, collect);
     }
 
     /// <summary>
-    /// Like <see cref="Resolve"/> but also resolves names inherited into scope through <c>extends</c>:
-    /// after trying the class's own scope, it tries each ancestor's scope (its package hierarchy, its
-    /// imports and its nested classes). Used so an inherited type name is not wrongly reported as
+    /// Like <see cref="Resolve"/> but also finds the classes a class inherits: after its own scope,
+    /// each ancestor's <b>nested classes</b> - <c>Medium.ThermodynamicState</c> written in a model
+    /// whose base declares <c>Medium</c>. Used so an inherited type name is not wrongly reported as
     /// unresolved.
     /// </summary>
+    /// <remarks>
+    /// <para><b>An ancestor's nested classes, and nothing else of its scope.</b> A class inherits its
+    /// bases' elements; it does not inherit the packages around them or their imports (MLS §5.6,
+    /// §13.2.1). This once tried each ancestor's whole scope, so a model extending
+    /// <c>Lib.Base</c> from another package could name <c>Constants.pi</c> and mean
+    /// <c>Lib.Constants</c> - and an <c>encapsulated</c> class could reach past itself through its
+    /// base's package. A name written in a base is resolved in the base, by asking with the base's
+    /// id: that is the question <see cref="ResolvedElement.OwnerId"/> exists to answer.</para>
+    /// </remarks>
     /// <param name="ancestors">
     /// Somewhere to remember each class's extends chain for the duration of a run, or null to walk it
     /// afresh every time. <b>Pass one for anything that resolves more than a handful of names.</b>
@@ -149,53 +160,47 @@ public static class TypeResolver
         if (string.IsNullOrWhiteSpace(typeText) || IsPredefined(typeText))
             return null;
 
+        // A global name was answered from the top, or not at all.
+        var name = typeText.Trim();
+        if (name.StartsWith('.'))
+            return null;
+
         var chain = ancestors is null
             ? CollectAncestors(graph, classId)
             : ancestors.GetOrAdd(classId, id => CollectAncestors(graph, id));
 
-        foreach (var (ancestorId, ancestorImports) in chain)
-            if (Resolve(graph, ancestorId, typeText, ancestorImports) is { } viaAncestor)
-                return viaAncestor;
+        foreach (var ancestorId in chain)
+            if (graph.GetNode<ModelNode>($"{ancestorId}.{name}") is { } inherited)
+                return inherited;
         return null;
     }
 
-    // The class's ancestors (via extends), each with its own imports, so a name can be resolved in the
-    // scope it is inherited from. Depth-guarded against cycles/diamonds.
-    private static List<(string Id, IReadOnlyList<string> Imports)> CollectAncestors(
-        DirectedGraph graph, string classId)
+    // The class's ancestors, nearest first down each extends clause in turn, so a class a nearer base
+    // redeclares is found before the one it replaces. Built on ClassElementResolver.DirectBases, the
+    // one reading of what a class extends (short classes included); BaseClasses has the same set in
+    // drawing order, deepest first, which is the wrong way round for a lookup.
+    private static IReadOnlyList<string> CollectAncestors(DirectedGraph graph, string classId)
     {
-        var result = new List<(string, IReadOnlyList<string>)>();
-        var visited = new HashSet<string>(StringComparer.Ordinal) { classId };
+        var result = new List<string>();
+        if (graph.GetNode<ModelNode>(classId) is not { } node)
+            return result;
 
-        void Walk(string id, int depth)
+        var visited = new HashSet<string>(StringComparer.Ordinal) { classId };
+        Walk(node, 0);
+        return result;
+
+        void Walk(ModelNode current, int depth)
         {
             if (depth > 32)
                 return;
-            // Borrowed, not kept: this walks up an extends chain, so every class it reaches beyond
-            // the first is one nobody else asked for. See ModelDefinition.Borrow.
-            var iface = graph.GetNode<ModelNode>(id)?.Definition
-                .Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
-            if (iface is null)
-                return;
-            var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
-            foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+            foreach (var (_, baseNode) in ClassElementResolver.DirectBases(graph, current))
             {
-                var baseNode = Resolve(graph, id, ext.Type, imports);
-                if (baseNode is null || !visited.Add(baseNode.Id))
+                if (!visited.Add(baseNode.Id))
                     continue;
-                var baseImports = baseNode.Definition
-                    .Borrow<IReadOnlyList<string>>(
-                        tree => ClassInterfaceExtractor.Extract(tree).Elements
-                            .Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList(),
-                        [])
-                    .ToList();
-                result.Add((baseNode.Id, baseImports));
-                Walk(baseNode.Id, depth + 1);
+                result.Add(baseNode.Id);
+                Walk(baseNode, depth + 1);
             }
         }
-
-        Walk(classId, 0);
-        return result;
     }
 
     internal static ModelNode? ResolveViaImport(DirectedGraph graph, string import, string name)

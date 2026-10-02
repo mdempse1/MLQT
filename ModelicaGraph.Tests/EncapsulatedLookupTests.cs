@@ -128,6 +128,29 @@ public class EncapsulatedLookupTests
     }
 
     [Fact]
+    public void ItsBaseClass_IsNotAWayOut()
+    {
+        // Sealed imports and extends Lib.Base. The inheritance fallback once tried the base's whole
+        // scope, so Lib's classes - and Lib.Constants by its bare name - were visible from inside an
+        // encapsulated class. What a base lends is its elements; its nested classes still come through.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("Lib", "Lib", "package Lib\nend Lib;"));
+        graph.AddNode(new ModelNode("Lib.Constants", "Constants",
+            "package Constants\n  constant Real pi = 3.14;\nend Constants;"));
+        graph.AddNode(new ModelNode("Lib.Base", "Base", "model Base\n  package Medium\n  end Medium;\nend Base;"));
+        graph.AddNode(new ModelNode("Lib.Base.Medium", "Medium", "package Medium\n  constant Real p = 1;\nend Medium;"));
+        graph.AddNode(new ModelNode("Other", "Other", "package Other\nend Other;"));
+        graph.AddNode(new ModelNode("Other.Sealed", "Sealed",
+            "encapsulated model Sealed\n  import Lib.Base;\n  extends Base;\nend Sealed;"));
+        var sealedClass = graph.GetNode<ModelNode>("Other.Sealed")!;
+
+        Assert.Null(TypeResolver.ResolveWithInheritance(graph, "Other.Sealed", "Lib.Constants", null));
+        Assert.Null(ClassElementResolver.ResolveReference(graph, sealedClass, "Lib.Constants.pi"));
+        Assert.Null(ClassElementResolver.ResolveReference(graph, sealedClass, "Constants.pi"));
+        Assert.Equal("Lib.Base.Medium", ClassElementResolver.ResolveReference(graph, sealedClass, "Medium.p")?.Scope.Id);
+    }
+
+    [Fact]
     public void AComponentReference_CannotReachPastIt_EvenByQualifiedName()
     {
         var graph = Graph(Sealed);
