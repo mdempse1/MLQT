@@ -120,7 +120,7 @@ public static class UnitResolver
 
     // The base a type names and the attributes it sets on it (IsRealDerived left false: that depends on
     // the base), from either form: a short class `type X = Base(mods)`, or - for a `type` - the long
-    // form `type X extends Base(mods); ... end X;`, which MLS §4.7 allows a type to be and which is the
+    // form `type X extends Base(mods); ... end X;`, which MLS §4.6 allows a type to be and which is the
     // only way to give one an equalityConstraint. Null for anything else: an enumeration, a der class,
     // and a long class that is not a type - a model extending a base is no quantity, and following its
     // chain would cost a walk of every component type reached for nothing.

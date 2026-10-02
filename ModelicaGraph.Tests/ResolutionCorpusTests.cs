@@ -84,9 +84,16 @@ public class ResolutionCorpusTests
                         continue;
 
                     var target = TypeResolver.ResolveWithInheritance(graph, instance.OwnerId, instance.Element.Type, instance.OwnerImports, ancestors);
+                    if (target is null)
+                        continue;   // a component type: the other test's business
                     var replacement = TypeResolver.ResolveWithInheritance(graph, instance.OwnerId, redeclaration.Type, instance.OwnerImports, ancestors);
-                    if (target is null || replacement is null)
-                        continue;   // the other test's business
+                    if (replacement is null)
+                    {
+                        // Not a component type, so nothing else would say so - and skipping it would
+                        // leave a redeclaration this test cannot judge reading as one that agreed.
+                        differ.Add($"{node.Id}: {instance.Element.Name}({path} = {redeclaration.Type}): the replacement does not resolve");
+                        continue;
+                    }
                     redeclarations++;
 
                     // Each member the instantiated class types through the replaced name - `Medium.T` -
@@ -101,7 +108,12 @@ public class ResolutionCorpusTests
 
                         members++;
                         var constraining = UnitResolver.ResolveAttributes(graph, m.OwnerId, type, m.OwnerImports, cache, ancestors);
-                        var redeclaredUnit = UnitResolver.ResolveAttributes(graph, replacement.Id, type[prefix.Length..], imports: null, cache, ancestors);
+                        // `Medium.T` is a member of the replacement - its own or one it inherits - and
+                        // nothing outside it, so it is asked by full name. A bare `T` looked up from
+                        // inside the replacement would go on to its enclosing packages when the member
+                        // is missing, and could agree with the constraining type by finding another `T`.
+                        var redeclaredUnit = UnitResolver.ResolveAttributes(
+                            graph, replacement.Id, "." + replacement.Id + type[path.Length..], imports: null, cache, ancestors);
                         if (constraining.Unit != redeclaredUnit.Unit || constraining.IsRealDerived != redeclaredUnit.IsRealDerived)
                             differ.Add($"{node.Id}: {instance.Element.Name}({path} = {replacement.Id}): {m.Element.Name} : {type} "
                                        + $"is '{constraining.Unit}' constrained and '{redeclaredUnit.Unit}' redeclared");
@@ -111,8 +123,9 @@ public class ResolutionCorpusTests
 
         _output.WriteLine($"{redeclarations} package redeclarations, {members} members, {differ.Count} differing");
         Assert.True(differ.Count == 0,
-            $"{differ.Count} of {members} members take a different unit from the redeclared package - the unit check "
-            + $"must resolve through redeclarations (Design/unit-consistency.md):{Environment.NewLine}"
+            $"{differ.Count} problem(s) over {redeclarations} redeclarations and {members} members: a member whose unit "
+            + "differs from the constraining type's means the unit check must resolve through redeclarations "
+            + $"(Design/unit-consistency.md):{Environment.NewLine}"
             + string.Join(Environment.NewLine, differ.Take(20)));
     }
 

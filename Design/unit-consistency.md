@@ -81,7 +81,8 @@ whose output type fixes no unit; and anything below not listed as known.
 | `a ^ n` with `n` an integer literal | Exponents multiply; any other exponent makes the result unknown unless `a` is dimensionless |
 | `der(x)` | `unit(x) / s` |
 | `sqrt(a)` | Halves exponents; unknown if one is odd |
-| `abs`, `sign`-free built-ins that preserve units (`abs`, `pre`, `delay(x, ...)`, `noEvent`, `smooth(_, x)`, `homotopy(a, b)`) | The argument's (both of `homotopy`'s must agree) |
+| Built-ins that preserve units: `abs`, `pre`, `delay(x, ...)`, `noEvent`, `smooth(_, x)`, `homotopy(a, b)` | The argument's (both of `homotopy`'s must agree) |
+| `sign(a)` | Dimensionless, whatever `a` is |
 | `sin`, `cos`, `tan`, `exp`, `log`, `log10`, `asin`... | Dimensionless result; argument expected dimensionless — see *Open questions* on `rad` |
 | A user function call | Its single output's declared type; each argument checked against the declared input type as an `=` would be. Several outputs, or an output with no unit: unknown |
 | A component reference | Via `ReferencesIn`: the last segment's declared type through `UnitResolver`, or the `unit` written on the declaration itself, which wins |
@@ -104,8 +105,8 @@ loops and conditional assignment, and the equation case should be proven on the 
 
 ### 4. The finding
 
-A new rule, `MLQT.Units.Inconsistent` (name to confirm), category Units, governed like the other unit
-rule, **off by default** and Warning when on. One finding per mismatch site, carrying the equation's
+A new rule, `MLQT.Units.Inconsistent` (name to confirm), category Units beside `MissingUnit`
+(which has no governor, and nor would this), **off by default** and Warning when on. One finding per mismatch site, carrying the equation's
 line, the two units as written *and* as dimensions (`N` vs `kg.m/s` reads as "these differ by `1/s`"),
 and the sub-expressions that disagree. Its fingerprint is the equation's normalised text plus the site,
 so a reformat does not re-raise it. `__MLQT(suppress="MLQT.Units.Inconsistent")` waives it like any

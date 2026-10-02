@@ -59,8 +59,8 @@ Name each library's own directory, not a repository root: MSL's holds `ModelicaT
 written against 3.2.3, whose names rightly do not resolve against 4.1.0.
 
 **Required whenever the release carries a change to `TypeResolver`, `ClassElementResolver` or
-`UnitResolver`.** Taking away the lookup among inherited classes — the resolver as it was before PR #13
-— fails both: 1,744 types stop resolving and 813 members disagree.
+`UnitResolver`.** Taking away the lookup among inherited classes (`inherited: false` in
+`ResolveWithInheritance`) fails both: 1,744 types stop resolving and 813 members disagree.
 
 ## 4. The nightly WebKit rehearsal, triggered deliberately
 
