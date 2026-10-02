@@ -323,7 +323,7 @@ public partial class MetricsDashboard : IDisposable
             packages
                 .OrderBy(id => string.Equals(id, term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ThenBy(id => string.Equals(ModelicaName.LeafOf(id), term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-                .ThenBy(id => id.Count(c => c == '.'))
+                .ThenBy(id => ModelicaName.Segments(id).Count)
                 .ThenBy(id => id, System.StringComparer.Ordinal)
                 .Take(50)
                 .ToList());

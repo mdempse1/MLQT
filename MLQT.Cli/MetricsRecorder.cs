@@ -56,7 +56,7 @@ internal static class MetricsRecorder
             // packages, so a scope recorded for anything else could never be selected — and a flat
             // folder of loose .mo files would otherwise produce one scope per class.
             var libraryRoots = models
-                .Where(m => m.ClassType == "package" && !m.Id.Contains('.'))
+                .Where(m => m.ClassType == "package" && ModelicaName.IsSimple(m.Id))
                 .Select(m => m.Id)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(root => root, StringComparer.Ordinal)

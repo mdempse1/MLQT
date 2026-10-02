@@ -126,7 +126,7 @@ public static class GraphAnalysisRunner
             return string.Empty;
 
         var root = context.Models
-            .Where(m => !m.Id.Contains('.'))
+            .Where(m => ModelicaName.IsSimple(m.Id))
             .OrderBy(m => m.Id, StringComparer.Ordinal)
             .FirstOrDefault();
 

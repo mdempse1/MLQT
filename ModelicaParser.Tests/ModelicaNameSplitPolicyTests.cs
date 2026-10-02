@@ -19,9 +19,14 @@ namespace ModelicaParser.Tests;
 public class ModelicaNameSplitPolicyTests
 {
     // Every overload, with the dot as a char or a string: the first version matched `Split('.')` and
-    // `IndexOf('.')` alone, and a port reference split with `Split('.', options)` went unnoticed.
+    // `IndexOf('.')` alone, and a port reference split with `Split('.', options)` went unnoticed. And
+    // the questions asked without splitting - `Contains('.')` for "is this top-level?", counting dots
+    // for "how deep?" - which a quoted identifier answers wrongly the same way. A character scanner
+    // comparing `c == '.'` is not matched: the ones there are quote-aware, or read text that is no name.
     private static readonly Regex DotSplit = new(
-        @"\.(Split|(Last)?IndexOf)\(\s*('\.'|""\."")",
+        @"\.(Split|(Last)?IndexOf)\(\s*('\.'|""\."")" +
+        @"|\.Contains\(\s*('\.'|""\."")\s*\)" +
+        @"|\.Count\(\s*\w+\s*=>\s*\w+\s*==\s*'\.'\s*\)",
         RegexOptions.Compiled);
 
     /// <summary>
@@ -37,6 +42,8 @@ public class ModelicaNameSplitPolicyTests
             + "identifier characters and dots - a quoted one is refused before the split"),
         ["MLQT.Services/Checking/UsesVersionChecker.cs"] = (1, "a version string from a uses annotation, "
             + "\"4.2.0 dev\" - numbers, not a name"),
+        ["ModelicaParser/SpellChecking/TextExtractor.cs"] = (1, "a word of prose being spell checked, "
+            + "skipped when it looks like a name or a path"),
     };
 
     private static string RepositoryRoot()

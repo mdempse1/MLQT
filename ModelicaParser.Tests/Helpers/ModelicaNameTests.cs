@@ -172,6 +172,18 @@ public class ModelicaNameTests
     public void Abbreviated_KeepsTheEndsOfALongName(string name, string expected) =>
         Assert.Equal(expected, ModelicaName.Abbreviated(name));
 
+    [Theory]
+    [InlineData("Modelica", true)]
+    [InlineData("port", true)]
+    [InlineData("'a.b'", true)]
+    [InlineData("Modelica.Blocks", false)]
+    [InlineData("'a.b'.C", false)]
+    [InlineData("port.medium", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsSimple_IsOneSegment(string? name, bool expected) =>
+        Assert.Equal(expected, ModelicaName.IsSimple(name));
+
     [Fact]
     public void EnclosingNames_AreInnermostFirst_AndExcludeTheClass() =>
         Assert.Equal(["Lib.'a.b'.C", "Lib.'a.b'", "Lib"], ModelicaName.EnclosingNamesOf("Lib.'a.b'.C.D"));

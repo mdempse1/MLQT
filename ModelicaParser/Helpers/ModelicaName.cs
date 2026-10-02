@@ -199,6 +199,12 @@ public static class ModelicaName
     }
 
     /// <summary>
+    /// True for a non-empty name of one segment - a top-level class, or a component named directly
+    /// rather than through another. <c>'a.b'</c> is one; <c>a.b</c> is not.
+    /// </summary>
+    public static bool IsSimple(string? name) => !string.IsNullOrEmpty(name) && LastSeparator(name) < 0;
+
+    /// <summary>
     /// A long name shortened for a narrow column: its first two segments and its last, with the middle
     /// elided - <c>Modelica.Fluid....Pipe</c> - or the name itself when it is no longer than
     /// <paramref name="maxLength"/> or has no middle to leave out.
