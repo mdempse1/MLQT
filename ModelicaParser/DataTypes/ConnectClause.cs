@@ -18,14 +18,19 @@ public sealed record ConnectScope(ConnectScopeKind Kind, string Header, IReadOnl
 
 /// <summary>
 /// A <c>connect(a, b)</c> equation in a class body, read by <see cref="Visitors.ConnectClauses"/>:
-/// its two ports as written, the span of the <c>connect(...)</c> itself, and the equations it is
-/// nested in, outermost first - empty for one written directly in an equation section.
+/// its two ports as written, the span of the <c>connect(...)</c> itself, the offset of the
+/// <c>;</c> that ends the equation, and the equations it is nested in, outermost first - empty for
+/// one written directly in an equation section. <see cref="Semicolon"/> is read from the tree, not
+/// searched for: the description and annotation come between the clause and it, and a description
+/// may hold a <c>;</c> of its own. Where the parser recovered without one, it is the equation's last
+/// character.
 /// </summary>
 public sealed record ConnectClause(
     string PortA,
     string PortB,
     int Start,
     int Stop,
+    int Semicolon,
     IReadOnlyList<ConnectScope> Scopes)
 {
     /// <summary>True for a connect inside a <c>for</c>, <c>if</c> or <c>when</c> equation.</summary>

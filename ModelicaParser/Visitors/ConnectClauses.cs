@@ -40,17 +40,24 @@ public static class ConnectClauses
     private static IEnumerable<(modelicaParser.EquationContext, ConnectClause)> Walk(
         IEnumerable<modelicaParser.Equation_or_commentContext> body, IReadOnlyList<ConnectScope> scopes)
     {
-        foreach (var equation in body.Select(e => e.equation()).OfType<modelicaParser.EquationContext>())
+        foreach (var item in body)
         {
+            if (item.equation() is not { } equation)
+                continue;
+
             IEnumerable<(modelicaParser.EquationContext, ConnectClause)> inner = [];
 
             if (equation.connect_clause() is { } connect)
             {
                 var refs = connect.component_reference();
+                // `equation c_comment* ';'`: the item's last token is the semicolon. Where the parser
+                // recovered without one, the equation's last character - such a class cannot be
+                // edited, so nothing cuts at it.
+                var semicolon = item.Stop is { Text: ";" } end ? end.StartIndex : equation.Stop.StopIndex;
                 if (refs.Length >= 2)
                     inner = [(equation, new ConnectClause(
                         refs[0].GetText(), refs[1].GetText(),
-                        connect.Start.StartIndex, connect.Stop.StopIndex, scopes))];
+                        connect.Start.StartIndex, connect.Stop.StopIndex, semicolon, scopes))];
             }
             else if (equation.for_equation() is { } loop)
             {

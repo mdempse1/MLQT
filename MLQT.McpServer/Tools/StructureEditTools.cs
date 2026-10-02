@@ -172,7 +172,9 @@ public sealed class StructureEditTools
 
     [McpServerTool(Name = "remove_component")]
     [Description("Remove a component from a class by name. Handles both a component on its own line and one " +
-                "of several declared together (e.g. 'Real a, b, c;'). Fails if no such component exists or " +
+                "of several declared together (e.g. 'Real a, b, c;'). The connect() equations naming it are " +
+                "removed with it (those inside a for/if too) and listed in the result's note; other " +
+                "equations that use it are left for you to change. Fails if no such component exists or " +
                 "the result would not parse. Set preview=true to see the file text.")]
     public async Task<object> RemoveComponent(
         [Description("Fully-qualified id of the class.")] string classId,
@@ -187,32 +189,65 @@ public sealed class StructureEditTools
         if (comp is null)
             return new ToolError($"'{classId}' has no component named '{name}'.");
 
-        var code = ctx.ClassCode;
-        string newClassCode;
-        if (comp.SoleInClause)
+        // The connects that name it go with it, as they do when a component is deleted in a diagram
+        // editor: left behind, each names nothing, and the class no longer translates. One inside a
+        // for or if goes too - it names the component whichever index or branch applies.
+        var connects = ctx.Layout.Connections
+            .Where(c => ComponentOf(c.PortA) == name || ComponentOf(c.PortB) == name)
+            .ToList();
+
+        // Each removal is made at offsets into the original text, last first, so the ones still to
+        // do are untouched by those already done.
+        var removals = connects
+            .Select(c => (Start: c.Start, Remove: (Func<string, string?>)(text => RemoveWholeLine(text, c.Start, c.Semicolon))))
+            .Append((Start: comp.ClauseStart, Remove: text => RemoveDeclaration(text, comp)))
+            .OrderByDescending(r => r.Start);
+
+        var newClassCode = ctx.ClassCode;
+        foreach (var (_, remove) in removals)
         {
-            if (RemoveWholeLine(code, comp.ClauseStart, comp.ClauseStop) is not { } withoutLine)
-                return new ToolError("Could not find the end of the component declaration.");
-            newClassCode = withoutLine;
-        }
-        else
-        {
-            // Remove just this declaration from a shared clause, taking one adjacent comma with it.
-            var commaBefore = code.LastIndexOf(',', comp.DeclStart - 1);
-            if (commaBefore > comp.ClauseStart)
-            {
-                newClassCode = code[..commaBefore] + code[(comp.DeclStop + 1)..];
-            }
-            else
-            {
-                var commaAfter = code.IndexOf(',', comp.DeclStop);
-                var afterComma = commaAfter + 1 < code.Length && code[commaAfter + 1] == ' ' ? commaAfter + 1 : commaAfter;
-                newClassCode = code[..comp.DeclStart] + code[(afterComma + 1)..];
-            }
+            if (remove(newClassCode) is not { } removed)
+                return new ToolError("Could not find the end of the component declaration or of a connection to it.");
+            newClassCode = removed;
         }
 
-        return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
+        var note = connects.Count == 0
+            ? null
+            : $"Also removed {connects.Count} connection(s) to '{name}': "
+              + string.Join(", ", connects.Select(c => $"connect({c.PortA}, {c.PortB})"
+                                                       + (c.IsNested ? $" (within {string.Join(" / ", c.Within)})" : "")))
+              + ".";
+
+        return ToResult(classId, note, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"remove component from '{classId}'"));
+    }
+
+    // A component's declaration: its whole line when the clause declares it alone, otherwise just its
+    // declarator, taking one adjacent comma with it.
+    private static string? RemoveDeclaration(string code, ClassBodyComponent comp)
+    {
+        if (comp.SoleInClause)
+            return code.IndexOf(';', comp.ClauseStop) is var semicolon and >= 0
+                ? RemoveWholeLine(code, comp.ClauseStart, semicolon)
+                : null;
+
+        var commaBefore = code.LastIndexOf(',', comp.DeclStart - 1);
+        if (commaBefore > comp.ClauseStart)
+            return code[..commaBefore] + code[(comp.DeclStop + 1)..];
+
+        var commaAfter = code.IndexOf(',', comp.DeclStop);
+        var afterComma = commaAfter + 1 < code.Length && code[commaAfter + 1] == ' ' ? commaAfter + 1 : commaAfter;
+        return code[..comp.DeclStart] + code[(afterComma + 1)..];
+    }
+
+    // The component a connect port goes through: its first segment without subscripts - `r` in
+    // `r.p`, `r[i].p` and `r`. A quoted name is kept whole, brackets and all.
+    private static string ComponentOf(string port)
+    {
+        var first = ModelicaName.Segments(port)[0];
+        if (first.StartsWith('\''))
+            return first.IndexOf('\'', 1) is var close and > 0 ? first[..(close + 1)] : first;
+        return first.IndexOf('[') is var bracket and >= 0 ? first[..bracket] : first;
     }
 
     [McpServerTool(Name = "set_component_modifier")]
@@ -465,7 +500,7 @@ public sealed class StructureEditTools
         if (conn is null)
             return new ToolError($"'{classId}' has no connection between '{a}' and '{b}'.");
 
-        if (RemoveWholeLine(ctx.ClassCode, conn.Start, conn.Stop) is not { } newClassCode)
+        if (RemoveWholeLine(ctx.ClassCode, conn.Start, conn.Semicolon) is not { } newClassCode)
             return new ToolError("Could not find the end of the connect statement.");
 
         return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
@@ -583,9 +618,9 @@ public sealed class StructureEditTools
     }
 
     /// <summary>
-    /// Removes the whole line spanning <paramref name="start"/>..<paramref name="stop"/>, including
-    /// its terminating <c>;</c> and the newline after it, and returns null when the statement has no
-    /// terminating semicolon.
+    /// Removes the whole line spanning <paramref name="start"/>..<paramref name="semicolon"/>, including
+    /// that terminating <c>;</c> and the newline after it, and returns null when there is no
+    /// <c>;</c> at <paramref name="semicolon"/>.
     /// </summary>
     /// <remarks>
     /// <para><b>The one place a line is deleted from a class, for both callers.</b> Removing a
@@ -595,6 +630,13 @@ public sealed class StructureEditTools
     /// Its extra behaviour is kept rather than lost: it reported an error when there was no
     /// semicolon where this fell back to <c>stop</c>, so this now answers null and lets each caller
     /// say what that means.</para>
+    ///
+    /// <para><b>The caller says where the semicolon is.</b> This searched for the first <c>;</c>
+    /// after the statement's span, and a connect's span ends at its closing parenthesis, before its
+    /// description: <c>connect(a, b) "a; b";</c> was cut inside the string, the parse check refused
+    /// the result, and a connection that was there could not be removed. A connect's comes from the
+    /// tree (<c>ConnectClause.Semicolon</c>); a component's description and annotation are inside its
+    /// clause, so the first <c>;</c> after the clause is its own.</para>
     ///
     /// <para>The contract the tests hold it to is the whole of it: <b>what is left is the original
     /// lines minus exactly one</b>. That is what a wrong offset here breaks - by swallowing the line
@@ -608,11 +650,10 @@ public sealed class StructureEditTools
     /// its neighbour - cutting from the line start deleted the neighbour as well, and the result
     /// still parsed, so the parse check passed and the user's code was silently lost.</para>
     /// </remarks>
-    private static string? RemoveWholeLine(string code, int start, int stop)
+    private static string? RemoveWholeLine(string code, int start, int semicolon)
     {
         var lineStart = code.LastIndexOf('\n', start) + 1;
-        var semicolon = code.IndexOf(';', stop);
-        if (semicolon < 0)
+        if (semicolon < start || semicolon >= code.Length || code[semicolon] != ';')
             return null;
 
         var lineEnd = code.IndexOf('\n', semicolon);

@@ -46,6 +46,16 @@ public class StructureRemovalTests
             x = 1; connect(y, z);
             connect(x, z); y = 2;
           end OneLine;
+          model Wired "connections to a component, and one whose description holds a semicolon"
+            Real r, r2, s[2];
+          equation
+            connect(r, r2);
+            connect(r2, s[1]);
+            for i in 1:2 loop
+              connect(r, s[i]);
+            end for;
+            connect(r2, s[2]) "joined; see r2";
+          end Wired;
         end P;
         """;
 
@@ -181,11 +191,13 @@ public class StructureRemovalTests
     /// stays where it was, indentation included (B312). Deleting "the line" here deleted the
     /// neighbour too, and the result still parsed - so nothing reported the lost code.
     /// </summary>
+    /// <remarks>Each of these components is connected on a line it shares, so its connect goes
+    /// too - from that line, leaving the statement beside it.</remarks>
     [Theory]
-    [InlineData("y", "Real x; Real y;", "Real x;")]
-    [InlineData("x", "Real x; Real y;", "Real y;")]
+    [InlineData("y", "Real x; Real y;", "Real x;", "x = 1; connect(y, z);", "x = 1;")]
+    [InlineData("x", "Real x; Real y;", "Real y;", "connect(x, z); y = 2;", "y = 2;")]
     public async Task RemovingAComponentThatSharesItsLineKeepsTheOtherStatement(
-        string name, string original, string remaining)
+        string name, string original, string remaining, string connectLine, string connectRemaining)
     {
         using var host = new TestHost();
         var tools = Load(host);
@@ -193,7 +205,58 @@ public class StructureRemovalTests
 
         ToolAssert.Ok<StructureEditResult>(await tools.RemoveComponent("P.OneLine", name));
 
-        AssertLineRewritten(before, Lines(host, "P.OneLine"), original, remaining);
+        AssertLineRewritten(before, Lines(host, "P.OneLine"), (original, remaining), (connectLine, connectRemaining));
+    }
+
+    /// <summary>
+    /// A removed component's connects go with it - left behind, each names nothing and the class no
+    /// longer translates - including one in a loop, which names it as <c>r</c> whatever <c>i</c> is.
+    /// A component whose name merely starts with the same letters keeps its own.
+    /// </summary>
+    [Fact]
+    public async Task RemovingAComponentRemovesTheConnectsThatNameIt()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = Lines(host, "P.Wired");
+
+        var result = ToolAssert.Ok<StructureEditResult>(await tools.RemoveComponent("P.Wired", "r"));
+
+        var expected = before
+            .Where(line => !line.Contains("connect(r, ", StringComparison.Ordinal))
+            .Select(line => line.Replace("Real r, r2, s[2];", "Real r2, s[2];", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(before.Length - 2, expected.Length);
+        Assert.Equal(expected, Lines(host, "P.Wired"));
+        Assert.Contains("connect(r, r2)", result.Note);
+        Assert.Contains("connect(r, s[i]) (within for i in 1:2)", result.Note);
+    }
+
+    [Fact]
+    public async Task RemovingAnUnconnectedComponentSaysNothingAboutConnections()
+    {
+        using var host = new TestHost();
+
+        var result = ToolAssert.Ok<StructureEditResult>(await Load(host).RemoveComponent("P.A", "last"));
+
+        Assert.Null(result.Note);
+    }
+
+    /// <summary>
+    /// The connect's own semicolon, not the first one after its closing parenthesis: that was inside
+    /// the description, the cut left half a string, the parse check refused it, and the connection
+    /// could not be removed at all.
+    /// </summary>
+    [Fact]
+    public async Task RemovingAConnectionWhoseDescriptionHoldsASemicolon()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = Lines(host, "P.Wired");
+
+        ToolAssert.Ok<StructureEditResult>(await tools.RemoveConnection("P.Wired", "r2", "s[2]"));
+
+        AssertOnlyLineRemoved(before, Lines(host, "P.Wired"), "joined; see r2");
     }
 
     [Theory]
@@ -208,15 +271,16 @@ public class StructureRemovalTests
 
         ToolAssert.Ok<StructureEditResult>(await tools.RemoveConnection("P.OneLine", portA, portB));
 
-        AssertLineRewritten(before, Lines(host, "P.OneLine"), original, remaining);
+        AssertLineRewritten(before, Lines(host, "P.OneLine"), (original, remaining));
     }
 
-    private static void AssertLineRewritten(string[] before, string[] after, string original, string remaining)
+    private static void AssertLineRewritten(
+        string[] before, string[] after, params (string Original, string Remaining)[] rewrites)
     {
         var expected = before
-            .Select(line => line.Contains(original, StringComparison.Ordinal)
-                ? line.Replace(original, remaining, StringComparison.Ordinal)
-                : line)
+            .Select(line => rewrites.Aggregate(line, (text, r) => text.Contains(r.Original, StringComparison.Ordinal)
+                ? text.Replace(r.Original, r.Remaining, StringComparison.Ordinal)
+                : text))
             .ToArray();
 
         Assert.Equal(expected, after);

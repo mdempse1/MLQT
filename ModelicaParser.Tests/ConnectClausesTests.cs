@@ -139,6 +139,19 @@ public class ConnectClausesTests
     }
 
     [Fact]
+    public void TheSemicolon_IsTheEquations_PastADescriptionHoldingOne()
+    {
+        const string code =
+            "model M\nequation\n  connect(a, b) \"a; b\" annotation (Line(points={{0,0},{1,1}}));\nend M;";
+
+        var clause = Assert.Single(Read(code));
+
+        Assert.Equal(';', code[clause.Semicolon]);
+        Assert.Equal("connect(a, b) \"a; b\" annotation (Line(points={{0,0},{1,1}}));",
+            code[clause.Start..(clause.Semicolon + 1)]);
+    }
+
+    [Fact]
     public void ConnectsAreInSourceOrder_AcrossSectionsAndNesting()
     {
         const string code = """
