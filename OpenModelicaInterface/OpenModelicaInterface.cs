@@ -25,19 +25,33 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// before it is disposed rather than being torn down underneath (B369).
     /// </summary>
     private readonly CancellationTokenSource _lifetime = new();
-    private const int DefaultPort = 13027;
+
+    /// <summary>The port to ask for that lets omc bind any free one, and say which.</summary>
+    public const int AnyPort = 0;
+
     private readonly int _port;
 
     /// <summary>
     /// Creates a new OpenModelica interface instance.
     /// </summary>
     /// <param name="omcPath">Path to omc.exe (e.g., "C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe")</param>
-    /// <param name="port">ZMQ port to use (default: 13027)</param>
-    public OpenModelicaInterface(string omcPath, int port = DefaultPort)
+    /// <param name="port">ZMQ port omc listens on, or <see cref="AnyPort"/> (the default) for any
+    /// free one - see <see cref="Port"/> for the one it took.</param>
+    public OpenModelicaInterface(string omcPath, int port = AnyPort)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(port);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
         _omcPath = omcPath;
         _port = port;
     }
+
+    /// <summary>
+    /// The port omc is listening on, once started - the one it chose when started with
+    /// <see cref="AnyPort"/>. Null before a start, and after the session has closed.
+    /// </summary>
+    public int? Port => IsConnected ? _boundPort : null;
+
+    private int? _boundPort;
 
     /// <summary>
     /// A session that owns <paramref name="process"/> as though it had started it, and is not
@@ -98,11 +112,14 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             throw new FileNotFoundException($"OMC executable not found at: {_omcPath}");
         }
 
-        // Start OMC with ZMQ server
+        // Start OMC with ZMQ server. Without --interactivePort omc binds any free port; either way it
+        // says where it is listening in a port file named after the suffix (see OmcPortAnnouncement),
+        // so two sessions - the GUI and the MCP server, say - never contend for one fixed port.
+        var announcement = new OmcPortAnnouncement($"mlqt-{Guid.NewGuid():N}");
         var startInfo = new ProcessStartInfo
         {
             FileName = _omcPath,
-            Arguments = $"--interactive=zmq --interactivePort={_port}",
+            Arguments = StartArguments(announcement.Suffix, _port),
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
@@ -125,27 +142,35 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             throw new ObjectDisposedException(nameof(OpenModelicaInterface));
         }
 
-        // Start background readers to consume stdout/stderr (prevent blocking)
-        _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardOutput));
-        _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardError));
+        // Background readers consume stdout/stderr (prevent blocking), and hand what omc says to the
+        // announcement until it has said where it is listening.
+        _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardOutput, announcement.Output, announcement.Ended));
+        _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardError, announcement.Error, null));
 
-        // Connect straight away: ZeroMQ keeps trying until omc has bound its port, and holds the
-        // first request until then, so the question is only how long to wait for the answer.
+        // One clock for the whole start: finding the port and the first answer share StartupTimeout.
+        var clock = Stopwatch.StartNew();
+        var endpoint = await WaitForEndpointAsync(announcement, cancellationToken);
+
         try
         {
             _socket = new RequestSocket();
-            _socket.Connect($"tcp://127.0.0.1:{_port}");
+            _socket.Connect(endpoint);
+            _boundPort = OmcPortAnnouncement.PortOf(endpoint);
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException($"Failed to connect to OMC on port {_port}", ex);
+            Abandon();
+            throw new InvalidOperationException($"Failed to connect to OMC at {endpoint}", ex);
         }
 
-        // Verify connection by getting version, within StartupTimeout.
+        // Verify connection by getting version, within what is left of StartupTimeout.
+        var left = StartupTimeout == Timeout.InfiniteTimeSpan
+            ? Timeout.InfiniteTimeSpan
+            : TimeSpan.FromTicks(Math.Max(TimeSpan.TicksPerMillisecond, (StartupTimeout - clock.Elapsed).Ticks));
         string version;
         try
         {
-            version = UnquoteString(await SendCommandAsync("getVersion()", StartupTimeout, "start", cancellationToken));
+            version = UnquoteString(await SendCommandAsync("getVersion()", left, "start", cancellationToken));
         }
         catch (TimeoutException)
         {
@@ -168,29 +193,109 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         }
     }
 
+    /// <summary>omc's command line: ZeroMQ, the port file's suffix, and the port when one is fixed.</summary>
+    internal static string StartArguments(string suffix, int port) => port == AnyPort
+        ? $"--interactive=zmq -z={suffix}"
+        : $"--interactive=zmq -z={suffix} --interactivePort={port}";
+
     /// <summary>
-    /// Consumes a stream asynchronously to prevent process blocking.
+    /// The address omc announces, within <see cref="StartupTimeout"/>. The session is closed if it
+    /// does not come.
     /// </summary>
-    private async Task ConsumeStreamAsync(StreamReader reader)
+    private async Task<string> WaitForEndpointAsync(OmcPortAnnouncement announcement, CancellationToken cancellationToken)
     {
+        // Disposing the session ends the wait as well as the caller's token: MLQT exiting as omc starts.
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
         try
         {
-            while (!_isDisposed && reader != null)
+            var portFile = await announcement.PortFile.WaitAsync(StartupTimeout, stopping.Token);
+            return ReadPortFile(portFile);
+        }
+        catch (TimeoutException)
+        {
+            Abandon();
+            throw new TimeoutException(StartTimedOut());
+        }
+        catch (OperationCanceledException)
+        {
+            Abandon();   // not left half-started
+            if (_lifetime.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                throw new ObjectDisposedException(nameof(OpenModelicaInterface));
+            throw;
+        }
+        catch
+        {
+            Abandon();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The address in the port file omc announced. The file is deleted once read: omc leaves it behind
+    /// when it exits, and with a fresh suffix every start nothing would ever read it again.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The file is missing or does not hold an address.</exception>
+    internal static string ReadPortFile(string path)
+    {
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException($"OpenModelica's port file {path} could not be read.", ex);
+        }
+
+        try { File.Delete(path); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* temp */ }
+
+        return OmcPortAnnouncement.Endpoint(text)
+               ?? throw new InvalidOperationException(
+                   $"OpenModelica's port file {path} does not hold an address: '{text.Trim()}'.");
+    }
+
+    private string StartTimedOut() =>
+        $"OpenModelica did not start and answer within {StartupTimeout.TotalSeconds:0.#}s; it has been stopped.";
+
+    /// <summary>
+    /// Consumes a stream asynchronously to prevent process blocking, handing what it reads to
+    /// <paramref name="read"/> and saying when it ends.
+    /// </summary>
+    /// <remarks>
+    /// Read in chunks, not lines: omc ends its port announcement without a newline (see
+    /// <see cref="OmcPortAnnouncement"/>), so a line reader held it back until omc next printed.
+    /// </remarks>
+    private async Task ConsumeStreamAsync(StreamReader reader, Action<string> read, Action? ended)
+    {
+        var buffer = new char[4096];
+        try
+        {
+            while (!_isDisposed)
             {
-                var line = await reader.ReadLineAsync();
-                if (line == null)
+                var count = await reader.ReadAsync(buffer, 0, buffer.Length);
+                if (count == 0)
                 {
                     // End of stream: omc has exited. Looping on here spun a thread at full speed for
                     // as long as this object lived, which a session closed after a timeout does.
                     break;
                 }
 
-                Debug.WriteLine($"OMC: {line}");
+                var text = new string(buffer, 0, count);
+                read(text);
+                Debug.Write($"OMC: {text}");
             }
         }
         catch (ObjectDisposedException)
         {
             // Expected when disposing
+        }
+        catch (IOException)
+        {
+            // The pipe broke as omc was ended
+        }
+        finally
+        {
+            ended?.Invoke();
         }
     }
 
@@ -254,8 +359,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
                     throw new ObjectDisposedException(nameof(OpenModelicaInterface));
                 cancellationToken.ThrowIfCancellationRequested();
                 throw new TimeoutException(what == "start"
-                    ? $"OpenModelica did not start and answer within {timeout.TotalSeconds:0.#}s; it has been stopped."
-                    : $"OpenModelica did not answer {Describe(command)} within {timeout.TotalSeconds:0.#}s; the session has been closed.");
+                    ? StartTimedOut()
+                    :$"OpenModelica did not answer {Describe(command)} within {timeout.TotalSeconds:0.#}s; the session has been closed.");
             }
 
             return response;

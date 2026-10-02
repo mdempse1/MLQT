@@ -7,7 +7,7 @@ namespace OpenModelicaInterface.Tests;
 /// </summary>
 public class OpenModelicaFixture : IDisposable
 {
-    private const string OmcPath = @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe";
+    private static readonly string OmcPath = OpenModelicaSettings.FindInstalledOmc();
     private readonly SemaphoreSlim _omcLock = new(1, 1);
 
     public OpenModelicaInterface Omc { get; private set; }

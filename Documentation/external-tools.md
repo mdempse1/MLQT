@@ -76,7 +76,7 @@ launcher your installation uses.
 | Field | Description |
 |-------|-------------|
 | **Path to OpenModelica Compiler Executable** | The full path to `omc.exe` on Windows, or `omc` on Linux. **Auto-detect**, beside the field, searches for it — see [Auto-Detection](#auto-detection). Click the folder icon to browse. On Windows, choose the installation folder and MLQT takes `bin\omc.exe` inside it, or `omc.exe` directly if you chose the `bin` folder itself. On Linux, choose `omc` itself — the dialog opens in `/usr/bin`, where OpenModelica's apt packages put it. |
-| **Port Number** | The port used for the ZeroMQ communication channel. Default: `13027`. |
+| **Port Number** | The port OpenModelica listens on for MLQT's commands (ZeroMQ). Default: `0`, which lets OpenModelica choose any free port, so two MLQT sessions at once - the desktop app and the MCP server, say - never contend for one. Set a port only if a firewall rule needs a fixed one. |
 | **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `60`. `0` means no limit. |
 
 ### OpenModelica on Linux

@@ -125,7 +125,7 @@ public class ParseTreeBorrowingTests
         var si = Node("Temperature", "type Temperature = Real(unit=\"K\");", classType: "type");
         var alias = Node("T2", "type T2 = Temperature;", classType: "type");
         var graph = GraphOf(si, alias);
-        var cache = new ConcurrentDictionary<string, (bool, bool)>(StringComparer.Ordinal);
+        var cache = new ConcurrentDictionary<string, UnitAttributes>(StringComparer.Ordinal);
 
         var (isReal, hasUnit) = UnitResolver.Resolve(graph, "T2", "T2", [], cache);
 

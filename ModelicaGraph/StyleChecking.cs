@@ -276,7 +276,7 @@ public static class StyleChecking
     {
         if (graph == null) return null;
 
-        var unitCache = new ConcurrentDictionary<string, (bool, bool)>(StringComparer.Ordinal);
+        var unitCache = new ConcurrentDictionary<string, UnitAttributes>(StringComparer.Ordinal);
         var importsByModel = new ConcurrentDictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
         // Memoised on the question, not only on the answer (B174). `unitCache` is keyed by the id of

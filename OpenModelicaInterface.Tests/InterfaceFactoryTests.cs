@@ -129,7 +129,7 @@ public class InterfaceFactoryTests
             Assert.True(File.Exists(settings.OmcPath), $"Discovered OmcPath '{settings.OmcPath}' should exist on disk.");
             Assert.Equal(OpenModelicaSettings.OmcExecutableName, Path.GetFileName(settings.OmcPath));
         }
-        Assert.Equal(13027, settings.PortNumber);
+        Assert.Equal(OpenModelicaInterface.OpenModelicaInterface.AnyPort, settings.PortNumber);
         Assert.False(settings.AutoLoadModelicaLibrary);
         Assert.Equal(1e-6, settings.DefaultTolerance);
         Assert.Equal(500, settings.DefaultNumberOfIntervals);

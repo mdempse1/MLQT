@@ -71,9 +71,10 @@
 
     <MudNumericField @bind-Value="@_settings.OpenModelica.PortNumber"
                     Label="Port Number"
+                    HelperText="The port OpenModelica listens on. 0 lets it choose any free port."
                     Variant="Variant.Outlined"
                     Margin="Margin.Dense"
-                    Min="1" Max="65535"
+                    Min="0" Max="65535"
                     Typo="Typo.body1" 
                     ShrinkLabel="true"
                     Class="mt-4"/>

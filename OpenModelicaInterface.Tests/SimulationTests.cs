@@ -116,12 +116,14 @@ public class SimulationTests
     }
 
     [Fact]
-    public async Task LoadingAMissingFile_FailsAndReportsNothing()
+    public async Task LoadingAMissingFile_Fails_AndSaysNothingElse()
     {
-        // omc 1.26 answers false and leaves the error buffer empty for a file that is not there -
-        // it distinguishes "could not open it" from "opened it and it was wrong". The old version of
-        // this test assumed the opposite and used a missing file to manufacture an error, so its
-        // arrange step failed before it reached what it meant to check (B116).
+        // omc 1.26 answers false and leaves the error buffer empty for a file that is not there;
+        // 1.27 adds "Failed to load file NonExistent.mo: file does not exist." Either is fine for
+        // MLQT, which decides "file not found" with File.Exists and drains the buffer after a failed
+        // load. What both must do is fail, say nothing unrelated, and leave nothing behind once read.
+        // Asserted that way rather than per version, so the next release's wording does not break it
+        // (B116 for the 1.26 half).
         await _fixture.EnsureOmcStartedAsync();
 
         // The whole collection shares one omc, and its error buffer is global state that only a read
@@ -131,10 +133,13 @@ public class SimulationTests
 
         var loaded = await _fixture.Omc.LoadFileAsync("NonExistent.mo", cancellationToken: TestContext.Current.CancellationToken);
         var error = await _fixture.Omc.GetErrorStringAsync();
+        var afterwards = await _fixture.Omc.GetErrorStringAsync();
 
         Assert.False(loaded);
-        Assert.True(string.IsNullOrWhiteSpace(error),
-            $"expected no error text for a missing file, got: {error}");
+        Assert.True(string.IsNullOrWhiteSpace(error) || error.Contains("NonExistent.mo"),
+            $"omc reported something other than the missing file: {error}");
+        Assert.True(string.IsNullOrWhiteSpace(afterwards),
+            $"the missing file's error outlived the read that should have emptied it: {afterwards}");
     }
 
     [Fact]
@@ -146,7 +151,8 @@ public class SimulationTests
         await _fixture.EnsureOmcStartedAsync();
         await _fixture.Omc.GetErrorStringAsync();          // drain anything left by earlier tests
 
-        // A class that does not exist is a failure omc *does* report, unlike a missing file.
+        // A class that does not exist is a failure every omc reports; a missing file is reported
+        // only from 1.27, so it cannot be used to manufacture an error here.
         await _fixture.Omc.InstantiateModelAsync("NoSuchModelForThisTest");
 
         var first = await _fixture.Omc.GetErrorStringAsync();
