@@ -37,6 +37,8 @@ public class ClassElementResolverReferenceTests
             "  Inertia inertia1(J = 2);\n" +
             "  Inertia shafts[3];\n" +
             "  BigInertia big;\n" +
+            "  parameter Real Jbig = 20;\n" +
+            "  BigInertia big2(J = Jbig);\n" +
             "  Real x;\n" +
             "protected\n" +
             "  Real secret;\n" +
@@ -104,7 +106,11 @@ public class ClassElementResolverReferenceTests
         var graph = Rotational();
 
         Assert.Equal("2", Resolve(graph, "inertia1.J")?.Element.Element.DefaultValue);
+        Assert.Equal("Lib.Examples.Drive", Resolve(graph, "inertia1.J")?.Element.ModifiedIn);
+
+        // Its own binding: written where it is declared.
         Assert.Equal("1", Resolve(graph, "shafts[1].J")?.Element.Element.DefaultValue);
+        Assert.Null(Resolve(graph, "shafts[1].J")?.Element.ModifiedIn);
     }
 
     [Fact]
@@ -115,8 +121,21 @@ public class ClassElementResolverReferenceTests
         Assert.Equal("Lib.SI.Torque", resolved?.Type?.Id);
         Assert.Equal("Lib.TwoFlanges", resolved?.Path[1].InheritedFrom);
 
-        // Declared in the short class's base itself, so that is where it is inherited from.
-        Assert.Equal("Lib.Inertia", Resolve(Rotational(), "big.J")?.Element.InheritedFrom);
+        // Declared in the short class's base itself, so that is where it is inherited from - and
+        // the short class's own modification is its default, written in the short class.
+        var j = Resolve(Rotational(), "big.J")?.Element;
+        Assert.Equal("Lib.Inertia", j?.InheritedFrom);
+        Assert.Equal("10", j?.Element.DefaultValue);
+        Assert.Equal("Lib.BigInertia", j?.ModifiedIn);
+    }
+
+    [Fact]
+    public void AnInstanceModification_WinsOverAShortClasses_AndIsWrittenInTheDeclaringClass()
+    {
+        var j = Resolve(Rotational(), "big2.J")?.Element;
+
+        Assert.Equal("Jbig", j?.Element.DefaultValue);
+        Assert.Equal("Lib.Examples.Drive", j?.ModifiedIn);
     }
 
     [Fact]
@@ -278,6 +297,132 @@ public class ClassElementResolverReferenceTests
 
         Assert.Equal(uncached?.Type?.Id, cached?.Type?.Id);
         Assert.Equal(uncached?.Path.Select(p => p.OwnerId), cached?.Path.Select(p => p.OwnerId));
-        Assert.True(interfaces.Count >= 3);   // Drive, Inertia, TwoFlanges, Flange
+
+        // Inertia, TwoFlanges and Flange, which every reference through them passes through again -
+        // and not Drive, the class the reference is written in, which a run must not keep (B147).
+        Assert.Equal(3, interfaces.Count);
+    }
+
+    [Fact]
+    public void OneResolverPerClass_AnswersAsTheOneShotCallDoes()
+    {
+        var graph = Rotational();
+        var references = ClassElementResolver.ReferencesIn(graph, graph.GetNode<ModelNode>("Lib.Examples.Drive")!);
+
+        Assert.Equal("Lib.SI.Torque", references.Resolve("inertia1.flange_b.tau")?.Type?.Id);
+        Assert.Equal("Lib.SI.Angle", references.Resolve("shafts[2].flange_a.phi")?.Type?.Id);
+        Assert.Null(references.Resolve("nothing"));
+    }
+
+    [Fact]
+    public void AnEnclosingPackagesClass_WinsOverATopLevelOneOfTheSameName()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Constants", "package", "package Constants\n  constant Real pi = 3;\nend Constants;"));
+
+        Assert.Equal("Lib.Constants", Resolve(graph, "Constants.pi")?.Scope.Id);
+        Assert.Equal("Constants", Resolve(graph, ".Constants.pi")?.Scope.Id);
+    }
+
+    [Fact]
+    public void AClassesInheritedMember_ResolvesFromInsideIt()
+    {
+        var graph = Rotational();
+        var resolved = ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("Lib.Inertia")!, "flange_a.tau");
+
+        Assert.Equal("Lib.SI.Torque", resolved?.Type?.Id);
+        Assert.Equal("Lib.TwoFlanges", resolved?.Path[0].InheritedFrom);
+    }
+
+    [Fact]
+    public void AnEnclosingPackagesProtectedConstant_IsInReach_AndItsNestedClassHidesOneFurtherOut()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Lib.Private", "package",
+            "package Private\nprotected\n  constant Real hiddenK = 2;\n  record g\n  end g;\nend Private;"));
+        graph.AddNode(Node("Lib.Private.M", "model", "model M\nend M;"));
+        var m = graph.GetNode<ModelNode>("Lib.Private.M")!;
+
+        Assert.Equal("Lib.Private", ClassElementResolver.ResolveReference(graph, m, "hiddenK")?.Scope.Id);
+        // Private's record g is what `g` names here, not Lib's constant g - and a class is not a component.
+        Assert.Null(ClassElementResolver.ResolveReference(graph, m, "g"));
+    }
+
+    [Fact]
+    public void TheEnclosingPackagesAreRemembered_AndTheClassItselfIsNot()
+    {
+        var graph = Rotational();
+        var interfaces = new ClassElementResolver.InterfaceCache();
+
+        Assert.NotNull(Resolve(graph, "g", interfaces));
+
+        // Lib.Examples and Lib, which every class inside them asks again; not Drive.
+        Assert.Equal(2, interfaces.Count);
+    }
+
+    [Fact]
+    public void TimeIsTheLanguages_NotAClassElement()
+    {
+        Assert.Null(Resolve(Rotational(), "time"));
+    }
+
+    [Fact]
+    public void AnEnclosingClassLendsItsConstants_AndNothingElse()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Lib.Outer", "model",
+            "model Outer\n  Real v;\n  constant Real c = 1;\nend Outer;"));
+        graph.AddNode(Node("Lib.Outer.Inner", "model", "model Inner\nend Inner;"));
+        var inner = graph.GetNode<ModelNode>("Lib.Outer.Inner")!;
+
+        Assert.Equal("Lib.Outer", ClassElementResolver.ResolveReference(graph, inner, "c")?.Scope.Id);
+        Assert.Null(ClassElementResolver.ResolveReference(graph, inner, "v"));
+        // Found and not visible ends the search: Lib's g is not reached past Outer's g.
+        graph.AddNode(Node("Lib.Outer2", "model", "model Outer2\n  Real g;\nend Outer2;"));
+        graph.AddNode(Node("Lib.Outer2.Inner", "model", "model Inner\nend Inner;"));
+        Assert.Null(ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("Lib.Outer2.Inner")!, "g"));
+    }
+
+    [Fact]
+    public void AnEncapsulatedClass_SeesNothingOutsideIt()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Lib.Sealed", "model", "encapsulated model Sealed\nend Sealed;"));
+        graph.AddNode(Node("Lib.SealedPackage", "package",
+            "encapsulated package SealedPackage\n  constant Real own = 1;\nend SealedPackage;"));
+        graph.AddNode(Node("Lib.SealedPackage.M", "model", "model M\nend M;"));
+        var inSealedPackage = graph.GetNode<ModelNode>("Lib.SealedPackage.M")!;
+
+        Assert.Null(ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("Lib.Sealed")!, "g"));
+        // The encapsulated package's own constants are still in reach; Lib's beyond it are not.
+        Assert.Equal("Lib.SealedPackage", ClassElementResolver.ResolveReference(graph, inSealedPackage, "own")?.Scope.Id);
+        Assert.Null(ClassElementResolver.ResolveReference(graph, inSealedPackage, "g"));
+    }
+
+    [Fact]
+    public void CollectOverAShortClass_ListsItsBasesMembers_WithItsModifications()
+    {
+        var graph = Rotational();
+        var elements = ClassElementResolver.Collect(graph, graph.GetNode<ModelNode>("Lib.BigInertia")!,
+            includeProtected: false, includeInherited: true);
+
+        var j = Assert.Single(elements, e => e.Element.Name == "J");
+        Assert.Equal("10", j.Element.DefaultValue);
+        Assert.Equal("Lib.BigInertia", j.ModifiedIn);
+        Assert.Contains(elements, e => e.Element.Name == "flange_a");
+        Assert.DoesNotContain(elements, e => e.Element.Name == "hidden");
+    }
+
+    [Fact]
+    public void CollectNamesTheClassWhoseExtendsClauseSetADefault()
+    {
+        var graph = Rotational();
+        graph.AddNode(Node("Lib.Heavy", "model", "model Heavy\n  extends Inertia(J = 5);\nend Heavy;"));
+
+        var elements = ClassElementResolver.Collect(graph, graph.GetNode<ModelNode>("Lib.Heavy")!,
+            includeProtected: false, includeInherited: true);
+
+        Assert.Equal("Lib.Heavy", Assert.Single(elements, e => e.Element.Name == "J").ModifiedIn);
+        Assert.Null(Assert.Single(elements, e => e.Element.Name == "w").ModifiedIn);
     }
 }

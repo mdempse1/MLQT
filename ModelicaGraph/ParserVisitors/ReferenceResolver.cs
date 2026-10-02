@@ -42,7 +42,8 @@ public static class ReferenceResolver
         // `import A.B.C;` made nothing visible here - only an aliased one did, matched by prefix, so
         // `SIx` would have matched an alias `SI` - and neither looked at the imports of enclosing
         // packages, which is where MSL declares `SI` for every block (B292).
-        return TypeResolver.ResolveName(graph, ownerModelId, name, imports.Select(Describe).ToList())?.Id;
+        return TypeResolver.ResolveName(
+            graph, ownerModelId, name, imports.Select(Describe).ToList(), global: reference.StartsWith('.'))?.Id;
     }
 
     /// <summary>An import in the string form <see cref="TypeResolver"/> reads.</summary>

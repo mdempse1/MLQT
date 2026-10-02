@@ -35,7 +35,19 @@ public static class ClassInterfaceExtractor
         if (spec?.long_class_specifier()?.composition() is { } composition)
             CollectComposition(composition, elements);
 
-        return new ClassInterface { Description = ClassDescription(spec), Elements = elements };
+        // `model R2 = Resistor(R = 2)`: no elements of its own, so what it is comes from its base.
+        // The enumeration form has no type specifier and is not one of these.
+        var shortClass = spec?.short_class_specifier();
+        var shortBase = shortClass?.type_specifier()?.GetText();
+
+        return new ClassInterface
+        {
+            Description = ClassDescription(spec),
+            Elements = elements,
+            IsEncapsulated = cls.GetChild(0)?.GetText() == "encapsulated",
+            ShortClassBase = shortBase,
+            ShortClassModifications = shortBase is null ? null : ScalarModifications(shortClass!.class_modification())
+        };
     }
 
     private static void CollectComposition(modelicaParser.CompositionContext composition, List<ClassElement> elements)

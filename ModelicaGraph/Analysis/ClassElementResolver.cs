@@ -15,7 +15,19 @@ public sealed record ResolvedElement(
     ClassElement Element,
     string? InheritedFrom,
     string OwnerId,
-    IReadOnlyList<string> OwnerImports);
+    IReadOnlyList<string> OwnerImports)
+{
+    /// <summary>
+    /// The class whose modification set <see cref="ClassElement.DefaultValue"/> - a more-derived
+    /// class's <c>extends</c> clause, a short class definition, or the class declaring a component
+    /// further out along a reference - or null when the value is the declaration's own binding.
+    ///
+    /// <para><b>The value is an expression written in that class</b>, so that is where its names
+    /// resolve: in <c>Inertia inertia1(J = Jb)</c>, <c>Jb</c> is the enclosing model's parameter, and
+    /// looking it up in <see cref="OwnerId"/> (<c>Inertia</c>) finds nothing, or something else.</para>
+    /// </summary>
+    public string? ModifiedIn { get; init; }
+}
 
 /// <summary>
 /// Collects the full element set of a class, following its <c>extends</c> clauses so inherited
@@ -28,8 +40,9 @@ public static partial class ClassElementResolver
 {
     private const int MaxDepth = 32;
 
-    private static readonly IReadOnlyDictionary<string, string> NoMods =
-        new Dictionary<string, string>(StringComparer.Ordinal);
+    // A modification's value, and the class it is written in.
+    private static readonly IReadOnlyDictionary<string, (string Value, string Scope)> NoMods =
+        new Dictionary<string, (string, string)>(StringComparer.Ordinal);
 
     /// <summary>
     /// Somewhere to keep each class's extracted interface for the length of a run.
@@ -105,20 +118,22 @@ public static partial class ClassElementResolver
         /// </remarks>
         public int Count => _interfaces.Count;
 
-        private readonly ConcurrentDictionary<string, string?> _shortBases = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<(string Id, bool Protected), Lazy<Dictionary<string, ResolvedElement>>>
+            _members = new();
 
         /// <summary>
-        /// The base a short class definition names (<c>model R2 = Resistor(R = 2)</c> gives
-        /// <c>Resistor</c>), or null for any other class. Kept for the run: a short class's interface
-        /// is empty, so a member looked for in one is looked for in its base, every time.
+        /// A class's members - components and nested classes, inherited ones included - by name, kept
+        /// for the run. For the classes a component reference passes <em>through</em>: a connector or
+        /// component type, or an enclosing package, which every equation mentioning it passes
+        /// through again. Never for the class the references are written in, which is read once per
+        /// <see cref="ComponentReferences"/> and is the one class a run must not keep (B147).
         /// </summary>
-        internal string? ShortBaseOf(ModelNode node) =>
-            _shortBases.GetOrAdd(node.Id, static (_, n) => ReadShortBase(n), node);
-
-        internal static string? ReadShortBase(ModelNode node) =>
-            node.Definition.Borrow<string?>(tree => tree.class_definition() is { Length: > 0 } defs
-                ? defs[0].class_specifier()?.short_class_specifier()?.type_specifier()?.GetText()
-                : null);
+        internal Dictionary<string, ResolvedElement> MembersOf(DirectedGraph graph, ModelNode node, bool includeProtected) =>
+            _members.GetOrAdd(
+                (node.Id, includeProtected),
+                key => new Lazy<Dictionary<string, ResolvedElement>>(
+                    () => MemberTable(CollectRemembered(graph, node, key.Protected, this)),
+                    LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         internal static ClassInterface? Extract(ModelNode node) =>
             node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
@@ -151,7 +166,7 @@ public static partial class ClassElementResolver
 
     private static void Walk(
         DirectedGraph graph, ModelNode node, bool includeProtected, bool includeInherited,
-        string? origin, IReadOnlyDictionary<string, string> mods,
+        string? origin, IReadOnlyDictionary<string, (string Value, string Scope)> mods,
         List<ResolvedElement> result, HashSet<string> seen, HashSet<string> visited, int depth,
         InterfaceCache? interfaces, bool rememberRoot)
     {
@@ -190,11 +205,12 @@ public static partial class ClassElementResolver
                         break;
                     if (!seen.Add($"{e.Kind}|{e.Name}")) // derived (added first) shadows inherited
                         break;
-                    // A modification from a more-derived extends clause overrides this inherited default.
-                    var element = e.Kind == ClassElementKind.Component && mods.TryGetValue(e.Name, out var v)
-                        ? e with { DefaultValue = v }
-                        : e;
-                    result.Add(new ResolvedElement(element, origin, node.Id, imports));
+                    // A modification from a more-derived extends clause overrides this inherited
+                    // default, and is an expression in the class that wrote it.
+                    result.Add(e.Kind == ClassElementKind.Component && mods.TryGetValue(e.Name, out var m)
+                        ? new ResolvedElement(e with { DefaultValue = m.Value }, origin, node.Id, imports)
+                            { ModifiedIn = m.Scope }
+                        : new ResolvedElement(e, origin, node.Id, imports));
                     break;
             }
         }
@@ -202,14 +218,27 @@ public static partial class ClassElementResolver
         if (!includeInherited)
             return;
 
-        foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+        foreach (var (baseType, baseMods) in Bases(iface))
         {
-            var baseNode = TypeResolver.Resolve(graph, node.Id, ext.Type, imports);
+            var baseNode = TypeResolver.Resolve(graph, node.Id, baseType, imports);
             if (baseNode is not null)
                 Walk(graph, baseNode, includeProtected, includeInherited, baseNode.Id,
-                    MergeMods(ext.Modifications, mods), result, seen, visited, depth + 1, interfaces,
+                    MergeMods(baseMods, node.Id, mods), result, seen, visited, depth + 1, interfaces,
                     rememberRoot);
         }
+    }
+
+    // What a class inherits from, with the modifications it applies: each extends clause, or - for
+    // `model R2 = Resistor(R = 2)`, which has no elements of its own - the short class's base, which
+    // is an extends clause in all but syntax (MLS §4.5.1).
+    private static IEnumerable<(string? Type, IReadOnlyDictionary<string, string>? Modifications)> Bases(
+        ClassInterface iface)
+    {
+        if (iface.ShortClassBase is { } shortBase)
+            return [(shortBase, iface.ShortClassModifications)];
+        return iface.Elements
+            .Where(e => e.Kind == ClassElementKind.Extends)
+            .Select(e => (e.Type, e.Modifications));
     }
 
     /// <summary>
@@ -271,14 +300,16 @@ public static partial class ClassElementResolver
 
     // Modifications applying to a base's members: this extends clause's, with any already-accumulated
     // (more-derived) modification winning on a key clash.
-    private static IReadOnlyDictionary<string, string> MergeMods(
-        IReadOnlyDictionary<string, string>? baseMods, IReadOnlyDictionary<string, string> moreDerived)
+    // Each value is kept with the class that wrote it (`scope`), since that is where it resolves.
+    private static IReadOnlyDictionary<string, (string Value, string Scope)> MergeMods(
+        IReadOnlyDictionary<string, string>? baseMods, string scope,
+        IReadOnlyDictionary<string, (string Value, string Scope)> moreDerived)
     {
         if (baseMods is null || baseMods.Count == 0)
             return moreDerived;
-        if (moreDerived.Count == 0)
-            return baseMods;
-        var merged = new Dictionary<string, string>(baseMods, StringComparer.Ordinal);
+        var merged = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
+        foreach (var kv in baseMods)
+            merged[kv.Key] = (kv.Value, scope);
         foreach (var kv in moreDerived)
             merged[kv.Key] = kv.Value;
         return merged;

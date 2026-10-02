@@ -98,6 +98,36 @@ public class TypeResolverTests
         Assert.Equal("Lib.Deep.Target", TypeResolver.Resolve(graph, "Lib.Deep.M", "Target")!.Id);
     }
 
+    [Fact]
+    public void AnEnclosingPackagesClass_WinsOverATopLevelClassOfTheSameName()
+    {
+        // Modelica takes the innermost scope that has the name; the name as written, matched at the
+        // root, is the last resort and not the first.
+        var graph = GraphWith("Constants", "Lib.Constants", "Lib.Examples.M");
+
+        Assert.Equal("Lib.Constants", TypeResolver.Resolve(graph, "Lib.Examples.M", "Constants")!.Id);
+    }
+
+    [Fact]
+    public void AnImport_WinsOverATopLevelClassOfTheSameName()
+    {
+        var graph = GraphWith("SI", "Modelica.Units.SI", "Lib.M");
+
+        Assert.Equal("Modelica.Units.SI",
+            TypeResolver.Resolve(graph, "Lib.M", "SI", ["SI = Modelica.Units.SI"])!.Id);
+    }
+
+    [Fact]
+    public void AGlobalName_IsLookedUpFromTheTopOnly()
+    {
+        var graph = GraphWith("Constants", "Lib.Constants", "Lib.M");
+
+        Assert.Equal("Constants", TypeResolver.Resolve(graph, "Lib.M", ".Constants")!.Id);
+        Assert.Equal("Constants", ReferenceResolver.Resolve(graph, "Lib.M", [], ".Constants"));
+        Assert.Equal("Lib.Constants", ReferenceResolver.Resolve(graph, "Lib.M", [], "Constants"));
+        Assert.Null(TypeResolver.Resolve(GraphWith("Lib.Constants", "Lib.M"), "Lib.M", ".Constants"));
+    }
+
     // ── imports, in each form Modelica allows ──
 
     [Fact]

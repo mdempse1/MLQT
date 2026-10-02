@@ -15,6 +15,48 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
+    public void AnEncapsulatedClass_SaysSo()
+    {
+        Assert.True(Extract("encapsulated package P\nend P;").IsEncapsulated);
+        Assert.False(Extract("package P\nend P;").IsEncapsulated);
+    }
+
+    [Fact]
+    public void AShortClass_NamesItsBase_AndTheModificationsItApplies()
+    {
+        var iface = Extract("model Big = Lib.Inertia(J = 10, w(start = 1)) \"a big one\";");
+
+        Assert.Empty(iface.Elements);
+        Assert.Equal("Lib.Inertia", iface.ShortClassBase);
+        // Nested modifications are not scalar defaults, as for an extends clause.
+        Assert.Equal(new Dictionary<string, string> { ["J"] = "10" }, iface.ShortClassModifications);
+        Assert.Equal("a big one", iface.Description);
+    }
+
+    [Theory]
+    [InlineData("type Length = Real;")]
+    [InlineData("connector RealInput = input Real;")]
+    public void AShortClassWithoutModifications_HasNone(string code)
+    {
+        var iface = Extract(code);
+
+        Assert.NotNull(iface.ShortClassBase);
+        Assert.Null(iface.ShortClassModifications);
+    }
+
+    [Theory]
+    [InlineData("model M\n  Real x;\nend M;")]
+    [InlineData("type Colour = enumeration(Red, Green);")]
+    [InlineData("function f = der(g, x);")]
+    public void AnythingElse_IsNotAShortClass(string code)
+    {
+        var iface = Extract(code);
+
+        Assert.Null(iface.ShortClassBase);
+        Assert.Null(iface.ShortClassModifications);
+    }
+
+    [Fact]
     public void ConcatenatedDescription_IsJoined()
     {
         var iface = Extract("model M \"part one \" + \"part two\"\n  Real x;\nend M;");

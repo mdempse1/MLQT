@@ -40,11 +40,12 @@ public static class TypeResolver
         if (string.IsNullOrWhiteSpace(typeText))
             return null;
 
-        var name = typeText.TrimStart('.').Trim();
+        var trimmed = typeText.Trim();
+        var name = trimmed.TrimStart('.');
         if (name.Length == 0 || IsPredefined(name))
             return null;
 
-        return ResolveName(graph, ownerId, name, imports);
+        return ResolveName(graph, ownerId, name, imports, global: trimmed.StartsWith('.'));
     }
 
     /// <summary>
@@ -59,39 +60,44 @@ public static class TypeResolver
     /// block below it. Asking only the class that wrote the name left MSL's controllers without edges to
     /// the types they use (B292). The enclosing classes' imports come from
     /// <see cref="ClassImports.For"/>, which reads each package once.</para>
+    /// <para><b>The innermost scope that has the name wins</b>, and a name matched at the root - as
+    /// written, fully qualified - is the last thing tried, not the first. In <c>Lib.Examples.Drive</c>,
+    /// <c>Constants.pi</c> means <c>Lib.Constants</c> when there is one, even if a top-level
+    /// <c>Constants</c> is loaded too; trying the name as written first answered with the top-level
+    /// one. Within each scope its own classes come before its imports, as the language has them.</para>
     /// </remarks>
+    /// <param name="global">
+    /// True for a name written with a leading dot (<paramref name="name"/> is without it), which
+    /// Modelica looks up from the top and nowhere else. Now that the root is tried last, losing the
+    /// dot would let a nearer class of the same name answer for it.
+    /// </param>
     internal static ModelNode? ResolveName(
-        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports)
+        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports, bool global = false)
     {
-        // 1. Already fully-qualified.
-        if (graph.GetNode<ModelNode>(name) is { } exact)
-            return exact;
+        if (global)
+            return graph.GetNode<ModelNode>(name);
 
-        // 2. Via the class's own imports.
-        if (imports is not null)
-            foreach (var import in imports)
-                if (ResolveViaImport(graph, import, name) is { } viaImport)
-                    return viaImport;
-
-        // 3. Relative: start in the class's own scope and walk outward through enclosing packages,
-        //    trying each one's classes and then its imports.
+        // Start in the class's own scope and walk outward through the enclosing packages, trying
+        // each one's classes and then its imports; the root - the name as written - comes last.
         var parts = ownerId.Split('.');
-        for (var take = parts.Length; take >= 0; take--)
+        for (var take = parts.Length; take > 0; take--)
         {
             var prefix = string.Join('.', parts.Take(take));
-            var candidate = prefix.Length == 0 ? name : $"{prefix}.{name}";
-            if (graph.GetNode<ModelNode>(candidate) is { } node)
+            if (graph.GetNode<ModelNode>($"{prefix}.{name}") is { } node)
                 return node;
 
-            // The owner's own imports were step 2.
-            if (take == parts.Length || prefix.Length == 0 || graph.GetNode<ModelNode>(prefix) is not { } scope)
-                continue;
-            foreach (var import in ClassImports.For(scope.Definition))
-                if (ResolveViaImport(graph, import, name) is { } viaEnclosing)
-                    return viaEnclosing;
+            // The owner's own imports are the ones it was given; an enclosing package's are read
+            // from it, once.
+            var scopeImports = take == parts.Length
+                ? imports
+                : graph.GetNode<ModelNode>(prefix) is { } scope ? ClassImports.For(scope.Definition) : null;
+            if (scopeImports is not null)
+                foreach (var import in scopeImports)
+                    if (ResolveViaImport(graph, import, name) is { } viaImport)
+                        return viaImport;
         }
 
-        return null;
+        return graph.GetNode<ModelNode>(name);
     }
 
     /// <summary>The ancestors of a class, as <see cref="ResolveWithInheritance"/> caches them.</summary>
