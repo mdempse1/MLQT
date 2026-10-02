@@ -1881,13 +1881,7 @@ document.head.appendChild(style);
         await InvokeAsync(StateHasChanged);
     }
 
-    private string MakeShortName(string name)
-    {
-        var idx = name.IndexOf(".") + 1;
-        return name.Length <= 40 || name.IndexOf(".") == -1 || name.Count(c => c == '.') <= 1 ?
-                name :
-                name.Substring(0, name.IndexOf(".", idx)) + "..." + name.Substring(name.LastIndexOf("."));
-    }
+    private static string MakeShortName(string name) => ModelicaName.Abbreviated(name);
 
     private bool FilterFunc1(LogMessage element)
     {

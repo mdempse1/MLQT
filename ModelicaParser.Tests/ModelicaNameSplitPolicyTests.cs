@@ -18,8 +18,10 @@ namespace ModelicaParser.Tests;
 /// </summary>
 public class ModelicaNameSplitPolicyTests
 {
+    // Every overload, with the dot as a char or a string: the first version matched `Split('.')` and
+    // `IndexOf('.')` alone, and a port reference split with `Split('.', options)` went unnoticed.
     private static readonly Regex DotSplit = new(
-        @"\.Split\('\.'\)|\.(Last)?IndexOf\('\.'(\s*,[^)]*)?\)",
+        @"\.(Split|(Last)?IndexOf)\(\s*('\.'|""\."")",
         RegexOptions.Compiled);
 
     /// <summary>
@@ -33,6 +35,8 @@ public class ModelicaNameSplitPolicyTests
         ["ModelicaParser/Helpers/ModelicaUriScanner.cs"] = (1, "a file extension in a modelica:// URI's path"),
         ["ModelicaParser/Icons/IconText.cs"] = (1, "a label value, taken as a name only when it is plain "
             + "identifier characters and dots - a quoted one is refused before the split"),
+        ["MLQT.Services/Checking/UsesVersionChecker.cs"] = (1, "a version string from a uses annotation, "
+            + "\"4.2.0 dev\" - numbers, not a name"),
     };
 
     private static string RepositoryRoot()

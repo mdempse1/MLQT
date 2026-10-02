@@ -199,6 +199,62 @@ public class NameBindingTests
         Assert.Equal("Lib.Sub.X", Lookup(graph, "Lib.M", "Sub.X")?.Node.Id);
     }
 
+    // ---- class extends ----------------------------------------------------------------------------
+
+    // Every MSL medium redeclares its state this way: `redeclare record extends ThermodynamicState`,
+    // stored as the class definition without the `redeclare`.
+    private static DirectedGraph ClassExtends() => Graph(
+        ("Lib", "package Lib\nend Lib;"),
+        ("Lib.PartialMedium", "partial package PartialMedium\n  replaceable record ThermodynamicState\n  end ThermodynamicState;\nend PartialMedium;"),
+        ("Lib.PartialMedium.ThermodynamicState", "replaceable record ThermodynamicState\n  Real T(unit = \"K\");\n  Real p;\nend ThermodynamicState;"),
+        ("Lib.Water", "package Water\n  extends PartialMedium;\n  redeclare record extends ThermodynamicState(p(start = 1e5))\n    Real d;\n  end ThermodynamicState;\nend Water;"),
+        ("Lib.Water.ThermodynamicState", "record extends ThermodynamicState(p(start = 1e5))\n  Real d;\nend ThermodynamicState;"),
+        ("Lib.User", "model User\n  Water.ThermodynamicState state;\n  Real x = state.T;\nend User;"));
+
+    [Fact]
+    public void AClassExtends_ExtendsTheClassItsEnclosingClassInherits()
+    {
+        // Looked up as a name, ThermodynamicState found the class itself, and it had no base at all.
+        var graph = ClassExtends();
+
+        var bases = ClassElementResolver.DirectBases(graph, graph.GetNode<ModelNode>("Lib.Water.ThermodynamicState")!, new TypeResolver.AncestorCache());
+
+        Assert.Equal(["Lib.PartialMedium.ThermodynamicState"], bases.Select(b => b.Base.Id));
+    }
+
+    [Fact]
+    public void AClassExtends_HasTheMembersOfWhatItReplaces_WithItsModifications()
+    {
+        var graph = ClassExtends();
+
+        var members = ClassElementResolver.Collect(graph, graph.GetNode<ModelNode>("Lib.Water.ThermodynamicState")!,
+            includeProtected: false, includeInherited: true);
+
+        Assert.Equal(["d", "T", "p"], members.Where(m => m.Element.Kind == ModelicaParser.DataTypes.ClassElementKind.Component)
+            .Select(m => m.Element.Name));
+        Assert.Equal("Lib.PartialMedium.ThermodynamicState", members.Single(m => m.Element.Name == "T").InheritedFrom);
+    }
+
+    [Fact]
+    public void AComponentOfAClassExtends_ReachesWhatItInherits()
+    {
+        var graph = ClassExtends();
+
+        var resolved = ClassElementResolver.ResolveReference(graph, graph.GetNode<ModelNode>("Lib.User")!, "state.T",
+            null, new TypeResolver.AncestorCache());
+
+        Assert.Equal("Lib.PartialMedium.ThermodynamicState", resolved?.Element.OwnerId);
+    }
+
+    [Fact]
+    public void ABaseNamedLikeItsClass_ThatNothingAroundItInherits_IsNoBase()
+    {
+        // Lib.M `extends M` - there is no inherited M to mean, and the class itself is no base.
+        var graph = Graph(("Lib", "package Lib\nend Lib;"), ("Lib.M", "model M\n  extends M;\nend M;"));
+
+        Assert.Empty(ClassElementResolver.DirectBases(graph, graph.GetNode<ModelNode>("Lib.M")!));
+    }
+
     // ---- quoted identifiers ---------------------------------------------------------------------
 
     [Fact]

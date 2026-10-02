@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 
 namespace ModelicaGraph.Analysis;
@@ -231,7 +232,7 @@ public static partial class ClassElementResolver
 
         foreach (var (baseType, baseMods) in Bases(iface))
         {
-            var baseNode = TypeResolver.Resolve(graph, node.Id, baseType, imports);
+            var baseNode = ResolveBaseOf(graph, node, baseType, imports, ancestors: null);
             if (baseNode is not null)
                 Walk(graph, baseNode, includeProtected, includeInherited, baseNode.Id,
                     MergeMods(baseMods, node.Id, mods), result, seen, visited, depth + 1, interfaces,
@@ -262,10 +263,32 @@ public static partial class ClassElementResolver
     {
         if (iface.ShortClassBase is { } shortBase)
             return [(shortBase, iface.ShortClassModifications)];
-        return iface.Elements
+        var clauses = iface.Elements
             .Where(e => e.Kind == ClassElementKind.Extends)
             .Select(e => (e.Type, e.Modifications));
+        // A class extends extends the class it replaces before anything its body adds.
+        return iface.ClassExtendsBase is { } replaced
+            ? clauses.Prepend((replaced, iface.ClassExtendsModifications))
+            : clauses;
     }
+
+    /// <summary>
+    /// The class a base name written in <paramref name="node"/> means - <see cref="TypeResolver.ResolveBase"/>,
+    /// except for a base written as the class's own name.
+    /// </summary>
+    /// <remarks>
+    /// That is a class extends (<c>redeclare record extends ThermodynamicState</c>), whose base is the
+    /// element of that name the <b>enclosing</b> class inherits (MLS §7.3.1). Looked up as a name, it
+    /// found the class itself - so a medium's own ThermodynamicState had no base, and <c>state.T</c>
+    /// resolved to nothing. Nothing else is lost: an ordinary base spelled with the class's own name
+    /// can only ever have meant the class itself, which no class may extend.
+    /// </remarks>
+    internal static ModelNode? ResolveBaseOf(
+        DirectedGraph graph, ModelNode node, string? written, IReadOnlyList<string> imports,
+        TypeResolver.AncestorCache? ancestors)
+        => written is not null && string.Equals(written.Trim(), ModelicaName.LeafOf(node.Id), StringComparison.Ordinal)
+            ? TypeResolver.InheritedClass(graph, ModelicaName.EnclosingPackageOf(node.Id), written.Trim(), ancestors)
+            : TypeResolver.ResolveBase(graph, node.Id, written, imports, ancestors);
 
     /// <summary>
     /// Every class <paramref name="node"/> inherits from, transitively, in the order their layers are
@@ -322,7 +345,7 @@ public static partial class ClassElementResolver
         var result = new List<(string, ModelNode)>();
         var imports = ClassImports.For(node.Definition);
         foreach (var baseType in ClassImports.BasesOf(node.Definition))
-            if (TypeResolver.ResolveBase(graph, node.Id, baseType, imports, ancestors) is { } baseNode)
+            if (ResolveBaseOf(graph, node, baseType, imports, ancestors) is { } baseNode)
                 result.Add((baseType, baseNode));
 
         return result;

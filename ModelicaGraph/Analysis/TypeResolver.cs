@@ -185,10 +185,18 @@ public static class TypeResolver
     /// inherited from one of its bases, nearest first - a short class's base included.
     /// </summary>
     internal static ModelNode? MemberClass(DirectedGraph graph, ModelNode owner, string name, AncestorCache? ancestors)
+        => graph.GetNode<ModelNode>($"{owner.Id}.{name}") ?? InheritedClass(graph, owner.Id, name, ancestors);
+
+    /// <summary>
+    /// The class called <paramref name="name"/> that <paramref name="ownerId"/> inherits - nested in one
+    /// of its bases, nearest first - but not one it declares itself. What a class extends written in
+    /// that class extends.
+    /// </summary>
+    internal static ModelNode? InheritedClass(DirectedGraph graph, string ownerId, string name, AncestorCache? ancestors)
     {
-        if (graph.GetNode<ModelNode>($"{owner.Id}.{name}") is { } nested)
-            return nested;
-        foreach (var ancestorId in AncestorsOf(graph, owner.Id, ancestors))
+        if (ownerId.Length == 0)
+            return null;
+        foreach (var ancestorId in AncestorsOf(graph, ownerId, ancestors))
             if (graph.GetNode<ModelNode>($"{ancestorId}.{name}") is { } inheritedClass)
                 return inheritedClass;
         return null;

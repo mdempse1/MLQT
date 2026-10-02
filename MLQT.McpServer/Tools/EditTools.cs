@@ -617,7 +617,7 @@ public sealed class EditTools
         if (blocked.Count > 0)
             return FullNameRefusal($"Moving '{classId}' to '{newId}'", newId, blocked);
 
-        var note = $"Moved package directory '{oldLeaf}' from '{oldParent}' to '{newParentId}', re-qualifying " +
+        var note = $"Moved package directory {Quoted(oldLeaf)} from '{oldParent}' to '{newParentId}', re-qualifying " +
                    $"{requalCount} reference(s). Verify with a model checker.";
         if (preview)
             return new MoveClassResult(classId, newId, "directory-package", PreviewOnly: true, Moved: false,
@@ -771,6 +771,9 @@ public sealed class EditTools
     }
 
     private static string TopLevelOf(string id) => ModelicaName.RootLibraryOf(id);
+
+    // A class name in quotes for a message - unless it is a quoted identifier, which has its own.
+    private static string Quoted(string name) => name.StartsWith('\'') ? name : $"'{name}'";
 
     /// <summary>
     /// Whether <paramref name="site"/> still means its class, as written, once <paramref name="movedId"/>
@@ -1148,7 +1151,12 @@ public sealed class EditTools
         foreach (var r in renamed)
             if (graph.GetNode<ModelNode>(r)?.ContainingFileId is { } own)
                 fileIds.Add(own);
-        foreach (var target in targets.Concat(derivedFromParent))
+        // A redeclare can sit any number of modifications deep - `h(b(redeclare package Medium = W))` in
+        // a class that only uses Holder, whose component is the Base being modified - so for a
+        // replaceable class, every class reaching a derived one through its users is looked in, not
+        // only the direct users. Those files were never opened, and kept a redeclare of a name gone.
+        var modifiedThrough = IsReplaceable(graph, classId) ? UsersReaching(graph, derivedFromParent) : derivedFromParent;
+        foreach (var target in targets.Concat(modifiedThrough))
             foreach (var dependent in graph.GetModelUsedBy(target))
                 if (dependent.ContainingFileId is not null)
                     fileIds.Add(dependent.ContainingFileId);
@@ -1243,7 +1251,7 @@ public sealed class EditTools
                 $"No references to '{classId}' were found to rename. (Has analyze_dependencies run since the class was loaded?)");
 
         var total = planned.Sum(p => p.count);
-        var note = $"Precise rename of the declaration and of every reference that spells '{oldLeaf}' as " +
+        var note = $"Precise rename of the declaration and of every reference that spells {Quoted(oldLeaf)} as " +
                    "the class's name - its own, and those to the classes and components inside it " +
                    $"({oldLeaf}.Child, {oldLeaf}.constant) - and, for a replaceable class, every redeclaration " +
                    "of it. Names inside strings, such as modelica:// links in documentation, are not " +
@@ -1309,6 +1317,33 @@ public sealed class EditTools
             return (site.Segments[i], i, site.SegmentIds[i]);
         }
         return null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="classId"/> is declared <c>replaceable</c> in the class around it - the only
+    /// kind of class a modification can redeclare.
+    /// </summary>
+    private static bool IsReplaceable(DirectedGraph graph, string classId)
+    {
+        if (graph.GetNode<ModelNode>(ModelicaName.EnclosingPackageOf(classId)) is not { } parent)
+            return false;
+        var leaf = ModelicaName.LeafOf(classId);
+        return ClassElementResolver.Collect(graph, parent, includeProtected: true, includeInherited: false)
+            .Any(e => e.Element.Kind == ClassElementKind.Class
+                      && string.Equals(e.Element.Name, leaf, StringComparison.Ordinal)
+                      && e.Element.Prefixes.Contains("replaceable"));
+    }
+
+    // Every class that uses one of `start`, directly or through classes that do - and `start` itself.
+    private static HashSet<string> UsersReaching(DirectedGraph graph, IEnumerable<string> start)
+    {
+        var reached = new HashSet<string>(start, StringComparer.Ordinal);
+        var frontier = new Queue<string>(reached);
+        while (frontier.Count > 0)
+            foreach (var user in graph.GetModelUsedBy(frontier.Dequeue()))
+                if (reached.Add(user.Id))
+                    frontier.Enqueue(user.Id);
+        return reached;
     }
 
     /// <summary>

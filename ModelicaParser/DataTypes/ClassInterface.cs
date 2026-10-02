@@ -125,4 +125,15 @@ public sealed record ClassInterface
     /// <c>extends</c> clause's do, and are keyed as <see cref="ClassElement.Modifications"/> are.
     /// </summary>
     public IReadOnlyDictionary<string, string>? ShortClassModifications { get; init; }
+
+    /// <summary>
+    /// For a class extends - <c>redeclare record extends ThermodynamicState ... end ThermodynamicState</c>
+    /// - the name of the inherited class it extends, which is its own name; null for any other class.
+    /// The base is not looked up as a name is: it is the element of that name the <b>enclosing</b>
+    /// class inherits (MLS §7.3.1), which the class replaces and adds to.
+    /// </summary>
+    public string? ClassExtendsBase { get; init; }
+
+    /// <summary>The scalar modifications a class extends applies to that base, or null.</summary>
+    public IReadOnlyDictionary<string, string>? ClassExtendsModifications { get; init; }
 }

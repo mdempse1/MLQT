@@ -47,6 +47,29 @@ public class ClassInterfaceExtractorTests
 
         Assert.Null(iface.ShortClassBase);
         Assert.Null(iface.ShortClassModifications);
+        Assert.Null(iface.ClassExtendsBase);
+        Assert.Null(iface.ClassExtendsModifications);
+    }
+
+    [Fact]
+    public void AClassExtends_NamesTheClassItReplaces_AndItsModifications()
+    {
+        // As a redeclared class is stored: the class definition, without the `redeclare` before it.
+        var iface = Extract("record extends ThermodynamicState(p(start = 1e5)) \"water\"\n  Real d;\nend ThermodynamicState;");
+
+        Assert.Equal("ThermodynamicState", iface.ClassExtendsBase);
+        Assert.Equal(new Dictionary<string, string> { ["p.start"] = "1e5" }, iface.ClassExtendsModifications);
+        Assert.Equal("d", Assert.Single(iface.Elements).Name);
+        Assert.Equal("water", iface.Description);
+    }
+
+    [Fact]
+    public void AClassExtendsWithoutModifications_HasNone()
+    {
+        var iface = Extract("model extends BaseProperties\nend BaseProperties;");
+
+        Assert.Equal("BaseProperties", iface.ClassExtendsBase);
+        Assert.Null(iface.ClassExtendsModifications);
     }
 
     [Fact]

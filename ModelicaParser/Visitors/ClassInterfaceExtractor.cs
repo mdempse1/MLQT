@@ -40,12 +40,19 @@ public static class ClassInterfaceExtractor
         var shortClass = spec?.short_class_specifier();
         var shortBase = shortClass?.type_specifier()?.GetText();
 
+        // `record extends ThermodynamicState ... end ThermodynamicState`: the long form led by `extends`.
+        var classExtends = spec?.long_class_specifier() is { } longClass && longClass.GetChild(0)?.GetText() == "extends"
+            ? longClass
+            : null;
+
         return new ClassInterface
         {
             Description = ClassDescription(spec),
             Elements = elements,
             ShortClassBase = shortBase,
-            ShortClassModifications = shortBase is null ? null : ScalarModifications(shortClass!.class_modification())
+            ShortClassModifications = shortBase is null ? null : ScalarModifications(shortClass!.class_modification()),
+            ClassExtendsBase = classExtends?.IDENT(0)?.GetText(),
+            ClassExtendsModifications = classExtends is null ? null : ScalarModifications(classExtends.class_modification())
         };
     }
 

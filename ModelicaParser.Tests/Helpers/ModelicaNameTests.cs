@@ -160,6 +160,18 @@ public class ModelicaNameTests
         Assert.Equal(last, ModelicaName.LastSeparator(name));
     }
 
+    [Theory]
+    // Short enough, or no middle to leave out: as it is.
+    [InlineData("Modelica.Blocks.Sources.Ramp", "Modelica.Blocks.Sources.Ramp")]
+    [InlineData("Modelica.AVeryLongPackageNameIndeedThatGoesOnAndOn", "Modelica.AVeryLongPackageNameIndeedThatGoesOnAndOn")]
+    // The first two segments and the last, as the two pages that shorten names always wrote them.
+    [InlineData("Modelica.Fluid.Examples.HeatingSystem.Components.Pipe", "Modelica.Fluid....Pipe")]
+    // A quoted segment is never cut: the old shorteners split 'x.y' and kept half of it.
+    [InlineData("Lib.'a.b'.Components.Subsystems.Deeper.Still.Model", "Lib.'a.b'....Model")]
+    [InlineData("Lib.Components.Subsystems.Deeper.Still.Models.'m.1'", "Lib.Components....'m.1'")]
+    public void Abbreviated_KeepsTheEndsOfALongName(string name, string expected) =>
+        Assert.Equal(expected, ModelicaName.Abbreviated(name));
+
     [Fact]
     public void EnclosingNames_AreInnermostFirst_AndExcludeTheClass() =>
         Assert.Equal(["Lib.'a.b'.C", "Lib.'a.b'", "Lib"], ModelicaName.EnclosingNamesOf("Lib.'a.b'.C.D"));

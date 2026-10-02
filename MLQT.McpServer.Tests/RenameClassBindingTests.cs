@@ -17,9 +17,12 @@ namespace MLQT.McpServer.Tests;
 /// </remarks>
 public class RenameClassBindingTests
 {
-    private static async Task<EditTools> Load(TestHost h, string package)
+    private static Task<EditTools> Load(TestHost h, string package) =>
+        Load(h, new Dictionary<string, string> { ["package.mo"] = package });
+
+    private static async Task<EditTools> Load(TestHost h, Dictionary<string, string> files)
     {
-        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = package });
+        var dir = h.WriteLibraryDir(files);
         await h.Libraries.AddLibraryFromDirectoryAsync(dir);
         await new DependencyTools(h.Libraries, h.Impact, h.Resources, h.Session).AnalyzeDependencies();
         return new EditTools(h.Libraries, h.Resources, h.Session);
@@ -136,6 +139,30 @@ public class RenameClassBindingTests
     }
 
     [Fact]
+    public async Task ARedeclarationNestedInAModification_IsRenamed_InAFileOfItsOwn()
+    {
+        // User and ExtUser only use Holder, whose component b is the Base modified. Neither uses Base or
+        // a class derived from it, so their files were never opened and kept `redeclare package Medium`
+        // - the tests above passed only because every class shared one file.
+        using var host = new TestHost();
+        var edit = await Load(host, new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Root \"root\"\nend Root;\n",
+            ["package.order"] = "Water\nBase\nHolder\nUser\nExtUser\n",
+            ["Water.mo"] = "within Root;\npackage Water\n  record State\n  end State;\nend Water;\n",
+            ["Base.mo"] = "within Root;\npartial model Base\n  replaceable package Medium = Water;\nend Base;\n",
+            ["Holder.mo"] = "within Root;\nmodel Holder\n  Base b;\nend Holder;\n",
+            ["User.mo"] = "within Root;\nmodel User\n  Holder h(b(redeclare package Medium = Water));\nend User;\n",
+            ["ExtUser.mo"] = "within Root;\nmodel ExtUser\n  extends Holder(b(redeclare package Medium = Water));\nend ExtUser;\n",
+        });
+
+        ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("Root.Base.Medium", "Fluid"));
+
+        Assert.Contains("Holder h(b(redeclare package Fluid = Water));", Code(host, "Root.User"));
+        Assert.Contains("extends Holder(b(redeclare package Fluid = Water));", Code(host, "Root.ExtUser"));
+    }
+
+    [Fact]
     public async Task AReplaceableClassOfTheSameName_ThatIsNotARedeclaration_IsLeftAlone()
     {
         using var host = new TestHost();
@@ -201,6 +228,34 @@ public class RenameClassBindingTests
         var user = Code(host, "Root.User");
         Assert.Contains("'a.b'.D c;", user);
         Assert.Contains("Root.'a.b'.D d;", user);
+    }
+
+    [Fact]
+    public async Task AQuotedPackageWithADot_IsRenamed_AndTheNoteQuotesItOnce()
+    {
+        using var host = new TestHost();
+        var edit = await Load(host, """
+            within;
+            package Root "root"
+              package 'a.b'
+                model C
+                end C;
+              end 'a.b';
+              model User
+                'a.b'.C c;
+                Root.'a.b'.C d;
+              end User;
+            end Root;
+            """);
+
+        var result = ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("Root.'a.b'", "AB"));
+
+        Assert.NotNull(host.Libraries.GetModelById("Root.AB.C"));
+        var user = Code(host, "Root.User");
+        Assert.Contains("AB.C c;", user);
+        Assert.Contains("Root.AB.C d;", user);
+        // A quoted identifier has quotes of its own; the note does not add a second pair.
+        Assert.Contains("spells 'a.b' as", result.Note);
     }
 
     // ---- moves ----------------------------------------------------------------------------------

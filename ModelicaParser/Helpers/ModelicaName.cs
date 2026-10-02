@@ -197,4 +197,17 @@ public static class ModelicaName
         var firstDot = FirstSeparator(fullName);
         return firstDot > 0 ? fullName[..firstDot] : fullName;
     }
+
+    /// <summary>
+    /// A long name shortened for a narrow column: its first two segments and its last, with the middle
+    /// elided - <c>Modelica.Fluid....Pipe</c> - or the name itself when it is no longer than
+    /// <paramref name="maxLength"/> or has no middle to leave out.
+    /// </summary>
+    public static string Abbreviated(string name, int maxLength = 40)
+    {
+        var segments = Segments(name);
+        return name.Length <= maxLength || segments.Count <= 2
+            ? name
+            : $"{segments[0]}.{segments[1]}....{segments[^1]}";
+    }
 }
