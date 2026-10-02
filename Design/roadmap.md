@@ -194,7 +194,8 @@ Each of these was looked at and deliberately left alone. Reopen one only with wh
   package redeclaration on an instance - 316 in MSL, 5,920 in Buildings - the 2,189 and 23,936
   `Medium.X` members they reach have **the same unit** from the constraining type as from the
   redeclared one, with no exception. A redeclared medium extends `PartialMedium` and does not redefine
-  its types. The extractor records the redeclarations (`ClassElement.Redeclarations`) so nothing need
+  its types. `ResolutionCorpusTests` keeps both facts true (opt-in, `MLQT_RESOLUTION_CORPUS`; see
+  `Design/release-checklist.md`). The extractor records the redeclarations (`ClassElement.Redeclarations`) so nothing need
   be re-read if this is reopened; reopen with a library whose redeclared package gives one of its
   types a different unit.
 

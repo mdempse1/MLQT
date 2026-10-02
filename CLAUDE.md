@@ -420,7 +420,7 @@ is the unit-consistency flagship, which has not started.
 |----------|--------|
 | `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, what was *decided against*, the *known open issues*, and the item-id rule |
 | `Design/unit-consistency.md` | **The design for the phase-3 unit / dimensional consistency check, not started**: what it builds on (measured), the unit algebra, three-state typing of an equation, the finding, the increments, and the questions the user decides first. Retire it when the check ships |
-| `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity corpus (opt-in, so an ordinary run says nothing about it), the nightly WebKit rehearsal, and the `.deb` job that only a tag exercises. Adding to it is a decision that something *cannot* be a gate on every push |
+| `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity and resolution corpora (opt-in, so an ordinary run says nothing about them), the nightly WebKit rehearsal, and the `.deb` job that only a tag exercises. Adding to it is a decision that something *cannot* be a gate on every push |
 
 **A `Bnnn` in a comment, a test or a script is a backlog id.** They were issued, B1–B498, in
 `Design/backlog.md`, the working list until 2026-09-28. That file was retired once every item was
@@ -663,6 +663,25 @@ dotnet test ModelicaParser.Tests --filter "FullyQualifiedName~RoundTripsOverAWho
 Several libraries are separated by `;`. With the variable unset the test returns immediately, so an
 ordinary run is unaffected — which is the trap, not a convenience: a green suite says nothing about
 fidelity unless this has been run.
+
+### "Does every type still resolve?" — two real libraries, by hand
+
+`ModelicaGraph.Tests/ResolutionCorpusTests` holds the two facts `Design/unit-consistency.md` is built
+on: every component type of the loaded libraries resolves, and a package redeclared on an instance
+gives each member the unit the constraining type does — so a unit check may resolve against the
+constraining type. Opt-in like the fidelity corpus, and for the same reason. **Run it after any change
+to `TypeResolver`, `ClassElementResolver` or `UnitResolver`:**
+
+```powershell
+$msl = "C:\Projects\Modelica\ModelicaStandardLibrary"
+$env:MLQT_RESOLUTION_CORPUS = "$msl\Modelica;$msl\ModelicaServices;$msl\Complex.mo;C:\Projects\Modelica\Modelica-Buildings\Buildings"
+dotnet test ModelicaGraph.Tests --filter "FullyQualifiedName~ResolutionCorpusTests"
+```
+
+Everything named is loaded into **one graph**, because a library resolves only beside its
+dependencies — so name each library's directory, not MSL's repository root, which also holds a test
+library written against 3.2.3. On 2026-10-03: 124,977 types, none unresolved; 6,239 redeclarations,
+no unit changed; about a minute. Taking away the lookup among inherited classes fails both tests.
 
 ### "Where is the time actually going?" — `dotnet-trace`
 
