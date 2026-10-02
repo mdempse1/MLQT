@@ -98,6 +98,23 @@ public class RenameClassContentsTests
     }
 
     [Fact]
+    public async Task TheRefusalCountsReferences_AndReportsAClashWithTheParentApart()
+    {
+        using var host = new TestHost();
+        var edit = await Load(host, Shadowed);
+
+        // Box: only Other's reference. Box4: Src's own constant clashes with the renamed class, and
+        // Other's reference finds it too - one clash, one reference, counted apart.
+        var box = Assert.IsType<ToolError>(await edit.RenameClass("Root.Src.Pkg", "Box")).Error;
+        var box4 = Assert.IsType<ToolError>(await edit.RenameClass("Root.Src.Pkg", "Box4")).Error;
+
+        Assert.Contains("1 reference(s) would change meaning", box);
+        Assert.DoesNotContain("already has", box);
+        Assert.Contains("Root.Src already has component Box4 of Root.Src", box4);
+        Assert.Contains("1 reference(s) would change meaning", box4);
+    }
+
+    [Fact]
     public async Task ANewNameTakenOnlyFurtherOut_IsNoObstacle()
     {
         // Root.Box3 is further out than Root.Src, where the renamed class is found first.

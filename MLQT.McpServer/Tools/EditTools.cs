@@ -1069,11 +1069,11 @@ public sealed class EditTools
         // Plan the precise edits per file: the declaration name tokens + resolved usage leaf tokens.
         var planned = new List<(string path, string newContent, int count)>();
         var shared = new ReferenceLocator.Shared();
-        var interfaces = new ClassElementResolver.InterfaceCache();
+        // One checker for the rename: it remembers what each class on the way out answers, and most
+        // references share the packages around them.
+        var capture = new NameCapture(graph, newName, classId);
+        var clash = string.IsNullOrEmpty(parent) ? null : capture.CapturedAt(parent);
         var captured = new List<string>();
-        if (!string.IsNullOrEmpty(parent) &&
-            NameCapture.CapturedBy(graph, parent, newName, classId, interfaces) is { } clash)
-            captured.Add($"{parent} already has {clash}");
         foreach (var path in paths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
@@ -1098,7 +1098,7 @@ public sealed class EditTools
                 // A reference that starts with the new name is looked up from where it is written:
                 // something of that name met first takes it over (NameCapture).
                 if (ReferenceEquals(segment, site.Segments[0]) && !site.Text.StartsWith('.') &&
-                    NameCapture.CapturedBy(graph, site.ScopeId, newName, classId, interfaces) is { } capturer)
+                    capture.CapturedAt(site.ScopeId) is { } capturer)
                     captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}: {newName} " +
                                  $"would mean {capturer}");
             }
@@ -1117,12 +1117,19 @@ public sealed class EditTools
             planned.Add((path, newContent, spans.Count));
         }
 
-        if (captured.Count > 0)
-            return new ToolError(
-                $"Renaming '{classId}' to '{newName}' would change what {captured.Count} reference(s) mean, " +
-                "because something already called that is found first where they are written: " +
-                string.Join("; ", captured.Distinct().Take(10)) + (captured.Distinct().Count() > 10 ? "; ..." : "") +
-                ". Nothing was changed. Choose another name.");
+        if (clash is not null || captured.Count > 0)
+        {
+            var references = captured.Distinct().ToList();
+            var problems = new List<string>();
+            if (clash is not null)
+                problems.Add($"{parent} already has {clash}, which the renamed class would sit beside");
+            if (references.Count > 0)
+                problems.Add($"{references.Count} reference(s) would change meaning, because something already " +
+                             "called that is found first where they are written: " +
+                             string.Join("; ", references.Take(10)) + (references.Count > 10 ? "; ..." : ""));
+            return new ToolError($"Renaming '{classId}' to '{newName}' is refused: {string.Join(". ", problems)}. " +
+                                 "Nothing was changed. Choose another name.");
+        }
 
         if (planned.Count == 0)
             return new ToolError(

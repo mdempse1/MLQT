@@ -123,11 +123,68 @@ public class NameCaptureTests
     }
 
     [Fact]
+    public void OneCheckerAskedAboutManyScopes_AnswersAsAFreshOneDoes()
+    {
+        // It remembers what each class on the way out says; asked in any order, each scope still gets
+        // the answer it would get alone - a shared package's verdict is the same for every scope below.
+        var graph = Graph(("Root.Src.Mid", "package Mid\n  constant Real Box = 1;\nend Mid;"),
+                          ("Root.Src.Mid.Inner", "model Inner\nend Inner;"),
+                          ("Root.Src.Other", "model Other\n  package Box\n  end Box;\nend Other;"),
+                          ("Root.Src.Other.Box", "package Box\nend Box;"));
+        var scopes = new[] { "Root.Src.Mid.Inner", "Root.Src.Plain", "Root.Src.Mid", "Root.Src.Other", "Root.Src.Mid.Inner" };
+        var capture = new NameCapture(graph, "Box", "Root.Src.Pkg");
+
+        Assert.Equal(scopes.Select(s => Captured(graph, s)), scopes.Select(capture.CapturedAt));
+        Assert.Equal(["component Box of Root.Src.Mid", null, "component Box of Root.Src.Mid", "Root.Src.Other.Box",
+                      "component Box of Root.Src.Mid"], scopes.Select(capture.CapturedAt));
+    }
+
+    [Fact]
+    public void ANestedClassInAFileOfItsOwn_Captures_InTheScopeOrABase()
+    {
+        // A directory package's child is not in its parent's source, so no interface lists it: only
+        // the graph knows Other.Box and Base.Box exist.
+        var graph = Graph(("Root.Src.Other", "package Other\nend Other;"),
+                          ("Root.Src.Other.Box", "package Box\nend Box;"),
+                          ("Root.Src.Base", "package Base\nend Base;"),
+                          ("Root.Src.Base.Box", "package Box\nend Box;"),
+                          ("Root.Src.Derived", "model Derived\n  extends Root.Src.Base;\nend Derived;"));
+
+        Assert.Equal("Root.Src.Other.Box", Captured(graph, "Root.Src.Other"));
+        Assert.Equal("Root.Src.Base.Box", Captured(graph, "Root.Src.Derived"));
+    }
+
+    [Fact]
+    public void AnImportOfTheRenamedClass_IsWhereItIsFound_BeforeAnythingFurtherOut()
+    {
+        // User imports Root.Src.Pkg - renamed with it - so `Box` finds the renamed class there,
+        // before Lib's own Box one scope out.
+        var graph = Graph(("Lib", "package Lib\nend Lib;"), ("Lib.Box", "package Box\nend Box;"),
+                          ("Lib.User", "model User\n  import Root.Src.Pkg;\nend User;"));
+
+        Assert.Null(Captured(graph, "Lib.User"));
+    }
+
+    [Fact]
+    public void ATopLevelRenamedClass_IsCapturedOnlyByWhatIsNearer()
+    {
+        // Renaming the top-level Root: nothing is further out than the root, so anything of the new
+        // name on the way out captures, and nothing of it means the renamed class is found.
+        var graph = Graph(("Other", "package Other\n  constant Real Box = 1;\nend Other;"),
+                          ("Other.User", "model User\nend User;"));
+
+        Assert.Equal("component Box of Other", Captured(graph, "Other.User", renamed: "Root"));
+        Assert.Null(Captured(graph, "Root.Src.Plain", renamed: "Root"));
+    }
+
+    [Fact]
     public void AnEncapsulatedClassEndsTheSearch()
     {
-        var graph = Graph(("Root.Src.Sealed", "encapsulated model Sealed\nend Sealed;"),
-                          ("Root.Box", "package Box\nend Box;"));
+        // Mid's Box is between Sealed and Root.Src, and lookup never gets past Sealed to reach it.
+        var graph = Graph(("Root.Src.Mid", "package Mid\n  constant Real Box = 1;\nend Mid;"),
+                          ("Root.Src.Mid.Sealed", "encapsulated model Sealed\nend Sealed;"));
 
-        Assert.Null(Captured(graph, "Root.Src.Sealed"));
+        Assert.Null(Captured(graph, "Root.Src.Mid.Sealed"));
+        Assert.Equal("component Box of Root.Src.Mid", Captured(graph, "Root.Src.Mid"));
     }
 }
