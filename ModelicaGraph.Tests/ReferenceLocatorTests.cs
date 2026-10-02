@@ -47,6 +47,36 @@ public class ReferenceLocatorTests
     }
 
     [Fact]
+    public void AGlobalReference_IsToTheTopLevelClass_NotANearerOneOfTheSameName()
+    {
+        // `.Base` is the top-level Base whatever P holds - so renaming P.Base must leave it alone,
+        // and renaming the top-level Base must find it, in a declaration and an extends clause alike.
+        var graph = GraphWith("Base", "P.Base", "P.User");
+        const string code = "within P;\nmodel User\n  extends .Base;\n  .Base b;\n  Base near;\nend User;";
+
+        var toTop = Locate(code, graph, "Base");
+        var toNear = Locate(code, graph, "P.Base");
+
+        Assert.Equal(2, toTop.Count);
+        Assert.All(toTop, s => Assert.Equal("Base", s.TargetId));
+        // The leaf is the name, not the dot: a rename rewrites only "Base".
+        Assert.All(toTop, s => Assert.Equal("Base", code.Substring(s.Leaf.StartIndex, s.Leaf.StopIndex - s.Leaf.StartIndex + 1)));
+        Assert.Equal("P.Base", Assert.Single(toNear).TargetId);
+    }
+
+    [Fact]
+    public void AnImportClausesName_IsMarkedAsOne_AndKnowsWhereItIsWritten()
+    {
+        var graph = GraphWith("P.Base", "P.User");
+        const string code = "within P;\nmodel User\n  import P.Base;\n  P.Base b;\nend User;";
+
+        var sites = Locate(code, graph, "P.Base");
+
+        Assert.Equal([true, false], sites.Select(s => s.InImport));
+        Assert.All(sites, s => Assert.Equal("P.User", s.ScopeId));
+    }
+
+    [Fact]
     public void LocatesExtendsReference()
     {
         var graph = GraphWith("P.Base", "P.User");

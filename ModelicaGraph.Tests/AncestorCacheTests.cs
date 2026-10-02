@@ -22,15 +22,15 @@ public class AncestorCacheTests
 {
     /// <summary>
     /// A library where <c>Length</c> is only in scope through the extends chain, so resolving it
-    /// needs the ancestor walk rather than a name lookup.
+    /// needs the ancestor walk rather than a name lookup: it is a class <c>Base</c> declares, and so
+    /// one <c>A</c> inherits. (This fixture once reached it through an <c>import</c> in
+    /// <c>Base</c>, which Modelica does not inherit - MLS 13.2.1.)
     /// </summary>
     private static DirectedGraph Library()
     {
         var graph = new DirectedGraph();
-        GraphBuilder.LoadModelicaFile(graph, "Units.mo",
-            "package Units\n  type Length = Real(unit=\"m\");\n  type Mass = Real(unit=\"kg\");\nend Units;\n");
         GraphBuilder.LoadModelicaFile(graph, "Bases.mo",
-            "partial model Base\n  import Units.*;\nend Base;\n");
+            "partial model Base\n  type Length = Real(unit=\"m\");\n  type Mass = Real(unit=\"kg\");\nend Base;\n");
         GraphBuilder.LoadModelicaFile(graph, "Models.mo",
             "model A\n  extends Base;\n  Length x;\nend A;\n"
             + "model B\n  Length y;\nend B;\n");
@@ -47,7 +47,7 @@ public class AncestorCacheTests
         var cached = TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache);
 
         Assert.NotNull(uncached);
-        Assert.Equal("Units.Length", uncached!.Id);
+        Assert.Equal("Base.Length", uncached!.Id);
         Assert.Equal(uncached.Id, cached?.Id);
     }
 
@@ -60,9 +60,9 @@ public class AncestorCacheTests
         var graph = Library();
         var cache = new TypeResolver.AncestorCache();
 
-        Assert.Equal("Units.Length", TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache)?.Id);
-        Assert.Equal("Units.Mass", TypeResolver.ResolveWithInheritance(graph, "A", "Mass", null, cache)?.Id);
-        Assert.Equal("Units.Length", TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache)?.Id);
+        Assert.Equal("Base.Length", TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache)?.Id);
+        Assert.Equal("Base.Mass", TypeResolver.ResolveWithInheritance(graph, "A", "Mass", null, cache)?.Id);
+        Assert.Equal("Base.Length", TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache)?.Id);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public class AncestorCacheTests
         Assert.Null(TypeResolver.ResolveWithInheritance(graph, "A", "NoSuchType", null, cache));
 
         // ...and it has not poisoned the chain for a name that is there.
-        Assert.Equal("Units.Length", TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache)?.Id);
+        Assert.Equal("Base.Length", TypeResolver.ResolveWithInheritance(graph, "A", "Length", null, cache)?.Id);
     }
 
     [Fact]

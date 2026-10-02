@@ -51,7 +51,24 @@ A model is considered impacted if it depends on a selected model through any of 
 
 - **extends** — The impacted model extends (inherits from) the selected model
 - **Component usage** — The impacted model declares a component of the selected model's type
-- **Nested model references** — The impacted model references the selected model inside equations, algorithms, or annotations
+- **References in equations and algorithms** — The impacted model names the selected model in its
+  code: a function call, a type in a modification, a qualified name
+- **Constants and enumeration literals** — A name that goes *through* a class uses that class:
+  `Modelica.Constants.pi` uses `Modelica.Constants`, and `Types.Init.SteadyState` uses `Types.Init`
+- **Constants a package lends** — A class that uses a constant declared in a package around it, by its
+  bare name, uses that package
+- **Inherited classes** — A model whose base class declares a class (typically a replaceable `Medium`)
+  uses that class when it writes `Medium.State` or `Medium.T_default`. Names are looked up the way
+  Modelica looks them up: among the classes a model inherits before its imports and the packages
+  around it, so a package's own `Medium` does not answer for the one the base declares
+- **Imports** — An `import` clause uses the class it names, including in an `encapsulated` class
+
+**Annotations mostly do not count.** An annotation describes a class rather than using anything, so
+graphics, documentation and `uses(...)` are not dependencies. The exceptions name code that runs:
+`derivative`, `inverse`, and `choices`/`choice`.
+
+Names written inside strings — `modelica://` links in documentation, for instance — are not
+dependencies either.
 
 The analysis is transitive: if Model A depends on Model B, and Model B depends on Model C, then selecting Model C will show both Model A and Model B as impacted.
 

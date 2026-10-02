@@ -7,12 +7,13 @@ namespace ModelicaGraph.Analysis;
 
 /// <summary>
 /// Best-effort resolution of a type name written inside a class to the <see cref="ModelNode"/> it
-/// refers to in a <see cref="DirectedGraph"/>. Tries an exact match, then the class's own imports, then
-/// a relative lookup up the package hierarchy — mirroring how the dependency analyzer resolves
-/// references. <see cref="Resolve"/> intentionally does NOT model names inherited through <c>extends</c>
-/// (a documented limitation shared with dependency analysis), so an unresolved result is "not found by
-/// these rules", not a guarantee the type is undefined; <see cref="ResolveWithInheritance"/> adds the
-/// ancestor scopes. Shared by the analyses (metrics, shadowing) and the MCP tooling.
+/// refers to in a <see cref="DirectedGraph"/>: scope by scope from the class outward, each scope's
+/// classes and then its imports, the root last. <see cref="Resolve"/> does not look among inherited
+/// classes - it is the lookup for an <c>extends</c> clause's own base name, which may not use what that
+/// clause brings in - and <see cref="ResolveWithInheritance"/>, which dependency analysis uses for every
+/// other name, does. Either way an unresolved result is "not found by these rules", not a guarantee the
+/// type is undefined: a <c>redeclare</c> is not modelled. Shared by the analyses (metrics, shadowing)
+/// and the MCP tooling.
 /// </summary>
 public static class TypeResolver
 {
@@ -32,7 +33,8 @@ public static class TypeResolver
     /// <summary>
     /// Resolve <paramref name="typeText"/> (as written in class <paramref name="ownerId"/>) to a class in
     /// the graph, or null if these rules cannot resolve it. <paramref name="imports"/> are the class's
-    /// import statements (from the interface extractor), used to expand aliases/wildcards.
+    /// import statements (from the interface extractor), used to expand aliases/wildcards; null reads
+    /// the class's own, so pass them only when you have them already.
     /// </summary>
     public static ModelNode? Resolve(
         DirectedGraph graph, string ownerId, string? typeText, IReadOnlyList<string>? imports = null)
@@ -40,11 +42,12 @@ public static class TypeResolver
         if (string.IsNullOrWhiteSpace(typeText))
             return null;
 
-        var name = typeText.TrimStart('.').Trim();
+        var trimmed = typeText.Trim();
+        var name = trimmed.TrimStart('.');
         if (name.Length == 0 || IsPredefined(name))
             return null;
 
-        return ResolveName(graph, ownerId, name, imports);
+        return ResolveName(graph, ownerId, name, imports, global: trimmed.StartsWith('.'));
     }
 
     /// <summary>
@@ -59,58 +62,308 @@ public static class TypeResolver
     /// block below it. Asking only the class that wrote the name left MSL's controllers without edges to
     /// the types they use (B292). The enclosing classes' imports come from
     /// <see cref="ClassImports.For"/>, which reads each package once.</para>
+    /// <para><b>The innermost scope that has the name wins</b>, and a name matched at the root - as
+    /// written, fully qualified - is the last thing tried, not the first. In <c>Lib.Examples.Drive</c>,
+    /// <c>Constants.pi</c> means <c>Lib.Constants</c> when there is one, even if a top-level
+    /// <c>Constants</c> is loaded too; trying the name as written first answered with the top-level
+    /// one. Within each scope its own classes come before its imports, as the language has them.</para>
+    /// <para><b>Lookup stops at an <c>encapsulated</c> class</b>, after its own classes and imports:
+    /// nothing outside it, the root included, is visible from inside it.</para>
     /// </remarks>
+    /// <param name="global">
+    /// True for a name written with a leading dot (<paramref name="name"/> is without it), which
+    /// Modelica looks up from the top and nowhere else. Now that the root is tried last, losing the
+    /// dot would let a nearer class of the same name answer for it.
+    /// </param>
+    /// <param name="inherited">
+    /// True to look among each scope's <b>inherited</b> classes too, between its own and its imports,
+    /// which is where Modelica looks (MLS §5.3.1): the replaceable <c>Medium</c> a base declares is
+    /// what <c>Medium</c> means in a model extending it, whatever its package holds. False for an
+    /// <c>extends</c> clause's own base name, which is looked up without the inherited elements it is
+    /// about to bring in.
+    /// </param>
+    /// <param name="ancestors">Where <paramref name="inherited"/> lookups keep each scope's bases for
+    /// the run; see <see cref="ResolveWithInheritance"/>.</param>
     internal static ModelNode? ResolveName(
-        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports)
+        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports, bool global = false,
+        bool inherited = false, AncestorCache? ancestors = null)
+        => ResolveNamePath(graph, ownerId, name, imports, global, inherited, ancestors)?.Node;
+
+    /// <summary>
+    /// An <c>extends</c> clause's base name, as written in <paramref name="ownerId"/>: looked up without
+    /// the class's own inherited classes - the ones the clause is bringing in - and with everything
+    /// else, the inherited classes of the packages around it included.
+    /// </summary>
+    internal static ModelNode? ResolveBase(
+        DirectedGraph graph, string ownerId, string? typeText, IReadOnlyList<string>? imports, AncestorCache? ancestors)
     {
-        // 1. Already fully-qualified.
-        if (graph.GetNode<ModelNode>(name) is { } exact)
-            return exact;
+        if (string.IsNullOrWhiteSpace(typeText))
+            return null;
+        var trimmed = typeText.Trim();
+        var name = trimmed.TrimStart('.');
+        return name.Length == 0 || IsPredefined(name)
+            ? null
+            : ResolveName(graph, ownerId, name, imports, global: trimmed.StartsWith('.'), inherited: false, ancestors);
+    }
 
-        // 2. Via the class's own imports.
-        if (imports is not null)
-            foreach (var import in imports)
-                if (ResolveViaImport(graph, import, name) is { } viaImport)
-                    return viaImport;
+    /// <summary>
+    /// The lookup, saying how it got there: the class each segment of <paramref name="name"/> names,
+    /// and how the first was bound. Null when the name resolves to no class.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The first segment is looked up; every later one is a member of the class before
+    /// it</b> (MLS §5.3.2) - nested in it, or in one of its bases, a short class's included. So
+    /// <c>Medium.ThermodynamicState</c>, where <c>Medium</c> is
+    /// <c>replaceable package Medium = Modelica.Media.Interfaces.PartialMedium</c>, is
+    /// <c>PartialMedium.ThermodynamicState</c>: <c>Base.Medium.ThermodynamicState</c> is no class
+    /// anyone declared. Matching the whole name as one id at each scope found nothing for that, and -
+    /// worse - went on looking further out, where a package's own <c>Medium</c> answered for it.
+    /// <b>Once the first segment is found, the search is over</b>: if the rest is not there, the name
+    /// resolves to nothing, as the language has it.</para>
+    /// <para>Who asks what the first segment was bound to: the reference locator, so that a rename
+    /// leaves an alias as written and a move leaves an inherited or imported name alone.</para>
+    /// </remarks>
+    internal static NameResolution? ResolveNamePath(
+        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports, bool global,
+        bool inherited, AncestorCache? ancestors)
+    {
+        var segments = ModelicaName.Segments(name);
+        if (segments.Count == 0 || segments.Any(s => s.Length == 0))
+            return null;
 
-        // 3. Relative: start in the class's own scope and walk outward through enclosing packages,
-        //    trying each one's classes and then its imports.
-        var parts = ownerId.Split('.');
-        for (var take = parts.Length; take >= 0; take--)
+        if (global)
+            return Descend(graph, segments[0], NameBinding.Global, segments, ancestors);
+
+        if (BindFirst(graph, ownerId, segments[0], imports, inherited, ancestors) is { } bound)
+            return Descend(graph, bound.Id, bound.Binding, segments, ancestors);
+
+        // The first segment is no class in the graph at all - a package not loaded, or a graph built
+        // without its packages - so match the whole name at each scope, as an id, the way the lookup
+        // always did before it went a segment at a time.
+        return WholeName(graph, ownerId, name, segments, ancestors);
+    }
+
+    // The rest of a name, a member at a time, from the class its first segment is bound to. A package
+    // on the way that the graph does not hold is stepped over by id: only the class at the end has to
+    // be there.
+    private static NameResolution? Descend(
+        DirectedGraph graph, string firstId, NameBinding binding, IReadOnlyList<string> segments, AncestorCache? ancestors)
+    {
+        var path = new List<string>(segments.Count) { firstId };
+        for (var i = 1; i < segments.Count; i++)
         {
-            var prefix = string.Join('.', parts.Take(take));
-            var candidate = prefix.Length == 0 ? name : $"{prefix}.{name}";
-            if (graph.GetNode<ModelNode>(candidate) is { } node)
-                return node;
+            var current = path[^1];
+            var next = $"{current}.{segments[i]}";
+            if (graph.GetNode<ModelNode>(next) is null && graph.GetNode<ModelNode>(current) is { } owner)
+            {
+                if (MemberClass(graph, owner, segments[i], ancestors) is not { } inheritedClass)
+                    return null;
+                next = inheritedClass.Id;
+            }
+            path.Add(next);
+        }
+        return graph.GetNode<ModelNode>(path[^1]) is { } node ? new NameResolution(node, path, binding) : null;
+    }
 
-            // The owner's own imports were step 2.
-            if (take == parts.Length || prefix.Length == 0 || graph.GetNode<ModelNode>(prefix) is not { } scope)
-                continue;
-            foreach (var import in ClassImports.For(scope.Definition))
-                if (ResolveViaImport(graph, import, name) is { } viaEnclosing)
-                    return viaEnclosing;
+    // A name whose first segment is no class anywhere, matched whole at each scope from the class
+    // outward, the root last.
+    private static NameResolution? WholeName(
+        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string> segments, AncestorCache? ancestors)
+    {
+        foreach (var scopeId in ScopesOf(ownerId))
+        {
+            if (graph.GetNode<ModelNode>($"{scopeId}.{name}") is not null)
+                return Descend(graph, $"{scopeId}.{segments[0]}", NameBinding.Own, segments, ancestors);
+            if (graph.GetNode<ModelNode>(scopeId) is { } scope && ClassImports.IsEncapsulated(scope.Definition))
+                return null;
+        }
+        return Descend(graph, segments[0], NameBinding.Root, segments, ancestors);
+    }
+
+    /// <summary>
+    /// The class called <paramref name="name"/> inside <paramref name="owner"/>: nested in it, or
+    /// inherited from one of its bases, nearest first - a short class's base included.
+    /// </summary>
+    internal static ModelNode? MemberClass(DirectedGraph graph, ModelNode owner, string name, AncestorCache? ancestors)
+        => graph.GetNode<ModelNode>($"{owner.Id}.{name}") ?? InheritedClass(graph, owner.Id, name, ancestors);
+
+    /// <summary>
+    /// The class called <paramref name="name"/> that <paramref name="ownerId"/> inherits - nested in one
+    /// of its bases, nearest first - but not one it declares itself. What a class extends written in
+    /// that class extends.
+    /// </summary>
+    internal static ModelNode? InheritedClass(DirectedGraph graph, string ownerId, string name, AncestorCache? ancestors)
+    {
+        if (ownerId.Length == 0)
+            return null;
+        foreach (var ancestorId in AncestorsOf(graph, ownerId, ancestors))
+            if (graph.GetNode<ModelNode>($"{ancestorId}.{name}") is { } inheritedClass)
+                return inheritedClass;
+        return null;
+    }
+
+    // Where a first segment is found: from the class outward, each scope's own classes, then the ones
+    // it inherits, then its imports; an encapsulated scope ends the search; the root comes last.
+    private static (string Id, NameBinding Binding)? BindFirst(
+        DirectedGraph graph, string ownerId, string first, IReadOnlyList<string>? imports, bool inherited,
+        AncestorCache? ancestors)
+    {
+        foreach (var scopeId in ScopesOf(ownerId))
+        {
+            if (graph.GetNode<ModelNode>($"{scopeId}.{first}") is { } own)
+                return (own.Id, NameBinding.Own);
+
+            // An extends clause's base name is looked up without the inherited classes that clause is
+            // bringing in - its own class's - but with every enclosing scope's (MLS §5.6.1).
+            if (inherited || scopeId != ownerId)
+                foreach (var ancestorId in AncestorsOf(graph, scopeId, ancestors))
+                    if (graph.GetNode<ModelNode>($"{ancestorId}.{first}") is { } inheritedClass)
+                        return (inheritedClass.Id, NameBinding.Inherited);
+
+            // The owner's own imports are the ones it was given, or - given none - its own, read once;
+            // an enclosing package's are read from it. Null was once "no imports", which cost nothing
+            // while the root was tried first, and since an encapsulated class stops the lookup it
+            // turned every name such a class imports into an unresolved one.
+            var scope = graph.GetNode<ModelNode>(scopeId);
+            var scopeImports = scopeId == ownerId && imports is not null
+                ? imports
+                : scope is not null ? ClassImports.For(scope.Definition) : null;
+            if (scopeImports is not null && BindViaImports(graph, scopeImports, first, ancestors) is { } imported)
+                return imported;
+
+            // An encapsulated class is as far as lookup goes - not even the root is tried - which is
+            // why such a class imports what it uses (MLS §5.3.1). The predefined types it may still
+            // name were answered before the lookup began.
+            if (scope is not null && ClassImports.IsEncapsulated(scope.Definition))
+                return null;
         }
 
+        return graph.GetNode<ModelNode>(first) is { } root ? (root.Id, NameBinding.Root) : null;
+    }
+
+    // A class and the classes enclosing it, innermost first.
+    private static IEnumerable<string> ScopesOf(string classId)
+    {
+        if (classId.Length == 0)
+            yield break;
+        yield return classId;
+        foreach (var enclosing in ModelicaName.EnclosingNamesOf(classId))
+            yield return enclosing;
+    }
+
+    /// <summary>
+    /// What one scope's imports make <paramref name="first"/> mean: a qualified or alias import before
+    /// any wildcard, as MLS §5.3.1 orders them - declaration order said <c>import A.*; import B.X;</c>
+    /// made <c>X</c> <c>A.X</c>.
+    /// </summary>
+    internal static (string Id, NameBinding Binding)? BindViaImports(
+        DirectedGraph graph, IReadOnlyList<string> imports, string first, AncestorCache? ancestors)
+    {
+        foreach (var import in imports)
+            if (!IsWildcard(import) && BindViaImport(graph, import, first, ancestors) is { } qualified)
+                return qualified;
+        foreach (var import in imports)
+            if (IsWildcard(import) && BindViaImport(graph, import, first, ancestors) is { } unqualified)
+                return unqualified;
         return null;
+    }
+
+    /// <summary>True for an unqualified import, <c>import A.B.*;</c>.</summary>
+    internal static bool IsWildcard(string import)
+    {
+        var statement = import.Trim();
+        return !statement.Contains('=') && statement.EndsWith(".*", StringComparison.Ordinal);
+    }
+
+    // What one import clause makes a first segment mean, and how. Its target is a name from the top,
+    // resolved like any other - so a class an imported package inherits is in reach too.
+    private static (string Id, NameBinding Binding)? BindViaImport(
+        DirectedGraph graph, string import, string first, AncestorCache? ancestors)
+    {
+        var statement = import.Trim();
+
+        // Alias: "SI = Modelica.Units.SI"
+        var eq = statement.IndexOf('=');
+        if (eq >= 0)
+            return string.Equals(statement[..eq].Trim(), first, StringComparison.Ordinal)
+                ? (GlobalId(graph, statement[(eq + 1)..].Trim(), ancestors), NameBinding.AliasImport)
+                : null;
+
+        // Wildcard: "Modelica.Units.SI.*"
+        if (statement.EndsWith(".*", StringComparison.Ordinal))
+            return ResolveGlobal(graph, $"{statement[..^2]}.{first}", ancestors) is { } member
+                ? (member.Id, NameBinding.WildcardImport)
+                : null;
+
+        // Explicit list: "Modelica.Units.SI.{Voltage, Current}" is `import Modelica.Units.SI.Voltage;
+        // import Modelica.Units.SI.Current;`, and makes those two names visible and no others. Read as
+        // a wildcard it made every class in SI visible, so an enclosing package's list import captured
+        // names that belong further out (B348).
+        var listIdx = statement.IndexOf(".{", StringComparison.Ordinal);
+        if (listIdx >= 0)
+        {
+            var members = statement[(listIdx + 2)..].TrimEnd('}')
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            return members.Contains(first, StringComparer.Ordinal)
+                ? (GlobalId(graph, $"{statement[..listIdx]}.{first}", ancestors), NameBinding.Import)
+                : null;
+        }
+
+        // Plain: "Modelica.Units.SI" - its last segment is the name it brings in.
+        return string.Equals(ModelicaName.LeafOf(statement), first, StringComparison.Ordinal)
+            ? (GlobalId(graph, statement, ancestors), NameBinding.Import)
+            : null;
+    }
+
+    // The id a name from the top means: the class it resolves to, or - where the graph does not hold
+    // that class, a package not loaded - the name as written, for the rest of a name to go on from.
+    // A wildcard does not use it: a clause that merely could bring a name in must not claim it.
+    private static string GlobalId(DirectedGraph graph, string name, AncestorCache? ancestors)
+        => ResolveGlobal(graph, name, ancestors)?.Id ?? name.Trim().TrimStart('.');
+
+    /// <summary>A name from the top - what an import clause, or a name with a leading dot, means.</summary>
+    internal static ModelNode? ResolveGlobal(DirectedGraph graph, string name, AncestorCache? ancestors = null)
+        => ResolveNamePath(graph, string.Empty, name.Trim().TrimStart('.'), imports: null, global: true,
+            inherited: false, ancestors)?.Node;
+
+    /// <summary>
+    /// What <paramref name="import"/> makes <paramref name="name"/> mean - its first segment brought in
+    /// by the clause, the rest members of that class - or null when the clause does not reach it.
+    /// </summary>
+    internal static ModelNode? ResolveViaImport(DirectedGraph graph, string import, string name)
+    {
+        var segments = ModelicaName.Segments(name);
+        return segments.Count > 0 && BindViaImport(graph, import, segments[0], ancestors: null) is { } bound
+            ? Descend(graph, bound.Id, bound.Binding, segments, ancestors: null)?.Node
+            : null;
     }
 
     /// <summary>The ancestors of a class, as <see cref="ResolveWithInheritance"/> caches them.</summary>
     public sealed class AncestorCache
     {
-        private readonly System.Collections.Concurrent.ConcurrentDictionary
-            <string, List<(string Id, IReadOnlyList<string> Imports)>> _byClass = new(StringComparer.Ordinal);
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<string>> _byClass =
+            new(StringComparer.Ordinal);
 
-        internal List<(string Id, IReadOnlyList<string> Imports)> GetOrAdd(
-            string classId, Func<string, List<(string Id, IReadOnlyList<string> Imports)>> collect)
+        internal IReadOnlyList<string> GetOrAdd(string classId, Func<string, IReadOnlyList<string>> collect)
             => _byClass.GetOrAdd(classId, collect);
     }
 
     /// <summary>
-    /// Like <see cref="Resolve"/> but also resolves names inherited into scope through <c>extends</c>:
-    /// after trying the class's own scope, it tries each ancestor's scope (its package hierarchy, its
-    /// imports and its nested classes). Used so an inherited type name is not wrongly reported as
-    /// unresolved.
+    /// Like <see cref="Resolve"/> but also finds the classes a class inherits - each ancestor's
+    /// <b>nested classes</b>, as <c>Medium.ThermodynamicState</c> written in a model whose base
+    /// declares <c>Medium</c> - and finds them <b>where Modelica looks</b>: after the class's own
+    /// classes and before its imports and enclosing packages, at every scope on the way out. Looked
+    /// for last, a package's own <c>Medium</c> answered for the one the base declares.
     /// </summary>
+    /// <remarks>
+    /// <para><b>An ancestor's nested classes, and nothing else of its scope.</b> A class inherits its
+    /// bases' elements; it does not inherit the packages around them or their imports (MLS §5.6,
+    /// §13.2.1). This once tried each ancestor's whole scope, so a model extending
+    /// <c>Lib.Base</c> from another package could name <c>Constants.pi</c> and mean
+    /// <c>Lib.Constants</c> - and an <c>encapsulated</c> class could reach past itself through its
+    /// base's package. A name written in a base is resolved in the base, by asking with the base's
+    /// id: that is the question <see cref="ResolvedElement.OwnerId"/> exists to answer.</para>
+    /// </remarks>
     /// <param name="ancestors">
     /// Somewhere to remember each class's extends chain for the duration of a run, or null to walk it
     /// afresh every time. <b>Pass one for anything that resolves more than a handful of names.</b>
@@ -129,106 +382,68 @@ public static class TypeResolver
         DirectedGraph graph, string classId, string? typeText, IReadOnlyList<string>? imports,
         AncestorCache? ancestors = null)
     {
-        if (Resolve(graph, classId, typeText, imports) is { } direct)
-            return direct;
-        if (string.IsNullOrWhiteSpace(typeText) || IsPredefined(typeText))
+        if (string.IsNullOrWhiteSpace(typeText))
             return null;
 
-        var chain = ancestors is null
-            ? CollectAncestors(graph, classId)
-            : ancestors.GetOrAdd(classId, id => CollectAncestors(graph, id));
+        var trimmed = typeText.Trim();
+        var name = trimmed.TrimStart('.');
+        if (name.Length == 0 || IsPredefined(name))
+            return null;
 
-        foreach (var (ancestorId, ancestorImports) in chain)
-            if (Resolve(graph, ancestorId, typeText, ancestorImports) is { } viaAncestor)
-                return viaAncestor;
-        return null;
+        return ResolveName(graph, classId, name, imports, global: trimmed.StartsWith('.'), inherited: true, ancestors);
     }
 
-    // The class's ancestors (via extends), each with its own imports, so a name can be resolved in the
-    // scope it is inherited from. Depth-guarded against cycles/diamonds.
-    private static List<(string Id, IReadOnlyList<string> Imports)> CollectAncestors(
-        DirectedGraph graph, string classId)
+    // A scope's ancestors, through the run's cache when there is one. Cheap without it too: what each
+    // class extends is read once and kept on the class (ClassImports.BasesOf).
+    private static IReadOnlyList<string> AncestorsOf(DirectedGraph graph, string scopeId, AncestorCache? ancestors)
     {
-        var result = new List<(string, IReadOnlyList<string>)>();
-        var visited = new HashSet<string>(StringComparer.Ordinal) { classId };
+        // Finding a class's bases resolves their names, which looks at the bases of the scopes around
+        // it - so a cycle through inheritance and enclosing scopes would come back here for the same
+        // class. It gets no bases on the way round, and nothing is remembered from that answer.
+        var collecting = _collecting ??= new HashSet<string>(StringComparer.Ordinal);
+        if (!collecting.Add(scopeId))
+            return [];
+        try
+        {
+            return ancestors is null
+                ? CollectAncestors(graph, scopeId, ancestors)
+                : ancestors.GetOrAdd(scopeId, id => CollectAncestors(graph, id, ancestors));
+        }
+        finally
+        {
+            collecting.Remove(scopeId);
+        }
+    }
 
-        void Walk(string id, int depth)
+    [ThreadStatic]
+    private static HashSet<string>? _collecting;
+
+    // The class's ancestors, nearest first down each extends clause in turn, so a class a nearer base
+    // redeclares is found before the one it replaces. Built on ClassElementResolver.DirectBases, the
+    // one reading of what a class extends (short classes included); BaseClasses has the same set in
+    // drawing order, deepest first, which is the wrong way round for a lookup.
+    private static IReadOnlyList<string> CollectAncestors(DirectedGraph graph, string classId, AncestorCache? ancestors)
+    {
+        var result = new List<string>();
+        if (graph.GetNode<ModelNode>(classId) is not { } node)
+            return result;
+
+        var visited = new HashSet<string>(StringComparer.Ordinal) { classId };
+        Walk(node, 0);
+        return result;
+
+        void Walk(ModelNode current, int depth)
         {
             if (depth > 32)
                 return;
-            // Borrowed, not kept: this walks up an extends chain, so every class it reaches beyond
-            // the first is one nobody else asked for. See ModelDefinition.Borrow.
-            var iface = graph.GetNode<ModelNode>(id)?.Definition
-                .Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
-            if (iface is null)
-                return;
-            var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
-            foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+            foreach (var (_, baseNode) in ClassElementResolver.DirectBases(graph, current, ancestors))
             {
-                var baseNode = Resolve(graph, id, ext.Type, imports);
-                if (baseNode is null || !visited.Add(baseNode.Id))
+                if (!visited.Add(baseNode.Id))
                     continue;
-                var baseImports = baseNode.Definition
-                    .Borrow<IReadOnlyList<string>>(
-                        tree => ClassInterfaceExtractor.Extract(tree).Elements
-                            .Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList(),
-                        [])
-                    .ToList();
-                result.Add((baseNode.Id, baseImports));
-                Walk(baseNode.Id, depth + 1);
+                result.Add(baseNode.Id);
+                Walk(baseNode, depth + 1);
             }
         }
-
-        Walk(classId, 0);
-        return result;
     }
 
-    internal static ModelNode? ResolveViaImport(DirectedGraph graph, string import, string name)
-    {
-        var stmt = import.Trim();
-
-        // Alias: "SI = Modelica.Units.SI"
-        var eq = stmt.IndexOf('=');
-        if (eq >= 0)
-        {
-            var alias = stmt[..eq].Trim();
-            var target = stmt[(eq + 1)..].Trim();
-            // `import SI = Modelica.SIunits;` makes SI.Voltage mean Modelica.SIunits.Voltage:
-            // the name is re-rooted from the alias onto the target, and is unresolvable here if it
-            // is not under the alias at all.
-            return ModelicaName.ReRoot(name, alias, target) is { } aliased
-                ? graph.GetNode<ModelNode>(aliased)
-                : null;
-        }
-
-        // Wildcard: "Modelica.Units.SI.*"
-        if (stmt.EndsWith(".*", StringComparison.Ordinal))
-            return graph.GetNode<ModelNode>($"{stmt[..^2]}.{name}");
-
-        // Explicit list: "Modelica.Units.SI.{Voltage, Current}" is `import Modelica.Units.SI.Voltage;
-        // import Modelica.Units.SI.Current;`, and makes those two names visible and no others. Read as
-        // a wildcard it made every class in SI visible, so an enclosing package's list import captured
-        // names that belong further out, and the rules disagreed with dependency analysis, whose
-        // ReferenceResolver.AddImport has always expanded the list exactly (B348).
-        var listIdx = stmt.IndexOf(".{", StringComparison.Ordinal);
-        if (listIdx >= 0)
-        {
-            var package = stmt[..listIdx];
-            var members = stmt[(listIdx + 2)..].TrimEnd('}')
-                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            foreach (var member in members)
-                if (ModelicaName.ReRoot(name, member, $"{package}.{member}") is { } listed)
-                    return graph.GetNode<ModelNode>(listed);
-            return null;
-        }
-
-        // Plain: "Modelica.Units.SI" — the last segment becomes the implicit alias.
-        var lastDot = stmt.LastIndexOf('.');
-        var leaf = lastDot >= 0 ? stmt[(lastDot + 1)..] : stmt;
-        // `import Modelica.SIunits;` makes SIunits.Voltage mean Modelica.SIunits.Voltage - the
-        // same re-rooting, with the statement's last segment standing in for the alias.
-        return ModelicaName.ReRoot(name, leaf, stmt) is { } imported
-            ? graph.GetNode<ModelNode>(imported)
-            : null;
-    }
 }

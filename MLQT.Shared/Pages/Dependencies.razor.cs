@@ -212,13 +212,7 @@ public partial class Dependencies : IAsyncDisposable
     private string GetImpactRowClass(ImpactDetail impact, int index) =>
         impact.ModelId == _highlightedNodeId ? "impact-row-selected" : string.Empty;
 
-    private string MakeShortName(string name)
-    {
-        var idx = name.IndexOf(".") + 1;
-        return name.Length <= 40 || name.IndexOf(".") == -1 || name.Count(c => c == '.') <= 1 ?
-                name :
-                name.Substring(0, name.IndexOf(".", idx)) + "..." + name.Substring(name.LastIndexOf("."));
-    }
+    private static string MakeShortName(string name) => ModelicaParser.Helpers.ModelicaName.Abbreviated(name);
 
     private List<string> MakeShortNames(List<string> names)
     {

@@ -1,5 +1,6 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph;
 
@@ -79,8 +80,8 @@ public sealed class ReloadedClassChanges
 
         if (changedScopes.Count > 0)
             foreach (var id in present)
-                for (var dot = id.IndexOf('.'); dot > 0; dot = id.IndexOf('.', dot + 1))
-                    if (changedScopes.Contains(id[..dot]))
+                foreach (var enclosing in ModelicaName.EnclosingNamesOf(id))
+                    if (changedScopes.Contains(enclosing))
                     {
                         result.Add(id);
                         break;

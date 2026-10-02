@@ -35,7 +35,25 @@ public static class ClassInterfaceExtractor
         if (spec?.long_class_specifier()?.composition() is { } composition)
             CollectComposition(composition, elements);
 
-        return new ClassInterface { Description = ClassDescription(spec), Elements = elements };
+        // `model R2 = Resistor(R = 2)`: no elements of its own, so what it is comes from its base.
+        // The enumeration form has no type specifier and is not one of these.
+        var shortClass = spec?.short_class_specifier();
+        var shortBase = shortClass?.type_specifier()?.GetText();
+
+        // `record extends ThermodynamicState ... end ThermodynamicState`: the long form led by `extends`.
+        var classExtends = spec?.long_class_specifier() is { } longClass && longClass.GetChild(0)?.GetText() == "extends"
+            ? longClass
+            : null;
+
+        return new ClassInterface
+        {
+            Description = ClassDescription(spec),
+            Elements = elements,
+            ShortClassBase = shortBase,
+            ShortClassModifications = shortBase is null ? null : ScalarModifications(shortClass!.class_modification()),
+            ClassExtendsBase = classExtends?.IDENT(0)?.GetText(),
+            ClassExtendsModifications = classExtends is null ? null : ScalarModifications(classExtends.class_modification())
+        };
     }
 
     private static void CollectComposition(modelicaParser.CompositionContext composition, List<ClassElement> elements)
@@ -178,8 +196,8 @@ public static class ClassInterfaceExtractor
         }
     }
 
-    // The scalar modifications on an extends clause: extends Base(k = 5, T = 2) -> {k:5, T:2}. Nested
-    // modifications (e.g. sub(x = 5)) and redeclarations are not scalar defaults and are omitted.
+    // The scalar modifications on an extends clause: extends Base(k = 5, T = 2) -> {k:5, T:2}, read as
+    // ScalarModifications reads any other.
     private static IReadOnlyDictionary<string, string>? ExtractExtendsModifications(
         modelicaParser.Extends_clauseContext ext)
     {
@@ -188,17 +206,7 @@ public static class ClassInterfaceExtractor
             return null;
 
         Dictionary<string, string>? mods = null;
-        foreach (var arg in list.argument())
-        {
-            var em = arg.element_modification_or_replaceable()?.element_modification();
-            var name = em?.name()?.GetText();
-            if (string.IsNullOrEmpty(name))
-                continue;
-            var value = ScalarModificationValue(em!.modification());
-            if (value is null)
-                continue;
-            (mods ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
-        }
+        AddScalarModifications(list.argument(), prefix: "", ref mods);
         return mods;
     }
 
@@ -250,8 +258,11 @@ public static class ClassInterfaceExtractor
     }
 
     /// <summary>
-    /// The scalar arguments of a modification: <c>(J = 1, phi(fixed = true))</c> yields {J:1}, the
-    /// nested one being a modification of a sub-component rather than a value this element takes.
+    /// The scalar arguments of a modification, each keyed by the path it reaches:
+    /// <c>(J = 1, flange_a(phi = 0), flange_b.phi = 2)</c> yields {J:1, flange_a.phi:0,
+    /// flange_b.phi:2}. A nested modification and a dotted one are two spellings of the same thing
+    /// (MLS §7.2), so they are read into the same key; reading only the dotted spelling made the
+    /// nested one - the commoner - a value nobody saw.
     /// </summary>
     private static IReadOnlyDictionary<string, string>? ScalarModifications(
         modelicaParser.Class_modificationContext? classMod)
@@ -261,18 +272,28 @@ public static class ClassInterfaceExtractor
             return null;
 
         Dictionary<string, string>? mods = null;
-        foreach (var arg in list.argument())
+        AddScalarModifications(list.argument(), prefix: "", ref mods);
+        return mods;
+    }
+
+    private static void AddScalarModifications(
+        IEnumerable<modelicaParser.ArgumentContext> arguments, string prefix, ref Dictionary<string, string>? mods)
+    {
+        foreach (var arg in arguments)
         {
+            // A redeclaration replaces a type; it gives nothing a value.
             var em = arg.element_modification_or_replaceable()?.element_modification();
             var name = em?.name()?.GetText();
             if (string.IsNullOrEmpty(name))
                 continue;
-            var value = ScalarModificationValue(em!.modification());
-            if (value is null)
-                continue;
-            (mods ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
+
+            var key = prefix + name;
+            var modification = em!.modification();
+            if (modification?.class_modification()?.argument_list() is { } nested)
+                AddScalarModifications(nested.argument(), key + ".", ref mods);
+            if (ScalarModificationValue(modification) is { } value)
+                (mods ??= new Dictionary<string, string>(StringComparer.Ordinal))[key] = value;
         }
-        return mods;
     }
 
     private static string? ScalarModificationValue(modelicaParser.ModificationContext? mod)

@@ -204,12 +204,11 @@ internal static class DiagramImage
         ILibraryDataService libraries, string declaringId, IReadOnlyList<string> imports, ModelNode? type)
         => value =>
         {
-            var dot = value.LastIndexOf('.');
-            if (dot <= 0)
+            var prefix = ModelicaName.EnclosingPackageOf(value);
+            if (prefix.Length == 0)
                 return false;
-            var prefix = value[..dot];
             return TypeResolver.Resolve(libraries.CombinedGraph, declaringId, prefix, imports) is not null
-                || (type is not null && TypeResolver.Resolve(libraries.CombinedGraph, type.Id, prefix, []) is not null);
+                || (type is not null && TypeResolver.Resolve(libraries.CombinedGraph, type.Id, prefix, null) is not null);
         };
 
     /// <summary>
@@ -239,11 +238,11 @@ internal static class DiagramImage
             && DiagramLayerOf(libraries, type) is { } diagram)
             return diagram;
 
-        var dot = type.Id.LastIndexOf('.');
+        var package = ModelicaName.EnclosingPackageOf(type.Id);
         return IconSvgRenderer.ExtractIconWithInheritance(
             source,
             baseName => Resolve(libraries, type.Id, baseName)?.Definition.ModelicaCode,
-            initialPackageContext: dot > 0 ? type.Id[..dot] : null);
+            initialPackageContext: package.Length > 0 ? package : null);
     }
 
     /// <summary>
@@ -312,11 +311,11 @@ internal static class DiagramImage
         if (type.Definition.ModelicaCode is not { Length: > 0 } source)
             return null;
 
-        var dot = type.Id.LastIndexOf('.');
+        var package = ModelicaName.EnclosingPackageOf(type.Id);
         return IconSvgRenderer.ExtractIconWithInheritance(
             source,
             baseName => Resolve(libraries, type.Id, baseName)?.Definition.ModelicaCode,
-            initialPackageContext: dot > 0 ? type.Id[..dot] : null);
+            initialPackageContext: package.Length > 0 ? package : null);
     }
 
     /// <summary>
@@ -431,7 +430,7 @@ internal static class DiagramImage
     internal const int MaxInheritanceDepth = 32;
 
     private static ModelNode? Resolve(ILibraryDataService libraries, string fromId, string name)
-        => TypeResolver.Resolve(libraries.CombinedGraph, fromId, name, []);
+        => TypeResolver.Resolve(libraries.CombinedGraph, fromId, name, null);
 
     private static IReadOnlyList<string> Imports(ModelNode node)
     {

@@ -19,7 +19,8 @@ public class ModelDefinition
     /// The Modelica source code for this model.
     ///
     /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
-    /// <see cref="Coverage"/>, <see cref="Suppressions"/>, <see cref="Imports"/> and
+    /// <see cref="Coverage"/>, <see cref="Suppressions"/>, <see cref="Imports"/>,
+    /// <see cref="IsEncapsulated"/>, <see cref="Bases"/> and
     /// <see cref="ParserErrors"/> all describe code that is no longer here, and
     /// <see cref="MayRecordParserErrors"/> is set again so the new code can report its own. The icon is marked to be rendered again rather than dropped -
     /// see <see cref="IconSvg"/>.</para>
@@ -37,20 +38,31 @@ public class ModelDefinition
         get => _modelicaCode;
         set
         {
-            _modelicaCode = value;
-            ParsedCode = null;
-            Coverage = null;
-            Suppressions = null;
-            Imports = null;
-            // A diagnosis of the old source says nothing about the new one, and the rule barring a
-            // class from recording its own was the old file's (B389). Kept, they reported errors a
-            // reformatted class no longer has and hid the ones it does. PackageCodeTrimmer, which
-            // only cuts lines out, puts the load's diagnosis back itself.
-            ParserErrors = new();
-            MayRecordParserErrors = true;
-            // Rendered again when the tree next asks, but not blanked meanwhile (B300).
-            IconRendered = false;
+            // Under the lock the cached readers take (ClassImports, ClassSuppressions): a read already
+            // under way finishes from the old source and is then cleared, rather than publishing its
+            // answer after the clearing - which left the old source's imports and bases on the class.
+            lock (this)
+                ReplaceSource(value);
         }
+    }
+
+    private void ReplaceSource(string value)
+    {
+        _modelicaCode = value;
+        ParsedCode = null;
+        Coverage = null;
+        Suppressions = null;
+        Imports = null;
+        IsEncapsulated = null;
+        Bases = null;
+        // A diagnosis of the old source says nothing about the new one, and the rule barring a
+        // class from recording its own was the old file's (B389). Kept, they reported errors a
+        // reformatted class no longer has and hid the ones it does. PackageCodeTrimmer, which
+        // only cuts lines out, puts the load's diagnosis back itself.
+        ParserErrors = new();
+        MayRecordParserErrors = true;
+        // Rendered again when the tree next asks, but not blanked meanwhile (B300).
+        IconRendered = false;
     }
 
     /// <summary>
@@ -79,6 +91,21 @@ public class ModelDefinition
     /// name (B292). Set it through <see cref="ClassImports.For"/> rather than directly.
     /// </summary>
     public IReadOnlyList<string>? Imports { get; set; }
+
+    /// <summary>
+    /// Whether the class is <c>encapsulated</c> - name lookup does not continue past it into the
+    /// classes enclosing it (MLS §5.3.1) - once something has read it. Null until then. Read with
+    /// <see cref="Imports"/>, in the same pass, because lookup asks every enclosing class both
+    /// questions. Set it through <see cref="ClassImports.IsEncapsulated"/> rather than directly.
+    /// </summary>
+    public bool? IsEncapsulated { get; set; }
+
+    /// <summary>
+    /// The bases the class names, as written - each <c>extends</c> clause's, or a short class's one -
+    /// once something has read them. Null until then. Read with <see cref="Imports"/>, in the same
+    /// pass. Set it through <see cref="ClassImports.BasesOf"/> rather than directly.
+    /// </summary>
+    public IReadOnlyList<string>? Bases { get; set; }
 
     /// <summary>
     /// The class's icon as SVG, once something has rendered it, and whether that has been tried.

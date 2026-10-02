@@ -4,6 +4,7 @@ using ModelicaParser.DataTypes;
 using ModelicaParser.Icons;
 using ModelicaParser.Visitors;
 using MLQT.Services.Interfaces;
+using ModelicaParser.Helpers;
 
 namespace MLQT.McpServer.Helpers;
 
@@ -139,11 +140,11 @@ internal static class DiagramGeometry
         if (component is not { } comp)
             return null; // component not positioned — cannot route to it
 
-        var dot = portRef.IndexOf('.');
-        var port = dot < 0
+        var segments = ModelicaName.Segments(portRef);
+        var port = segments.Count < 2
             ? DiagramSvgRenderer.PortOnEdge(comp, 0, 0) // the port is the component itself (unusual for connect)
-            : DiagramSvgRenderer.PortOf(comp, portRef[(dot + 1)..].Split('.')[0])
-              ?? GuessedPort(libraries, classId, classCode, comp, root, portRef[(dot + 1)..].Split('.')[0]);
+            : DiagramSvgRenderer.PortOf(comp, segments[1])
+              ?? GuessedPort(libraries, classId, classCode, comp, root, segments[1]);
 
         return (new Pt(port.X, port.Y), new Facing(port.FacingX, port.FacingY));
     }
@@ -511,7 +512,7 @@ internal static class DiagramGeometry
 
     // --- Small maths -------------------------------------------------------------------------------
 
-    private static string Segment(string portRef, int i) => portRef.Split('.')[i];
+    private static string Segment(string portRef, int i) => ModelicaName.Segments(portRef)[i];
     private static double Distance(Pt a, Pt b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
     private static double Num(string s) => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture);
     private static bool Between(double a, double m, double b) => m >= Math.Min(a, b) && m <= Math.Max(a, b);

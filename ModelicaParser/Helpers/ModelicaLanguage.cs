@@ -32,7 +32,7 @@ public static class ModelicaLanguage
     /// <c>Connections</c>.
     /// </summary>
     public static bool IsBuiltInName(string? reference)
-        => !string.IsNullOrWhiteSpace(reference) && Names.Contains(reference.Split('.')[0]);
+        => !string.IsNullOrWhiteSpace(reference) && Names.Contains(ModelicaName.RootLibraryOf(reference));
 
     /// <summary>The whole set, for a caller that wants to ask something else of it.</summary>
     public static IReadOnlySet<string> Names => _names;

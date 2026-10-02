@@ -3,6 +3,7 @@ using ModelicaGraph.DataTypes;
 using ModelicaParser;
 using ModelicaParser.DataTypes;
 using MLQT.Services.Interfaces;
+using ModelicaParser.Helpers;
 
 namespace MLQT.McpServer.Helpers;
 
@@ -24,7 +25,7 @@ internal static class ConnectorCompatibility
     /// </summary>
     public static PortResolution ResolvePort(ILibraryDataService libraries, string classId, string portRef)
     {
-        var segments = portRef.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = ModelicaName.Segments(portRef).Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
         if (segments.Length == 0)
             return new PortResolution(null, $"'{portRef}' is not a valid port reference.", null);
 

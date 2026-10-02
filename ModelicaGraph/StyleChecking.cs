@@ -541,17 +541,11 @@ public static class StyleChecking
             return rawName;
 
         // Walk up the package hierarchy of the current model
-        var lastDot = currentModelFullId.LastIndexOf('.');
-        var pkg = lastDot > 0 ? currentModelFullId[..lastDot] : null;
-
-        while (!string.IsNullOrEmpty(pkg))
+        foreach (var pkg in ModelicaName.EnclosingNamesOf(currentModelFullId))
         {
             var qualifiedName = $"{pkg}.{rawName}";
             if (graph.GetNode<ModelNode>(qualifiedName) != null)
                 return qualifiedName;
-
-            var dotIdx = pkg.LastIndexOf('.');
-            pkg = dotIdx > 0 ? pkg[..dotIdx] : null;
         }
 
         return null;

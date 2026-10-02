@@ -323,7 +323,7 @@ public partial class MetricsDashboard : IDisposable
             packages
                 .OrderBy(id => string.Equals(id, term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ThenBy(id => string.Equals(ModelicaName.LeafOf(id), term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-                .ThenBy(id => id.Count(c => c == '.'))
+                .ThenBy(id => ModelicaName.Segments(id).Count)
                 .ThenBy(id => id, System.StringComparer.Ordinal)
                 .Take(50)
                 .ToList());
@@ -644,13 +644,12 @@ public partial class MetricsDashboard : IDisposable
         }
         else
         {
-            var roots = packages.Where(id => !id.Contains('.')).ToList();
+            var roots = packages.Where(id => ModelicaName.EnclosingPackageOf(id).Length == 0).ToList();
             parent = roots.Count == 1 ? roots[0] : "";
         }
         IEnumerable<string> children = parent.Length == 0
-            ? packages.Where(id => !id.Contains('.'))
-            : packages.Where(id => ModelicaName.IsStrictlyInside(id, parent)
-                                   && id.IndexOf('.', parent.Length + 1) < 0);
+            ? packages.Where(id => ModelicaName.EnclosingPackageOf(id).Length == 0)
+            : packages.Where(id => ModelicaName.EnclosingPackageOf(id) == parent);
         return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
     }
 

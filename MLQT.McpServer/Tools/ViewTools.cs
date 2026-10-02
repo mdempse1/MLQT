@@ -37,7 +37,7 @@ public sealed class ViewTools
                 "CONDITIONAL - it exists only where that expression is true, so an instance that leaves it " +
                 "false has no such port and connecting to it is an error. A parameter's default is the value it takes; a " +
                 "typeModification (e.g. \"(min=0)\") constrains its type and is reported apart from the " +
-                "default, since a declaration can carry both. For a class from an encrypted library, " +
+                "default, since a declaration can carry both. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, " +
                 "recoveredFromDocumentation is true and the members come from the vendor's generated " +
                 "help: names, descriptions and units, with no types, defaults or inheritance - that is " +
                 "everything the vendor published. Needs only a loaded library.")]
@@ -85,7 +85,7 @@ public sealed class ViewTools
             else if (e.Variability is "parameter" or "constant")
                 parameters.Add(new ParameterView(
                     e.Name, e.Type, e.Variability, e.DefaultValue, e.TypeModification,
-                    e.Description, m.InheritedFrom));
+                    e.Description, m.InheritedFrom, ModifiedIn: m.ModifiedIn));
             else
                 members.Add(new MemberView(e.Name, e.Type, e.Description, m.InheritedFrom));
         }
@@ -95,7 +95,7 @@ public sealed class ViewTools
         {
             ParameterView ToArg(ResolvedElement m) =>
                 new(m.Element.Name, m.Element.Type, m.Element.Variability, m.Element.DefaultValue,
-                    m.Element.TypeModification, m.Element.Description, m.InheritedFrom);
+                    m.Element.TypeModification, m.Element.Description, m.InheritedFrom, ModifiedIn: m.ModifiedIn);
             var comps = merged.Where(m => m.Element.Kind == ClassElementKind.Component).ToList();
             signature = new FunctionSignatureView(
                 comps.Where(m => m.Element.Causality == "input").Select(ToArg).ToList(),
@@ -117,7 +117,7 @@ public sealed class ViewTools
                 "leadingComments (the // or /* */ comments written just above it). This is the granular " +
                 "data behind get_class_interface. A component's default is the value it is bound to; its " +
                 "typeModification is any modification written on its type (e.g. \"(min=0)\" or \"(k=2)\"), " +
-                "which is not a value. For a class from an encrypted library, recoveredFromDocumentation " +
+                "which is not a value. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, recoveredFromDocumentation " +
                 "is true and its members come from the vendor's generated help - name, description, " +
                 "unit and which table they were in (parameter / connector / input / output), with no " +
                 "type, no default and line 0; one it inherits from a readable base is listed once, marked " +
@@ -200,7 +200,8 @@ public sealed class ViewTools
         m.Element.LeadingComments,
         m.Element.Line,
         m.Element.Condition,
-        m.InheritedFrom);
+        m.InheritedFrom,
+        m.ModifiedIn);
 
     [McpServerTool(Name = "get_class_documentation")]
     [Description("Get a class's documentation without its code: its description string plus the " +

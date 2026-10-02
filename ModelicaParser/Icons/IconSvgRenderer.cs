@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using ModelicaParser.Visitors;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.Icons;
 
@@ -272,9 +273,9 @@ public static class IconSvgRenderer
                     // likely the fully-qualified class ID, so derive the owning package from it.
                     // This ensures the next recursion level can resolve its own unqualified extends
                     // (e.g. "Modelica.Blocks.Interfaces.DiscreteSISO" → package "Modelica.Blocks.Interfaces").
-                    var dotInBase = baseClassName.LastIndexOf('.');
-                    if (dotInBase > 0)
-                        nextPackageContext = baseClassName[..dotInBase];
+                    var basePackage = ModelicaName.EnclosingPackageOf(baseClassName);
+                    if (basePackage.Length > 0)
+                        nextPackageContext = basePackage;
                 }
                 else if (!string.IsNullOrEmpty(effectivePackage))
                 {
@@ -282,8 +283,7 @@ public static class IconSvgRenderer
                     // Modelica name resolution rules: try each ancestor package as a prefix until found.
                     // Example: "DiscreteBlock" from package "Modelica.Blocks.Interfaces" tries:
                     //   1. "Modelica.Blocks.Interfaces.DiscreteBlock"  → found (sibling class)
-                    var pkg = effectivePackage;
-                    while (!string.IsNullOrEmpty(pkg))
+                    foreach (var pkg in ModelicaName.EnclosingNamesOf(effectivePackage).Prepend(effectivePackage))
                     {
                         var qualifiedName = $"{pkg}.{baseClassName}";
                         if (!visitedClasses.Contains(qualifiedName))
@@ -294,13 +294,11 @@ public static class IconSvgRenderer
                                 visitedClasses.Add(qualifiedName);
                                 // Derive the package for the next recursion level from the resolved
                                 // qualified name: strip the last component to get the owning package.
-                                var lastDot = qualifiedName.LastIndexOf('.');
-                                nextPackageContext = lastDot > 0 ? qualifiedName[..lastDot] : null;
+                                var owning = ModelicaName.EnclosingPackageOf(qualifiedName);
+                                nextPackageContext = owning.Length > 0 ? owning : null;
                                 break;
                             }
                         }
-                        var dotIdx = pkg.LastIndexOf('.');
-                        pkg = dotIdx > 0 ? pkg[..dotIdx] : null;
                     }
                 }
 

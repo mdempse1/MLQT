@@ -188,6 +188,23 @@ public class ViewToolsTests
         var k = view.Parameters.Single(p => p.Name == "k");
         Assert.Equal("10", k.Default);
         Assert.Equal("I.Gain", k.InheritedFrom);
+        // ...and the 10 is written in Amplifier, which is where an expression there would resolve.
+        Assert.Equal("I.Amplifier", k.ModifiedIn);
+    }
+
+    [Fact]
+    public void Elements_SayWhichClasssModificationSetADefault()
+    {
+        using var host = new TestHost();
+        var tools = LoadContent(host, InheritancePackage);
+
+        var amplified = ToolAssert.Ok<ClassElementsResult>(tools.ListClassElements("I.Amplifier"))
+            .Elements.Single(e => e.Name == "k");
+        var own = ToolAssert.Ok<ClassElementsResult>(tools.ListClassElements("I.Integrator"))
+            .Elements.Single(e => e.Name == "k");
+
+        Assert.Equal("I.Amplifier", amplified.ModifiedIn);
+        Assert.Null(own.ModifiedIn);   // the declaration's own binding
     }
 
     [Fact]

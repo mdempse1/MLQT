@@ -53,6 +53,32 @@ public class ClassElementResolverBaseClassesTests
     }
 
     [Fact]
+    public void AShortClassesBase_IsItsBase_AsCollectHasIt()
+    {
+        // A diagram takes its components from Collect and its wiring from these; the two must agree
+        // on what a short class inherits, or the picture has parts and no wires (B316).
+        var graph = new DirectedGraph();
+        graph.AddNode(Model("Root", "model Root\nend Root;"));
+        graph.AddNode(Model("Part", "model Part\n  extends Root;\nend Part;"));
+        graph.AddNode(Model("Short", "model Short = Part(x = 1);"));
+        var shortClass = graph.GetNode<ModelNode>("Short")!;
+
+        Assert.Equal(["Root", "Part"], BasesOf(graph, "Short"));
+        var (written, direct) = Assert.Single(ClassElementResolver.DirectBases(graph, shortClass));
+        Assert.Equal("Part", written);
+        Assert.Equal("Part", direct.Id);
+    }
+
+    [Fact]
+    public void AShortClassOfAPredefinedType_HasNoBaseClass()
+    {
+        var graph = new DirectedGraph();
+        graph.AddNode(Model("Length", "type Length = Real(unit = \"m\");"));
+
+        Assert.Empty(BasesOf(graph, "Length"));
+    }
+
+    [Fact]
     public void AClassThatDoesNotParseHasNoBases()
     {
         var graph = new DirectedGraph();

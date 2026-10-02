@@ -20,7 +20,8 @@ public sealed record ClassInterfaceView(
     bool RecoveredFromDocumentation = false);
 
 /// <summary>A settable parameter/constant (or a function argument). InheritedFrom is the base class id
-/// it comes from, or null if declared in the class itself. Default is the value it takes; TypeModification
+/// it comes from, or null if declared in the class itself. Default is the value it takes, and ModifiedIn
+/// the class whose modification set it (null when it is the declaration's own); TypeModification
 /// is any modification written on its type (e.g. "(min=0)"), which is a constraint, not a value.
 ///
 /// <para>Unit is only ever set for a class recovered from documentation, where the vendor's table
@@ -34,7 +35,8 @@ public sealed record ParameterView(
     string? TypeModification,
     string? Description,
     string? InheritedFrom,
-    string? Unit = null);
+    string? Unit = null,
+    string? ModifiedIn = null);
 
 /// <summary>A connector member (physical connector, or a causal signal port).</summary>
 public sealed record ConnectorView(
@@ -63,7 +65,8 @@ public sealed record FunctionSignatureView(
 
 /// <summary>One raw element from list_class_elements. InheritedFrom is the base class id it comes from,
 /// or null if declared in the class itself. Condition is the expression a conditional component is
-/// declared with, and such a component exists only where that expression is true.</summary>
+/// declared with, and such a component exists only where that expression is true. ModifiedIn is the
+/// class whose modification set Default, or null when it is the declaration's own binding.</summary>
 public sealed record ClassElementView(
     string Kind,
     string Name,
@@ -80,7 +83,8 @@ public sealed record ClassElementView(
     IReadOnlyList<string> LeadingComments,
     int Line,
     string? Condition,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? ModifiedIn = null);
 
 /// <summary>Full element listing for a class.</summary>
 public sealed record ClassElementsResult(

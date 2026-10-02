@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 
 namespace ModelicaGraph.Analysis;
@@ -15,7 +16,27 @@ public sealed record ResolvedElement(
     ClassElement Element,
     string? InheritedFrom,
     string OwnerId,
-    IReadOnlyList<string> OwnerImports);
+    IReadOnlyList<string> OwnerImports)
+{
+    /// <summary>
+    /// The class whose modification set <see cref="ClassElement.DefaultValue"/> - a more-derived
+    /// class's <c>extends</c> clause, a short class definition, or the class declaring a component
+    /// further out along a reference - or null when the value is the declaration's own binding.
+    ///
+    /// <para><b>The value is an expression written in that class</b>, so that is where its names
+    /// resolve: in <c>Inertia inertia1(J = Jb)</c>, <c>Jb</c> is the enclosing model's parameter, and
+    /// looking it up in <see cref="OwnerId"/> (<c>Inertia</c>) finds nothing, or something else.</para>
+    /// </summary>
+    public string? ModifiedIn { get; init; }
+
+    /// <summary>
+    /// What a more-derived class's <c>extends</c> clause - or a short class definition - sets
+    /// <em>below</em> this component, keyed by the path from it: <c>extends Base(inertia1.J = 9)</c>
+    /// gives <c>inertia1</c> {"J" =&gt; ("9", the deriving class)}. Null when there is none. Read when a
+    /// reference goes through the component, where it outranks the component's own declaration.
+    /// </summary>
+    internal IReadOnlyDictionary<string, (string Value, string Scope)>? ModificationsBelow { get; init; }
+}
 
 /// <summary>
 /// Collects the full element set of a class, following its <c>extends</c> clauses so inherited
@@ -24,12 +45,13 @@ public sealed record ResolvedElement(
 /// diamond inheritance is visited once. Imports and extends clauses themselves are reported only for
 /// the queried class (they are not "inherited members"). Shared by the analyses and the MCP tooling.
 /// </summary>
-public static class ClassElementResolver
+public static partial class ClassElementResolver
 {
     private const int MaxDepth = 32;
 
-    private static readonly IReadOnlyDictionary<string, string> NoMods =
-        new Dictionary<string, string>(StringComparer.Ordinal);
+    // A modification's value, and the class it is written in.
+    private static readonly IReadOnlyDictionary<string, (string Value, string Scope)> NoMods =
+        new Dictionary<string, (string, string)>(StringComparer.Ordinal);
 
     /// <summary>
     /// Somewhere to keep each class's extracted interface for the length of a run.
@@ -105,6 +127,23 @@ public static class ClassElementResolver
         /// </remarks>
         public int Count => _interfaces.Count;
 
+        private readonly ConcurrentDictionary<(string Id, bool Protected), Lazy<Dictionary<string, ResolvedElement>>>
+            _members = new();
+
+        /// <summary>
+        /// A class's members - components and nested classes, inherited ones included - by name, kept
+        /// for the run. For the classes a component reference passes <em>through</em>: a connector or
+        /// component type, or an enclosing package, which every equation mentioning it passes
+        /// through again. Never for the class the references are written in, which is read once per
+        /// <see cref="ComponentReferences"/> and is the one class a run must not keep (B147).
+        /// </summary>
+        internal Dictionary<string, ResolvedElement> MembersOf(DirectedGraph graph, ModelNode node, bool includeProtected) =>
+            _members.GetOrAdd(
+                (node.Id, includeProtected),
+                key => new Lazy<Dictionary<string, ResolvedElement>>(
+                    () => MemberTable(CollectRemembered(graph, node, key.Protected, this)),
+                    LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+
         internal static ClassInterface? Extract(ModelNode node) =>
             node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
     }
@@ -117,15 +156,28 @@ public static class ClassElementResolver
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var visited = new HashSet<string>(StringComparer.Ordinal);
         Walk(graph, node, includeProtected, includeInherited, origin: null, NoMods, result, seen, visited,
-             depth: 0, interfaces);
+             depth: 0, interfaces, rememberRoot: false);
+        return result;
+    }
+
+    // Collect, for a class that is about to be asked again: a reference's intermediate types
+    // (Inertia, Flange_a) are walked once for every reference that passes through them, so unlike
+    // the class a caller asks about directly, they are worth keeping.
+    private static List<ResolvedElement> CollectRemembered(
+        DirectedGraph graph, ModelNode node, bool includeProtected, InterfaceCache? interfaces)
+    {
+        var result = new List<ResolvedElement>();
+        Walk(graph, node, includeProtected, includeInherited: true, origin: null, NoMods, result,
+             new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal),
+             depth: 0, interfaces, rememberRoot: true);
         return result;
     }
 
     private static void Walk(
         DirectedGraph graph, ModelNode node, bool includeProtected, bool includeInherited,
-        string? origin, IReadOnlyDictionary<string, string> mods,
+        string? origin, IReadOnlyDictionary<string, (string Value, string Scope)> mods,
         List<ResolvedElement> result, HashSet<string> seen, HashSet<string> visited, int depth,
-        InterfaceCache? interfaces)
+        InterfaceCache? interfaces, bool rememberRoot)
     {
         if (depth > MaxDepth || !visited.Add(node.Id))
             return;
@@ -136,7 +188,7 @@ public static class ClassElementResolver
         // one costs a fraction of what re-deriving it does.
         var iface = interfaces is null
             ? InterfaceCache.Extract(node)
-            : interfaces.Of(node, remember: origin is not null);
+            : interfaces.Of(node, remember: rememberRoot || origin is not null);
         if (iface is null)
             return;
 
@@ -162,11 +214,15 @@ public static class ClassElementResolver
                         break;
                     if (!seen.Add($"{e.Kind}|{e.Name}")) // derived (added first) shadows inherited
                         break;
-                    // A modification from a more-derived extends clause overrides this inherited default.
-                    var element = e.Kind == ClassElementKind.Component && mods.TryGetValue(e.Name, out var v)
-                        ? e with { DefaultValue = v }
-                        : e;
-                    result.Add(new ResolvedElement(element, origin, node.Id, imports));
+                    // A modification from a more-derived extends clause overrides this inherited
+                    // default, and is an expression in the class that wrote it.
+                    var resolved = e.Kind == ClassElementKind.Component && mods.TryGetValue(e.Name, out var m)
+                        ? new ResolvedElement(e with { DefaultValue = m.Value }, origin, node.Id, imports)
+                            { ModifiedIn = m.Scope }
+                        : new ResolvedElement(e, origin, node.Id, imports);
+                    result.Add(e.Kind == ClassElementKind.Component && Below(mods, e.Name) is { } below
+                        ? resolved with { ModificationsBelow = below }
+                        : resolved);
                     break;
             }
         }
@@ -174,14 +230,65 @@ public static class ClassElementResolver
         if (!includeInherited)
             return;
 
-        foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+        foreach (var (baseType, baseMods) in Bases(iface))
         {
-            var baseNode = TypeResolver.Resolve(graph, node.Id, ext.Type, imports);
+            var baseNode = ResolveBaseOf(graph, node, baseType, imports, ancestors: null);
             if (baseNode is not null)
                 Walk(graph, baseNode, includeProtected, includeInherited, baseNode.Id,
-                    MergeMods(ext.Modifications, mods), result, seen, visited, depth + 1, interfaces);
+                    MergeMods(baseMods, node.Id, mods), result, seen, visited, depth + 1, interfaces,
+                    rememberRoot);
         }
     }
+
+    // The modifications reaching below a component, keyed by the path from it.
+    private static Dictionary<string, (string Value, string Scope)>? Below(
+        IReadOnlyDictionary<string, (string Value, string Scope)> mods, string component)
+    {
+        if (mods.Count == 0)
+            return null;
+
+        Dictionary<string, (string, string)>? below = null;
+        var prefix = component + ".";
+        foreach (var (key, value) in mods)
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+                (below ??= new Dictionary<string, (string, string)>(StringComparer.Ordinal))[key[prefix.Length..]] = value;
+        return below;
+    }
+
+    // What a class inherits from, with the modifications it applies: each extends clause, or - for
+    // `model R2 = Resistor(R = 2)`, which has no elements of its own - the short class's base, which
+    // is an extends clause in all but syntax (MLS §4.5.1).
+    internal static IEnumerable<(string? Type, IReadOnlyDictionary<string, string>? Modifications)> Bases(
+        ClassInterface iface)
+    {
+        if (iface.ShortClassBase is { } shortBase)
+            return [(shortBase, iface.ShortClassModifications)];
+        var clauses = iface.Elements
+            .Where(e => e.Kind == ClassElementKind.Extends)
+            .Select(e => (e.Type, e.Modifications));
+        // A class extends extends the class it replaces before anything its body adds.
+        return iface.ClassExtendsBase is { } replaced
+            ? clauses.Prepend((replaced, iface.ClassExtendsModifications))
+            : clauses;
+    }
+
+    /// <summary>
+    /// The class a base name written in <paramref name="node"/> means - <see cref="TypeResolver.ResolveBase"/>,
+    /// except for a base written as the class's own name.
+    /// </summary>
+    /// <remarks>
+    /// That is a class extends (<c>redeclare record extends ThermodynamicState</c>), whose base is the
+    /// element of that name the <b>enclosing</b> class inherits (MLS §7.3.1). Looked up as a name, it
+    /// found the class itself - so a medium's own ThermodynamicState had no base, and <c>state.T</c>
+    /// resolved to nothing. Nothing else is lost: an ordinary base spelled with the class's own name
+    /// can only ever have meant the class itself, which no class may extend.
+    /// </remarks>
+    internal static ModelNode? ResolveBaseOf(
+        DirectedGraph graph, ModelNode node, string? written, IReadOnlyList<string> imports,
+        TypeResolver.AncestorCache? ancestors)
+        => written is not null && string.Equals(written.Trim(), ModelicaName.LeafOf(node.Id), StringComparison.Ordinal)
+            ? TypeResolver.InheritedClass(graph, ModelicaName.EnclosingPackageOf(node.Id), written.Trim(), ancestors)
+            : TypeResolver.ResolveBase(graph, node.Id, written, imports, ancestors);
 
     /// <summary>
     /// Every class <paramref name="node"/> inherits from, transitively, in the order their layers are
@@ -217,39 +324,45 @@ public static class ClassElementResolver
 
     /// <summary>
     /// The classes <paramref name="node"/>'s own <c>extends</c> clauses name, in clause order, each
-    /// with the name as written in the clause. A clause whose base is not loaded is skipped.
+    /// with the name as written in the clause - or, for a short class (<c>model R2 = Resistor(R = 2)</c>),
+    /// the one base it names. A clause whose base is not loaded is skipped.
+    ///
+    /// <para><b>A short class is followed here as <see cref="Collect"/> follows it.</b> A diagram
+    /// takes its components from one and its connections, Diagram layer and coordinate system from
+    /// the other; following the short class in only one of them drew a short class's diagram as its
+    /// base's components with no wires and no background, which is what B316 was.</para>
     ///
     /// <para>For a question the first clause answers differently from the others: which base lends
     /// a class its coordinate system (MLS 3.6 §18.6.1.1, B394).</para>
     /// </summary>
-    public static List<(string Written, ModelNode Base)> DirectBases(DirectedGraph graph, ModelNode node)
+    /// <param name="ancestors">The run's ancestor cache, when there is one: resolving a base name looks
+    /// at what the scopes around the class inherit.</param>
+    public static List<(string Written, ModelNode Base)> DirectBases(
+        DirectedGraph graph, ModelNode node, TypeResolver.AncestorCache? ancestors = null)
     {
+        // Read once per class and kept on it (ClassImports), because name lookup asks every scope it
+        // passes what that scope inherits: parsing a class to answer was a parse per lookup.
         var result = new List<(string, ModelNode)>();
-        if (InterfaceCache.Extract(node) is not { } iface)
-            return result;
-
-        var imports = iface.Elements
-            .Where(e => e.Kind == ClassElementKind.Import)
-            .Select(e => e.Name)
-            .ToList();
-
-        foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
-            if (TypeResolver.Resolve(graph, node.Id, ext.Type, imports) is { } baseNode)
-                result.Add((ext.Type ?? string.Empty, baseNode));
+        var imports = ClassImports.For(node.Definition);
+        foreach (var baseType in ClassImports.BasesOf(node.Definition))
+            if (ResolveBaseOf(graph, node, baseType, imports, ancestors) is { } baseNode)
+                result.Add((baseType, baseNode));
 
         return result;
     }
 
     // Modifications applying to a base's members: this extends clause's, with any already-accumulated
     // (more-derived) modification winning on a key clash.
-    private static IReadOnlyDictionary<string, string> MergeMods(
-        IReadOnlyDictionary<string, string>? baseMods, IReadOnlyDictionary<string, string> moreDerived)
+    // Each value is kept with the class that wrote it (`scope`), since that is where it resolves.
+    private static IReadOnlyDictionary<string, (string Value, string Scope)> MergeMods(
+        IReadOnlyDictionary<string, string>? baseMods, string scope,
+        IReadOnlyDictionary<string, (string Value, string Scope)> moreDerived)
     {
         if (baseMods is null || baseMods.Count == 0)
             return moreDerived;
-        if (moreDerived.Count == 0)
-            return baseMods;
-        var merged = new Dictionary<string, string>(baseMods, StringComparer.Ordinal);
+        var merged = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
+        foreach (var kv in baseMods)
+            merged[kv.Key] = (kv.Value, scope);
         foreach (var kv in moreDerived)
             merged[kv.Key] = kv.Value;
         return merged;

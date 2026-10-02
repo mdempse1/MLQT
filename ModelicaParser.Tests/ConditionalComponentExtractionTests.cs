@@ -65,9 +65,32 @@ public class ConditionalComponentExtractionTests
 
         Assert.NotNull(element.Modifications);
 
-        // The nested one configures a sub-component and is not a value this component takes.
-        Assert.Equal("1", Assert.Single(element.Modifications!).Value);
-        Assert.Equal("J", element.Modifications!.Keys.Single());
+        // The nested one configures a sub-component and is not a value this component takes - so it
+        // is keyed by the path it reaches, never by `phi`, which it gives no value.
+        Assert.Equal(
+            new Dictionary<string, string> { ["J"] = "1", ["phi.fixed"] = "true", ["phi.start"] = "0" },
+            element.Modifications);
+    }
+
+    [Fact]
+    public void ANestedModificationAndADottedOne_AreTheSameKey()
+    {
+        var nested = Component("model M\n  Inertia i(flange(phi = 2));\nend M;", "i");
+        var dotted = Component("model M\n  Inertia i(flange.phi = 2);\nend M;", "i");
+
+        Assert.Equal(dotted.Modifications, nested.Modifications);
+        Assert.Equal("2", nested.Modifications!["flange.phi"]);
+    }
+
+    [Fact]
+    public void ABindingBesideANestedModification_IsStillNotAValue_AndARedeclarationIsSkipped()
+    {
+        // `w(start = 1) = 2` - the binding is not read where a class modification comes with it, as
+        // before; what it nests still is.
+        var element = Component(
+            "model M\n  Inertia i(w(start = 1) = 2, redeclare Real x);\nend M;", "i");
+
+        Assert.Equal(new Dictionary<string, string> { ["w.start"] = "1" }, element.Modifications);
     }
 
     [Fact]

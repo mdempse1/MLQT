@@ -1359,8 +1359,8 @@ public class LibraryDataService : ILibraryDataService
             // The stored ModelicaCode is the extracted class body (no 'within' clause), so the
             // renderer cannot infer the package from the code itself. The package context is needed
             // to resolve unqualified extends names (e.g. "Interfaces.DiscreteSISO") via walk-up.
-            var dotIdx = model.Id.LastIndexOf('.');
-            var initialPackageContext = dotIdx > 0 ? model.Id[..dotIdx] : null;
+            var package = ModelicaName.EnclosingPackageOf(model.Id);
+            var initialPackageContext = package.Length > 0 ? package : null;
 
             // Read once: a concurrent release can null the tree between a check and a second read
             // (B291's shape), and the render then throws.
@@ -1405,9 +1405,7 @@ public class LibraryDataService : ILibraryDataService
             return baseModel.Definition.ModelicaCode;
 
         // Try resolving relative to the current model's package
-        var currentPackage = currentModel.Id.Contains('.')
-            ? currentModel.Id.Substring(0, currentModel.Id.LastIndexOf('.'))
-            : "";
+        var currentPackage = ModelicaName.EnclosingPackageOf(currentModel.Id);
 
         if (!string.IsNullOrEmpty(currentPackage))
         {

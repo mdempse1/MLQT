@@ -69,11 +69,26 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public List<ExternalResourceInfo> Resources => _resources;
 
-    public ModelAnalyzer(string modelId, DirectedGraph graph)
+    /// <param name="ancestors">Each class's bases, kept for the run: name lookup asks every scope
+    /// what it inherits. Share one across the analyzers of one pass.</param>
+    /// <param name="interfaces">The interfaces of the classes a component reference reaches through
+    /// (<c>Modelica.Constants</c>), kept for the run. Share one across the analyzers of one pass.</param>
+    public ModelAnalyzer(
+        string modelId, DirectedGraph graph, Analysis.TypeResolver.AncestorCache? ancestors = null,
+        Analysis.ClassElementResolver.InterfaceCache? interfaces = null)
     {
         _modelId = modelId;
         _graph = graph;
+        _ancestors = ancestors;
+        _interfaces = interfaces;
     }
+
+    private readonly Analysis.TypeResolver.AncestorCache? _ancestors;
+    private readonly Analysis.ClassElementResolver.InterfaceCache? _interfaces;
+
+    // Made the first time a reference is not a class by its whole name, which is most classes with an
+    // equation in them, and kept for this class only.
+    private Analysis.ComponentReferences? _references;
 
     #region Dependency Analysis (from DependencyAnalyzer)
 
@@ -115,7 +130,7 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public override object? VisitName([NotNull] modelicaParser.NameContext context)
     {
-        var reference = GetQualifiedName(context);
+        var reference = ReferenceResolver.GetReferenceName(context);
         if (!string.IsNullOrWhiteSpace(reference))
         {
             ResolveAndAddDependency(reference);
@@ -428,7 +443,8 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         if (_annotationDepth > 0 && _annotationCodeDepth == 0)
             return;
 
-        var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference);
+        var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference, _ancestors)
+                         ?? ClassAReferenceStartsIn(reference);
         if (resolvedId != null && resolvedId != _modelId)
         {
             var referencedModel = _graph.GetNode<ModelNode>(resolvedId);
@@ -437,6 +453,22 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
                 _referencedModels.Add(resolvedId);
             }
         }
+    }
+
+    // The class a component reference goes through: Modelica.Constants in `Modelica.Constants.pi`,
+    // the base's Medium in `Medium.p`, the package that lends a constant used by its bare name, the
+    // enumeration in `Types.Init.SteadyState`. Whole-name resolution answers only for classes, so
+    // these uses linked to nothing, and the classes they use read as unused.
+    private string? ClassAReferenceStartsIn(string reference)
+    {
+        if (_references is null)
+        {
+            if (_graph.GetNode<ModelNode>(_modelId) is not { } node)
+                return null;
+            _references = Analysis.ClassElementResolver.ReferencesIn(_graph, node, _interfaces, _ancestors);
+        }
+
+        return _references.Start(reference)?.Scope.Id;
     }
 
     private string GetQualifiedName(modelicaParser.NameContext context)

@@ -31,7 +31,7 @@ public static class SuppressionScope
     /// when the component-scoped write fails.
     /// </remarks>
     public static string? ComponentFor(string? elementPath) =>
-        elementPath is { Length: > 0 } path && !path.Contains('.') ? path : null;
+        ModelicaName.IsSimple(elementPath) ? elementPath : null;
 
     /// <summary>
     /// Whether <paramref name="finding"/> is waived by suppressing <paramref name="ruleId"/> on
