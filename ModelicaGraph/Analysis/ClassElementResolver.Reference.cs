@@ -47,7 +47,17 @@ public sealed record ResolvedReference(IReadOnlyList<ResolvedElement> Path, Mode
 /// analysis and the reference locator ask this rather than <see cref="ComponentReferences.Resolve"/>:
 /// it never walks a component's type, and it answers where the whole reference would not.
 /// </remarks>
-public sealed record ReferenceStart(ModelNode Scope, int QualifierSegments);
+public sealed record ReferenceStart(ModelNode Scope, int QualifierSegments)
+{
+    /// <summary>
+    /// True when the leading segments name <see cref="Scope"/> only because the class inherits it -
+    /// <c>Medium</c> in <c>Medium.p</c>, written in a model whose base declares a replaceable
+    /// <c>Medium</c>. Such a name means whatever that inherited class is in the instance, so it is
+    /// never to be rewritten as <see cref="Scope"/>'s full name: that would fix it to the base's
+    /// default and undo every <c>redeclare</c>.
+    /// </summary>
+    public bool ThroughInheritance { get; init; }
+}
 
 /// <summary>
 /// Resolves the component references written in one class. Make one per class and ask it about every
@@ -138,7 +148,11 @@ public sealed class ComponentReferences
         if (ClassElementResolver.ReferenceSegments(reference) is not { } parsed)
             return null;
         if (Locate(parsed.Segments, parsed.Global) is { } start)
-            return new ReferenceStart(start.Scope, start.Qualifier);
+            return new ReferenceStart(start.Scope, start.Qualifier)
+            {
+                ThroughInheritance = start.Qualifier > 0
+                    && IsInherited(string.Join('.', parsed.Segments.Take(start.Qualifier)), parsed.Global)
+            };
         if (!parsed.Global
             && (ModelicaLanguage.IsBuiltInName(parsed.Segments[0]) || StartsWithComponent(parsed.Segments[0])))
             return null;
@@ -148,10 +162,19 @@ public sealed class ComponentReferences
             return null;
 
         for (var take = parsed.Segments.Count - 1; take > 0; take--)
-            if (QualifyingClass(string.Join('.', parsed.Segments.Take(take)), parsed.Global) is { } scope)
-                return new ReferenceStart(scope, take);
+        {
+            var prefix = string.Join('.', parsed.Segments.Take(take));
+            if (QualifyingClass(prefix, parsed.Global) is { } scope)
+                return new ReferenceStart(scope, take) { ThroughInheritance = IsInherited(prefix, parsed.Global) };
+        }
         return null;
     }
+
+    // Whether a class name means what it does only through inheritance: the lookup without inherited
+    // classes answers differently, or not at all.
+    private bool IsInherited(string prefix, bool global)
+        => !global && TypeResolver.Resolve(_graph, _class.Id, prefix, _own.Value.Imports)?.Id
+                      != QualifyingClass(prefix, global)?.Id;
 
     // Whether a reference's first segment is a component in reach - the class's own, inherited ones
     // included, or one an enclosing class declares.

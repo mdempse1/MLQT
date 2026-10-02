@@ -456,18 +456,19 @@ public sealed class EditTools
         // Plan the re-qualification (replace each reference's whole dotted name with the mapped new id).
         var requalified = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var requalCount = 0;
+        var shared = new ReferenceLocator.Shared();
         foreach (var path in refPaths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
             var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
-            var locator = new ReferenceLocator(graph, targetSet);
+            var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
-            if (locator.Sites.Count == 0)
+            var edits = RequalifyingEdits(locator.Sites, MapId);
+            if (edits.Count == 0)
                 continue;
 
-            var edits = locator.Sites.Select(s => (s.StartIndex, s.StopIndex, MapId(s.TargetId))).ToList();
             requalified[path] = ApplyReplacements(text, edits);
             requalCount += edits.Count;
         }
@@ -569,17 +570,18 @@ public sealed class EditTools
 
         var changed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var requalCount = 0;
+        var shared = new ReferenceLocator.Shared();
         foreach (var path in refPaths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
             var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
-            var locator = new ReferenceLocator(graph, targetSet);
+            var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
-            if (locator.Sites.Count > 0)
+            var edits = RequalifyingEdits(locator.Sites, MapId);
+            if (edits.Count > 0)
             {
-                var edits = locator.Sites.Select(s => (s.StartIndex, s.StopIndex, MapId(s.TargetId))).ToList();
                 text = ApplyReplacements(text, edits);
                 requalCount += edits.Count;
             }
@@ -662,17 +664,18 @@ public sealed class EditTools
         // rewrite the within clause, and for the package's own package.mo rename the declaration.
         var changed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var requalCount = 0;
+        var shared = new ReferenceLocator.Shared();
         foreach (var path in refPaths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
             var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
-            var locator = new ReferenceLocator(graph, targetSet);
+            var locator = new ReferenceLocator(graph, targetSet, shared);
             locator.Visit(tree);
-            if (locator.Sites.Count > 0)
+            var edits = RequalifyingEdits(locator.Sites, MapId);
+            if (edits.Count > 0)
             {
-                var edits = locator.Sites.Select(s => (s.StartIndex, s.StopIndex, MapId(s.TargetId))).ToList();
                 text = ApplyReplacements(text, edits);
                 requalCount += edits.Count;
             }
@@ -742,6 +745,21 @@ public sealed class EditTools
         var g = m.Groups[1];
         return text[..g.Index] + replacement + text[(g.Index + name.Length)..];
     }
+
+    /// <summary>
+    /// The edits that re-qualify a moved class's references: each site's whole dotted name replaced by
+    /// the class's new id - <b>except a site reached through inheritance</b>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Medium.State</c> in a model whose base declares a replaceable <c>Medium</c> means whatever
+    /// <c>Medium</c> the instance has. Moving the base rewrites the model's extends clause, so the
+    /// name still resolves as written; replacing it with <c>NewPackage.Base.Medium.State</c> fixed it
+    /// to the base's default and undid every <c>redeclare</c> - silently, since the result compiles.
+    /// One helper, so the three operations that re-qualify cannot disagree about it.
+    /// </remarks>
+    private static List<(int StartIndex, int StopIndex, string Replacement)> RequalifyingEdits(
+        IEnumerable<ReferenceSite> sites, Func<string, string> mapId)
+        => [.. sites.Where(s => !s.ThroughInheritance).Select(s => (s.StartIndex, s.StopIndex, mapId(s.TargetId)))];
 
     // Rename a class's own declaration name tokens (package X ... end X) to newLeaf.
     private static string RenameDefinitionTokens(string text, string classId, string newLeaf, DirectedGraph graph)
@@ -1032,6 +1050,7 @@ public sealed class EditTools
 
         // Plan the precise edits per file: the declaration name tokens + resolved usage leaf tokens.
         var planned = new List<(string path, string newContent, int count)>();
+        var shared = new ReferenceLocator.Shared();
         foreach (var path in paths)
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
@@ -1039,7 +1058,7 @@ public sealed class EditTools
             var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
 
-            var locator = new ReferenceLocator(graph, new[] { classId });
+            var locator = new ReferenceLocator(graph, new[] { classId }, shared);
             locator.Visit(tree);
 
             var spans = new List<(int start, int stop)>();

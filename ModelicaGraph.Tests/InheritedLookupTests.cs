@@ -133,6 +133,36 @@ public class InheritedLookupTests
     }
 
     [Fact]
+    public void TheLocator_SaysWhenASiteWasReachedThroughInheritance()
+    {
+        // A move must leave such a site as written: the full name would fix it to the base's default.
+        var graph = Graph();
+        const string code =
+            "within Lib;\nmodel M\n  extends .Base;\n  Medium.State s;\n  .Base.Medium.State t;\n  Medium.p x;\nend M;";
+
+        var sites = ReferenceLocator.Locate(graph, ModelicaParserHelper.Parse(code), ["Base.Medium.State", "Base.Medium"]);
+
+        Assert.True(Assert.Single(sites, s => s.Text == "Medium.State").ThroughInheritance);
+        Assert.False(Assert.Single(sites, s => s.Text == ".Base.Medium.State").ThroughInheritance);
+        // Through a component reference, too: the class part `Medium` of Medium.p.
+        Assert.True(Assert.Single(sites, s => s.Text == "Medium.p").ThroughInheritance);
+    }
+
+    [Fact]
+    public void AReferenceStartReachedThroughInheritance_SaysSo()
+    {
+        var graph = Graph();
+        graph.AddNode(new ModelNode("Lib.Plain", "Plain", "model Plain\nend Plain;"));
+        var m = ClassElementResolver.ReferencesIn(graph, graph.GetNode<ModelNode>("Lib.M")!);
+
+        Assert.True(m.Start("Medium.p")?.ThroughInheritance);
+        // Lib.Medium is what the plain lookup finds; only inheritance makes it Base.Medium.
+        Assert.Equal("Base.Medium", m.Start("Medium.p")?.Scope.Id);
+        Assert.False(ClassElementResolver.ReferencesIn(graph, graph.GetNode<ModelNode>("Lib.Plain")!)
+            .Start("Medium.p")?.ThroughInheritance);
+    }
+
+    [Fact]
     public void WhatAClassExtends_IsReadOnceAndKept_AndReadAgainWhenTheSourceChanges()
     {
         var definition = new ModelDefinition("M", "model M\n  extends A;\n  extends B.C(k = 1);\nend M;");

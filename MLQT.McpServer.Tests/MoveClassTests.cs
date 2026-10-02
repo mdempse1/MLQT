@@ -25,6 +25,60 @@ public class MoveClassTests
         end Root;
         """;
 
+    // Root.Src.Base declares a replaceable Medium; Derived extends it and writes Medium.State, and Other
+    // names the same record in full.
+    private const string InheritedPackage = """
+        within;
+        package Root "root"
+          package Src
+            model Base
+              replaceable package Medium
+                record State
+                end State;
+              end Medium;
+            end Base;
+            model Derived
+              extends Base;
+              Medium.State s;
+            end Derived;
+            model Other
+              Root.Src.Base.Medium.State t;
+            end Other;
+          end Src;
+          package Dst
+          end Dst;
+        end Root;
+        """;
+
+    private static async Task<EditTools> LoadInherited(TestHost h)
+    {
+        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = InheritedPackage });
+        h.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        await new DependencyTools(h.Libraries, h.Impact, h.Resources, h.Session).AnalyzeDependencies();
+        return new EditTools(h.Libraries, h.Resources, h.Session);
+    }
+
+    [Fact]
+    public async Task Move_LeavesANameReachedThroughInheritanceAsWritten()
+    {
+        // Medium.State means whatever Medium the instance has. Rewritten as the base's full name it
+        // would be fixed to the base's default, undoing every `redeclare package Medium = ...`, and
+        // still compile. The extends clause is re-qualified, so the name resolves as written.
+        using var host = new TestHost();
+        var edit = await LoadInherited(host);
+
+        ToolAssert.Ok<MoveClassResult>(await edit.MoveClass("Root.Src.Base", "Root.Dst"));
+
+        var derived = host.Libraries.GetModelById("Root.Src.Derived")!.Definition.ModelicaCode;
+        Assert.Contains("extends Root.Dst.Base;", derived);
+        Assert.Contains("Medium.State s;", derived);
+        Assert.DoesNotContain("Base.Medium.State", derived);
+
+        // A reference written in full is not reached through inheritance, and is re-qualified.
+        Assert.Contains("Root.Dst.Base.Medium.State t;",
+            host.Libraries.GetModelById("Root.Src.Other")!.Definition.ModelicaCode);
+    }
+
     private static async Task<EditTools> LoadAndAnalyze(TestHost h)
     {
         var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });

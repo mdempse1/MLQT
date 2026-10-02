@@ -22,6 +22,15 @@ public sealed record ReferenceSite(
 {
     /// <summary>The last segment — the class's own name in the reference.</summary>
     public NameSegment Leaf => Segments[^1];
+
+    /// <summary>
+    /// True when the reference names its target only because the class it is written in inherits it -
+    /// <c>Medium.State</c> in a model whose base declares a replaceable <c>Medium</c>. <b>A move must
+    /// leave it as written</b>: the extends clause it depends on is re-qualified anyway, and writing
+    /// the target's full name would fix it to the base's default and undo every <c>redeclare</c>. A
+    /// rename, which rewrites only the leaf, rewrites it like any other.
+    /// </summary>
+    public bool ThroughInheritance { get; init; }
 }
 
 /// <summary>
@@ -55,31 +64,43 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
 
     private sealed record Frame(string ClassId, List<ImportInfo> Imports);
 
-    /// <param name="graph">The graph used to resolve references.</param>
-    /// <param name="targetIds">Only record references resolving to these ids; null records all resolvable references.</param>
-    // One walk over one tree asks about the same few scopes many times.
-    private readonly Analysis.TypeResolver.AncestorCache _ancestors = new();
-    private readonly Analysis.ClassElementResolver.InterfaceCache _interfaces = new();
-    private readonly Dictionary<string, Analysis.ComponentReferences?> _references = new(StringComparer.Ordinal);
-
-    // One resolver per class the walk is inside, made the first time one of its references is not a
-    // class by its whole name.
-    private Analysis.ComponentReferences? ReferencesIn(string classId)
+    /// <summary>
+    /// What locators can share over one operation - a rename or move walks a locator over every file
+    /// that refers to the class, and each asks about the same bases, packages and classes. Valid while
+    /// the graph is unchanged: make one per operation, before its edits are applied.
+    /// </summary>
+    public sealed class Shared
     {
-        if (!_references.TryGetValue(classId, out var references))
-        {
-            references = _graph.GetNode<DataTypes.ModelNode>(classId) is { } node
-                ? Analysis.ClassElementResolver.ReferencesIn(_graph, node, _interfaces, _ancestors)
-                : null;
-            _references[classId] = references;
-        }
-        return references;
+        internal Analysis.TypeResolver.AncestorCache Ancestors { get; } = new();
+        internal Analysis.ClassElementResolver.InterfaceCache Interfaces { get; } = new();
+        internal Dictionary<string, Analysis.ComponentReferences?> References { get; } = new(StringComparer.Ordinal);
     }
 
-    public ReferenceLocator(DirectedGraph graph, IEnumerable<string>? targetIds = null)
+    private readonly Shared _shared;
+
+    /// <param name="graph">The graph used to resolve references.</param>
+    /// <param name="targetIds">Only record references resolving to these ids; null records all resolvable references.</param>
+    /// <param name="shared">Caches to share with the other locators of one operation; null for a
+    /// locator of its own.</param>
+    public ReferenceLocator(DirectedGraph graph, IEnumerable<string>? targetIds = null, Shared? shared = null)
     {
         _graph = graph;
         _targets = targetIds is null ? null : new HashSet<string>(targetIds, StringComparer.Ordinal);
+        _shared = shared ?? new Shared();
+    }
+
+    // One resolver per class the walk is inside, made the first time one of its references is not a
+    // class by its whole name, and kept for the operation.
+    private Analysis.ComponentReferences? ReferencesIn(string classId)
+    {
+        if (!_shared.References.TryGetValue(classId, out var references))
+        {
+            references = _graph.GetNode<DataTypes.ModelNode>(classId) is { } node
+                ? Analysis.ClassElementResolver.ReferencesIn(_graph, node, _shared.Interfaces, _shared.Ancestors)
+                : null;
+            _shared.References[classId] = references;
+        }
+        return references;
     }
 
     public IReadOnlyList<ReferenceSite> Sites => _sites;
@@ -146,7 +167,8 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             return;
 
         var frame = _scopes.Peek();
-        var targetId = ReferenceResolver.Resolve(_graph, frame.ClassId, frame.Imports, reference, _ancestors);
+        var targetId = ReferenceResolver.Resolve(_graph, frame.ClassId, frame.Imports, reference, _shared.Ancestors);
+        bool? inherited = null;
 
         // Not a class by its whole name: a component reached through one (Modelica.Constants.pi).
         // The site is the leading segments that name the class - renaming Constants rewrites them,
@@ -155,18 +177,22 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
             && start.QualifierSegments <= idents.Length)
         {
             targetId = start.Scope.Id;
+            inherited = start.ThroughInheritance;
             idents = idents[..start.QualifierSegments];
         }
 
         if (targetId is null || (_targets is not null && !_targets.Contains(targetId)))
             return;
 
+        // Asked only of a site that is kept: it is a second lookup of the name.
+        inherited ??= ReferenceResolver.ResolveWithoutInheritance(_graph, frame.ClassId, frame.Imports, reference) != targetId;
+
         var segments = idents
             .Select(t => new NameSegment(t.GetText(), t.Symbol.StartIndex, t.Symbol.StopIndex))
             .ToList();
         _sites.Add(new ReferenceSite(
             targetId, idents[0].Symbol.StartIndex, idents[^1].Symbol.StopIndex, reference, segments,
-            idents[0].Symbol.Line));
+            idents[0].Symbol.Line) { ThroughInheritance = inherited.Value });
     }
 
     private static string? ClassLeafName(modelicaParser.Class_definitionContext context)
