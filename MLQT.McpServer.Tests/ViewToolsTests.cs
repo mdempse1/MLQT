@@ -106,11 +106,62 @@ public class ViewToolsTests
 
         var length = view.Parameters.Single(p => p.Name == "length");
         Assert.Equal("1", length.Default);
-        Assert.Equal("(min=0)", length.TypeModification);
+        Assert.Equal("(min = 0)", length.TypeModification);
 
         var plain = view.Parameters.Single(p => p.Name == "plain");
         Assert.Equal("2", plain.Default);
         Assert.Null(plain.TypeModification);
+    }
+
+    // What a static unit check reads off an instance: its dimensions, what it redeclares, and the
+    // base and unit a nested type alias names.
+    private const string RedeclaringPackage = """
+        within;
+        package R "r"
+          type Torque = Real(unit = "N.m") "a torque";
+          model Pipe "a pipe"
+            replaceable package Medium = R "the medium";
+            parameter Real L = 1;
+          end Pipe;
+          model User "uses a pipe"
+            Pipe pipe(redeclare package Medium = R(x = 1), L = 2);
+            Real[2] t[3];
+          end User;
+        end R;
+        """;
+
+    [Fact]
+    public void ListElements_ReportsDimensionsAndRedeclarations()
+    {
+        using var host = new TestHost();
+        var result = ToolAssert.Ok<ClassElementsResult>(
+            LoadContent(host, RedeclaringPackage).ListClassElements("R.User"));
+
+        var pipe = result.Elements.Single(e => e.Name == "pipe");
+        var medium = Assert.Single(pipe.Redeclarations!);
+        Assert.Equal("Medium", medium.Key);
+        Assert.Equal(new RedeclarationView("package", "R", "(x = 1)", null), medium.Value);
+        Assert.Null(pipe.ArraySubscripts);
+
+        var t = result.Elements.Single(e => e.Name == "t");
+        Assert.Equal("[3, 2]", t.ArraySubscripts);
+        Assert.Null(t.Redeclarations);
+    }
+
+    [Fact]
+    public void ListElements_ANestedShortClassNamesItsBase()
+    {
+        using var host = new TestHost();
+        var result = ToolAssert.Ok<ClassElementsResult>(
+            LoadContent(host, RedeclaringPackage).ListClassElements("R"));
+
+        var torque = result.Elements.Single(e => e.Name == "Torque");
+        Assert.Equal("class", torque.Kind);
+        Assert.Equal("Real", torque.Type);
+        Assert.Equal("(unit = \"N.m\")", torque.TypeModification);
+
+        // A long nested class names no base.
+        Assert.Null(result.Elements.Single(e => e.Name == "Pipe").Type);
     }
 
     [Fact]
@@ -122,13 +173,13 @@ public class ViewToolsTests
 
         var length = result.Elements.Single(e => e.Name == "length");
         Assert.Equal("1", length.Default);
-        Assert.Equal("(min=0)", length.TypeModification);
+        Assert.Equal("(min = 0)", length.TypeModification);
 
         // Constrained but bound to nothing: it has no default at all, which is a different answer from
         // "its default is (unit=\"m\")".
         var x = result.Elements.Single(e => e.Name == "x");
         Assert.Null(x.Default);
-        Assert.Equal("(unit=\"m\")", x.TypeModification);
+        Assert.Equal("(unit = \"m\")", x.TypeModification);
     }
 
     [Fact]

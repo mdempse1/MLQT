@@ -164,6 +164,19 @@ because listing it without saying so tells you that you can connect to a port th
 Where the expression is past what MLQT evaluates, the connector **is** drawn: showing a port that is
 switched off is a smaller lie than hiding one that is switched on.
 
+`list_class_elements` also reports what an instance is given that is not a value. `arraySubscripts`
+are a component's dimensions as written (`Real[2] x[3]` is `[3, 2]`, the declaration's first);
+`redeclarations` lists each `redeclare` its modification makes, keyed by the path to the element it
+replaces (`Medium`, or `b.Medium` for `b(redeclare package Medium = Water)`), with the replacing type;
+and a nested type alias such as `type Torque = Real(unit = "N.m")` reports `Real` as its `type` and the
+modification in `typeModification`.
+
+**`typeModification` changed form on 2026-10-02**, in both `get_class_interface` and
+`list_class_elements`: it is the text as written, with the spaces between its tokens and **without any
+comment inside it**. Before, it ran the tokens together and kept the comments - `x(/* note */ unit = "m")`
+gave `(/*note*/unit="m")` and now gives `(unit = "m")`, and `b(start = p and q)` gave the unreadable
+`(start=pandq)`. An agent that compared it as a string against the old form will see every one change.
+
 Two deliberate differences from a Modelica tool's diagram window:
 
 - **Nothing is clipped.** A viewer scales to the declared coordinate system and cuts off anything

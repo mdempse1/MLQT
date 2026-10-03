@@ -63,6 +63,28 @@
 3. Use the search field to filter findings by type
 4. Consider using less strict rules initially (e.g., just descriptions, not full documentation)
 
+### "Quantity declares a unit" Reports Components It Did Not Before
+
+**Symptom:** after upgrading, `MLQT.Units.MissingUnit` reports components whose code has not changed,
+and a CI gate with a baseline fails on them as *New*.
+
+**Why:** the rule follows a component's type through its alias chain to see whether the type fixes a
+unit. Until 2026-10-02 that chain stopped at a `type` written in the long form —
+`type X extends Base; ... end X;`, which a type has to be written as to carry an
+`equalityConstraint` — so every component typed through one was not judged at all. Such a type is
+now followed like a short alias. In the Modelica Standard Library 4.1.0 this reports **145** more
+components, all through `Modelica.Icons.TypeReal` (`type TypeReal extends Real`) — `SpecularCoefficient`,
+`ShapeExtra`, `RealColor` — and MultiBody's `TransformationMatrices.Orientation`. Each is a `Real`
+with no unit, which is what the rule reports. A type that does fix one, such as
+`Quaternions.Orientation` (`unit = "1"`), passes.
+
+A type that writes `unit` with no value — `Real(unit)` or `Real(unit(...))` — used to count as fixing
+a unit, and now fixes nothing. No library MLQT is tested against writes it.
+
+**What to do:** these are findings the rule should always have made. Give the type a unit (`"1"` for a
+dimensionless quantity), suppress the rule where the finding is not wanted, or accept them as debt
+with `mlqt baseline update --force` after reading them — see `cli.md`.
+
 ### Diff View Shows No Changes
 
 **Symptom:** You know a file has been modified but the diff buttons are disabled.

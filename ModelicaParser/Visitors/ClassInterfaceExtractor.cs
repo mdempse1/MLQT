@@ -51,6 +51,7 @@ public static class ClassInterfaceExtractor
             Elements = elements,
             ShortClassBase = shortBase,
             ShortClassModifications = shortBase is null ? null : ScalarModifications(shortClass!.class_modification()),
+            ShortClassRedeclarations = shortBase is null ? null : Redeclarations(shortClass!.class_modification()),
             ClassExtendsBase = classExtends?.IDENT(0)?.GetText(),
             ClassExtendsModifications = classExtends is null ? null : ScalarModifications(classExtends.class_modification())
         };
@@ -134,6 +135,7 @@ public static class ClassInterfaceExtractor
                 Name = baseType,
                 Type = baseType,
                 Modifications = ExtractExtendsModifications(ext),
+                Redeclarations = ExtendsArguments(ext) is { } arguments ? Redeclarations(arguments) : null,
                 IsPublic = isPublic,
                 Prefixes = prefixes,
                 Line = element.Start.Line
@@ -142,11 +144,19 @@ public static class ClassInterfaceExtractor
         else if (element.class_definition() is { } nested)
         {
             var spec = nested.class_specifier();
+            // `type Torque = Real(unit = "N.m")`: the base and what it is given, as the nested class's
+            // own interface would report them. The enumeration form names no base.
+            var shortClass = spec?.short_class_specifier() is { } s && s.type_specifier() is not null ? s : null;
             elements.Add(new ClassElement
             {
                 Kind = ClassElementKind.Class,
                 Name = ClassName(spec),
                 ClassType = GetClassType(nested.class_prefixes()),
+                Type = shortClass?.type_specifier().GetText(),
+                ArraySubscripts = Dimensions(shortClass?.array_subscripts()),
+                TypeModification = SourceText(shortClass?.class_modification()),
+                Modifications = ScalarModifications(shortClass?.class_modification()),
+                Redeclarations = Redeclarations(shortClass?.class_modification()),
                 Description = ClassDescription(spec),
                 IsPublic = isPublic,
                 Prefixes = prefixes,
@@ -164,6 +174,7 @@ public static class ClassInterfaceExtractor
     {
         var (variability, causality, connection) = ReadTypePrefix(cc.type_prefix());
         var type = cc.type_specifier()?.GetText()?.Trim();
+        var typeDimensions = cc.array_subscripts();
         var list = cc.component_list();
         if (list is null)
             return;
@@ -181,12 +192,14 @@ public static class ClassInterfaceExtractor
                 Kind = ClassElementKind.Component,
                 Name = name,
                 Type = type,
+                ArraySubscripts = Dimensions(declaration!.array_subscripts(), typeDimensions),
                 Variability = variability,
                 Causality = causality,
                 Connection = connection,
-                DefaultValue = ReadBinding(declaration!.modification()),
-                TypeModification = ReadTypeModification(declaration.modification()),
+                DefaultValue = ReadBinding(declaration.modification()),
+                TypeModification = SourceText(declaration.modification()?.class_modification()),
                 Modifications = ScalarModifications(declaration.modification()?.class_modification()),
+                Redeclarations = Redeclarations(declaration.modification()?.class_modification()),
                 Condition = SourceText(decl.condition_attribute()?.expression()),
                 Description = ReadStringComment(decl.comment()?.string_comment()),
                 IsPublic = isPublic,
@@ -201,13 +214,132 @@ public static class ClassInterfaceExtractor
     private static IReadOnlyDictionary<string, string>? ExtractExtendsModifications(
         modelicaParser.Extends_clauseContext ext)
     {
-        var list = ext.class_or_inheritence_modification()?.argument_or_inheritence_list();
-        if (list is null)
+        if (ExtendsArguments(ext) is not { } arguments)
             return null;
 
         Dictionary<string, string>? mods = null;
-        AddScalarModifications(list.argument(), prefix: "", ref mods);
+        AddScalarModifications(arguments, prefix: "", ref mods);
         return mods;
+    }
+
+    // An extends clause's arguments, without the `break` inheritance modifications among them.
+    private static modelicaParser.ArgumentContext[]? ExtendsArguments(modelicaParser.Extends_clauseContext ext)
+        => ext.class_or_inheritence_modification()?.argument_or_inheritence_list()?.argument();
+
+    /// <summary>
+    /// Array dimensions as written, in the order the language reads them: the declaration's, then
+    /// the type's (<c>Real[2] x[3]</c> is <c>Real x[3, 2]</c>, MLS §10.1). Null for a scalar.
+    /// </summary>
+    private static string? Dimensions(params modelicaParser.Array_subscriptsContext?[] subscripts)
+    {
+        var dimensions = subscripts
+            .Where(s => s is not null)
+            .SelectMany(s => s!.subscript_())
+            .Select(s => SourceText(s))
+            .ToList();
+        return dimensions.Count == 0 ? null : $"[{string.Join(", ", dimensions)}]";
+    }
+
+    private static IReadOnlyDictionary<string, Redeclaration>? Redeclarations(
+        modelicaParser.Class_modificationContext? classMod)
+        => classMod?.argument_list() is { } list ? Redeclarations(list.argument()) : null;
+
+    private static IReadOnlyDictionary<string, Redeclaration>? Redeclarations(
+        IEnumerable<modelicaParser.ArgumentContext> arguments)
+    {
+        Dictionary<string, Redeclaration>? redeclarations = null;
+        AddRedeclarations(arguments, prefix: "", ref redeclarations);
+        return redeclarations;
+    }
+
+    /// <summary>
+    /// The redeclarations among a modification's arguments, each keyed by the path to the element it
+    /// replaces, as <see cref="AddScalarModifications"/> keys values: a redeclaration inside a nested
+    /// modification (<c>b(redeclare package Medium = W)</c>) is <c>b.Medium</c>. Both forms replace
+    /// the element - <c>redeclare ...</c>, and a <c>replaceable ...</c> written in a modification,
+    /// which is a redeclaration that may be redeclared again (MLS §7.3).
+    /// </summary>
+    private static void AddRedeclarations(
+        IEnumerable<modelicaParser.ArgumentContext> arguments, string prefix,
+        ref Dictionary<string, Redeclaration>? redeclarations)
+    {
+        foreach (var arg in arguments)
+        {
+            Redeclaration? found = null;
+            if (arg.element_redeclaration() is { } redeclaration)
+            {
+                var prefixes = Terminals(redeclaration, "each", "final");
+                found = redeclaration.element_replaceable() is { } replaceable
+                    ? Replacement(replaceable, [.. prefixes, "replaceable"])
+                    : Replacement(redeclaration.short_class_definition(), redeclaration.component_clause1(), prefixes);
+            }
+            else if (arg.element_modification_or_replaceable() is { } modOrReplaceable)
+            {
+                var prefixes = Terminals(modOrReplaceable, "each", "final");
+                if (modOrReplaceable.element_replaceable() is { } replaceable)
+                {
+                    found = Replacement(replaceable, [.. prefixes, "replaceable"]);
+                }
+                else if (modOrReplaceable.element_modification() is { } em
+                         && em.modification()?.class_modification()?.argument_list() is { } nested
+                         && em.name()?.GetText() is { Length: > 0 } name)
+                {
+                    AddRedeclarations(nested.argument(), prefix + name + ".", ref redeclarations);
+                }
+            }
+
+            if (found is not null)
+                (redeclarations ??= new Dictionary<string, Redeclaration>(StringComparer.Ordinal))[prefix + found.Name] = found;
+        }
+    }
+
+    private static Redeclaration? Replacement(modelicaParser.Element_replaceableContext replaceable, IReadOnlyList<string> prefixes)
+        => Replacement(replaceable.short_class_definition(), replaceable.component_clause1(), prefixes);
+
+    // `package Medium = Water` or `Real x[2](unit = "m")`: what an element is replaced with.
+    private static Redeclaration? Replacement(
+        modelicaParser.Short_class_definitionContext? shortClass,
+        modelicaParser.Component_clause1Context? component,
+        IReadOnlyList<string> prefixes)
+    {
+        if (shortClass?.short_class_specifier() is { } spec && spec.IDENT() is { } className)
+        {
+            return new Redeclaration
+            {
+                Name = className.GetText(),
+                ClassType = GetClassType(shortClass.class_prefixes()),
+                Type = spec.type_specifier()?.GetText(),
+                TypeModification = SourceText(spec.class_modification()),
+                ArraySubscripts = Dimensions(spec.array_subscripts()),
+                Prefixes = prefixes,
+                Line = shortClass.Start.Line
+            };
+        }
+
+        if (component?.component_declaration1()?.declaration() is { } declaration && declaration.IDENT() is { } componentName)
+        {
+            return new Redeclaration
+            {
+                Name = componentName.GetText(),
+                Type = component.type_specifier()?.GetText(),
+                TypeModification = SourceText(declaration.modification()?.class_modification()),
+                ArraySubscripts = Dimensions(declaration.array_subscripts()),
+                Prefixes = prefixes,
+                Line = component.Start.Line
+            };
+        }
+
+        return null;
+    }
+
+    // The keywords among a context's own terminals, in source order.
+    private static List<string> Terminals(ParserRuleContext context, params string[] keywords)
+    {
+        var found = new List<string>();
+        for (var i = 0; i < context.ChildCount; i++)
+            if (context.GetChild(i) is ITerminalNode t && keywords.Contains(t.GetText()))
+                found.Add(t.GetText());
+        return found;
     }
 
     /// <summary>
@@ -335,16 +467,6 @@ public static class ClassInterfaceExtractor
     /// </summary>
     private static string? ReadBinding(modelicaParser.ModificationContext? mod)
         => SourceText(mod?.modification_expression());
-
-    /// <summary>
-    /// The modification applied to the component's type, e.g. <c>(min = 0)</c> or <c>(k = 2)</c>. It
-    /// sets attributes on the type or on a sub-component; it is not a value the component takes.
-    /// </summary>
-    private static string? ReadTypeModification(modelicaParser.ModificationContext? mod)
-    {
-        var text = mod?.class_modification()?.GetText()?.Trim();
-        return string.IsNullOrEmpty(text) ? null : text;
-    }
 
     private static IReadOnlyList<string> ReadElementPrefixes(modelicaParser.ElementContext element)
     {

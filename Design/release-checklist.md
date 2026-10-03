@@ -42,7 +42,29 @@ and strips, and `Plain` — the fallback — round-trips too. A fault that makes
 passes this test at any corpus size. That is what `TheEmitLoopIsFaithfulAndStillColours` is for, and
 it runs on every push (B234).
 
-## 3. The nightly WebKit rehearsal, triggered deliberately
+## 3. The resolution corpus, by hand
+
+```powershell
+$msl = "C:\Projects\Modelica\ModelicaStandardLibrary"
+$env:MLQT_RESOLUTION_CORPUS = "$msl\Modelica;$msl\ModelicaServices;$msl\Complex.mo;C:\Projects\Modelica\Modelica-Buildings\Buildings"
+dotnet test ModelicaGraph.Tests --filter "FullyQualifiedName~ResolutionCorpusTests"
+```
+
+The two facts the unit-consistency design stands on, over MSL 4.1.0 and Buildings 13 loaded into one
+graph: **every component type resolves** (124,977 of them on 2026-10-03), and **a package redeclared on
+an instance gives every member the unit the constraining type does** (26,145 members under 6,239
+redeclarations). About a minute. **With the variable unset both tests return immediately.**
+
+Name each library's own directory, not a repository root: MSL's holds `ModelicaTestConversion4`,
+written against 3.2.3, whose names rightly do not resolve against 4.1.0. Buildings 13 declares MSL
+4.0.0 and the figures above are for it beside 4.1.0, the version on the development machine; the
+tests load whatever they are given and do not check that a library's `uses` matches.
+
+**Required whenever the release carries a change to `TypeResolver`, `ClassElementResolver` or
+`UnitResolver`.** Taking away the lookup among inherited classes (`inherited: false` in
+`ResolveWithInheritance`) fails both: 1,744 types stop resolving and 813 members disagree.
+
+## 4. The nightly WebKit rehearsal, triggered deliberately
 
 ```bash
 gh workflow run nightly-webkit.yml
@@ -53,7 +75,7 @@ scheduled rather than push-triggered, so **a change to the runner image or the h
 here until the next night** — and the runners are pinned to `ubuntu-24.04` precisely because
 Playwright ships no WebKit for 26.04 (B256). Trigger it and wait for it.
 
-## 4. Tag, then watch the release workflow's Linux half
+## 5. Tag, then watch the release workflow's Linux half
 
 `release.yml` only fires on a tag, so its `.deb` job is the least-rehearsed thing in the repository
 and does the most environment-dependent work: `apt-get install`, `xvfb`, and the 16 `/selftest`
@@ -62,7 +84,7 @@ means here** — `build/package-deb.sh` exists to prove it rather than to produc
 
 The Windows half is better covered, because `desktop-selftest` runs the same probes on every push.
 
-## 5. Read the coverage ledger, do not just pass the gate
+## 6. Read the coverage ledger, do not just pass the gate
 
 ```powershell
 ./build/check-coverage.ps1
