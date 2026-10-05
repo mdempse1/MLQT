@@ -24,6 +24,29 @@
   </PropertyGroup>
 
   <!--
+    The public surface other people build against.
+
+    ModelicaParser, ModelicaGraph, RevisionControl and DymolaInterface are consumed from source
+    outside this repository, by other projects, so a change to
+    their public types can break code no test here can see. A project opts in with
+    `<TrackPublicApi>true</TrackPublicApi>`, and the analyzer then holds its public surface to
+    `PublicAPI.Shipped.txt` beside the project file:
+
+    - a new public member is RS0016 until it is listed in `PublicAPI.Unshipped.txt` (the IDE's fix
+      for the diagnostic writes the line, and `dotnet format analyzers` asked for RS0016 writes them
+      all - the exact command is in CODING_GUIDELINES.md, since an XML comment cannot hold a double
+      dash);
+    - a removed or changed one is RS0017, because its line in a file no longer matches anything.
+
+    So every change to what those consumers see arrives as a diff in a reviewed text file, rather
+    than as their next pull failing to compile. At a release, Unshipped moves into Shipped. Under
+    CI=true both are errors, as every warning is.
+  -->
+  <ItemGroup Condition="'$(TrackPublicApi)' == 'true'">
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
     A warning fails a CI build, and only a CI build (B439).
 
     B408 took a clean Release build from 56 warnings to none, and within hours tests written in

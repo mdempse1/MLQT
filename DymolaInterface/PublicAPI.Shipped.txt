@@ -1,0 +1,264 @@
+#nullable enable
+const DymolaInterface.DymolaSettings.OldestDetectedYear = 2021 -> int
+DymolaInterface.CommandOutcome
+DymolaInterface.CommandOutcome.Answered = 0 -> DymolaInterface.CommandOutcome
+DymolaInterface.CommandOutcome.Cancelled = 3 -> DymolaInterface.CommandOutcome
+DymolaInterface.CommandOutcome.Failed = 4 -> DymolaInterface.CommandOutcome
+DymolaInterface.CommandOutcome.Offline = 1 -> DymolaInterface.CommandOutcome
+DymolaInterface.CommandOutcome.TimedOut = 2 -> DymolaInterface.CommandOutcome
+DymolaInterface.DymolaInterface
+DymolaInterface.DymolaInterface.AddModelicaPathAsync(string! path, bool erase = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.AnimationPositionAsync(double[]! position, int id, bool maximized = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.AnimationSetupAsync() -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.CalculateNumberPrecisionAsync(double[]! values) -> System.Threading.Tasks.Task<int>!
+DymolaInterface.DymolaInterface.CallDymolaFunctionAsync(string! cmd, object?[]? parameters = null, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.CdAsync(string! dir = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.CheckConversionAsync(string! library, string! fromVersion, string![]! oldVersions, string! reportPath, bool autoAddExtends, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.CheckModelAsync(string! problem, bool simulate = false, bool constraint = false, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ClearAsync(bool fast = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ClearFlagsAsync() -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ClearLogAsync() -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ClearPlotAsync(int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.CommandTimeout.get -> System.TimeSpan
+DymolaInterface.DymolaInterface.CommandTimeout.set -> void
+DymolaInterface.DymolaInterface.CreatePlotAsync(int id, int[]! position, string![]! x, string![]! y, string! heading, double[]! range, bool erase, bool autoscale, bool autoerase, bool autoreplot, bool description, bool grid, bool color, bool online, bool legend, double timeWindow, string! filename, int legendLocation, bool legendHorizontal, bool legendFrame, bool supressMarker, bool logX, bool logY, string![]! legends, int[]! subPlot, bool uniformScaling, int leftTitleType, string! leftTitle, int bottomTitleType, string! bottomTitle, int[]![]! colors, DymolaInterface.LinePattern[]! patterns, DymolaInterface.MarkerStyle[]! markers, double[]! thicknesses, double[]! range2, bool logY2, int rightTitleType, string! rightTitle, int[]! axes, string! timeUnit, string![]! displayUnits, bool showOriginal, bool showDifference, bool plotInAll) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.CreateTableAsync(int id, int[]! position, string![]! x, string![]! y, string! heading, bool autoerase, bool autoreplot, string! filename, string![]! legends, string! timeUnit, string![]! displayUnits, bool showOriginal, bool showDifference) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.DefaultModelicaVersionAsync(string! version, bool forceUpgrade) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.Detach() -> void
+DymolaInterface.DymolaInterface.Dispose() -> void
+DymolaInterface.DymolaInterface.DocumentAsync(string! function) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.DymolaInterface(string! dymolaPath = "", int portNumber = 8082, string! hostname = "127.0.0.1", System.TimeSpan? connectionWindow = null) -> void
+DymolaInterface.DymolaInterface.DymolaLicenseInfoAsync() -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.DymolaVersionAsync() -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.DymolaInterface.DymolaVersionNumberAsync() -> System.Threading.Tasks.Task<double>!
+DymolaInterface.DymolaInterface.EraseClassesAsync(string![]! classnames) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExecuteAsync(string! file, bool wait = true, bool terminal = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExecuteCommandAsync(string! cmd, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExistTrajectoryNamesAsync(string! fileName, string![]! names) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ExitAsync(int status = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExperimentAsync(double startTime = 0, double stopTime = 1, int numberOfIntervals = 0, double outputInterval = 0, string! algorithm = "", double tolerance = 0.0001, double fixedStepSize = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExperimentGetOutputAsync() -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ExperimentSetupOutputAsync(bool textual = false, bool doublePrecision = false, bool states = true, bool derivatives = true, bool inputs = true, bool outputs = true, bool auxiliaries = true, bool equidistant = true, bool events = true, bool onlyStopTime = false, bool debug = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportAnimationAsync(string! path, int width = -1, int height = -1, int frameRate = 20, int quality = 1, bool repeat = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportDiagramAsync(string! path, int width = 400, int height = 400, bool trim = true, string! modelToExport = "", bool evaluate = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportDocumentationAsync(string! path, string! className = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportEquationsAsync(string! path) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportHTMLDirectoryAsync(string! name, string! directory = "", string![]? listOfLibraries = null, string![]? listOfLibraryDirectories = null, bool copyLinksLocally = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportIconAsync(string! path, int width = 80, int height = 80, bool trim = true, string! modelToExport = "", bool evaluate = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportInitialAsync(string! dsName, string! scriptName, bool exportAllVariables, bool exportSimulator) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportInitialDsinAsync(string! scriptName) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportPlotAsImageAsync(string! fileName, int id = -1, bool includeInLog = true, bool onlyActiveSubplot = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ExportSSPAsync(string! modelName, string! fileName = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.GetClassTextAsync(string! fullName, bool includeAnnotations = false, bool formatted = false) -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.DymolaInterface.GetDependentLibrariesAsync(string! modelName, bool dependentModels = false) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.GetDymolaCompilerAsync() -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.GetExperimentAsync() -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.GetLastErrorAsync() -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.DymolaInterface.GetLastErrorLogAsync() -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.DymolaInterface.GetLastErrorRawAsync() -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.GetLastResultFileNameAsync() -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.DymolaInterface.GetRegistryValueAsync(string! key, string! name, bool convert = true, string! defaultValue = "") -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.DymolaInterface.GetSessionStateAsync() -> System.Threading.Tasks.Task<DymolaInterface.DymolaSessionState>!
+DymolaInterface.DymolaInterface.ImportFMUAsync(string! fileName, bool includeAllVariables, bool integrate, bool promptReplacement, string! packageName, bool includeVariables, string! modelName, bool sourceCodeImport, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ImportInitialAsync(string! dsName = "dsfinal.txt") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ImportInitialResultAsync(string! dsResName, double atTime) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ImportSSPAsync(string! fileName, bool filterVariables = false, string! packageName = "", bool silentSave = true, bool includeAllVariables = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ImportSSVAsync(string! fileName, string! baseName = "", string! packageName = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.InitializedAsync(bool allVars = false, bool isInitialized = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.InterpolateTrajectoryAsync(string! fileName, string![]! signals, double[]! times) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.IsAliveAsync() -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.IsOfflineMode() -> bool
+DymolaInterface.DymolaInterface.LastOutcome.get -> DymolaInterface.CommandOutcome
+DymolaInterface.DymolaInterface.LinearizeModelAsync(string! problem = "", double startTime = 0, double stopTime = 1, int numberOfIntervals = 0, double outputInterval = 0, string! method = "Dassl", double tolerance = 0.0001, double fixedStepSize = 0, string! resultFile = "dslin", System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ListAsync(string! filename = "", string![]? variables = null) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ListFunctionsAsync(string! filter = "*", bool longForm = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.LoadAnimationAsync(string! fileName, int id = 0, bool together = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.OpenModelAsync(string! path, bool mustRead = true, bool changeDirectory = true, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.OpenModelFileAsync(string! modelName, string! path = "", string! version = "", bool newTab = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.OwnsProcess.get -> bool
+DymolaInterface.DymolaInterface.PlotArrayAsync(double[]! x, double[]! y, int style = 0, string! legend = "", int id = 0, int[]? color = null, DymolaInterface.LinePattern pattern = DymolaInterface.LinePattern.Default, DymolaInterface.MarkerStyle marker = DymolaInterface.MarkerStyle.Default, double thickness = -1, bool erase = true, int axis = 1, string! unit = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotArraysAsync(double[]! x, double[]![]! y, int style, string![]! legend, int id, string! title, int[]![]! colors, DymolaInterface.LinePattern[]! patterns, DymolaInterface.MarkerStyle[]! markers, double[]! thicknesses, int[]! axes, string![]! units) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotAsync(string![]! y, string![]? legends = null, bool? plotInAll = null, int[]![]? colors = null, DymolaInterface.LinePattern[]? patterns = null, DymolaInterface.MarkerStyle[]? markers = null, double[]? thicknesses = null, int[]? axes = null) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotDiscretizedAsync(string![]! vars, string! legend, string! independent, int id, bool erase) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotDocumentationAsync(string! doc = "", int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotExpressionAsync(string! mapFunction, bool eraseOld = false, string! expressionName = "", int id = 0, int axis = 1, string! unit = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotExternalAsync(string! fileName) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotHeadingAsync(string! textString, double fontSize, string! fontName, int[]! lineColor, DymolaInterface.TextStyle[]! textStyle, DymolaInterface.TextAlignment horizontalAlignment, int id) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotMovingAverageAsync(string! variablePath, double startTime, double stopTime, double intervalLength, int order = 0, int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotParametricCurveAsync(double[]! x, double[]! y, double[]! s, string! xName = "", string! yName = "", string! sName = "", string! legend = "", int id = 0, int[]? color = null, DymolaInterface.LinePattern pattern = DymolaInterface.LinePattern.Default, DymolaInterface.MarkerStyle marker = DymolaInterface.MarkerStyle.Default, double thickness = -1, bool labelWithS = false, bool erase = true, int axis = 1) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotParametricCurvesAsync(double[]![]! x, double[]![]! y, double[]![]! s, string! xName, string! yName, string! sName, string![]! legends, int id, int[]![]! colors, DymolaInterface.LinePattern[]! patterns, DymolaInterface.MarkerStyle[]! markers, double[]! thicknesses, bool labelWithS, int[]! axes) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotRowColumnLabelsAsync(string![]! x, string![]! y, int id) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotScatterAsync(double[]! x, double[]! y, int[]![]! colors, DymolaInterface.MarkerStyle[]! markers, string! legend, int axis, string! unit, bool erase, int id) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotSignalDifferenceAsync(string! variablePath, double startTime = 0, double stopTime = 0, int axis = 1, int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotSignalOperatorAsync(string! variablePath, DymolaInterface.SignalOperator signalOperator, double startTime, double stopTime, double period = 0, int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotSignalOperatorHarmonicAsync(string! variablePath, DymolaInterface.SignalOperator signalOperator, double startTime, double stopTime, double period, double intervalLength, int window, int harmonicNo, int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotTextAsync(double[]! extent, string! textString, double fontSize, string! fontName, int[]! lineColor, DymolaInterface.TextStyle[]! textStyle, DymolaInterface.TextAlignment horizontalAlignment, int id) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotTitleAsync(string! title = "", int id = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PlotWindowSetupAsync(int window) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PrintPlotArrayAsync(double[]! x, double[]! y, int style = 0, string! legend = "", int id = 0, int[]? color = null, DymolaInterface.LinePattern pattern = DymolaInterface.LinePattern.Default, DymolaInterface.MarkerStyle marker = DymolaInterface.MarkerStyle.Default, double thickness = -1, bool erase = true, int axis = 1, string! unit = "") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PrintPlotArraysAsync(double[]! x, double[]![]! y, int style, string![]! legend, int id, string! title, int[]![]! colors, DymolaInterface.LinePattern[]! patterns, DymolaInterface.MarkerStyle[]! markers, double[]! thicknesses, int[]! axes, string![]! units) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.PrintPlotAsync(string![]! y, string![]? legends = null, bool? plotInAll = null, int[]![]? colors = null, DymolaInterface.LinePattern[]? patterns = null, DymolaInterface.MarkerStyle[]? markers = null, double[]? thicknesses = null, int[]? axes = null) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ProcessId.get -> int?
+DymolaInterface.DymolaInterface.ReadMatrixAsync(string! fileName, string! matrixName, int rows, int columns) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ReadMatrixSizeAsync(string! fileName, string! matrixName) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ReadStringMatrixAsync(string! fileName, string! matrixName, int rows) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ReadTrajectoryAsync(string! fileName, string![]! signals, int rows) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ReadTrajectoryNamesAsync(string! fileName) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.ReadTrajectorySizeAsync(string! fileName) -> System.Threading.Tasks.Task<int>!
+DymolaInterface.DymolaInterface.RemovePlotsAsync(bool closeResults = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.RemoveResultsAsync(string![]! results) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.RequestOptionAsync(string! optionName, string! licenseDate = "", bool verbose = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.RunAnimationAsync(bool immediate = true, string! loadFile = "", bool ensureAnimationWindow = false, bool eraseOld = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.RunScriptAsync(string! script, bool silent = false, string! scriptDir = "", System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SaveEncryptedModelAsync(string! name, string! path) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SaveLogAsync(string! logfile = "dymolalg.txt") -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SaveModelAsync(string! name, string! path, int storeVariant = 0) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SaveSettingsAsync(string! fileName, bool storePlot = false, bool storeAnimation = false, bool storeSettings = false, bool storeVariables = false, bool storeInitial = true, bool storeAllVariables = true, bool storeSimulator = true, bool storePlotFilenames = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SaveTotalModelAsync(string! fileName, string! modelName, bool skipStandard = false, bool completePackage = false, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SetClassTextAsync(string! parentName, string! fullText) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SetDymolaCompilerAsync(string! compiler, string![]? settings = null, bool mergeSettings = true) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SetOfflineMode(bool enable) -> void
+DymolaInterface.DymolaInterface.SetVariableAsync(string! name, object! value) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ShowComponentAsync(string! path, string![]! components) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ShowMessageDialogAsync(string! message, double timeOut = 5, bool continueAfterStop = false, double[]? position = null) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.ShowMessageWindowAsync(bool show) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SignalOperatorValueAsync(string! variablePath, DymolaInterface.SignalOperator signalOperator, double startTime = -1E+100, double stopTime = 1E+100) -> System.Threading.Tasks.Task<double>!
+DymolaInterface.DymolaInterface.SimulateExtendedModelAsync(string! problem, double startTime, double stopTime, int numberOfIntervals, double outputInterval, string! method, double tolerance, double fixedStepSize, string! resultFile, string![]! initialNames, double[]! initialValues, string![]! finalNames, bool autoLoad, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.SimulateModelAsync(string! problem = "", double startTime = 0, double stopTime = 1, int numberOfIntervals = 0, double outputInterval = 0, string! method = "Dassl", double tolerance = 0.0001, double fixedStepSize = 0, string! resultFile = "dsres", System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.SimulateMultiExtendedModelAsync(string! problem, double startTime, double stopTime, int numberOfIntervals, double outputInterval, string! method, double tolerance, double fixedStepSize, string! resultFile, string![]! initialNames, double[]![]! initialValues, string![]! finalNames, string![]! resultFileNames, bool autoLoad, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.SimulateMultiResultsModelAsync(string! problem, double startTime, double stopTime, int numberOfIntervals, double outputInterval, string! method, double tolerance, double fixedStepSize, string! resultFile, string![]! initialNames, double[]![]! initialValues, string![]! resultNames, string![]! resultFileNames, bool autoLoad, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement?>!
+DymolaInterface.DymolaInterface.SpawnEnvironmentVariables.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+DymolaInterface.DymolaInterface.SpawnEnvironmentVariables.set -> void
+DymolaInterface.DymolaInterface.StartDymolaProcessAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+DymolaInterface.DymolaInterface.StopDymolaProcessAsync() -> System.Threading.Tasks.Task!
+DymolaInterface.DymolaInterface.SystemAsync(string! command) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.TraceAsync(bool variables = false, bool statements = false, bool calls = false, string! onlyFunction = "", bool profile = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.TranslateModelAsync(string! problem, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.TranslateModelExportAsync(string! modelName, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.TranslateModelFMUAsync(string! modelToOpen, bool storeResult, string! modelName, string! fmiVersion, string! fmiType, bool includeSource, bool includeImage, bool includeVariables, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.VariablesAsync(string! filename = "", string![]? variables = null) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.VerifyCompilerAsync() -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.Visualize3dModelAsync(string! problem) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.WriteMatrixAsync(string! fileName, string! matrixName, double[]![]! matrix, bool append = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterface.WriteTrajectoryAsync(string! fileName, string![]! signals, double[]![]! values) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.DymolaInterfaceFactory
+DymolaInterface.DymolaInterfaceFactory.DymolaInterfaceFactory() -> void
+DymolaInterface.DymolaInterfaceFactory.DymolaInterfaceFactory(System.Func<DymolaInterface.DymolaSettings!, DymolaInterface.Interfaces.IDymolaSession!>! createSession) -> void
+DymolaInterface.DymolaInterfaceFactory.GetOrCreateAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DymolaInterface.Interfaces.IDymolaInterface!>!
+DymolaInterface.DymolaInterfaceFactory.IsConnected.get -> bool
+DymolaInterface.DymolaInterfaceFactory.Log.get -> System.Action<string!>?
+DymolaInterface.DymolaInterfaceFactory.Log.set -> void
+DymolaInterface.DymolaInterfaceFactory.ResetAsync() -> System.Threading.Tasks.Task!
+DymolaInterface.DymolaInterfaceFactory.Shutdown() -> void
+DymolaInterface.DymolaInterfaceFactory.UpdateSettings(DymolaInterface.DymolaSettings! settings) -> void
+DymolaInterface.DymolaSessionState
+DymolaInterface.DymolaSessionState.Answering = 0 -> DymolaInterface.DymolaSessionState
+DymolaInterface.DymolaSessionState.Busy = 1 -> DymolaInterface.DymolaSessionState
+DymolaInterface.DymolaSessionState.Gone = 3 -> DymolaInterface.DymolaSessionState
+DymolaInterface.DymolaSessionState.Starting = 2 -> DymolaInterface.DymolaSessionState
+DymolaInterface.DymolaSettings
+DymolaInterface.DymolaSettings.CommandTimeout.get -> System.TimeSpan
+DymolaInterface.DymolaSettings.CommandTimeoutMs.get -> int
+DymolaInterface.DymolaSettings.CommandTimeoutMs.set -> void
+DymolaInterface.DymolaSettings.DymolaPath.get -> string!
+DymolaInterface.DymolaSettings.DymolaPath.set -> void
+DymolaInterface.DymolaSettings.DymolaSettings() -> void
+DymolaInterface.DymolaSettings.HostAddress.get -> string!
+DymolaInterface.DymolaSettings.PortNumber.get -> int
+DymolaInterface.DymolaSettings.PortNumber.set -> void
+DymolaInterface.Examples.Examples
+DymolaInterface.Interfaces.IDymolaInterface
+DymolaInterface.Interfaces.IDymolaInterface.CheckModelAsync(string! problem, bool simulate = false, bool constraint = false, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.Interfaces.IDymolaInterface.ClearAsync(bool fast = false) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.Interfaces.IDymolaInterface.ClearLogAsync() -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.Interfaces.IDymolaInterface.GetLastErrorAsync() -> System.Threading.Tasks.Task<string!>!
+DymolaInterface.Interfaces.IDymolaInterface.GetSessionStateAsync() -> System.Threading.Tasks.Task<DymolaInterface.DymolaSessionState>!
+DymolaInterface.Interfaces.IDymolaInterface.LastOutcome.get -> DymolaInterface.CommandOutcome
+DymolaInterface.Interfaces.IDymolaInterface.OpenModelAsync(string! path, bool mustRead = true, bool changeDirectory = true, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+DymolaInterface.Interfaces.IDymolaInterfaceFactory
+DymolaInterface.Interfaces.IDymolaInterfaceFactory.GetOrCreateAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DymolaInterface.Interfaces.IDymolaInterface!>!
+DymolaInterface.Interfaces.IDymolaInterfaceFactory.IsConnected.get -> bool
+DymolaInterface.Interfaces.IDymolaInterfaceFactory.ResetAsync() -> System.Threading.Tasks.Task!
+DymolaInterface.Interfaces.IDymolaInterfaceFactory.Shutdown() -> void
+DymolaInterface.Interfaces.IDymolaInterfaceFactory.UpdateSettings(DymolaInterface.DymolaSettings! settings) -> void
+DymolaInterface.Interfaces.IDymolaSession
+DymolaInterface.Interfaces.IDymolaSession.CommandTimeout.get -> System.TimeSpan
+DymolaInterface.Interfaces.IDymolaSession.CommandTimeout.set -> void
+DymolaInterface.Interfaces.IDymolaSession.Detach() -> void
+DymolaInterface.Interfaces.IDymolaSession.IsOfflineMode() -> bool
+DymolaInterface.Interfaces.IDymolaSession.ProcessId.get -> int?
+DymolaInterface.Interfaces.IDymolaSession.SetOfflineMode(bool enable) -> void
+DymolaInterface.Interfaces.IDymolaSession.StartDymolaProcessAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+DymolaInterface.LinePattern
+DymolaInterface.LinePattern.Dash = 4 -> DymolaInterface.LinePattern
+DymolaInterface.LinePattern.DashDot = 6 -> DymolaInterface.LinePattern
+DymolaInterface.LinePattern.DashDotDot = 7 -> DymolaInterface.LinePattern
+DymolaInterface.LinePattern.Default = 1 -> DymolaInterface.LinePattern
+DymolaInterface.LinePattern.Dot = 5 -> DymolaInterface.LinePattern
+DymolaInterface.LinePattern.None = 2 -> DymolaInterface.LinePattern
+DymolaInterface.LinePattern.Solid = 3 -> DymolaInterface.LinePattern
+DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.AreaFill = 15 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.BarChart = 14 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Circle = 4 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Cross = 3 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Default = 1 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Diamond = 10 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Dot = 11 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.FilledCircle = 6 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.FilledSquare = 7 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.None = 2 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Point = 13 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.SmallSquare = 12 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.Square = 5 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.TriangleDown = 8 -> DymolaInterface.MarkerStyle
+DymolaInterface.MarkerStyle.TriangleUp = 9 -> DymolaInterface.MarkerStyle
+DymolaInterface.ModelicaExpression
+DymolaInterface.ModelicaExpression.ModelicaExpression(string! value) -> void
+DymolaInterface.ModelicaExpression.Value.get -> string!
+DymolaInterface.NamedArgument
+DymolaInterface.NamedArgument.Name.get -> string!
+DymolaInterface.NamedArgument.NamedArgument(string! name, object? value) -> void
+DymolaInterface.NamedArgument.Value.get -> object?
+DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.ACCoupledRMS = 6 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.ArithmeticMean = 3 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.FirstHarmonic = 9 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.Max = 2 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.Min = 1 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.RectifiedMean = 4 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.RMS = 5 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.SlewRate = 7 -> DymolaInterface.SignalOperator
+DymolaInterface.SignalOperator.THD = 8 -> DymolaInterface.SignalOperator
+DymolaInterface.TextAlignment
+DymolaInterface.TextAlignment.Center = 2 -> DymolaInterface.TextAlignment
+DymolaInterface.TextAlignment.Left = 1 -> DymolaInterface.TextAlignment
+DymolaInterface.TextAlignment.Right = 3 -> DymolaInterface.TextAlignment
+DymolaInterface.TextStyle
+DymolaInterface.TextStyle.Bold = 1 -> DymolaInterface.TextStyle
+DymolaInterface.TextStyle.Italic = 2 -> DymolaInterface.TextStyle
+DymolaInterface.TextStyle.UnderLine = 3 -> DymolaInterface.TextStyle
+static DymolaInterface.DymolaInterface.CheckDymolaPathString(string! path) -> string!
+static DymolaInterface.DymolaInterface.GetArrayResult(System.Text.Json.JsonElement? result) -> System.Text.Json.JsonElement?
+static DymolaInterface.DymolaInterface.GetBooleanResult(System.Text.Json.JsonElement? result) -> bool
+static DymolaInterface.DymolaInterface.GetDoubleResult(System.Text.Json.JsonElement? result) -> double
+static DymolaInterface.DymolaInterface.GetStringResult(System.Text.Json.JsonElement? result) -> string!
+static DymolaInterface.DymolaInterface.MakeModelicaString(string! str) -> string!
+static DymolaInterface.DymolaInterface.PingAsync(int port, string! hostname = "127.0.0.1", System.TimeSpan? timeout = null) -> System.Threading.Tasks.Task<bool>!
+static DymolaInterface.DymolaSettings.CandidateDymolaPaths(bool windows, string! programFiles, string? pathVariable, int newestYear, string! optFolder = "/opt", string! localBinFolder = "/usr/local/bin") -> System.Collections.Generic.IEnumerable<string!>!
+static DymolaInterface.DymolaSettings.CandidateInstallNames(int newestYear) -> System.Collections.Generic.IEnumerable<string!>!
+static DymolaInterface.DymolaSettings.DymolaExecutableName.get -> string!
+static DymolaInterface.DymolaSettings.DymolaUnder(string! folder) -> string!
+static DymolaInterface.DymolaSettings.FindInstalledDymola() -> string!
+static DymolaInterface.DymolaSettings.FindInstalledDymola(bool windows, string! programFiles, string? pathVariable, int newestYear, string! optFolder = "/opt", string! localBinFolder = "/usr/local/bin") -> string!
+static DymolaInterface.DymolaSettings.FindInstalledDymola(string! programFiles, int newestYear) -> string!
+static DymolaInterface.Examples.Examples.BatchSimulationExample() -> System.Threading.Tasks.Task!
+static DymolaInterface.Examples.Examples.ErrorHandlingExample() -> System.Threading.Tasks.Task!
+static DymolaInterface.Examples.Examples.ExecuteCustomCommands() -> System.Threading.Tasks.Task!
+static DymolaInterface.Examples.Examples.OpenLibraryAndSimulate(string! libraryPath, string! modelName) -> System.Threading.Tasks.Task!
+static DymolaInterface.Examples.Examples.SimulateModelExample() -> System.Threading.Tasks.Task!
+static DymolaInterface.Examples.Examples.StartDymolaAndCheckModel(string! dymolaPath) -> System.Threading.Tasks.Task!
+static DymolaInterface.Examples.Examples.TranslateAndExportPlot() -> System.Threading.Tasks.Task!
+static readonly DymolaInterface.DymolaInterface.DefaultCommandTimeout -> System.TimeSpan
+static readonly DymolaInterface.DymolaInterface.DefaultConnectionWindow -> System.TimeSpan
+static readonly DymolaInterface.DymolaInterface.MaxCommandTimeout -> System.TimeSpan

@@ -196,6 +196,14 @@ Test packages are marked as development dependencies and don't ship with the app
 </PackageReference>
 ```
 
+### Microsoft.CodeAnalysis.PublicApiAnalyzers (v5.6.0)
+- **Purpose**: Holds a project's public surface to `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`, so a change to it is a reviewed diff (RS0016 for an unlisted addition, RS0017 for a listed symbol that is gone)
+- **Used in**: ModelicaParser, ModelicaGraph, RevisionControl, DymolaInterface, the assemblies built from source outside this repository. Referenced once in `Directory.Build.props`, for any project setting `<TrackPublicApi>true</TrackPublicApi>`
+- **Development dependency** (`PrivateAssets="all"`): an analyzer only, it ships nothing
+- **License**: [MIT](https://github.com/dotnet/roslyn/blob/main/License.txt)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.CodeAnalysis.PublicApiAnalyzers
+- **Workflow**: `CODING_GUIDELINES.md` §Public API of the Assemblies Others Build On
+
 ## Adding New Packages
 
 1. Add package reference to appropriate .csproj file
@@ -207,10 +215,10 @@ Test packages are marked as development dependencies and don't ship with the app
 
 | Project | Key Packages |
 |---------|--------------|
-| ModelicaParser | Antlr4.Runtime.Standard, Antlr4BuildTasks |
-| ModelicaGraph | _(project reference to ModelicaParser only)_ |
-| RevisionControl | LibGit2Sharp, NLog _(SVN via bundled svn CLI)_ |
-| DymolaInterface | Microsoft.Extensions.DependencyInjection |
+| ModelicaParser | Antlr4.Runtime.Standard, Antlr4BuildTasks, PublicApiAnalyzers |
+| ModelicaGraph | PublicApiAnalyzers _(project references to ModelicaParser and RevisionControl)_ |
+| RevisionControl | LibGit2Sharp, NLog, PublicApiAnalyzers _(SVN via bundled svn CLI)_ |
+| DymolaInterface | Microsoft.Extensions.DependencyInjection, PublicApiAnalyzers |
 | OpenModelicaInterface | NetMQ |
 | MLQT.Services | MudBlazor, NLog |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
