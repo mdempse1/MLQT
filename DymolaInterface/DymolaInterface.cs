@@ -199,7 +199,7 @@ public class DymolaInterface : IDymolaSession
     /// the next call waits for it rather than starting another.</param>
     public async Task StartDymolaProcessAsync(CancellationToken cancellationToken = default)
     {
-        var alreadyRunning = _dymolaProcess != null && !_dymolaProcess.HasExited;
+        var alreadyRunning = OwnsProcess;
         if (alreadyRunning && Probe() == ProbeResult.Answered)
         {
             _isOffline = false;
@@ -256,12 +256,14 @@ public class DymolaInterface : IDymolaSession
         await _commandLock.WaitAsync();
         try
         {
-            if (_dymolaProcess != null && !_dymolaProcess.HasExited)
+            if (TakeProcess() is { } process)
             {
-                KillStartedTree(_dymolaProcess);
-                _dymolaProcess.WaitForExit();
-                _dymolaProcess.Dispose();
-                _dymolaProcess = null;
+                if (!process.HasExited)
+                {
+                    KillStartedTree(process);
+                    process.WaitForExit();
+                }
+                process.Dispose();
             }
             _isOffline = true;
             _forcedOffline = true;   // see _forcedOffline: not to be undone by the next probe
@@ -295,7 +297,7 @@ public class DymolaInterface : IDymolaSession
     /// process. False when it merely attached to a Dymola that some other process
     /// started, or after <see cref="Detach"/>.
     /// </summary>
-    public bool OwnsProcess => _dymolaProcess != null && !_dymolaProcess.HasExited;
+    public bool OwnsProcess => ProcessId != null;
 
     /// <summary>
     /// OS process id of the Dymola this interface started, or null when it attached to a
@@ -307,10 +309,48 @@ public class DymolaInterface : IDymolaSession
     {
         get
         {
+            // Read once, and a disposed handle taken for none: Detach runs without the command lock -
+            // the factory's Shutdown calls it as MLQT exits, while a check may be asking this - and
+            // can dispose the process between this read and HasExited, which then throws.
             var process = _dymolaProcess;
-            return process != null && !process.HasExited ? process.Id : null;
+            try
+            {
+                return process is { HasExited: false } ? process.Id : null;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;   // let go of meanwhile
+            }
         }
     }
+
+    /// <summary>
+    /// Whether the process this interface started has exited - false when it has none, or let go of
+    /// it, which <see cref="Detach"/> may do at any moment (see <see cref="ProcessId"/>).
+    /// </summary>
+    private bool StartedProcessExited
+    {
+        get
+        {
+            var process = _dymolaProcess;
+            try
+            {
+                return process is { HasExited: true };
+            }
+            catch (InvalidOperationException)
+            {
+                return false;   // let go of meanwhile
+            }
+        }
+    }
+
+    /// <summary>
+    /// The process, now this caller's alone to end or let go of; null when it has none or another
+    /// took it first. <see cref="Detach"/>, <see cref="Dispose"/> and <see cref="StopDymolaProcessAsync"/>
+    /// do not share a lock, so each takes the field rather than reading it, and exactly one of them
+    /// disposes the process.
+    /// </summary>
+    private Process? TakeProcess() => Interlocked.Exchange(ref _dymolaProcess, null);
 
     /// <summary>
     /// Relinquish ownership of the underlying Dymola process without terminating it.
@@ -323,8 +363,7 @@ public class DymolaInterface : IDymolaSession
     {
         // Releasing the Process handle does NOT terminate the OS process (only Kill
         // does that); it just drops our local reference to it.
-        try { _dymolaProcess?.Dispose(); } catch { /* ignore */ }
-        _dymolaProcess = null;
+        try { TakeProcess()?.Dispose(); } catch { /* ignore */ }
     }
 
     /// <summary>
@@ -440,7 +479,7 @@ public class DymolaInterface : IDymolaSession
         if (_disposed || _forcedOffline || _isOffline)
             return false;
 
-        if (_dymolaProcess is { HasExited: true })
+        if (StartedProcessExited)
             return false;
 
         return await PingAsync(_portNumber, _hostname);
@@ -457,7 +496,7 @@ public class DymolaInterface : IDymolaSession
         if (_disposed || _forcedOffline)
             return DymolaSessionState.Gone;
 
-        if (_dymolaProcess is { HasExited: true })
+        if (StartedProcessExited)
             return DymolaSessionState.Gone;
 
         // On the pool: the probe is synchronous and can take its whole connect and answer budget.
@@ -477,8 +516,8 @@ public class DymolaInterface : IDymolaSession
     public void Dispose()
     {
         if (_disposed) return;
-        try { if (_dymolaProcess != null) KillStartedTree(_dymolaProcess); _dymolaProcess?.Dispose(); } catch { /* ignore */ }
-        _dymolaProcess = null;
+        var process = TakeProcess();
+        try { if (process != null) KillStartedTree(process); process?.Dispose(); } catch { /* ignore */ }
         _httpClient.Dispose();
         _commandLock.Dispose();
         _disposed = true;
