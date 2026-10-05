@@ -222,6 +222,8 @@ public class DymolaInterface : IDymolaSession
             for (int i = 0; i < 30; i++)
             {
                 await Task.Delay(1000, cancellationToken);
+                if (CouldNotRun(_dymolaProcess) is { } notRun)
+                    throw notRun;
                 if (Probe() == ProbeResult.Answered)
                 {
                     _isOffline = false;
@@ -294,6 +296,27 @@ public class DymolaInterface : IDymolaSession
     /// arguments, passed as arguments rather than spliced into the script, so no path needs quoting.
     /// </summary>
     internal const string NullStreamsThenExec = "exec \"$0\" \"$@\" </dev/null >/dev/null 2>&1";
+
+    /// <summary>
+    /// Why the shell Dymola is started through on Linux could not run it, when that is what
+    /// happened: <c>sh</c> ends with 127 when <c>exec</c> finds no such file and 126 when it may not
+    /// run it, and with the streams on <c>/dev/null</c> nothing else says so. Started directly, a
+    /// missing Dymola was an exception from <c>Process.Start</c> at once; without this it became thirty
+    /// seconds of waiting and "did not start". Null otherwise - including a launcher that starts Dymola
+    /// in the background and exits, which is not a failure.
+    /// </summary>
+    internal Exception? CouldNotRun(Process? process)
+    {
+        if (OperatingSystem.IsWindows() || process is not { HasExited: true })
+            return null;
+
+        return process.ExitCode switch
+        {
+            127 => new System.ComponentModel.Win32Exception(2, $"Dymola could not be started: no such file '{_dymolaPath}'."),
+            126 => new System.ComponentModel.Win32Exception(13, $"Dymola could not be started: '{_dymolaPath}' is not executable."),
+            _ => null,
+        };
+    }
 
     public async Task StopDymolaProcessAsync()
     {

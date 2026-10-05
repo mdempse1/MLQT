@@ -38,6 +38,14 @@ internal static class IsolatedProcess
     [SupportedOSPlatform("windows")]
     public static Process? Start(ProcessStartInfo startInfo)
     {
+        // What it does not do is refused rather than ignored: a caller relying on any of these would
+        // otherwise get a process started some other way than it asked for, and nothing would say so.
+        if (startInfo.ArgumentList.Count > 0 || startInfo.UseShellExecute || startInfo.RedirectStandardInput
+            || startInfo.RedirectStandardOutput || startInfo.RedirectStandardError)
+            throw new ArgumentException(
+                "An isolated process takes its arguments as one string and has no shell execution and no standard streams.",
+                nameof(startInfo));
+
         var commandLine = new StringBuilder(Quote(startInfo.FileName));
         if (!string.IsNullOrEmpty(startInfo.Arguments))
             commandLine.Append(' ').Append(startInfo.Arguments);

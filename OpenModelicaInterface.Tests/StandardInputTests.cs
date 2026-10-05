@@ -24,6 +24,10 @@ public class StandardInputTests
     }
 }
 
+/// <summary>Tests that replace the test host's own stdin, and so run with nothing beside them.</summary>
+[CollectionDefinition(nameof(HostStdinCollection), DisableParallelization = true)]
+public class HostStdinCollection;
+
 /// <summary>
 /// A host blocked reading its stdin - an MCP server over stdio, which is what Plumbline's simulation
 /// adapter runs in - can still start omc.
@@ -38,8 +42,13 @@ public class StandardInputTests
 /// it. Windows only, since that is where it was seen and what <c>SetStdHandle</c> is; the
 /// redirection itself is held on every platform by <see cref="StandardInputTests"/>. Seen to fail
 /// with <c>RedirectStandardInput</c> taken out of the start.</para>
+///
+/// <para>Run alone: the stdin it replaces is the whole test host's, so a process another test started
+/// meanwhile without redirecting its own - the fake omc of <c>SessionEndTests</c> - would be handed
+/// the blocked pipe and could hang behind it exactly as omc did.</para>
 /// </remarks>
 [Trait("Requires", "OpenModelica")]
+[Collection(nameof(HostStdinCollection))]
 public class HostReadingStdinTests
 {
     private const int StdInputHandle = -10;

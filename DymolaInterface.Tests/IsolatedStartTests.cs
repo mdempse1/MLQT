@@ -107,6 +107,24 @@ public sealed class IsolatedProcessTests : IDisposable
         Assert.Throws<System.ComponentModel.Win32Exception>(() => Start(startInfo));
     }
 
+    /// <summary>What it cannot do is refused, never ignored: a process started some other way than
+    /// asked would say nothing about it.</summary>
+    [Fact]
+    public void WhatItDoesNotDo_IsRefused()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        var withList = new ProcessStartInfo(cmd);
+        withList.ArgumentList.Add("/c");
+
+        Assert.Throws<ArgumentException>(() => Start(withList));
+        Assert.Throws<ArgumentException>(() => Start(new ProcessStartInfo(cmd) { RedirectStandardOutput = true }));
+        Assert.Throws<ArgumentException>(() => Start(new ProcessStartInfo(cmd) { UseShellExecute = true }));
+        Assert.Null(_child);
+    }
+
     [Fact]
     public void Quote_QuotesOnlyAPathThatNeedsIt()
     {
@@ -189,5 +207,51 @@ public sealed class LinuxStartTests : IDisposable
         Assert.Equal(["/dev/null", "/dev/null", "/dev/null"], lines[..3]);
         Assert.Equal(process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), lines[3]);
         Assert.Equal("-serverport 9999", lines[4]);
+    }
+
+    /// <summary>
+    /// A Dymola that is not there is said so at once, as <c>Process.Start</c> said it when Dymola was
+    /// started directly - not after thirty seconds of waiting for it to answer.
+    /// </summary>
+    [Fact]
+    public async Task ADymolaThatIsNotThere_IsReportedAtOnce()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        using var dymola = new DymolaInterface(Path.Combine(_folder, "no such dymola"), UnusedPort(), "127.0.0.1", TimeSpan.Zero);
+        var waited = Stopwatch.StartNew();
+
+        var ex = await Assert.ThrowsAsync<System.ComponentModel.Win32Exception>(
+            () => dymola.StartDymolaProcessAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("no such file", ex.Message);
+        Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), $"took {waited.Elapsed}");
+    }
+
+    [Fact]
+    public async Task ADymolaThatMayNotBeRun_IsReportedAtOnce()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var notExecutable = Path.Combine(_folder, "dymola");
+        File.WriteAllText(notExecutable, "#!/bin/sh\n");
+        File.SetUnixFileMode(notExecutable, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        using var dymola = new DymolaInterface(notExecutable, UnusedPort(), "127.0.0.1", TimeSpan.Zero);
+
+        var ex = await Assert.ThrowsAsync<System.ComponentModel.Win32Exception>(
+            () => dymola.StartDymolaProcessAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("not executable", ex.Message);
+    }
+
+    private static int UnusedPort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 }

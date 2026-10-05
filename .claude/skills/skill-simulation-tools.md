@@ -184,7 +184,10 @@ inheritance off and no standard handles (environment, so `SpawnEnvironmentVariab
 On Linux only the three standard descriptors reach a child, but they cannot be pipes of MLQT's - a
 process .NET starts does not ignore SIGPIPE, so Dymola's first write after MLQT exited would end it -
 so Dymola is started as `/bin/sh -c 'exec "$0" "$@" </dev/null >/dev/null 2>&1' <dymola> -serverport N`:
-same pid, so `ProcessId` and the tree kill are unchanged. Held by `IsolatedProcessTests` (Windows, an
+same pid, so `ProcessId` and the tree kill are unchanged. With its streams on `/dev/null`, a Dymola
+the shell cannot run says so only by sh's exit code - 127 no such file, 126 not executable - so the
+start loop reads it (`CouldNotRun`) and throws at once, as `Process.Start` used to, instead of waiting
+thirty seconds for an answer. Held by `IsolatedProcessTests` (Windows, an
 inheritable pipe and `ping`) and `LinuxStartTests` (a fake Dymola reporting its fds), both tool-free.
 omc gets the simpler half - stdin of its own (see the OpenModelica section) - because it is ended when
 MLQT exits.
