@@ -116,23 +116,14 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         // says where it is listening in a port file named after the suffix (see OmcPortAnnouncement),
         // so two sessions - the GUI and the MCP server, say - never contend for one fixed port.
         var announcement = new OmcPortAnnouncement($"mlqt-{Guid.NewGuid():N}");
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = _omcPath,
-            Arguments = StartArguments(announcement.Suffix, _port),
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-
-        _omcProcess = Process.Start(startInfo);
+        _omcProcess = Process.Start(CreateStartInfo(_omcPath, announcement.Suffix, _port));
         if (_omcProcess == null)
         {
             throw new InvalidOperationException("Failed to start OMC process");
         }
+
+        // omc is spoken to over ZeroMQ and reads nothing from stdin, so it gets an empty one.
+        CloseStandardInput(_omcProcess);
 
         // Disposed while starting - MLQT exiting as a check starts omc (B493). Dispose has already
         // been through the process, so the one just started is ended here or by nobody.
@@ -190,6 +181,45 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         {
             Abandon();
             throw new InvalidOperationException("Failed to establish communication with OMC");
+        }
+    }
+
+    /// <summary>
+    /// How omc is started. <b>Every standard stream is omc's own</b>, stdin included: inherited, omc
+    /// shares the host's stdin, and in a host that is reading it - an MCP server over stdio, whose
+    /// stdin is the protocol channel - omc did not start. Measured on Windows with omc 1.27.1: a host
+    /// blocked in a read of its stdin pipe while omc started gave "did not start and answer within
+    /// 30s" every time, and the same start with stdin redirected took 0.1-0.2s. (Synchronous I/O on
+    /// one Windows pipe is serialised, so omc's start-up waits behind the host's read.) omc is spoken
+    /// to over a socket and has no use for the host's input; inherited, it could also read from that
+    /// channel, and would keep it open for as long as it outlived the host.
+    /// </summary>
+    internal static ProcessStartInfo CreateStartInfo(string omcPath, string suffix, int port) => new()
+    {
+        FileName = omcPath,
+        Arguments = StartArguments(suffix, port),
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardInput = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        StandardOutputEncoding = Encoding.UTF8,
+        StandardErrorEncoding = Encoding.UTF8
+    };
+
+    /// <summary>
+    /// Closes our end of a started process's stdin, so it reads end-of-file - as from an empty file -
+    /// rather than waiting on a pipe nobody writes to.
+    /// </summary>
+    internal static void CloseStandardInput(Process process)
+    {
+        try
+        {
+            process.StandardInput.Close();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            // Already gone: the start is judged by whether omc announces a port, not by this.
         }
     }
 

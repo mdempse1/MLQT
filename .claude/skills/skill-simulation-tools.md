@@ -222,6 +222,7 @@ otherwise specify `InvariantCulture`) rather than calling `.ToString()` directly
 - Process-based: Starts OMC as child process with `--interactive=zmq` flag
 - REQ-REP pattern for communication
 - Port: any free one by default (`PortNumber = 0`); omc announces it through a port file named after the `-z` suffix, found via the `Dumped server port in file:` line on stdout (no trailing newline - read stdout in chunks, never by line). See `OmcPortAnnouncement`
+- stdin is omc's own (redirected, then closed - omc reads nothing from it and runs on at end-of-file), never inherited: a host with a read of its stdin pending - any stdio MCP server - kept omc from starting within 30s on Windows, because synchronous I/O on one pipe is serialised. `HostReadingStdinTests` reproduces that in-process with `SetStdHandle`
 - Responses in various formats: boolean, string, JSON, array
 
 ### Basic Usage
