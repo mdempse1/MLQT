@@ -129,10 +129,17 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         };
 
         // Held in a local from here on: Abandon or Dispose may clear the field at any moment (see
-        // Abandon), and the readers below run later still.
+        // Abandon). The streams are taken before the process is published to the field, because once
+        // it is there Dispose may dispose it, and a reader asking a disposed process for its stream
+        // throws in a task nobody observes; a stream disposed under its reader is already handled.
         var process = Process.Start(startInfo)
                       ?? throw new InvalidOperationException("Failed to start OMC process");
-        _omcProcess = process;
+        var output = process.StandardOutput;
+        var error = process.StandardError;
+
+        // Published with a fence: the read of _isDisposed below must not move ahead of this write, or
+        // Dispose could find no process while this finds Dispose not yet begun, and neither end omc.
+        Interlocked.Exchange(ref _omcProcess, process);
 
         // Disposed while starting - MLQT exiting as a check starts omc (B493). Dispose may already
         // have been through the process, so the one just started is ended here or by nobody - unless
@@ -149,8 +156,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
 
         // Background readers consume stdout/stderr (prevent blocking), and hand what omc says to the
         // announcement until it has said where it is listening.
-        _ = Task.Run(() => ConsumeStreamAsync(process.StandardOutput, announcement.Output, announcement.Ended));
-        _ = Task.Run(() => ConsumeStreamAsync(process.StandardError, announcement.Error, null));
+        _ = Task.Run(() => ConsumeStreamAsync(output, announcement.Output, announcement.Ended));
+        _ = Task.Run(() => ConsumeStreamAsync(error, announcement.Error, null));
 
         // One clock for the whole start: finding the port and the first answer share StartupTimeout.
         var clock = Stopwatch.StartNew();
@@ -379,6 +386,10 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException
                                        and not ObjectDisposedException)
         {
+            // Dispose ran on without the lock (its wait for it ran out) and closed the socket or the
+            // process under this exchange: that is the session ending, not the command failing.
+            if (_lifetime.IsCancellationRequested)
+                throw new ObjectDisposedException(nameof(OpenModelicaInterface));
             throw new InvalidOperationException($"Failed to send command to OMC: {command}", ex);
         }
         finally
