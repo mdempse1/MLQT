@@ -213,7 +213,11 @@ public class DymolaInterface : IDymolaSession
         try
         {
             if (!alreadyRunning)
-                _dymolaProcess = Process.Start(CreateStartInfo());
+            {
+                _dymolaProcess = OperatingSystem.IsWindows()
+                    ? IsolatedProcess.Start(CreateStartInfo(windows: true))
+                    : Process.Start(CreateStartInfo(windows: false));
+            }
 
             for (int i = 0; i < 30; i++)
             {
@@ -234,15 +238,49 @@ public class DymolaInterface : IDymolaSession
         }
     }
 
-    private ProcessStartInfo CreateStartInfo()
+    /// <summary>
+    /// How Dymola is started. <b>No handle of the host reaches it</b>, its standard streams least of
+    /// all: Dymola is spoken to over HTTP and is left running when MLQT exits (B493), so anything it
+    /// inherited would outlive the host. In an MCP server over stdio the host's streams are the
+    /// protocol channel - measured on Windows with Dymola 2026x Refresh 1, a host that started Dymola
+    /// and exited left its stdout open until Dymola was ended, so the client never saw the server go;
+    /// and anything Dymola wrote to an inherited stdout would have landed in the protocol stream.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Windows</b>: the start info is handed to <see cref="IsolatedProcess"/>, which starts it
+    /// inheriting nothing. Redirecting its streams here would not do: <c>Process.Start</c> passes the
+    /// child every inheritable handle the host holds, the host's own stdio included, whatever it is
+    /// given as the child's three.</para>
+    ///
+    /// <para><b>Linux</b>: a child gets only the descriptors it is given, since .NET opens everything
+    /// else close-on-exec, so it is the three that matter - and they cannot be pipes of MLQT's, because
+    /// a process .NET starts does not ignore SIGPIPE (measured: <c>SigIgn</c> 0) and the first line
+    /// Dymola wrote after MLQT exited would end it. So Dymola is started through <c>/bin/sh</c>, which
+    /// points all three at <c>/dev/null</c> and then <c>exec</c>s it in its own place: the same
+    /// process, so <see cref="ProcessId"/> and ending its tree are unchanged.</para>
+    /// </remarks>
+    internal ProcessStartInfo CreateStartInfo(bool windows)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = _dymolaPath,
-            Arguments = $"-serverport {_portNumber}",
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        if (windows)
+        {
+            startInfo.FileName = _dymolaPath;
+            startInfo.Arguments = $"-serverport {_portNumber}";
+        }
+        else
+        {
+            startInfo.FileName = "/bin/sh";
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add(NullStreamsThenExec);
+            startInfo.ArgumentList.Add(_dymolaPath);
+            startInfo.ArgumentList.Add("-serverport");
+            startInfo.ArgumentList.Add(_portNumber.ToString(CultureInfo.InvariantCulture));
+        }
 
         if (SpawnEnvironmentVariables != null)
             foreach (var pair in SpawnEnvironmentVariables)
@@ -250,6 +288,12 @@ public class DymolaInterface : IDymolaSession
 
         return startInfo;
     }
+
+    /// <summary>
+    /// The script Dymola is started through on Linux: <c>$0</c> is Dymola's path and the rest its
+    /// arguments, passed as arguments rather than spliced into the script, so no path needs quoting.
+    /// </summary>
+    internal const string NullStreamsThenExec = "exec \"$0\" \"$@\" </dev/null >/dev/null 2>&1";
 
     public async Task StopDymolaProcessAsync()
     {

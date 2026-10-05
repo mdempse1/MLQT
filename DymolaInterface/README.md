@@ -20,6 +20,11 @@ This library provides a .NET API for communicating with Dymola via its HTTP JSON
 - **.NET 10.0** or later
 - Dymola must be started with the `-serverport` command-line option (default: 8082)
 
+A Dymola started by `StartDymolaProcessAsync` inherits **no handle of the host's** - on Windows it is
+started through `CreateProcess` with handle inheritance off, on Linux through `/bin/sh` with its
+standard streams on `/dev/null` - so a host whose stdio is a protocol channel (an MCP server) keeps
+that channel to itself, even though Dymola is left running when the host exits.
+
 ## Usage
 
 ### Using the Factory (Recommended)

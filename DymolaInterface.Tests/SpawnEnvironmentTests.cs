@@ -1,23 +1,16 @@
 using System.Diagnostics;
-using System.Reflection;
 using Xunit;
 
 namespace DymolaInterface.Tests;
 
 /// <summary>
-/// Tests for <see cref="DymolaInterface.SpawnEnvironmentVariables"/>. The start info is
-/// built by a private method; reflection is used to inspect it without launching a
-/// process, following the same approach as <see cref="Fakes.DymolaTestHarness"/>.
+/// Tests for <see cref="DymolaInterface.SpawnEnvironmentVariables"/> and how Dymola is started -
+/// built without launching a process. The Windows form is what most of these read; the Linux form,
+/// which goes through <c>/bin/sh</c>, has tests of its own here and in <see cref="LinuxStartTests"/>.
 /// </summary>
 public class SpawnEnvironmentTests
 {
-    private static ProcessStartInfo CreateStartInfo(DymolaInterface dymola)
-    {
-        var method = typeof(DymolaInterface).GetMethod("CreateStartInfo",
-            BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new InvalidOperationException("CreateStartInfo method not found");
-        return (ProcessStartInfo)method.Invoke(dymola, null)!;
-    }
+    private static ProcessStartInfo CreateStartInfo(DymolaInterface dymola) => dymola.CreateStartInfo(windows: true);
 
     [Fact]
     public void SpawnEnvironmentVariables_DefaultsToNull()
@@ -71,5 +64,41 @@ public class SpawnEnvironmentTests
         var startInfo = CreateStartInfo(dymola);
 
         Assert.Equal("overridden", startInfo.Environment[inheritedName]);
+    }
+
+    /// <summary>
+    /// On Linux Dymola is started through sh, which points its streams at /dev/null and execs it -
+    /// with its path and arguments passed as arguments, never spliced into the script.
+    /// </summary>
+    [Fact]
+    public void CreateStartInfo_OnLinux_GoesThroughShWithDymolaAsArguments()
+    {
+        using var dymola = new DymolaInterface("/opt/dymola 2026x/bin/dymola", 9999, "127.0.0.1", TimeSpan.Zero)
+        {
+            SpawnEnvironmentVariables = new Dictionary<string, string> { ["DYMOLA_X"] = "1" }
+        };
+
+        var startInfo = dymola.CreateStartInfo(windows: false);
+
+        Assert.Equal("/bin/sh", startInfo.FileName);
+        Assert.Equal(
+            ["-c", DymolaInterface.NullStreamsThenExec, "/opt/dymola 2026x/bin/dymola", "-serverport", "9999"],
+            startInfo.ArgumentList);
+        Assert.Equal("1", startInfo.Environment["DYMOLA_X"]);
+        Assert.False(startInfo.UseShellExecute);
+    }
+
+    /// <summary>
+    /// On Windows nothing is redirected: <see cref="IsolatedProcess"/> starts Dymola with no handles at
+    /// all, and a redirection here would only be ignored.
+    /// </summary>
+    [Fact]
+    public void CreateStartInfo_OnWindows_RedirectsNothing()
+    {
+        using var dymola = new DymolaInterface("C:/Dymola/bin64/Dymola.exe", 9999, "127.0.0.1", TimeSpan.Zero);
+
+        var startInfo = CreateStartInfo(dymola);
+
+        Assert.False(startInfo.RedirectStandardInput || startInfo.RedirectStandardOutput || startInfo.RedirectStandardError);
     }
 }

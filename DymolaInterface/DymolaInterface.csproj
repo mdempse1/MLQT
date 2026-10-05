@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="MLQT.Services.Tests" />
+    <InternalsVisibleTo Include="DymolaInterface.Tests" />
   </ItemGroup>
 
 </Project>

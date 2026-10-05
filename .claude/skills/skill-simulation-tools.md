@@ -174,6 +174,21 @@ covered: a launcher that backgrounds Dymola and exits - the handle then describe
 `OwnsProcess` is false and the child is out of any tree MLQT can reach without per-platform
 process-table walking.
 
+**No handle of the host reaches a Dymola MLQT starts** - it outlives MLQT, so anything it inherited
+would too. Under a stdio MCP host that is the protocol channel: started by `Process.Start`, Dymola held
+the host's stdout open after the host had exited, until Dymola itself was ended (measured, 2026x
+Refresh 1). **Redirecting its streams does not fix that on Windows**: `Process.Start` calls
+`CreateProcess` with `bInheritHandles` true, which passes *every* inheritable handle the host holds,
+its own inherited stdio included. So on Windows `IsolatedProcess` calls `CreateProcess` itself with
+inheritance off and no standard handles (environment, so `SpawnEnvironmentVariables`, still applied).
+On Linux only the three standard descriptors reach a child, but they cannot be pipes of MLQT's - a
+process .NET starts does not ignore SIGPIPE, so Dymola's first write after MLQT exited would end it -
+so Dymola is started as `/bin/sh -c 'exec "$0" "$@" </dev/null >/dev/null 2>&1' <dymola> -serverport N`:
+same pid, so `ProcessId` and the tree kill are unchanged. Held by `IsolatedProcessTests` (Windows, an
+inheritable pipe and `ping`) and `LinuxStartTests` (a fake Dymola reporting its fds), both tool-free.
+omc gets the simpler half - stdin of its own (see the OpenModelica section) - because it is ended when
+MLQT exits.
+
 ### When MLQT exits: omc ended, Dymola left running (B260, B493)
 
 **The user's decision, on both platforms.** omc is headless and would run on unseen, so it is ended
