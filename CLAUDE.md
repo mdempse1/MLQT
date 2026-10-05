@@ -24,8 +24,9 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **DymolaInterface** / **DymolaInterface.Tests** - Dymola HTTP JSON-RPC interface
 - **OpenModelicaInterface** / **OpenModelicaInterface.Tests** - OpenModelica ZeroMQ interface
 
-**Four of these are built on outside this repository.** Other projects build `ModelicaParser`,
-`ModelicaGraph`, `RevisionControl` and `DymolaInterface` from source, so those four track their public surface in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`
+**Six of these are built on outside this repository.** Other projects build `ModelicaParser`,
+`ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and `MLQT.Services`
+from source, so those six track their public surface in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`
 (`Microsoft.CodeAnalysis.PublicApiAnalyzers`, switched on by `<TrackPublicApi>`). A new public member
 fails the build until it is listed, and a removed one until its line goes, so every change a consumer
 would feel is a reviewed diff. See `CODING_GUIDELINES.md` §Public API of the Assemblies Others Build On.

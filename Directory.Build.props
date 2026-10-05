@@ -26,8 +26,8 @@
   <!--
     The public surface other people build against.
 
-    ModelicaParser, ModelicaGraph, RevisionControl and DymolaInterface are consumed from source
-    outside this repository, by other projects, so a change to
+    ModelicaParser, ModelicaGraph, RevisionControl, DymolaInterface, OpenModelicaInterface and
+    MLQT.Services are consumed from source outside this repository, by other projects, so a change to
     their public types can break code no test here can see. A project opts in with
     `<TrackPublicApi>true</TrackPublicApi>`, and the analyzer then holds its public surface to
     `PublicAPI.Shipped.txt` beside the project file:

@@ -198,7 +198,7 @@ Test packages are marked as development dependencies and don't ship with the app
 
 ### Microsoft.CodeAnalysis.PublicApiAnalyzers (v5.6.0)
 - **Purpose**: Holds a project's public surface to `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`, so a change to it is a reviewed diff (RS0016 for an unlisted addition, RS0017 for a listed symbol that is gone)
-- **Used in**: ModelicaParser, ModelicaGraph, RevisionControl, DymolaInterface, the assemblies built from source outside this repository. Referenced once in `Directory.Build.props`, for any project setting `<TrackPublicApi>true</TrackPublicApi>`
+- **Used in**: ModelicaParser, ModelicaGraph, RevisionControl, DymolaInterface, OpenModelicaInterface, MLQT.Services, the assemblies built from source outside this repository. Referenced once in `Directory.Build.props`, for any project setting `<TrackPublicApi>true</TrackPublicApi>`
 - **Development dependency** (`PrivateAssets="all"`): an analyzer only, it ships nothing
 - **License**: [MIT](https://github.com/dotnet/roslyn/blob/main/License.txt)
 - **NuGet**: https://www.nuget.org/packages/Microsoft.CodeAnalysis.PublicApiAnalyzers
@@ -219,8 +219,8 @@ Test packages are marked as development dependencies and don't ship with the app
 | ModelicaGraph | PublicApiAnalyzers _(project references to ModelicaParser and RevisionControl)_ |
 | RevisionControl | LibGit2Sharp, NLog, PublicApiAnalyzers _(SVN via bundled svn CLI)_ |
 | DymolaInterface | Microsoft.Extensions.DependencyInjection, PublicApiAnalyzers |
-| OpenModelicaInterface | NetMQ |
-| MLQT.Services | MudBlazor, NLog |
+| OpenModelicaInterface | NetMQ, PublicApiAnalyzers |
+| MLQT.Services | MudBlazor, NLog, PublicApiAnalyzers |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
 | MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
 | MLQT.McpServer | ModelContextProtocol, Microsoft.Extensions.Hosting, Svg.Skia, SkiaSharp.NativeAssets.Linux |

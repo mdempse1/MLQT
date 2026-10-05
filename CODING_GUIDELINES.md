@@ -161,8 +161,8 @@ using MLQT.Services.Interfaces;
 
 ### Public API of the Assemblies Others Build On
 
-`ModelicaParser`, `ModelicaGraph`, `RevisionControl` and `DymolaInterface` are built from source
-**outside this repository**, by other projects, so a public type
+`ModelicaParser`, `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and
+`MLQT.Services` are built from source **outside this repository**, by other projects, so a public type
 or member in them is something code we cannot see may depend on. Each one sets
 `<TrackPublicApi>true</TrackPublicApi>`, and `Microsoft.CodeAnalysis.PublicApiAnalyzers` holds its
 public surface to two files beside the project:
