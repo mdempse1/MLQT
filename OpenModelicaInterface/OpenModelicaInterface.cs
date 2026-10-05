@@ -116,26 +116,18 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         // says where it is listening in a port file named after the suffix (see OmcPortAnnouncement),
         // so two sessions - the GUI and the MCP server, say - never contend for one fixed port.
         var announcement = new OmcPortAnnouncement($"mlqt-{Guid.NewGuid():N}");
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = _omcPath,
-            Arguments = StartArguments(announcement.Suffix, _port),
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-
         // Held in a local from here on: Abandon or Dispose may clear the field at any moment (see
         // Abandon). The streams are taken before the process is published to the field, because once
         // it is there Dispose may dispose it, and a reader asking a disposed process for its stream
         // throws in a task nobody observes; a stream disposed under its reader is already handled.
-        var process = Process.Start(startInfo)
+        var process = Process.Start(CreateStartInfo(_omcPath, announcement.Suffix, _port))
                       ?? throw new InvalidOperationException("Failed to start OMC process");
         var output = process.StandardOutput;
         var error = process.StandardError;
+
+        // omc is spoken to over ZeroMQ and reads nothing from stdin, so it gets an empty one. Closed
+        // before the process is published, for the same reason the streams are taken before it.
+        CloseStandardInput(process);
 
         // Published with a fence: the read of _isDisposed below must not move ahead of this write, or
         // Dispose could find no process while this finds Dispose not yet begun, and neither end omc.
@@ -202,6 +194,53 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         {
             Abandon();
             throw new InvalidOperationException("Failed to establish communication with OMC");
+        }
+    }
+
+    /// <summary>
+    /// How omc is started. <b>Every standard stream is omc's own</b>, stdin included: inherited, omc
+    /// shares the host's stdin, and in a host that is reading it - an MCP server over stdio, whose
+    /// stdin is the protocol channel - omc did not start. Measured on Windows with omc 1.27.1: a host
+    /// blocked in a read of its stdin pipe while omc started gave "did not start and answer within
+    /// 30s" every time, and the same start with stdin redirected took 0.1-0.2s. The likely cause is
+    /// that synchronous I/O on one Windows pipe is serialised, so omc's start-up waits behind the
+    /// host's read; the fix does not depend on it, since omc is spoken to over a socket and has no
+    /// use for the host's input.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is not isolation.</b> On Windows <c>Process.Start</c> still hands omc every inheritable
+    /// handle the host holds, the host's own stdio among them, only not as omc's streams: measured, an
+    /// omc left running by a host that was killed kept the host's stdout open until omc was ended.
+    /// Ending omc whenever the host ends (<c>ExternalToolShutdown</c>, or Plumbline's Job Object) is
+    /// what closes it; Dymola, which outlives MLQT by design, is started by <c>IsolatedProcess</c>
+    /// instead, which omc cannot use because its stdout is how it says where it listens (B501).
+    /// </remarks>
+    internal static ProcessStartInfo CreateStartInfo(string omcPath, string suffix, int port) => new()
+    {
+        FileName = omcPath,
+        Arguments = StartArguments(suffix, port),
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardInput = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        StandardOutputEncoding = Encoding.UTF8,
+        StandardErrorEncoding = Encoding.UTF8
+    };
+
+    /// <summary>
+    /// Closes our end of a started process's stdin, so it reads end-of-file - as from an empty file -
+    /// rather than waiting on a pipe nobody writes to.
+    /// </summary>
+    internal static void CloseStandardInput(Process process)
+    {
+        try
+        {
+            process.StandardInput.Close();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            // Already gone: the start is judged by whether omc announces a port, not by this.
         }
     }
 

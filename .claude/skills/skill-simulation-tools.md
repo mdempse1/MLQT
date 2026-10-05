@@ -174,6 +174,28 @@ covered: a launcher that backgrounds Dymola and exits - the handle then describe
 `OwnsProcess` is false and the child is out of any tree MLQT can reach without per-platform
 process-table walking.
 
+**None of the host's standard streams reach a Dymola MLQT starts** - it outlives MLQT, so anything
+it inherited would too. Under a stdio MCP host that is the protocol channel: started by `Process.Start`, Dymola held
+the host's stdout open after the host had exited, until Dymola itself was ended (measured, 2026x
+Refresh 1). **Redirecting its streams does not fix that on Windows**: `Process.Start` calls
+`CreateProcess` with `bInheritHandles` true, which passes *every* inheritable handle the host holds,
+its own inherited stdio included. So on Windows `IsolatedProcess` calls `CreateProcess` itself with
+inheritance off and no standard handles (environment, so `SpawnEnvironmentVariables`, still applied).
+On Linux what .NET opens is close-on-exec, so the standard descriptors are what matter, but they
+cannot be pipes of MLQT's - a
+process .NET starts does not ignore SIGPIPE, so Dymola's first write after MLQT exited would end it -
+so Dymola is started as `/bin/sh -c 'exec "$0" "$@" </dev/null >/dev/null 2>&1' <dymola> -serverport N`:
+same pid, so `ProcessId` and the tree kill are unchanged. With its streams on `/dev/null`, a Dymola
+the shell cannot run says so only by sh's exit code - 127 no such file, 126 not executable - so the
+start loop reads it (`CouldNotRun`) and throws at once, as `Process.Start` used to, instead of waiting
+thirty seconds for an answer. The cost is that Dymola's console output is discarded on Linux. Held
+by `IsolatedProcessTests` (Windows, an inheritable pipe and `ping`) and `LinuxStartTests` (a fake
+Dymola reporting its fds, and a missing and a non-executable one), both tool-free.
+omc gets only the simpler half - stdin of its own (see the OpenModelica section) - and on Windows still
+inherits the host's other handles: an omc left running by a killed host was measured holding its
+stdout open. It is ended when MLQT exits, which closes it; `IsolatedProcess` does not fit, because omc's
+stdout is how it says where it listens (B501).
+
 ### When MLQT exits: omc ended, Dymola left running (B260, B493)
 
 **The user's decision, on both platforms.** omc is headless and would run on unseen, so it is ended
@@ -222,6 +244,7 @@ otherwise specify `InvariantCulture`) rather than calling `.ToString()` directly
 - Process-based: Starts OMC as child process with `--interactive=zmq` flag
 - REQ-REP pattern for communication
 - Port: any free one by default (`PortNumber = 0`); omc announces it through a port file named after the `-z` suffix, found via the `Dumped server port in file:` line on stdout (no trailing newline - read stdout in chunks, never by line). See `OmcPortAnnouncement`
+- stdin is omc's own (redirected, then closed - omc reads nothing from it and runs on at end-of-file), never inherited as its stdin: a host with a read of its stdin pending - any stdio MCP server - kept omc from starting within 30s on Windows, most likely because synchronous I/O on one pipe is serialised. `HostReadingStdinTests` reproduces that in-process with `SetStdHandle`
 - Responses in various formats: boolean, string, JSON, array
 
 ### Basic Usage

@@ -206,10 +206,13 @@ Each of these was looked at and deliberately left alone. Reopen one only with wh
 B492 and B496 are intermittent journey failures, each seen once and not reproduced since. **If one
 recurs, find the cause from its evidence. Never add a retry.**
 
+B501 is a limitation found while fixing how omc and Dymola are started, not a failure anyone has seen.
+
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
 | B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
+| B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and Plumbline's Job Object ends it when its host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
 
 ---
 
@@ -222,7 +225,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B501**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B502**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row

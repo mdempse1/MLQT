@@ -213,11 +213,17 @@ public class DymolaInterface : IDymolaSession
         try
         {
             if (!alreadyRunning)
-                _dymolaProcess = Process.Start(CreateStartInfo());
+            {
+                _dymolaProcess = OperatingSystem.IsWindows()
+                    ? IsolatedProcess.Start(CreateStartInfo(windows: true))
+                    : Process.Start(CreateStartInfo(windows: false));
+            }
 
             for (int i = 0; i < 30; i++)
             {
                 await Task.Delay(1000, cancellationToken);
+                if (CouldNotRun(_dymolaProcess) is { } notRun)
+                    throw notRun;
                 if (Probe() == ProbeResult.Answered)
                 {
                     _isOffline = false;
@@ -234,21 +240,93 @@ public class DymolaInterface : IDymolaSession
         }
     }
 
-    private ProcessStartInfo CreateStartInfo()
+    /// <summary>
+    /// How Dymola is started. <b>None of the host's standard streams reach it</b>: Dymola is spoken to over HTTP and is left running when MLQT exits (B493), so anything it
+    /// inherited would outlive the host. In an MCP server over stdio the host's streams are the
+    /// protocol channel - measured on Windows with Dymola 2026x Refresh 1, a host that started Dymola
+    /// and exited left its stdout open until Dymola was ended, so the client never saw the server go;
+    /// and anything Dymola wrote to an inherited stdout would have landed in the protocol stream.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Windows</b>: the start info is handed to <see cref="IsolatedProcess"/>, which starts it
+    /// inheriting nothing. Redirecting its streams here would not do: <c>Process.Start</c> passes the
+    /// child every inheritable handle the host holds, the host's own stdio included, whatever it is
+    /// given as the child's three.</para>
+    ///
+    /// <para><b>Linux</b>: what .NET opens is close-on-exec, so beyond descriptors the host was itself
+    /// handed open, a child gets the three standard ones - and they cannot be pipes of MLQT's, because
+    /// a process .NET starts does not ignore SIGPIPE (measured: <c>SigIgn</c> 0) and the first line
+    /// Dymola wrote after MLQT exited would end it. So Dymola is started through <c>/bin/sh</c>, which
+    /// points all three at <c>/dev/null</c> and then <c>exec</c>s it in its own place: the same
+    /// process, so <see cref="ProcessId"/> and ending its tree are unchanged.</para>
+    /// </remarks>
+    internal ProcessStartInfo CreateStartInfo(bool windows)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = _dymolaPath,
-            Arguments = $"-serverport {_portNumber}",
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        if (windows)
+        {
+            startInfo.FileName = _dymolaPath;
+            startInfo.Arguments = $"-serverport {_portNumber}";
+        }
+        else
+        {
+            startInfo.FileName = "/bin/sh";
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add(NullStreamsThenExec);
+            startInfo.ArgumentList.Add(_dymolaPath);
+            startInfo.ArgumentList.Add("-serverport");
+            startInfo.ArgumentList.Add(_portNumber.ToString(CultureInfo.InvariantCulture));
+        }
 
         if (SpawnEnvironmentVariables != null)
             foreach (var pair in SpawnEnvironmentVariables)
                 startInfo.Environment[pair.Key] = pair.Value;
 
         return startInfo;
+    }
+
+    /// <summary>
+    /// The script Dymola is started through on Linux: <c>$0</c> is Dymola's path and the rest its
+    /// arguments, passed as arguments rather than spliced into the script, so no path needs quoting.
+    /// </summary>
+    internal const string NullStreamsThenExec = "exec \"$0\" \"$@\" </dev/null >/dev/null 2>&1";
+
+    /// <summary>
+    /// Why the shell Dymola is started through on Linux could not run it, when that is what
+    /// happened: <c>sh</c> ends with 127 when <c>exec</c> finds no such file and 126 when it may not
+    /// run it, and with the streams on <c>/dev/null</c> nothing else says so. Started directly, a
+    /// missing Dymola was an exception from <c>Process.Start</c> at once; without this it became thirty
+    /// seconds of waiting and "did not start". Null otherwise - including a launcher that starts Dymola
+    /// in the background and exits, which is not a failure.
+    /// </summary>
+    internal Exception? CouldNotRun(Process? process)
+    {
+        if (OperatingSystem.IsWindows())
+            return null;
+
+        int exitCode;
+        try
+        {
+            if (process is not { HasExited: true })
+                return null;
+            exitCode = process.ExitCode;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;   // let go of meanwhile - Detach runs without the command lock (see ProcessId)
+        }
+
+        return exitCode switch
+        {
+            127 => new System.ComponentModel.Win32Exception(2, $"Dymola could not be started: no such file '{_dymolaPath}'."),
+            126 => new System.ComponentModel.Win32Exception(13, $"Dymola could not be started: '{_dymolaPath}' is not executable."),
+            _ => null,
+        };
     }
 
     public async Task StopDymolaProcessAsync()
