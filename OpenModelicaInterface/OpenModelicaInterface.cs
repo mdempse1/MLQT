@@ -128,24 +128,29 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             StandardErrorEncoding = Encoding.UTF8
         };
 
-        _omcProcess = Process.Start(startInfo);
-        if (_omcProcess == null)
-        {
-            throw new InvalidOperationException("Failed to start OMC process");
-        }
+        // Held in a local from here on: Abandon or Dispose may clear the field at any moment (see
+        // Abandon), and the readers below run later still.
+        var process = Process.Start(startInfo)
+                      ?? throw new InvalidOperationException("Failed to start OMC process");
+        _omcProcess = process;
 
-        // Disposed while starting - MLQT exiting as a check starts omc (B493). Dispose has already
-        // been through the process, so the one just started is ended here or by nobody.
+        // Disposed while starting - MLQT exiting as a check starts omc (B493). Dispose may already
+        // have been through the process, so the one just started is ended here or by nobody - unless
+        // Dispose took it after all, in which case it is Dispose's to end.
         if (_isDisposed)
         {
-            EndProcessTree(_omcProcess);
+            if (TakeProcess() is { } orphan)
+            {
+                try { EndProcessTree(orphan); } catch { /* gone already */ }
+                orphan.Dispose();
+            }
             throw new ObjectDisposedException(nameof(OpenModelicaInterface));
         }
 
         // Background readers consume stdout/stderr (prevent blocking), and hand what omc says to the
         // announcement until it has said where it is listening.
-        _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardOutput, announcement.Output, announcement.Ended));
-        _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardError, announcement.Error, null));
+        _ = Task.Run(() => ConsumeStreamAsync(process.StandardOutput, announcement.Output, announcement.Ended));
+        _ = Task.Run(() => ConsumeStreamAsync(process.StandardError, announcement.Error, null));
 
         // One clock for the whole start: finding the port and the first answer share StartupTimeout.
         var clock = Stopwatch.StartNew();
@@ -342,7 +347,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             if (!IsConnected)
                 throw new ObjectDisposedException(nameof(OpenModelicaInterface));
 
-            var socket = _socket!;
+            // Read once each: a start being abandoned outside the lock can clear either at any time.
+            var socket = _socket ?? throw new ObjectDisposedException(nameof(OpenModelicaInterface));
             var process = _omcProcess;
 
             // Sent and received against one clock, both in slices, so the wait can end on the time
@@ -454,26 +460,39 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// was given up on, and omc is still busy with the command behind it. Leaves the object undisposed
     /// but disconnected, so the factory replaces it.
     /// </summary>
-    private void Abandon()
+    /// <remarks>
+    /// Runs outside the command lock on the start-up paths, so it can meet <see cref="Dispose"/> -
+    /// which cancels <see cref="_lifetime"/> and so is often the very thing that sent a start here.
+    /// Each takes the socket and the process with <see cref="TakeSocket"/>/<see cref="TakeProcess"/>,
+    /// so exactly one of them ends and disposes each, and neither reads a field the other has just
+    /// cleared: reading <c>_omcProcess</c> again after a null check threw a
+    /// <see cref="NullReferenceException"/> out of Dispose on a loaded CI runner. Internal so that race
+    /// can be tested.
+    /// </remarks>
+    internal void Abandon()
     {
-        try { _socket?.Dispose(); } catch { /* already unusable */ }
-        _socket = null;
+        try { TakeSocket()?.Dispose(); } catch { /* already unusable */ }
 
-        if (_omcProcess != null)
+        if (TakeProcess() is { } process)
         {
             try
             {
-                if (!_omcProcess.HasExited)
-                    EndProcessTree(_omcProcess);
+                if (!process.HasExited)
+                    EndProcessTree(process);
             }
             catch
             {
                 // Gone already, or not ours to kill.
             }
-            _omcProcess.Dispose();
-            _omcProcess = null;
+            process.Dispose();
         }
     }
+
+    /// <summary>The socket, now this caller's alone to close; null when another took it first.</summary>
+    private RequestSocket? TakeSocket() => Interlocked.Exchange(ref _socket, null);
+
+    /// <summary>The omc process, now this caller's alone to end; null when another took it first.</summary>
+    private Process? TakeProcess() => Interlocked.Exchange(ref _omcProcess, null);
 
     /// <summary>
     /// Ends omc and everything it started. The one way this class ends omc, whether a command was
@@ -824,33 +843,33 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         var held = _commandLock.Wait(TimeSpan.FromSeconds(2));
         try
         {
-            _socket?.Dispose();
-            _socket = null;
+            // Taken, not read: the lock is not always held here (the wait above can run out), and a
+            // start being cancelled by _lifetime abandons the session without it. See Abandon.
+            try { TakeSocket()?.Dispose(); } catch { /* already unusable */ }
 
-            if (_omcProcess != null)
+            if (TakeProcess() is { } process)
             {
                 try
                 {
                     // An omc that answered quit() is on its way out and is given a moment to go by
                     // itself - it answers before it exits, so asking HasExited at once found it still
                     // there and killed it anyway, and the graceful exit above was graceful in name only.
-                    if (!_omcProcess.HasExited && !(quitAnswered && _omcProcess.WaitForExit(2000)))
+                    if (!process.HasExited && !(quitAnswered && process.WaitForExit(2000)))
                     {
                         // The whole tree (B493). omc runs what a command asks for - a compiler, a
                         // simulation, a system() call - as children, and one busy enough not to answer
                         // quit() is busy with exactly that. Kill() ended omc and left the child: on
                         // Linux it is handed to init and runs on, headless, with nothing to say whose
                         // it was.
-                        EndProcessTree(_omcProcess);
-                        _omcProcess.WaitForExit(5000);
+                        EndProcessTree(process);
+                        process.WaitForExit(5000);
                     }
                 }
                 catch
                 {
                     // Gone already, or not ours to end.
                 }
-                _omcProcess.Dispose();
-                _omcProcess = null;
+                process.Dispose();
             }
         }
         finally
