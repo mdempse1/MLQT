@@ -189,11 +189,19 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// shares the host's stdin, and in a host that is reading it - an MCP server over stdio, whose
     /// stdin is the protocol channel - omc did not start. Measured on Windows with omc 1.27.1: a host
     /// blocked in a read of its stdin pipe while omc started gave "did not start and answer within
-    /// 30s" every time, and the same start with stdin redirected took 0.1-0.2s. (Synchronous I/O on
-    /// one Windows pipe is serialised, so omc's start-up waits behind the host's read.) omc is spoken
-    /// to over a socket and has no use for the host's input; inherited, it could also read from that
-    /// channel, and would keep it open for as long as it outlived the host.
+    /// 30s" every time, and the same start with stdin redirected took 0.1-0.2s. The likely cause is
+    /// that synchronous I/O on one Windows pipe is serialised, so omc's start-up waits behind the
+    /// host's read; the fix does not depend on it, since omc is spoken to over a socket and has no
+    /// use for the host's input.
     /// </summary>
+    /// <remarks>
+    /// <b>This is not isolation.</b> On Windows <c>Process.Start</c> still hands omc every inheritable
+    /// handle the host holds, the host's own stdio among them, only not as omc's streams: measured, an
+    /// omc left running by a host that was killed kept the host's stdout open until omc was ended.
+    /// Ending omc whenever the host ends (<c>ExternalToolShutdown</c>, or Plumbline's Job Object) is
+    /// what closes it; Dymola, which outlives MLQT by design, is started by <c>IsolatedProcess</c>
+    /// instead, which omc cannot use because its stdout is how it says where it listens (B501).
+    /// </remarks>
     internal static ProcessStartInfo CreateStartInfo(string omcPath, string suffix, int port) => new()
     {
         FileName = omcPath,

@@ -241,8 +241,7 @@ public class DymolaInterface : IDymolaSession
     }
 
     /// <summary>
-    /// How Dymola is started. <b>No handle of the host reaches it</b>, its standard streams least of
-    /// all: Dymola is spoken to over HTTP and is left running when MLQT exits (B493), so anything it
+    /// How Dymola is started. <b>None of the host's standard streams reach it</b>: Dymola is spoken to over HTTP and is left running when MLQT exits (B493), so anything it
     /// inherited would outlive the host. In an MCP server over stdio the host's streams are the
     /// protocol channel - measured on Windows with Dymola 2026x Refresh 1, a host that started Dymola
     /// and exited left its stdout open until Dymola was ended, so the client never saw the server go;
@@ -254,8 +253,8 @@ public class DymolaInterface : IDymolaSession
     /// child every inheritable handle the host holds, the host's own stdio included, whatever it is
     /// given as the child's three.</para>
     ///
-    /// <para><b>Linux</b>: a child gets only the descriptors it is given, since .NET opens everything
-    /// else close-on-exec, so it is the three that matter - and they cannot be pipes of MLQT's, because
+    /// <para><b>Linux</b>: what .NET opens is close-on-exec, so beyond descriptors the host was itself
+    /// handed open, a child gets the three standard ones - and they cannot be pipes of MLQT's, because
     /// a process .NET starts does not ignore SIGPIPE (measured: <c>SigIgn</c> 0) and the first line
     /// Dymola wrote after MLQT exited would end it. So Dymola is started through <c>/bin/sh</c>, which
     /// points all three at <c>/dev/null</c> and then <c>exec</c>s it in its own place: the same

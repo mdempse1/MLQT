@@ -110,7 +110,7 @@ Unlike Dymola's HTTP JSON-RPC protocol, OpenModelica uses **ZeroMQ (ZMQ) with RE
 
 - **Protocol**: TCP sockets via ZMQ
 - **Port**: any free one by default (`OpenModelicaInterface.AnyPort`, `0`). omc is started with `-z=mlqt-<guid>` and without `--interactivePort`; it binds a free port, writes the address to a port file named after that suffix in the temp directory, and prints the file's path on stdout - with no newline after it, so stdout is read in chunks. `OmcPortAnnouncement` finds the path, the address is read and the file deleted, and `Port` says which port it was. A fixed port is still passed on when one is set; omc exits at once if it is taken, and the start fails with what omc said
-- **stdin**: omc gets one of its own, closed at once, never the host's. Inherited, a host blocked reading its stdin - an MCP server over stdio, whose stdin is the protocol channel - stopped omc starting at all on Windows (`HostReadingStdinTests`)
+- **stdin**: omc gets one of its own, closed at once, never the host's. Inherited, a host blocked reading its stdin - an MCP server over stdio, whose stdin is the protocol channel - stopped omc starting at all on Windows (`HostReadingStdinTests`). This is not isolation: on Windows omc still inherits the host's other inheritable handles, its stdio among them, so an omc left running by a host that was killed keeps the host's stdout open until it is ended (B501). Ending omc with the host is what closes it
 - **Pattern**: Request-Reply (REQ-REP)
 - **Commands**: Sent as text strings via ZMQ frames
 - **Responses**: Returned as complete ZMQ message frames, which may be:

@@ -66,6 +66,12 @@ running. (MLQT closing is not one of those times: see
 [What happens to the tool when MLQT closes](#what-happens-to-the-tool-when-mlqt-closes).) A launcher that starts Dymola in the background and exits at once is the exception: MLQT
 cannot tell which program it left behind, so that Dymola stays open and has to be closed by hand.
 
+A Dymola that MLQT starts on Linux **prints nothing to the terminal** MLQT was started from: its
+console output is discarded, because Dymola stays open after MLQT closes and would otherwise be
+writing to a terminal, or a pipe, that has gone. If you need that output, start Dymola yourself from a
+terminal with `-serverport` and the port in these settings; MLQT uses a Dymola already answering on
+that port rather than starting another.
+
 **This search has not yet been tried against a real Linux installation of Dymola** — the locations
 come from Dassault's installation guide and published setup guides rather than from a machine MLQT
 has run on. If it finds nothing, or finds something that will not start, type or browse to the

@@ -34,8 +34,8 @@ public class HostStdinCollection;
 /// </summary>
 /// <remarks>
 /// <para>Inheriting the host's stdin, omc did not start within 30s while the host had a read of it
-/// pending: synchronous I/O on one Windows pipe is serialised, and omc's start-up waited behind the
-/// read. Reported from Plumbline (#146, PR #169).</para>
+/// pending - most likely because synchronous I/O on one Windows pipe is serialised, so omc's start-up
+/// waited behind the read. Reported from Plumbline (#146, PR #169).</para>
 ///
 /// <para>The test makes its own process that host: it points this process's stdin at a pipe of its
 /// own, which <c>Process.Start</c> reads as the handle a child inherits, and blocks a thread reading
