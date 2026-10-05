@@ -140,6 +140,39 @@ public sealed class SessionEndTests : IDisposable
     }
 
     /// <summary>
+    /// A start given up on abandons the session outside the command lock, and the commonest reason it
+    /// is given up on is Dispose itself, so the two meet. Each read the process field again after its
+    /// own null check, and one clearing it between the other's check and its use threw a
+    /// NullReferenceException out of Dispose - seen once on a loaded CI runner, where it replaced the
+    /// outcome the caller was reporting. Raced many times because one meeting rarely lands in the gap.
+    /// </summary>
+    [Fact]
+    public async Task AbandoningAndDisposingAtOnce_NeitherThrows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        for (var round = 0; round < 100; round++)
+        {
+            using var sleeper = Process.Start(new ProcessStartInfo(
+                OperatingSystem.IsWindows() ? "ping" : "sleep",
+                OperatingSystem.IsWindows() ? "-n 60 127.0.0.1" : "60")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+            }) ?? throw new InvalidOperationException("the stand-in omc did not start");
+            using var handle = Process.GetProcessById(sleeper.Id);
+            var session = new OpenModelicaInterface(sleeper);
+
+            using var bothReady = new Barrier(2);
+            var abandon = Task.Run(() => { bothReady.SignalAndWait(ct); session.Abandon(); }, ct);
+            var dispose = Task.Run(() => { bothReady.SignalAndWait(ct); session.Dispose(); }, ct);
+
+            await Task.WhenAll(abandon, dispose);
+            Assert.True(handle.WaitForExit(NeverThisLong), $"round {round}: the stand-in omc was not ended");
+        }
+    }
+
+    /// <summary>
     /// Each of the host's ways out can reach it, and an ordinary close reaches more than one; nor may
     /// disposing afterwards - which the TestHost's container does - throw over it.
     /// </summary>

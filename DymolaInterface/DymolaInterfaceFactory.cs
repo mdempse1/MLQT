@@ -107,10 +107,20 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             // Asked here rather than at the call sites because this is the one place that decides
             // whether to reuse or create, and a liveness test anywhere else would be a second
             // answer to the same question.
-            if (_instance != null)
+            //
+            // Read into a local once: Shutdown takes _instance without this lock - deliberately, see
+            // there - so it can be gone after any await below, and reading it again after its null
+            // check threw a NullReferenceException out of a check as MLQT closed.
+            var cached = _instance;
+            if (cached != null)
             {
-                var state = await _instance.GetSessionStateAsync();
-                Report($"Cached session on port {settings.PortNumber}, {Whose(_instance)}: {state}");
+                var state = await cached.GetSessionStateAsync();
+                Report($"Cached session on port {settings.PortNumber}, {Whose(cached)}: {state}");
+
+                // Let go of while it was asked: it is not to be handed out, nor - below - its
+                // Dymola started.
+                ObjectDisposedException.ThrowIf(_shutDown, this);
+
                 switch (state)
                 {
                     case DymolaSessionState.Answering:
@@ -120,14 +130,13 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                         // Still on the command it was given. Its commands are sent rather than held
                         // back as offline, so they wait for Dymola to finish - up to the time limit -
                         // which is what "the next check waits" means (B331).
-                        _instance.SetOfflineMode(false);
+                        cached.SetOfflineMode(false);
                         break;
 
                     case DymolaSessionState.Starting:
                         // The Dymola it launched has not come up yet: wait for that one rather than
                         // launching another beside it on the same port.
-                        var starting = _instance;
-                        await Task.Run(() => starting.StartDymolaProcessAsync(cancellationToken), cancellationToken);
+                        await Task.Run(() => cached.StartDymolaProcessAsync(cancellationToken), cancellationToken);
                         break;
 
                     default:
@@ -135,12 +144,13 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                         break;
                 }
 
-                if (_instance != null)
+                ObjectDisposedException.ThrowIf(_shutDown, this);
+                if (_instance == cached)
                 {
                     // Applied on every hand-out rather than only at creation, so a time limit changed
                     // in the settings reaches the session already open.
-                    _instance.CommandTimeout = settings.CommandTimeout;
-                    return _instance;
+                    cached.CommandTimeout = settings.CommandTimeout;
+                    return cached;
                 }
             }
 
@@ -154,7 +164,22 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             // A session left behind that way holds a client and no process.
             var created = await Task.Run(() => _createSession(settings), cancellationToken)
                 .WaitAsync(cancellationToken);
-            _instance = created;
+            // Published with a fence and Shutdown asked after it. Shutdown sets its flag before it
+            // takes _instance, so either it takes this session or this sees the flag - never neither.
+            // Building a session can take the whole thirty-second connection window, and a Shutdown
+            // in that time found nothing to let go of; the session was then stored after MLQT had
+            // let go of everything, and a Dymola started for it (B493's case, by another route).
+            Interlocked.Exchange(ref _instance, created);
+            if (_shutDown)
+            {
+                if (Interlocked.CompareExchange(ref _instance, null, created) == created)
+                {
+                    try { created.Detach(); } catch { /* nothing to let go of */ }
+                    try { created.Dispose(); } catch { /* the session is already gone */ }
+                }
+                ObjectDisposedException.ThrowIf(true, this);
+            }
+
             _instanceBuiltFor = BuiltFor(settings);
             created.CommandTimeout = settings.CommandTimeout;
 
@@ -170,6 +195,10 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                     created.SetOfflineMode(false);
                 else
                 {
+                    // Asked once more, the probe above being seconds long. Narrows rather than closes
+                    // the window - Shutdown holds no lock to close it with - and a Dymola started in
+                    // what is left is one MLQT leaves running on exit anyway.
+                    ObjectDisposedException.ThrowIf(_shutDown, this);
                     Report($"Starting {settings.DymolaPath} -serverport {settings.PortNumber}");
                     await Task.Run(() => created.StartDymolaProcessAsync(cancellationToken), cancellationToken);
                     Report($"Dymola is answering on port {settings.PortNumber}: {Whose(created)}");
@@ -197,8 +226,9 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// </summary>
     private void Drop()
     {
-        var session = _instance;
-        _instance = null;
+        // Taken, not read then cleared: Shutdown takes it without the lock, and both holding one
+        // session had one detach the process while the other was still describing it.
+        var session = Interlocked.Exchange(ref _instance, null);
         if (session == null)
             return;
 
@@ -210,16 +240,7 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// <summary>
     /// Checks if an instance exists and is connected.
     /// </summary>
-    public bool IsConnected
-    {
-        get
-        {
-            if (_instance == null)
-                return false;
-
-            return !_instance.IsOfflineMode();
-        }
-    }
+    public bool IsConnected => _instance is { } session && !session.IsOfflineMode();
 
     /// <summary>
     /// Forgets the current session, so the next call to <see cref="GetOrCreateAsync"/> connects
@@ -249,7 +270,10 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// on the exit path that could reach the kill even were the detach to fail.</para>
     ///
     /// <para>No lock: a check starting Dymola holds it for up to a minute, and the session it is
-    /// starting is already <see cref="_instance"/>, so letting go of that one is what is wanted.</para>
+    /// starting is already <see cref="_instance"/>, so letting go of that one is what is wanted. A
+    /// session still being built is not, and <see cref="GetOrCreateAsync"/> lets go of it itself when
+    /// it finds this has run. Without the lock, everything else reads <see cref="_instance"/> once and
+    /// asks <see cref="_shutDown"/> after each wait.</para>
     /// </remarks>
     public void Shutdown()
     {

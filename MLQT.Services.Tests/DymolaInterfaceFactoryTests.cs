@@ -35,7 +35,14 @@ public class DymolaInterfaceFactoryTests
         /// <summary>Whether disposing this session would have ended the process behind it.</summary>
         public bool Killed => Disposed && !Detached;
 
-        public Task<DymolaSessionState> GetSessionStateAsync() => Task.FromResult(State);
+        /// <summary>Run while the factory waits for this session's state - where MLQT can exit.</summary>
+        public Action? WhileAsked;
+
+        public Task<DymolaSessionState> GetSessionStateAsync()
+        {
+            WhileAsked?.Invoke();
+            return Task.FromResult(State);
+        }
         public bool IsOfflineMode() => Offline;
         public void SetOfflineMode(bool enable) => Offline = enable;
 
@@ -67,10 +74,14 @@ public class DymolaInterfaceFactoryTests
         private readonly Queue<FakeSession> _next;
         public readonly List<FakeSession> Created = [];
 
+        /// <summary>Run while a session is being built - up to thirty seconds against a real Dymola.</summary>
+        public Action? WhileCreating;
+
         public Sessions(params FakeSession[] sessions) => _next = new Queue<FakeSession>(sessions);
 
         public IDymolaSession Create(DymolaSettings _)
         {
+            WhileCreating?.Invoke();
             var session = _next.Count > 0 ? _next.Dequeue() : new FakeSession();
             Created.Add(session);
             return session;
@@ -253,5 +264,47 @@ public class DymolaInterfaceFactoryTests
         Assert.True(first.Disposed);
         Assert.False(first.Killed, "resetting killed the Dymola window the session had started");
         Assert.Equal(2, sessions.Created.Count);
+    }
+
+    /// <summary>
+    /// Shutdown takes no lock, so MLQT can exit while a check is asking the cached session what
+    /// state it is in - a probe of several seconds. The factory read the session again afterwards,
+    /// found null and threw a NullReferenceException; nor may it start that session's Dymola once
+    /// MLQT has let go of it.
+    /// </summary>
+    [Fact]
+    public async Task ExitingWhileACachedSessionIsAsked_EndsTheCheckAsDisposed()
+    {
+        var first = new FakeSession();
+        var factory = new DymolaInterfaceFactory(new Sessions(first).Create);
+        await factory.GetOrCreateAsync();
+
+        first.State = DymolaSessionState.Starting;
+        first.WhileAsked = factory.Shutdown;
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => factory.GetOrCreateAsync());
+        Assert.Equal(0, first.Starts);
+        Assert.True(first.Detached);
+        Assert.False(first.Killed, "MLQT exiting killed the Dymola the session had started");
+    }
+
+    /// <summary>
+    /// Building a session waits up to Dymola's thirty-second connection window, and Shutdown in that
+    /// time found no session to let go of. The new one was then stored after MLQT had let go of
+    /// everything, and a Dymola started for it as MLQT exited.
+    /// </summary>
+    [Fact]
+    public async Task ExitingWhileASessionIsBeingBuilt_LetsGoOfItAndStartsNoDymola()
+    {
+        var nothing = new FakeSession { Offline = true, State = DymolaSessionState.Gone };
+        var sessions = new Sessions(nothing);
+        var factory = new DymolaInterfaceFactory(sessions.Create);
+        sessions.WhileCreating = factory.Shutdown;
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => factory.GetOrCreateAsync());
+        Assert.Equal(0, nothing.Starts);
+        Assert.True(nothing.Detached, "a session built as MLQT exited was kept");
+        Assert.False(nothing.Killed);
+        Assert.False(factory.IsConnected);
     }
 }
