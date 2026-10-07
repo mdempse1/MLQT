@@ -167,7 +167,7 @@ public class ExternalStubBuilderTests
         // The members the documentation listed - parameters, connectors, a function's arguments -
         // have no truthful Modelica declaration, since the generator publishes no types, so they
         // cannot travel in the synthesized source the way the description and the extends do. They
-        // were parsed and then dropped here, and get_class_interface answered "no parameters" for a
+        // were parsed and then dropped here, and mlqt_get_class_interface answered "no parameters" for a
         // vendor class that has a dozen (B179).
         var graph = new DirectedGraph();
         var documented = new DocumentedClass(

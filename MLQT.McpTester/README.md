@@ -46,12 +46,12 @@ keeps its independence from MLQT's service layer.
      multiline (enter JSON), everything else → text.
    - required fields are marked `*`; leave optional fields blank (and booleans on **(default)**) to use
      the server's defaults. Leaving a boolean on (default) omits it entirely, which matters for tri-state
-     `boolean|null` parameters (e.g. `create_class`'s `standalone`) where sending `false` is not the same
+     `boolean|null` parameters (e.g. `mlqt_create_class`'s `standalone`) where sending `false` is not the same
      as omitting it.
 5. **Call tool** — the result is shown with an `ok` / `isError` badge: text content, pretty-printed
    if it is JSON, plus any `structuredContent`.
    - **Image content is displayed, not described.** A tool that returns an image — MLQT's
-     `get_diagram_image` renders a class's diagram as a PNG — shows the picture above the text, on a
+     `mlqt_get_diagram_image` renders a class's diagram as a PNG — shows the picture above the text, on a
      transparency checkerboard so the edge of the image is visible against the card, with its media
      type and size beneath. **Actual size** switches between fitting the panel and one image pixel
      per screen pixel. Nothing here is MLQT-specific: any server's image content, and any embedded

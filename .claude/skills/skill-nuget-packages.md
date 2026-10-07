@@ -112,7 +112,7 @@ these two are what replaced them, and they are the whole of the host's dependenc
 ## Graphics
 
 ### Svg.Skia (v5.2.3)
-- **Purpose**: Rasterises an SVG to a bitmap. Behind `get_diagram_image`, which draws a class's
+- **Purpose**: Rasterises an SVG to a bitmap. Behind `mlqt_get_diagram_image`, which draws a class's
   diagram and returns it as a PNG so an agent can look at a layout rather than read its coordinates
   back (B196)
 - **Used in**: MLQT.McpServer

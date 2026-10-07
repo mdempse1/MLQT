@@ -358,7 +358,7 @@ assembly, where it is not an embedded resource of ModelicaParser and never loads
 
 | Scope | Where it lives | Written by |
 |-------|----------------|------------|
-| One class, and the classes nested in it | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `accept_spelling_in_class` |
+| One class, and the classes nested in it | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `mlqt_accept_spelling_in_class` |
 | One repository | `<repo>/.mlqt/dictionary.txt` | Code Review's **Add to Dictionary**, the repository dictionary settings page |
 | Every check, every repository | `modelica_terms.txt` (+ the dialect list for the chosen language) | Editing ModelicaParser |
 
@@ -398,7 +398,7 @@ so the GUI, the CLI and MCP all honour it, and `mlqt check --no-suppress` audits
 | `ModelicaGraph.Tests/StyleCheckingTests.cs` | HasAnyStyleRuleEnabled includes spell check settings |
 | `ModelicaGraph.Tests/SpellingSuppressionTests.cs` | `__MLQT(spelling="…")` end to end: word scope, class scope, possessives, `--no-suppress` |
 | `ModelicaParser.Tests/StyleRuleChecks/MlqtSuppressionWriterTests.cs` | Writing and merging the annotation, including the spelling list |
-| `MLQT.McpServer.Tests/SuppressionToolsTests.cs` | `accept_spelling_in_class` |
+| `MLQT.McpServer.Tests/SuppressionToolsTests.cs` | `mlqt_accept_spelling_in_class` |
 
 ## Key Design Decisions
 

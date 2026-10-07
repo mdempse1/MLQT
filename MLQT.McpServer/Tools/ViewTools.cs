@@ -14,9 +14,9 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// "Views" over a class — token-efficient projections so an agent can learn how to USE a class, or
-/// what it CONTAINS, without reading its full source. get_class_interface (public API), list_class_elements
-/// (every declaration), get_class_documentation (prose), and validate_class_references (undefined names).
-/// All are read-only and need only a loaded library (not analyze_dependencies).
+/// what it CONTAINS, without reading its full source. mlqt_get_class_interface (public API), mlqt_list_class_elements
+/// (every declaration), mlqt_get_class_documentation (prose), and mlqt_validate_class_references (undefined names).
+/// All are read-only and need only a loaded library (not mlqt_analyze_dependencies).
 /// </summary>
 [McpServerToolType]
 public sealed class ViewTools
@@ -25,14 +25,14 @@ public sealed class ViewTools
 
     public ViewTools(ILibraryDataService libraries) => _libraries = libraries;
 
-    [McpServerTool(Name = "get_class_interface")]
-    [Description("Get the public interface of a class — how to USE it without reading its source: its " +
+    [McpServerTool(Name = "mlqt_get_class_interface")]
+    [Description("Get the public interface of a Modelica class — how to USE it without reading its source: its " +
                 "settable parameters (name/type/default/description), its connectors (with causality " +
                 "input/output and flow/stream), its extends (base classes), and, for a function, its " +
                 "input/output signature. Members INHERITED via extends are included by default (each marked " +
                 "with the base class it came from in inheritedFrom), so you get the complete picture without " +
                 "chasing base classes — set include_inherited=false for only what the class declares itself. " +
-                "Far smaller than get_class_source. A component is a connector when it has a causality or its " +
+                "Far smaller than mlqt_get_class_source. A component is a connector when it has a causality or its " +
                 "type resolves to a loaded connector class. A connector carrying a 'condition' is " +
                 "CONDITIONAL - it exists only where that expression is true, so an instance that leaves it " +
                 "false has no such port and connecting to it is an error. A parameter's default is the value it takes; a " +
@@ -107,15 +107,15 @@ public sealed class ViewTools
             extends, parameters, connectors, members, signature);
     }
 
-    [McpServerTool(Name = "list_class_elements")]
-    [Description("List the elements of a class: components (with type, variability parameter/constant/" +
+    [McpServerTool(Name = "mlqt_list_class_elements")]
+    [Description("List the elements of a Modelica class: components (with type, variability parameter/constant/" +
                 "discrete, causality input/output, flow/stream, default value, description), extends " +
                 "clauses, imports, and nested classes. Members INHERITED via extends are included by " +
                 "default (each marked with its base class in inheritedFrom); set include_inherited=false " +
                 "for only the class's own declarations. By default only public elements are returned; set " +
                 "include_protected=true to also include protected ones. Each element also carries any " +
                 "leadingComments (the // or /* */ comments written just above it). This is the granular " +
-                "data behind get_class_interface. A component's default is the value it is bound to; its " +
+                "data behind mlqt_get_class_interface. A component's default is the value it is bound to; its " +
                 "typeModification is any modification written on its type, as written (e.g. \"(min = 0)\" or \"(k = 2)\"), " +
                 "which is not a value. arraySubscripts are its dimensions as written, the declaration's before the type's " +
                 "(Real[2] x[3] gives \"[3, 2]\"). redeclarations lists each redeclare (or replaceable) its modification makes, " +
@@ -211,8 +211,8 @@ public sealed class ViewTools
             r => r.Key,
             r => new RedeclarationView(r.Value.ClassType, r.Value.Type, r.Value.TypeModification, r.Value.ArraySubscripts)));
 
-    [McpServerTool(Name = "get_class_documentation")]
-    [Description("Get a class's documentation without its code: its description string plus the " +
+    [McpServerTool(Name = "mlqt_get_class_documentation")]
+    [Description("Get a Modelica class's documentation without its code: its description string plus the " +
                 "Documentation(info=...) and Documentation(revisions=...) annotation text. format='text' " +
                 "(default) strips HTML to plain text; format='html' returns the raw HTML. Use this to " +
                 "understand what a class does. Needs only a loaded library.")]
@@ -234,8 +234,8 @@ public sealed class ViewTools
         return new ClassDocumentationResult(node.Id, asText ? "text" : "html", iface!.Description, info, revisions);
     }
 
-    [McpServerTool(Name = "get_class_behavior")]
-    [Description("Get the behavior a class declares itself: its top-level equations, connect() statements " +
+    [McpServerTool(Name = "mlqt_get_class_behavior")]
+    [Description("Get the behavior a Modelica class declares itself: its top-level equations, connect() statements " +
                 "and algorithm statements (each equation/statement carries any leadingComments written " +
                 "above it). connections includes those inside a for/if/when equation, each with 'within' " +
                 "naming the branches it is in (e.g. ['for i in 1:n']) - such an equation is also listed, " +
@@ -289,8 +289,8 @@ public sealed class ViewTools
         return result;
     }
 
-    [McpServerTool(Name = "validate_class_references")]
-    [Description("Check that the types a class references (its component types and extends base classes) " +
+    [McpServerTool(Name = "mlqt_validate_class_references")]
+    [Description("Check that the types a Modelica class references (its component types and extends base classes) " +
                 "resolve to loaded classes, and report those that do not — useful after writing or editing " +
                 "a class to catch typos and missing dependencies. Resolution uses exact, import and " +
                 "package-relative lookup AND names inherited via extends (an inherited type is not flagged). " +

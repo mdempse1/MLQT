@@ -8,7 +8,7 @@ namespace MLQT.McpServer.Tests;
 /// <summary>
 /// A port that is switched off, and a label that says what a parameter is (B277, B278).
 ///
-/// <para>Both were found putting <c>get_diagram_image</c>'s render of
+/// <para>Both were found putting <c>mlqt_get_diagram_image</c>'s render of
 /// <c>Modelica.Blocks.Examples.PID_Controller</c> beside Dymola's: four of its nine components drew a
 /// connector Dymola leaves off — each declared <c>if</c> some parameter that is false by default —
 /// and every parameter label read <c>J=%J</c> rather than <c>J=1</c>.</para>

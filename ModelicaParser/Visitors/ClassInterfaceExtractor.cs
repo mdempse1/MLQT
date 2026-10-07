@@ -353,7 +353,7 @@ public static class ClassInterfaceExtractor
     /// which is how it survived until a connector that should have gone stayed on the picture.
     /// Values had the same defect after conditions were fixed (B317): <c>k = pulse.y and step.y</c>
     /// read as <c>pulse.yandstep.y</c>, which a label then showed as <b>y</b>, and
-    /// <c>get_class_interface</c> reported a default of <c>ifathen1else2</c>.</para>
+    /// <c>mlqt_get_class_interface</c> reported a default of <c>ifathen1else2</c>.</para>
     ///
     /// <para><b>Rebuilt from the tokens rather than cut from the source</b>, so a value written over
     /// three lines, or with a comment inside it, comes back as one line a reader can use.</para>

@@ -9,7 +9,7 @@ namespace MLQT.McpServer.Helpers;
 /// <summary>
 /// After a file edit + reload, incrementally rebuilds dependency edges (and the resource index) for the
 /// affected models — but only for the analyses that have already been run this session — so
-/// get_dependencies / find_usages / analyze_impact and the resource tools stay fresh after an edit
+/// mlqt_get_dependencies / mlqt_find_usages / mlqt_analyze_impact and the resource tools stay fresh after an edit
 /// without paying for a full re-analysis. No-op if nothing has been analyzed yet.
 /// </summary>
 internal static class GraphRefresh

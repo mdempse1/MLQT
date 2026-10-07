@@ -30,7 +30,7 @@ by shared root cause; all sixteen are complete. What it delivered:
 | **Rules and formatting** | `ComponentsBeforeClasses`, `DeclarationOrder`, `SingleFilePackage` and a match-Dymola package-order option; excision instead of re-rendering in the trimmer; every write keeps its file's final newline and line endings; formatting exclusion written as `__MLQT(format=false)` |
 | **Performance** | A Claytex check went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
 | **External tools and revision control** | A result dialog, dead-session recovery, a time limit per tool and Cancel reaching a running check, for both Dymola and OpenModelica; tags and detached HEAD, history diffs against the predecessor, and revision content decoded by MLQT's encoding funnel |
-| **MCP** | `get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `get_class_source` elides rather than re-renders, so its lines match the findings |
+| **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class_source` elides rather than re-renders, so its lines match the findings |
 | **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
 
 **Then the end-of-branch review of 2026-09-25 opened B302–B369**, with eight reviewers each reading
@@ -110,7 +110,7 @@ What it leaves as candidates rather than work:
   Dependencies, External Resources, Metrics and Settings with no way back. The history itself is
   shared, on `AppState`. If this becomes a problem, the other direction is to bring the
   used-classes menu up beside the class name, rather than to move the arrows back down (B249).
-- **Units and truncation in diagram labels.** `get_diagram_image` substitutes `%parameter` values but
+- **Units and truncation in diagram labels.** `mlqt_get_diagram_image` substitutes `%parameter` values but
   writes no unit and does not cut text to the icon's width. The unit needs unit resolution and a
   decision about how to show it (B278).
 - **Server GC in the desktop app over a long session.** It was measured in the CLI, where a Claytex

@@ -42,15 +42,15 @@ def call(name, args):
 send("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}})
 send("notifications/initialized", None)
 labels = {}
-labels[call("load_library", {"path": load_dir})] = "load_library"
-labels[call("get_dependencies", {"classId": "TestLib.Top"})] = "get_dependencies Top (pre-analyze)"
-labels[call("analyze_dependencies", {})] = "analyze_dependencies"
-labels[call("get_dependencies", {"classId": "TestLib.Top"})] = "get_dependencies Top"
-labels[call("get_dependencies", {"classId": "TestLib.Middle"})] = "get_dependencies Middle"
-labels[call("find_usages", {"classId": "TestLib.Base"})] = "find_usages Base"
-labels[call("analyze_impact", {"classIds": ["TestLib.Base"]})] = "analyze_impact Base"
-labels[call("get_class_resources", {"classId": "TestLib.WithRes"})] = "get_class_resources WithRes"
-labels[call("get_resource_warnings", {})] = "get_resource_warnings"
+labels[call("mlqt_load_library", {"path": load_dir})] = "mlqt_load_library"
+labels[call("mlqt_get_dependencies", {"classId": "TestLib.Top"})] = "mlqt_get_dependencies Top (pre-analyze)"
+labels[call("mlqt_analyze_dependencies", {})] = "mlqt_analyze_dependencies"
+labels[call("mlqt_get_dependencies", {"classId": "TestLib.Top"})] = "mlqt_get_dependencies Top"
+labels[call("mlqt_get_dependencies", {"classId": "TestLib.Middle"})] = "mlqt_get_dependencies Middle"
+labels[call("mlqt_find_usages", {"classId": "TestLib.Base"})] = "mlqt_find_usages Base"
+labels[call("mlqt_analyze_impact", {"classIds": ["TestLib.Base"]})] = "mlqt_analyze_impact Base"
+labels[call("mlqt_get_class_resources", {"classId": "TestLib.WithRes"})] = "mlqt_get_class_resources WithRes"
+labels[call("mlqt_get_resource_warnings", {})] = "mlqt_get_resource_warnings"
 proc.stdin.close()
 try:
     proc.wait(timeout=10)

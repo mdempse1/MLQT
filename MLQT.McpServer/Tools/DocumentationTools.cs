@@ -12,7 +12,7 @@ namespace MLQT.McpServer.Tools;
 /// <summary>
 /// Tools for adding/changing a class's documentation surgically: its description string, a component's
 /// description string, and the Documentation(info/revisions) annotation. Complements the read-only
-/// get_class_documentation. Each validates, parse-checks with rollback, refuses read-only files and
+/// mlqt_get_class_documentation. Each validates, parse-checks with rollback, refuses read-only files and
 /// refreshes dependencies; all support preview.
 /// </summary>
 [McpServerToolType]
@@ -29,8 +29,8 @@ public sealed class DocumentationTools
         _session = session;
     }
 
-    [McpServerTool(Name = "set_class_description")]
-    [Description("Set (or replace) a class's one-line description string, e.g. give 'model Foo' the " +
+    [McpServerTool(Name = "mlqt_set_class_description")]
+    [Description("Set (or replace) a Modelica class's one-line description string, e.g. give 'model Foo' the " +
                 "description 'Output the integral of the input'. This is the quoted string right after the " +
                 "class name. Fails if the class has no long body (e.g. a short type alias) or the result " +
                 "would not parse. Set preview=true to see the file text.")]
@@ -68,8 +68,8 @@ public sealed class DocumentationTools
             _libraries, _resources, _session, ctx, newCode, preview, $"set description of '{classId}'"));
     }
 
-    [McpServerTool(Name = "set_component_description")]
-    [Description("Set (or replace) the description string of a component in a class, e.g. give 'Real k' " +
+    [McpServerTool(Name = "mlqt_set_component_description")]
+    [Description("Set (or replace) the description string of a component in a Modelica class, e.g. give 'Real k' " +
                 "the description 'gain'. Fails if no such component exists or the result would not parse. " +
                 "Set preview=true to see the file text.")]
     public async Task<object> SetComponentDescription(
@@ -106,12 +106,12 @@ public sealed class DocumentationTools
             _libraries, _resources, _session, ctx, newCode, preview, $"set description of '{componentName}'"));
     }
 
-    [McpServerTool(Name = "set_class_documentation")]
+    [McpServerTool(Name = "mlqt_set_class_documentation")]
     [Description("Set (or replace) a class's Documentation annotation — the rich HTML help shown in " +
                 "Modelica tools. Provide info (the main documentation) and/or revisions (the change log) as " +
                 "HTML strings, e.g. '<html><p>Integrates the input.</p></html>'. Whichever you omit is left " +
                 "unchanged. Adds the annotation if the class has none. Read it back with " +
-                "get_class_documentation. Fails if the class has no long body or the result would not parse.")]
+                "mlqt_get_class_documentation. Fails if the class has no long body or the result would not parse.")]
     public async Task<object> SetClassDocumentation(
         [Description("Fully-qualified class id.")] string classId,
         [Description("The Documentation(info=...) HTML string. Omit to leave it unchanged.")] string? info = null,

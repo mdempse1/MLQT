@@ -850,6 +850,45 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public async Task Batch_AcceptsAnOpWrittenAsItsToolName()
+    {
+        // The ops are named after the tools that do the same edit, and the tools all carry the mlqt_
+        // prefix, so an agent that has just called mlqt_add_component writes that here too. Refusing it
+        // would fail the whole batch over a spelling the description invites.
+        using var host = new TestHost();
+        var tools = LoadConn(host);
+
+        var ops = new List<BatchOperation>
+        {
+            new() { Op = "mlqt_add_component", ClassId = "C.Sys", Type = "C.Source", Name = "src3" },
+            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Sink", Name = "snk3" },
+            new() { Op = "mlqt_add_connection", ClassId = "C.Sys", PortA = "src3.y", PortB = "snk3.u" },
+        };
+
+        var res = ToolAssert.Ok<BatchEditResult>(await tools.BatchEdit(ops));
+        Assert.Equal(3, res.OperationsApplied);
+        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
+        Assert.Contains("C.Source src3", src);
+        Assert.Contains("connect(src3.y, snk3.u)", src);
+    }
+
+    [Fact]
+    public async Task Batch_RejectsAnOpThatIsNoToolOfThatName()
+    {
+        // The prefix is stripped, not matched loosely: an unknown name with it is still unknown.
+        using var host = new TestHost();
+        var tools = LoadConn(host);
+
+        var ops = new List<BatchOperation>
+        {
+            new() { Op = "mlqt_add_widget", ClassId = "C.Sys", Name = "w" },
+        };
+
+        var err = Assert.IsType<ToolError>(await tools.BatchEdit(ops));
+        Assert.Contains("mlqt_add_widget", err.Error);
+    }
+
+    [Fact]
     public async Task Batch_RollsBackOnFailure()
     {
         using var host = new TestHost();

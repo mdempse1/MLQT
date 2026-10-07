@@ -17,9 +17,9 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// Editing tools that change the source of loaded classes: replace one class's body in place
-/// (update_class_source) or rename a class and every reference to it (rename_class). Both write the
+/// (mlqt_update_class_source) or rename a class and every reference to it (mlqt_rename_class). Both write the
 /// affected .mo file(s), reload them, and (when analysis has run) refresh the dependency graph.
-/// rename_class is precise — it rewrites only the exact identifier tokens that resolve to the class
+/// mlqt_rename_class is precise — it rewrites only the exact identifier tokens that resolve to the class
 /// (via the shared reference locator), not textual matches.
 /// </summary>
 [McpServerToolType]
@@ -38,13 +38,16 @@ public sealed class EditTools
         _session = session;
     }
 
-    [McpServerTool(Name = "update_class_source")]
+    [McpServerTool(Name = "mlqt_update_class_source")]
     [Description("Replace the Modelica source of a single loaded class with new source, then write the " +
-                "file to disk and refresh the graph (so check_class / spell_check / get_class_source / the " +
-                "dependency tools see the change). new_source must be ONE complete, syntactically valid " +
+                "file to disk and refresh the graph (so mlqt_check_class / mlqt_spell_check / mlqt_get_class_source / the " +
+                "dependency tools see the change). Use this (or the surgical edit tools) rather than editing " +
+                "the .mo file as text: nothing is written if the result would not parse, the rest of the " +
+                "file keeps its text, encoding and line endings, and read-only libraries are refused. " +
+                "new_source must be ONE complete, syntactically valid " +
                 "class definition (e.g. 'model X ... end X;'); it is written verbatim — NOT reformatted, so " +
-                "run format_class afterwards if you want. The class name must stay the same — to rename or " +
-                "move a class (rewriting references too) use rename_class / move_class. Set preview=true to " +
+                "run mlqt_format_class afterwards if you want. The class name must stay the same — to rename or " +
+                "move a class (rewriting references too) use mlqt_rename_class / mlqt_move_class. Set preview=true to " +
                 "get the resulting file text without writing.")]
     public async Task<object> UpdateClassSource(
         [Description("Fully-qualified class id to replace, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
@@ -75,9 +78,9 @@ public sealed class EditTools
                 $"new_source must define exactly ONE top-level class; found {topLevel.Count}. Update one class at a time.");
         if (!string.Equals(topLevel[0].Name, node.Name, StringComparison.Ordinal))
             return new ToolError(
-                $"new_source renames the class from '{node.Name}' to '{topLevel[0].Name}'. update_class_source " +
+                $"new_source renames the class from '{node.Name}' to '{topLevel[0].Name}'. mlqt_update_class_source " +
                 "only replaces a class's body in place — to rename it (updating references too) use " +
-                "rename_class. Keep the class name the same here.");
+                "mlqt_rename_class. Keep the class name the same here.");
 
         var ctx = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
         if (ctx is null)
@@ -116,9 +119,10 @@ public sealed class EditTools
         return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: false, Changed: true, affected.Count, null);
     }
 
-    [McpServerTool(Name = "create_class")]
+    [McpServerTool(Name = "mlqt_create_class")]
     [Description("Create a new class inside a loaded parent class/package from complete Modelica source, " +
-                "place it on disk, and load it. Provide just the class definition (no 'within' clause). " +
+                "place it on disk, and load it - rather than writing a .mo file yourself, which leaves the " +
+                "parent's package.order and MLQT's graph out of step. Provide just the class definition (no 'within' clause). " +
                 "Storage: for a directory package parent, a standalone class is written as its own .mo file " +
                 "in the package directory (and added to package.order) — and a standalone sub-package is " +
                 "written as its own directory package (folder + package.mo) so its members can also be one " +
@@ -160,7 +164,7 @@ public sealed class EditTools
 
         var newId = $"{parentId}.{className}";
         if (_libraries.GetModelById(newId) is not null)
-            return new ToolError($"A class '{newId}' already exists. Use update_class_source to change it, or choose another name.");
+            return new ToolError($"A class '{newId}' already exists. Use mlqt_update_class_source to change it, or choose another name.");
 
         var ctx = ModelFilePersistence.ResolveFileOwner(_libraries, parentId);
         if (ctx is null)
@@ -304,10 +308,10 @@ public sealed class EditTools
         return new CreateClassResult(newId, ctx.FilePath, "nested", PreviewOnly: false, Created: true, null);
     }
 
-    [McpServerTool(Name = "delete_class")]
-    [Description("Delete a loaded class and its .mo storage: a standalone class's file is removed (and its " +
+    [McpServerTool(Name = "mlqt_delete_class")]
+    [Description("Delete a loaded Modelica class and its .mo storage: a standalone class's file is removed (and its " +
                 "package.order entry), a nested class is cut out of its containing package.mo, and a " +
-                "directory package's whole folder is deleted recursively. If analyze_dependencies has run, " +
+                "directory package's whole folder is deleted recursively. If mlqt_analyze_dependencies has run, " +
                 "classes that still reference the deleted class (or, for a package, any of its members) are " +
                 "reported as dangling references (they are NOT auto-updated — fix or remove them). Writes " +
                 "are refused on read-only files. Set preview=true to see what would be deleted and what " +
@@ -338,7 +342,7 @@ public sealed class EditTools
             ? (dangling.Count > 0
                 ? $"{dangling.Count} class(es) still reference '{classId}' and will not resolve after deletion — update or remove them."
                 : null)
-            : "Dependencies were not analyzed, so references to this class were not checked. Run analyze_dependencies first to see what would break.";
+            : "Dependencies were not analyzed, so references to this class were not checked. Run mlqt_analyze_dependencies first to see what would break.";
 
         string storage;
         string? newOwnerContent = null;
@@ -385,11 +389,11 @@ public sealed class EditTools
         return new DeleteClassResult(classId, ctx.FilePath, storage, PreviewOnly: false, Deleted: true, depsChecked, dangling, note);
     }
 
-    [McpServerTool(Name = "move_class")]
-    [Description("Move a class to a different parent package (keeping its simple name), relocating its .mo " +
+    [McpServerTool(Name = "mlqt_move_class")]
+    [Description("Move a Modelica class to a different parent package (keeping its simple name), relocating its .mo " +
                 "storage and re-qualifying references to it (and its nested classes) across the loaded " +
-                "files. Requires analyze_dependencies. The class is placed under the target the same way " +
-                "create_class chooses (standalone file in a directory package, else nested). References that " +
+                "files. Requires mlqt_analyze_dependencies. The class is placed under the target the same way " +
+                "mlqt_create_class chooses (standalone file in a directory package, else nested). References that " +
                 "resolve to the class are rewritten to the new fully-qualified name - except one that still " +
                 "means the class as written: a name reached through inheritance (Medium.State under a base's " +
                 "replaceable Medium, where the full name would undo every redeclare) while the class stays in " +
@@ -893,7 +897,7 @@ public sealed class EditTools
                 ? $"{dangling.Count} class(es) outside '{classId}' still reference it (or its members) and will " +
                   "not resolve after deletion — update or remove them."
                 : null)
-            : "Dependencies were not analyzed, so external references were not checked. Run analyze_dependencies first.";
+            : "Dependencies were not analyzed, so external references were not checked. Run mlqt_analyze_dependencies first.";
 
         if (preview)
             return new DeleteClassResult(classId, dir, "directory-package", PreviewOnly: true, Deleted: false, depsChecked, dangling, note);
@@ -1025,7 +1029,7 @@ public sealed class EditTools
 
     // Best-effort: the component/extends types declared directly in a class that do not resolve in the
     // class's current scope. After a move this surfaces references to former siblings that are no longer
-    // visible. Uses the same resolution as validate_class_references.
+    // visible. Uses the same resolution as mlqt_validate_class_references.
     private List<string> ProbeUnresolvedReferences(ModelNode? classNode)
     {
         var tree = classNode?.Definition.EnsureParsed();
@@ -1053,10 +1057,10 @@ public sealed class EditTools
         return broken;
     }
 
-    [McpServerTool(Name = "rename_class")]
-    [Description("Rename a loaded class AND rewrite every reference to it across the loaded files, then " +
+    [McpServerTool(Name = "mlqt_rename_class")]
+    [Description("Rename a loaded Modelica class AND rewrite every reference to it across the loaded files, then " +
                 "write the changed files, reload them, and refresh dependencies. Requires " +
-                "analyze_dependencies (the referencing files are found via the dependency graph). This is a " +
+                "mlqt_analyze_dependencies (the referencing files are found via the dependency graph). This is a " +
                 "PRECISE rename: it resolves each reference the same way dependency analysis does and " +
                 "rewrites only the exact identifier tokens that refer to this class (the declaration plus " +
                 "qualified/relative/imported uses) — NOT textual name matches, so a same-named unrelated " +
@@ -1248,7 +1252,7 @@ public sealed class EditTools
 
         if (planned.Count == 0)
             return new ToolError(
-                $"No references to '{classId}' were found to rename. (Has analyze_dependencies run since the class was loaded?)");
+                $"No references to '{classId}' were found to rename. (Has mlqt_analyze_dependencies run since the class was loaded?)");
 
         var total = planned.Sum(p => p.count);
         var note = $"Precise rename of the declaration and of every reference that spells {Quoted(oldLeaf)} as " +

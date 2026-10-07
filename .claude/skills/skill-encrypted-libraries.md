@@ -53,7 +53,7 @@ writes reads it** — only the surfaces that *report* a class do (B179).
 
 The rule above is unchanged and the reason is the same one that produced it: the stub route is taken
 wherever a truthful declaration can be written, and here there is none to write. They were parsed
-and dropped for a year, so `get_class_interface` answered "no parameters" for a vendor class with a
+and dropped for a year, so `mlqt_get_class_interface` answered "no parameters" for a vendor class with a
 dozen. It now returns them with `recoveredFromDocumentation: true` and **`type: null`**, which says
 *not published* rather than *not worked out*.
 
@@ -73,7 +73,7 @@ The highest-severity failure mode is MLQT rewriting a vendor library it cannot r
 
 Backlog B85 was this guard reached from a direction nobody had checked: the MCP edit tools would
 overwrite a vendor's `package.moe` with Modelica text whenever the library happened to sit somewhere
-writable. `IsWritable` answers false for a stub too, so `get_class_info` stops advertising one as
+writable. `IsWritable` answers false for a stub too, so `mlqt_get_class_info` stops advertising one as
 editable and inviting the attempt.
 
 **A readable reference library is a different fact.** `ModelNode.IsExternalStub` covers encrypted

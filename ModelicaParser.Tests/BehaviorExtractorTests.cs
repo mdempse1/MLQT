@@ -35,7 +35,7 @@ public class BehaviorExtractorTests
     public void AConnectInAForLoop_IsAConnection()
     {
         // How an array of components is wired. This came back as one opaque equation and no
-        // connections, so get_diagram_layout reported such a model as unwired.
+        // connections, so mlqt_get_diagram_layout reported such a model as unwired.
         const string code = """
             model N
               Pin a[3], b[3];
@@ -105,8 +105,8 @@ public class BehaviorExtractorTests
     public void AClassWithNoBody_HasNoBehaviour()
     {
         // A short class definition (`type Gain = Real`) has no composition to read at all. The answer
-        // is the empty behaviour, not a null: get_class_behavior and get_diagram_layout read its lists
-        // directly, and get_class_behavior asks HasAny of every base class it walks, short ones included.
+        // is the empty behaviour, not a null: mlqt_get_class_behavior and mlqt_get_diagram_layout read its lists
+        // directly, and mlqt_get_class_behavior asks HasAny of every base class it walks, short ones included.
         Assert.False(BehaviorExtractor.ExtractFromCode("type Gain = Real;").HasAny);
     }
 
@@ -119,7 +119,7 @@ public class BehaviorExtractorTests
     [Fact]
     public void ABlockCommentAboveAStatement_StaysWithIt()
     {
-        // get_class_behavior hands each statement to an agent with the comments above it, in place of
+        // mlqt_get_class_behavior hands each statement to an agent with the comments above it, in place of
         // the source. A comment dropped here is one the agent never sees - often the reason the
         // statement is written the way it is.
         const string code = """

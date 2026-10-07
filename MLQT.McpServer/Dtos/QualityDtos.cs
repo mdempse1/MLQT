@@ -8,9 +8,9 @@ namespace MLQT.McpServer.Dtos;
 /// spell-check dictionary languages.
 ///
 /// <para><b>Every toggle is optional.</b> A rule you do not mention is left exactly as it was when
-/// saving with <c>set_style_settings</c> — so enabling one rule does not switch off the rest — and
+/// saving with <c>mlqt_set_style_settings</c> — so enabling one rule does not switch off the rest — and
 /// counts as off for a one-off run through a check tool, which starts from a blank settings object.
-/// Read the current values with <c>get_style_settings</c>, change what you want, and pass back
+/// Read the current values with <c>mlqt_get_style_settings</c>, change what you want, and pass back
 /// either the whole object or just the keys you are changing.</para>
 ///
 /// <para>The nested naming-convention configuration is not exposed here and is preserved untouched
@@ -38,7 +38,7 @@ public sealed class StyleSettingsInput
     public bool? ValidateModelReferences { get; set; }
 
     // Wave-1 analyses (Phase 6). Structure/uses/unused-class are graph analyses; they only produce
-    // findings from check_library after analyze_dependencies has run (except package.order).
+    // findings from mlqt_check_library after mlqt_analyze_dependencies has run (except package.order).
     public bool? CheckDuplicateDeclarations { get; set; }
     public bool? CheckDuplicateImports { get; set; }
     public bool? CheckMissingUnits { get; set; }
@@ -145,7 +145,7 @@ public sealed class StyleSettingsInput
     ///
     /// <para>A rule reports whether it is <em>switched on</em>, not whether it would currently run:
     /// the ordering rules are inert while <c>OneOfEachSection</c> is off, and reporting those as
-    /// <c>false</c> would mean a read-modify-write round trip through <c>set_style_settings</c>
+    /// <c>false</c> would mean a read-modify-write round trip through <c>mlqt_set_style_settings</c>
     /// silently discarded them. Same distinction, and the same reason, as the settings dialog's —
     /// see <see cref="StyleCheckingSettings.IsRuleSwitchedOn"/>.</para>
     /// </summary>
@@ -277,7 +277,7 @@ public sealed record MoveClassResult(
     IReadOnlyList<string> BrokenReferencesInMovedClass,
     string Note);
 
-/// <summary>One operation in a batch_edit. Op names the surgical edit; the other fields carry its
+/// <summary>One operation in a mlqt_batch_edit. Op names the surgical edit; the other fields carry its
 /// arguments (only those relevant to the chosen Op are used).</summary>
 public sealed class BatchOperation
 {

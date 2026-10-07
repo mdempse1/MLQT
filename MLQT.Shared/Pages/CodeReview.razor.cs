@@ -2559,7 +2559,7 @@ document.head.appendChild(style);
     // other misspelling in the class, so they get the word-scoped Ignore in the correction menu.
     // Diagnostics are excluded too: MLQT.Check.Failed reaches this list with the style source, and
     // offering Suppress on it wrote an annotation into the user's file that nothing reads and then
-    // reported success. suppress_rule has refused a diagnostic since B26; this is the surface an
+    // reported success. mlqt_suppress_rule has refused a diagnostic since B26; this is the surface an
     // author is more likely to be sitting in front of.
     internal static bool CanSuppressRule(LogMessage? finding)
         => finding is { Source: LogMessage.StyleCheckingSource } && !string.IsNullOrEmpty(finding.RuleId)

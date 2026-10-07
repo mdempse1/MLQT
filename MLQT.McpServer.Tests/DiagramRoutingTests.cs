@@ -13,7 +13,7 @@ namespace MLQT.McpServer.Tests;
 /// placement's <c>origin</c>. The router used to read the <i>diagram</i> layer's placement, the first
 /// <c>coordinateSystem</c> in the type's text (which may be the Diagram's) and the extent's centre,
 /// so for any connector whose two placements differ the line ended where nothing was drawn - and
-/// <c>add_connection</c> and <c>set_component_placement</c> wrote those points into the user's
+/// <c>mlqt_add_connection</c> and <c>mlqt_set_component_placement</c> wrote those points into the user's
 /// file. MSL has 157 files using <c>iconTransformation</c>.</para>
 /// </summary>
 public class DiagramRoutingTests

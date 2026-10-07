@@ -209,7 +209,7 @@ public class EditToolsTests
         host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
 
         var err = ToolAssert.Error(await Edit(host).RenameClass("P.Base", "NewBase"));
-        Assert.Contains("analyze_dependencies", err.Error);
+        Assert.Contains("mlqt_analyze_dependencies", err.Error);
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public class EditToolsTests
         // Middle no longer uses Base.
         await edit.UpdateClassSource("P.Middle", "model Middle \"m\"\n  Real y;\nequation\n  y = 1;\nend Middle;");
 
-        // Dependency graph auto-refreshed without a manual analyze_dependencies re-run.
+        // Dependency graph auto-refreshed without a manual mlqt_analyze_dependencies re-run.
         var after = ToolAssert.Ok<DependencyResult>(deps.GetDependencies("P.Middle"));
         Assert.DoesNotContain(after.Items, i => i.Id == "P.Base");
     }
@@ -296,7 +296,7 @@ public class EditToolsTests
         LoadFile(host, "Foo.mo", "model Foo\n  Real x;\nequation\n  x = 1;\nend Foo;");
         var edit = Edit(host);
 
-        // Renaming via update_class_source is not supported — the class name must stay the same.
+        // Renaming via mlqt_update_class_source is not supported — the class name must stay the same.
         var err = ToolAssert.Error(await edit.UpdateClassSource(
             "Foo", "model Bar\n  Real x;\nequation\n  x = 1;\nend Bar;"));
         Assert.Contains("rename", err.Error, StringComparison.OrdinalIgnoreCase);

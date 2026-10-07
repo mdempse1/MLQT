@@ -47,14 +47,14 @@ public sealed record LoadRepositoryResult(
     IReadOnlyList<LibrarySummary> LoadedLibraries,
     IReadOnlyList<string> Warnings);
 
-/// <summary>Result of the reload tool: what scope was re-read from disk.</summary>
+/// <summary>Result of the mlqt_reload tool: what scope was re-read from disk.</summary>
 public sealed record ReloadResult(
     string Scope,
     IReadOnlyList<string> ReloadedLibraries,
     int AffectedModelCount,
     string? Note);
 
-/// <summary>Result of create_library: the new top-level library's name, on-disk path and whether it was
+/// <summary>Result of mlqt_create_library: the new top-level library's name, on-disk path and whether it was
 /// loaded into the session (with its id).</summary>
 public sealed record CreateLibraryResult(
     string Name,

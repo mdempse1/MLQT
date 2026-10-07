@@ -131,12 +131,12 @@ is never reported on — there is no source in it to have an opinion about.
 
 ### From the MCP server
 
-`load_library` accepts an encrypted library directory and loads it the same way, returning the usual
+`mlqt_load_library` accepts an encrypted library directory and loads it the same way, returning the usual
 library summary.
 
 An agent gets more back than the synthesized declaration shows. The vendor's help lists each class's
-parameters, connectors and, for a function, its inputs and outputs, and `get_class_interface` and
-`list_class_elements` return them with the description and the unit the vendor published:
+parameters, connectors and, for a function, its inputs and outputs, and `mlqt_get_class_interface` and
+`mlqt_list_class_elements` return them with the description and the unit the vendor published:
 
 ```json
 {
@@ -153,8 +153,8 @@ parameters, connectors and, for a function, its inputs and outputs, and `get_cla
 
 Every `type` is `null` and always will be: the generator does not publish declared types, and a
 guessed one would be indistinguishable from a real one everywhere downstream.
-`recoveredFromDocumentation` is what says so — it appears on `get_class_info`,
-`get_class_interface` and `list_class_elements`, and a class carrying it is never writable.
+`recoveredFromDocumentation` is what says so — it appears on `mlqt_get_class_info`,
+`mlqt_get_class_interface` and `mlqt_list_class_elements`, and a class carrying it is never writable.
 
 ---
 

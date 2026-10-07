@@ -387,7 +387,7 @@ Honoured identically by the desktop app, the CLI and the MCP server. In the app 
 
 † **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
 enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
-`analyze_dependencies` before `check_library`. In the GUI these rules produce findings once dependency
+`mlqt_analyze_dependencies` before `mlqt_check_library`. In the GUI these rules produce findings once dependency
 analysis has run in the load/analysis pipeline. Graph findings appear in Code Review alongside the
 per-class ones and are re-run for the affected repository after an incremental re-check (e.g. following
 a VCS operation or a file edit), so they stay in step with the per-class findings.

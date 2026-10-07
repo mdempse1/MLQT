@@ -59,11 +59,11 @@ public sealed class ToolUsageLoggerTests : IDisposable
         File.WriteAllText(MarkerPath, "");
         var logger = new ToolUsageLogger(_dir);
 
-        logger.Record("get_class_info", null, elapsedMs: 12, isError: false);
+        logger.Record("mlqt_get_class_info", null, elapsedMs: 12, isError: false);
 
         Assert.True(File.Exists(DefaultLogPath));
         var content = File.ReadAllText(DefaultLogPath);
-        Assert.Contains("get_class_info", content);
+        Assert.Contains("mlqt_get_class_info", content);
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public sealed class ToolUsageLoggerTests : IDisposable
     {
         var logger = new ToolUsageLogger(_dir);
 
-        logger.Record("get_class_info", null, elapsedMs: 12, isError: false);
+        logger.Record("mlqt_get_class_info", null, elapsedMs: 12, isError: false);
 
         Assert.False(File.Exists(DefaultLogPath));
     }

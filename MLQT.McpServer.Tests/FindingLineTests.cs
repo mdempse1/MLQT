@@ -6,7 +6,7 @@ using ModelicaParser.Helpers;
 namespace MLQT.McpServer.Tests;
 
 /// <summary>
-/// The two line numbers <c>list_findings</c> returns. An agent given a file path and a line will
+/// The two line numbers <c>mlqt_list_findings</c> returns. An agent given a file path and a line will
 /// edit that line, so the pair has to be counted from the same place — which for a class nested down
 /// a <c>package.mo</c> is not where the class's own source starts.
 /// </summary>
@@ -87,7 +87,7 @@ public class FindingLineTests
     public void TheModelLineIndexesGetClassSource_AnnotationsOrNot()
     {
         // The third relationship, and the one B218 broke: an agent reads a class through
-        // get_class_source and then reads findings against it. get_class_source used to re-render
+        // mlqt_get_class_source and then reads findings against it. mlqt_get_class_source used to re-render
         // the class when it stripped annotations, so modelLine indexed a text nobody had.
         using var host = Library(PackageWithAnAnnotationAboveTheFinding, "M\n");
         Style(host).CheckLibrary(settings: new StyleSettingsInput { ParameterHasDescription = true })
@@ -126,7 +126,7 @@ public class FindingLineTests
     public void ACheckDoesNotAddASecondCopyOfEveryParseError()
     {
         // A check records parse errors on the review list as well as leaving them on the graph, and
-        // list_findings used to report both — so calling check_library added a second copy of every
+        // mlqt_list_findings used to report both — so calling mlqt_check_library added a second copy of every
         // parse error, differing from the first only in which line it named. The graph is the answer.
         using var host = BrokenLibrary();
         var style = Style(host);

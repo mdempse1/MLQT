@@ -62,7 +62,7 @@ public sealed record Finding
     /// <para>The severity is <see cref="SeverityLabel"/>, which reports <see cref="Severity"/>. It
     /// used to be the constant <c>"Style warning"</c> whatever the finding said, which meant the
     /// severity was resolved correctly by <c>StampSeverities</c> and then thrown away at this one
-    /// line: every finding reached the Code Review list and <c>list_findings</c> as a warning, a
+    /// line: every finding reached the Code Review list and <c>mlqt_list_findings</c> as a warning, a
     /// filter for errors matched nothing, and configuring a rule to Error or Info changed no visible
     /// thing (B165). The CLI reads <see cref="Severity"/> directly, which is why its gate was the
     /// only one that worked. The docstring here called the constant a compatibility contract; the

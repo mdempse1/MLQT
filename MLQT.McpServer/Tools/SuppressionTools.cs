@@ -30,8 +30,8 @@ public sealed class SuppressionTools
         _session = session;
     }
 
-    [McpServerTool(Name = "suppress_rule")]
-    [Description("Suppress a style-check rule for a class (or one of its components) by adding a " +
+    [McpServerTool(Name = "mlqt_suppress_rule")]
+    [Description("Suppress a style-check rule for a Modelica class (or one of its components) by adding a " +
                 "'__MLQT(suppress=\"<ruleId>\")' vendor annotation to the source. Use this to waive a finding " +
                 "that is a false positive or an accepted exception — the waiver is written into the .mo file, " +
                 "survives reformatting, and is honoured by both 'mlqt check' and the desktop app. Pass the " +
@@ -110,15 +110,15 @@ public sealed class SuppressionTools
         return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, note);
     }
 
-    [McpServerTool(Name = "accept_spelling_in_class")]
-    [Description("Accept a word as correctly spelled in one class by adding a " +
+    [McpServerTool(Name = "mlqt_accept_spelling_in_class")]
+    [Description("Accept a word as correctly spelled in one Modelica class by adding a " +
                 "'__MLQT(spelling=\"<word>\")' vendor annotation to its source. Use this for a term that is " +
                 "right here but is not the library's vocabulary generally — it silences the spelling findings " +
                 "for that word in that class (and any class nested in it) only, and leaves every other misspelling " +
                 "reported. " +
                 "For a term the whole repository uses, add it to the repository's accepted spellings " +
                 "(.mlqt/dictionary.txt) instead; to waive spelling for a class entirely, suppress " +
-                "'MLQT.Spelling.Description' / 'MLQT.Spelling.Documentation' with suppress_rule. The possessive " +
+                "'MLQT.Spelling.Description' / 'MLQT.Spelling.Documentation' with mlqt_suppress_rule. The possessive " +
                 "of an accepted word is accepted too, so pass the word itself ('Stodola', not \"Stodola's\"). " +
                 "Merges into any existing '__MLQT' annotation. Set preview=true to see the file text without writing.")]
     public async Task<object> AcceptSpellingInClass(

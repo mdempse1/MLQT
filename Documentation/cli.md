@@ -214,7 +214,7 @@ not check — is not a matter of taste, and every other rule silently under-repo
   produced even when no style rules are configured at all.
 - **Always errors.** They fail the default `--fail-on error` gate.
 - **Cannot be suppressed** with a `__MLQT` annotation, and `baseline create` will not record them, so
-  a baseline can never accept one. `suppress_rule` in the MCP server refuses them for the same reason.
+  a baseline can never accept one. `mlqt_suppress_rule` in the MCP server refuses them for the same reason.
 
 That last point is the one worth stating plainly: **a diagnostic cannot be waived**. Every other
 finding can be accepted into the baseline and stop failing the build, because it is a judgement about
@@ -223,8 +223,8 @@ to read are incomplete* — and accepting it would hide exactly that. If one is 
 `--fail-on off` will get past it, but the totals in that run are still short by however many findings
 the unread class would have produced.
 
-The same diagnostics appear in the desktop app's Findings panel and from the MCP server's `check_class`
-/ `check_library`, with identical wording and line numbers.
+The same diagnostics appear in the desktop app's Findings panel and from the MCP server's `mlqt_check_class`
+/ `mlqt_check_library`, with identical wording and line numbers.
 
 ### `MLQT.Check.Failed`
 

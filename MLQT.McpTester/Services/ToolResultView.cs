@@ -16,7 +16,7 @@ public sealed record ResultImage(string DataUri, string MimeType, int Bytes);
 /// One tool call's result, split into the part that is read and the part that is looked at.
 ///
 /// <para>The tester used to print <c>[image content]</c> for anything that was not text, which is
-/// the least useful thing it could say about a picture. MLQT's own <c>get_diagram_image</c> returns
+/// the least useful thing it could say about a picture. MLQT's own <c>mlqt_get_diagram_image</c> returns
 /// a rendered diagram (B196) and the point of that tool is that a layout has to be <em>seen</em> —
 /// but nothing here is MLQT-specific: any MCP server returning image content is shown the same way,
 /// which is what this app is for.</para>

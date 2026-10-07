@@ -13,8 +13,8 @@ using MLQT.Services.Interfaces;
 namespace MLQT.McpServer.Tools;
 
 /// <summary>
-/// Modelica code formatting. format_code is stateless (source in, formatted source out).
-/// format_class formats the file containing a loaded class and, unless preview is set, writes the
+/// Modelica code formatting. mlqt_format_code is stateless (source in, formatted source out).
+/// mlqt_format_class formats the file containing a loaded class and, unless preview is set, writes the
 /// updated file to disk and refreshes the in-memory graph.
 /// </summary>
 [McpServerToolType]
@@ -34,7 +34,7 @@ public sealed class FormattingTools
         _session = session;
     }
 
-    [McpServerTool(Name = "format_code")]
+    [McpServerTool(Name = "mlqt_format_code")]
     [Description("Format one or more COMPLETE Modelica class definitions and return the formatted text " +
                 "(stateless — no library needed, nothing written to disk). The input must be a whole " +
                 "class definition, e.g. 'model X ... end X;' (or a package / record / block / function / " +
@@ -42,7 +42,7 @@ public sealed class FormattingTools
                 "single component declaration, or an expression — because MLQT only formats complete " +
                 "classes; wrap such a fragment in a class first. Syntax errors in the input are reported " +
                 "(not silently formatted into malformed output). To format a class already loaded from " +
-                "disk, use format_class. Options control section ordering; annotations are preserved.")]
+                "disk, use mlqt_format_class. Options control section ordering; annotations are preserved.")]
     public object FormatCode(
         [Description("Modelica source: one or more complete class definitions (e.g. 'model X ... end X;').")]
         string source,
@@ -52,7 +52,7 @@ public sealed class FormattingTools
         [Description("Order component declarations before nested class definitions; default false.")]
         bool componentsBeforeClasses = false,
         [Description(DeclarationOrderDescription + " With no library behind it, only Real, Integer, " +
-                     "Boolean and String are known to be variables - the same answer check_style gives.")]
+                     "Boolean and String are known to be variables - the same answer mlqt_check_style gives.")]
         bool declarationOrder = false,
         [Description("Maximum line length before wrapping; default 100.")] int maxLineLength = 100)
     {
@@ -68,7 +68,7 @@ public sealed class FormattingTools
             if (errors.Count > 0)
                 return new ToolError(
                     $"The input has {errors.Count} Modelica syntax error(s) and cannot be reliably " +
-                    $"formatted: {DescribeErrors(errors)}. format_code needs a complete, valid class " +
+                    $"formatted: {DescribeErrors(errors)}. mlqt_format_code needs a complete, valid class " +
                     "definition (e.g. 'model X ... end X;').");
 
             var renderer = new ModelicaRenderer(
@@ -91,10 +91,10 @@ public sealed class FormattingTools
             // silent no-op into actionable guidance.
             if (string.IsNullOrWhiteSpace(formatted))
                 return new ToolError(
-                    "Could not format this input. format_code needs a COMPLETE Modelica class definition " +
+                    "Could not format this input. mlqt_format_code needs a COMPLETE Modelica class definition " +
                     "(e.g. 'model X ... end X;', or a package / record / block / function). A bare equation, " +
                     "component declaration, or expression cannot be formatted on its own — wrap it in a class, " +
-                    "or use format_class to format a class already loaded from disk.");
+                    "or use mlqt_format_class to format a class already loaded from disk.");
 
             return new FormatCodeResult(formatted);
         }
@@ -104,8 +104,8 @@ public sealed class FormattingTools
         }
     }
 
-    [McpServerTool(Name = "format_class")]
-    [Description("Format the .mo file that contains a loaded class using the given ordering options. " +
+    [McpServerTool(Name = "mlqt_format_class")]
+    [Description("Format the .mo file that contains a loaded Modelica class using the given ordering options. " +
                 "By default the reformatted file is written to disk and the in-memory graph is " +
                 "refreshed; set preview=true to return the formatted text without writing. Reformats the " +
                 "whole containing file (all classes stored in it), matching how MLQT saves files. If the " +
@@ -118,7 +118,7 @@ public sealed class FormattingTools
         [Description("Order component declarations before nested class definitions; default false.")]
         bool componentsBeforeClasses = false,
         [Description(DeclarationOrderDescription + " Types are resolved through the loaded libraries, " +
-                     "exactly as check_class resolves them, so what this writes is what that rule asks for.")]
+                     "exactly as mlqt_check_class resolves them, so what this writes is what that rule asks for.")]
         bool declarationOrder = false,
         [Description("Return the formatted text without writing to disk or updating the graph; default false.")]
         bool preview = false)
@@ -142,7 +142,7 @@ public sealed class FormattingTools
         if (syntaxErrors.Count > 0)
             return new ToolError(
                 $"'{classId}' cannot be formatted: its file has {syntaxErrors.Count} Modelica syntax " +
-                $"error(s): {DescribeErrors(syntaxErrors)}. Fix the syntax first — format_class will not " +
+                $"error(s): {DescribeErrors(syntaxErrors)}. Fix the syntax first — mlqt_format_class will not " +
                 "overwrite the file with malformed output.");
 
         if (!File.Exists(ctx.FilePath))
@@ -174,7 +174,7 @@ public sealed class FormattingTools
         string rendered;
         try
         {
-            // The same lookup check_class gives MLQT.Style.DeclarationOrder, keyed by the same class,
+            // The same lookup mlqt_check_class gives MLQT.Style.DeclarationOrder, keyed by the same class,
             // so the order written here is the order the rule asks for.
             rendered = ModelicaPackageSaver.RenderFileOwnerModel(
                 owner,

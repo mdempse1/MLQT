@@ -8,7 +8,7 @@ namespace MLQT.McpServer.Tests;
 
 /// <summary>
 /// Holds <see cref="StyleSettingsInput"/> to the rule catalog, and pins the merge semantics that
-/// stop <c>set_style_settings</c> destroying a repository's configuration.
+/// stop <c>mlqt_set_style_settings</c> destroying a repository's configuration.
 /// </summary>
 public class StyleSettingsCoverageTests
 {
@@ -49,7 +49,7 @@ public class StyleSettingsCoverageTests
 
         Assert.True(missing.Count == 0,
             "These rules have a setting of their own but no toggle on StyleSettingsInput, so an agent " +
-            "cannot enable them and get_style_settings cannot report them: " + string.Join(", ", missing));
+            "cannot enable them and mlqt_get_style_settings cannot report them: " + string.Join(", ", missing));
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public class StyleSettingsCoverageTests
     public void ToSettings_TreatsAnUnmentionedRuleAsOff()
     {
         // A check tool builds from a blank settings object, so "not mentioned" and "off" coincide
-        // there - which is what makes the nullable toggles safe for check_style/check_class.
+        // there - which is what makes the nullable toggles safe for mlqt_check_style/mlqt_check_class.
         var settings = new StyleSettingsInput { ClassHasDescription = true }.ToSettings();
 
         Assert.True(settings.IsRuleSwitchedOn(RuleIds.ClassDescription));

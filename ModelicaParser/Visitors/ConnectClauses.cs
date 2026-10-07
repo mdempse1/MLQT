@@ -11,7 +11,7 @@ namespace ModelicaParser.Visitors;
 /// with the equations it is nested in. A connect in a loop is how an array of components is wired
 /// (<c>for i in 1:n loop connect(a[i].p, b[i].n); end for;</c>), so a reader that looked only at an
 /// equation section's direct children reported such a model as having no connections at all, while
-/// <c>list_connections</c>, which walked the whole tree, found them: two tools giving two answers for
+/// <c>mlqt_list_connections</c>, which walked the whole tree, found them: two tools giving two answers for
 /// one class. A caller that cannot treat a nested connect like any other - one that writes a line
 /// annotation into it, say - asks <see cref="ConnectClause.IsNested"/> and decides, rather than
 /// reading less.

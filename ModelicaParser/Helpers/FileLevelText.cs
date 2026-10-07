@@ -104,7 +104,7 @@ public sealed class FileLevelText
     /// <summary>
     /// <paramref name="file"/> — a file's text opening with its within clause — with this text put
     /// back around the clause and the class. Unchanged when <paramref name="file"/> already has text
-    /// above its clause, which means it is a whole file that brought its own (format_class renders the
+    /// above its clause, which means it is a whole file that brought its own (mlqt_format_class renders the
     /// file as it is on disk), or has no clause to place it by.
     /// </summary>
     public string ApplyTo(string file)

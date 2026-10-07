@@ -59,8 +59,8 @@ public class GuidanceToolsTests
     public void TheGuidanceQuotesThePagingLimitsThatAreActuallyEnforced()
     {
         // The guidance tells an agent how to read a finding list it is only ever shown part of, and it
-        // does that by quoting numbers: how many check_library returns inline, and how large a
-        // list_findings page may be. Written out in prose, they go stale the moment either constant
+        // does that by quoting numbers: how many mlqt_check_library returns inline, and how large a
+        // mlqt_list_findings page may be. Written out in prose, they go stale the moment either constant
         // moves — and a wrong number here is worse than none, because an agent that trusts it stops
         // paging early and reports a total it never read.
         var style = (string)Prop(new GuidanceTools().GetGuidance("style"), "guidance")!;
@@ -171,7 +171,7 @@ public class ToolDiagnosticsTests
             host.WriteMoFile("X.mo", "model X\n Real a;\nequation\n a=1;\nend X;")).GetAwaiter().GetResult();
         var q = new ClassQueryTools(host.Libraries);
         var err = ToolAssert.Error(q.GetClassInfo("Nope"));
-        Assert.Contains("search_classes", err.Error);
+        Assert.Contains("mlqt_search_classes", err.Error);
     }
 
     [Fact]

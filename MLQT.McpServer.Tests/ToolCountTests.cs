@@ -17,7 +17,7 @@ namespace MLQT.McpServer.Tests;
 /// </summary>
 public class ToolCountTests
 {
-    private static string RepositoryRoot()
+    internal static string RepositoryRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
@@ -34,7 +34,7 @@ public class ToolCountTests
     /// <c>WithToolsFromAssembly</c> scans this assembly for <c>[McpServerToolType]</c> classes and
     /// takes their <c>[McpServerTool]</c> methods.
     /// </summary>
-    private static List<string> DeclaredTools() =>
+    internal static List<string> DeclaredTools() =>
         [.. typeof(ClassQueryTools).Assembly.GetTypes()
             .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))

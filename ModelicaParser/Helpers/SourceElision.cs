@@ -24,7 +24,7 @@ public readonly record struct ElidedRange(int FirstLine, int LastLine, string? R
 /// <para><b>Why this is one type.</b> Four things in MLQT hide part of a class and each of them is
 /// the same operation: the viewer's hide-annotations toggle, the viewer hiding a package's nested
 /// class definitions (which is on for every package, so it is not an optional extra), the MCP
-/// <c>get_class_source</c> tool stripping annotations for an agent, and the package trimmer removing
+/// <c>mlqt_get_class_source</c> tool stripping annotations for an agent, and the package trimmer removing
 /// inline standalone children. Today each is "run the renderer and have it not visit that subtree",
 /// which rebuilds the whole text as a side effect and loses any relation to the file. Dropping the
 /// lines instead keeps every line that is still shown exactly as it was written, and the relation
@@ -155,7 +155,7 @@ public sealed class SourceElision
     ///
     /// <para><b>Why both exist.</b> A viewer shows the elided text next to a line map it can invert,
     /// so dropping the lines costs nothing. A caller handing the text to someone with no map — the
-    /// MCP <c>get_class_source</c> tool handing a class to an agent that will go on to read findings
+    /// MCP <c>mlqt_get_class_source</c> tool handing a class to an agent that will go on to read findings
     /// reported against that class's own line numbers — has to keep the numbering, and a blank line
     /// is the cheapest thing that does (B218).</para>
     ///

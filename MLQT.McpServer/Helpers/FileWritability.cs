@@ -31,7 +31,7 @@ internal static class FileWritability
     public static bool IsWritable(string path)
     {
         // Not a permissions question, but it is the honest answer to "can this be written", and it is
-        // the one `get_class_info` reports: a stub whose library sits somewhere writable used to be
+        // the one `mlqt_get_class_info` reports: a stub whose library sits somewhere writable used to be
         // advertised as editable, which is an invitation to try.
         if (ExternalStubBuilder.IsEncryptedPackageFile(path))
             return false;

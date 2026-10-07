@@ -17,7 +17,7 @@ namespace MLQT.McpServer.Helpers;
 /// Draws a class's diagram — its components at their placements, wearing their own types' icons,
 /// with the connection lines between them — and rasterises it so an agent can look at it (B196).
 ///
-/// <para><b>Why the tools needed this.</b> <c>set_component_placement</c> and <c>add_connection</c>
+/// <para><b>Why the tools needed this.</b> <c>mlqt_set_component_placement</c> and <c>mlqt_add_connection</c>
 /// let an agent lay out a model and then tell it, in coordinates, what it just did. Reading numbers
 /// back is not seeing the picture: components overlapping, a signal flowing right to left, a
 /// connector left on the wrong edge and a component put outside the canvas are all obvious in an
@@ -447,7 +447,7 @@ internal static class DiagramImage
     /// <summary>
     /// One poly-line per connection. The route the class already carries is used where there is one,
     /// because that is what the diagram actually looks like; a connection with no <c>Line</c>
-    /// annotation is routed the same way <c>add_connection</c> would route it, so a model assembled
+    /// annotation is routed the same way <c>mlqt_add_connection</c> would route it, so a model assembled
     /// by an agent draws before it has been annotated.
     /// </summary>
     /// <param name="router">Routes against the class being drawn.</param>

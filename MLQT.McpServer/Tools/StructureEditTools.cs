@@ -49,8 +49,8 @@ public sealed class StructureEditTools
     private static readonly HashSet<string> EquationClassKinds = new(StringComparer.Ordinal) { "model", "block", "class" };
     private static readonly HashSet<string> AlgorithmClassKinds = new(StringComparer.Ordinal) { "model", "block", "class", "function" };
 
-    [McpServerTool(Name = "add_component")]
-    [Description("Add a component (a variable, parameter or connector instance) to a class, e.g. a " +
+    [McpServerTool(Name = "mlqt_add_component")]
+    [Description("Add a component (a variable, parameter or connector instance) to a Modelica class, e.g. a " +
                 "'Modelica.Blocks.Continuous.Integrator integrator1(k = 2)'. Provide the component's type " +
                 "(a class id), a name, and optionally a modifier and a description. The modifier is a " +
                 "comma-separated list like 'k = 2, T = 10' (wrapped automatically as name(k = 2, T = 10)); " +
@@ -123,7 +123,7 @@ public sealed class StructureEditTools
             return error;
 
         if (ctx!.Layout.Components.Any(c => string.Equals(c.Name, name, StringComparison.Ordinal)))
-            return new ToolError($"'{classId}' already has a component named '{name}'. Use set_component_modifier or remove_component first.");
+            return new ToolError($"'{classId}' already has a component named '{name}'. Use mlqt_set_component_modifier or mlqt_remove_component first.");
 
         // Restricted-class rules for components: a type has no body; a package may hold only constants.
         if (ctx.Node.ClassType == "type")
@@ -170,8 +170,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add component to '{classId}'"));
     }
 
-    [McpServerTool(Name = "remove_component")]
-    [Description("Remove a component from a class by name. Handles both a component on its own line and one " +
+    [McpServerTool(Name = "mlqt_remove_component")]
+    [Description("Remove a component from a Modelica class by name. Handles both a component on its own line and one " +
                 "of several declared together (e.g. 'Real a, b, c;'). The connect() equations naming it are " +
                 "removed with it (those inside a for/if too) and listed in the result's note; other " +
                 "equations that use it are left for you to change. Fails if no such component exists or " +
@@ -250,8 +250,8 @@ public sealed class StructureEditTools
         return first.IndexOf('[') is var bracket and >= 0 ? first[..bracket] : first;
     }
 
-    [McpServerTool(Name = "set_component_modifier")]
-    [Description("Set (or clear) a component's modifier/binding, e.g. change 'integrator1' to " +
+    [McpServerTool(Name = "mlqt_set_component_modifier")]
+    [Description("Set (or clear) a component's modifier/binding in a Modelica class, e.g. change 'integrator1' to " +
                 "'integrator1(k = 2)' or set a parameter's value with '= 5'. The modifier is a " +
                 "comma-separated list like 'k = 2, T = 10' (wrapped as name(k = 2, T = 10)), a binding like " +
                 "'= 5', or a parenthesised group '(k = 2)'. Pass an empty modifier to remove an existing " +
@@ -294,8 +294,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"modify component in '{classId}'"));
     }
 
-    [McpServerTool(Name = "add_extends")]
-    [Description("Add an 'extends' (inheritance) clause to a class, e.g. 'extends " +
+    [McpServerTool(Name = "mlqt_add_extends")]
+    [Description("Add an 'extends' (inheritance) clause to a Modelica class, e.g. 'extends " +
                 "Modelica.Blocks.Interfaces.SISO'. Optionally set inherited defaults with a modifier — a " +
                 "comma-separated list like 'k = 2, T = 10' (wrapped as (k = 2, T = 10)) or an already- " +
                 "parenthesised group. Inserted at the top of the class. Fails if the result would not parse.")]
@@ -326,8 +326,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add extends to '{classId}'"));
     }
 
-    [McpServerTool(Name = "add_import")]
-    [Description("Add an 'import' statement to a class, e.g. 'Modelica.Units.SI', 'SI = Modelica.Units.SI' " +
+    [McpServerTool(Name = "mlqt_add_import")]
+    [Description("Add an 'import' statement to a Modelica class, e.g. 'Modelica.Units.SI', 'SI = Modelica.Units.SI' " +
                 "or 'Modelica.Constants.*'. Provide just the import target (no 'import' keyword). Inserted " +
                 "at the top of the class. Fails if the result would not parse.")]
     public async Task<object> AddImport(
@@ -348,12 +348,12 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add import to '{classId}'"));
     }
 
-    [McpServerTool(Name = "add_equation")]
-    [Description("Add an equation to a class's equation section (creating the section if needed), e.g. " +
+    [McpServerTool(Name = "mlqt_add_equation")]
+    [Description("Add an equation to a Modelica class's equation section (creating the section if needed), e.g. " +
                 "'y = k*x' or 'der(x) = u'. Do not include the trailing ';'. Only valid in a model, block or " +
                 "class (a package, record, connector, function or type cannot contain equations). Fails if " +
-                "the result would not parse. For connections use add_connection; for algorithm statements " +
-                "use add_statement.")]
+                "the result would not parse. For connections use mlqt_add_connection; for algorithm statements " +
+                "use mlqt_add_statement.")]
     public async Task<object> AddEquation(
         [Description("Fully-qualified id of the class.")] string classId,
         [Description("The equation, e.g. 'y = k*x' (no trailing ';').")] string equation,
@@ -376,8 +376,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add equation to '{classId}'"));
     }
 
-    [McpServerTool(Name = "add_statement")]
-    [Description("Add a statement to a class/function's algorithm section (creating the section if " +
+    [McpServerTool(Name = "mlqt_add_statement")]
+    [Description("Add a statement to a Modelica class/function's algorithm section (creating the section if " +
                 "needed), e.g. 'y := k*x'. Do not include the trailing ';'. Only valid in a model, block, " +
                 "class or function (a package, record, connector or type cannot contain an algorithm). " +
                 "Fails if the result would not parse.")]
@@ -403,8 +403,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add statement to '{classId}'"));
     }
 
-    [McpServerTool(Name = "add_connection")]
-    [Description("Add a connect(portA, portB) equation to a class, e.g. connect(sine1.y, integrator1.u). " +
+    [McpServerTool(Name = "mlqt_add_connection")]
+    [Description("Add a connect(portA, portB) equation to a Modelica class, e.g. connect(sine1.y, integrator1.u). " +
                 "Ports are component references (a connector on the class, or component.connector). Both " +
                 "ports must exist and resolve to connectors, and their connector types must be compatible " +
                 "(RealOutput to RealInput is fine; a signal port to a physical Pin is refused). If a type " +
@@ -480,9 +480,9 @@ public sealed class StructureEditTools
         return null;
     }
 
-    [McpServerTool(Name = "remove_connection")]
-    [Description("Remove a connect(a, b) equation from a class by its two ports (order-insensitive). A " +
-                "connect inside a for/if/when equation is found too - give its ports as list_connections " +
+    [McpServerTool(Name = "mlqt_remove_connection")]
+    [Description("Remove a connect(a, b) equation from a Modelica class by its two ports (order-insensitive). A " +
+                "connect inside a for/if/when equation is found too - give its ports as mlqt_list_connections " +
                 "shows them, e.g. 'a[i]'; the loop or branch is left in place. Fails if no matching " +
                 "connection exists. Set preview=true to see the file text.")]
     public async Task<object> RemoveConnection(
@@ -509,8 +509,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"remove connection from '{classId}'"));
     }
 
-    [McpServerTool(Name = "list_connections")]
-    [Description("List the connect(a, b) equations declared in a class, including those inside a " +
+    [McpServerTool(Name = "mlqt_list_connections")]
+    [Description("List the connect(a, b) equations declared in a Modelica class, including those inside a " +
                 "for/if/when equation - each of those carries 'within', the branches it is in, outermost " +
                 "first (a loop's connect names its ports with the loop's index, e.g. 'a[i]'). Also lists base classes that " +
                 "themselves contain connections (their connections are NOT merged in — query those base " +
@@ -572,7 +572,7 @@ public sealed class StructureEditTools
     // (one with neither an input nor an output prefix), returns that variable's name; otherwise null. Only
     // composite connectors carry named variables — an alias connector (e.g. RealInput = input Real) has
     // none, so it passes. When the type does not resolve (e.g. its library is not loaded) the rule cannot
-    // be applied and null is returned (add_component already notes the unresolved type separately).
+    // be applied and null is returned (mlqt_add_component already notes the unresolved type separately).
     private string? AcausalConnectorVariable(string classId, string type)
     {
         var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, classId, type, null);
@@ -703,12 +703,13 @@ public sealed class StructureEditTools
         return $"// {oneLine}\n{indent}{line}";
     }
 
-    [McpServerTool(Name = "batch_edit")]
-    [Description("Apply a sequence of surgical edits ATOMICALLY — all succeed or none do. Ideal for " +
+    [McpServerTool(Name = "mlqt_batch_edit")]
+    [Description("Apply a sequence of surgical edits to a Modelica class ATOMICALLY — all succeed or none do. Ideal for " +
                 "building a whole model in one shot: e.g. add several components then connect them. Each " +
                 "operation's 'op' is one of add_component, remove_component, set_component_modifier, " +
                 "add_extends, add_import, add_equation, add_statement, add_connection, remove_connection, " +
-                "with the same arguments as those tools (class_id plus the relevant fields). Operations run " +
+                "with the same arguments as the mlqt_ tool of that name (class_id plus the relevant fields; " +
+                "the op may be written with or without the mlqt_ prefix). Operations run " +
                 "in order and see earlier ones (so you can add a component and connect it in the same " +
                 "batch). If any operation fails, every change is rolled back and the failing operation is " +
                 "reported. Set preview=true to get the resulting files without keeping the changes.")]
@@ -726,7 +727,7 @@ public sealed class StructureEditTools
         for (var i = 0; i < operations.Count; i++)
         {
             var op = operations[i];
-            if (!KnownOps.Contains(op.Op))
+            if (!KnownOps.Contains(OpName(op.Op)))
                 return new ToolError($"Operation {i} has unknown op '{op.Op}'. Valid ops: {string.Join(", ", KnownOps)}.");
             var (ctx, error) = ClassBodyEditor.Open(_libraries, op.ClassId);
             if (error is not null)
@@ -764,7 +765,12 @@ public sealed class StructureEditTools
         "add_equation", "add_statement", "add_connection", "remove_connection"
     };
 
-    private Task<object> Dispatch(BatchOperation op) => op.Op switch
+    // An op is named after the tool that does the same edit, and an agent that has just called
+    // mlqt_add_component writes that name here too. Accept it rather than refuse the whole batch.
+    private static string OpName(string? op) =>
+        op is not null && op.StartsWith("mlqt_", StringComparison.Ordinal) ? op["mlqt_".Length..] : op ?? string.Empty;
+
+    private Task<object> Dispatch(BatchOperation op) => OpName(op.Op) switch
     {
         "add_component" => AddComponent(op.ClassId, op.Type ?? string.Empty, op.Name ?? string.Empty, op.Modifier, op.Description, op.Comment, op.Visibility ?? "public", op.Prefix, op.ConstrainedBy, op.Condition),
         "remove_component" => RemoveComponent(op.ClassId, op.Name ?? string.Empty),

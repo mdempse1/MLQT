@@ -6,7 +6,7 @@ namespace MLQT.McpServer.Tests;
 /// <summary>
 /// B456 — a standalone class lives in a file of its own name (MLS 13.4), and a directory package's
 /// <c>package.order</c> lists its children by name, so renaming the class has to rename both with it.
-/// <c>rename_class</c> rewrote the declaration inside <c>M.mo</c> and left the file and the order
+/// <c>mlqt_rename_class</c> rewrote the declaration inside <c>M.mo</c> and left the file and the order
 /// entry alone, so <c>model Renamed</c> sat in <c>M.mo</c> where no tool looks for it.
 /// </summary>
 public class RenameClassStorageTests

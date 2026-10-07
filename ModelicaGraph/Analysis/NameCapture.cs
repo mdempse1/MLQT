@@ -77,7 +77,7 @@ public sealed class NameCapture
 
     /// <summary>
     /// A checker for full names starting with the top-level class <paramref name="topLevel"/> -
-    /// what <c>move_class</c> writes - to ask with <see cref="FullNameProblemAt"/>.
+    /// what <c>mlqt_move_class</c> writes - to ask with <see cref="FullNameProblemAt"/>.
     /// </summary>
     public static NameCapture ForFullNames(DirectedGraph graph, string topLevel) => new(graph, topLevel, topLevel);
 

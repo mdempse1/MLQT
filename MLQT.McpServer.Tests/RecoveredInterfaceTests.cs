@@ -12,7 +12,7 @@ namespace MLQT.McpServer.Tests;
 /// <para>An agent could load one and get almost nothing back: the vendor's generated help lists a
 /// class's parameters, connectors and function signature, MLQT parsed them, and then
 /// <c>ExternalStubBuilder</c> dropped them on the floor because a synthesized declaration has no
-/// type to write. So <c>get_class_interface</c> answered "no parameters" for a class with fourteen
+/// type to write. So <c>mlqt_get_class_interface</c> answered "no parameters" for a class with fourteen
 /// of them, which is a worse answer than "the source is encrypted".</para>
 ///
 /// <para>These pin both halves: the members come back, and every result that carries them says they

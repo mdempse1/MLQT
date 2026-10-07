@@ -18,20 +18,20 @@ namespace MLQT.McpServer.Tools;
 /// <summary>
 /// Style/quality checking, settings, and finding retrieval. Style checking is opt-in (nothing runs at
 /// load). Rule settings are per-repository: they come from each repo's .mlqt/settings.json (loaded
-/// by load_repository), and set_style_settings writes changes back there.
+/// by mlqt_load_repository), and mlqt_set_style_settings writes changes back there.
 /// </summary>
 [McpServerToolType]
 public sealed class StyleTools
 {
     /// <summary>How many findings a check returns inline, out of however many it stored.</summary>
     /// <remarks>
-    /// Internal, with <see cref="MaxFindingLimit"/>, because get_guidance quotes both numbers to tell
+    /// Internal, with <see cref="MaxFindingLimit"/>, because mlqt_get_guidance quotes both numbers to tell
     /// an agent how to read a result it cannot see the whole of — and a number written out in prose
     /// beside the constant it describes is one that goes stale silently. A test holds the two together.
     /// </remarks>
     internal const int MaxReturnedFindings = 200;
 
-    /// <summary>The largest page list_findings will return; a bigger limit is clamped, not refused.</summary>
+    /// <summary>The largest page mlqt_list_findings will return; a bigger limit is clamped, not refused.</summary>
     internal const int MaxFindingLimit = 1000;
 
     private readonly ILibraryDataService _libraries;
@@ -57,12 +57,12 @@ public sealed class StyleTools
         _session = session;
     }
 
-    [McpServerTool(Name = "get_style_settings")]
-    [Description("Get the style-checking rule settings for a repository, read from its " +
+    [McpServerTool(Name = "mlqt_get_style_settings")]
+    [Description("Get the Modelica style-checking rule settings for a repository, read from its " +
                 ".mlqt/settings.json (the same file MLQT uses). Returns the on/off rule toggles plus the " +
                 "spell-check languages. With one repository loaded, repositoryId is optional. Libraries " +
-                "loaded via load_library (no repository) report the built-in defaults. Modify the " +
-                "returned settings and pass them to set_style_settings (to persist) or a check tool.")]
+                "loaded via mlqt_load_library (no repository) report the built-in defaults. Modify the " +
+                "returned settings and pass them to mlqt_set_style_settings (to persist) or a check tool.")]
     public object GetStyleSettings(
         [Description("Optional repository id (GUID) or name. Omit when a single repository is loaded.")]
         string? repositoryId = null)
@@ -76,13 +76,13 @@ public sealed class StyleTools
         return new StyleSettingsResult(repo?.Id, repo?.Name, source, StyleSettingsInput.From(settings));
     }
 
-    [McpServerTool(Name = "set_style_settings")]
-    [Description("Update a repository's style-checking rules and spell-check languages and PERSIST them " +
+    [McpServerTool(Name = "mlqt_set_style_settings")]
+    [Description("Update a repository's Modelica style-checking rules and spell-check languages and PERSIST them " +
                 "to its .mlqt/settings.json (creating the file if needed), exactly like MLQT. This is a " +
                 "MERGE: send only the rules you are changing. A rule you omit keeps its current value, " +
                 "and the naming-convention config and every other setting are preserved. With one " +
                 "repository loaded, repositoryId is optional. Requires a repository — libraries loaded " +
-                "via load_library have no .mlqt/settings.json to write.")]
+                "via mlqt_load_library have no .mlqt/settings.json to write.")]
     public async Task<object> SetStyleSettings(
         [Description("The rules to change, and optionally spellCheckLanguages. Every key is optional: " +
                      "omit a rule to leave it as it is, omit spellCheckLanguages to keep the current " +
@@ -92,7 +92,7 @@ public sealed class StyleTools
         string? repositoryId = null)
     {
         if (settings is null)
-            return new ToolError("Provide a 'settings' object. Call get_style_settings to see the current shape.");
+            return new ToolError("Provide a 'settings' object. Call mlqt_get_style_settings to see the current shape.");
 
         var (repo, error) = ResolveRepo(repositoryId, requireRepo: true);
         if (error is not null)
@@ -110,8 +110,9 @@ public sealed class StyleTools
             StyleSettingsInput.From(repo.StyleSettings));
     }
 
-    [McpServerTool(Name = "check_style")]
-    [Description("Run style/spell rules against an arbitrary Modelica source snippet (stateless — no " +
+    [McpServerTool(Name = "mlqt_check_style")]
+    [Description("Run MLQT's style and spelling rules (NOT a compile check) against an arbitrary Modelica " +
+                "source snippet (stateless — no " +
                 "library needed) and return the findings. If 'settings' is omitted, the loaded " +
                 "repository's settings are used when exactly one is loaded, otherwise all rules are off. " +
                 "Reference-validation and icon-inheritance rules need a loaded library and are inert here.")]
@@ -125,7 +126,7 @@ public sealed class StyleTools
 
         // A snippet belongs to no class, so the only sensible scope is the one loaded repository — and
         // then it is that repository's accepted words as well as its rules. Taking the rules and not
-        // the words reports a term the team has accepted as a misspelling; see spell_check, which
+        // the words reports a term the team has accepted as a misspelling; see mlqt_spell_check, which
         // answers this the same way.
         var repository = SingleRepository();
         // All-off with neither, as the description says - which a blank settings object is not once a
@@ -137,10 +138,12 @@ public sealed class StyleTools
         return ToCheckResult(findings, modelsChecked: 1);
     }
 
-    [McpServerTool(Name = "check_class")]
-    [Description("Run style/spell rules against a single loaded class and return the findings, which " +
-                "are also stored for list_findings. By default the rules come from the class's repository " +
-                "(.mlqt/settings.json); pass a 'settings' object to override for this run.")]
+    [McpServerTool(Name = "mlqt_check_class")]
+    [Description("Run MLQT's style and spelling rules against a single loaded Modelica class and return the findings, which " +
+                "are also stored for mlqt_list_findings. By default the rules come from the class's repository " +
+                "(.mlqt/settings.json); pass a 'settings' object to override for this run. This is NOT a compile " +
+                "check: it does not translate the model or check types, units or equation balance - use a " +
+                "simulator's check (e.g. check_model) for that.")]
     public object CheckClass(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -176,15 +179,16 @@ public sealed class StyleTools
         return ToCheckResult(findings, modelsChecked: 1);
     }
 
-    [McpServerTool(Name = "check_library")]
-    [Description("Run style/spell rules across all classes in a loaded library (or every loaded library " +
+    [McpServerTool(Name = "mlqt_check_library")]
+    [Description("Run MLQT's style and spelling rules (NOT a compile check - see mlqt_check_class) across all " +
+                "Modelica classes in a loaded library (or every loaded library " +
                 "if library_id is omitted) and return a summary plus the first 200 findings, all stored " +
-                "for list_findings. By default each library is checked with its own repository settings " +
+                "for mlqt_list_findings. By default each library is checked with its own repository settings " +
                 "(.mlqt/settings.json); pass 'settings' to override for every class. If an enabled rule " +
                 "needs cross-model dependencies (e.g. unused-class), dependency analysis is run first " +
                 "automatically (matching the GUI and CLI). Can be slow on a big library.")]
     public async Task<object> CheckLibrary(
-        [Description("Optional: one library to check, by its id (GUID from list_libraries) or its name " +
+        [Description("Optional: one library to check, by its id (GUID from mlqt_list_libraries) or its name " +
                      "(e.g. 'Modelica'). Omit to check every loaded library. Not a class id.")]
         string? libraryId = null,
         [Description("Rules to apply for this run. Omit to use each library's repository settings.")]
@@ -238,7 +242,7 @@ public sealed class StyleTools
                 // With the library roots, so modelica:// URIs resolve against every loaded library —
                 // the argument the CLI passes here and GraphRefresh passes on the edit path. Left out,
                 // this one call built the resource edges from unresolved URIs, so whether a resource
-                // resolved depended on whether analyze_dependencies or check_library ran first.
+                // resolved depended on whether mlqt_analyze_dependencies or mlqt_check_library ran first.
                 await GraphBuilder.AnalyzeDependenciesAsync(graph, GraphRefresh.BuildLibraryInfos(_libraries));
                 _session.DependenciesAnalyzed = true;
             }
@@ -272,17 +276,17 @@ public sealed class StyleTools
 
                 // Go through the same LibraryCheckSession facade the CLI uses so the per-class checks and
                 // the whole-graph analyses (package.order, uses hygiene, unused classes) can't drift between
-                // the tools. Dependency-requiring analyses only run if analyze_dependencies ran first.
+                // the tools. Dependency-requiring analyses only run if mlqt_analyze_dependencies ran first.
                 // Whether the edges are present is read off the graph itself rather than the session
                 // flag, so this can't disagree with what the GUI and CLI see for the same library.
                 //
                 // repositoryRoot is the repository the library came out of, because that is where its
                 // accepted spellings live. Omitted, every word in .mlqt/dictionary.txt came back as a
-                // misspelling and check_library reported thousands of findings the GUI and CLI do not
+                // misspelling and mlqt_check_library reported thousands of findings the GUI and CLI do not
                 // (B166): over MSL, 21,249 against their 18,193, the whole of the difference being
                 // MLQT.Spelling.Description and MLQT.Spelling.Documentation. The settings were read
                 // from the repository all along — taking those and not the words is the same mistake
-                // spell_check had, and DictionaryScope is the one answer both now go through.
+                // mlqt_spell_check had, and DictionaryScope is the one answer both now go through.
                 var findings = LibraryCheckSession.Check(
                     graph, models, effective, _customDictionary, _dictionaryManager,
                     honorSuppressions: true,
@@ -318,7 +322,7 @@ public sealed class StyleTools
 
                 // With one deliberate exception. The findings just recorded were measured against the
                 // TRIMMED source, so their line numbers do not describe the text now on the node —
-                // and list_findings maps them at read time. Reporting them at the class declaration
+                // and mlqt_list_findings maps them at read time. Reporting them at the class declaration
                 // is ClassLocation's own answer for that ("pointing at the right class is always
                 // true; pointing at the wrong line looks precise and is not"), so the flag stays
                 // down until a reload replaces the node.
@@ -327,13 +331,13 @@ public sealed class StyleTools
         }
     }
 
-    [McpServerTool(Name = "list_findings")]
-    [Description("List findings currently known for the loaded libraries: parse errors (available " +
+    [McpServerTool(Name = "mlqt_list_findings")]
+    [Description("List findings currently known for the loaded Modelica libraries: parse errors (available " +
                 "immediately after loading) plus style/spell findings from any check that has been run " +
-                "(check_class / check_library). Filter by severity, source ('Parser' or 'StyleChecking'), " +
+                "(mlqt_check_class / mlqt_check_library). Filter by severity, source ('Parser' or 'StyleChecking'), " +
                 "or a specific class id, and page with limit/offset. Each item carries two line numbers: " +
                 "'line' is the line in 'filePath' - use that pair to edit the file - and 'modelLine' is " +
-                "the line within the class's own source, for a caller working from get_class_source.")]
+                "the line within the class's own source, for a caller working from mlqt_get_class_source.")]
     public object ListFindings(
         [Description("Filter by severity substring (case-insensitive). A style finding carries the " +
                      "severity its rule is configured with, as 'Style error', 'Style warning' or " +
@@ -374,7 +378,7 @@ public sealed class StyleTools
         {
             // Parse errors are taken from the graph above whether or not a check has run, and a
             // check records them here as well - so reporting both returned every parse error twice
-            // once check_class or check_library had been called.
+            // once mlqt_check_class or mlqt_check_library had been called.
             if (string.Equals(m.Source, ParserErrorReporter.SourceName, StringComparison.Ordinal))
                 continue;
 
@@ -413,7 +417,7 @@ public sealed class StyleTools
         if (repos.Count == 0)
             return requireRepo
                 ? (null, new ToolError("No repository is loaded. Per-repository style settings require a " +
-                    "repository — use load_repository. Libraries loaded via load_library have no .mlqt/settings.json."))
+                    "repository — use mlqt_load_repository. Libraries loaded via mlqt_load_library have no .mlqt/settings.json."))
                 : (null, null);
 
         return (null, new ToolError(
