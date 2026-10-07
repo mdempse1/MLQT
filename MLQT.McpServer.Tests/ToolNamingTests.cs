@@ -87,6 +87,17 @@ public class ToolNamingTests
     }
 
     [Fact]
+    public void TheInstructionsSayMlqtHasASessionOfItsOwn()
+    {
+        // An agent loaded the MSL with a simulator's load_library and then searched with MLQT, taking
+        // one server's session for the other's. Said second, right after when to use these tools.
+        var paragraphs = ServerInstructions.Text.Split("\n\n");
+        Assert.Contains("starts EMPTY", paragraphs[1]);
+        Assert.Contains("does NOT load anything here", paragraphs[1]);
+        Assert.Contains("getLoadedLibraries()", paragraphs[1]);
+    }
+
+    [Fact]
     public void TheGuidanceToolListsEveryTopic()
     {
         var method = typeof(GuidanceTools).GetMethod(nameof(GuidanceTools.GetGuidance))!;

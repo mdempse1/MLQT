@@ -10,14 +10,25 @@ namespace MLQT.McpServer.Helpers;
 /// </summary>
 internal static class ToolDiagnostics
 {
+    /// <summary>
+    /// What to say when nothing is loaded, whatever the tool. The likeliest reason is not that the
+    /// agent forgot to load anything: it loaded the library into a simulator's server beside this one
+    /// (OpenModelica's load_library) and took that to have loaded it here. So this says that it did
+    /// not, and how to get the path the simulator already knows.
+    /// </summary>
+    public static string NothingLoaded(string whatFor) =>
+        $"Nothing is loaded into MLQT, and {whatFor} needs a loaded library. MLQT is a separate server with its own " +
+        "session: a library loaded into a simulator (e.g. OpenModelica's load_library) is not loaded here. " +
+        "Load each library you need with mlqt_load_library, giving its directory, its package.mo or a single " +
+        ".mo file (mlqt_load_repository for a Git/SVN working copy), and its dependencies too - usually the " +
+        "Modelica Standard Library. If a simulator already has the library loaded, ask it for the path: in " +
+        "OpenModelica, getLoadedLibraries() lists each loaded library with its directory.";
+
     /// <summary>Why a class id could not be resolved, tailored to whether anything is loaded.</summary>
     public static ToolError ClassNotFound(ILibraryDataService libraries, string classId)
     {
         if (libraries.Libraries.Count == 0)
-            return new ToolError(
-                $"No library is loaded, so class '{classId}' cannot be resolved. Load one first with " +
-                "mlqt_load_repository (a Git/SVN working copy or a directory of libraries) or mlqt_load_library " +
-                "(a single library directory or .mo file), then retry.");
+            return new ToolError(NothingLoaded($"resolving class '{classId}'"));
 
         return new ToolError(
             $"No class with id '{classId}' in the loaded libraries. Class ids are fully-qualified dotted " +
@@ -29,8 +40,7 @@ internal static class ToolDiagnostics
     public static ToolError? RequireLibrary(ILibraryDataService libraries, string whatFor)
     {
         if (libraries.Libraries.Count == 0)
-            return new ToolError(
-                $"No library is loaded. Load one with mlqt_load_repository or mlqt_load_library before {whatFor}.");
+            return new ToolError(NothingLoaded(whatFor));
         return null;
     }
 
@@ -39,9 +49,7 @@ internal static class ToolDiagnostics
     public static ToolError NotAnalyzed(ILibraryDataService libraries, string whatFor)
     {
         if (libraries.Libraries.Count == 0)
-            return new ToolError(
-                $"No library is loaded. Load one (mlqt_load_repository / mlqt_load_library) and then run " +
-                $"mlqt_analyze_dependencies before {whatFor}.");
+            return new ToolError(NothingLoaded(whatFor) + " Then run mlqt_analyze_dependencies.");
 
         return new ToolError(
             $"Dependencies have not been analyzed yet. Run mlqt_analyze_dependencies first (it builds the " +

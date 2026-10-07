@@ -38,8 +38,10 @@ public sealed class GuidanceTools
             Core concepts:
             - Load first. Almost every tool operates on an in-memory graph. Use mlqt_load_repository for a
               Git/SVN working copy or directory of libraries, or mlqt_load_library for a single library
-              directory (with package.mo) or .mo file. mlqt_list_libraries shows what is loaded. To start
-              a NEW project, mlqt_create_library writes and loads an empty top-level library.
+              directory (with package.mo) or .mo file. mlqt_list_libraries shows what is loaded. MLQT
+              starts empty and has its own session: a library loaded into a simulator is not loaded here
+              (see the 'simulators' topic). To start a NEW project, mlqt_create_library writes and loads
+              an empty top-level library.
             - Load the dependencies too. Nearly every library builds on the Modelica Standard Library (MSL),
               and loading a library does NOT load what it uses — but its load summary lists them (from its
               `uses` annotation) with the version it expects. Load each one; ask the user for the path if
@@ -72,6 +74,23 @@ public sealed class GuidanceTools
             - The simulator owns TRANSLATION: checking a model compiles (types, units, equation balance),
               instantiating it, simulating it and reading its results.
             Neither knows what the other has loaded. They are two separate sessions over the same files.
+
+            Load every library into BOTH servers. Each starts empty, and loading into one does nothing
+            for the other — if you loaded the MSL into the simulator, MLQT still has nothing, and its
+            searches find nothing:
+            - Into MLQT: mlqt_load_library(path), with the library's directory or its package.mo. For the
+              MSL that is the Modelica directory, plus Complex and ModelicaServices beside it.
+            - Into the simulator: its own load_library, usually by name ('Modelica').
+            For the path MLQT needs, ask the simulator where it loaded the library from: in OpenModelica,
+            getLoadedLibraries() (through its raw-command tool) lists each loaded library with its
+            directory. If neither knows, ask the user.
+
+            Example — find and simulate an MSL example, such as a PID controller:
+              1. Simulator: load_library 'Modelica'; then getLoadedLibraries() for the directories.
+              2. MLQT: mlqt_load_library on the Modelica, Complex and ModelicaServices directories.
+              3. MLQT: mlqt_search_text 'PID' (or mlqt_search_by_interface for simulatable models) to find
+                 the example, and mlqt_get_class_documentation / mlqt_get_class_interface to understand it.
+              4. Simulator: simulate the class id MLQT found, and read the results there.
 
             Names that look alike and are not:
             - mlqt_load_library takes a PATH and loads source into MLQT. A simulator's load_library usually

@@ -47,7 +47,7 @@ public sealed class DependencyTools
     public async Task<object> AnalyzeDependencies()
     {
         if (_libraries.Libraries.Count == 0)
-            return new ToolError("No libraries loaded. Load one first with mlqt_load_library or mlqt_load_repository.");
+            return new ToolError(ToolDiagnostics.NothingLoaded("analysing dependencies"));
 
         var graph = _libraries.CombinedGraph;
         // The service's list, not a copy of it: the copy this tool kept never marked an encrypted

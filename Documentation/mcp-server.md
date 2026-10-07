@@ -137,8 +137,15 @@ simulator's MCP server (OpenModelica, Dymola) beside this one. The two divide th
 | Checks | Style, spelling, references, connector compatibility (`mlqt_check_class`) | Types, units, equation balance (its `check_model` or equivalent) |
 | Loads a library | By **path**, into MLQT (`mlqt_load_library`) | Usually by **name**, into the simulator (its `load_library`) |
 
-They are two separate sessions over the same files, and neither sees what the other has loaded. The
-loop the server's instructions and its `simulators` guidance topic teach an agent:
+They are two separate sessions over the same files, and neither sees what the other has loaded.
+**Every library has to be loaded into both**: an agent that loads the MSL with the simulator's
+`load_library` and then searches with `mlqt_search_text` is searching an empty MLQT. The server says
+so where it matters most — every tool called on an empty session answers that a simulator's load does
+not count here, and how to get the path: a simulator that has the library loaded knows where it came
+from, and in OpenModelica `getLoadedLibraries()` lists each library with the directory
+`mlqt_load_library` takes. For the MSL that is three — `Modelica`, `Complex` and `ModelicaServices`.
+
+The loop the server's instructions and its `simulators` guidance topic teach an agent:
 
 1. Read and edit with MLQT. The change is written to disk.
 2. Load or reload **that file** in the simulator — a simulator does not see an edit until it re-reads it.

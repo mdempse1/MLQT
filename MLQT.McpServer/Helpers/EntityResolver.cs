@@ -17,7 +17,7 @@ internal static class EntityResolver
     {
         var loaded = libraries.Libraries;
         if (loaded.Count == 0)
-            return (null, new ToolError("No libraries are loaded. Load one with mlqt_load_repository or mlqt_load_library."));
+            return (null, new ToolError(ToolDiagnostics.NothingLoaded($"finding library '{idOrName}'")));
 
         var byId = loaded.FirstOrDefault(l => l.Id == idOrName);
         if (byId is not null)

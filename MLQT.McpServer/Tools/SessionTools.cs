@@ -216,8 +216,10 @@ public sealed class SessionTools
     }
 
     [McpServerTool(Name = "mlqt_list_libraries")]
-    [Description("List all Modelica libraries currently loaded in memory, with their model counts. " +
-                "Returns an empty list if nothing is loaded yet.")]
+    [Description("List the Modelica libraries loaded into MLQT, with their model counts. Only " +
+                "mlqt_load_library / mlqt_load_repository load them: a library a simulator has loaded is not " +
+                "here. An empty list means nothing is loaded yet - load what you need before using the " +
+                "other mlqt_ tools.")]
     public IReadOnlyList<LibrarySummary> ListLibraries()
         => _libraries.Libraries.Select(ToSummary).ToList();
 

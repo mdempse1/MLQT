@@ -123,7 +123,7 @@ public sealed class ClassQueryTools
     }
 
     [McpServerTool(Name = "mlqt_list_classes")]
-    [Description("List Modelica classes across the loaded libraries, with optional filtering by library and by " +
+    [Description("List Modelica classes across the libraries loaded into MLQT (not a simulator's), with optional filtering by library and by " +
                 "class type. Paginated: results are ordered by id; use offset/limit to page. Returns the " +
                 "total match count so you know how many pages remain. Use mlqt_search_classes to find classes " +
                 "by name substring instead.")]
@@ -172,6 +172,7 @@ public sealed class ClassQueryTools
 
     [McpServerTool(Name = "mlqt_search_classes")]
     [Description("Find Modelica classes whose fully-qualified id contains the given text (case-insensitive). " +
+                "Searches only libraries loaded into MLQT with mlqt_load_library, not those a simulator has loaded. " +
                 "Matches on the id, so 'Integrator' finds 'Modelica.Blocks.Continuous.Integrator'. " +
                 "Results are ordered with exact leaf-name matches first, then by id, and each carries the " +
                 "class's description and a short documentation snippet so you can judge relevance (e.g. which " +
@@ -236,7 +237,7 @@ public sealed class ClassQueryTools
 
     [McpServerTool(Name = "mlqt_get_package_tree")]
     [Description("Get the hierarchical tree of Modelica packages and classes. Without root_class_id, returns the top-level " +
-                "classes of every loaded library. With root_class_id, returns that class and its nested " +
+                "classes of every library loaded into MLQT. With root_class_id, returns that class and its nested " +
                 "children. max_depth bounds how many levels are expanded (default 1 = immediate children); " +
                 "each node reports its childCount so you can drill in with further calls. Use this to " +
                 "navigate structure; use mlqt_list_classes for a flat, filterable listing.")]

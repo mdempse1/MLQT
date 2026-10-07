@@ -37,20 +37,24 @@ internal static class ServerInstructions
         or move rewrites every reference, the file keeps its encoding and line endings, read-only
         libraries are refused, and the dependency graph stays current.
 
+        MLQT starts EMPTY and keeps its own session: every mlqt_ tool, the searches included, sees
+        only libraries loaded into MLQT. Before using them, load each one with mlqt_load_library (its
+        directory, package.mo or one .mo file) or mlqt_load_repository (a Git/SVN working copy), and
+        its dependencies - the load summary lists them, usually the MSL. A simulator's load_library
+        does NOT load anything here. For the path of a library a simulator has loaded, ask it
+        (OpenModelica: getLoadedLibraries()).
+
         Beside a simulator's server (OpenModelica, Dymola): MLQT owns the source files; the simulator
         compiles, checks equations and simulates. Write code with MLQT, then load or reload that FILE
         in the simulator before checking or simulating it - never author code through the
-        simulator's load_string. mlqt_load_library loads from a path into MLQT only; a simulator's
-        load_library is separate. mlqt_check_class is a style/spelling check, not a compile check.
+        simulator's load_string. mlqt_check_class is a style/spelling check, not a compile check.
         After a file changes outside MLQT, call mlqt_reload.
 
-        Start: mlqt_load_library (a library directory, its package.mo, or one .mo file) or
-        mlqt_load_repository (a Git/SVN working copy), then load its dependencies too - the load
-        summary lists them, usually the MSL - or types will not resolve. Class ids are full dotted
-        names (Modelica.Blocks.Continuous.Integrator); find one with mlqt_search_classes. Read with
-        mlqt_get_class_interface (how to use a class) or mlqt_get_class_source; edit with
-        mlqt_update_class_source, mlqt_create_class or the surgical tools (mlqt_add_component,
-        mlqt_add_connection, mlqt_batch_edit ...). New project: mlqt_create_library.
+        Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator); find one with
+        mlqt_search_classes or mlqt_search_text. Read with mlqt_get_class_interface (how to use a
+        class) or mlqt_get_class_source; edit with mlqt_update_class_source, mlqt_create_class or the
+        surgical tools (mlqt_add_component, mlqt_add_connection, mlqt_batch_edit ...). New project:
+        mlqt_create_library.
 
         Call mlqt_get_guidance for recipes. Topics: overview, workflows, simulators, views, editing,
         diagrams, dependencies, style, spelling, formatting, vcs, resources.
