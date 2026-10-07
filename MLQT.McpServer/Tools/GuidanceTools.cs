@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 
 namespace MLQT.McpServer.Tools;
 
@@ -197,8 +198,8 @@ public sealed class GuidanceTools
         ["views"] = """
             Class "views" — compact projections so you don't have to read full source. All need only a
             loaded library (not mlqt_analyze_dependencies):
-            - mlqt_get_class_interface(classId): the PUBLIC interface — settable parameters (name/type/default/
-              description), connectors (with causality input/output and flow/stream), extends base classes,
+            - mlqt_get_class_interface(classId): the PUBLIC interface — settable parameters
+              (name/type/default/description), connectors (with causality input/output and flow/stream), extends base classes,
               and for a function its input/output signature. The best first call to learn how to USE a class.
               Members INHERITED via extends are merged in and each marked with its base class in
               inheritedFrom (e.g. Integrator's u/y connectors come from Interfaces.SISO) — you get the whole
@@ -468,6 +469,7 @@ public sealed class GuidanceTools
         if (!Guidance.TryGetValue(key, out var text))
             return new ToolError($"Unknown topic '{topic}'. Available topics: {string.Join(", ", Topics)}.");
 
-        return new { topic = key.ToLowerInvariant(), guidance = text, availableTopics = Topics };
+        // Unwrapped: the text is hard-wrapped for the source file, and a wrap means nothing to an agent.
+        return new { topic = key.ToLowerInvariant(), guidance = Prose.Unwrap(text), availableTopics = Topics };
     }
 }

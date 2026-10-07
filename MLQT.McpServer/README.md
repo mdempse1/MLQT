@@ -54,6 +54,12 @@ Three layers, each kept to what it is for (and each held by a test in `ToolNamin
 - **`mlqt_get_guidance`**, the recipes: `overview` carries what the instructions had no room for, and
   `simulators` the division of work with a simulator.
 
+The instructions and the guidance are hard-wrapped to fit the source, and are **unwrapped before they
+are sent** (`Helpers/Prose.cs`): a wrap means nothing to an agent, and sent as written every source
+line reached it ending in the checkout's CRLF. A blank line still separates paragraphs and a list item
+still starts a line; an item's wrapped lines must be indented past its marker, because a line that is
+not ends the list.
+
 ## Key concepts
 
 - **Load first.** Almost every tool operates on an in-memory graph. Use `mlqt_load_repository` (a Git/SVN

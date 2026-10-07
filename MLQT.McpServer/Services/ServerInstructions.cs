@@ -1,3 +1,5 @@
+using MLQT.McpServer.Helpers;
+
 namespace MLQT.McpServer.Services;
 
 /// <summary>
@@ -21,11 +23,11 @@ internal static class ServerInstructions
     internal const int Budget = 2000;
 
     /// <summary>
-    /// The instructions, with line feeds whatever the checkout's line endings are: a raw string carries
-    /// the source file's, so on a Windows checkout this would otherwise be CRLF, and a different length
-    /// on each platform.
+    /// The instructions as sent: each paragraph on one line (see <see cref="Prose.Unwrap"/>). The
+    /// source wraps them to fit the editor, and a raw string carries the file's line endings, so sent
+    /// as written they would be CRLF on a Windows checkout and broken mid-sentence on every one.
     /// </summary>
-    internal static readonly string Text = Raw.ReplaceLineEndings("\n");
+    internal static readonly string Text = Prose.Unwrap(Raw);
 
     private const string Raw =
         """
