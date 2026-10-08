@@ -60,6 +60,12 @@ line reached it ending in the checkout's CRLF. A blank line still separates para
 still starts a line; an item's wrapped lines must be indented past its marker, because a line that is
 not ends the list.
 
+**A class id that does not resolve is diagnosed, not just refused** (`ToolDiagnostics.ClassNotFound`,
+which every tool taking a class id goes through): nothing loaded; the id's library not loaded, with
+how to load it; or the library loaded without that class, naming the deepest package of the id that
+does exist. A near match leads when there is one - the same id in another case, or classes elsewhere
+with the same last name, which is what an id missing its leading packages finds.
+
 ## Key concepts
 
 - **Load first.** Almost every tool operates on an in-memory graph. Use `mlqt_load_repository` (a Git/SVN

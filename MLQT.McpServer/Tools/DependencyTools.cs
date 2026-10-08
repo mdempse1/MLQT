@@ -129,9 +129,7 @@ public sealed class DependencyTools
 
         var missing = classIds.Where(id => _libraries.GetModelById(id) is null).ToList();
         if (missing.Count > 0)
-            return _libraries.Libraries.Count == 0
-                ? ToolDiagnostics.ClassNotFound(_libraries, missing[0])
-                : new ToolError($"Unknown class id(s): {string.Join(", ", missing)}. Use mlqt_search_classes to find them.");
+            return ToolDiagnostics.ClassesNotFound(_libraries, missing);
         if (!_session.DependenciesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries, "analysing change impact");
 
