@@ -246,6 +246,9 @@ public sealed class ClassQueryTools
         string? rootClassId = null,
         [Description("How many levels to expand (default 1, max 8).")] int maxDepth = 1)
     {
+        // Asked about one class with nothing loaded: name the library that class is in.
+        if (rootClassId is not null && _libraries.Libraries.Count == 0)
+            return ToolDiagnostics.ClassNotFound(_libraries, rootClassId);
         if (ToolDiagnostics.RequireLibrary(_libraries, "browsing the package tree") is { } noLib)
             return noLib;
 

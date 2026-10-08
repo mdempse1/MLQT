@@ -19,11 +19,54 @@ internal static class ToolDiagnostics
     /// </summary>
     public static string NothingLoaded(string whatFor) =>
         $"Nothing is loaded into MLQT, and {whatFor} needs a loaded library. MLQT is a separate server with its own " +
-        "session: a library loaded into a simulator (e.g. OpenModelica's load_library) is not loaded here. " +
+        "session: a library loaded into a simulator (e.g. OpenModelica or Dymola) is not loaded here. " +
         "Load each library you need with mlqt_load_library, giving its directory, its package.mo or a single " +
         ".mo file (mlqt_load_repository for a Git/SVN working copy), and its dependencies too - usually the " +
         "Modelica Standard Library. If a simulator already has the library loaded, ask it for the path: in " +
         "OpenModelica, getLoadedLibraries() lists each loaded library with its directory.";
+
+    /// <summary>
+    /// What to say when nothing is loaded and the agent asked for particular classes. A class id starts
+    /// with its library's name, so the library to load is known, and saying "load each library you need"
+    /// left the agent to work out which. Named here, one per library the ids start with; a bare name
+    /// (<c>PID_Controller</c>) names no library, and is told that ids start with one.
+    /// </summary>
+    internal static string NothingLoadedForClasses(IReadOnlyList<string> classIds)
+    {
+        var quoted = string.Join(", ", classIds.Select(id => $"'{id}'"));
+        var opening = classIds.Count == 1
+            ? $"Nothing is loaded into MLQT, so class {quoted} cannot be found."
+            : $"Nothing is loaded into MLQT, so none of {quoted} can be found.";
+
+        var roots = classIds.Where(id => !ModelicaName.IsSimple(id))
+            .Select(ModelicaName.RootLibraryOf).Distinct(StringComparer.Ordinal).ToList();
+        var bare = classIds.Where(ModelicaName.IsSimple).ToList();
+
+        var steps = new List<string>();
+        if (roots.Count > 0)
+        {
+            var which = roots.Count == 1
+                ? $"{(classIds.Count == 1 ? "It is" : "They are")} in library '{roots[0]}'"
+                : $"They are in libraries {string.Join(", ", roots.Select(r => $"'{r}'"))}";
+            steps.Add(
+                $"{which}: load {(roots.Count == 1 ? "it" : "each")} with mlqt_load_library, giving the library's " +
+                "directory or its package.mo (mlqt_load_repository for a Git/SVN working copy), then retry. " +
+                "Load its dependencies too - the load summary lists them" +
+                (roots.Contains("Modelica") ? " (for the Modelica Standard Library, Complex and ModelicaServices)." : "."));
+        }
+
+        if (bare.Count > 0)
+            steps.Add(
+                $"{string.Join(", ", bare.Select(id => $"'{id}'"))} names no library: class ids are fully-qualified " +
+                "names starting with their library's (e.g. 'Modelica.Blocks.Examples.PID_Controller' is in library " +
+                "'Modelica'). Load the library the class is in with mlqt_load_library, then use its full id - " +
+                "mlqt_search_classes finds it once the library is loaded.");
+
+        var path = roots.Count == 1 ? $"'{roots[0]}'" : "a library";
+        return $"{opening} {string.Join(" ", steps)} MLQT is a separate server with its own session: a library a " +
+               $"simulator has loaded is not loaded here. If a simulator has {path} loaded, ask it for the path: in " +
+               "OpenModelica, getLoadedLibraries() lists each loaded library with its directory.";
+    }
 
     /// <summary>How to look for a class whose id is not known, said the same way wherever it is said.</summary>
     private const string SearchTools =
@@ -49,7 +92,7 @@ internal static class ToolDiagnostics
     public static ToolError ClassNotFound(ILibraryDataService libraries, string classId)
     {
         if (libraries.Libraries.Count == 0)
-            return new ToolError(NothingLoaded($"resolving class '{classId}'"));
+            return new ToolError(NothingLoadedForClasses([classId]));
 
         var (otherCase, sameLeaf) = NearMatches(libraries, classId);
         var root = ModelicaName.RootLibraryOf(classId);
@@ -132,6 +175,11 @@ internal static class ToolDiagnostics
     /// </summary>
     public static ToolError ClassesNotFound(ILibraryDataService libraries, IReadOnlyList<string> missing)
     {
+        // With nothing loaded every id fails for the same reason, and each library they start with is
+        // one to load - so name them all rather than diagnosing the first.
+        if (libraries.Libraries.Count == 0)
+            return new ToolError(NothingLoadedForClasses(missing));
+
         var first = ClassNotFound(libraries, missing[0]);
         return missing.Count == 1
             ? first

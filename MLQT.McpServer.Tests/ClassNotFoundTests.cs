@@ -31,6 +31,73 @@ public class ClassNotFoundTests
         return new ClassQueryTools(host.Libraries);
     }
 
+    // ---- nothing loaded: the library to load is the one the id starts with ----------------------
+
+    [Fact]
+    public void WithNothingLoadedTheLibraryTheClassIsInIsNamed()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(new ClassQueryTools(host.Libraries).GetClassInfo("Modelica.Blocks.Continuous.LimPID")).Error;
+
+        Assert.StartsWith(
+            "Nothing is loaded into MLQT, so class 'Modelica.Blocks.Continuous.LimPID' cannot be found. " +
+            "It is in library 'Modelica': load it with mlqt_load_library, giving the library's directory or its package.mo", err);
+        Assert.Contains("(for the Modelica Standard Library, Complex and ModelicaServices)", err);
+        Assert.Contains("If a simulator has 'Modelica' loaded, ask it for the path", err);
+        Assert.Contains("getLoadedLibraries()", err);
+    }
+
+    [Fact]
+    public void WithNothingLoadedAnotherLibrarysDependenciesAreNotGivenAsTheMsls()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(new ClassQueryTools(host.Libraries).GetClassInfo("Buildings.Fluid.Movers.FlowControlled_m_flow")).Error;
+
+        Assert.Contains("It is in library 'Buildings': load it with mlqt_load_library", err);
+        Assert.Contains("the load summary lists them.", err);
+        Assert.DoesNotContain("ModelicaServices", err);
+    }
+
+    [Fact]
+    public void WithNothingLoadedABareNameIsToldIdsStartWithTheirLibrary()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(new ClassQueryTools(host.Libraries).GetClassInfo("PID_Controller")).Error;
+
+        Assert.StartsWith("Nothing is loaded into MLQT, so class 'PID_Controller' cannot be found. 'PID_Controller' names no library", err);
+        Assert.Contains("'Modelica.Blocks.Examples.PID_Controller' is in library 'Modelica'", err);
+        Assert.DoesNotContain("It is in library", err);
+    }
+
+    [Fact]
+    public void WithNothingLoadedSeveralIdsNameEachLibraryOnce()
+    {
+        using var host = new TestHost();
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+
+        var err = ToolAssert.Error(deps.AnalyzeImpact(["Modelica.A.B", "Buildings.C", "Modelica.D"])).Error;
+
+        Assert.StartsWith(
+            "Nothing is loaded into MLQT, so none of 'Modelica.A.B', 'Buildings.C', 'Modelica.D' can be found. " +
+            "They are in libraries 'Modelica', 'Buildings': load each with mlqt_load_library", err);
+    }
+
+    [Fact]
+    public void WithNothingLoadedAToolWhoseClassIdIsOptionalStillNamesTheLibrary()
+    {
+        // Both check "is anything loaded?" before they look at the class, and so answered generically.
+        using var host = new TestHost();
+        var tree = ToolAssert.Error(new ClassQueryTools(host.Libraries).GetPackageTree("Lib.Sub")).Error;
+        var findings = ToolAssert.Error(new StyleTools(
+            host.Libraries, host.CodeReview, host.Repositories,
+            host.CustomDictionary, host.DictionaryManager, host.Session).ListFindings(classId: "Lib.Sub")).Error;
+
+        Assert.Contains("It is in library 'Lib'", tree);
+        Assert.Contains("It is in library 'Lib'", findings);
+    }
+
+    // ---- something loaded, but not the id's library -------------------------------------------
+
     [Fact]
     public void ALibraryThatIsNotLoadedIsNamedWithHowToLoadIt()
     {

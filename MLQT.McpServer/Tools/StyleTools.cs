@@ -350,6 +350,9 @@ public sealed class StyleTools
         [Description("Max items to return (default 100, max 1000).")] int limit = 100,
         [Description("Items to skip for pagination (default 0).")] int offset = 0)
     {
+        // Asked about one class with nothing loaded: name the library that class is in.
+        if (classId is not null && _libraries.Libraries.Count == 0)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
         if (ToolDiagnostics.RequireLibrary(_libraries, "listing findings") is { } noLib)
             return noLib;
 
