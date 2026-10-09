@@ -122,7 +122,7 @@ public class ReadOnlySourceLoaderTests
         var graph = new DirectedGraph();
         Load(graph, SuppliedLibrary());
 
-        Assert.Equal(["Pump", "Inline"], graph.GetNode<ModelNode>("Lib")!.PackageOrder);
+        Assert.Equal(["Pump", "Inline"], graph.GetNode<ModelNode>("Lib")!.PackageOrder!);
     }
 
     [Fact]
