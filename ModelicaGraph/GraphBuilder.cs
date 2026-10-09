@@ -19,6 +19,15 @@ public static class GraphBuilder
     /// <param name="filePath">Path to the Modelica file.</param>
     /// <returns>The list of models read from the file</returns>
     public static List<string> LoadModelicaFile(DirectedGraph graph, string filePath, string content)
+        => LoadModelicaFile(graph, filePath, content, readOnlyBanner: null);
+
+    /// <param name="readOnlyBanner">For a read-only library's supplied text
+    /// (<see cref="ReadOnlySourceLoader"/>): the comment block every class opens with. When set, each
+    /// class is marked <see cref="ModelNode.IsExternalStub"/> <b>before</b> it reaches the graph, so
+    /// it never stands in the graph as readable source, not even for the time a file takes to load.</param>
+    /// <inheritdoc cref="LoadModelicaFile(DirectedGraph, string, string)"/>
+    internal static List<string> LoadModelicaFile(
+        DirectedGraph graph, string filePath, string content, string? readOnlyBanner)
     {
         // Normalize line endings once - all downstream methods skip re-normalization
         var normalizedContent = ModelicaParserHelper.NormalizeLineEndings(content);
@@ -78,7 +87,8 @@ public static class GraphBuilder
             // clause and comments is valid and has nothing to report.
             if (models.Count == 0 && fileParserErrors.Count > 0)
             {
-                var placeholderId = CreateParseFailurePlaceholder(graph, fileId, filePath, normalizedContent, fileParserErrors);
+                var placeholderId = CreateParseFailurePlaceholder(
+                    graph, fileId, filePath, normalizedContent, fileParserErrors, readOnly: readOnlyBanner is not null);
                 modelIDs.Add(placeholderId);
                 return modelIDs;
             }
@@ -91,7 +101,10 @@ public static class GraphBuilder
             {
                 var modelId = GenerateModelId(modelInfo.ParentModelName, modelInfo.Name);
                 modelIDs.Add(modelId);
-                var modelNode = new ModelNode(modelId, modelInfo.Name, modelInfo.SourceCode);
+                var modelNode = new ModelNode(modelId, modelInfo.Name, readOnlyBanner + modelInfo.SourceCode)
+                {
+                    IsExternalStub = readOnlyBanner is not null
+                };
 
                 // Store additional information as typed properties
                 modelNode.ClassType = modelInfo.ClassType;
@@ -230,7 +243,8 @@ public static class GraphBuilder
                     Severity = ParserErrorSeverity.FatalParseFailure
                 }
             };
-            var placeholderId = CreateParseFailurePlaceholder(graph, fileId, filePath, normalizedContent, fallbackErrors);
+            var placeholderId = CreateParseFailurePlaceholder(
+                graph, fileId, filePath, normalizedContent, fallbackErrors, readOnly: readOnlyBanner is not null);
             return new List<string> { placeholderId };
         }
     }
@@ -246,7 +260,8 @@ public static class GraphBuilder
         string fileId,
         string filePath,
         string fileContent,
-        List<ParserError> parserErrors)
+        List<ParserError> parserErrors,
+        bool readOnly)
     {
         // Determine the class name. For `package.mo` the Modelica class is named after
         // the *containing directory*, not the filename. For all other .mo files the
@@ -292,7 +307,8 @@ public static class GraphBuilder
             // Downstream tools that must skip unparseable files should check
             // IsParseFailurePlaceholder explicitly rather than relying on this flag.
             CanBeStoredStandalone = true,
-            IsParseFailurePlaceholder = true
+            IsParseFailurePlaceholder = true,
+            IsExternalStub = readOnly
         };
 
         foreach (var error in parserErrors)
@@ -523,8 +539,14 @@ public static class GraphBuilder
         // side when the user's own models are analysed. Reference libraries can outnumber the code
         // under check many times over (a Dymola install contributes ~38k classes), so analysing
         // them is the difference between a check that takes seconds and one that takes minutes.
+        //
+        // A *supplied* read-only class is not such a stub: its text declares real components,
+        // connectors and visible equations, so it is analysed as a readable reference library is.
+        // Without its edges, "what does this vendor component use" and "where do the vendor's own
+        // examples use it" would both answer nothing for a class every other tool reads in full.
         var allModels = graph.ModelNodes
-            .Where(m => !m.IsParseFailurePlaceholder && !m.IsExternalStub)
+            .Where(m => !m.IsParseFailurePlaceholder
+                        && ReadOnlySources.KindOf(m) != ReadOnlySourceKind.RecoveredFromDocumentation)
             .ToList();
         progressLog?.Invoke($"Starting dependency analysis for {allModels.Count} models");
 

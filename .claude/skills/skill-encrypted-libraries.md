@@ -107,6 +107,48 @@ removed, and that path loads it. `DirectedGraph.AddNode`'s stub-versus-source ru
 `LibraryOwnership.Owner` are still there, now as safety nets, and `LibraryOwnershipPolicyTests`
 holds every read of a library's `ModelIds` to a ledger so the list search does not come back.
 
+## One read-only path, two sources
+
+An encrypted library is one implementation of `IReadOnlyClassSource` (`ModelicaGraph/ReadOnlySources/`),
+`EncryptedDirectoryClassSource` in MLQT.Services. The other kind, `ReadOnlySourceKind.Supplied`, is
+Modelica text a host holds in memory and hands to `ILibraryDataService.AddLibraryFromSourceAsync` — a
+vendor-issued description of a library whose source it does not ship: declarations, connectors,
+graphics and whatever equations the vendor makes visible. Both go through `ReadOnlySourceLoader` and
+`LibraryDataService.LoadReadOnlyAsync`, so what "read-only" means is decided once, on three levels:
+
+- **class** — `IsExternalStub` on every class, set *before* it reaches the graph
+  (`GraphBuilder.LoadModelicaFile`'s internal banner overload). A supplied class leaves
+  `RecoveredFromDocumentation` null, so the view tools read its declarations instead of a
+  documentation record, and dependency analysis visits it as it does a readable reference library;
+  `ReadOnlySources.KindOf(node)` tells the three kinds of class apart.
+- **file** — `ReadOnlySources.IsReadOnlyPath`: a `.moe` path, or anything under
+  `mlqt-readonly://<Library>/`, which is where a supplied class's file node is placed. It is never a
+  path anything can open. `FileWritability` and `DirectedGraph` ask it, so the MCP edit tools refuse a
+  supplied class without being taught about it; `ClassBodyEditor.Open` and
+  `mlqt_update_class_source` refuse **before** composing an edit, because a nested supplied class's
+  stored source opens with a banner its file owner's does not repeat, and the splice would otherwise
+  fail first and blame a stale cache.
+- **library** — `LoadedLibrary.ReadOnlySource` / `IsReadOnly` (an `EncryptedDirectory` answers
+  without being told) and `Version`. Ask `IsReadOnly` for "may this be touched?"; `SourceType` is only
+  where a library came from.
+
+**The banner is the source's** (`IReadOnlyClassSource.ProvenanceNote`, written as `//` lines by
+`ReadOnlySources.Banner`). The encrypted source's note, `ExternalStubBuilder.RecoveredProvenanceNote`,
+is the old fixed header word for word, and a test holds that.
+
+**Precedence is one rank** (`ReadOnlySources.Precedence`): readable source 2, supplied 1, recovered 0.
+`SourceSupersedesEncrypted` applies it to libraries, `DirectedGraph.AddNode` to two copies of a class,
+and `AddFileContainsModel` refuses to move a class into a lower-ranked file — so the three cannot
+disagree about which copy the user sees. **One exception, for the version**: a supplied copy whose
+version differs from a loaded recovered copy's describes a release that is not installed, so the
+recovered copy stays. Because the class-level rank says the opposite, that is the one case retired
+*before* the arriving copy loads (`RetireOutrankedOnlyByVersion`); everywhere else the graph already
+agrees and retirement waits for `Register`.
+
+`SuppliedLibraryToolTests` (MLQT.McpServer.Tests) calls **every** MCP tool that names a class, by
+reflection, on a supplied class and asserts none throws and none changes the class or the user's
+files. Extend the reflection, not a list.
+
 ## What the HTML gives, and what it does not
 
 ```html

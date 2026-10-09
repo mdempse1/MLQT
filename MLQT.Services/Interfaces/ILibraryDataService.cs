@@ -137,6 +137,25 @@ public interface ILibraryDataService
     Task<LoadedLibrary> AddEncryptedLibraryFromDirectoryAsync(string directoryPath);
 
     /// <summary>
+    /// Adds a library a host supplies from memory — Modelica text it holds, describing a library
+    /// whose source it does not ship. Nothing is read from or written to disk.
+    ///
+    /// <para>Read-only in every sense an encrypted library is, and through the same machinery: each
+    /// class opens with the source's provenance note, is never written (its file is under
+    /// <see cref="ReadOnlySources.InMemoryPathPrefix"/>, which every write path refuses) and is never
+    /// reported on. For the same library name, readable source outranks it and it outranks one
+    /// recovered from documentation — unless that one names a different version, when it is the
+    /// supplied library that is not used (<see cref="SourceSupersedesEncrypted"/>).</para>
+    /// </summary>
+    /// <param name="source">The library. Its <see cref="IReadOnlyClassSource.Kind"/> must be
+    /// <see cref="ReadOnlySourceKind.Supplied"/>; an encrypted library has
+    /// <see cref="AddEncryptedLibraryFromDirectoryAsync"/>.</param>
+    /// <param name="cancellationToken">Stops the load before the library is registered.</param>
+    /// <returns>The loaded library. When a copy that outranks it is loaded, its
+    /// <see cref="LoadedLibrary.SupersededBy"/> says where, and nothing was read.</returns>
+    Task<LoadedLibrary> AddLibraryFromSourceAsync(IReadOnlyClassSource source, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a library from a zip file.
     /// </summary>
     /// <param name="files">Dictionary of file paths to content from the zip.</param>

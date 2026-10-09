@@ -613,7 +613,7 @@ public class RepositoryService : IRepositoryService
 
         foreach (var library in _libraryDataService.Libraries)
         {
-            if (library.SourceType != LibrarySourceType.EncryptedDirectory)
+            if (!library.IsReadOnly)
                 readable.Add((library.Name, library.SourcePath));
         }
 

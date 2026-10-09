@@ -1,1 +1,12 @@
 #nullable enable
+MLQT.Services.DataTypes.LibrarySourceType.Supplied = 6 -> MLQT.Services.DataTypes.LibrarySourceType
+MLQT.Services.DataTypes.LoadedLibrary.IsReadOnly.get -> bool
+MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.get -> ModelicaGraph.ReadOnlySourceKind?
+MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.Version.get -> string?
+MLQT.Services.DataTypes.LoadedLibrary.Version.set -> void
+MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
+MLQT.Services.LibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
+static MLQT.Services.SourceSupersedesEncrypted.OutrankedBy(MLQT.Services.DataTypes.LoadedLibrary! library, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.LoadedLibrary!>! loaded) -> MLQT.Services.DataTypes.LoadedLibrary?
+static MLQT.Services.SourceSupersedesEncrypted.Outranks(MLQT.Services.DataTypes.LoadedLibrary! winner, MLQT.Services.DataTypes.LoadedLibrary! loser) -> bool
+static MLQT.Services.SourceSupersedesEncrypted.VersionsDisagree(MLQT.Services.DataTypes.LoadedLibrary! a, MLQT.Services.DataTypes.LoadedLibrary! b) -> bool

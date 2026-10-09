@@ -36,7 +36,7 @@ public static class FormattableLibraries
         IRepositoryService repositories,
         string? filterRepositoryId) =>
         libraries
-            .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
+            .Where(l => !l.IsReadOnly)
             .Where(l => !ReferenceOnlyScope.IsReference(l, repositories))
             .Where(l => filterRepositoryId == null || l.RepositoryId == filterRepositoryId)
             .ToList();

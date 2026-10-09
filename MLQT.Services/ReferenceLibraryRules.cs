@@ -84,7 +84,7 @@ public static class ReferenceLibraryRules
         // candidate is loaded even when an encrypted copy got there first — and the encrypted copy is
         // then retired whole as the source registers (SourceSupersedesEncrypted), not merged with it
         // class by class. Every other combination is a second copy of something already present.
-        if (!isEncrypted && sameName.SourceType == LibrarySourceType.EncryptedDirectory)
+        if (!isEncrypted && sameName.IsReadOnly)
             return null;
 
         return $"'{encryptedName}' is already loaded from {sameName.SourcePath}";

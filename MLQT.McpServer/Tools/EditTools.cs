@@ -86,6 +86,12 @@ public sealed class EditTools
         if (ctx is null)
             return new ToolError($"Could not locate the source file for '{classId}'.");
 
+        // Refused before the new text is spliced in, preview included: a read-only class has no
+        // source to show a replacement of (see ClassBodyEditor.Open).
+        if (ReadOnlySources.IsReadOnlyPath(ctx.FilePath)
+            && FileWritability.RequireWritable(ctx.FilePath, "update this class") is { } refused)
+            return refused;
+
         var owner = ctx.FileOwner;
         var ownerCode = owner.Definition.ModelicaCode ?? string.Empty;
 

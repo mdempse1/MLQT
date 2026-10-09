@@ -52,10 +52,11 @@ public static class LibraryOwnership
         if (claimants is null)
             return first;
 
-        var isStub = lookup(modelId)?.IsExternalStub == true;
+        // The claimant whose kind matches the class actually in the graph: readable source, or a
+        // read-only library of the kind the class came from.
+        var kind = lookup(modelId) is { } node ? ModelicaGraph.ReadOnlySources.KindOf(node) : null;
 
-        return claimants.FirstOrDefault(
-                   l => (l.SourceType == LibrarySourceType.EncryptedDirectory) == isStub)
+        return claimants.FirstOrDefault(l => l.ReadOnlySource == kind)
                ?? claimants[0];
     }
 }

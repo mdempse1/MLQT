@@ -91,7 +91,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 | Service | Purpose |
 |---------|---------|
-| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run. `GetOwningLibrary(modelId)` is the **only** way to ask which library a class belongs to — never `Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))`, which returns whichever load finished first; `LibraryOwnershipPolicyTests` holds every read of a library's `ModelIds` to a ledger. An encrypted library is **never loaded beside readable source for the same library** (`SourceSupersedesEncrypted`, B268): the source wins whole, so the vendor build contributes no classes the checkout has deleted |
+| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run. `GetOwningLibrary(modelId)` is the **only** way to ask which library a class belongs to — never `Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))`, which returns whichever load finished first; `LibraryOwnershipPolicyTests` holds every read of a library's `ModelIds` to a ledger. An encrypted library is **never loaded beside readable source for the same library** (`SourceSupersedesEncrypted`, B268): the source wins whole, so the vendor build contributes no classes the checkout has deleted. `AddLibraryFromSourceAsync(IReadOnlyClassSource)` adds a library a host **supplies from memory** — read-only through the same loader as an encrypted one, and ranked between them: readable source > supplied > recovered from documentation, except that a supplied copy naming a different version from the installed encrypted build gives way to it. Ask `LoadedLibrary.IsReadOnly`, never `SourceType == EncryptedDirectory`, for "may this be touched?" |
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations. `GetWorkingCopyChanges` runs **one status query per working copy at a time**, shared by every caller that arrives while it runs (B293) — two libraries checked out in one tree share it (B330) — never call the VCS for status yourself. `GetRepositoriesSharingWorkingCopy` is the group a VCS operation acts on: two libraries checked out in one tree are two repositories, and whatever follows an operation (monitor pause, reload, analysis) must reach all of them (B301). `RelocateLibraryAsync` is how a library that was one `.mo` file becomes the directory Format All expanded it into — its `SourcePath`, `RelativePathInRepository` and the repository's `DiscoveredLibraries` together, so the state is what a project reload would give (B417). `RefreshRepositoryAsync` keeps which classes the reload changed - source that differs, and everything below a package whose `__MLQT` waivers or imports now reach it differently - until the VCS pipeline takes them with `TakeClassesChangedByReload`, because neither the paused monitor nor the VCS status can name what an update committed (B499) |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing. A VCS operation holds the monitor off with a `MonitorPause` (`MLQT.Shared/Helpers`), which starts it again on disposal unless it was handed to the `VcsFilesChanged` pipeline — never with a bare `StopMonitoring`/`StartMonitoring` pair (B296) |
 | **ICodeReviewService** | Log messages and findings from parsing/style checking |
@@ -277,6 +277,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 - `DirectedGraph` - Main graph structure with node/edge management. `DependenciesAnalyzed` is the single source of truth for whether `UsedModelIds`/`UsedByModelIds` are populated — never infer it by checking whether some model happens to have edges
 - `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
 - `ExternalStubBuilder` - Turns `DocumentedClass` records into graph nodes by synthesizing a minimal Modelica declaration, so every parse-tree-based consumer resolves them unchanged. Nodes are flagged `ModelNode.IsExternalStub`: never reported on, never written
+- `IReadOnlyClassSource` / `ReadOnlySourceLoader` / `ReadOnlySources` (`ReadOnlySources/`) - **The one way a read-only library comes in**, recovered from documentation or supplied from memory as Modelica text. Read-only is decided once per level: the class (`IsExternalStub`, set before it reaches the graph), the file (`ReadOnlySources.IsReadOnlyPath`: a `.moe`, or under `mlqt-readonly://`, never on disk — every write path asks it) and the library (`LoadedLibrary.IsReadOnly`). `ReadOnlySources.Precedence` is the one rank between copies of a class or library; `KindOf(node)` tells readable, supplied and recovered classes apart. See `skill-encrypted-libraries.md`
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
 - `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule findings) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags). `SeverityFor(id)` is the **only** way to ask what a rule will do — it resolves governors, prerequisites and formatter-derived levels, none of which are visible in the raw `RuleSeverities` map. `StampSeverities` is the one place configuration is applied to findings
 - `ModelDefinition.Borrow` - **The convention for reading a class you do not own.** Parses if needed, runs the work, and releases the tree again *only if this call is what parsed it*. Read it before adding any `EnsureParsed()`: the two halves have come apart in both directions, and a walk that keeps a base class's tree accumulates over tens of thousands of classes. The bulk load pass in `GraphBuilder` is the deliberate exception, and says so
@@ -349,7 +350,7 @@ Detailed documentation for specialized subsystems is available in `.claude/skill
 | `skill-cytoscape.md` | CytoscapeGraph component, cytoscapeGraph.js, layout options, script loading |
 | `skill-spell-checking.md` | Spell checking system: SpellChecker, dictionaries, custom words, style rule visitors, UI integration |
 | `skill-naming-conventions.md` | Naming convention checking: NamingValidator, NamingStyle, presets, FollowNamingConvention visitor, exception names |
-| `skill-encrypted-libraries.md` | Reading a vendor's generated help HTML: `DymolaHelpParser`, stub synthesis, `IsExternalStub` write guards, asymmetric resolution, accuracy |
+| `skill-encrypted-libraries.md` | Reading a vendor's generated help HTML: `DymolaHelpParser`, stub synthesis, `IsExternalStub` write guards, asymmetric resolution, accuracy; read-only class sources, supplied libraries and their precedence |
 | `skill-desktop-host.md` | The Photino host: `HostAssetManifest`, the silent failure modes, window placement and icons, the three platform services, WebKitGTK-vs-WebView2 differences, `/selftest` |
 | `skill-gui-testing.md` | The four test layers over `MLQT.Shared`, verify-by-mutation, guard tests, `MLQT.TestHost` + Playwright journeys, generated documentation screenshots |
 
@@ -689,6 +690,19 @@ Everything named is loaded into **one graph**, because a library resolves only b
 dependencies — so name each library's directory, not MSL's repository root, which also holds a test
 library written against 3.2.3. On 2026-10-03: 124,977 types, none unresolved; 6,239 redeclarations,
 no unit changed; about a minute. Taking away the lookup among inherited classes fails both tests.
+
+### "How long does a supplied library take to load?" — one real library, by hand
+
+`MLQT.Services.Tests/ExternalDocs/SuppliedLoadSpeedTests` reads a library's files into memory and
+times `AddLibraryFromSourceAsync` alone — what a host holding a library in memory pays when a session
+starts. Opt-in, and it reports rather than asserts a time:
+
+```powershell
+$env:MLQT_SUPPLIED_CORPUS = "C:\Projects\Modelica\ModelicaStandardLibrary\Modelica"
+dotnet test MLQT.Services.Tests --filter "FullyQualifiedName~SuppliedLoadSpeedTests" --output Detailed
+```
+
+On 2026-10-09: 2,939 files, 6,487 classes in 4.3 s, about 1,500 classes a second.
 
 ### "Where is the time actually going?" — `dotnet-trace`
 

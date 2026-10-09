@@ -55,8 +55,8 @@ public static class DictionaryScope
 
     private static Repository? RepositoryFor(IRepositoryService repositories, LoadedLibrary library)
     {
-        if (library.SourceType == LibrarySourceType.EncryptedDirectory)
-            return null;   // reconstructed from documentation; never checked, never spelled
+        if (library.IsReadOnly)
+            return null;   // not the vendor's source; never checked, never spelled
 
         if (library.RepositoryId is not { Length: > 0 } repositoryId)
             return null;

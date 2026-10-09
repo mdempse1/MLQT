@@ -32,8 +32,9 @@ internal static class FileWritability
     {
         // Not a permissions question, but it is the honest answer to "can this be written", and it is
         // the one `mlqt_get_class_info` reports: a stub whose library sits somewhere writable used to be
-        // advertised as editable, which is an invitation to try.
-        if (ExternalStubBuilder.IsEncryptedPackageFile(path))
+        // advertised as editable, which is an invitation to try. A class held only in memory has no
+        // file at all, and its path must never be created as one.
+        if (ReadOnlySources.IsReadOnlyPath(path))
             return false;
 
         try
@@ -96,6 +97,17 @@ internal static class FileWritability
                 "package. Its classes are reconstructions MLQT built from the vendor's documentation so " +
                 "that references into the library resolve — there is no source to edit, and writing here " +
                 "would destroy the package. No files were changed.");
+
+        var inMemory = pathList
+            .Where(ReadOnlySources.IsInMemoryPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (inMemory.Count > 0)
+            return new ToolError(
+                $"Cannot {operation}: {string.Join(", ", inMemory.Take(10))} belongs to a read-only library " +
+                "supplied from memory. Its classes describe a library whose source is not available — they " +
+                "are not the vendor's source and can never be edited. Edit your own classes, which may use " +
+                "them. No files were changed.");
 
         var blocked = pathList.Where(p => !IsWritable(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)

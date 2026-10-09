@@ -135,26 +135,29 @@ public class DirectedGraph
             }
             else if (node is ModelNode newModel && _nodes[node.Id] is ModelNode existingModel)
             {
-                // Readable source always beats a class reconstructed from vendor documentation, in
-                // whichever order the two arrive. The encrypted build of a library is no longer kept
-                // beside its source (B268, SourceSupersedesEncrypted) — but when the encrypted copy is
-                // loaded first, the source's classes land here before that library is retired, and
-                // this is what replaces the stubs in that window.
+                // Readable source always beats a class from a read-only library, and a supplied class
+                // beats one reconstructed from vendor documentation, in whichever order they arrive
+                // (ReadOnlySources.Precedence). A lower-ranked library is no longer kept beside a
+                // higher one (B268, SourceSupersedesEncrypted) — but when it is loaded first, the
+                // other's classes land here before it is retired, and this is what replaces its
+                // classes in that window.
                 //
                 // This has to be decided before the standalone rule below, because that rule cannot
                 // see the difference. A stub is never standalone, so a stub colliding with a nested
                 // `redeclare` class — which is not standalone either — matched none of its cases and
                 // left the stub in place. The class then had no source to check, so every rule went
                 // quiet on it while the standalone classes beside it were checked normally.
-                if (existingModel.IsExternalStub != newModel.IsExternalStub)
+                var existingRank = ReadOnlySources.Precedence(ReadOnlySources.KindOf(existingModel));
+                var newRank = ReadOnlySources.Precedence(ReadOnlySources.KindOf(newModel));
+                if (existingRank != newRank)
                 {
-                    if (existingModel.IsExternalStub)
+                    if (newRank > existingRank)
                     {
                         DetachFromFile(existingModel);
                         _nodes[node.Id] = node;
                     }
 
-                    // Otherwise the existing node is the real source: keep it.
+                    // Otherwise the existing node outranks it: keep it.
                 }
                 // When a standalone model collides with a non-standalone (prefixed) model,
                 // prefer the standalone version — it has the full class definition and can
@@ -368,11 +371,13 @@ public class DirectedGraph
         if (fileNode == null || modelNode == null)
             throw new ArgumentException("Both file and model nodes must exist.");
 
-        // A class whose source is loaded keeps the file its source is in. The only thing that ever
-        // asks otherwise is a library recovered from a vendor's documentation being loaded over a
-        // checked-out copy of the same library, and letting it win pointed the real class at an
-        // encrypted package — which then got read, parsed and, in the worst case, written.
-        if (!modelNode.IsExternalStub && IsExternalStubFile(fileNode))
+        // A class keeps the file of the source it came from. The only thing that ever asks
+        // otherwise is a lower-ranked read-only library being loaded over a copy that outranks it —
+        // a library recovered from a vendor's documentation over a checked-out copy of it — and
+        // letting it win pointed the real class at an encrypted package, which then got read,
+        // parsed and, in the worst case, written. Ranked as AddNode ranks the classes themselves.
+        if (ReadOnlySources.Precedence(ReadOnlySources.KindOf(modelNode))
+            > ReadOnlySources.PrecedenceOfFile(fileNode.FilePath))
             return;
 
         // A class lives in one file. Leaving it listed in the file it came from made it a member of
@@ -406,15 +411,6 @@ public class DirectedGraph
         GetNode<FileNode>(model.ContainingFileId)?.ContainedModelIds.Remove(model.Id);
         RemoveEdge(model.ContainingFileId, model.Id);
     }
-
-    /// <summary>
-    /// Whether a file is an encrypted package, which holds no readable source at all — only classes
-    /// MLQT rebuilt from the vendor's documentation. Decided by the extension rather than by what the
-    /// file currently contains, so the answer does not depend on how much of it has been registered
-    /// yet.
-    /// </summary>
-    private static bool IsExternalStubFile(FileNode fileNode) =>
-        ExternalStubBuilder.IsEncryptedPackageFile(fileNode.FilePath);
 
     /// <summary>
     /// Creates a relationship where one model uses another model.
