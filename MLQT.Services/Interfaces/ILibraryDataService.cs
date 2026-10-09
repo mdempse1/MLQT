@@ -145,7 +145,7 @@ public interface ILibraryDataService
     /// <see cref="ReadOnlySources.InMemoryPathPrefix"/>, which every write path refuses) and is never
     /// reported on. For the same library name, readable source outranks it and it outranks one
     /// recovered from documentation — unless that one names a different version, when it is the
-    /// supplied library that is not used (<see cref="SourceSupersedesEncrypted"/>).</para>
+    /// supplied library that is not used (<see cref="LibraryPrecedence"/>).</para>
     /// </summary>
     /// <param name="source">The library. Its <see cref="IReadOnlyClassSource.Kind"/> must be
     /// <see cref="ReadOnlySourceKind.Supplied"/>; an encrypted library has

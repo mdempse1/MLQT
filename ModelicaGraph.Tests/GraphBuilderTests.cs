@@ -1717,7 +1717,7 @@ end AbsUser;";
         var method = typeof(GraphBuilder).GetMethod(
             "CreateParseFailurePlaceholder",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        return (string)method.Invoke(null, new object[] { graph, fileId, filePath, content, errors, false })!;
+        return (string)method.Invoke(null, new object?[] { graph, fileId, filePath, content, errors, null })!;
     }
 
     private static string InvokeExtractWithin(string content)

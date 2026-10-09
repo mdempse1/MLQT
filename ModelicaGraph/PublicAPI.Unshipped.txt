@@ -23,6 +23,8 @@ ModelicaGraph.ReadOnlySourceLoad.Equals(ModelicaGraph.ReadOnlySourceLoad? other)
 ModelicaGraph.ReadOnlySourceLoad.ModelIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.ReadOnlySourceLoad.ModelIds.init -> void
 ModelicaGraph.ReadOnlySourceLoad.ReadOnlySourceLoad(System.Collections.Generic.IReadOnlyList<string!>! ModelIds, int Superseded) -> void
+ModelicaGraph.ReadOnlySourceLoad.Refused.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.ReadOnlySourceLoad.Refused.init -> void
 ModelicaGraph.ReadOnlySourceLoad.Superseded.get -> int
 ModelicaGraph.ReadOnlySourceLoad.Superseded.init -> void
 ModelicaGraph.ReadOnlySourceLoader

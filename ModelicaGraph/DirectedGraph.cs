@@ -138,7 +138,7 @@ public class DirectedGraph
                 // Readable source always beats a class from a read-only library, and a supplied class
                 // beats one reconstructed from vendor documentation, in whichever order they arrive
                 // (ReadOnlySources.Precedence). A lower-ranked library is no longer kept beside a
-                // higher one (B268, SourceSupersedesEncrypted) — but when it is loaded first, the
+                // higher one (B268, LibraryPrecedence) — but when it is loaded first, the
                 // other's classes land here before it is retired, and this is what replaces its
                 // classes in that window.
                 //

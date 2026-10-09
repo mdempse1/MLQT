@@ -67,6 +67,15 @@ public class LoadedLibrary
     public string? Version { get; set; }
 
     /// <summary>
+    /// What a library's source said its version was when it was loaded — the read-only source's
+    /// <c>LibraryVersion</c>, or an encrypted library's directory name — kept apart from
+    /// <see cref="Version"/> so the version can be settled again when the top-level package is
+    /// reloaded, without the previous answer posing as a claim. Null for a readable library, whose
+    /// directory name is asked each time.
+    /// </summary>
+    internal string? VersionClaim { get; set; }
+
+    /// <summary>
     /// What kind of read-only library this is, or null for one loaded from source. Set by the loader
     /// of an <see cref="ModelicaGraph.IReadOnlyClassSource"/>; every class it supplies is a
     /// <see cref="ModelicaGraph.DataTypes.ModelNode.IsExternalStub"/> of that kind
@@ -159,7 +168,7 @@ public class LoadedLibrary
 
     /// <summary>
     /// For a read-only library that was not used because a copy of the same library that outranks it
-    /// is loaded (<see cref="SourceSupersedesEncrypted"/>), where that copy is. Null for every library
+    /// is loaded (<see cref="LibraryPrecedence"/>), where that copy is. Null for every library
     /// that is in use.
     ///
     /// <para>Such a library has an empty <see cref="ModelIds"/>, and so does one that ships no

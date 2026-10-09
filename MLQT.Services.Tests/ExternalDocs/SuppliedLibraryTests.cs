@@ -446,6 +446,68 @@ public class SuppliedLibraryTests : IDisposable
         Assert.NotNull(ReferenceLibraryRules.ReasonToSkip(candidate, isEncrypted: true, "Claytex", [recovered], true));
     }
 
+    [Fact]
+    public async Task EditingTheVersionAnnotation_ChangesTheLibrarysVersion()
+    {
+        // Read from the graph at load and settled again when the top-level package reloads; before,
+        // the library went on reporting the version it was loaded with.
+        var lib = Path.Combine(_root, "edited", "V 4.0.0");
+        Directory.CreateDirectory(lib);
+        var packageMo = Path.Combine(lib, "package.mo");
+        File.WriteAllText(packageMo, "package V\n  annotation (version = \"4.0.0\");\nend V;\n");
+        var service = new LibraryDataService();
+        var library = await service.AddLibraryFromDirectoryAsync(lib);
+        Assert.Equal("4.0.0", library.Version);
+
+        File.WriteAllText(packageMo, "package V\n  annotation (version = \"4.1.0\");\nend V;\n");
+        await service.ReloadFileAsync(packageMo);
+
+        Assert.Equal("4.1.0", library.Version);
+    }
+
+    [Fact]
+    public async Task TwoReadOnlyLoadsOfOneLibrary_RunOneAtATime()
+    {
+        // Each must see the other in its precedence checks; side by side, either could pass before the
+        // other registered. The first is held inside its read, and the second may not start reading -
+        // or finish - until it is let go.
+        using var reading = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var service = new LibraryDataService();
+        var first = new Source(onRead: () => { reading.Set(); release.Wait(TimeSpan.FromSeconds(30)); });
+        var second = new Source();
+
+        var firstLoad = Task.Run(() => service.AddLibraryFromSourceAsync(first));
+        Assert.True(reading.Wait(TimeSpan.FromSeconds(30)), "the first load never reached its read");
+        var secondLoad = Task.Run(() => service.AddLibraryFromSourceAsync(second));
+
+        // Without the gate the second load has nothing to wait for and finishes at once.
+        var finishedFirst = await Task.WhenAny(secondLoad, Task.Delay(TimeSpan.FromSeconds(2)));
+        Assert.NotSame(secondLoad, finishedFirst);
+        Assert.Equal(0, second.Reads);
+
+        release.Set();
+        await firstLoad;
+        var secondLibrary = await secondLoad;
+
+        // And having waited, it saw the first and was not loaded.
+        Assert.Single(service.Libraries);
+        Assert.NotNull(secondLibrary.SupersededBy);
+    }
+
+#pragma warning disable CS0618 // the forwarder is obsolete by design, and this is its test
+    [Fact]
+    public void TheOldName_StillAnswersAsTheNewOne()
+    {
+        var source = Library(null);
+        var recovered = Library(ReadOnlySourceKind.RecoveredFromDocumentation);
+
+        Assert.Equal(LibraryPrecedence.Retires(source, [recovered]), SourceSupersedesEncrypted.Retires(source, [recovered]));
+        Assert.True(SourceSupersedesEncrypted.SameLibrary("Claytex", "Claytex"));
+        Assert.Equal("/b", SourceSupersedesEncrypted.ReadableSourceFor("Claytex", [("Claytex", "/b")]));
+    }
+#pragma warning restore CS0618
+
     // ---------------------------------------------------------------- the rule on its own
 
     private static LoadedLibrary Library(ReadOnlySourceKind? kind, string? version = null) => new()
@@ -468,12 +530,12 @@ public class SuppliedLibraryTests : IDisposable
         var supplied = Library(ReadOnlySourceKind.Supplied);
         var recovered = Library(ReadOnlySourceKind.RecoveredFromDocumentation);
 
-        Assert.True(SourceSupersedesEncrypted.Outranks(source, supplied));
-        Assert.True(SourceSupersedesEncrypted.Outranks(supplied, recovered));
-        Assert.True(SourceSupersedesEncrypted.Outranks(source, recovered));
-        Assert.False(SourceSupersedesEncrypted.Outranks(supplied, source));
-        Assert.False(SourceSupersedesEncrypted.Outranks(recovered, supplied));
-        Assert.False(SourceSupersedesEncrypted.Outranks(supplied, Library(ReadOnlySourceKind.Supplied)));
+        Assert.True(LibraryPrecedence.Outranks(source, supplied));
+        Assert.True(LibraryPrecedence.Outranks(supplied, recovered));
+        Assert.True(LibraryPrecedence.Outranks(source, recovered));
+        Assert.False(LibraryPrecedence.Outranks(supplied, source));
+        Assert.False(LibraryPrecedence.Outranks(recovered, supplied));
+        Assert.False(LibraryPrecedence.Outranks(supplied, Library(ReadOnlySourceKind.Supplied)));
     }
 
     [Theory]
@@ -487,8 +549,8 @@ public class SuppliedLibraryTests : IDisposable
         var supplied = Library(ReadOnlySourceKind.Supplied, suppliedVersion);
         var recovered = Library(ReadOnlySourceKind.RecoveredFromDocumentation, recoveredVersion);
 
-        Assert.Equal(suppliedWins, SourceSupersedesEncrypted.Outranks(supplied, recovered));
-        Assert.Equal(!suppliedWins, SourceSupersedesEncrypted.Outranks(recovered, supplied));
+        Assert.Equal(suppliedWins, LibraryPrecedence.Outranks(supplied, recovered));
+        Assert.Equal(!suppliedWins, LibraryPrecedence.Outranks(recovered, supplied));
     }
 
     [Fact]
@@ -496,8 +558,8 @@ public class SuppliedLibraryTests : IDisposable
     {
         var source = Library(null, "1.0");
 
-        Assert.True(SourceSupersedesEncrypted.Outranks(source, Library(ReadOnlySourceKind.Supplied, "2.0")));
-        Assert.True(SourceSupersedesEncrypted.Outranks(source, Library(ReadOnlySourceKind.RecoveredFromDocumentation, "2.0")));
+        Assert.True(LibraryPrecedence.Outranks(source, Library(ReadOnlySourceKind.Supplied, "2.0")));
+        Assert.True(LibraryPrecedence.Outranks(source, Library(ReadOnlySourceKind.RecoveredFromDocumentation, "2.0")));
     }
 
     [Fact]

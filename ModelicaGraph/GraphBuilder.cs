@@ -19,15 +19,15 @@ public static class GraphBuilder
     /// <param name="filePath">Path to the Modelica file.</param>
     /// <returns>The list of models read from the file</returns>
     public static List<string> LoadModelicaFile(DirectedGraph graph, string filePath, string content)
-        => LoadModelicaFile(graph, filePath, content, readOnlyBanner: null);
+        => LoadModelicaFile(graph, filePath, content, readOnly: null);
 
-    /// <param name="readOnlyBanner">For a read-only library's supplied text
-    /// (<see cref="ReadOnlySourceLoader"/>): the comment block every class opens with. When set, each
-    /// class is marked <see cref="ModelNode.IsExternalStub"/> <b>before</b> it reaches the graph, so
-    /// it never stands in the graph as readable source, not even for the time a file takes to load.</param>
+    /// <param name="readOnly">For a read-only library's supplied text (<see cref="ReadOnlySourceLoader"/>).
+    /// When set, each class is marked <see cref="ModelNode.IsExternalStub"/> and given the banner
+    /// <b>before</b> it reaches the graph, so it never stands in the graph as readable source, not even
+    /// for the time a file takes to load - and a class outside the library is not added at all.</param>
     /// <inheritdoc cref="LoadModelicaFile(DirectedGraph, string, string)"/>
     internal static List<string> LoadModelicaFile(
-        DirectedGraph graph, string filePath, string content, string? readOnlyBanner)
+        DirectedGraph graph, string filePath, string content, ReadOnlyFileLoad? readOnly)
     {
         // Normalize line endings once - all downstream methods skip re-normalization
         var normalizedContent = ModelicaParserHelper.NormalizeLineEndings(content);
@@ -39,6 +39,7 @@ public static class GraphBuilder
         graph.AddNode(fileNode);
 
         List<string> modelIDs = new();
+        List<ModelNode> placed = new();
         List<ModelInfo> models = new();
         List<ParserError> fileParserErrors = new();
 
@@ -88,8 +89,9 @@ public static class GraphBuilder
             if (models.Count == 0 && fileParserErrors.Count > 0)
             {
                 var placeholderId = CreateParseFailurePlaceholder(
-                    graph, fileId, filePath, normalizedContent, fileParserErrors, readOnly: readOnlyBanner is not null);
-                modelIDs.Add(placeholderId);
+                    graph, fileId, filePath, normalizedContent, fileParserErrors, readOnly);
+                if (placeholderId is not null)
+                    modelIDs.Add(placeholderId);
                 return modelIDs;
             }
 
@@ -100,10 +102,19 @@ public static class GraphBuilder
             foreach (var modelInfo in models)
             {
                 var modelId = GenerateModelId(modelInfo.ParentModelName, modelInfo.Name);
-                modelIDs.Add(modelId);
-                var modelNode = new ModelNode(modelId, modelInfo.Name, readOnlyBanner + modelInfo.SourceCode)
+                if (readOnly is not null && !readOnly.Accepts(modelId))
                 {
-                    IsExternalStub = readOnlyBanner is not null
+                    readOnly.Refused.Add(modelId);
+                    continue;
+                }
+
+                modelIDs.Add(modelId);
+                var modelNode = new ModelNode(modelId, modelInfo.Name, readOnly?.Banner + modelInfo.SourceCode)
+                {
+                    IsExternalStub = readOnly is not null,
+                    // The banner is the source's, not the file's, so the stored text is no longer the
+                    // file's lines - and a line inside the class must not be mapped back as if it were.
+                    SourceMatchesFile = readOnly is null
                 };
 
                 // Store additional information as typed properties
@@ -139,6 +150,7 @@ public static class GraphBuilder
                 }
 
                 graph.AddNode(modelNode);
+                placed.Add(modelNode);
 
                 // Link the file to the model
                 graph.AddFileContainsModel(fileId, modelId);
@@ -231,7 +243,14 @@ public static class GraphBuilder
             // partially-added models for this file and produce a placeholder so the user
             // still sees the file and knows something went wrong. This guarantees no file
             // ever disappears silently from the library tree.
-            graph.RemoveNodes(modelIDs);
+            //
+            // Only the nodes this call placed. A class of the same id loaded from somewhere else - the
+            // copy AddNode kept instead of this one, readable source over a supplied class - is not
+            // this file's to take out.
+            graph.RemoveNodes(placed
+                .Where(node => ReferenceEquals(graph.GetNode<ModelNode>(node.Id), node))
+                .Select(node => node.Id)
+                .ToList());
 
             var fallbackErrors = new List<ParserError>(fileParserErrors)
             {
@@ -244,8 +263,8 @@ public static class GraphBuilder
                 }
             };
             var placeholderId = CreateParseFailurePlaceholder(
-                graph, fileId, filePath, normalizedContent, fallbackErrors, readOnly: readOnlyBanner is not null);
-            return new List<string> { placeholderId };
+                graph, fileId, filePath, normalizedContent, fallbackErrors, readOnly);
+            return placeholderId is null ? [] : [placeholderId];
         }
     }
 
@@ -255,13 +274,13 @@ public static class GraphBuilder
     /// placeholder is linked to the file node and flagged via
     /// <see cref="ModelNode.IsParseFailurePlaceholder"/> so downstream analysis can skip it.
     /// </summary>
-    private static string CreateParseFailurePlaceholder(
+    private static string? CreateParseFailurePlaceholder(
         DirectedGraph graph,
         string fileId,
         string filePath,
         string fileContent,
         List<ParserError> parserErrors,
-        bool readOnly)
+        ReadOnlyFileLoad? readOnly)
     {
         // Determine the class name. For `package.mo` the Modelica class is named after
         // the *containing directory*, not the filename. For all other .mo files the
@@ -308,8 +327,15 @@ public static class GraphBuilder
             // IsParseFailurePlaceholder explicitly rather than relying on this flag.
             CanBeStoredStandalone = true,
             IsParseFailurePlaceholder = true,
-            IsExternalStub = readOnly
+            IsExternalStub = readOnly is not null
         };
+
+        // A file of a supplied library that does not parse is still held to its library.
+        if (readOnly is not null && !readOnly.Accepts(placeholderId))
+        {
+            readOnly.Refused.Add(placeholderId);
+            return null;
+        }
 
         foreach (var error in parserErrors)
             placeholder.Definition.ParserErrors.Add(error);

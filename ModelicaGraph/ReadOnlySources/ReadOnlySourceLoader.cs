@@ -77,7 +77,8 @@ public static class ReadOnlySourceLoader
                 $"A supplied source's files are held in memory, so its location must start with " +
                 $"'{ReadOnlySources.InMemoryPathPrefix}', not be '{location}'.", nameof(source));
 
-        var banner = ReadOnlySources.Banner(source.ProvenanceNote);
+        var fileLoad = new ReadOnlyFileLoad(
+            ReadOnlySources.Banner(source.ProvenanceNote), source.LibraryName, new ConcurrentBag<string>());
         var root = source.Location ?? ReadOnlySources.InMemoryRoot(source.LibraryName);
         var classTexts = content.Texts.Where(t => !IsPackageOrder(t.RelativePath)).ToList();
         var ids = new ConcurrentBag<string>();
@@ -88,7 +89,7 @@ public static class ReadOnlySourceLoader
             var batch = classTexts.Skip(start).Take(BatchSize);
             Parallel.ForEach(batch, text =>
             {
-                var loaded = GraphBuilder.LoadModelicaFile(graph, PathOf(root, text.RelativePath), text.Text, banner);
+                var loaded = GraphBuilder.LoadModelicaFile(graph, PathOf(root, text.RelativePath), text.Text, fileLoad);
                 foreach (var id in loaded)
                 {
                     // Left in the graph only where nothing outranked it: AddNode keeps readable source
@@ -105,7 +106,10 @@ public static class ReadOnlySourceLoader
         foreach (var order in content.Texts.Where(t => IsPackageOrder(t.RelativePath)))
             ApplyPackageOrder(graph, root, order);
 
-        return new ReadOnlySourceLoad(ids.Distinct().ToList(), superseded);
+        return new ReadOnlySourceLoad(ids.Distinct().ToList(), superseded)
+        {
+            Refused = fileLoad.Refused.Distinct().Order(StringComparer.Ordinal).ToList()
+        };
     }
 
     private static string PathOf(string root, string relativePath) =>

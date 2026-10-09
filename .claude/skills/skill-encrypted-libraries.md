@@ -85,7 +85,7 @@ trend.
 
 A tool's library folder ships the encrypted build of libraries a user may also have checked out as
 source, and the two are routinely **different releases**. They are never both loaded:
-`SourceSupersedesEncrypted` (exact top-level name; an unknown name matches nothing) decides, and it is
+`LibraryPrecedence` (exact top-level name; an unknown name matches nothing) decides, and it is
 applied twice (B268, WP15):
 
 - `RepositoryService.LoadLibrariesAsync` skips the encrypted build **before reading it**, from the
@@ -142,6 +142,25 @@ disagreement is logged. A supplied library's annotation is read from its text *b
 loaded, because precedence depends on it; an encrypted library has none anyone can read, so its
 directory name, then `libraryinfo.mos`, is its version.
 
+**A supplied library may only hold classes of its own name.** `ReadOnlyFileLoad` refuses, before
+it reaches the graph, any class whose root is not the library's (`within Modelica.Blocks;`,
+`within MyLib;`), and the refused ids come back in `ReadOnlySourceLoad.Refused` and are logged.
+Precedence is decided per library name, so a class in another library's namespace would sidestep it
+— displacing that library's recovered classes, or adding to the user's own.
+
+**A supplied class's stored source is not its file's lines** (`SourceMatchesFile` is false): the
+banner is the source's, so nothing maps a line inside the class back to a file line by offset.
+
+**Read-only loads of one library name run one at a time** (a gate per name in `LibraryDataService`).
+Class by class the rank can point the other way from the library-level answer — a supplied copy of
+another release outranks the installed build's classes, yet loses to it as a library — so two such
+loads side by side could leave the loser's classes in place of the winner's. Different libraries
+still load in parallel.
+
+**`LoadedLibrary.Version` is settled again when the top-level package reloads**, so an edit to its
+annotation is seen. What the source claimed is kept apart (`VersionClaim`) so the previous answer is
+never mistaken for a claim.
+
 **Cancellation is observed before the first class is added, never after.** Stopping half way
 would leave classes no library owns, and removing them again is not enough — a supplied class may
 already have replaced a recovered one, which would then be missing from its own library.
@@ -151,7 +170,8 @@ already have replaced a recovered one, which would then be missing from its own 
 is the old fixed header word for word, and a test holds that.
 
 **Precedence is one rank** (`ReadOnlySources.Precedence`): readable source 2, supplied 1, recovered 0.
-`SourceSupersedesEncrypted` applies it to libraries, `DirectedGraph.AddNode` to two copies of a class,
+`LibraryPrecedence` (formerly `SourceSupersedesEncrypted`, which remains as an obsolete forwarder for
+code built against it) applies it to libraries, `DirectedGraph.AddNode` to two copies of a class,
 and `AddFileContainsModel` refuses to move a class into a lower-ranked file — so the three cannot
 disagree about which copy the user sees. **One exception, for the version**: a supplied copy whose
 version differs from a loaded recovered copy's describes a release that is not installed, so the

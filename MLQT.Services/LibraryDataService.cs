@@ -21,6 +21,18 @@ public class LibraryDataService : ILibraryDataService
     private readonly object _graphLock = new();
 
     /// <summary>
+    /// One gate per library name, held for the whole of a read-only load. Two read-only copies of one
+    /// library loading at once could each pass the other's precedence check before either registered,
+    /// and the loser - retired only at registration - could already have displaced the winner's
+    /// classes, because class by class the rank can point the other way: a supplied copy of another
+    /// release outranks the installed build's classes, yet loses to it as a library. Different
+    /// libraries still load in parallel; readable source needs no gate, because its classes win
+    /// class by class exactly as its library wins.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _readOnlyLoadGates =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Combined graph for cross-library operations.
     /// </summary>
     private readonly DirectedGraph _combinedGraph = new();
@@ -334,7 +346,10 @@ public class LibraryDataService : ILibraryDataService
         // library's is not known until its text is - the annotation in it is definitive - so its
         // first precedence check below is by rank alone.
         library.Version = source.Kind == ReadOnlySourceKind.RecoveredFromDocumentation ? source.LibraryVersion : null;
+        library.VersionClaim = source.LibraryVersion;
 
+        var gate = _readOnlyLoadGates.GetOrAdd(source.LibraryName, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
         try
         {
             // A copy that keeps its place against this one is already loaded, so this one would be
@@ -389,6 +404,14 @@ public class LibraryDataService : ILibraryDataService
                 }
 
                 superseded = load.Superseded;
+                if (load.Refused.Count > 0)
+                {
+                    Warn("LibraryDataService",
+                        $"{Capitalised(Describe(source.Kind))} '{library.Name}' declared {load.Refused.Count} class(es) " +
+                        $"outside the library, which were not loaded: {string.Join(", ", load.Refused.Take(10))}" +
+                        (load.Refused.Count > 10 ? ", ..." : ""));
+                }
+
                 BuildLibraryIndex(library, _combinedGraph, load.ModelIds.ToList());
             }, CancellationToken.None);
 
@@ -416,6 +439,10 @@ public class LibraryDataService : ILibraryDataService
             LogProcessFailed("LibraryDataService", $"Loading {description}", ex);
             throw;
         }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>
@@ -427,7 +454,7 @@ public class LibraryDataService : ILibraryDataService
         LoadedLibrary? keeper;
         lock (_lock)
         {
-            keeper = SourceSupersedesEncrypted.OutrankedBy(library, _libraries);
+            keeper = LibraryPrecedence.OutrankedBy(library, _libraries);
         }
 
         if (keeper is null)
@@ -475,7 +502,7 @@ public class LibraryDataService : ILibraryDataService
 
     /// <summary>Why <paramref name="library"/> is not used, now that <paramref name="winner"/> outranks it.</summary>
     private static string NotUsedMessage(LoadedLibrary library, LoadedLibrary winner) =>
-        SourceSupersedesEncrypted.VersionsDisagree(library, winner)
+        LibraryPrecedence.VersionsDisagree(library, winner)
             ? $"{Capitalised(Describe(library.ReadOnlySource))} '{library.Name}' {library.Version} at {library.SourcePath} " +
               $"is not used: it describes a different release from the {Describe(winner.ReadOnlySource)} " +
               $"{winner.Version} installed at {winner.SourcePath}"
@@ -704,7 +731,7 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <summary>
-    /// Adds a newly loaded library to the list, applying <see cref="SourceSupersedesEncrypted"/> on
+    /// Adds a newly loaded library to the list, applying <see cref="LibraryPrecedence"/> on
     /// the way in. Every load path registers through here, so the rule cannot be missing from one.
     /// </summary>
     /// <returns>False when the library itself was superseded and is not registered: a read-only copy
@@ -722,7 +749,7 @@ public class LibraryDataService : ILibraryDataService
 
         lock (_lock)
         {
-            foreach (var (superseded, winner) in SourceSupersedesEncrypted.RetirementsFor(library, _libraries))
+            foreach (var (superseded, winner) in LibraryPrecedence.RetirementsFor(library, _libraries))
                 retired.Add((superseded, winner, RetireLocked(superseded, winner)));
 
             registered = !retired.Any(r => ReferenceEquals(r.Library, library));
@@ -751,7 +778,7 @@ public class LibraryDataService : ILibraryDataService
         List<(LoadedLibrary Library, LoadedLibrary Winner, int Removed)> retired = [];
         lock (_lock)
         {
-            foreach (var (superseded, _) in SourceSupersedesEncrypted.RetirementsFor(arriving, _libraries)
+            foreach (var (superseded, _) in LibraryPrecedence.RetirementsFor(arriving, _libraries)
                          .Where(r => !ReferenceEquals(r.Retired, arriving)
                                      && ReadOnlySources.Precedence(r.Retired.ReadOnlySource)
                                         > ReadOnlySources.Precedence(arriving.ReadOnlySource))
@@ -1022,6 +1049,7 @@ public class LibraryDataService : ILibraryDataService
         lock (_lock)
             affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(_combinedGraph));
 
+        RefreshVersions(affectedModelIds);
         RaiseTreeDataChanged();
 
         // Each class once. A file whose classes are unchanged contributes every id twice — once as
@@ -1133,6 +1161,7 @@ public class LibraryDataService : ILibraryDataService
             }
         }
 
+        RefreshVersions(affectedModelIds);
         RaiseTreeDataChanged();
         return affectedModelIds.ToHashSet();
     }
@@ -1495,13 +1524,30 @@ public class LibraryDataService : ILibraryDataService
         var annotated = root is not null && ReadOnlySources.KindOf(root) != ReadOnlySourceKind.RecoveredFromDocumentation
             ? root.Version
             : null;
-        var claimed = library.Version
-                      ?? (library.SourceType == LibrarySourceType.Supplied ? null : LibraryVersion.FromPathName(library.SourcePath));
+        var claimed = library.IsReadOnly ? library.VersionClaim : LibraryVersion.FromPathName(library.SourcePath);
 
         var (version, conflict) = LibraryVersion.Resolve(annotated, claimed);
-        library.Version = version;
-        if (conflict is not null)
+
+        // Reported when the answer is new: a supplied library's was settled, and reported, before it
+        // loaded, and a reload that leaves the version where it was has nothing new to say.
+        if (conflict is not null && version != library.Version)
             Warn("LibraryDataService", $"Library '{library.Name}' at {library.SourcePath}: {conflict}");
+        library.Version = version;
+    }
+
+    /// <summary>
+    /// Settles the version again for every readable library whose top-level package is among
+    /// <paramref name="changedModelIds"/> - an edit to its <c>version</c> annotation changes what the
+    /// library is, and <see cref="LoadedLibrary.Version"/> is only read from the graph at load.
+    /// </summary>
+    private void RefreshVersions(IEnumerable<string> changedModelIds)
+    {
+        var changed = changedModelIds.ToHashSet(StringComparer.Ordinal);
+        lock (_lock)
+        {
+            foreach (var library in _libraries.Where(l => !l.IsReadOnly && l.TopLevelModelIds.Any(changed.Contains)))
+                ResolveVersion(library, _combinedGraph);
+        }
     }
 
     /// <summary>

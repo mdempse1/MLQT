@@ -76,13 +76,13 @@ public static class ReferenceLibraryRules
         if (encryptedName is not { Length: > 0 })
             return null;
 
-        var sameName = loaded.FirstOrDefault(l => SourceSupersedesEncrypted.SameLibrary(l.Name, encryptedName));
+        var sameName = loaded.FirstOrDefault(l => LibraryPrecedence.SameLibrary(l.Name, encryptedName));
         if (sameName is null)
             return null;
 
         // Readable source always beats a read-only copy, so a readable candidate is loaded even when a
         // read-only copy got there first - and that copy is then retired whole as the source registers
-        // (SourceSupersedesEncrypted), not merged with it class by class. An encrypted candidate
+        // (LibraryPrecedence), not merged with it class by class. An encrypted candidate
         // against a supplied copy is left to the same rule too, because it is not always the supplied
         // copy that stays: one describing another release gives way to the build installed. Every
         // other combination is a second copy of something already present.

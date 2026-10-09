@@ -257,6 +257,42 @@ public class ReadOnlySourceLoaderTests
         Assert.Empty(Node(graph, "Vendor.Base").UsedModelIds);
     }
 
+    [Fact]
+    public void AClassOutsideTheLibrary_IsRefused_AndDisplacesNothing()
+    {
+        // A supplied library may only hold classes of its own name. Here it tries to add to another
+        // library's namespace - where a recovered class of that name is loaded - and to a third.
+        var graph = new DirectedGraph();
+        LoadRecovered(graph, Documented("Other"), Documented("Other.Pump"));
+
+        var load = Load(graph, Supplied(
+            new SuppliedText("Lib/package.mo", PackageText),
+            new SuppliedText("Lib/Pump.mo", "within Other;\nmodel Pump\nend Pump;\n"),
+            new SuppliedText("Lib/Gain.mo", "within Modelica.Blocks;\nblock Gain\nend Gain;\n"),
+            new SuppliedText("Lib/Broken.mo", "within Elsewhere;\n@@@ not Modelica @@@")));
+
+        Assert.Equal(["Elsewhere.Broken", "Modelica.Blocks.Gain", "Other.Pump"], load.Refused);
+        Assert.Equal(["Lib", "Lib.Inline"], load.ModelIds.Order());
+        Assert.Null(graph.GetNode<ModelNode>("Modelica.Blocks.Gain"));
+        Assert.Null(graph.GetNode<ModelNode>("Elsewhere.Broken"));
+        // The other library's recovered class is still its own.
+        Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation, ReadOnlySources.KindOf(Node(graph, "Other.Pump")));
+    }
+
+    [Fact]
+    public void ASuppliedClassesStoredSource_IsNotTakenForItsFilesLines()
+    {
+        // The banner is the source's, not the file's, so a line in the stored text is not the file's
+        // line plus an offset - which is what SourceMatchesFile says to everything that maps one.
+        var graph = new DirectedGraph();
+        Load(graph, SuppliedLibrary());
+        GraphBuilder.LoadModelicaFile(graph, WorkingCopyPump.Replace("Pump.mo", "Valve.mo"),
+            "within Lib;\nmodel Valve\nend Valve;\n");
+
+        Assert.False(Node(graph, "Lib.Pump").SourceMatchesFile);
+        Assert.True(Node(graph, "Lib.Valve").SourceMatchesFile);
+    }
+
     #endregion
 
     #region Precedence between copies of a class
