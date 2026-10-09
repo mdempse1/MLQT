@@ -41,18 +41,16 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ## UI Framework
 
-### MudBlazor (v9.0.0)
+### MudBlazor (v9.11.0)
 - **Purpose**: Blazor component library for Material Design UI
-- **Used in**: MLQT.Shared
+- **Used in**: MLQT.Shared, MLQT.McpTester
 - **License**: [MIT](https://github.com/MudBlazor/MudBlazor/blob/dev/LICENSE)
 - **NuGet**: https://www.nuget.org/packages/MudBlazor
-- **Components used**: MudTreeView, MudChipSet, MudTable, MudDialog, MudAlert, etc.
-
-### MudBlazor.Extensions (v8.15.1)
-- **Purpose**: Extended components and utilities for MudBlazor
-- **Used in**: MLQT.Shared
-- **License**: [MIT](https://github.com/fgilde/MudBlazor.Extensions)
-- **NuGet**: https://www.nuget.org/packages/MudBlazor.Extensions
+- **Components used**: MudTreeView, MudChipSet, MudTable, MudDialog, MudAlert, MudSplitPanel, etc.
+- **Note**: 9.11.0 is the first version with `MudSplitPanel`, which is why it is the floor. It
+  replaced MudBlazor.Extensions' `MudExSplitPanel`, the only thing that package was used for, and
+  removing it took `SixLabors.ImageSharp` 3.1.12 out of the tree: five advisories (NU1902/NU1903)
+  with no 3.x fix, and an ImageSharp 4 that checks for a licence key at build time
 
 ## The desktop host
 
@@ -221,7 +219,7 @@ Test packages are marked as development dependencies and don't ship with the app
 | DymolaInterface | Microsoft.Extensions.DependencyInjection, PublicApiAnalyzers |
 | OpenModelicaInterface | NetMQ, PublicApiAnalyzers |
 | MLQT.Services | MudBlazor, NLog, PublicApiAnalyzers |
-| MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
+| MLQT.Shared | MudBlazor, NLog |
 | MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
 | MLQT.McpServer | ModelContextProtocol, Microsoft.Extensions.Hosting, Svg.Skia, SkiaSharp.NativeAssets.Linux |
 | MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol |

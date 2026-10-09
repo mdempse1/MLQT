@@ -79,13 +79,11 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
     /// from the tabs with this same control, so every page carries at least two — nested, since the
     /// page's own panel is inside MainLayout's. A page-wide locator picks the outer one, which drags
     /// perfectly well and resizes something else entirely; the first version of this journey did
-    /// that and reported the splitter broken when the test was looking at the wrong element. Putting
-    /// a class on <c>MudExSplitPanel</c> does not help either: it lands on a wrapper rather than on
-    /// the element carrying <c>mud-ex-split-panel</c>. Anchoring on a pane we do own, and taking the
-    /// innermost match, says what is meant.</para>
+    /// that and reported the splitter broken when the test was looking at the wrong element.
+    /// Anchoring on a pane we do own, and taking the innermost match, says what is meant.</para>
     /// </summary>
     private static ILocator Splitter(IPage page, string pane) =>
-        page.Locator($".mud-ex-split-panel:has(.{pane}) > .mud-ex-splitter").Last;
+        page.Locator($".mud-split-panel:has(.{pane}) > .divider").Last;
 
     /// <summary>Drags <paramref name="splitter"/> by (dx, dy) and lets the layout settle.</summary>
     private static async Task DragAsync(IPage page, ILocator splitter, int dx, int dy)
@@ -99,6 +97,46 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
             new MouseMoveOptions { Steps = 10 });
         await page.Mouse.UpAsync();
         await page.WaitForTimeoutAsync(500);
+    }
+
+    /// <summary>
+    /// How much of its split the first pane of the innermost split containing
+    /// <paramref name="pane"/> starts with.
+    /// </summary>
+    private static Task<double> FirstPaneShareAsync(IPage page, string pane) =>
+        page.EvaluateAsync<double>(@"pane => {
+            const panels = [...document.querySelectorAll(`.mud-split-panel:has(.${pane})`)];
+            const split = panels[panels.length - 1];
+            const column = getComputedStyle(split).flexDirection === 'column';
+            const size = e => column ? e.getBoundingClientRect().height : e.getBoundingClientRect().width;
+            return size(split.firstElementChild) / size(split);
+        }", pane);
+
+    /// <summary>
+    /// Each split starts in the proportion it was designed with, not MudSplitPanel's 50/50. Its
+    /// initial size can only be given in pixels, so the proportion comes from the panes'
+    /// <c>flex-shrink</c> weights in app.css — a rule a MudBlazor update could stop honouring
+    /// without a single other test noticing, since every pane would still render and drag.
+    /// </summary>
+    [Fact]
+    public async Task EachSplitStartsInItsOwnProportion()
+    {
+        var page = await OpenAsync(0);
+        await Assertions.Expect(page.Locator(".mlqt-findings-pane").First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        var tree = await FirstPaneShareAsync(page, "mlqt-tree-pane");
+        Assert.InRange(tree, 0.20, 0.30);
+
+        var code = await FirstPaneShareAsync(page, "mlqt-findings-pane");
+        Assert.InRange(code, 0.60, 0.72);
+
+        page = await OpenAsync(2, withResources: true);
+        await Assertions.Expect(page.Locator(".mlqt-resource-tree-pane").First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        var resources = await FirstPaneShareAsync(page, "mlqt-resource-tree-pane");
+        Assert.InRange(resources, 0.28, 0.38);
     }
 
     [Fact]
@@ -153,7 +191,7 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
     }
 
     /// <summary>
-    /// One scrollbar, on the rows. <c>MudExSplitPanelItem</c> gives its content
+    /// One scrollbar, on the rows. The splitter this page first used gave its content
     /// <c>overflow: auto</c>, so when the toolbar and the table together outgrew the pane the pane
     /// scrolled as well — carrying the heading, the filters and the search box out of view along
     /// with the rows, and leaving the user two scrollbars of which the obvious one moved the wrong
@@ -308,8 +346,8 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
                         .ToBeVisibleAsync(new() { Timeout = 20_000 });
 
         var grew = await page.EvaluateAsync<int>(@"() => {
-            const panels = [...document.querySelectorAll('.mud-ex-split-panel:has(.mlqt-findings-pane)')];
-            const splitter = panels[panels.length - 1].closest('.mud-ex-split-panel-grid') ?? panels[panels.length - 1];
+            const panels = [...document.querySelectorAll('.mud-split-panel:has(.mlqt-findings-pane)')];
+            const splitter = panels[panels.length - 1];
             const before = splitter.getBoundingClientRect().height;
 
             const alert = document.createElement('div');
@@ -327,8 +365,8 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
 
         // And the alert really is taking room from the viewer rather than being ignored.
         var after = await page.EvaluateAsync<int>(@"() => {
-            const panels = [...document.querySelectorAll('.mud-ex-split-panel:has(.mlqt-findings-pane)')];
-            const splitter = panels[panels.length - 1].closest('.mud-ex-split-panel-grid') ?? panels[panels.length - 1];
+            const panels = [...document.querySelectorAll('.mud-split-panel:has(.mlqt-findings-pane)')];
+            const splitter = panels[panels.length - 1];
             return Math.round(splitter.getBoundingClientRect().height);
         }");
 

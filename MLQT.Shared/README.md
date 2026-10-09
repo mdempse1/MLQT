@@ -160,11 +160,9 @@ MIT License — see [LICENSE](../LICENSE) for details.
 ## Dependencies
 
 **NuGet Packages:**
-- MudBlazor 9.0.0
-- CodeBeam.MudBlazor.Extensions 9.0.0
-- MudBlazor.Extensions 8.15.1
-- Microsoft.AspNetCore.Components.Web 10.0.3
-- NLog 6.1.0
+- MudBlazor 9.11.0
+- Microsoft.AspNetCore.Components.Web 10.0.9
+- NLog 6.1.3
 
 **Project References:**
 - DymolaInterface
