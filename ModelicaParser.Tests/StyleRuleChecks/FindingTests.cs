@@ -129,7 +129,7 @@ public class FindingProjectionTests
     {
         // The projection used to hardcode "Style warning", so a rule configured to Error or Info was
         // resolved correctly and then flattened at this one line — the Code Review list and the MCP's
-        // list_findings saw warnings and nothing else, and a filter for errors matched nothing
+        // mlqt_list_findings saw warnings and nothing else, and a filter for errors matched nothing
         // whatever the settings said (B165). Only the CLI, which reads Finding.Severity directly, was
         // unaffected, which is why its gate worked and no other surface's did.
         var f = new Finding

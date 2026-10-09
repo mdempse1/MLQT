@@ -210,7 +210,7 @@ public class FileHeaderTests : IDisposable
     [Fact]
     public void RenderFileOwnerModel_OfAWholeFile_DoesNotWriteTheHeaderTwice()
     {
-        // format_class hands it the file as it is on disk, header included.
+        // mlqt_format_class hands it the file as it is on disk, header included.
         var lib = WriteLibrary();
         var graph = Load(lib);
         var owner = graph.GetNode<ModelNode>("Lib.M")!;

@@ -149,7 +149,7 @@ MLQT started from a familiar frustration: every time a Modelica tool saved a fil
 
 Doing that properly meant writing a real parser rather than matching text, and the parser turned out to be the useful part. The same understanding of the language that drives the formatter also drives style checking, the static analyses, dependency impact analysis and external resource tracking, alongside integrations with Dymola and OpenModelica for model checking.
 
-More recently, the improvement in AI agents' ability to work on Modelica made a third host worth building. The MCP server gives an agent focused information instead of raw files: to understand the public interface of `Modelica.Blocks.Continuous.Integrator` an agent would otherwise read the whole of `Continuous.mo`, close to 59,000 tokens; `get_class_interface` returns the same thing in under 600.
+More recently, the improvement in AI agents' ability to work on Modelica made a third host worth building. The MCP server gives an agent focused information instead of raw files: to understand the public interface of `Modelica.Blocks.Continuous.Integrator` an agent would otherwise read the whole of `Continuous.mo`, close to 59,000 tokens; `mlqt_get_class_interface` returns the same thing in under 600.
 
 ## License
 

@@ -246,7 +246,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
     [Fact]
     public async Task AnEncryptedCopyOfLoadedSource_IsNotEvenRead()
     {
-        // The CLI's --dependency folder and the MCP server's load_library come straight to the loader,
+        // The CLI's --dependency folder and the MCP server's mlqt_load_library come straight to the loader,
         // with no discovery pass in front to skip it. The loader asks before reading the help HTML,
         // so a library whose source is checked out costs a directory probe rather than a parse of its
         // documentation and a graph of stubs built to be thrown away.

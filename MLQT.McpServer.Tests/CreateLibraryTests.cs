@@ -26,7 +26,7 @@ public class CreateLibraryTests
         Assert.Contains("version=\"1.0.0\"", content);
         Assert.Contains("end MyLib;", content);
 
-        // The library is loaded and usable as a create_class parent.
+        // The library is loaded and usable as a mlqt_create_class parent.
         Assert.NotNull(host.Libraries.GetModelById("MyLib"));
         var edit = new EditTools(host.Libraries, host.Resources, host.Session);
         ToolAssert.Ok<CreateClassResult>(

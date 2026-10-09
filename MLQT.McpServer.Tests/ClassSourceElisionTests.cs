@@ -5,7 +5,7 @@ using ModelicaParser.Helpers;
 namespace MLQT.McpServer.Tests;
 
 /// <summary>
-/// What <c>get_class_source</c> hands an agent when it takes the annotations out (B218).
+/// What <c>mlqt_get_class_source</c> hands an agent when it takes the annotations out (B218).
 ///
 /// <para>It used to re-render the class through <c>ModelicaRenderer</c>, which rebuilds every line
 /// it emits — so the text was a reformat of the class rather than the class, and its line numbers
@@ -121,7 +121,7 @@ public class ClassSourceElisionTests
 
     /// <summary>
     /// The stripped text is offered to an agent as something it can edit and hand back to
-    /// <c>update_class_source</c>, so it has to parse. The trap is the semicolon that terminates a
+    /// <c>mlqt_update_class_source</c>, so it has to parse. The trap is the semicolon that terminates a
     /// declaration and sits after the annotation on the annotation's own line: taken out with it,
     /// the declaration above runs into the next one.
     /// </summary>

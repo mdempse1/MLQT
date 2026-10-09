@@ -15,8 +15,8 @@ public sealed class ServerInfoTools
 
     public ServerInfoTools(ILibraryDataService libraryData) => _libraryData = libraryData;
 
-    [McpServerTool(Name = "server_info")]
-    [Description("Returns basic MLQT MCP server status: how many libraries are currently loaded " +
+    [McpServerTool(Name = "mlqt_server_info")]
+    [Description("Returns basic MLQT MCP server status: how many Modelica libraries are currently loaded " +
                  "and their names. Use this to confirm the server is running and whether a library " +
                  "has been loaded yet (most other tools require a loaded library).")]
     public object GetServerInfo()

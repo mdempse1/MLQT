@@ -14,7 +14,7 @@ namespace MLQT.Services.Tests.Checking;
 /// <para>A class records a parse error lazily when something first parses it on its own - which the
 /// per-class pass does - unless its file's load already settled the diagnosis. LibraryCheckSession read
 /// the parse findings before that pass, so such an error reached only the <em>next</em> run in the same
-/// session: the MCP server's second <c>check_library</c> reported one more finding than its first on
+/// session: the MCP server's second <c>mlqt_check_library</c> reported one more finding than its first on
 /// unchanged code.</para>
 ///
 /// <para><b>Measured before being credited:</b> no library loaded from disk produces such a class. Over

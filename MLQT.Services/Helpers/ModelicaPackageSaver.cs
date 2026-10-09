@@ -202,7 +202,7 @@ public class ModelicaPackageSaver
             rootClassId: isSimpleType is null ? null : fileOwner.Id, isSimpleType);
 
         // The file's header and trailing comments, which the stored source never carries (B445), as
-        // the renderer writes them. Not when the source is already a whole file (format_class hands
+        // the renderer writes them. Not when the source is already a whole file (mlqt_format_class hands
         // over the file as it is on disk): its own header was rendered with it.
         return fileOwner.FileText is { } fileText && !WithinClause.Has(fileOwner.Definition.ModelicaCode ?? "")
             ? fileText.Formatted().ApplyTo(rendered)

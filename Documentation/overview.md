@@ -213,7 +213,7 @@ and services as the desktop application.
 
 The difference it makes is in what the agent has to read. To learn the public interface of
 `Modelica.Blocks.Continuous.Integrator`, an agent would otherwise read the whole of
-`Continuous.mo` — close to 59,000 tokens. `get_class_interface` returns the same information in
+`Continuous.mo` — close to 59,000 tokens. `mlqt_get_class_interface` returns the same information in
 under 600. That is the difference between working with a real library and working with a toy
 one.
 

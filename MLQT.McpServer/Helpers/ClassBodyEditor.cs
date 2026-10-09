@@ -24,7 +24,7 @@ internal sealed record ClassEditResult(string FilePath, bool PreviewOnly, int Af
 /// Shared machinery for section-aware surgical edits: resolves a class, its file owner and its body
 /// layout, then persists a transformed class body by splicing it back into the file, parse-checking,
 /// pre-flighting writability, writing, reloading and refreshing dependencies — the same path
-/// update_class_source uses, so single-element edits are as safe as whole-class replacement.
+/// mlqt_update_class_source uses, so single-element edits are as safe as whole-class replacement.
 /// </summary>
 internal static class ClassBodyEditor
 {
@@ -73,7 +73,7 @@ internal static class ClassBodyEditor
     /// <summary>
     /// Persist a transformed *file-owner* body (the whole-file slice): re-add the within clause,
     /// parse-check, preview/writability-gate, write, reload and refresh. Used by edits that produce a
-    /// new owner body directly (e.g. suppress_rule, which places an annotation onto a class located by
+    /// new owner body directly (e.g. mlqt_suppress_rule, which places an annotation onto a class located by
     /// name path within the owner rather than splicing a class slice).
     /// </summary>
     public static async Task<object> PersistOwnerAsync(

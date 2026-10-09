@@ -17,7 +17,7 @@ internal static class EntityResolver
     {
         var loaded = libraries.Libraries;
         if (loaded.Count == 0)
-            return (null, new ToolError("No libraries are loaded. Load one with load_repository or load_library."));
+            return (null, new ToolError(ToolDiagnostics.NothingLoaded($"finding library '{idOrName}'")));
 
         var byId = loaded.FirstOrDefault(l => l.Id == idOrName);
         if (byId is not null)
@@ -28,13 +28,13 @@ internal static class EntityResolver
             return (byName[0], null);
         if (byName.Count > 1)
             return (null, new ToolError(
-                $"Multiple loaded libraries are named '{idOrName}'. Use the specific id from list_libraries: " +
+                $"Multiple loaded libraries are named '{idOrName}'. Use the specific id from mlqt_list_libraries: " +
                 string.Join(", ", byName.Select(l => l.Id)) + "."));
 
         return (null, new ToolError(
             $"No loaded library matches '{idOrName}' by id or name. Loaded libraries: " +
             string.Join(", ", loaded.Select(l => $"'{l.Name}' (id {l.Id})")) +
-            ". Pass the name or the id exactly as shown by list_libraries."));
+            ". Pass the name or the id exactly as shown by mlqt_list_libraries."));
     }
 
     public static (Repository? repository, ToolError? error) ResolveRepository(
@@ -42,7 +42,7 @@ internal static class EntityResolver
     {
         var all = repositories.Repositories;
         if (all.Count == 0)
-            return (null, new ToolError("No repositories have been added. Use load_repository first."));
+            return (null, new ToolError("No repositories have been added. Use mlqt_load_repository first."));
 
         var byId = repositories.GetRepository(idOrName);
         if (byId is not null)
@@ -53,12 +53,12 @@ internal static class EntityResolver
             return (byName[0], null);
         if (byName.Count > 1)
             return (null, new ToolError(
-                $"Multiple repositories are named '{idOrName}'. Use the specific id from list_repositories: " +
+                $"Multiple repositories are named '{idOrName}'. Use the specific id from mlqt_list_repositories: " +
                 string.Join(", ", byName.Select(r => r.Id)) + "."));
 
         return (null, new ToolError(
             $"No repository matches '{idOrName}' by id or name. Repositories: " +
             string.Join(", ", all.Select(r => $"'{r.Name}' (id {r.Id})")) +
-            ". Pass the name or the id exactly as shown by list_repositories."));
+            ". Pass the name or the id exactly as shown by mlqt_list_repositories."));
     }
 }

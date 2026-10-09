@@ -293,7 +293,7 @@ public class MoveClassTests
 
         var err = ToolAssert.Error(await new EditTools(host.Libraries, host.Resources, host.Session)
             .MoveClass("Root.Src.Widget", "Root.Dst"));
-        Assert.Contains("analyze_dependencies", err.Error);
+        Assert.Contains("mlqt_analyze_dependencies", err.Error);
     }
 
     [Fact]

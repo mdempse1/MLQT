@@ -81,7 +81,7 @@ public static class ElisionFinder
     /// but <c>;</c> on screen for every hidden declaration annotation, which in a library of any
     /// size is precisely the per-annotation noise B233 was asked to remove — and the viewer never
     /// parses the elided text, only the spliced source, which still has those annotations in it.
-    /// <c>get_class_source</c> sets it because an agent reads the elided text and edits it (B218).</para>
+    /// <c>mlqt_get_class_source</c> sets it because an agent reads the elided text and edits it (B218).</para>
     /// </param>
     /// <returns>
     /// The spliced source, which has exactly as many lines as it was given, and the lines to drop

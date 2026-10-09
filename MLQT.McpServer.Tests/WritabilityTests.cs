@@ -6,7 +6,7 @@ namespace MLQT.McpServer.Tests;
 
 /// <summary>
 /// Phase 0 — filesystem-inferred writability. Editing tools must refuse to write files this process
-/// cannot own (e.g. a read-only reference library), and get_class_info surfaces the flag.
+/// cannot own (e.g. a read-only reference library), and mlqt_get_class_info surfaces the flag.
 /// </summary>
 public class WritabilityTests
 {

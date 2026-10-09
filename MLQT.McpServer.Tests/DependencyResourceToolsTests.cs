@@ -38,9 +38,9 @@ public class DependencyResourceToolsTests
     {
         using var host = new TestHost();
         var (deps, _) = Load(host);
-        // The class exists, but analysis has not run — guide to analyze_dependencies, not "not found".
+        // The class exists, but analysis has not run — guide to mlqt_analyze_dependencies, not "not found".
         var err = ToolAssert.Error(deps.GetDependencies("DepLib.Middle"));
-        Assert.Contains("analyze_dependencies", err.Error);
+        Assert.Contains("mlqt_analyze_dependencies", err.Error);
     }
 
     [Fact]

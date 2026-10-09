@@ -281,7 +281,7 @@ public class LibraryDataService : ILibraryDataService
             // source is checked out costs a directory probe instead of a pass over its help HTML and a
             // graph full of stubs built only to be taken out again. RepositoryService asks the same
             // question earlier still, from discovery; this is for every caller that comes straight
-            // here - the CLI's dependencies, the MCP server's load_library, the Reference Libraries
+            // here - the CLI's dependencies, the MCP server's mlqt_load_library, the Reference Libraries
             // setting. A source that arrives while this is loading is still caught by Register.
             if (ReadableSourceLoadedFor(library.Name) is { } source)
             {

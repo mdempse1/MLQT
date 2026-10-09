@@ -7,7 +7,7 @@ namespace MLQT.McpServer.Tests;
 /// Where one class's subtree ends — asked of the two tools that move and delete a user's files.
 /// </summary>
 /// <remarks>
-/// <para><b>Why these cases (B274).</b> `move_class` and `delete_class` both work out which classes
+/// <para><b>Why these cases (B274).</b> `mlqt_move_class` and `mlqt_delete_class` both work out which classes
 /// they are acting on with <c>id == root || id.StartsWith(root + ".")</c>. The 2026-09-22 campaign
 /// could empty that <c>"."</c> in all four copies with no test objecting, which makes
 /// <c>Root.Src</c> a prefix of <c>Root.SrcExtra</c> — so a move or a delete aimed at one package

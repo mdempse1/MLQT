@@ -25,10 +25,10 @@ public sealed class SearchTools
 
     public SearchTools(ILibraryDataService libraries) => _libraries = libraries;
 
-    [McpServerTool(Name = "search_text")]
-    [Description("Find classes whose description or Documentation prose contains the given text " +
+    [McpServerTool(Name = "mlqt_search_text")]
+    [Description("Find Modelica classes whose description or Documentation prose contains the given text " +
                 "(case-insensitive) — e.g. 'PID controller' or 'heat exchanger' — for when you don't know " +
-                "the class name. Searches the human-readable text, not code identifiers (use search_classes " +
+                "the class name. Searches only libraries loaded into MLQT (not a simulator's), and only the human-readable text, not code identifiers (use mlqt_search_classes " +
                 "for name matching). Returns where it matched and a snippet. Scans loaded classes, so the " +
                 "first search after loading a large library is slower (results are cached).")]
     public object SearchText(
@@ -82,9 +82,9 @@ public sealed class SearchTools
         return new TextSearchResult(total, items.Count, items);
     }
 
-    [McpServerTool(Name = "search_by_interface")]
-    [Description("Find classes by interface shape rather than name — e.g. simulatable models, blocks with " +
-                "connectors, or classes with parameters. Filter by class type, name substring, whether it " +
+    [McpServerTool(Name = "mlqt_search_by_interface")]
+    [Description("Find Modelica classes by interface shape rather than name — e.g. simulatable models, blocks with " +
+                "connectors, or classes with parameters. Searches only libraries loaded into MLQT, not a simulator's. Filter by class type, name substring, whether it " +
                 "has an experiment() annotation (simulatable), and minimum parameter/connector counts " +
                 "(counts include inherited members). Returns each match's parameter and connector counts.")]
     public object SearchByInterface(

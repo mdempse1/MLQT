@@ -75,12 +75,12 @@ public class ToolArgumentCoercionTests
     {
         var map = ToolArgumentCoercion.BuildParameterMap(typeof(EditTools).Assembly);
 
-        Assert.True(map.TryGetValue("create_class", out var createClass));
+        Assert.True(map.TryGetValue("mlqt_create_class", out var createClass));
         Assert.Contains("standalone", createClass!.Booleans);
         Assert.Contains("preview", createClass.Booleans);
 
         // A tool with no scalar parameters should not appear in the map.
-        Assert.True(map.TryGetValue("add_component", out var addComponent));
+        Assert.True(map.TryGetValue("mlqt_add_component", out var addComponent));
         Assert.Contains("preview", addComponent!.Booleans);
     }
 }

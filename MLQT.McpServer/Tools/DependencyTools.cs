@@ -13,8 +13,8 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// Dependency, usage and impact analysis over the loaded model graph. Dependency edges are NOT
-/// built at load time — call analyze_dependencies once (it can be slow on a large library) to
-/// populate them, then get_dependencies / find_usages / analyze_impact return meaningful results.
+/// built at load time — call mlqt_analyze_dependencies once (it can be slow on a large library) to
+/// populate them, then mlqt_get_dependencies / mlqt_find_usages / mlqt_analyze_impact return meaningful results.
 /// </summary>
 [McpServerToolType]
 public sealed class DependencyTools
@@ -38,16 +38,16 @@ public sealed class DependencyTools
         _session = session;
     }
 
-    [McpServerTool(Name = "analyze_dependencies")]
-    [Description("Run the dependency and external-resource analysis over all loaded libraries. This is " +
+    [McpServerTool(Name = "mlqt_analyze_dependencies")]
+    [Description("Run the dependency and external-resource analysis over all loaded Modelica libraries. This is " +
                 "an opt-in, potentially slow step (it parses every model and resolves references) and is " +
-                "required before get_dependencies, find_usages, analyze_impact, get_class_resources and " +
-                "get_resource_warnings return meaningful results. Returns counts of dependency edges and " +
+                "required before mlqt_get_dependencies, mlqt_find_usages, mlqt_analyze_impact, mlqt_get_class_resources and " +
+                "mlqt_get_resource_warnings return meaningful results. Returns counts of dependency edges and " +
                 "resources found. Safe to re-run after loading more libraries.")]
     public async Task<object> AnalyzeDependencies()
     {
         if (_libraries.Libraries.Count == 0)
-            return new ToolError("No libraries loaded. Load one first with load_library or load_repository.");
+            return new ToolError(ToolDiagnostics.NothingLoaded("analysing dependencies"));
 
         var graph = _libraries.CombinedGraph;
         // The service's list, not a copy of it: the copy this tool kept never marked an encrypted
@@ -71,9 +71,9 @@ public sealed class DependencyTools
             ElapsedMs: sw.ElapsedMilliseconds);
     }
 
-    [McpServerTool(Name = "get_dependencies")]
-    [Description("List the classes that a class directly uses/depends on (one hop). Requires " +
-                "analyze_dependencies to have been run. The result's dependenciesAnalyzed flag tells you " +
+    [McpServerTool(Name = "mlqt_get_dependencies")]
+    [Description("List the Modelica classes that a class directly uses/depends on (one hop). Requires " +
+                "mlqt_analyze_dependencies to have been run. The result's dependenciesAnalyzed flag tells you " +
                 "whether an empty list means 'no dependencies' (true) or 'not analyzed yet' (false).")]
     public object GetDependencies(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
@@ -92,10 +92,10 @@ public sealed class DependencyTools
         return new DependencyResult(classId, _session.DependenciesAnalyzed, items.Count, items);
     }
 
-    [McpServerTool(Name = "find_usages")]
-    [Description("List the classes that directly use/depend on a class (one hop, i.e. the direct " +
-                "dependents that would be affected if this class changed). Requires analyze_dependencies. " +
-                "For the full transitive blast radius, use analyze_impact.")]
+    [McpServerTool(Name = "mlqt_find_usages")]
+    [Description("List the Modelica classes that directly use/depend on a class (one hop, i.e. the direct " +
+                "dependents that would be affected if this class changed). Requires mlqt_analyze_dependencies. " +
+                "For the full transitive blast radius, use mlqt_analyze_impact.")]
     public object FindUsages(
         [Description("Fully-qualified class id whose direct dependents you want.")] string classId)
     {
@@ -112,10 +112,10 @@ public sealed class DependencyTools
         return new DependencyResult(classId, _session.DependenciesAnalyzed, items.Count, items);
     }
 
-    [McpServerTool(Name = "analyze_impact")]
-    [Description("Compute the full transitive impact of changing one or more classes: every class that " +
+    [McpServerTool(Name = "mlqt_analyze_impact")]
+    [Description("Compute the full transitive impact of changing one or more Modelica classes: every class that " +
                 "transitively depends on them (the complete blast radius), with the immediate source(s) " +
-                "that pulled each into the impact set. Requires analyze_dependencies. Returns the total " +
+                "that pulled each into the impact set. Requires mlqt_analyze_dependencies. Returns the total " +
                 "impacted count plus a page of details (use limit/offset; the count can be very large for " +
                 "core classes).")]
     public object AnalyzeImpact(
@@ -129,9 +129,7 @@ public sealed class DependencyTools
 
         var missing = classIds.Where(id => _libraries.GetModelById(id) is null).ToList();
         if (missing.Count > 0)
-            return _libraries.Libraries.Count == 0
-                ? ToolDiagnostics.ClassNotFound(_libraries, missing[0])
-                : new ToolError($"Unknown class id(s): {string.Join(", ", missing)}. Use search_classes to find them.");
+            return ToolDiagnostics.ClassesNotFound(_libraries, missing);
         if (!_session.DependenciesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries, "analysing change impact");
 

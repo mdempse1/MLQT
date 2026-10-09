@@ -54,14 +54,14 @@ send("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "client
 send("notifications/initialized", None)
 
 out = {}
-load = call("load_repository", {"path": repo})
-out["load_repository"] = load
+load = call("mlqt_load_repository", {"path": repo})
+out["mlqt_load_repository"] = load
 rid = load.get("repositoryId")
-out["get_changed_classes (working copy)"] = call("get_changed_classes", {"repositoryId": rid})
-out["analyze_change_impact (pre-analyze)"] = call("analyze_change_impact", {"repositoryId": rid})
-out["analyze_dependencies"] = call("analyze_dependencies", {})
-out["analyze_change_impact (working copy)"] = call("analyze_change_impact", {"repositoryId": rid})
-out["get_changed_classes (revision HEAD)"] = call("get_changed_classes", {"repositoryId": rid, "revision": "HEAD"})
+out["mlqt_get_changed_classes (working copy)"] = call("mlqt_get_changed_classes", {"repositoryId": rid})
+out["mlqt_analyze_change_impact (pre-analyze)"] = call("mlqt_analyze_change_impact", {"repositoryId": rid})
+out["mlqt_analyze_dependencies"] = call("mlqt_analyze_dependencies", {})
+out["mlqt_analyze_change_impact (working copy)"] = call("mlqt_analyze_change_impact", {"repositoryId": rid})
+out["mlqt_get_changed_classes (revision HEAD)"] = call("mlqt_get_changed_classes", {"repositoryId": rid, "revision": "HEAD"})
 
 proc.stdin.close()
 try:

@@ -16,7 +16,7 @@ public sealed class ToolParam
     public string StringValue { get; set; } = "";
 
     // Boolean value: null means "unset" so the parameter is omitted and the server applies its own
-    // default. This matters for tri-state bool? parameters (e.g. create_class's 'standalone', where
+    // default. This matters for tri-state bool? parameters (e.g. mlqt_create_class's 'standalone', where
     // unset = auto-choose, true = force standalone, false = force nested) — always sending false would
     // silently override the server's automatic choice.
     public bool? BoolValue { get; set; }

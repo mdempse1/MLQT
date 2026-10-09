@@ -162,7 +162,7 @@ public class WithoutAnnotationsTests
 
     // ---------------------------------------------------------------------------------------
     // elidedTextMustParse — B218. The viewer never parses the elided text, only the spliced
-    // source; get_class_source hands the elided text to an agent that edits it and gives it back.
+    // source; mlqt_get_class_source hands the elided text to an agent that edits it and gives it back.
     // The difference between the two is one character: who owns the semicolon after an annotation.
     // ---------------------------------------------------------------------------------------
 

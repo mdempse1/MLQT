@@ -139,9 +139,9 @@ public class VcsToolsTests
         using var host = new TestHost();
         var vcs = Build(host, out var repoId);
 
-        // Before analysis: guidance to run analyze_dependencies (get_changed_classes still works).
+        // Before analysis: guidance to run mlqt_analyze_dependencies (mlqt_get_changed_classes still works).
         var pre = ToolAssert.Error(vcs.AnalyzeChangeImpact(repoId));
-        Assert.Contains("analyze_dependencies", pre.Error);
+        Assert.Contains("mlqt_analyze_dependencies", pre.Error);
 
         // Run dependency analysis, then the impact appears.
         var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);

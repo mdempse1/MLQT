@@ -242,7 +242,7 @@ public class DiagramPlacementTests
     /// A protected component is hidden from the class's users, not from its diagram: MSL's
     /// <c>Modelica.Blocks.Examples.BusUsage</c> keeps its <c>controlBus</c> in a protected section
     /// and wires five connections to it. Listing only public elements drew those five lines to
-    /// nothing, and left the bus out of <c>get_diagram_layout</c> altogether.
+    /// nothing, and left the bus out of <c>mlqt_get_diagram_layout</c> altogether.
     /// </summary>
     private const string ProtectedSource = """
         within;

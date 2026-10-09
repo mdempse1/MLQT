@@ -12,25 +12,25 @@ load_path = sys.argv[2]
 reqs_phase1 = [
     ("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}),
     ("notifications/initialized", None),
-    ("tools/call", {"name": "load_library", "arguments": {"path": load_path}}),
+    ("tools/call", {"name": "mlqt_load_library", "arguments": {"path": load_path}}),
 ]
 
 MESSY = 'model M "d"\n  Real   y=2   "yy";\nequation\n y=1;\nend M;'
 
 reqs_phase2 = [
-    ("tools/call", {"name": "get_style_settings", "arguments": {}}),
-    ("tools/call", {"name": "format_code", "arguments": {"source": MESSY}}),
-    ("tools/call", {"name": "check_style", "arguments": {"source": 'model B\n Real p;\nequation\n p=1;\nend B;',
+    ("tools/call", {"name": "mlqt_get_style_settings", "arguments": {}}),
+    ("tools/call", {"name": "mlqt_format_code", "arguments": {"source": MESSY}}),
+    ("tools/call", {"name": "mlqt_check_style", "arguments": {"source": 'model B\n Real p;\nequation\n p=1;\nend B;',
                                                            "settings": {"ClassHasDescription": True, "ParameterHasDescription": True}}}),
-    ("tools/call", {"name": "check_style", "arguments": {"source": 'model P "aa"\n  Real q "The postion of q";\nequation\n q=1;\nend P;',
+    ("tools/call", {"name": "mlqt_check_style", "arguments": {"source": 'model P "aa"\n  Real q "The postion of q";\nequation\n q=1;\nend P;',
                                                            "settings": {"SpellCheckDescription": True}}}),
-    ("tools/call", {"name": "spell_check", "arguments": {"classId": "TestModel"}}),
-    ("tools/call", {"name": "spelling_suggestions", "arguments": {"word": "postion"}}),
-    ("tools/call", {"name": "check_class", "arguments": {"classId": "TestModel",
+    ("tools/call", {"name": "mlqt_spell_check", "arguments": {"classId": "TestModel"}}),
+    ("tools/call", {"name": "mlqt_spelling_suggestions", "arguments": {"word": "postion"}}),
+    ("tools/call", {"name": "mlqt_check_class", "arguments": {"classId": "TestModel",
                                                           "settings": {"ClassHasDocumentationInfo": True, "SpellCheckDescription": True}}}),
     ("tools/call", {"name": "list_issues", "arguments": {}}),
-    ("tools/call", {"name": "format_class", "arguments": {"classId": "TestModel", "preview": True}}),
-    ("tools/call", {"name": "correct_spelling", "arguments": {"classId": "TestModel", "oldWord": "postion", "newWord": "position"}}),
+    ("tools/call", {"name": "mlqt_format_class", "arguments": {"classId": "TestModel", "preview": True}}),
+    ("tools/call", {"name": "mlqt_correct_spelling", "arguments": {"classId": "TestModel", "oldWord": "postion", "newWord": "position"}}),
 ]
 
 proc = subprocess.Popen(exe, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)

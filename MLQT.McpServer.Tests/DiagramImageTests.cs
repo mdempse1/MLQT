@@ -10,7 +10,7 @@ using Xunit;
 namespace MLQT.McpServer.Tests;
 
 /// <summary>
-/// <c>get_diagram_image</c> — the picture an agent could not see (B196).
+/// <c>mlqt_get_diagram_image</c> — the picture an agent could not see (B196).
 ///
 /// <para>The diagram tools let an agent place components and wire them up and then reported, in
 /// coordinates, what it had just done. These check the three things that make an image worth
@@ -164,7 +164,7 @@ public class DiagramImageTests
         using var host = Load();
         var tools = Tools(host);
         var tool = McpServerTool.Create(
-            tools.GetDiagramImage, new McpServerToolCreateOptions { Name = "get_diagram_image" });
+            tools.GetDiagramImage, new McpServerToolCreateOptions { Name = "mlqt_get_diagram_image" });
 
         // A real server, because it is the SDK that decides what a returned object becomes on the
         // wire: everything else here returns a DTO and arrives as JSON text, and an image that
@@ -180,7 +180,7 @@ public class DiagramImageTests
                 server, new JsonRpcRequest { Method = "tools/call" },
                 new CallToolRequestParams
                 {
-                    Name = "get_diagram_image",
+                    Name = "mlqt_get_diagram_image",
                     Arguments = new Dictionary<string, JsonElement>
                     {
                         ["classId"] = JsonSerializer.SerializeToElement("Lib.Wired"),

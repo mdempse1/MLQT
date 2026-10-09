@@ -143,7 +143,7 @@ public class QualityToolsTests
     [Fact]
     public void CheckLibrary_HonoursAClassesOwnSuppression()
     {
-        // check_library passes honorSuppressions: true, and flipping that to false survived the
+        // mlqt_check_library passes honorSuppressions: true, and flipping that to false survived the
         // mutation audit - no test had ever put a suppressed class in front of it (B221). An agent
         // reading findings the user has explicitly waived is worse than noise: it will go and
         // "fix" them.
@@ -244,7 +244,7 @@ public class QualityToolsTests
         LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
         Assert.False(host.Session.DependenciesAnalyzed);
 
-        // The unused-class rule needs cross-model edges. check_library must run dependency analysis
+        // The unused-class rule needs cross-model edges. mlqt_check_library must run dependency analysis
         // itself (as the GUI and CLI do) so its count includes those findings without an extra step.
         Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckUnusedClass = true }).GetAwaiter().GetResult();
 
@@ -343,10 +343,10 @@ public class QualityToolsTests
     [Fact]
     public async Task CheckLibrary_HonoursTheRepositorysAcceptedSpellings()
     {
-        // check_library took the repository's rules and not its accepted spellings, so every word in
+        // mlqt_check_library took the repository's rules and not its accepted spellings, so every word in
         // .mlqt/dictionary.txt came back as a misspelling: over MSL that was 21,249 findings against
         // the GUI's and CLI's 18,193, the whole 3,056 being MLQT.Spelling.Description and
-        // MLQT.Spelling.Documentation (B166). spell_check had the same bug and was fixed; its sibling
+        // MLQT.Spelling.Documentation (B166). mlqt_spell_check had the same bug and was fixed; its sibling
         // was not, and nothing here compared the two. DictionaryScope.RootForLibrary existed for this
         // call and was referenced only by its own test.
         using var host = new TestHost();
@@ -626,7 +626,7 @@ B
     [Fact]
     public void FormatClass_LeavesAClassThatOptsOutInItsSource_Alone()
     {
-        // format_class rendered through its own options and never asked FormattingExclusion, so it
+        // mlqt_format_class rendered through its own options and never asked FormattingExclusion, so it
         // rewrote exactly the class __MLQT(format=false) was written on.
         using var host = new TestHost();
         var source = Jumbled.Replace("end Foo;", "  annotation(__MLQT(format=false));\nend Foo;");

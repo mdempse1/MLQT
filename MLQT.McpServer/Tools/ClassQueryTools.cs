@@ -24,16 +24,16 @@ public sealed class ClassQueryTools
 
     public ClassQueryTools(ILibraryDataService libraries) => _libraries = libraries;
 
-    [McpServerTool(Name = "get_class_info")]
+    [McpServerTool(Name = "mlqt_get_class_info")]
     [Description("Get structural metadata for a single Modelica class by its fully-qualified id: " +
                 "class type (model/block/package/function/record/connector/type/class), whether it is " +
                 "partial, its containing file and line span, package version, 'uses' dependencies from " +
                 "the annotation, whether it carries an experiment() annotation (i.e. is simulatable), " +
                 "parse health, and whether the class was recovered from a vendor's documentation " +
                 "rather than read from source (recoveredFromDocumentation - an encrypted library; " +
-                "such a class is never writable, and get_class_interface says what was recovered). " +
-                "Does NOT return the source code (use get_class_source) or the dependency " +
-                "graph (use get_dependencies / find_usages).")]
+                "such a class is never writable, and mlqt_get_class_interface says what was recovered). " +
+                "Does NOT return the source code (use mlqt_get_class_source) or the dependency " +
+                "graph (use mlqt_get_dependencies / mlqt_find_usages).")]
     public object GetClassInfo(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId)
@@ -72,14 +72,15 @@ public sealed class ClassQueryTools
             node.IsExternalStub);
     }
 
-    [McpServerTool(Name = "get_class_source")]
-    [Description("Get the Modelica source code for a class. By default (include_annotations=false) the " +
+    [McpServerTool(Name = "mlqt_get_class_source")]
+    [Description("Get the Modelica source code for a class - use this rather than reading the .mo file, which may hold " +
+                "many classes and their annotations. By default (include_annotations=false) the " +
                 "graphical/experiment/Documentation annotations are removed, returning just the " +
                 "structural code — much smaller, and still valid parseable Modelica. Either way you " +
                 "get the class's own text and not a reformat of it: each line is the file's line " +
                 "with any annotation cut out of it, still at its original number (an annotation " +
                 "written on its own lines leaves them blank), so the 'modelLine' of a finding from " +
-                "list_findings indexes this text directly. Set include_annotations=true to keep the " +
+                "mlqt_list_findings indexes this text directly. Set include_annotations=true to keep the " +
                 "annotations.")]
     public object GetClassSource(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
@@ -108,7 +109,7 @@ public sealed class ClassQueryTools
             // ElisionFinder takes the annotations out and leaves every other character as written.
             // It reports the lines left empty rather than deleting them, and they are blanked here
             // rather than dropped: an agent holds no line map, so preserving the numbering is what
-            // makes get_class_source and list_findings describe the same text.
+            // makes mlqt_get_class_source and mlqt_list_findings describe the same text.
             var (spliced, elision) = ElisionFinder.WithoutAnnotations(
                 ModelicaParserHelper.Parse(code), code, elidedTextMustParse: true);
             var stripped = string.Join("\n", elision.Blank(spliced.Split('\n')));
@@ -121,13 +122,13 @@ public sealed class ClassQueryTools
         }
     }
 
-    [McpServerTool(Name = "list_classes")]
-    [Description("List classes across the loaded libraries, with optional filtering by library and by " +
+    [McpServerTool(Name = "mlqt_list_classes")]
+    [Description("List Modelica classes across the libraries loaded into MLQT (not a simulator's), with optional filtering by library and by " +
                 "class type. Paginated: results are ordered by id; use offset/limit to page. Returns the " +
-                "total match count so you know how many pages remain. Use search_classes to find classes " +
+                "total match count so you know how many pages remain. Use mlqt_search_classes to find classes " +
                 "by name substring instead.")]
     public object ListClasses(
-        [Description("Optional: restrict to one library, by its id (GUID from list_libraries) or its " +
+        [Description("Optional: restrict to one library, by its id (GUID from mlqt_list_libraries) or its " +
                      "name (e.g. 'Modelica'). Omit for all libraries. Not a class id.")]
         string? libraryId = null,
         [Description("Optional class type filter, e.g. 'model', 'package', 'function', 'block', " +
@@ -169,8 +170,9 @@ public sealed class ClassQueryTools
         return new ClassListResult(ordered.Count, offset, page.Count, page);
     }
 
-    [McpServerTool(Name = "search_classes")]
-    [Description("Find classes whose fully-qualified id contains the given text (case-insensitive). " +
+    [McpServerTool(Name = "mlqt_search_classes")]
+    [Description("Find Modelica classes whose fully-qualified id contains the given text (case-insensitive). " +
+                "Searches only libraries loaded into MLQT with mlqt_load_library, not those a simulator has loaded. " +
                 "Matches on the id, so 'Integrator' finds 'Modelica.Blocks.Continuous.Integrator'. " +
                 "Results are ordered with exact leaf-name matches first, then by id, and each carries the " +
                 "class's description and a short documentation snippet so you can judge relevance (e.g. which " +
@@ -233,17 +235,20 @@ public sealed class ClassQueryTools
         return text.Length > 200 ? text[..200].TrimEnd() + "…" : text;
     }
 
-    [McpServerTool(Name = "get_package_tree")]
-    [Description("Get the hierarchical package/class tree. Without root_class_id, returns the top-level " +
-                "classes of every loaded library. With root_class_id, returns that class and its nested " +
+    [McpServerTool(Name = "mlqt_get_package_tree")]
+    [Description("Get the hierarchical tree of Modelica packages and classes. Without root_class_id, returns the top-level " +
+                "classes of every library loaded into MLQT. With root_class_id, returns that class and its nested " +
                 "children. max_depth bounds how many levels are expanded (default 1 = immediate children); " +
                 "each node reports its childCount so you can drill in with further calls. Use this to " +
-                "navigate structure; use list_classes for a flat, filterable listing.")]
+                "navigate structure; use mlqt_list_classes for a flat, filterable listing.")]
     public object GetPackageTree(
         [Description("Optional class id to root the tree at. Omit for all libraries' top-level classes.")]
         string? rootClassId = null,
         [Description("How many levels to expand (default 1, max 8).")] int maxDepth = 1)
     {
+        // Asked about one class with nothing loaded: name the library that class is in.
+        if (rootClassId is not null && _libraries.Libraries.Count == 0)
+            return ToolDiagnostics.ClassNotFound(_libraries, rootClassId);
         if (ToolDiagnostics.RequireLibrary(_libraries, "browsing the package tree") is { } noLib)
             return noLib;
 

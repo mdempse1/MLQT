@@ -48,7 +48,7 @@ public class DiagramToolsTests
     public void GetLayout_ReportsAConnectInALoop_AndTheLoop()
     {
         // An array of components is wired in a for loop. The layout read only an equation section's
-        // direct children and reported this model as having no connections, while list_connections,
+        // direct children and reported this model as having no connections, while mlqt_list_connections,
         // reading the same class, found it.
         using var host = new TestHost();
         var path = host.WriteMoFile("N.mo",

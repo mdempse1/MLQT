@@ -59,8 +59,8 @@ public class GuidanceToolsTests
     public void TheGuidanceQuotesThePagingLimitsThatAreActuallyEnforced()
     {
         // The guidance tells an agent how to read a finding list it is only ever shown part of, and it
-        // does that by quoting numbers: how many check_library returns inline, and how large a
-        // list_findings page may be. Written out in prose, they go stale the moment either constant
+        // does that by quoting numbers: how many mlqt_check_library returns inline, and how large a
+        // mlqt_list_findings page may be. Written out in prose, they go stale the moment either constant
         // moves — and a wrong number here is worse than none, because an agent that trusts it stops
         // paging early and reports a total it never read.
         var style = (string)Prop(new GuidanceTools().GetGuidance("style"), "guidance")!;
@@ -160,7 +160,39 @@ public class ToolDiagnosticsTests
         var q = new ClassQueryTools(host.Libraries);
         var err = ToolAssert.Error(q.GetClassInfo("Modelica.Blocks.Continuous.Integrator"));
         Assert.Contains("load_", err.Error);
-        Assert.Contains("No library is loaded", err.Error);
+        Assert.Contains("Nothing is loaded into MLQT", err.Error);
+    }
+
+    /// <summary>
+    /// An agent with a simulator's server beside this one loaded the MSL there, then searched here and
+    /// took MLQT to be searching what the simulator had loaded. The error it gets back from an empty
+    /// session is the one place certain to be read at that moment, so every path to it says the same
+    /// three things: the simulator's load does not count, which tool loads here, and where the path is.
+    /// </summary>
+    [Fact]
+    public void EveryEmptySessionErrorSaysASimulatorsLoadDoesNotCountAndWhereThePathIs()
+    {
+        using var host = new TestHost();
+        var query = new ClassQueryTools(host.Libraries);
+        var search = new SearchTools(host.Libraries);
+
+        var errors = new[]
+        {
+            ToolAssert.Error(search.SearchText("PID")),
+            ToolAssert.Error(search.SearchByInterface()),
+            ToolAssert.Error(query.SearchClasses("PID")),
+            ToolAssert.Error(query.ListClasses()),
+            ToolAssert.Error(query.GetPackageTree()),
+            ToolAssert.Error(query.GetClassInfo("Modelica.Blocks.Examples.PID_Controller")),
+        };
+
+        Assert.All(errors, err =>
+        {
+            Assert.Contains("simulator", err.Error);
+            Assert.Contains("is not loaded here", err.Error);
+            Assert.Contains("mlqt_load_library", err.Error);
+            Assert.Contains("getLoadedLibraries()", err.Error);
+        });
     }
 
     [Fact]
@@ -171,7 +203,7 @@ public class ToolDiagnosticsTests
             host.WriteMoFile("X.mo", "model X\n Real a;\nequation\n a=1;\nend X;")).GetAwaiter().GetResult();
         var q = new ClassQueryTools(host.Libraries);
         var err = ToolAssert.Error(q.GetClassInfo("Nope"));
-        Assert.Contains("search_classes", err.Error);
+        Assert.Contains("mlqt_search_classes", err.Error);
     }
 
     [Fact]

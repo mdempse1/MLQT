@@ -12,7 +12,7 @@ internal sealed record PortResolution(ModelNode? Connector, string? Error, strin
 
 /// <summary>
 /// Resolves a connection endpoint to its connector class and decides whether two endpoints are
-/// compatible — used by add_connection to refuse obviously wrong wiring without rejecting valid signal
+/// compatible — used by mlqt_add_connection to refuse obviously wrong wiring without rejecting valid signal
 /// connections. Compatibility is by structural SIGNATURE (ignoring input/output causality), so a
 /// RealOutput and a RealInput match (both are a single Real) while a signal port and a physical Pin do
 /// not. When a type cannot be resolved the check is inconclusive (a note, not a refusal).
