@@ -292,6 +292,7 @@ public class LibraryDataService : ILibraryDataService
     public async Task<LoadedLibrary> AddLibraryFromSourceAsync(
         IReadOnlyClassSource source, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(source);
         if (source.Kind != ReadOnlySourceKind.Supplied)
             throw new ArgumentException(
                 $"Only a supplied library is added this way; '{source.LibraryName}' is {source.Kind}, which " +
@@ -300,7 +301,8 @@ public class LibraryDataService : ILibraryDataService
         var library = new LoadedLibrary
         {
             SourcePath = source.Location ?? ReadOnlySources.InMemoryRoot(source.LibraryName),
-            SourceType = LibrarySourceType.Supplied
+            SourceType = LibrarySourceType.Supplied,
+            ResourceRoot = source.ResourceRoot
         };
 
         await LoadReadOnlyAsync(library, source, cancellationToken, onRead: null);
@@ -314,7 +316,9 @@ public class LibraryDataService : ILibraryDataService
     /// </summary>
     /// <param name="library">The library to fill, with its source path and type already set.</param>
     /// <param name="source">Where its classes come from.</param>
-    /// <param name="cancellationToken">Stops the load before it registers anything.</param>
+    /// <param name="cancellationToken">Passed to the source's read, and observed once more before
+    /// any class is added (<see cref="ReadOnlySourceLoader.Load"/>). Not after: a load that has put
+    /// classes into the graph finishes and registers, so none are left that no library owns.</param>
     /// <param name="onRead">Called after the source is read, for a log line only the caller can write.</param>
     private async Task LoadReadOnlyAsync(
         LoadedLibrary library, IReadOnlyClassSource source, CancellationToken cancellationToken, Action? onRead)
@@ -323,31 +327,43 @@ public class LibraryDataService : ILibraryDataService
         LogProcessStart("LibraryDataService", $"Loading {description}");
 
         library.Name = source.LibraryName;
-        library.Version = source.LibraryVersion;
         library.ReadOnlySource = source.Kind;
+
+        // An encrypted library's version is settled before it is read: there is no annotation to
+        // read, so what its directory name or libraryinfo.mos says is the answer. A supplied
+        // library's is not known until its text is - the annotation in it is definitive - so its
+        // first precedence check below is by rank alone.
+        library.Version = source.Kind == ReadOnlySourceKind.RecoveredFromDocumentation ? source.LibraryVersion : null;
 
         try
         {
-            // A copy that outranks this one is already loaded, so it would be retired the moment it
-            // registered. Asked before the source is read rather than after, so an encrypted library
-            // whose source is checked out costs a directory probe instead of a pass over its help
-            // HTML and a graph full of stubs built only to be taken out again - and a supplied one is
-            // never read for nothing. RepositoryService asks the readable-source half of this earlier
-            // still, from discovery; this is for every caller that comes straight here - the CLI's
-            // dependencies, the MCP server's mlqt_load_library, the Reference Libraries setting. A
-            // copy that arrives while this is loading is still caught by Register.
-            LoadedLibrary? outranking;
-            lock (_lock)
-            {
-                outranking = SourceSupersedesEncrypted.OutrankedBy(library, _libraries);
-            }
-
-            if (outranking is not null)
-            {
-                library.SupersededBy = outranking.SourcePath;
-                Info("LibraryDataService", NotUsedMessage(library, outranking));
-                LogProcessEnd("LibraryDataService", $"Loading {description}");
+            // A copy that keeps its place against this one is already loaded, so this one would be
+            // retired the moment it registered. Asked before the source is read rather than after, so
+            // an encrypted library whose source is checked out costs a directory probe instead of a
+            // pass over its help HTML and a graph full of stubs built only to be taken out again - and
+            // a supplied one is never read for nothing. RepositoryService asks the readable-source half
+            // of this earlier still, from discovery; this is for every caller that comes straight here
+            // - the CLI's dependencies, the MCP server's mlqt_load_library, the Reference Libraries
+            // setting. A copy that arrives while this is loading is still caught by Register.
+            if (NotUsedBecauseOfALoadedCopy(library, description))
                 return;
+
+            var content = await Task.Run(() => source.Read(cancellationToken), cancellationToken);
+            onRead?.Invoke();
+
+            if (source.Kind == ReadOnlySourceKind.Supplied)
+            {
+                // Now its version is known, and precedence is asked again with it - still before
+                // anything is in the graph. A supplied copy describing another release than the one
+                // installed is turned away here, rather than after its classes had already replaced
+                // the installed build's (which outrank them class by class) and been taken out again.
+                var (version, conflict) = LibraryVersion.Resolve(AnnotatedVersion(source, content), source.LibraryVersion);
+                library.Version = version;
+                if (conflict is not null)
+                    Warn("LibraryDataService", $"Supplied library '{library.Name}': {conflict}");
+
+                if (NotUsedBecauseOfALoadedCopy(library, description))
+                    return;
             }
 
             RetireOutrankedOnlyByVersion(library);
@@ -355,9 +371,6 @@ public class LibraryDataService : ILibraryDataService
             var superseded = 0;
             await Task.Run(() =>
             {
-                var content = source.Read(cancellationToken);
-                onRead?.Invoke();
-
                 // Supplied text is parsed in parallel, as a directory's files are; the documentation
                 // path builds its nodes one by one and takes the graph lock for that, as it always has.
                 ReadOnlySourceLoad load;
@@ -377,7 +390,7 @@ public class LibraryDataService : ILibraryDataService
 
                 superseded = load.Superseded;
                 BuildLibraryIndex(library, _combinedGraph, load.ModelIds.ToList());
-            }, cancellationToken);
+            }, CancellationToken.None);
 
             // The new models have no dependency edges yet, so anything that needs them must
             // re-analyse before it can trust the graph.
@@ -404,6 +417,54 @@ public class LibraryDataService : ILibraryDataService
             throw;
         }
     }
+
+    /// <summary>
+    /// Whether a copy already loaded keeps its place against <paramref name="library"/>; when one
+    /// does, records which and logs why, and the caller loads nothing.
+    /// </summary>
+    private bool NotUsedBecauseOfALoadedCopy(LoadedLibrary library, string description)
+    {
+        LoadedLibrary? keeper;
+        lock (_lock)
+        {
+            keeper = SourceSupersedesEncrypted.OutrankedBy(library, _libraries);
+        }
+
+        if (keeper is null)
+            return false;
+
+        library.SupersededBy = keeper.SourcePath;
+        Info("LibraryDataService", NotUsedMessage(library, keeper));
+        LogProcessEnd("LibraryDataService", $"Loading {description}");
+        return true;
+    }
+
+    /// <summary>
+    /// The <c>version</c> annotation of a supplied library's top-level package, read from its text
+    /// before any of it is loaded, or null when it has none. The package is the class named after the
+    /// library with no enclosing package, in its <c>package.mo</c> or single-file <c>.mo</c>; only
+    /// those files are parsed for it.
+    /// </summary>
+    private static string? AnnotatedVersion(IReadOnlyClassSource source, ReadOnlySourceContent content)
+    {
+        var candidates = content.Texts
+            .Where(t => FileNameOf(t.RelativePath) is var file
+                        && (file.Equals("package.mo", StringComparison.OrdinalIgnoreCase)
+                            || file.Equals(source.LibraryName + ".mo", StringComparison.Ordinal)))
+            .OrderBy(t => t.RelativePath.Count(c => c is '/' or '\\'));
+
+        foreach (var text in candidates)
+        {
+            var (models, _) = ModelicaParserHelper.ExtractModelsWithErrors(text.Text);
+            if (models.FirstOrDefault(m => string.IsNullOrEmpty(m.ParentModelName) && m.Name == source.LibraryName) is { } root)
+                return root.Version;
+        }
+
+        return null;
+    }
+
+    private static string FileNameOf(string relativePath) =>
+        relativePath.Replace('\\', '/').Split('/')[^1];
 
     private static string Describe(ReadOnlySourceKind? kind) => kind switch
     {
@@ -661,13 +722,8 @@ public class LibraryDataService : ILibraryDataService
 
         lock (_lock)
         {
-            foreach (var superseded in SourceSupersedesEncrypted.Retires(library, _libraries))
-            {
-                var winner = ReferenceEquals(superseded, library)
-                    ? SourceSupersedesEncrypted.OutrankedBy(library, _libraries)!
-                    : library;
+            foreach (var (superseded, winner) in SourceSupersedesEncrypted.RetirementsFor(library, _libraries))
                 retired.Add((superseded, winner, RetireLocked(superseded, winner)));
-            }
 
             registered = !retired.Any(r => ReferenceEquals(r.Library, library));
             if (registered)
@@ -695,9 +751,9 @@ public class LibraryDataService : ILibraryDataService
         List<(LoadedLibrary Library, LoadedLibrary Winner, int Removed)> retired = [];
         lock (_lock)
         {
-            foreach (var superseded in SourceSupersedesEncrypted.Retires(arriving, _libraries)
-                         .Where(l => !ReferenceEquals(l, arriving)
-                                     && ReadOnlySources.Precedence(l.ReadOnlySource)
+            foreach (var (superseded, _) in SourceSupersedesEncrypted.RetirementsFor(arriving, _libraries)
+                         .Where(r => !ReferenceEquals(r.Retired, arriving)
+                                     && ReadOnlySources.Precedence(r.Retired.ReadOnlySource)
                                         > ReadOnlySources.Precedence(arriving.ReadOnlySource))
                          .ToList())
             {
@@ -1418,9 +1474,34 @@ public class LibraryDataService : ILibraryDataService
             }
         }
 
-        // And its version from the top-level package's annotation, unless its source already said.
-        if (library.Version is null && library.TopLevelModelIds.Count > 0)
-            library.Version = graph.GetNode<ModelNode>(library.TopLevelModelIds[0])?.Version;
+        ResolveVersion(library, graph);
+    }
+
+    /// <summary>
+    /// Settles <see cref="LoadedLibrary.Version"/>: the top-level package's annotation when it has
+    /// one, otherwise what was claimed - the read-only source's version already on the library, or
+    /// the version in its directory name (<see cref="LibraryVersion"/>).
+    /// </summary>
+    private static void ResolveVersion(LoadedLibrary library, DirectedGraph graph)
+    {
+        var top = library.TopLevelModelIds
+            .Select(graph.GetNode<ModelNode>)
+            .OfType<ModelNode>()
+            .ToList();
+        var root = top.FirstOrDefault(m => m.Name == library.Name) ?? top.FirstOrDefault();
+
+        // A class recovered from documentation carries the claimed version, stamped on it at load;
+        // only a class read from text has an annotation to read.
+        var annotated = root is not null && ReadOnlySources.KindOf(root) != ReadOnlySourceKind.RecoveredFromDocumentation
+            ? root.Version
+            : null;
+        var claimed = library.Version
+                      ?? (library.SourceType == LibrarySourceType.Supplied ? null : LibraryVersion.FromPathName(library.SourcePath));
+
+        var (version, conflict) = LibraryVersion.Resolve(annotated, claimed);
+        library.Version = version;
+        if (conflict is not null)
+            Warn("LibraryDataService", $"Library '{library.Name}' at {library.SourcePath}: {conflict}");
     }
 
     /// <summary>

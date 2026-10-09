@@ -6,6 +6,7 @@ ModelicaGraph.IReadOnlyClassSource.LibraryVersion.get -> string?
 ModelicaGraph.IReadOnlyClassSource.Location.get -> string?
 ModelicaGraph.IReadOnlyClassSource.ProvenanceNote.get -> string!
 ModelicaGraph.IReadOnlyClassSource.Read(System.Threading.CancellationToken cancellationToken) -> ModelicaGraph.ReadOnlySourceContent!
+ModelicaGraph.IReadOnlyClassSource.ResourceRoot.get -> string?
 ModelicaGraph.ReadOnlySourceContent
 ModelicaGraph.ReadOnlySourceContent.Documented.get -> System.Collections.Generic.IReadOnlyList<ModelicaParser.ExternalDocs.DocumentedClass!>!
 ModelicaGraph.ReadOnlySourceContent.Documented.init -> void
@@ -45,7 +46,6 @@ override ModelicaGraph.SuppliedText.ToString() -> string!
 static ModelicaGraph.ReadOnlySourceLoad.operator !=(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
 static ModelicaGraph.ReadOnlySourceLoad.operator ==(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
 static ModelicaGraph.ReadOnlySourceLoader.Load(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.IReadOnlyClassSource! source, ModelicaGraph.ReadOnlySourceContent! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> ModelicaGraph.ReadOnlySourceLoad!
-static ModelicaGraph.ReadOnlySources.Banner(string! provenanceNote) -> string!
 static ModelicaGraph.ReadOnlySources.InMemoryRoot(string! libraryName) -> string!
 static ModelicaGraph.ReadOnlySources.IsInMemoryPath(string? path) -> bool
 static ModelicaGraph.ReadOnlySources.IsReadOnlyPath(string? path) -> bool

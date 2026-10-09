@@ -57,6 +57,9 @@ public sealed class EditTools
         [Description("Return the resulting file text without writing to disk or updating the graph. Default false.")]
         bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "update this class") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(newSource))
             return new ToolError("new_source must be a non-empty, complete Modelica class definition.");
 
@@ -85,12 +88,6 @@ public sealed class EditTools
         var ctx = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
         if (ctx is null)
             return new ToolError($"Could not locate the source file for '{classId}'.");
-
-        // Refused before the new text is spliced in, preview included: a read-only class has no
-        // source to show a replacement of (see ClassBodyEditor.Open).
-        if (ReadOnlySources.IsReadOnlyPath(ctx.FilePath)
-            && FileWritability.RequireWritable(ctx.FilePath, "update this class") is { } refused)
-            return refused;
 
         var owner = ctx.FileOwner;
         var ownerCode = owner.Definition.ModelicaCode ?? string.Empty;
@@ -148,6 +145,9 @@ public sealed class EditTools
         [Description("Return the file text that would be written without creating anything. Default false.")]
         bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, parentId, "create a class here") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(source))
             return new ToolError("source must be a complete Modelica class definition.");
         if (WithinClause.Has(source))
@@ -327,6 +327,9 @@ public sealed class EditTools
         [Description("Report what would be deleted (and what would dangle) without deleting. Default false.")]
         bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "delete this class") is { } readOnlyClass)
+            return readOnlyClass;
+
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
@@ -416,6 +419,11 @@ public sealed class EditTools
         [Description("Fully-qualified id of the destination parent package.")] string newParentId,
         [Description("Report the plan without changing anything. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "move this class") is { } readOnlyClass)
+            return readOnlyClass;
+        if (ReadOnlyClassGuard.Refuse(_libraries, newParentId, "move a class into this package") is { } readOnlyTarget)
+            return readOnlyTarget;
+
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
@@ -1093,6 +1101,9 @@ public sealed class EditTools
         [Description("Return the planned per-file changes (with new content) without writing. Default false.")]
         bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "rename this class") is { } readOnlyClass)
+            return readOnlyClass;
+
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);

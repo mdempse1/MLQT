@@ -70,7 +70,7 @@ public static class ReadOnlySources
     /// A provenance note as the comment block a class opens with: each line behind <c>// </c>, and a
     /// line feed after the last.
     /// </summary>
-    public static string Banner(string provenanceNote)
+    internal static string Banner(string provenanceNote)
     {
         var banner = new StringBuilder();
         foreach (var line in provenanceNote.Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))

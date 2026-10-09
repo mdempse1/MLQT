@@ -19,6 +19,10 @@ namespace MLQT.Services;
 /// else: the recovered copy stays and the supplied one goes. Where either version is unknown the
 /// rank decides, because nothing distinguishes the two.</para>
 ///
+/// <para><b>And one for two supplied copies</b>, which rank equally: the first stays and the second
+/// is not loaded. Both would place their classes under the same in-memory root, so keeping both
+/// would leave either one's removal taking the other's files with it.</para>
+///
 /// <para><b>Why the whole library and not class by class (B268).</b> The two copies are routinely
 /// different releases — a tool's library folder ships whatever the tool was built with, and the
 /// checkout is whatever the user is working on. Merging them per class kept a stub for every class
@@ -71,31 +75,47 @@ public static class SourceSupersedesEncrypted
     /// </summary>
     /// <param name="arriving">The library being registered.</param>
     /// <param name="loaded">The libraries already registered, not including it.</param>
-    public static IReadOnlyList<LoadedLibrary> Retires(LoadedLibrary arriving, IEnumerable<LoadedLibrary> loaded)
-    {
-        var sameName = loaded.Where(l => SameLibrary(l.Name, arriving.Name)).ToList();
-        if (sameName.Any(l => Outranks(l, arriving)))
-            return [arriving];
+    public static IReadOnlyList<LoadedLibrary> Retires(LoadedLibrary arriving, IEnumerable<LoadedLibrary> loaded) =>
+        RetirementsFor(arriving, loaded).Select(r => r.Retired).ToList();
 
-        return sameName.Where(l => Outranks(arriving, l)).ToList();
+    /// <summary>
+    /// <see cref="Retires"/>, with the copy that retires each one: <paramref name="arriving"/> for
+    /// those it outranks, or the loaded copy that keeps its place against it.
+    /// </summary>
+    internal static IReadOnlyList<(LoadedLibrary Retired, LoadedLibrary By)> RetirementsFor(
+        LoadedLibrary arriving, IEnumerable<LoadedLibrary> loaded)
+    {
+        var sameName = loaded.Where(l => !ReferenceEquals(l, arriving) && SameLibrary(l.Name, arriving.Name)).ToList();
+        if (sameName.FirstOrDefault(l => KeepsItsPlace(l, arriving)) is { } keeper)
+            return [(arriving, keeper)];
+
+        return sameName.Where(l => Outranks(arriving, l)).Select(l => (l, arriving)).ToList();
     }
 
     /// <summary>
-    /// The loaded copy of <paramref name="library"/>'s library that outranks it, or null when none
-    /// does. Asked before a read-only library is read, so one that would be retired the moment it
-    /// registered costs nothing, and after, to say which copy retired it.
+    /// The loaded copy of <paramref name="library"/>'s library that keeps its place against it, or
+    /// null when none does. Asked before a read-only library is read, so one that would be retired
+    /// the moment it registered costs nothing.
     /// </summary>
-    public static LoadedLibrary? OutrankedBy(LoadedLibrary library, IEnumerable<LoadedLibrary> loaded) =>
+    internal static LoadedLibrary? OutrankedBy(LoadedLibrary library, IEnumerable<LoadedLibrary> loaded) =>
         loaded.FirstOrDefault(l => !ReferenceEquals(l, library)
                                    && SameLibrary(l.Name, library.Name)
-                                   && Outranks(l, library));
+                                   && KeepsItsPlace(l, library));
+
+    /// <summary>
+    /// Whether <paramref name="loaded"/> stays when <paramref name="arriving"/>, a copy of the same
+    /// library, comes in: it outranks it, or both are supplied and the first one in stays.
+    /// </summary>
+    private static bool KeepsItsPlace(LoadedLibrary loaded, LoadedLibrary arriving) =>
+        Outranks(loaded, arriving)
+        || (loaded.ReadOnlySource == ReadOnlySourceKind.Supplied && arriving.ReadOnlySource == ReadOnlySourceKind.Supplied);
 
     /// <summary>
     /// Whether <paramref name="winner"/> takes the place of <paramref name="loser"/>, two copies of the
     /// same library: by rank, except that a recovered copy keeps its place against a supplied one
     /// describing a different version.
     /// </summary>
-    public static bool Outranks(LoadedLibrary winner, LoadedLibrary loser)
+    internal static bool Outranks(LoadedLibrary winner, LoadedLibrary loser)
     {
         if (VersionsDisagree(winner, loser))
         {
@@ -110,7 +130,7 @@ public static class SourceSupersedesEncrypted
     /// Whether a supplied copy and a recovered copy name different versions. Only between those two:
     /// readable source outranks either whatever its version, because it is the user's own.
     /// </summary>
-    public static bool VersionsDisagree(LoadedLibrary a, LoadedLibrary b)
+    internal static bool VersionsDisagree(LoadedLibrary a, LoadedLibrary b)
     {
         var kinds = new[] { a.ReadOnlySource, b.ReadOnlySource };
         return kinds.Contains(ReadOnlySourceKind.Supplied)

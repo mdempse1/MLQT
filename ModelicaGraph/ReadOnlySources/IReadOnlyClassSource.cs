@@ -1,5 +1,3 @@
-using ModelicaParser.ExternalDocs;
-
 namespace ModelicaGraph;
 
 /// <summary>
@@ -51,45 +49,17 @@ public interface IReadOnlyClassSource
     /// <see cref="ReadOnlySourceContent.Documented"/>; the other list must be empty.
     /// </summary>
     ReadOnlySourceContent Read(CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// What a read-only library's classes are. The order is their precedence: for the same library,
-/// readable source beats <see cref="Supplied"/>, which beats <see cref="RecoveredFromDocumentation"/>
-/// (<see cref="ReadOnlySources.Precedence"/>).
-/// </summary>
-public enum ReadOnlySourceKind
-{
-    /// <summary>
-    /// Rebuilt from the vendor's documentation: names, descriptions, base classes, whether there is
-    /// an icon, and member lists with no types. Each class keeps the record it was rebuilt from in
-    /// <see cref="DataTypes.ModelNode.RecoveredFromDocumentation"/>.
-    /// </summary>
-    RecoveredFromDocumentation,
 
     /// <summary>
-    /// Modelica text a host supplies — declarations, connectors, graphics and whatever equations the
-    /// vendor makes visible — parsed like any file but held only in memory.
+    /// The directory on disk the library's resources are in, or null when it has none — typically
+    /// the installed library's own directory, beside which the classes were supplied. It is what a
+    /// <c>modelica://Library/...</c> URI resolves against, from the library's own classes and from
+    /// the user's classes that use it.
+    ///
+    /// <para>A supplied library's classes are in memory, so without this its root is an in-memory
+    /// path and every such URI resolves to a file that cannot exist — a resource the user's model
+    /// really does load would be reported missing. Recovered libraries need none: their location
+    /// is the installed directory already.</para>
     /// </summary>
-    Supplied
+    string? ResourceRoot => null;
 }
-
-/// <summary>What <see cref="IReadOnlyClassSource.Read"/> returns.</summary>
-public sealed class ReadOnlySourceContent
-{
-    /// <summary>Modelica text, one entry per file-equivalent. For <see cref="ReadOnlySourceKind.Supplied"/>.</summary>
-    public IReadOnlyList<SuppliedText> Texts { get; init; } = [];
-
-    /// <summary>Classes recovered from documentation. For <see cref="ReadOnlySourceKind.RecoveredFromDocumentation"/>.</summary>
-    public IReadOnlyList<DocumentedClass> Documented { get; init; } = [];
-}
-
-/// <summary>
-/// One file's worth of supplied Modelica: a class with the classes nested in it, and the
-/// <c>within</c> clause placing it, exactly as it would be written to a <c>.mo</c> file.
-/// </summary>
-/// <param name="RelativePath">Where the text would sit in the library, such as
-/// <c>Lib/Sub/package.mo</c>. Names the class's file node under
-/// <see cref="ReadOnlySources.InMemoryRoot"/>; it is never a path on disk.</param>
-/// <param name="Text">The Modelica text.</param>
-public sealed record SuppliedText(string RelativePath, string Text);

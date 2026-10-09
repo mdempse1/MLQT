@@ -90,6 +90,18 @@ public class CosmeticSignatureTests
     }
 
     [Fact]
+    public void ReorderingTwoElementsOfOneKind_ChangesNothing()
+    {
+        // Within a category, as the kept elements are: an Icon and a Diagram written the other way
+        // round draw the same class.
+        const string iconFirst = "within MyLib;\nmodel Resistor\n  annotation (Icon(graphics={Line(points={{0,0},{1,1}})}), Diagram(graphics={Line(points={{2,2},{3,3}})}));\nend Resistor;\n";
+        const string diagramFirst = "within MyLib;\nmodel Resistor\n  annotation (Diagram(graphics={Line(points={{2,2},{3,3}})}), Icon(graphics={Line(points={{0,0},{1,1}})}));\nend Resistor;\n";
+
+        Assert.Equal(Sign(iconFirst).Graphics, Sign(diagramFirst).Graphics);
+        Assert.NotEqual(Sign(iconFirst).Surface, Sign(diagramFirst).Surface);
+    }
+
+    [Fact]
     public void ReformattingAndComments_ChangeNoneOfThem()
     {
         var reformatted = Original

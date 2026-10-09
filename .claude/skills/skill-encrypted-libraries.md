@@ -123,14 +123,28 @@ graphics and whatever equations the vendor makes visible. Both go through `ReadO
   `ReadOnlySources.KindOf(node)` tells the three kinds of class apart.
 - **file** — `ReadOnlySources.IsReadOnlyPath`: a `.moe` path, or anything under
   `mlqt-readonly://<Library>/`, which is where a supplied class's file node is placed. It is never a
-  path anything can open. `FileWritability` and `DirectedGraph` ask it, so the MCP edit tools refuse a
-  supplied class without being taught about it; `ClassBodyEditor.Open` and
-  `mlqt_update_class_source` refuse **before** composing an edit, because a nested supplied class's
-  stored source opens with a banner its file owner's does not repeat, and the splice would otherwise
-  fail first and blame a stale cache.
+  path anything can open. `FileWritability` and `DirectedGraph` ask it — the backstop at the moment
+  of writing. **The refusal a caller sees comes earlier**, from `ReadOnlyClassGuard` (McpServer), the
+  first statement of every tool that edits a class and of `ClassBodyEditor.Open` (which `batch_edit`
+  opens each operation through). Asked late, a tool composes its edit first, and a read-only class
+  fails that before it fails the write — a nested supplied class's stored source opens with a banner
+  its file owner's does not repeat — so the caller was told the cache was stale instead.
 - **library** — `LoadedLibrary.ReadOnlySource` / `IsReadOnly` (an `EncryptedDirectory` answers
   without being told) and `Version`. Ask `IsReadOnly` for "may this be touched?"; `SourceType` is only
-  where a library came from.
+  where a library came from. A supplied library's root is in memory, so `IReadOnlyClassSource.ResourceRoot`
+  (default none) names the directory its resources are in — the installed library's — and becomes
+  `LoadedLibrary.RootDirectory`, which `modelica://` URIs resolve against. Without it, a resource the
+  user's model loads from the library reads as missing.
+
+**A version is the top-level package's annotation** (`Helpers/LibraryVersion`). A version in the
+directory name, or the one a source states, is used only when there is no annotation, and a
+disagreement is logged. A supplied library's annotation is read from its text *before* anything is
+loaded, because precedence depends on it; an encrypted library has none anyone can read, so its
+directory name, then `libraryinfo.mos`, is its version.
+
+**Cancellation is observed before the first class is added, never after.** Stopping half way
+would leave classes no library owns, and removing them again is not enough — a supplied class may
+already have replaced a recovered one, which would then be missing from its own library.
 
 **The banner is the source's** (`IReadOnlyClassSource.ProvenanceNote`, written as `//` lines by
 `ReadOnlySources.Banner`). The encrypted source's note, `ExternalStubBuilder.RecoveredProvenanceNote`,
@@ -143,11 +157,16 @@ disagree about which copy the user sees. **One exception, for the version**: a s
 version differs from a loaded recovered copy's describes a release that is not installed, so the
 recovered copy stays. Because the class-level rank says the opposite, that is the one case retired
 *before* the arriving copy loads (`RetireOutrankedOnlyByVersion`); everywhere else the graph already
-agrees and retirement waits for `Register`.
+agrees and retirement waits for `Register`. **And two supplied copies**, which rank equally: the
+first stays and the second is not read, since both would put their files under the same in-memory
+root.
 
 `SuppliedLibraryToolTests` (MLQT.McpServer.Tests) calls **every** MCP tool that names a class, by
-reflection, on a supplied class and asserts none throws and none changes the class or the user's
-files. Extend the reflection, not a list.
+reflection, on a supplied class, and accepts exactly two outcomes: an answer, or `ReadOnlyClassGuard`'s
+refusal. Any other error fails it, naming the tool, as does any change to the class or the user's
+files. It has no list of editing tools to keep up to date: a new one that skips the guard either
+fails some other way or changes something. Taking the guard out of `mlqt_rename_class` is caught —
+it rewrote the user's reference to the class — and so is taking it out of `ClassBodyEditor.Open`.
 
 ## What the HTML gives, and what it does not
 

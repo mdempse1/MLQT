@@ -80,11 +80,15 @@ public static class ReferenceLibraryRules
         if (sameName is null)
             return null;
 
-        // Readable source always beats classes reconstructed from vendor documentation, so a readable
-        // candidate is loaded even when an encrypted copy got there first — and the encrypted copy is
-        // then retired whole as the source registers (SourceSupersedesEncrypted), not merged with it
-        // class by class. Every other combination is a second copy of something already present.
+        // Readable source always beats a read-only copy, so a readable candidate is loaded even when a
+        // read-only copy got there first - and that copy is then retired whole as the source registers
+        // (SourceSupersedesEncrypted), not merged with it class by class. An encrypted candidate
+        // against a supplied copy is left to the same rule too, because it is not always the supplied
+        // copy that stays: one describing another release gives way to the build installed. Every
+        // other combination is a second copy of something already present.
         if (!isEncrypted && sameName.IsReadOnly)
+            return null;
+        if (isEncrypted && sameName.ReadOnlySource == ModelicaGraph.ReadOnlySourceKind.Supplied)
             return null;
 
         return $"'{encryptedName}' is already loaded from {sameName.SourcePath}";

@@ -36,7 +36,8 @@ public class SuppliedLoadSpeedTests(ITestOutputHelper output)
         if (Environment.GetEnvironmentVariable(Variable) is not { Length: > 0 } root)
             return;
 
-        var parent = Path.GetDirectoryName(Path.GetFullPath(root))!;
+        var parent = Path.GetDirectoryName(Path.GetFullPath(root))
+            ?? throw new InvalidOperationException($"{Variable} names a root directory, not a library: {root}");
         var texts = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
                         || Path.GetFileName(f).Equals("package.order", StringComparison.OrdinalIgnoreCase))
@@ -54,6 +55,6 @@ public class SuppliedLoadSpeedTests(ITestOutputHelper output)
             $"{library.Name}: {texts.Count} files, {library.ModelIds.Count} classes in {clock.Elapsed.TotalSeconds:F2} s " +
             $"({library.ModelIds.Count / Math.Max(clock.Elapsed.TotalSeconds, 0.001):F0} classes/s)");
         Assert.NotEmpty(library.ModelIds);
-        Assert.All(library.ModelIds, id => Assert.True(service.GetModelById(id)!.IsExternalStub, id));
+        Assert.All(library.ModelIds, id => Assert.True(service.GetModelById(id)?.IsExternalStub == true, id));
     }
 }

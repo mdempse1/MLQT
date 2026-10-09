@@ -5,6 +5,8 @@ namespace MLQT.Services.DataTypes;
 /// </summary>
 public class LoadedLibrary
 {
+    private ModelicaGraph.ReadOnlySourceKind? _readOnlySource;
+
     /// <summary>
     /// Unique identifier for this library instance.
     /// </summary>
@@ -44,11 +46,23 @@ public class LoadedLibrary
     /// analysis, icon bitmaps and exported finding paths all ask it here (B428).
     /// </summary>
     public string RootDirectory =>
-        IsSingleFile ? Path.GetDirectoryName(SourcePath) ?? SourcePath : SourcePath;
+        ResourceRoot
+        ?? (IsSingleFile ? Path.GetDirectoryName(SourcePath) ?? SourcePath : SourcePath);
 
     /// <summary>
-    /// The library's version: what its read-only source says, or the <c>version</c> annotation of its
-    /// top-level package. Null when neither says.
+    /// For a library supplied from memory, the directory on disk its resources are in
+    /// (<see cref="ModelicaGraph.IReadOnlyClassSource.ResourceRoot"/>), which then answers
+    /// <see cref="RootDirectory"/> - its <see cref="SourcePath"/> is an in-memory path no URI can
+    /// resolve under. Null for every other library, and for a supplied one that named none.
+    /// </summary>
+    public string? ResourceRoot { get; set; }
+
+    /// <summary>
+    /// The library's version. The <c>version</c> annotation of its top-level package is the answer
+    /// whenever there is one; a version in its directory name, or the one its read-only source
+    /// states, is used only when the annotation is missing, and a disagreement is logged. An
+    /// encrypted library has no annotation anyone can read, so its directory name, then its
+    /// <c>libraryinfo.mos</c>, is all there is. Null when nothing says.
     /// </summary>
     public string? Version { get; set; }
 
@@ -71,7 +85,6 @@ public class LoadedLibrary
         set => _readOnlySource = value;
     }
 
-    private ModelicaGraph.ReadOnlySourceKind? _readOnlySource;
 
     /// <summary>
     /// Whether the library is never formatted, written, checked or spelled — the vendor's library

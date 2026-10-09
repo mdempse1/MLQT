@@ -20,7 +20,10 @@ public static class ReadOnlySourceLoader
     /// <param name="graph">Graph to populate.</param>
     /// <param name="source">The source the content was read from: its name, version, location and note.</param>
     /// <param name="content">What <see cref="IReadOnlyClassSource.Read"/> returned.</param>
-    /// <param name="cancellationToken">Stops parsing between files. Classes already added stay.</param>
+    /// <param name="cancellationToken">Observed once, before any class is added, and not after: a load
+    /// that has started finishes. Stopping half way would leave classes in the graph that no library
+    /// owns - and taking them out again is not enough, because a supplied class may already have
+    /// replaced a recovered one, which would then be gone from the library it belongs to.</param>
     /// <returns>The ids of the classes added, and how many were left to a copy that outranks them.</returns>
     /// <exception cref="ArgumentException">The content does not match the source's kind, or the
     /// source names a location that could be written: a recovered source's must be a read-only path
@@ -31,10 +34,15 @@ public static class ReadOnlySourceLoader
         ReadOnlySourceContent content,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(content);
+        cancellationToken.ThrowIfCancellationRequested();
+
         return source.Kind switch
         {
             ReadOnlySourceKind.RecoveredFromDocumentation => LoadRecovered(graph, source, content),
-            ReadOnlySourceKind.Supplied => LoadSupplied(graph, source, content, cancellationToken),
+            ReadOnlySourceKind.Supplied => LoadSupplied(graph, source, content),
             _ => throw new ArgumentOutOfRangeException(nameof(source), source.Kind, "Unknown read-only source kind.")
         };
     }
@@ -60,8 +68,7 @@ public static class ReadOnlySourceLoader
     }
 
     private static ReadOnlySourceLoad LoadSupplied(
-        DirectedGraph graph, IReadOnlyClassSource source, ReadOnlySourceContent content,
-        CancellationToken cancellationToken)
+        DirectedGraph graph, IReadOnlyClassSource source, ReadOnlySourceContent content)
     {
         if (content.Documented.Count > 0)
             throw new ArgumentException("A supplied source supplies Modelica text, not documentation.", nameof(content));
@@ -78,9 +85,8 @@ public static class ReadOnlySourceLoader
 
         for (var start = 0; start < classTexts.Count; start += BatchSize)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             var batch = classTexts.Skip(start).Take(BatchSize);
-            Parallel.ForEach(batch, new ParallelOptions { CancellationToken = cancellationToken }, text =>
+            Parallel.ForEach(batch, text =>
             {
                 var loaded = GraphBuilder.LoadModelicaFile(graph, PathOf(root, text.RelativePath), text.Text, banner);
                 foreach (var id in loaded)
@@ -129,8 +135,3 @@ public static class ReadOnlySourceLoader
             .ToArray();
     }
 }
-
-/// <summary>What <see cref="ReadOnlySourceLoader.Load"/> added.</summary>
-/// <param name="ModelIds">The classes this library supplies to the graph.</param>
-/// <param name="Superseded">Classes left alone because a copy that outranks them is already loaded.</param>
-public sealed record ReadOnlySourceLoad(IReadOnlyList<string> ModelIds, int Superseded);

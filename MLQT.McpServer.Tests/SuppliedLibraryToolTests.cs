@@ -21,7 +21,7 @@ namespace MLQT.McpServer.Tests;
 /// taught about them one by one. So the sweep calls <b>every</b> tool that names a class, by
 /// reflection, rather than a list someone remembered to extend.</para>
 /// </summary>
-public class SuppliedLibraryToolTests : IDisposable
+public class SuppliedLibraryToolTests : IAsyncLifetime
 {
     private const string Note = "Supplied by a test host - this is NOT the vendor's source.";
 
@@ -56,7 +56,8 @@ public class SuppliedLibraryToolTests : IDisposable
             connect(spring1.flange_b, spring2.flange_a);
             annotation (experiment(StopTime = 1));
           end Example;
-          annotation (version = "2.1.0");
+          annotation (version = "2.1.0",
+            Diagram(graphics={Text(extent={{-100,-20},{100,20}}, textString="Vendor")}));
         end Vendor;
         """;
 
@@ -100,18 +101,34 @@ public class SuppliedLibraryToolTests : IDisposable
             .AddSingleton(_host.Session)
             .BuildServiceProvider();
 
-        _host.Libraries.AddLibraryFromSourceAsync(new Source()).GetAwaiter().GetResult();
         _userDir = _host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = UserPackage });
-        _host.Libraries.AddLibraryFromDirectoryAsync(_userDir).GetAwaiter().GetResult();
     }
 
-    public void Dispose()
+    public async ValueTask InitializeAsync()
+    {
+        await _host.Libraries.AddLibraryFromSourceAsync(new Source());
+        await _host.Libraries.AddLibraryFromDirectoryAsync(_userDir);
+
+        // As an agent would before asking what a class uses: the dependency tools answer only once
+        // it has run, and running it over supplied classes is part of what is being tested.
+        Assert.IsNotType<ToolError>(await Tool<DependencyTools>().AnalyzeDependencies());
+    }
+
+    public ValueTask DisposeAsync()
     {
         _services.Dispose();
         _host.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private T Tool<T>() where T : class => ActivatorUtilities.CreateInstance<T>(_services);
+
+    private ModelicaGraph.DataTypes.ModelNode Spring()
+    {
+        var spring = _host.Libraries.GetModelById("Vendor.Spring");
+        Assert.NotNull(spring);
+        return spring;
+    }
 
     private static string Json(object result) =>
         System.Text.Json.JsonSerializer.Serialize(result, result.GetType(), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerOptions.Web)
@@ -153,7 +170,7 @@ public class SuppliedLibraryToolTests : IDisposable
             return CancellationToken.None;
         if (p.ParameterType == typeof(string))
         {
-            var name = p.Name!.ToLowerInvariant();
+            var name = (p.Name ?? "").ToLowerInvariant();
             return name.Contains("source") || name.Contains("code") || name.Contains("modelica")
                 ? "model Probe end Probe;"
                 : name.Contains("type") ? "Vendor.Spring"
@@ -165,7 +182,7 @@ public class SuppliedLibraryToolTests : IDisposable
         if (p.ParameterType.IsValueType)
             return Activator.CreateInstance(p.ParameterType);
         if (p.ParameterType.IsArray)
-            return Array.CreateInstance(p.ParameterType.GetElementType()!, 0);
+            return Array.CreateInstance(p.ParameterType.GetElementType() ?? typeof(object), 0);
         return null;
     }
 
@@ -181,11 +198,15 @@ public class SuppliedLibraryToolTests : IDisposable
         return result;
     }
 
-    public static TheoryData<string> SuppliedClasses => new() { "Vendor.Spring", "Vendor", "Vendor.Interfaces.Flange" };
+    /// <summary>A model, a model wiring two others, and the package: each has something to draw.</summary>
+    public static TheoryData<string> SuppliedClasses => new() { "Vendor.Spring", "Vendor.Example", "Vendor" };
+
+    /// <summary>The refusal every editing tool gives a supplied class (<c>ReadOnlyClassGuard</c>).</summary>
+    private const string Refusal = "belongs to a read-only library supplied from memory";
 
     [Theory]
     [MemberData(nameof(SuppliedClasses))]
-    public async Task EveryToolNamingAClass_AnswersOnASuppliedOne_AndChangesNothing(string classId)
+    public async Task EveryToolNamingAClass_AnswersOrRefusesAsReadOnly_AndChangesNothing(string classId)
     {
         var tools = ToolsNamingAClass().ToList();
         Assert.True(tools.Count > 30, $"only {tools.Count} tools found; the reflection query is wrong");
@@ -193,14 +214,28 @@ public class SuppliedLibraryToolTests : IDisposable
         var before = SuppliedSources();
         var userFiles = UserFiles();
         var failures = new List<string>();
+        var refused = 0;
 
         foreach (var method in tools)
         {
-            var name = method.GetCustomAttribute<McpServerToolAttribute>()!.Name;
+            var name = method.GetCustomAttribute<McpServerToolAttribute>()?.Name ?? method.Name;
             try
             {
-                var tool = ActivatorUtilities.CreateInstance(_services, method.DeclaringType!);
-                await InvokeAsync(tool, method, classId);
+                var tool = ActivatorUtilities.CreateInstance(_services, method.DeclaringType
+                    ?? throw new InvalidOperationException($"{method.Name} has no declaring type"));
+
+                // Exactly two outcomes are acceptable: an answer, or the read-only refusal. Any other
+                // error means the tool reached something about the class before asking whether it may
+                // edit it - or could not read it - and either is what this test is for.
+                switch (await InvokeAsync(tool, method, classId))
+                {
+                    case ToolError error when error.Error.Contains(Refusal, StringComparison.Ordinal):
+                        refused++;
+                        break;
+                    case ToolError error:
+                        failures.Add($"{name}: neither answered nor refused as read-only: {error.Error}");
+                        break;
+                }
             }
             catch (Exception ex)
             {
@@ -208,15 +243,25 @@ public class SuppliedLibraryToolTests : IDisposable
                 failures.Add($"{name}: {inner.GetType().Name}: {inner.Message}");
             }
 
-            // Checked after each tool, so a failure names the tool that did it.
-            if (!SuppliedSources().SequenceEqual(before))
+            // Checked after each tool, so a failure names the tool that did it - and taken again after
+            // one, so the tools after it are not blamed for the same change.
+            if (SuppliedSources() is var sources && !sources.SequenceEqual(before))
+            {
                 failures.Add($"{name}: changed a supplied class in the graph");
-            if (!UserFiles().SequenceEqual(userFiles))
+                before = sources;
+            }
+
+            if (UserFiles() is var files && !files.SequenceEqual(userFiles))
+            {
                 failures.Add($"{name}: changed the user's files while acting on a supplied class");
+                userFiles = files;
+            }
         }
 
-        Assert.True(failures.Count == 0, string.Join("\n", failures));
-        Assert.False(Directory.Exists("mlqt-readonly:"), "a supplied class's path was created on disk");
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        // Not zero, or the refusal text no longer matches what the guard says and every editing tool
+        // is being counted as one that answered.
+        Assert.True(refused > 15, $"only {refused} tools refused; has the refusal's wording changed?");
     }
 
     private List<string> SuppliedSources() =>
@@ -304,14 +349,16 @@ public class SuppliedLibraryToolTests : IDisposable
 
         var message = Assert.IsType<ToolError>(result).Error;
         Assert.Contains("read-only library supplied from memory", message);
-        Assert.Contains(Note, _host.Libraries.GetModelById("Vendor.Spring")!.Definition.ModelicaCode);
+        Assert.Contains(Note, Spring().Definition.ModelicaCode);
     }
 
     [Fact]
     public void ItsFilePath_IsNeverWritable()
     {
-        var file = _host.Libraries.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(
-            _host.Libraries.GetModelById("Vendor.Spring")!.ContainingFileId!)!;
+        var fileId = Spring().ContainingFileId;
+        Assert.NotNull(fileId);
+        var file = _host.Libraries.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(fileId);
+        Assert.NotNull(file);
 
         Assert.False(FileWritability.IsWritable(file.FilePath));
         Assert.NotNull(FileWritability.PreflightWritable([file.FilePath], "edit"));
