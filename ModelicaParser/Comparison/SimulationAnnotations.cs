@@ -29,63 +29,65 @@ namespace ModelicaParser.Comparison;
 public static class SimulationAnnotations
 {
     /// <summary>
-    /// Annotation names a translator ignores. Ordinal and case sensitive, because Modelica is.
+    /// Annotation names a translator ignores, each with what it is about. Ordinal and case
+    /// sensitive, because Modelica is.
     /// </summary>
-    private static readonly HashSet<string> Cosmetic = new(StringComparer.Ordinal)
+    /// <remarks>
+    /// <b>Every display-only name has exactly one category.</b> A class's dropped annotations are
+    /// kept per category on its <see cref="ClassSignature"/>, so a name in no category would vanish
+    /// from every comparison — and a change to it would read as no change at all.
+    /// </remarks>
+    private static readonly Dictionary<string, CosmeticCategory> Cosmetic = new(StringComparer.Ordinal)
     {
         // Drawing: the class's own two canvases, a component's position on its parent's, and the
         // primitives inside them. The primitives cannot appear at the top level of an annotation,
         // but naming them costs nothing and says what the set is.
-        "Icon",
-        "Diagram",
-        "IconMap",
-        "DiagramMap",
-        "Placement",
-        "coordinateSystem",
-        "graphics",
-        "Line",
-        "Text",
-        "Rectangle",
-        "Polygon",
-        "Ellipse",
-        "Bitmap",
+        ["Icon"] = CosmeticCategory.Graphics,
+        ["Diagram"] = CosmeticCategory.Graphics,
+        ["IconMap"] = CosmeticCategory.Graphics,
+        ["DiagramMap"] = CosmeticCategory.Graphics,
+        ["Placement"] = CosmeticCategory.Graphics,
+        ["coordinateSystem"] = CosmeticCategory.Graphics,
+        ["graphics"] = CosmeticCategory.Graphics,
+        ["Line"] = CosmeticCategory.Graphics,
+        ["Text"] = CosmeticCategory.Graphics,
+        ["Rectangle"] = CosmeticCategory.Graphics,
+        ["Polygon"] = CosmeticCategory.Graphics,
+        ["Ellipse"] = CosmeticCategory.Graphics,
+        ["Bitmap"] = CosmeticCategory.Graphics,
 
-        // Documentation.
-        "Documentation",
-        "DocumentationClass",
-        "revisions",
-        "obsolete",
+        // Documentation, and the wording of a diagnostic when one is produced at all.
+        ["Documentation"] = CosmeticCategory.Documentation,
+        ["DocumentationClass"] = CosmeticCategory.Documentation,
+        ["revisions"] = CosmeticCategory.Documentation,
+        ["obsolete"] = CosmeticCategory.Documentation,
+        ["missingInnerMessage"] = CosmeticCategory.Documentation,
+        ["unassignedMessage"] = CosmeticCategory.Documentation,
 
-        // What a tool's dialogs and browsers offer. None of it survives translation.
-        "Dialog",
-        "choices",
-        "choicesAllMatching",
-        "preferredView",
-        "defaultComponentName",
-        "defaultComponentPrefixes",
+        // What a tool's dialogs, menus and browsers offer. None of it survives translation. The
+        // vendor annotations here are the ones MLQT is prepared to vouch for as GUI-only; every
+        // other vendor annotation, __Dymola_ or otherwise, is significant by default.
+        ["Dialog"] = CosmeticCategory.Dialog,
+        ["choices"] = CosmeticCategory.Dialog,
+        ["choicesAllMatching"] = CosmeticCategory.Dialog,
+        ["preferredView"] = CosmeticCategory.Dialog,
+        ["defaultComponentName"] = CosmeticCategory.Dialog,
+        ["defaultComponentPrefixes"] = CosmeticCategory.Dialog,
+        ["__Dymola_Commands"] = CosmeticCategory.Dialog,
+        ["__Dymola_Images"] = CosmeticCategory.Dialog,
+        ["__Dymola_selections"] = CosmeticCategory.Dialog,
+        ["__Dymola_choicesAllMatching"] = CosmeticCategory.Dialog,
+        ["__Dymola_checkBox"] = CosmeticCategory.Dialog,
+        ["__Dymola_colorSelector"] = CosmeticCategory.Dialog,
+        ["__Dymola_editText"] = CosmeticCategory.Dialog,
+        ["__Dymola_editButton"] = CosmeticCategory.Dialog,
 
-        // Wording of a diagnostic, when one is produced at all.
-        "missingInnerMessage",
-        "unassignedMessage",
-
-        // Library bookkeeping a tool rewrites on save. Note the absence of "version" and "uses".
-        "versionBuild",
-        "versionDate",
-        "dateModified",
-
-        // Vendor annotations MLQT is prepared to vouch for as GUI-only. Every other vendor
-        // annotation, __Dymola_ or otherwise, is significant by default.
-        "__Dymola_Commands",
-        "__Dymola_Images",
-        "__Dymola_selections",
-        "__Dymola_choicesAllMatching",
-        "__Dymola_checkBox",
-        "__Dymola_colorSelector",
-        "__Dymola_editText",
-        "__Dymola_editButton",
-
-        // MLQT's own directives steer MLQT's checking and formatting. They are not Modelica.
-        "__MLQT",
+        // Library bookkeeping a tool rewrites on save (note the absence of "version" and "uses"),
+        // and MLQT's own directives, which steer MLQT's checking and formatting and are not Modelica.
+        ["versionBuild"] = CosmeticCategory.Tooling,
+        ["versionDate"] = CosmeticCategory.Tooling,
+        ["dateModified"] = CosmeticCategory.Tooling,
+        ["__MLQT"] = CosmeticCategory.Tooling,
     };
 
     /// <summary>
@@ -93,10 +95,18 @@ public static class SimulationAnnotations
     /// </summary>
     /// <param name="name">The annotation element's name, as written.</param>
     /// <returns>False only for a name this class vouches for as display-only.</returns>
-    public static bool AffectsSimulation(string name) => !Cosmetic.Contains(name);
+    public static bool AffectsSimulation(string name) => !Cosmetic.ContainsKey(name);
+
+    /// <summary>
+    /// What a display-only annotation is about, or null for one a translator acts on — including
+    /// every name this class has never heard of.
+    /// </summary>
+    /// <param name="name">The annotation element's name, as written.</param>
+    public static CosmeticCategory? CategoryOf(string name) =>
+        Cosmetic.TryGetValue(name, out var category) ? category : null;
 
     /// <summary>
     /// The names treated as display-only, for tests and for documentation that has to list them.
     /// </summary>
-    public static IReadOnlyCollection<string> CosmeticNames => Cosmetic;
+    public static IReadOnlyCollection<string> CosmeticNames => Cosmetic.Keys;
 }

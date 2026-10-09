@@ -123,6 +123,9 @@ public sealed class FormattingTools
         [Description("Return the formatted text without writing to disk or updating the graph; default false.")]
         bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "format this class") is { } readOnlyClass)
+            return readOnlyClass;
+
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);

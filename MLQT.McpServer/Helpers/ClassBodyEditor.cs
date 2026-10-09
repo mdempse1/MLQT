@@ -37,6 +37,11 @@ internal static class ClassBodyEditor
         if (node.IsParseFailurePlaceholder)
             return (null, new ToolError($"Class '{classId}' failed to parse and cannot be edited."));
 
+        // Before anything is composed against its text - which is what batch_edit relies on, since it
+        // opens each operation's class here rather than through a tool.
+        if (ReadOnlyClassGuard.Refuse(libraries, classId, "edit this class") is { } readOnly)
+            return (null, readOnly);
+
         var owner = ModelFilePersistence.ResolveFileOwner(libraries, classId);
         if (owner is null)
             return (null, new ToolError($"Could not locate the source file for '{classId}'."));

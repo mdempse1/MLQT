@@ -5,6 +5,8 @@ namespace MLQT.Services.DataTypes;
 /// </summary>
 public class LoadedLibrary
 {
+    private ModelicaGraph.ReadOnlySourceKind? _readOnlySource;
+
     /// <summary>
     /// Unique identifier for this library instance.
     /// </summary>
@@ -44,7 +46,62 @@ public class LoadedLibrary
     /// analysis, icon bitmaps and exported finding paths all ask it here (B428).
     /// </summary>
     public string RootDirectory =>
-        IsSingleFile ? Path.GetDirectoryName(SourcePath) ?? SourcePath : SourcePath;
+        ResourceRoot
+        ?? (IsSingleFile ? Path.GetDirectoryName(SourcePath) ?? SourcePath : SourcePath);
+
+    /// <summary>
+    /// For a library supplied from memory, the directory on disk its resources are in
+    /// (<see cref="ModelicaGraph.IReadOnlyClassSource.ResourceRoot"/>), which then answers
+    /// <see cref="RootDirectory"/> - its <see cref="SourcePath"/> is an in-memory path no URI can
+    /// resolve under. Null for every other library, and for a supplied one that named none.
+    /// </summary>
+    public string? ResourceRoot { get; set; }
+
+    /// <summary>
+    /// The library's version. The <c>version</c> annotation of its top-level package is the answer
+    /// whenever there is one; a version in its directory name, or the one its read-only source
+    /// states, is used only when the annotation is missing, and a disagreement is logged. An
+    /// encrypted library has no annotation anyone can read, so its directory name, then its
+    /// <c>libraryinfo.mos</c>, is all there is. Null when nothing says.
+    /// </summary>
+    public string? Version { get; set; }
+
+    /// <summary>
+    /// What a library's source said its version was when it was loaded — the read-only source's
+    /// <c>LibraryVersion</c>, or an encrypted library's directory name — kept apart from
+    /// <see cref="Version"/> so the version can be settled again when the top-level package is
+    /// reloaded, without the previous answer posing as a claim. Null for a readable library, whose
+    /// directory name is asked each time.
+    /// </summary>
+    internal string? VersionClaim { get; set; }
+
+    /// <summary>
+    /// What kind of read-only library this is, or null for one loaded from source. Set by the loader
+    /// of an <see cref="ModelicaGraph.IReadOnlyClassSource"/>; every class it supplies is a
+    /// <see cref="ModelicaGraph.DataTypes.ModelNode.IsExternalStub"/> of that kind
+    /// (<see cref="ModelicaGraph.ReadOnlySources.KindOf"/>).
+    ///
+    /// <para>An <see cref="LibrarySourceType.EncryptedDirectory"/> library is recovered from
+    /// documentation whether or not anything set this — there is no other way to read one — so a
+    /// library described only by its source type still answers <see cref="IsReadOnly"/> truthfully.</para>
+    /// </summary>
+    public ModelicaGraph.ReadOnlySourceKind? ReadOnlySource
+    {
+        get => _readOnlySource
+               ?? (SourceType == LibrarySourceType.EncryptedDirectory
+                   ? ModelicaGraph.ReadOnlySourceKind.RecoveredFromDocumentation
+                   : null);
+        set => _readOnlySource = value;
+    }
+
+
+    /// <summary>
+    /// Whether the library is never formatted, written, checked or spelled — the vendor's library
+    /// rebuilt from its documentation, or one a host supplied from memory. <b>Ask this</b>, not
+    /// <see cref="SourceType"/>, wherever the question is "may this be touched?": the source type
+    /// says where a library came from, and more than one place is read-only.
+    /// </summary>
+    public bool IsReadOnly => ReadOnlySource is not null;
 
     /// <summary>
     /// Revision identifier for version-controlled libraries.
@@ -100,8 +157,8 @@ public class LoadedLibrary
     public bool IsReferenceOnly { get; set; }
 
     /// <summary>
-    /// For an encrypted library, how many classes the vendor's documentation described — whether or
-    /// not they became nodes. Null for a library loaded from source.
+    /// For a library recovered from its documentation, how many classes the vendor's documentation
+    /// described — whether or not they became nodes. Null for every other library.
     ///
     /// <para>It is what separates "this library ships nothing we can read" from "we already have all
     /// of it from source". Both leave <see cref="ModelIds"/> empty, and only the first is worth
@@ -110,8 +167,9 @@ public class LoadedLibrary
     public int? DocumentedClassCount { get; set; }
 
     /// <summary>
-    /// For an encrypted library that was not used because readable source for the same library is
-    /// loaded, where that source is. Null for every library that is in use.
+    /// For a read-only library that was not used because a copy of the same library that outranks it
+    /// is loaded (<see cref="LibraryPrecedence"/>), where that copy is. Null for every library
+    /// that is in use.
     ///
     /// <para>Such a library has an empty <see cref="ModelIds"/>, and so does one that ships no
     /// documentation — and the two need opposite messages: one is a vendor library MLQT cannot read,

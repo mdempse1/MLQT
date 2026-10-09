@@ -95,6 +95,13 @@ The server returns a short set of instructions to the client on connect, and a `
    member's `type` is `null` — the generator does not publish declared types, and MLQT will not
    invent one. `mlqt_get_class_info` carries the same flag, and such a class is never writable.
 
+   **A library supplied by a host from memory** — Modelica text describing a library whose source is
+   not available, loaded by a host that embeds the server rather than by a tool — is read in full:
+   every view answers from its declarations and visible equations, as for any library. Each class
+   opens with a comment saying where it came from, `mlqt_list_libraries` gives the library's
+   `version` and `readOnlySource: "Supplied"`, `mlqt_get_class_info` gives the same `readOnlySource`,
+   and every edit tool refuses it. Nothing of it is on disk.
+
 4. **Analysis is opt-in — except parse errors.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `mlqt_analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `mlqt_check_class` / `mlqt_check_library`, using each repository's rules. **Parse errors are not opt-in**: `mlqt_check_class` and `mlqt_check_library` always report them (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, even when no style rules are enabled, and `mlqt_check_class` on a class that failed to parse returns the parse error rather than refusing. Treat one as a stop sign — every other rule reads a parse tree that is missing the code in question, so "no findings" on a file that did not parse means "never looked", not "fine". A style finding carries the severity the repository configured for its rule, as `Style error`, `Style warning` or `Style info`, so `mlqt_list_findings severity:"error"` selects the rules the team set to Error and not the parse diagnostics' bare `Error`.
 
 5. **A finding carries two line numbers, and they are not interchangeable.** `mlqt_list_findings`

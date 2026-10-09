@@ -344,6 +344,16 @@ stubs has a bug, and it should surface in a test rather than as a rewritten thir
 `PackageCodeTrimmer` and `MetricsCalculator` skip them, and `LibraryCheckSession` filters them out
 centrally so no surface can drift.
 
+### Read-only class sources
+
+`IReadOnlyClassSource` is the one way a library MLQT is *given* rather than reads from a checkout
+comes in: an encrypted library rebuilt from its documentation (`ReadOnlySourceKind.RecoveredFromDocumentation`)
+or Modelica text a host supplies from memory (`ReadOnlySourceKind.Supplied`). `ReadOnlySourceLoader.Load`
+puts either into the graph: every class is an `IsExternalStub`, opens with the source's
+`ProvenanceNote`, and sits in a file `ReadOnlySources.IsReadOnlyPath` refuses — a `.moe`, or a path
+under `mlqt-readonly://`, which is never on disk. `ReadOnlySources.Precedence` ranks the copies of a
+class: readable source, then supplied, then recovered.
+
 ### Node Properties
 
 Each node has a `Properties` dictionary for storing additional metadata:

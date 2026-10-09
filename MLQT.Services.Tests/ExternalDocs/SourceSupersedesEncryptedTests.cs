@@ -111,7 +111,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
         var encrypted = Library("Claytex", encrypted: true);
         var other = Library("Suspensions", encrypted: true);
 
-        var retired = SourceSupersedesEncrypted.Retires(Library("Claytex", encrypted: false), [encrypted, other]);
+        var retired = LibraryPrecedence.Retires(Library("Claytex", encrypted: false), [encrypted, other]);
 
         Assert.Same(encrypted, Assert.Single(retired));
     }
@@ -121,7 +121,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
     {
         var arriving = Library("Claytex", encrypted: true);
 
-        var retired = SourceSupersedesEncrypted.Retires(arriving, [Library("Claytex", encrypted: false)]);
+        var retired = LibraryPrecedence.Retires(arriving, [Library("Claytex", encrypted: false)]);
 
         Assert.Same(arriving, Assert.Single(retired));
     }
@@ -131,18 +131,18 @@ public class SourceSupersedesEncryptedTests : IDisposable
     {
         // Every other vendor library in the folder: the ordinary case, and the one that must not
         // lose anything to this rule.
-        Assert.Empty(SourceSupersedesEncrypted.Retires(
+        Assert.Empty(LibraryPrecedence.Retires(
             Library("Claytex", encrypted: true), [Library("Suspensions", encrypted: false)]));
-        Assert.Empty(SourceSupersedesEncrypted.Retires(
+        Assert.Empty(LibraryPrecedence.Retires(
             Library("Claytex", encrypted: false), [Library("Suspensions", encrypted: true)]));
     }
 
     [Fact]
     public void TwoCopiesOfTheSameKind_AreNotThisRulesBusiness()
     {
-        Assert.Empty(SourceSupersedesEncrypted.Retires(
+        Assert.Empty(LibraryPrecedence.Retires(
             Library("Claytex", encrypted: false), [Library("Claytex", encrypted: false)]));
-        Assert.Empty(SourceSupersedesEncrypted.Retires(
+        Assert.Empty(LibraryPrecedence.Retires(
             Library("Claytex", encrypted: true), [Library("Claytex", encrypted: true)]));
     }
 
@@ -154,7 +154,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
     [InlineData(null, null, false)]
     public void SameLibrary_IsTheExactTopLevelName(string? a, string? b, bool same)
     {
-        Assert.Equal(same, SourceSupersedesEncrypted.SameLibrary(a, b));
+        Assert.Equal(same, LibraryPrecedence.SameLibrary(a, b));
     }
 
     [Fact]
@@ -162,9 +162,9 @@ public class SourceSupersedesEncryptedTests : IDisposable
     {
         var readable = new[] { ("Suspensions", "/a"), ("Claytex", "/b") };
 
-        Assert.Equal("/b", SourceSupersedesEncrypted.ReadableSourceFor("Claytex", readable));
-        Assert.Null(SourceSupersedesEncrypted.ReadableSourceFor("VeSyMA", readable));
-        Assert.Null(SourceSupersedesEncrypted.ReadableSourceFor(null, readable));
+        Assert.Equal("/b", LibraryPrecedence.ReadableSourceFor("Claytex", readable));
+        Assert.Null(LibraryPrecedence.ReadableSourceFor("VeSyMA", readable));
+        Assert.Null(LibraryPrecedence.ReadableSourceFor(null, readable));
     }
 
     // ---------------------------------------------------------------- through LibraryDataService

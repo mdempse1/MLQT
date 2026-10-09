@@ -153,6 +153,9 @@ public sealed class DiagramTools
         [Description("Rotation in degrees (default 0).")] int rotation = 0,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "place a component") is { } readOnlyClass)
+            return readOnlyClass;
+
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
             return error;

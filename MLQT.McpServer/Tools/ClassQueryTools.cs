@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
+using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
@@ -31,7 +32,9 @@ public sealed class ClassQueryTools
                 "the annotation, whether it carries an experiment() annotation (i.e. is simulatable), " +
                 "parse health, and whether the class was recovered from a vendor's documentation " +
                 "rather than read from source (recoveredFromDocumentation - an encrypted library; " +
-                "such a class is never writable, and mlqt_get_class_interface says what was recovered). " +
+                "such a class is never writable, and mlqt_get_class_interface says what was recovered), " +
+                "and readOnlySource, which is set for every class that can never be edited - " +
+                "'Supplied' for a library a host supplied that is not the vendor's source. " +
                 "Does NOT return the source code (use mlqt_get_class_source) or the dependency " +
                 "graph (use mlqt_get_dependencies / mlqt_find_usages).")]
     public object GetClassInfo(
@@ -69,7 +72,8 @@ public sealed class ClassQueryTools
             node.HasParserErrors,
             node.HasFatalParseFailure,
             writable,
-            node.IsExternalStub);
+            ReadOnlySources.KindOf(node) == ReadOnlySourceKind.RecoveredFromDocumentation,
+            ReadOnlySources.KindOf(node)?.ToString());
     }
 
     [McpServerTool(Name = "mlqt_get_class_source")]

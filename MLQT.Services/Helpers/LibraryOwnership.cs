@@ -10,7 +10,7 @@ namespace MLQT.Services.Helpers;
 /// <para><b>Two libraries claiming one class was ordinary until B268.</b> A tool's library folder
 /// ships the encrypted build of a library the user also has checked out as source, both were loaded,
 /// and the losing entry went on listing ids whose node was now the source's. An encrypted build is
-/// no longer loaded beside its source (<c>SourceSupersedesEncrypted</c>), so that case has gone. Two
+/// no longer loaded beside its source (<c>LibraryPrecedence</c>), so that case has gone. Two
 /// claimants still arise from two readable checkouts of one library in different repositories, and
 /// from an encrypted library whose folder is not named after the package it documents — which the
 /// name rule cannot see.</para>
@@ -52,10 +52,11 @@ public static class LibraryOwnership
         if (claimants is null)
             return first;
 
-        var isStub = lookup(modelId)?.IsExternalStub == true;
+        // The claimant whose kind matches the class actually in the graph: readable source, or a
+        // read-only library of the kind the class came from.
+        var kind = lookup(modelId) is { } node ? ModelicaGraph.ReadOnlySources.KindOf(node) : null;
 
-        return claimants.FirstOrDefault(
-                   l => (l.SourceType == LibrarySourceType.EncryptedDirectory) == isStub)
+        return claimants.FirstOrDefault(l => l.ReadOnlySource == kind)
                ?? claimants[0];
     }
 }

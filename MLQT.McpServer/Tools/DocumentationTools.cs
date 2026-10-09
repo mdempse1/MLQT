@@ -39,6 +39,9 @@ public sealed class DocumentationTools
         [Description("The description text (without quotes).")] string description,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "set the description") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrEmpty(description))
             return new ToolError("description must be non-empty.");
 
@@ -78,6 +81,9 @@ public sealed class DocumentationTools
         [Description("The description text (without quotes).")] string description,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "set a component description") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrEmpty(description))
             return new ToolError("description must be non-empty.");
 
@@ -118,6 +124,9 @@ public sealed class DocumentationTools
         [Description("The Documentation(revisions=...) HTML string. Omit to leave it unchanged.")] string? revisions = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "set the documentation") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (info is null && revisions is null)
             return new ToolError("Provide info and/or revisions.");
 

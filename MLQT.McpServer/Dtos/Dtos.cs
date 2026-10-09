@@ -16,7 +16,13 @@ public sealed record LibrarySummary(
     // Libraries this one declares it depends on (from its `uses(...)` annotation), with the version it was
     // written against. Load these too (they are NOT loaded automatically) so type references resolve and
     // the views / validation / connector checks work across the whole model. Empty if none are declared.
-    IReadOnlyList<LibraryDependency> Dependencies);
+    IReadOnlyList<LibraryDependency> Dependencies,
+    // The library's version, from its read-only source or its top-level package's annotation. Null if unknown.
+    string? Version,
+    // Null for a library read from source. Otherwise why it is read-only - "RecoveredFromDocumentation"
+    // (an encrypted library rebuilt from its help files) or "Supplied" (classes a host supplied that are
+    // not the vendor's source): its classes answer every query and can never be edited.
+    string? ReadOnlySource);
 
 /// <summary>A dependency a library declares via its <c>uses</c> annotation, e.g. Modelica 4.0.0.</summary>
 public sealed record LibraryDependency(string Name, string? Version);
@@ -83,7 +89,10 @@ public sealed record ClassInfo(
     bool HasParserErrors,
     bool HasFatalParseFailure,
     bool? Writable,
-    bool RecoveredFromDocumentation = false);
+    bool RecoveredFromDocumentation = false,
+    // Null for a class read from source; otherwise why it is read-only: "RecoveredFromDocumentation"
+    // or "Supplied" (a class a host supplied that is not the vendor's source, read in full).
+    string? ReadOnlySource = null);
 
 public sealed record ClassSourceResult(
     string Id,

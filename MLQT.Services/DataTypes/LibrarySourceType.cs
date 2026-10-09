@@ -16,5 +16,12 @@ public enum LibrarySourceType
     /// vendor's generated documentation. Its classes are reconstructed from that documentation and
     /// exist only to resolve references; the library is read-only and is never reported on.
     /// </summary>
-    EncryptedDirectory
+    EncryptedDirectory,
+
+    /// <summary>
+    /// Classes a host supplied from memory through an <see cref="ModelicaGraph.IReadOnlyClassSource"/>.
+    /// Nothing of the library is on disk: its <c>SourcePath</c> and every file of it are under
+    /// <see cref="ModelicaGraph.ReadOnlySources.InMemoryPathPrefix"/>. Read-only, never reported on.
+    /// </summary>
+    Supplied
 }

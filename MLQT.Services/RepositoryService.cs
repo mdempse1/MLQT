@@ -521,9 +521,9 @@ public class RepositoryService : IRepositoryService
                 {
                     // An encrypted build of a library the project also has as source is not read at
                     // all. LibraryDataService would retire it on arrival anyway; this saves reading
-                    // its documentation to find that out. See SourceSupersedesEncrypted.
+                    // its documentation to find that out. See LibraryPrecedence.
                     if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath)
-                        && SourceSupersedesEncrypted.ReadableSourceFor(
+                        && LibraryPrecedence.ReadableSourceFor(
                             repository.DiscoveredLibraries.GetValueOrDefault(relativePath), readable) is { } source)
                     {
                         Info("RepositoryService",
@@ -613,7 +613,7 @@ public class RepositoryService : IRepositoryService
 
         foreach (var library in _libraryDataService.Libraries)
         {
-            if (library.SourceType != LibrarySourceType.EncryptedDirectory)
+            if (!library.IsReadOnly)
                 readable.Add((library.Name, library.SourcePath));
         }
 

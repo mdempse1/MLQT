@@ -8,6 +8,7 @@ using MLQT.Services;
 using ModelicaParser.Helpers;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
+using ModelicaGraph;
 
 namespace MLQT.McpServer.Tools;
 
@@ -182,10 +183,13 @@ public sealed class SessionTools
             // the wrong thing to say about a library whose classes are all available from source.
             if (library.SupersededBy is { } source)
             {
+                var winner = ReadOnlySources.IsInMemoryPath(source)
+                    ? "a supplied copy of it, which takes precedence over one recovered from documentation,"
+                    : "readable source for it";
                 return new ToolError(
-                    $"'{library.Name}' at '{path}' is an encrypted library, and readable source for it is " +
-                    $"already loaded from '{source}'. The source is used instead, whole: an encrypted build " +
-                    "is never loaded beside source for the same library, because the two are often different " +
+                    $"'{library.Name}' at '{path}' is an encrypted library, and {winner} is already loaded " +
+                    $"from '{source}'. That copy is used instead, whole: an encrypted build is never loaded " +
+                    "beside a copy of the same library that outranks it, because the two are often different " +
                     "releases. Nothing further was loaded.");
             }
 
@@ -358,7 +362,7 @@ public sealed class SessionTools
     private LibrarySummary ToSummary(LoadedLibrary l) => new(
         l.Id, l.Name, l.SourceType.ToString(), l.SourcePath,
         l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision,
-        DeclaredDependencies(l));
+        DeclaredDependencies(l), l.Version, l.ReadOnlySource?.ToString());
 
     // The library's declared dependencies (its top-level package's `uses(...)` annotation), so the caller
     // knows what else to load — most importantly the Modelica Standard Library, at the right version.

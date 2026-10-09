@@ -67,6 +67,20 @@ public static class ExternalStubBuilder
         string encryptedPackagePath,
         out int supersededBySource,
         string? libraryVersion = null)
+        => AddDocumentedClasses(
+            graph, documented, encryptedPackagePath, out supersededBySource, libraryVersion,
+            RecoveredProvenanceNote);
+
+    /// <param name="provenanceNote">What each class's banner says (<see cref="ReadOnlySources.Banner"/>):
+    /// the note of the <see cref="IReadOnlyClassSource"/> the classes came from.</param>
+    /// <inheritdoc cref="AddDocumentedClasses(DirectedGraph, IReadOnlyList{DocumentedClass}, string, out int, string?)"/>
+    internal static List<string> AddDocumentedClasses(
+        DirectedGraph graph,
+        IReadOnlyList<DocumentedClass> documented,
+        string encryptedPackagePath,
+        out int supersededBySource,
+        string? libraryVersion,
+        string provenanceNote)
     {
         supersededBySource = 0;
         var modelIds = new List<string>(documented.Count);
@@ -77,18 +91,20 @@ public static class ExternalStubBuilder
         graph.AddNode(new FileNode(fileId, encryptedPackagePath));
 
         var documentedNames = new HashSet<string>(documented.Select(d => d.FullName), StringComparer.Ordinal);
+        var banner = ReadOnlySources.Banner(provenanceNote);
 
         foreach (var documentedClass in documented)
         {
-            var node = BuildNode(documentedClass, documentedNames, libraryVersion);
+            var node = BuildNode(documentedClass, documentedNames, libraryVersion, banner);
 
-            // A class we already have the source of is left entirely alone. AddNode knows to keep the
-            // real node over a stub, but registering the containment afterwards would still point that
-            // real node at the encrypted package — and everything that asks a class where it lives
-            // would then be told package.moe. That is how correcting a spelling in a class whose
-            // source is checked out came to read, and try to parse, a vendor's encrypted blob.
+            // A class we already have a better copy of — its source, or a supplied class — is left
+            // entirely alone. AddNode knows to keep that copy over a stub, but registering the
+            // containment afterwards would still point it at the encrypted package — and everything
+            // that asks a class where it lives would then be told package.moe. That is how
+            // correcting a spelling in a class whose source is checked out came to read, and try to
+            // parse, a vendor's encrypted blob.
             var existing = graph.GetNode<ModelNode>(node.Id);
-            if (existing is not null && !existing.IsExternalStub)
+            if (existing is not null && ReadOnlySources.KindOf(existing) != ReadOnlySourceKind.RecoveredFromDocumentation)
             {
                 supersededBySource++;
                 continue;
@@ -103,9 +119,9 @@ public static class ExternalStubBuilder
     }
 
     private static ModelNode BuildNode(
-        DocumentedClass documented, HashSet<string> documentedNames, string? libraryVersion)
+        DocumentedClass documented, HashSet<string> documentedNames, string? libraryVersion, string banner)
     {
-        var source = SynthesizeSource(documented);
+        var source = SynthesizeSource(documented, banner);
         var node = new ModelNode(documented.FullName, documented.SimpleName, source)
         {
             IsExternalStub = true,
@@ -141,8 +157,9 @@ public static class ExternalStubBuilder
     }
 
     /// <summary>
-    /// <summary>
-    /// Header written above every stub.
+    /// What a class recovered from documentation says about itself: the
+    /// <see cref="IReadOnlyClassSource.ProvenanceNote"/> of an encrypted library, written above every
+    /// stub as <c>//</c> comment lines (<see cref="ReadOnlySources.Banner"/>).
     ///
     /// <para>Without it the synthesized declaration reads as ordinary Modelica that happens to be
     /// nearly empty, which is a worse impression to give than "MLQT cannot read this library": a
@@ -150,16 +167,19 @@ public static class ExternalStubBuilder
     /// them. It travels with the text, so it is still there if the code is copied out of the viewer
     /// or reaches somewhere the surrounding UI does not.</para>
     /// </summary>
-    private const string StubHeader =
-        "// Reconstructed by MLQT from this library's documentation — this is NOT the vendor's source.\n" +
-        "// The library ships encrypted, so only what its documentation states is known here: the name,\n" +
-        "// the description, the base classes and whether there is an icon. Read-only.\n";
+    public static readonly string RecoveredProvenanceNote =
+        "Reconstructed by MLQT from this library's documentation — this is NOT the vendor's source.\n" +
+        "The library ships encrypted, so only what its documentation states is known here: the name,\n" +
+        "the description, the base classes and whether there is an icon. Read-only.";
 
     /// <summary>Builds the Modelica declaration for one documented class.</summary>
-    public static string SynthesizeSource(DocumentedClass documented)
+    public static string SynthesizeSource(DocumentedClass documented) =>
+        SynthesizeSource(documented, ReadOnlySources.Banner(RecoveredProvenanceNote));
+
+    private static string SynthesizeSource(DocumentedClass documented, string banner)
     {
         var source = new StringBuilder();
-        source.Append(StubHeader);
+        source.Append(banner);
 
         if (documented.ParentName is { Length: > 0 } parent)
             source.Append("within ").Append(parent).Append(";\n");

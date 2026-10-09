@@ -140,6 +140,9 @@ public sealed class SpellingTools
         [Description("Return the corrected text without writing to disk or updating the graph; default false.")]
         bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "correct spelling in this class") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(oldWord) || string.IsNullOrEmpty(newWord))
             return new ToolError("Both oldWord and newWord must be provided.");
 

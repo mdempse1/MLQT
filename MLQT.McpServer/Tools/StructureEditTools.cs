@@ -91,6 +91,9 @@ public sealed class StructureEditTools
         string? condition = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add a component") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(type))
             return new ToolError("type is required (a class id or built-in type).");
         if (string.IsNullOrWhiteSpace(name) || !IdentifierRegex.IsMatch(name))
@@ -181,6 +184,9 @@ public sealed class StructureEditTools
         [Description("The name of the component to remove.")] string name,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "remove a component") is { } readOnlyClass)
+            return readOnlyClass;
+
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
             return error;
@@ -264,6 +270,9 @@ public sealed class StructureEditTools
         string modifier,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "modify a component") is { } readOnlyClass)
+            return readOnlyClass;
+
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
             return error;
@@ -305,6 +314,9 @@ public sealed class StructureEditTools
         [Description("Optional modifier(s), e.g. 'k = 2, T = 10' or '(k = 2)'.")] string? modifier = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add an extends clause") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(baseType))
             return new ToolError("baseType is required.");
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
@@ -336,6 +348,9 @@ public sealed class StructureEditTools
         string import,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add an import") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(import))
             return new ToolError("import is required.");
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
@@ -360,6 +375,9 @@ public sealed class StructureEditTools
         [Description("Optional // comment line to place above the equation.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add an equation") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(equation))
             return new ToolError("equation is required.");
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
@@ -387,6 +405,9 @@ public sealed class StructureEditTools
         [Description("Optional // comment line to place above the statement.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add a statement") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(statement))
             return new ToolError("statement is required.");
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
@@ -420,6 +441,9 @@ public sealed class StructureEditTools
         [Description("Optional // comment line to place above the connection.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add a connection") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(portA) || string.IsNullOrWhiteSpace(portB))
             return new ToolError("Both portA and portB are required.");
 
@@ -491,6 +515,9 @@ public sealed class StructureEditTools
         [Description("The other port, e.g. 'integrator1.u'.")] string portB,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "remove a connection") is { } readOnlyClass)
+            return readOnlyClass;
+
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
             return error;

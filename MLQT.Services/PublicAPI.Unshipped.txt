@@ -1,1 +1,15 @@
 #nullable enable
+MLQT.Services.DataTypes.LibrarySourceType.Supplied = 6 -> MLQT.Services.DataTypes.LibrarySourceType
+MLQT.Services.DataTypes.LoadedLibrary.IsReadOnly.get -> bool
+MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.get -> ModelicaGraph.ReadOnlySourceKind?
+MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.ResourceRoot.get -> string?
+MLQT.Services.DataTypes.LoadedLibrary.ResourceRoot.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.Version.get -> string?
+MLQT.Services.DataTypes.LoadedLibrary.Version.set -> void
+MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
+MLQT.Services.LibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
+MLQT.Services.LibraryPrecedence
+static MLQT.Services.LibraryPrecedence.ReadableSourceFor(string? encryptedName, System.Collections.Generic.IEnumerable<(string! Name, string! Location)>! readable) -> string?
+static MLQT.Services.LibraryPrecedence.Retires(MLQT.Services.DataTypes.LoadedLibrary! arriving, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.LoadedLibrary!>! loaded) -> System.Collections.Generic.IReadOnlyList<MLQT.Services.DataTypes.LoadedLibrary!>!
+static MLQT.Services.LibraryPrecedence.SameLibrary(string? a, string? b) -> bool

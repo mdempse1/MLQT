@@ -1,1 +1,15 @@
 #nullable enable
+ModelicaParser.Comparison.ClassSignature.Dialog.get -> string!
+ModelicaParser.Comparison.ClassSignature.Dialog.init -> void
+ModelicaParser.Comparison.ClassSignature.Documentation.get -> string!
+ModelicaParser.Comparison.ClassSignature.Documentation.init -> void
+ModelicaParser.Comparison.ClassSignature.Graphics.get -> string!
+ModelicaParser.Comparison.ClassSignature.Graphics.init -> void
+ModelicaParser.Comparison.ClassSignature.Tooling.get -> string!
+ModelicaParser.Comparison.ClassSignature.Tooling.init -> void
+ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.Comparison.CosmeticCategory.Dialog = 2 -> ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.Comparison.CosmeticCategory.Documentation = 1 -> ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.Comparison.CosmeticCategory.Graphics = 0 -> ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.Comparison.CosmeticCategory.Tooling = 3 -> ModelicaParser.Comparison.CosmeticCategory
+static ModelicaParser.Comparison.SimulationAnnotations.CategoryOf(string! name) -> ModelicaParser.Comparison.CosmeticCategory?

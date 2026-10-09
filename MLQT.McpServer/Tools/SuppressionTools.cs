@@ -56,6 +56,9 @@ public sealed class SuppressionTools
         string? reason = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "suppress a rule") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(ruleId))
             return new ToolError("ruleId is required — the rule to suppress, e.g. 'MLQT.Doc.ParameterDescription' or '*'.");
         ruleId = ruleId.Trim();
@@ -128,6 +131,9 @@ public sealed class SuppressionTools
         string? reason = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "accept a spelling") is { } readOnlyClass)
+            return readOnlyClass;
+
         if (string.IsNullOrWhiteSpace(word))
             return new ToolError("word is required — the word to accept in this class.");
         word = word.Trim();
