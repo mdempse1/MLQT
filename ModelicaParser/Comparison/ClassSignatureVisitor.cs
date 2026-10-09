@@ -44,6 +44,13 @@ internal sealed class ClassSignatureVisitor : modelicaBaseVisitor<object?>
 
     private string _within = string.Empty;
 
+    /// <summary>
+    /// What the class being signed has had left out of its semantic stream, by kind. Set for each
+    /// class before <see cref="Emit"/> walks it; <see cref="Emit"/> never descends into a nested
+    /// class, so only one class is ever being signed at a time.
+    /// </summary>
+    private Dictionary<CosmeticCategory, StringBuilder> _cosmetic = new();
+
     internal ClassSignatureVisitor(string preprocessedSource) => _source = preprocessedSource;
 
     internal IReadOnlyList<ClassSignature> Signatures => _signatures;
@@ -67,9 +74,16 @@ internal sealed class ClassSignatureVisitor : modelicaBaseVisitor<object?>
 
         var semantic = new StringBuilder();
         var nested = new List<NestedClass>();
+        _cosmetic = new Dictionary<CosmeticCategory, StringBuilder>();
         Emit(context, semantic, nested, isRoot: true);
 
-        _signatures.Add(new ClassSignature(fullName, semantic.ToString(), Surface(context, nested)));
+        _signatures.Add(new ClassSignature(fullName, semantic.ToString(), Surface(context, nested))
+        {
+            Graphics = CosmeticText(CosmeticCategory.Graphics),
+            Documentation = CosmeticText(CosmeticCategory.Documentation),
+            Dialog = CosmeticText(CosmeticCategory.Dialog),
+            Tooling = CosmeticText(CosmeticCategory.Tooling),
+        });
 
         _parents.Push(fullName);
         base.VisitClass_definition(context);
@@ -103,9 +117,21 @@ internal sealed class ClassSignatureVisitor : modelicaBaseVisitor<object?>
         switch (node)
         {
             // Neither reaches a translator. Comments are on the default channel in this grammar
-            // rather than hidden, so they are in the tree and have to be skipped explicitly.
+            // rather than hidden, so they are in the tree and have to be skipped explicitly. A
+            // description is documentation, and is kept as that; a comment is kept nowhere.
             case modelicaParser.C_commentContext:
-            case modelicaParser.String_commentContext:
+                return;
+
+            case modelicaParser.String_commentContext description:
+                if (description.ChildCount > 0)
+                {
+                    var text = new StringBuilder();
+                    for (var i = 0; i < description.ChildCount; i++)
+                        if (description.GetChild(i) is ITerminalNode token)
+                            text.Append(token.GetText()).Append(Separator);
+                    Cosmetic(CosmeticCategory.Documentation).Append(text);
+                }
+
                 return;
 
             case modelicaParser.AnnotationContext annotation:
@@ -212,29 +238,56 @@ internal sealed class ClassSignatureVisitor : modelicaBaseVisitor<object?>
             return;
 
         List<string>? kept = null;
+        Dictionary<CosmeticCategory, List<string>>? dropped = null;
         foreach (var argument in arguments)
         {
+            var element = new StringBuilder();
+            Emit(argument, element, _discarded, isRoot: false);
+
             // Only a recognised name is dropped. Anything whose shape this cannot read — a
             // redeclaration, or a tree ANTLR recovered — is kept, on the same principle as an
             // unrecognised name: it gets looked at rather than hidden.
             var name = argument.element_modification_or_replaceable()?.element_modification()?.name()?.GetText();
-            if (name is not null && !SimulationAnnotations.AffectsSimulation(name))
+            if (name is not null && SimulationAnnotations.CategoryOf(name) is { } category)
+            {
+                dropped ??= new Dictionary<CosmeticCategory, List<string>>();
+                if (!dropped.TryGetValue(category, out var elements))
+                    dropped[category] = elements = new List<string>();
+                elements.Add(element.ToString());
                 continue;
+            }
 
-            var element = new StringBuilder();
-            Emit(argument, element, _discarded, isRoot: false);
             (kept ??= new List<string>()).Add(element.ToString());
         }
 
-        if (kept is null)
-            return;
+        // Dropped from the meaning, kept as what they are: each category gets this annotation's
+        // elements of its kind, sorted as the kept ones are.
+        foreach (var (category, elements) in dropped ?? [])
+            AppendAnnotation(Cosmetic(category), elements);
 
-        kept.Sort(StringComparer.Ordinal);
+        if (kept is not null)
+            AppendAnnotation(builder, kept);
+    }
+
+    /// <summary>Appends one annotation's elements, sorted, because an annotation's elements are a set.</summary>
+    private static void AppendAnnotation(StringBuilder builder, List<string> elements)
+    {
+        elements.Sort(StringComparer.Ordinal);
         builder.Append("annotation(").Append(Separator);
-        foreach (var element in kept)
+        foreach (var element in elements)
             builder.Append(element);
         builder.Append(')').Append(Separator);
     }
+
+    private StringBuilder Cosmetic(CosmeticCategory category)
+    {
+        if (!_cosmetic.TryGetValue(category, out var builder))
+            _cosmetic[category] = builder = new StringBuilder();
+        return builder;
+    }
+
+    private string CosmeticText(CosmeticCategory category) =>
+        _cosmetic.TryGetValue(category, out var builder) ? builder.ToString() : "";
 
     /// <summary>
     /// The class's own source, with each directly nested class replaced by its name.
