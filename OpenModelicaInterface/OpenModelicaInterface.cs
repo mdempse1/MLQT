@@ -211,7 +211,7 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// <b>This is not isolation.</b> On Windows <c>Process.Start</c> still hands omc every inheritable
     /// handle the host holds, the host's own stdio among them, only not as omc's streams: measured, an
     /// omc left running by a host that was killed kept the host's stdout open until omc was ended.
-    /// Ending omc whenever the host ends (<c>ExternalToolShutdown</c>, or Plumbline's Job Object) is
+    /// Ending omc whenever the host ends (<c>ExternalToolShutdown</c>, or a Job Object the host puts omc in) is
     /// what closes it; Dymola, which outlives MLQT by design, is started by <c>IsolatedProcess</c>
     /// instead, which omc cannot use because its stdout is how it says where it listens (B501).
     /// </remarks>

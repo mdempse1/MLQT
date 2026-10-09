@@ -1,0 +1,101 @@
+#nullable enable
+const OpenModelicaInterface.OpenModelicaInterface.AnyPort = 0 -> int
+OpenModelicaInterface.Examples
+OpenModelicaInterface.Interfaces.IOpenModelicaInterface
+OpenModelicaInterface.Interfaces.IOpenModelicaInterface.CheckModelAsync(string! modelName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.Interfaces.IOpenModelicaInterface.ClearAsync() -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.Interfaces.IOpenModelicaInterface.GetErrorStringAsync() -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.Interfaces.IOpenModelicaInterface.LoadFileAsync(string! filePath, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory
+OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory.GetOrCreateAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<OpenModelicaInterface.Interfaces.IOpenModelicaInterface!>!
+OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory.IsConnected.get -> bool
+OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory.ResetAsync() -> System.Threading.Tasks.Task!
+OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory.Shutdown() -> void
+OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory.UpdateSettings(OpenModelicaInterface.OpenModelicaSettings! settings) -> void
+OpenModelicaInterface.OpenModelicaExitedException
+OpenModelicaInterface.OpenModelicaExitedException.OpenModelicaExitedException(string! message) -> void
+OpenModelicaInterface.OpenModelicaInterface
+OpenModelicaInterface.OpenModelicaInterface.BuildModelAsync(string! modelName) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.OpenModelicaInterface.CheckModelAsync(string! modelName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.OpenModelicaInterface.ClearAsync() -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.OpenModelicaInterface.CommandTimeout.get -> System.TimeSpan
+OpenModelicaInterface.OpenModelicaInterface.CommandTimeout.set -> void
+OpenModelicaInterface.OpenModelicaInterface.Dispose() -> void
+OpenModelicaInterface.OpenModelicaInterface.ExitAsync() -> System.Threading.Tasks.Task!
+OpenModelicaInterface.OpenModelicaInterface.GetClassCommentAsync(string! className) -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.GetClassInformationAsync(string! className) -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.GetClassNamesAsync() -> System.Threading.Tasks.Task<string![]!>!
+OpenModelicaInterface.OpenModelicaInterface.GetClassNamesInPackageAsync(string! packageName) -> System.Threading.Tasks.Task<string![]!>!
+OpenModelicaInterface.OpenModelicaInterface.GetComponentsAsync(string! modelName) -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.GetErrorStringAsync() -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.GetVersionAsync() -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.GetWorkingDirectoryAsync() -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.InstantiateModelAsync(string! modelName) -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.IsConnected.get -> bool
+OpenModelicaInterface.OpenModelicaInterface.LoadFileAsync(string! filePath, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.OpenModelicaInterface.LoadModelAsync(string! libraryName, string? version = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.OpenModelicaInterface.OpenModelicaInterface(string! omcPath, int port = 0) -> void
+OpenModelicaInterface.OpenModelicaInterface.Port.get -> int?
+OpenModelicaInterface.OpenModelicaInterface.SendCommandAsync(string! command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+OpenModelicaInterface.OpenModelicaInterface.SetWorkingDirectoryAsync(string! directory) -> System.Threading.Tasks.Task<bool>!
+OpenModelicaInterface.OpenModelicaInterface.SimulateModelAsync(string! modelName, double startTime = 0, double stopTime = 1, int numberOfIntervals = 500, double tolerance = 1E-06, string! method = "dassl") -> System.Threading.Tasks.Task<OpenModelicaInterface.SimulationResult!>!
+OpenModelicaInterface.OpenModelicaInterface.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+OpenModelicaInterface.OpenModelicaInterface.StartupTimeout.get -> System.TimeSpan
+OpenModelicaInterface.OpenModelicaInterface.StartupTimeout.set -> void
+OpenModelicaInterface.OpenModelicaInterfaceFactory
+OpenModelicaInterface.OpenModelicaInterfaceFactory.Dispose() -> void
+OpenModelicaInterface.OpenModelicaInterfaceFactory.GetOrCreateAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<OpenModelicaInterface.Interfaces.IOpenModelicaInterface!>!
+OpenModelicaInterface.OpenModelicaInterfaceFactory.IsConnected.get -> bool
+OpenModelicaInterface.OpenModelicaInterfaceFactory.OpenModelicaInterfaceFactory() -> void
+OpenModelicaInterface.OpenModelicaInterfaceFactory.ResetAsync() -> System.Threading.Tasks.Task!
+OpenModelicaInterface.OpenModelicaInterfaceFactory.Shutdown() -> void
+OpenModelicaInterface.OpenModelicaInterfaceFactory.UpdateSettings(OpenModelicaInterface.OpenModelicaSettings! settings) -> void
+OpenModelicaInterface.OpenModelicaSettings
+OpenModelicaInterface.OpenModelicaSettings.AutoLoadModelicaLibrary.get -> bool
+OpenModelicaInterface.OpenModelicaSettings.AutoLoadModelicaLibrary.set -> void
+OpenModelicaInterface.OpenModelicaSettings.CommandTimeout.get -> System.TimeSpan
+OpenModelicaInterface.OpenModelicaSettings.CommandTimeoutMs.get -> int
+OpenModelicaInterface.OpenModelicaSettings.CommandTimeoutMs.set -> void
+OpenModelicaInterface.OpenModelicaSettings.DefaultIntegrationMethod.get -> string!
+OpenModelicaInterface.OpenModelicaSettings.DefaultIntegrationMethod.set -> void
+OpenModelicaInterface.OpenModelicaSettings.DefaultNumberOfIntervals.get -> int
+OpenModelicaInterface.OpenModelicaSettings.DefaultNumberOfIntervals.set -> void
+OpenModelicaInterface.OpenModelicaSettings.DefaultTolerance.get -> double
+OpenModelicaInterface.OpenModelicaSettings.DefaultTolerance.set -> void
+OpenModelicaInterface.OpenModelicaSettings.GetInstallationDirectory() -> string!
+OpenModelicaInterface.OpenModelicaSettings.IsValid() -> bool
+OpenModelicaInterface.OpenModelicaSettings.OmcPath.get -> string!
+OpenModelicaInterface.OpenModelicaSettings.OmcPath.set -> void
+OpenModelicaInterface.OpenModelicaSettings.OpenModelicaSettings() -> void
+OpenModelicaInterface.OpenModelicaSettings.OpenModelicaSettings(string! omcPath) -> void
+OpenModelicaInterface.OpenModelicaSettings.PortNumber.get -> int
+OpenModelicaInterface.OpenModelicaSettings.PortNumber.set -> void
+OpenModelicaInterface.OpenModelicaSettings.StartupTimeout.get -> System.TimeSpan
+OpenModelicaInterface.OpenModelicaSettings.StartupTimeoutMs.get -> int
+OpenModelicaInterface.OpenModelicaSettings.StartupTimeoutMs.set -> void
+OpenModelicaInterface.SimulationResult
+OpenModelicaInterface.SimulationResult.Messages.get -> string!
+OpenModelicaInterface.SimulationResult.Messages.set -> void
+OpenModelicaInterface.SimulationResult.ResultFile.get -> string!
+OpenModelicaInterface.SimulationResult.ResultFile.set -> void
+OpenModelicaInterface.SimulationResult.SimulationResult() -> void
+OpenModelicaInterface.SimulationResult.Success.get -> bool
+OpenModelicaInterface.SimulationResult.Success.set -> void
+static OpenModelicaInterface.Examples.Example10_CustomCommands() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example1_BasicConnection() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example2_LoadAndCheckModel() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example3_SimulateModel() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example4_LoadCustomFile() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example5_ExplorePackage() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example6_BuildModel() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example7_InstantiateModel() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example8_GetComponents() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.Example9_ErrorHandling() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.Examples.RunAllExamples() -> System.Threading.Tasks.Task!
+static OpenModelicaInterface.OpenModelicaSettings.CandidateOmcPaths(bool windows, string! programFiles, string? pathVariable, int newestMinor) -> System.Collections.Generic.IEnumerable<string!>!
+static OpenModelicaInterface.OpenModelicaSettings.CommonWindowsPaths.get -> string![]!
+static OpenModelicaInterface.OpenModelicaSettings.FindInstalledOmc() -> string!
+static OpenModelicaInterface.OpenModelicaSettings.FindInstalledOmc(bool windows, string! programFiles, string? pathVariable, int newestMinor) -> string!
+static OpenModelicaInterface.OpenModelicaSettings.OmcExecutableName.get -> string!
+static OpenModelicaInterface.OpenModelicaSettings.OmcUnder(string! folder) -> string!
+static OpenModelicaInterface.OpenModelicaSettings.TryAutoDetect() -> OpenModelicaInterface.OpenModelicaSettings?

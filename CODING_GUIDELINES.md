@@ -159,6 +159,39 @@ using MLQT.Shared.Models;
 using MLQT.Services.Interfaces;
 ```
 
+### Public API of the Assemblies Others Build On
+
+`ModelicaParser`, `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and
+`MLQT.Services` are built from source **outside this repository**, by other projects, so a public type
+or member in them is something code we cannot see may depend on. Each one sets
+`<TrackPublicApi>true</TrackPublicApi>`, and `Microsoft.CodeAnalysis.PublicApiAnalyzers` holds its
+public surface to two files beside the project:
+
+| File | Holds |
+|------|-------|
+| `PublicAPI.Shipped.txt` | The surface as of the last release, which consumers may already use |
+| `PublicAPI.Unshipped.txt` | What has been added since. Empty right after a release |
+
+- **Adding a public member** is RS0016 until it is listed in `PublicAPI.Unshipped.txt`. Use the IDE's
+  fix for the diagnostic, or write every missing line at once:
+
+  ```bash
+  dotnet format analyzers ModelicaGraph/ModelicaGraph.csproj --diagnostics RS0016 --severity info --include-generated
+  ```
+
+  `--include-generated` matters for `ModelicaParser`: a change to `modelica.g4` changes the generated
+  parser, which is public too.
+- **Removing or changing one** is RS0017: its line no longer matches anything. Delete the line, and
+  remember that you have broken someone's build. Prefer adding the new shape beside the old one and
+  marking the old one `[Obsolete]` for a release.
+- **Ask whether it needs to be public at all** before listing it. `internal` plus the project's
+  existing `InternalsVisibleTo` is enough for this repository's own tests, and every line not in
+  these files is one nobody outside can come to depend on.
+- **At a release**, move `PublicAPI.Unshipped.txt`'s lines into `PublicAPI.Shipped.txt`.
+
+The ANTLR-generated parser has no nullable annotations, so its lines carry a leading `~` (oblivious)
+and `ModelicaParser/.editorconfig` turns off RS0041 for those generated files only.
+
 ---
 
 ## C# Best Practices

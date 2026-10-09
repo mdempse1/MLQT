@@ -1,0 +1,8 @@
+# The parser, lexer, listener and visitor ANTLR generates from modelica.g4.
+#
+# They are public API (a consumer's own visitor derives from modelicaBaseVisitor), so they are listed
+# in PublicAPI.Shipped.txt. But the generator writes no nullable annotations, so each of their symbols
+# is nullable-oblivious. The listing records exactly that, with a leading `~`, and RS0041 would only
+# say it again, about ~2,700 symbols this repository does not write.
+[obj/**/modelica{Parser,Lexer,Listener,BaseListener,Visitor,BaseVisitor}.cs]
+dotnet_diagnostic.RS0041.severity = none

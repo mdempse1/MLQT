@@ -1,0 +1,282 @@
+#nullable enable
+const RevisionControl.RevisionId.ShortLength = 7 -> int
+const RevisionControl.SvnToolLocator.BundledSubdirectory = "svn" -> string!
+const RevisionControl.SvnToolLocator.OverrideEnvVar = "MLQT_SVN_PATH" -> string!
+override RevisionControl.VcsRebaseInProgress.Equals(object? obj) -> bool
+override RevisionControl.VcsRebaseInProgress.GetHashCode() -> int
+override RevisionControl.VcsRebaseInProgress.ToString() -> string!
+RevisionControl.ConflictResolutionChoice
+RevisionControl.ConflictResolutionChoice.AcceptIncoming = 0 -> RevisionControl.ConflictResolutionChoice
+RevisionControl.ConflictResolutionChoice.KeepMine = 1 -> RevisionControl.ConflictResolutionChoice
+RevisionControl.ConflictResolutionChoice.MarkResolved = 2 -> RevisionControl.ConflictResolutionChoice
+RevisionControl.GitRevisionControlSystem
+RevisionControl.GitRevisionControlSystem.AbortRebase(string! repositoryPath) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.CheckoutRevision(string! repositoryPath, string! revision, string! outputPath) -> bool
+RevisionControl.GitRevisionControlSystem.CleanWorkspace(string! checkoutPath) -> bool
+RevisionControl.GitRevisionControlSystem.Commit(string! repositoryPath, string! message, System.Collections.Generic.IEnumerable<string!>? filesToCommit = null, System.IProgress<string!>? progress = null) -> RevisionControl.VcsCommitResult!
+RevisionControl.GitRevisionControlSystem.ContinueRebase(string! repositoryPath) -> RevisionControl.VcsMergeResult!
+RevisionControl.GitRevisionControlSystem.CountCommitsOnNoBranch(string! repositoryPath) -> int
+RevisionControl.GitRevisionControlSystem.CreateBranch(string! repositoryPath, string! branchName, bool switchToBranch = true) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.FindRepositoryRoot(string! path) -> string?
+RevisionControl.GitRevisionControlSystem.ForcePush(string! repositoryPath, string? branchName = null) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.GetBranches(string! repositoryPath, bool includeRemote = false) -> System.Collections.Generic.List<RevisionControl.VcsBranchInfo!>!
+RevisionControl.GitRevisionControlSystem.GetBranchPointDate(string! repositoryPath) -> System.DateTimeOffset?
+RevisionControl.GitRevisionControlSystem.GetBranchPointRevision(string! repositoryPath, string? startRevision = null) -> string?
+RevisionControl.GitRevisionControlSystem.GetChangedFilePathsSince(string! repositoryPath, string! sinceRevision) -> System.Collections.Generic.IReadOnlyList<string!>?
+RevisionControl.GitRevisionControlSystem.GetChangedFiles(string! repositoryPath, string! revision) -> System.Collections.Generic.List<RevisionControl.VcsChangedFile!>!
+RevisionControl.GitRevisionControlSystem.GetChangedLinesSince(string! repositoryPath, string! sinceRevision) -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Collections.Generic.IReadOnlySet<int>!>?
+RevisionControl.GitRevisionControlSystem.GetConflictVersions(string! repositoryPath, string! filePath) -> (byte[]? ours, byte[]? theirs)
+RevisionControl.GitRevisionControlSystem.GetCurrentBranch(string! repositoryPath) -> string?
+RevisionControl.GitRevisionControlSystem.GetCurrentRevision(string! repositoryPath) -> string?
+RevisionControl.GitRevisionControlSystem.GetDetachedHeadLabel(string! repositoryPath) -> string?
+RevisionControl.GitRevisionControlSystem.GetFileBytesAtRevision(string! repositoryPath, string! filePath, string? revision = null) -> byte[]?
+RevisionControl.GitRevisionControlSystem.GetLogEntries(string! repositoryPath, RevisionControl.VcsLogOptions? options = null) -> System.Collections.Generic.List<RevisionControl.VcsLogEntry!>!
+RevisionControl.GitRevisionControlSystem.GetPreviousRevision(string! repositoryPath, string! revision) -> string?
+RevisionControl.GitRevisionControlSystem.GetPullRequestUrl(string! repositoryPath, string? baseBranch = null) -> string?
+RevisionControl.GitRevisionControlSystem.GetRebaseInProgress(string! repositoryPath) -> RevisionControl.VcsRebaseInProgress?
+RevisionControl.GitRevisionControlSystem.GetRevisionDescription(string! repositoryPath, string! revision) -> string?
+RevisionControl.GitRevisionControlSystem.GetWorkingCopyChanges(string! repositoryPath) -> System.Collections.Generic.List<RevisionControl.VcsWorkingCopyFile!>!
+RevisionControl.GitRevisionControlSystem.GitRevisionControlSystem() -> void
+RevisionControl.GitRevisionControlSystem.IsBranchPushed(string! repositoryPath) -> bool
+RevisionControl.GitRevisionControlSystem.IsValidRepository(string! repositoryPath) -> bool
+RevisionControl.GitRevisionControlSystem.MergeBranch(string! repositoryPath, string! sourceBranch) -> RevisionControl.VcsMergeResult!
+RevisionControl.GitRevisionControlSystem.Push(string! repositoryPath, string? branchName = null) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.Rebase(string! repositoryPath, string! targetBranch) -> RevisionControl.VcsMergeResult!
+RevisionControl.GitRevisionControlSystem.ResolveConflict(string! repositoryPath, string! filePath, RevisionControl.ConflictResolutionChoice choice) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.ResolveRevision(string! repositoryPath, string! revision) -> string?
+RevisionControl.GitRevisionControlSystem.RevertFiles(string! repositoryPath, System.Collections.Generic.IEnumerable<string!>! filesToRevert) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.SwitchBranch(string! repositoryPath, string! branchName) -> RevisionControl.VcsOperationResult!
+RevisionControl.GitRevisionControlSystem.UpdateExistingCheckout(string! checkoutPath, string! repositoryPath, string! revision) -> bool
+RevisionControl.GitRevisionControlSystem.UpdateRevisionInPlace(string! checkoutPath, string! repositoryPath, string! revision) -> bool
+RevisionControl.GitRevisionControlSystem.UpdateToLatest(string! repositoryPath) -> RevisionControl.VcsUpdateResult!
+RevisionControl.Interfaces.ILineLevelDiff
+RevisionControl.Interfaces.ILineLevelDiff.GetChangedLinesSince(string! repositoryPath, string! sinceRevision) -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Collections.Generic.IReadOnlySet<int>!>?
+RevisionControl.Interfaces.IRevisionControlSystem
+RevisionControl.Interfaces.IRevisionControlSystem.AbortRebase(string! repositoryPath) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.CheckoutRevision(string! repositoryPath, string! revision, string! outputPath) -> bool
+RevisionControl.Interfaces.IRevisionControlSystem.CleanWorkspace(string! checkoutPath) -> bool
+RevisionControl.Interfaces.IRevisionControlSystem.Commit(string! repositoryPath, string! message, System.Collections.Generic.IEnumerable<string!>? filesToCommit = null, System.IProgress<string!>? progress = null) -> RevisionControl.VcsCommitResult!
+RevisionControl.Interfaces.IRevisionControlSystem.ContinueRebase(string! repositoryPath) -> RevisionControl.VcsMergeResult!
+RevisionControl.Interfaces.IRevisionControlSystem.CountCommitsOnNoBranch(string! repositoryPath) -> int
+RevisionControl.Interfaces.IRevisionControlSystem.CreateBranch(string! repositoryPath, string! branchName, bool switchToBranch = true) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.FindRepositoryRoot(string! path) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.ForcePush(string! repositoryPath, string? branchName = null) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.GetBranches(string! repositoryPath, bool includeRemote = false) -> System.Collections.Generic.List<RevisionControl.VcsBranchInfo!>!
+RevisionControl.Interfaces.IRevisionControlSystem.GetBranchPointDate(string! repositoryPath) -> System.DateTimeOffset?
+RevisionControl.Interfaces.IRevisionControlSystem.GetBranchPointRevision(string! repositoryPath, string? startRevision = null) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetChangedFilePathsSince(string! repositoryPath, string! sinceRevision) -> System.Collections.Generic.IReadOnlyList<string!>?
+RevisionControl.Interfaces.IRevisionControlSystem.GetChangedFiles(string! repositoryPath, string! revision) -> System.Collections.Generic.List<RevisionControl.VcsChangedFile!>!
+RevisionControl.Interfaces.IRevisionControlSystem.GetConflictVersions(string! repositoryPath, string! filePath) -> (byte[]? ours, byte[]? theirs)
+RevisionControl.Interfaces.IRevisionControlSystem.GetCurrentBranch(string! repositoryPath) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetCurrentRevision(string! repositoryPath) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetDetachedHeadLabel(string! repositoryPath) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetFileBytesAtRevision(string! repositoryPath, string! filePath, string? revision = null) -> byte[]?
+RevisionControl.Interfaces.IRevisionControlSystem.GetLogEntries(string! repositoryPath, RevisionControl.VcsLogOptions? options = null) -> System.Collections.Generic.List<RevisionControl.VcsLogEntry!>!
+RevisionControl.Interfaces.IRevisionControlSystem.GetPreviousRevision(string! repositoryPath, string! revision) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetPullRequestUrl(string! repositoryPath, string? baseBranch = null) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetRebaseInProgress(string! repositoryPath) -> RevisionControl.VcsRebaseInProgress?
+RevisionControl.Interfaces.IRevisionControlSystem.GetRevisionDescription(string! repositoryPath, string! revision) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.GetWorkingCopyChanges(string! repositoryPath) -> System.Collections.Generic.List<RevisionControl.VcsWorkingCopyFile!>!
+RevisionControl.Interfaces.IRevisionControlSystem.IsBranchPushed(string! repositoryPath) -> bool
+RevisionControl.Interfaces.IRevisionControlSystem.IsValidRepository(string! repositoryPath) -> bool
+RevisionControl.Interfaces.IRevisionControlSystem.MergeBranch(string! repositoryPath, string! sourceBranch) -> RevisionControl.VcsMergeResult!
+RevisionControl.Interfaces.IRevisionControlSystem.Push(string! repositoryPath, string? branchName = null) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.Rebase(string! repositoryPath, string! targetBranch) -> RevisionControl.VcsMergeResult!
+RevisionControl.Interfaces.IRevisionControlSystem.ResolveConflict(string! repositoryPath, string! filePath, RevisionControl.ConflictResolutionChoice choice) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.ResolveRevision(string! repositoryPath, string! revision) -> string?
+RevisionControl.Interfaces.IRevisionControlSystem.RevertFiles(string! repositoryPath, System.Collections.Generic.IEnumerable<string!>! filesToRevert) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.SwitchBranch(string! repositoryPath, string! branchName) -> RevisionControl.VcsOperationResult!
+RevisionControl.Interfaces.IRevisionControlSystem.UpdateExistingCheckout(string! checkoutPath, string! repositoryPath, string! revision) -> bool
+RevisionControl.Interfaces.IRevisionControlSystem.UpdateRevisionInPlace(string! checkoutPath, string! repositoryPath, string! revision) -> bool
+RevisionControl.Interfaces.IRevisionControlSystem.UpdateToLatest(string! repositoryPath) -> RevisionControl.VcsUpdateResult!
+RevisionControl.RevisionId
+RevisionControl.SvnRevisionControlSystem
+RevisionControl.SvnRevisionControlSystem.AbortRebase(string! repositoryPath) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.CheckoutRevision(string! repositoryPath, string! revision, string! outputPath) -> bool
+RevisionControl.SvnRevisionControlSystem.CleanWorkspace(string! checkoutPath) -> bool
+RevisionControl.SvnRevisionControlSystem.Commit(string! repositoryPath, string! message, System.Collections.Generic.IEnumerable<string!>? filesToCommit = null, System.IProgress<string!>? progress = null) -> RevisionControl.VcsCommitResult!
+RevisionControl.SvnRevisionControlSystem.ContinueRebase(string! repositoryPath) -> RevisionControl.VcsMergeResult!
+RevisionControl.SvnRevisionControlSystem.CountCommitsOnNoBranch(string! repositoryPath) -> int
+RevisionControl.SvnRevisionControlSystem.CreateBranch(string! repositoryPath, string! branchName, bool switchToBranch = true) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.CreateBranch(string! repositoryPath, string! branchName, bool switchToBranch, System.Collections.Generic.IReadOnlyList<string!>? branchDirectories) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.FindRepositoryRoot(string! path) -> string?
+RevisionControl.SvnRevisionControlSystem.ForcePush(string! repositoryPath, string? branchName = null) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.GetBranches(string! repositoryPath, bool includeRemote = false) -> System.Collections.Generic.List<RevisionControl.VcsBranchInfo!>!
+RevisionControl.SvnRevisionControlSystem.GetBranches(string! repositoryPath, bool includeRemote, System.Collections.Generic.IReadOnlyList<string!>? branchDirectories) -> System.Collections.Generic.List<RevisionControl.VcsBranchInfo!>!
+RevisionControl.SvnRevisionControlSystem.GetBranchPointDate(string! repositoryPath) -> System.DateTimeOffset?
+RevisionControl.SvnRevisionControlSystem.GetBranchPointRevision(string! repositoryPath, string? startRevision = null) -> string?
+RevisionControl.SvnRevisionControlSystem.GetChangedFilePathsSince(string! repositoryPath, string! sinceRevision) -> System.Collections.Generic.IReadOnlyList<string!>?
+RevisionControl.SvnRevisionControlSystem.GetChangedFiles(string! repositoryPath, string! revision) -> System.Collections.Generic.List<RevisionControl.VcsChangedFile!>!
+RevisionControl.SvnRevisionControlSystem.GetConflictVersions(string! repositoryPath, string! filePath) -> (byte[]? ours, byte[]? theirs)
+RevisionControl.SvnRevisionControlSystem.GetCurrentBranch(string! repositoryPath) -> string?
+RevisionControl.SvnRevisionControlSystem.GetCurrentBranch(string! repositoryPath, System.Collections.Generic.IReadOnlyList<string!>? branchDirectories) -> string?
+RevisionControl.SvnRevisionControlSystem.GetCurrentRevision(string! repositoryPath) -> string?
+RevisionControl.SvnRevisionControlSystem.GetDetachedHeadLabel(string! repositoryPath) -> string?
+RevisionControl.SvnRevisionControlSystem.GetFileBytesAtRevision(string! repositoryPath, string! filePath, string? revision = null) -> byte[]?
+RevisionControl.SvnRevisionControlSystem.GetLogEntries(string! repositoryPath, RevisionControl.VcsLogOptions? options = null) -> System.Collections.Generic.List<RevisionControl.VcsLogEntry!>!
+RevisionControl.SvnRevisionControlSystem.GetLogEntries(string! repositoryPath, RevisionControl.VcsLogOptions? options, System.Collections.Generic.IReadOnlyList<string!>? branchDirectories) -> System.Collections.Generic.List<RevisionControl.VcsLogEntry!>!
+RevisionControl.SvnRevisionControlSystem.GetPreviousRevision(string! repositoryPath, string! revision) -> string?
+RevisionControl.SvnRevisionControlSystem.GetPullRequestUrl(string! repositoryPath, string? baseBranch = null) -> string?
+RevisionControl.SvnRevisionControlSystem.GetRebaseInProgress(string! repositoryPath) -> RevisionControl.VcsRebaseInProgress?
+RevisionControl.SvnRevisionControlSystem.GetRevisionDescription(string! repositoryPath, string! revision) -> string?
+RevisionControl.SvnRevisionControlSystem.GetWorkingCopyChanges(string! repositoryPath) -> System.Collections.Generic.List<RevisionControl.VcsWorkingCopyFile!>!
+RevisionControl.SvnRevisionControlSystem.IsBranchPushed(string! repositoryPath) -> bool
+RevisionControl.SvnRevisionControlSystem.IsValidRepository(string! repositoryPath) -> bool
+RevisionControl.SvnRevisionControlSystem.MergeBranch(string! repositoryPath, string! sourceBranch) -> RevisionControl.VcsMergeResult!
+RevisionControl.SvnRevisionControlSystem.Push(string! repositoryPath, string? branchName = null) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.Rebase(string! repositoryPath, string! targetBranch) -> RevisionControl.VcsMergeResult!
+RevisionControl.SvnRevisionControlSystem.ResolveConflict(string! repositoryPath, string! filePath, RevisionControl.ConflictResolutionChoice choice) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.ResolveRevision(string! repositoryPath, string! revision) -> string?
+RevisionControl.SvnRevisionControlSystem.RevertFiles(string! repositoryPath, System.Collections.Generic.IEnumerable<string!>! filesToRevert) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.SvnRevisionControlSystem() -> void
+RevisionControl.SvnRevisionControlSystem.SwitchBranch(string! repositoryPath, string! branchName) -> RevisionControl.VcsOperationResult!
+RevisionControl.SvnRevisionControlSystem.UpdateExistingCheckout(string! checkoutPath, string! repositoryPath, string! revision) -> bool
+RevisionControl.SvnRevisionControlSystem.UpdateRevisionInPlace(string! checkoutPath, string! repositoryPath, string! revision) -> bool
+RevisionControl.SvnRevisionControlSystem.UpdateToLatest(string! repositoryPath) -> RevisionControl.VcsUpdateResult!
+RevisionControl.SvnToolLocator
+RevisionControl.VcsBranchInfo
+RevisionControl.VcsBranchInfo.IsCurrent.get -> bool
+RevisionControl.VcsBranchInfo.IsCurrent.set -> void
+RevisionControl.VcsBranchInfo.IsRemote.get -> bool
+RevisionControl.VcsBranchInfo.IsRemote.set -> void
+RevisionControl.VcsBranchInfo.IsTag.get -> bool
+RevisionControl.VcsBranchInfo.IsTag.set -> void
+RevisionControl.VcsBranchInfo.LastCommit.get -> string?
+RevisionControl.VcsBranchInfo.LastCommit.set -> void
+RevisionControl.VcsBranchInfo.Name.get -> string!
+RevisionControl.VcsBranchInfo.Name.set -> void
+RevisionControl.VcsBranchInfo.VcsBranchInfo() -> void
+RevisionControl.VcsChangedFile
+RevisionControl.VcsChangedFile.ChangeType.get -> RevisionControl.VcsChangeType
+RevisionControl.VcsChangedFile.ChangeType.set -> void
+RevisionControl.VcsChangedFile.OldPath.get -> string?
+RevisionControl.VcsChangedFile.OldPath.set -> void
+RevisionControl.VcsChangedFile.Path.get -> string!
+RevisionControl.VcsChangedFile.Path.set -> void
+RevisionControl.VcsChangedFile.VcsChangedFile() -> void
+RevisionControl.VcsChangeType
+RevisionControl.VcsChangeType.Added = 0 -> RevisionControl.VcsChangeType
+RevisionControl.VcsChangeType.Copied = 4 -> RevisionControl.VcsChangeType
+RevisionControl.VcsChangeType.Deleted = 2 -> RevisionControl.VcsChangeType
+RevisionControl.VcsChangeType.Modified = 1 -> RevisionControl.VcsChangeType
+RevisionControl.VcsChangeType.Renamed = 3 -> RevisionControl.VcsChangeType
+RevisionControl.VcsCommitResult
+RevisionControl.VcsCommitResult.ErrorMessage.get -> string?
+RevisionControl.VcsCommitResult.ErrorMessage.set -> void
+RevisionControl.VcsCommitResult.IsOutOfDate.get -> bool
+RevisionControl.VcsCommitResult.IsOutOfDate.set -> void
+RevisionControl.VcsCommitResult.NewRevision.get -> string?
+RevisionControl.VcsCommitResult.NewRevision.set -> void
+RevisionControl.VcsCommitResult.SkippedFiles.get -> System.Collections.Generic.List<string!>!
+RevisionControl.VcsCommitResult.SkippedFiles.set -> void
+RevisionControl.VcsCommitResult.Success.get -> bool
+RevisionControl.VcsCommitResult.Success.set -> void
+RevisionControl.VcsCommitResult.VcsCommitResult() -> void
+RevisionControl.VcsFileStatus
+RevisionControl.VcsFileStatus.Added = 1 -> RevisionControl.VcsFileStatus
+RevisionControl.VcsFileStatus.Conflicted = 5 -> RevisionControl.VcsFileStatus
+RevisionControl.VcsFileStatus.Deleted = 2 -> RevisionControl.VcsFileStatus
+RevisionControl.VcsFileStatus.Modified = 0 -> RevisionControl.VcsFileStatus
+RevisionControl.VcsFileStatus.Renamed = 3 -> RevisionControl.VcsFileStatus
+RevisionControl.VcsFileStatus.Untracked = 4 -> RevisionControl.VcsFileStatus
+RevisionControl.VcsLogEntry
+RevisionControl.VcsLogEntry.Author.get -> string!
+RevisionControl.VcsLogEntry.Author.set -> void
+RevisionControl.VcsLogEntry.AuthorEmail.get -> string!
+RevisionControl.VcsLogEntry.AuthorEmail.set -> void
+RevisionControl.VcsLogEntry.Branch.get -> string?
+RevisionControl.VcsLogEntry.Branch.set -> void
+RevisionControl.VcsLogEntry.Date.get -> System.DateTimeOffset
+RevisionControl.VcsLogEntry.Date.set -> void
+RevisionControl.VcsLogEntry.Message.get -> string!
+RevisionControl.VcsLogEntry.Message.set -> void
+RevisionControl.VcsLogEntry.MessageShort.get -> string!
+RevisionControl.VcsLogEntry.MessageShort.set -> void
+RevisionControl.VcsLogEntry.ParentRevisions.get -> System.Collections.Generic.List<string!>!
+RevisionControl.VcsLogEntry.ParentRevisions.set -> void
+RevisionControl.VcsLogEntry.Revision.get -> string!
+RevisionControl.VcsLogEntry.Revision.set -> void
+RevisionControl.VcsLogEntry.ShortRevision.get -> string!
+RevisionControl.VcsLogEntry.ShortRevision.set -> void
+RevisionControl.VcsLogEntry.VcsLogEntry() -> void
+RevisionControl.VcsLogOptions
+RevisionControl.VcsLogOptions.Branch.get -> string?
+RevisionControl.VcsLogOptions.Branch.set -> void
+RevisionControl.VcsLogOptions.MaxEntries.get -> int
+RevisionControl.VcsLogOptions.MaxEntries.set -> void
+RevisionControl.VcsLogOptions.Revision.get -> string?
+RevisionControl.VcsLogOptions.Revision.set -> void
+RevisionControl.VcsLogOptions.Since.get -> System.DateTimeOffset?
+RevisionControl.VcsLogOptions.Since.set -> void
+RevisionControl.VcsLogOptions.Until.get -> System.DateTimeOffset?
+RevisionControl.VcsLogOptions.Until.set -> void
+RevisionControl.VcsLogOptions.VcsLogOptions() -> void
+RevisionControl.VcsMergeResult
+RevisionControl.VcsMergeResult.ConflictedFiles.get -> System.Collections.Generic.List<string!>!
+RevisionControl.VcsMergeResult.ConflictedFiles.set -> void
+RevisionControl.VcsMergeResult.EndRevision.get -> long?
+RevisionControl.VcsMergeResult.EndRevision.set -> void
+RevisionControl.VcsMergeResult.ErrorMessage.get -> string?
+RevisionControl.VcsMergeResult.ErrorMessage.set -> void
+RevisionControl.VcsMergeResult.HasChanges.get -> bool
+RevisionControl.VcsMergeResult.HasChanges.set -> void
+RevisionControl.VcsMergeResult.HasConflicts.get -> bool
+RevisionControl.VcsMergeResult.HasConflicts.set -> void
+RevisionControl.VcsMergeResult.ModifiedFiles.get -> System.Collections.Generic.List<string!>!
+RevisionControl.VcsMergeResult.ModifiedFiles.set -> void
+RevisionControl.VcsMergeResult.SourceBranch.get -> string?
+RevisionControl.VcsMergeResult.SourceBranch.set -> void
+RevisionControl.VcsMergeResult.StartRevision.get -> long?
+RevisionControl.VcsMergeResult.StartRevision.set -> void
+RevisionControl.VcsMergeResult.Success.get -> bool
+RevisionControl.VcsMergeResult.Success.set -> void
+RevisionControl.VcsMergeResult.TreeConflictedFiles.get -> System.Collections.Generic.List<string!>!
+RevisionControl.VcsMergeResult.TreeConflictedFiles.set -> void
+RevisionControl.VcsMergeResult.VcsMergeResult() -> void
+RevisionControl.VcsOperationResult
+RevisionControl.VcsOperationResult.ErrorMessage.get -> string?
+RevisionControl.VcsOperationResult.ErrorMessage.set -> void
+RevisionControl.VcsOperationResult.Success.get -> bool
+RevisionControl.VcsOperationResult.Success.set -> void
+RevisionControl.VcsOperationResult.VcsOperationResult() -> void
+RevisionControl.VcsRebaseInProgress
+RevisionControl.VcsRebaseInProgress.<Clone>$() -> RevisionControl.VcsRebaseInProgress!
+RevisionControl.VcsRebaseInProgress.Branch.get -> string?
+RevisionControl.VcsRebaseInProgress.Branch.init -> void
+RevisionControl.VcsRebaseInProgress.ConflictedFiles.get -> System.Collections.Generic.IReadOnlyList<string!>!
+RevisionControl.VcsRebaseInProgress.ConflictedFiles.init -> void
+RevisionControl.VcsRebaseInProgress.Deconstruct(out string? Branch, out System.Collections.Generic.IReadOnlyList<string!>! ConflictedFiles) -> void
+RevisionControl.VcsRebaseInProgress.Equals(RevisionControl.VcsRebaseInProgress? other) -> bool
+RevisionControl.VcsRebaseInProgress.VcsRebaseInProgress(string? Branch, System.Collections.Generic.IReadOnlyList<string!>! ConflictedFiles) -> void
+RevisionControl.VcsRelativePath
+RevisionControl.VcsUpdateResult
+RevisionControl.VcsUpdateResult.ErrorMessage.get -> string?
+RevisionControl.VcsUpdateResult.ErrorMessage.set -> void
+RevisionControl.VcsUpdateResult.HasChanges.get -> bool
+RevisionControl.VcsUpdateResult.HasChanges.set -> void
+RevisionControl.VcsUpdateResult.NewRevision.get -> string?
+RevisionControl.VcsUpdateResult.NewRevision.set -> void
+RevisionControl.VcsUpdateResult.OldRevision.get -> string?
+RevisionControl.VcsUpdateResult.OldRevision.set -> void
+RevisionControl.VcsUpdateResult.Success.get -> bool
+RevisionControl.VcsUpdateResult.Success.set -> void
+RevisionControl.VcsUpdateResult.VcsUpdateResult() -> void
+RevisionControl.VcsWorkingCopyFile
+RevisionControl.VcsWorkingCopyFile.IsStaged.get -> bool
+RevisionControl.VcsWorkingCopyFile.IsStaged.set -> void
+RevisionControl.VcsWorkingCopyFile.OldPath.get -> string?
+RevisionControl.VcsWorkingCopyFile.OldPath.set -> void
+RevisionControl.VcsWorkingCopyFile.Path.get -> string!
+RevisionControl.VcsWorkingCopyFile.Path.set -> void
+RevisionControl.VcsWorkingCopyFile.Status.get -> RevisionControl.VcsFileStatus
+RevisionControl.VcsWorkingCopyFile.Status.set -> void
+RevisionControl.VcsWorkingCopyFile.VcsWorkingCopyFile() -> void
+static RevisionControl.RevisionId.IsCommitHash(string? revision) -> bool
+static RevisionControl.RevisionId.Shorten(string? revision, int length = 7) -> string!
+static RevisionControl.SvnToolLocator.BundledDirectory.get -> string?
+static RevisionControl.SvnToolLocator.SvnExecutablePath.get -> string?
+static RevisionControl.VcsLogOptions.DefaultPastWeek(int minEntries = 10) -> RevisionControl.VcsLogOptions!
+static RevisionControl.VcsRebaseInProgress.operator !=(RevisionControl.VcsRebaseInProgress? left, RevisionControl.VcsRebaseInProgress? right) -> bool
+static RevisionControl.VcsRebaseInProgress.operator ==(RevisionControl.VcsRebaseInProgress? left, RevisionControl.VcsRebaseInProgress? right) -> bool
+static RevisionControl.VcsRelativePath.Canonical(string! path) -> string!
+static RevisionControl.VcsRelativePath.ToFullPath(string! workingCopy, string! relativePath) -> string!

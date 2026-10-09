@@ -29,13 +29,13 @@ public class StandardInputTests
 public class HostStdinCollection;
 
 /// <summary>
-/// A host blocked reading its stdin - an MCP server over stdio, which is what Plumbline's simulation
-/// adapter runs in - can still start omc.
+/// A host blocked reading its stdin - an MCP server over stdio, which is what a simulation adapter
+/// built on this library may run in - can still start omc.
 /// </summary>
 /// <remarks>
 /// <para>Inheriting the host's stdin, omc did not start within 30s while the host had a read of it
 /// pending - most likely because synchronous I/O on one Windows pipe is serialised, so omc's start-up
-/// waited behind the read. Reported from Plumbline (#146, PR #169).</para>
+/// waited behind the read. Reported by a project that builds on this library.</para>
 ///
 /// <para>The test makes its own process that host: it points this process's stdin at a pipe of its
 /// own, which <c>Process.Start</c> reads as the handle a child inherits, and blocks a thread reading
