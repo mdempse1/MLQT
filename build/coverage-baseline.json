@@ -13,12 +13,6 @@
                  "MLQT.Shared":  80
              },
     "classes":  {
-                    "MLQT.McpServer::MLQT.McpServer.Helpers.ClassBodyEditor":  {
-                                                                                   "coverage":  78.9,
-                                                                                   "lines":  57,
-                                                                                   "bar":  80,
-                                                                                   "reason":  "1.1 points under the bar. The gap is the splice paths for class shapes no fixture builds yet. Reachable; not yet written."
-                                                                               },
                     "MLQT.McpServer::MLQT.McpServer.Helpers.EntityResolver":  {
                                                                                   "coverage":  79.4,
                                                                                   "lines":  34,

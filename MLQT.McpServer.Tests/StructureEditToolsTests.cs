@@ -547,6 +547,39 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public void ListConnections_UnknownClass_IsAnError()
+    {
+        using var host = new TestHost();
+        var error = Assert.IsType<ToolError>(Load(host).ListConnections("P.NoSuchClass"));
+        Assert.Contains("P.NoSuchClass", error.Error);
+    }
+
+    [Fact]
+    public void ListConnections_ShortClass_IsAnError()
+    {
+        using var host = new TestHost();
+        var path = host.WriteMoFile("S.mo", "within;\ntype S = Real(unit = \"m\");");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+
+        var error = Assert.IsType<ToolError>(tools.ListConnections("S"));
+        Assert.Contains("short class definition", error.Error);
+    }
+
+    [Fact]
+    public void ListConnections_ClassThatFailedToParse_IsAnError()
+    {
+        using var host = new TestHost();
+        var path = host.WriteMoFile("Broken.mo", "within;\nmodel Broken (((\n");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+        Assert.True(host.Libraries.GetModelById("Broken")?.IsParseFailurePlaceholder);
+
+        var error = Assert.IsType<ToolError>(tools.ListConnections("Broken"));
+        Assert.Contains("failed to parse", error.Error);
+    }
+
+    [Fact]
     public async Task RemoveConnection_Missing_Rejected()
     {
         using var host = new TestHost();

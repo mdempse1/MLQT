@@ -76,10 +76,13 @@ public class CheckTimingsTests
         Assert.True(shared.Elapsed.TotalMilliseconds >= 20, $"recorded only {shared.Elapsed.TotalMilliseconds}ms");
 
         // ...and the enclosing phase can take it back off its own measurement, which is what stops
-        // the two being added together.
-        Assert.True(nested > 0, "nothing was offered back for discounting");
-        Assert.True(outerElapsed - nested < outerElapsed / 2,
-            "discounting the nested phase should leave the enclosing one with almost nothing");
+        // the two being added together: all of the nested work is offered back, and never more than
+        // the enclosing phase measured. Not a ratio of the two - the first call's JIT and any
+        // preemption land outside the nested measurement, and on a busy CI runner they once
+        // outweighed the 30ms of work and failed the build.
+        Assert.True(nested >= Stopwatch.Frequency * 20 / 1000,
+            $"only {nested * 1000.0 / Stopwatch.Frequency}ms was offered back for discounting");
+        Assert.True(nested <= outerElapsed, "more was offered back than the enclosing phase measured");
     }
 
     [Fact]
