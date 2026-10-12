@@ -3,14 +3,15 @@
     Displays syntax-highlighted Modelica code using markup tags from ModelicaSyntaxVisitor
 *@
 
-<div class="code-viewer" style="@(!string.IsNullOrEmpty(Height) ? $"height: {Height};" : string.Empty)">
+<div class="code-viewer" style="@(!string.IsNullOrEmpty(Height) ? $"height: {Height};" : string.Empty)" @ref="_viewer">
     <div class="code-viewer-content">
         @if (_htmlLines != null && _htmlLines.Count > 0)
         {
-            @foreach (var htmlLine in _htmlLines)
+            @for (var i = 0; i < _htmlLines.Count; i++)
             {
-                <div class="code-line">
-                    @((MarkupString)htmlLine)
+                var lineNumber = i + 1;
+                <div class="@LineClass(lineNumber)" data-line="@lineNumber">
+                    @((MarkupString)_htmlLines[i])
                 </div>
             }
         }

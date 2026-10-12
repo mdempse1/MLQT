@@ -278,7 +278,8 @@ public sealed class SessionTools
                 "reloads everything currently loaded. With a target, reload just that: a .mo file path, or a " +
                 "library/repository by id or name. Reloading a library or repository (or everything) resets " +
                 "opt-in analysis, so re-run mlqt_analyze_dependencies afterwards; reloading a single file keeps " +
-                "the dependency graph current incrementally.")]
+                "the dependency graph current incrementally. A library the host supplied from memory has nothing " +
+                "on disk to re-read, and is left loaded as it is.")]
     public async Task<object> Reload(
         [Description("Optional: a .mo file path, or a library/repository id or name. Omit to reload everything.")]
         string? target = null)
@@ -306,6 +307,11 @@ public sealed class SessionTools
             var (lib, _) = EntityResolver.ResolveLibrary(_libraries, target);
             if (lib is not null)
             {
+                if (IsSupplied(lib))
+                    return new ToolError(
+                        $"'{lib.Name}' was supplied from memory by the host, so there is nothing on disk to re-read; " +
+                        "it is still loaded, unchanged. Only the host that supplied it can replace it.");
+
                 await ReloadLibraryAsync(lib);
                 ResetAnalysis();
                 return new ReloadResult("library", new[] { lib.Name }, 0, AnalysisResetNote);
@@ -316,8 +322,10 @@ public sealed class SessionTools
                 "or repository name/id, or omit the argument to reload everything.");
         }
 
-        // Reload everything: repositories first, then directly-loaded libraries.
+        // Reload everything: repositories first, then directly-loaded libraries. A supplied library is
+        // left as it is - see IsSupplied - and named in the result rather than passed over in silence.
         var reloaded = new List<string>();
+        var notReloaded = new List<string>();
         foreach (var repoId in _repositories.Repositories.Select(r => r.Id).ToList())
         {
             await _repositories.RefreshRepositoryAsync(repoId);
@@ -325,12 +333,30 @@ public sealed class SessionTools
         }
         foreach (var lib in _libraries.Libraries.Where(l => l.RepositoryId is null).ToList())
         {
+            if (IsSupplied(lib))
+            {
+                notReloaded.Add(lib.Name);
+                continue;
+            }
             reloaded.Add(lib.Name);
             await ReloadLibraryAsync(lib);
         }
         ResetAnalysis();
-        return new ReloadResult("all", reloaded.Distinct().ToList(), 0, AnalysisResetNote);
+        var note = notReloaded.Count == 0
+            ? AnalysisResetNote
+            : AnalysisResetNote + " Not reloaded, because the host supplied them from memory and there is nothing on " +
+              $"disk to re-read: {string.Join(", ", notReloaded)}. They are still loaded, unchanged.";
+        return new ReloadResult("all", reloaded.Distinct().ToList(), 0, note, notReloaded);
     }
+
+    /// <summary>
+    /// A library the host supplied from memory (<see cref="ILibraryDataService.AddLibraryFromSourceAsync"/>).
+    /// Its <see cref="LoadedLibrary.SourcePath"/> is an <c>mlqt-readonly://</c> root, which names no files
+    /// on disk: reloaded from it, the library was unloaded first and the load from the path then threw,
+    /// so the session lost it. Only the host holding its text can supply it again.
+    /// </summary>
+    private static bool IsSupplied(LoadedLibrary library) =>
+        library.ReadOnlySource == ReadOnlySourceKind.Supplied;
 
     private async Task ReloadLibraryAsync(LoadedLibrary library)
     {

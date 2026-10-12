@@ -396,8 +396,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("UpdateToLatest", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("UpdateToLatest", ex);
         }
 
         return result;
@@ -441,8 +440,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("RevertFiles", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("RevertFiles", ex);
         }
 
         return result;
@@ -993,8 +991,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("SwitchBranch", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("SwitchBranch", ex);
         }
 
         return result;
@@ -1065,8 +1062,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("CreateBranch", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("CreateBranch", ex);
         }
 
         return result;
@@ -1500,8 +1496,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("Commit", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("Commit", ex);
         }
 
         return result;
@@ -1601,8 +1596,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("MergeBranch", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("MergeBranch", ex);
         }
 
         return result;
@@ -1631,8 +1625,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("ResolveConflict", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("ResolveConflict", ex);
         }
         return result;
     }

@@ -19,6 +19,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "UnusedMembersAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } = new[] { RuleIdsRef.UnusedMember };
 
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)

@@ -15,6 +15,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class ShadowingAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "ShadowingAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } = new[] { RuleIdsRef.ShadowingInheritedMember };
 
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)

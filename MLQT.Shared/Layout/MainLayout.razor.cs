@@ -1385,33 +1385,58 @@ public partial class MainLayout : IDisposable
         StateHasChanged();
     }
 
+    /// <summary>
+    /// The startup dialog's Run All: every deferred step still waiting, in order.
+    /// </summary>
+    /// <remarks>
+    /// Calls the steps themselves, never their <c>...FromDialogAsync</c> wrappers. Those are the
+    /// handlers for a click on one row, and refuse to start while <c>_runningDeferredStep</c> is set
+    /// (B194) — which this method sets first, so through them nothing after the combined pass ran:
+    /// Run All finished with external resources never analysed, and with no style check whenever
+    /// dependency analysis had already been run on its own. Whether a step still needs running is
+    /// each step's own guard (<c>NavState.Has...</c>), the same one a page's request goes through.
+    /// </remarks>
     private async Task RunAllDeferredFromDialogAsync()
     {
         if (_runningDeferredStep) return;
 
         _runningDeferredStep = true;
-        StateHasChanged();
+        try
+        {
+            // Combined dependency analysis + style checking: parse each model once for both
+            _step3running = true;
+            _step3deferred = false;
+            _step3color = Color.Success;
+            _step4running = true;
+            _step4deferred = false;
+            _step4color = Color.Success;
+            StateHasChanged();
+            await Task.Run(() => RunDeferredDependenciesAsync(combineStyleChecking: true));
+            _step3running = false;
+            StateHasChanged();
 
-        // Combined dependency analysis + style checking: parse each model once for both
-        _step3running = true;
-        _step3deferred = false;
-        _step3color = Color.Success;
-        _step4running = true;
-        _step4deferred = false;
-        _step4color = Color.Success;
-        StateHasChanged();
-        await Task.Run(() => RunDeferredDependenciesAsync(combineStyleChecking: true));
-        _step3running = false;
-        _step4running = false;
-        StateHasChanged();
+            // If style checking wasn't combined (e.g., dependency analysis was already done), run separately
+            await Task.Run(() => RunDeferredStyleCheckingAsync(showOwnDialog: false));
+            _step4running = false;
 
-        // If style checking wasn't combined (e.g., dependency analysis was already done), run separately
-        await RunDeferredStyleCheckingFromDialogAsync();
-        await RunDeferredExternalResourcesFromDialogAsync();
-        NavState.DisableDeferredMode();
-        _runningDeferredStep = false;
-        _startupProcessRunning = false;
-        StateHasChanged();
+            _step5running = true;
+            _step5deferred = false;
+            _step5color = Color.Success;
+            StateHasChanged();
+            await Task.Run(RunDeferredExternalResourcesAsync);
+
+            NavState.DisableDeferredMode();
+        }
+        finally
+        {
+            _step3running = false;
+            _step4running = false;
+            _step5running = false;
+            _styleCheckRunning = false;
+            _runningDeferredStep = false;
+            _startupProcessRunning = false;
+            StateHasChanged();
+        }
     }
 
     private void CloseStartupDialog()

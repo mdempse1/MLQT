@@ -33,6 +33,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "SingleFilePackageAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } =
         new[] { ModelicaParser.StyleRules.RuleIds.SingleFilePackage };
 

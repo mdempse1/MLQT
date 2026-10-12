@@ -19,6 +19,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class PackageOrderAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "PackageOrderAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } = new[] { ModelicaParser.StyleRules.RuleIds.PackageOrder };
 
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)
