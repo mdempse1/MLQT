@@ -545,11 +545,12 @@ public sealed class StructureEditTools
     public object ListConnections(
         [Description("Fully-qualified id of the class.")] string classId)
     {
-        var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
+        // Read, not Open: listing writes nothing, so a read-only class answers like any other.
+        var (layout, error) = ClassBodyEditor.Read(_libraries, classId);
         if (error is not null)
-            return error!;
+            return error;
 
-        var connections = ctx!.Layout.Connections.Select(ConnectionView.Of).ToList();
+        var connections = layout!.Connections.Select(ConnectionView.Of).ToList();
         return new ConnectionsResult(classId, connections, CollectBasesWithConnections(classId));
     }
 

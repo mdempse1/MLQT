@@ -229,6 +229,10 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
                 // edit it - or could not read it - and either is what this test is for.
                 switch (await InvokeAsync(tool, method, classId))
                 {
+                    // A tool that only reads has no business with the guard: refusing is the defect.
+                    case ToolError error when error.Error.Contains(Refusal, StringComparison.Ordinal) && OnlyReads(name):
+                        failures.Add($"{name}: only reads, yet refused a supplied class as read-only");
+                        break;
                     case ToolError error when error.Error.Contains(Refusal, StringComparison.Ordinal):
                         refused++;
                         break;
@@ -263,6 +267,15 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
         // is being counted as one that answered.
         Assert.True(refused > 15, $"only {refused} tools refused; has the refusal's wording changed?");
     }
+
+    /// <summary>
+    /// Tools whose name says they only read. Accepting the refusal from every tool let
+    /// <c>mlqt_list_connections</c>, which opened its class through the edit path, pass the sweep while
+    /// answering nothing on a supplied class.
+    /// </summary>
+    private static bool OnlyReads(string toolName) =>
+        new[] { "mlqt_get_", "mlqt_list_", "mlqt_search_", "mlqt_find_" }
+            .Any(prefix => toolName.StartsWith(prefix, StringComparison.Ordinal));
 
     private List<string> SuppliedSources() =>
         [.. _host.Libraries.CombinedGraph.ModelNodes
@@ -337,6 +350,16 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
         var result = Tool<DiagramTools>().GetDiagramImage("Vendor.Example");
 
         Assert.IsNotType<ToolError>(result);
+    }
+
+    [Fact]
+    public void ItsConnections_AreListed()
+    {
+        var result = ToolAssert.Ok<ConnectionsResult>(Tool<StructureEditTools>().ListConnections("Vendor.Example"));
+
+        var connection = Assert.Single(result.Connections);
+        Assert.Contains("spring1.flange_b", Json(connection));
+        Assert.Contains("spring2.flange_a", Json(connection));
     }
 
     // ---------------------------------------------------------------- writing

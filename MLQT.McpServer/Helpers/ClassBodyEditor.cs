@@ -55,6 +55,26 @@ internal static class ClassBodyEditor
             owner.FileOwner.Definition.ModelicaCode ?? string.Empty, layout), null);
     }
 
+    /// <summary>
+    /// Resolve a class's body layout for a tool that only reads it. Unlike <see cref="Open"/> it asks
+    /// nothing about the file or whether the class may be written, so it answers on a read-only class
+    /// (supplied or recovered) as the other view tools do. Returns (layout, null) or (null, ToolError).
+    /// </summary>
+    public static (ClassBodyLayout? layout, object? error) Read(ILibraryDataService libraries, string classId)
+    {
+        var node = libraries.GetModelById(classId);
+        if (node is null)
+            return (null, ToolDiagnostics.ClassNotFound(libraries, classId));
+        if (node.IsParseFailurePlaceholder)
+            return (null, new ToolError($"Class '{classId}' failed to parse and cannot be read."));
+
+        var layout = ClassBodyLocator.Analyze(node.Definition.ModelicaCode ?? string.Empty);
+        if (!layout.Found)
+            return (null, new ToolError($"Could not analyse the body of '{classId}' (it may be a short class definition)."));
+
+        return (layout, null);
+    }
+
     /// <summary>Persist a transformed class body. Returns a <see cref="ClassEditResult"/> or a ToolError.</summary>
     public static async Task<object> ApplyAsync(
         ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
