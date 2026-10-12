@@ -78,7 +78,7 @@ public static class GraphAnalysisRunner
                 // anybody can act on and "UnusedMembersAnalyzer took 38 of them" is (B128).
                 var analysed = CheckTimings.Measure(
                     context.Timings,
-                    CheckTimings.Phase.AnalysisPrefix + analyzer.GetType().Name,
+                    CheckTimings.Phase.AnalysisPrefix + analyzer.Name,
                     () => analyzer.Analyze(context));
 
                 findings.AddRange(analysed);
@@ -112,8 +112,8 @@ public static class GraphAnalysisRunner
     private static Finding Failure(GraphAnalysisContext context, IGraphAnalyzer analyzer, Exception ex) =>
         CheckFailure.For(
             OwnerOf(context), ex,
-            what: $"The {analyzer.GetType().Name} analysis",
-            discriminator: analyzer.GetType().Name);
+            what: $"The {analyzer.Name} analysis",
+            discriminator: analyzer.Name);
 
     /// <summary>
     /// The class a whole-graph failure is reported against: the shortest top-level package in the

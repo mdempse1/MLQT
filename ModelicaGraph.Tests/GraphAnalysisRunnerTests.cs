@@ -12,6 +12,7 @@ public class GraphAnalysisRunnerTests
     {
         private readonly Finding[] _findings;
         public StubAnalyzer(params Finding[] findings) => _findings = findings;
+        public string Name => "StubAnalyzer";
         public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Stub" };
         public IEnumerable<Finding> Analyze(GraphAnalysisContext context) => _findings;
     }
@@ -19,6 +20,7 @@ public class GraphAnalysisRunnerTests
     /// <summary>An analyzer that throws — a defect in a rule, or a class it cannot handle.</summary>
     private sealed class ThrowingAnalyzer : IGraphAnalyzer
     {
+        public string Name { get; init; } = "ThrowingAnalyzer";
         public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Throws" };
         public IEnumerable<Finding> Analyze(GraphAnalysisContext context) =>
             throw new InvalidOperationException("the analyzer broke");
@@ -140,6 +142,7 @@ public class GraphAnalysisRunnerTests
     /// <summary>Reports one finding per model it is given, so a test can see what reached it.</summary>
     private sealed class ModelCountingAnalyzer : IGraphAnalyzer
     {
+        public string Name => "ModelCountingAnalyzer";
         public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Stub" };
         public IEnumerable<Finding> Analyze(GraphAnalysisContext context) =>
             context.Models.Select(m => new Finding
@@ -177,6 +180,7 @@ public class GraphAnalysisRunnerTests
 
     private sealed class DependencyRequiringStub : IGraphAnalyzer
     {
+        public string Name => "DependencyRequiringStub";
         public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Stub" };
         public bool NeedsDependencyAnalysis => true;
         public IEnumerable<Finding> Analyze(GraphAnalysisContext context) =>
@@ -290,5 +294,44 @@ public class GraphAnalysisRunnerTests
         var f = Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ThrowingAnalyzer() }));
 
         Assert.Equal(RuleSeverity.Error, f.Severity);
+    }
+
+    /// <summary>
+    /// The failure finding's fingerprint is built from the analyzer's <see cref="IGraphAnalyzer.Name"/>,
+    /// not its type's name, which an obfuscated build renames: a baseline taken by one build then
+    /// stopped matching the same finding in another, with nothing to say why.
+    /// </summary>
+    [Fact]
+    public void TheFailureFinding_IsIdentifiedByTheAnalyzersNameNotItsType()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Throws"] = RuleSeverity.Warning;
+        var (_, ctx) = Setup("M", "model M Real x; end M;", settings);
+
+        Finding Failure(string name) =>
+            Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ThrowingAnalyzer { Name = name } }));
+
+        var named = Failure("Renamed");
+        Assert.Contains("Renamed", named.Message);
+        Assert.DoesNotContain(nameof(ThrowingAnalyzer), named.Message);
+        Assert.Equal(named.Fingerprint, Failure("Renamed").Fingerprint);
+        Assert.NotEqual(named.Fingerprint, Failure("Other").Fingerprint);
+    }
+
+    /// <summary>
+    /// A built-in analyzer's name is its class name as it was when baselines were first recorded,
+    /// written out as a literal: changing either now changes the fingerprint of its failure finding in
+    /// every baseline already taken. The comparison with the type's name is only possible here, where
+    /// nothing is obfuscated.
+    /// </summary>
+    [Fact]
+    public void EachBuiltInAnalyzer_IsNamedAsItsClassWasAndUniquely()
+    {
+        foreach (var analyzer in GraphAnalysisRunner.BuiltIn)
+            Assert.Equal(analyzer.GetType().Name, analyzer.Name);
+
+        Assert.Equal(
+            GraphAnalysisRunner.BuiltIn.Count,
+            GraphAnalysisRunner.BuiltIn.Select(a => a.Name).Distinct(StringComparer.Ordinal).Count());
     }
 }

@@ -32,6 +32,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class UnusedImportAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "UnusedImportAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } = new[] { RuleIdsRef.UnusedImport };
 
     /// <summary>An enclosing class whose imports are still looking for a use further down the tree.</summary>

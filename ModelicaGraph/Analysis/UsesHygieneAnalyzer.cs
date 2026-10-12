@@ -19,6 +19,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class UsesHygieneAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "UsesHygieneAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } = new[] { RuleIdsRef.UsesUndeclared, RuleIdsRef.UsesDeclaredUnused };
 
     public bool NeedsDependencyAnalysis => true;

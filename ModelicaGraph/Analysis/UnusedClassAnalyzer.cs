@@ -23,6 +23,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class UnusedClassAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "UnusedClassAnalyzer";
+
     public IReadOnlyList<string> RuleIds { get; } = new[] { RuleIdsRef.UnusedClass, RuleIdsRef.UnusedPublicClass };
 
     public bool NeedsDependencyAnalysis => true;

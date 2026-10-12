@@ -56,3 +56,12 @@ static ModelicaGraph.ReadOnlySources.Precedence(ModelicaGraph.ReadOnlySourceKind
 static ModelicaGraph.SuppliedText.operator !=(ModelicaGraph.SuppliedText? left, ModelicaGraph.SuppliedText? right) -> bool
 static ModelicaGraph.SuppliedText.operator ==(ModelicaGraph.SuppliedText? left, ModelicaGraph.SuppliedText? right) -> bool
 static readonly ModelicaGraph.ExternalStubBuilder.RecoveredProvenanceNote -> string!
+ModelicaGraph.Analysis.IGraphAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.PackageOrderAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ShadowingAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.SingleFilePackageAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.UnusedClassAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.UnusedImportAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.UnusedMembersAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.UsesHygieneAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.WithinClauseAnalyzer.Name.get -> string!

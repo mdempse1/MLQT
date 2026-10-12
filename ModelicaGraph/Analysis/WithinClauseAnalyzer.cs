@@ -34,6 +34,9 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed class WithinClauseAnalyzer : IGraphAnalyzer
 {
+    /// <inheritdoc/>
+    public string Name => "WithinClauseAnalyzer";
+
     private const string PackageFile = "package.mo";
 
     public IReadOnlyList<string> RuleIds { get; } =
