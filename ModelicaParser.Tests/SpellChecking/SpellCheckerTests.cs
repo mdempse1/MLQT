@@ -185,6 +185,40 @@ public class SpellCheckerTests
         Assert.True(checker.IsCorrect("temperature"));
     }
 
+    /// <summary>
+    /// A bundled dictionary that is not where the checker looks is a broken build - an obfuscator
+    /// renaming the resources is how one was found - and it used to be skipped, leaving a checker with
+    /// no dictionary that called every word misspelled and logged nothing. This test assembly carries
+    /// none of the resources, which is that build.
+    /// </summary>
+    [Fact]
+    public void Create_WhenABundledDictionaryIsMissing_ThrowsNamingIt()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SpellChecker.Create(typeof(SpellCheckerTests).Assembly, ["en_GB"], null, null));
+
+        Assert.Contains("ModelicaParser.SpellChecking.Dictionaries.en_GB.aff", ex.Message);
+    }
+
+    [Fact]
+    public void Create_WhenTheTermListIsMissing_Throws()
+    {
+        // No language asked for, so the neutral term list is the only bundled resource it reads.
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SpellChecker.Create(typeof(SpellCheckerTests).Assembly, [], null, null));
+
+        Assert.Contains("modelica_terms.txt", ex.Message);
+    }
+
+    [Fact]
+    public void Create_ReadsTheBundledResourcesFromThisLibrary()
+    {
+        // The public overload names its own assembly, whoever calls it.
+        var checker = SpellChecker.Create(typeof(SpellChecker).Assembly, ["en_GB"], null, null);
+
+        Assert.True(checker.IsCorrect("colour"));
+    }
+
     [Fact]
     public void IsCorrect_BritishSpelling_ReturnsTrue()
     {

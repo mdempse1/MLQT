@@ -67,28 +67,42 @@ public class SpellChecker
     /// <param name="languageCodes">Language codes to load from embedded resources (e.g. "en_US", "en_GB"). Defaults to both.</param>
     /// <param name="customWords">Additional custom words to accept as correct.</param>
     /// <param name="additionalDictionaries">Additional Hunspell dictionaries loaded from file paths.</param>
+    /// <exception cref="InvalidOperationException">A dictionary or term list this assembly bundles is
+    /// not among its embedded resources - a build that renamed or dropped them, which an obfuscator
+    /// can. A language code that is not bundled is skipped, as before; one that is bundled and cannot
+    /// be read is a broken build, and reported as one rather than checked with no dictionary.</exception>
     public static SpellChecker Create(
         IEnumerable<string>? languageCodes = null,
         IEnumerable<string>? customWords = null,
         IEnumerable<DictionarySource>? additionalDictionaries = null)
+        => Create(typeof(SpellChecker).Assembly, languageCodes, customWords, additionalDictionaries);
+
+    /// <summary>
+    /// <see cref="Create(IEnumerable{string}?, IEnumerable{string}?, IEnumerable{DictionarySource}?)"/>
+    /// reading its bundled resources from <paramref name="resources"/>, so a test can hand it an
+    /// assembly that has none.
+    /// </summary>
+    /// <remarks>
+    /// The public overload names the assembly by type rather than with
+    /// <c>Assembly.GetExecutingAssembly()</c>, which answers for whichever method's body it ends up
+    /// in: inlined by the JIT or merged by an obfuscator, that is another assembly, with no
+    /// dictionaries in it.
+    /// </remarks>
+    internal static SpellChecker Create(
+        Assembly resources,
+        IEnumerable<string>? languageCodes,
+        IEnumerable<string>? customWords,
+        IEnumerable<DictionarySource>? additionalDictionaries)
     {
         var codes = languageCodes?.ToList() ?? ["en_US", "en_GB"];
+        var bundled = codes.Where(BundledLanguageCodes.Contains).ToList();
         var dictionaries = new List<WordList>();
-        var assembly = Assembly.GetExecutingAssembly();
 
-        foreach (var code in codes)
+        foreach (var code in bundled)
         {
-            var affResourceName = $"ModelicaParser.SpellChecking.Dictionaries.{code}.aff";
-            var dicResourceName = $"ModelicaParser.SpellChecking.Dictionaries.{code}.dic";
-
-            using var affStream = assembly.GetManifestResourceStream(affResourceName);
-            using var dicStream = assembly.GetManifestResourceStream(dicResourceName);
-
-            if (affStream != null && dicStream != null)
-            {
-                var wordList = WordList.CreateFromStreams(dicStream, affStream);
-                dictionaries.Add(wordList);
-            }
+            using var affStream = OpenBundled(resources, $"{code}.aff");
+            using var dicStream = OpenBundled(resources, $"{code}.dic");
+            dictionaries.Add(WordList.CreateFromStreams(dicStream, affStream));
         }
 
         // Load additional dictionaries from file paths
@@ -119,30 +133,26 @@ public class SpellChecker
         // language. The dialect lists are the American and British spellings of terms neither
         // dictionary carries — loading only the chosen one is what keeps a repository that has
         // settled on one spelling from being handed the other.
-        LoadTerms(assembly, "modelica_terms.txt", words);
-        foreach (var code in codes)
-            LoadTerms(assembly, $"modelica_terms_{code}.txt", words);
+        LoadTerms(resources, "modelica_terms.txt", words);
+        foreach (var code in bundled)
+            LoadTerms(resources, $"modelica_terms_{code}.txt", words);
 
         return new SpellChecker(dictionaries, words);
     }
 
     /// <summary>
     /// Adds the words from an embedded term list, skipping blank lines and <c>#</c> comments so the
-    /// lists can carry their own explanation and be grouped by subject. A list that does not exist
-    /// (no dialect list for this language) is simply not there to load.
+    /// lists can carry their own explanation and be grouped by subject. Only bundled lists are asked
+    /// for - the neutral one and each bundled language's - so one that is missing is a broken build.
     ///
     /// <para>The dialect lists are named <c>modelica_terms_en_US.txt</c>, not
     /// <c>modelica_terms.en_US.txt</c>: MSBuild reads a language between two dots as a culture and
     /// compiles the file into a satellite assembly, where it is not an embedded resource of this one
     /// and never loads.</para>
     /// </summary>
-    private static void LoadTerms(Assembly assembly, string fileName, HashSet<string> words)
+    private static void LoadTerms(Assembly resources, string fileName, HashSet<string> words)
     {
-        using var stream = assembly.GetManifestResourceStream(
-            $"ModelicaParser.SpellChecking.Dictionaries.{fileName}");
-        if (stream is null)
-            return;
-
+        using var stream = OpenBundled(resources, fileName);
         using var reader = new StreamReader(stream);
         string? line;
         while ((line = reader.ReadLine()) != null)
@@ -151,6 +161,21 @@ public class SpellChecker
             if (line.Length > 0 && line[0] != '#')
                 words.Add(line);
         }
+    }
+
+    /// <summary>
+    /// One of the files in <c>SpellChecking/Dictionaries</c>, which the project embeds whole. Missing
+    /// is never a choice the caller made, so it throws, naming what the assembly does carry: checking
+    /// on without it reported every word as misspelled, or none, with nothing in the log to say why.
+    /// </summary>
+    private static Stream OpenBundled(Assembly resources, string fileName)
+    {
+        var name = $"ModelicaParser.SpellChecking.Dictionaries.{fileName}";
+        return resources.GetManifestResourceStream(name)
+               ?? throw new InvalidOperationException(
+                   $"The bundled spelling resource '{name}' is not embedded in {resources.GetName().Name}. " +
+                   "Was the assembly renamed, or its resources renamed or removed (an obfuscator can do " +
+                   $"either)? It carries: {string.Join(", ", resources.GetManifestResourceNames().DefaultIfEmpty("nothing"))}.");
     }
 
     /// <summary>
