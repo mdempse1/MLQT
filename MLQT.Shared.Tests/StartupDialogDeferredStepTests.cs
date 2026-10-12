@@ -126,6 +126,35 @@ public class StartupDialogDeferredStepTests
         throw new FileNotFoundException("MainLayout.razor.cs was not found above the test binary");
     }
 
+    // ---------------------------------------------------------------- Run All
+
+    /// <summary>
+    /// Run All sets <c>_runningDeferredStep</c> before it starts, and the per-row handlers refuse to
+    /// start while it is set — so Run All going through them ran the combined pass and nothing after
+    /// it. External resources were never analysed, and the Externals tab stayed empty with no offer
+    /// to run the analysis, because Run All then left deferred mode as if it had.
+    /// </summary>
+    [Fact]
+    public void RunAllRunsEveryStepItselfRatherThanThroughTheRowHandlers()
+    {
+        var source = Regex.Replace(CodeBehindSource(), @"\s+", " ");
+        var runAll = MethodBody(source, "private async Task RunAllDeferredFromDialogAsync()");
+
+        foreach (var rowHandler in new[]
+                 {
+                     "RunDeferredDependenciesFromDialogAsync",
+                     "RunDeferredStyleCheckingFromDialogAsync",
+                     "RunDeferredExternalResourcesFromDialogAsync"
+                 })
+        {
+            Assert.DoesNotContain(rowHandler, runAll);
+        }
+
+        Assert.Contains("RunDeferredDependenciesAsync(combineStyleChecking: true)", runAll);
+        Assert.Contains("RunDeferredStyleCheckingAsync(showOwnDialog: false)", runAll);
+        Assert.Contains("RunDeferredExternalResourcesAsync", runAll);
+    }
+
     // ---------------------------------------------------------------- startup after a reload
 
     /// <summary>
