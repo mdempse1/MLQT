@@ -68,7 +68,7 @@ public static class DeclarationKinds
 
     private static int[] BuildPositions()
     {
-        var positions = new int[Enum.GetValues<DeclarationKind>().Length];
+        var positions = new int[Order.Count];
         for (var i = 0; i < Order.Count; i++)
             positions[(int)Order[i]] = i;
         return positions;

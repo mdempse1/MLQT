@@ -91,6 +91,22 @@ public class DeclarationKindsTests
             Assert.Equal(i, DeclarationKinds.PositionOf(DeclarationKinds.Order[i]));
     }
 
+    /// <summary>
+    /// <see cref="DeclarationKinds.Order"/> sizes the position table, so every kind has to be in it,
+    /// once. It used to be sized from <c>Enum.GetValues</c>, which reads the enum's fields by
+    /// reflection - and an obfuscator that strips an enum's fields (its values are compiled into the
+    /// callers) left a table too short for the indices written into it, so the type's initializer
+    /// threw and every declaration-order check and render with it. The reflection belongs here,
+    /// in a test, where the enum is never obfuscated.
+    /// </summary>
+    [Fact]
+    public void EveryKindIsInTheOrderOnce()
+    {
+        Assert.Equal(
+            Enum.GetValues<DeclarationKind>().OrderBy(k => k),
+            DeclarationKinds.Order.OrderBy(k => k));
+    }
+
     [Fact]
     public void EveryKindHasSomethingToCallIt()
     {
