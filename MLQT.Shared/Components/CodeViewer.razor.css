@@ -20,6 +20,15 @@
     min-height: 1.3rem;
 }
 
+/* A line a caller has pointed at (MarkedLines). Translucent rather than a solid colour, because the
+   viewer's background is the user's syntax-highlighting choice rather than the theme's: a wash over
+   it reads on a light background and a dark one alike, and the tokens keep their colours. Blue, so it
+   is not mistaken for a search match, which is amber (app.css). */
+.code-line-marked {
+    background-color: rgba(66, 135, 245, 0.18);
+    box-shadow: inset 3px 0 0 rgba(66, 135, 245, 0.75);
+}
+
 ::deep .code-keyword {
     color: #0000ff; 
     font-weight: 600;

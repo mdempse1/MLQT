@@ -126,11 +126,15 @@ window.spellCheck = (function () {
     // model, and the lines arrive a beat after the click. `line` is 1-based and is the line as
     // *displayed*, which is not the line in the class when the viewer is hiding annotations or a
     // package's nested classes — the caller maps it through SourceElision first. No-ops when the
-    // line does not exist, which is what a finding on something hidden comes down to.
-    function scrollLineIntoView(viewerSelector, line) {
+    // line does not exist, which is what a finding on something hidden comes down to. `viewer` is a
+    // selector or the viewer element itself; CodeViewer passes its own element, so a page showing
+    // two viewers scrolls the one asked.
+    function scrollLineIntoView(viewerOrSelector, line) {
         let attempts = 0;
         const tick = function () {
-            const viewer = document.querySelector(viewerSelector);
+            const viewer = typeof viewerOrSelector === 'string'
+                ? document.querySelector(viewerOrSelector)
+                : viewerOrSelector;
             if (viewer) {
                 const lines = viewer.querySelectorAll('.code-line');
                 if (lines.length > 0) {

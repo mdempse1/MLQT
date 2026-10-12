@@ -30,6 +30,34 @@ public partial class CodeViewer
     [Parameter]
     public string? SearchTerm { get; set; }
 
+    /// <summary>
+    /// Lines to mark, 1-based as the gutter numbers them: each gains the class
+    /// <c>code-line-marked</c>, a background tint, so a caller can point at the lines something
+    /// refers to - the equations a description cites, say. A number outside the listing marks nothing.
+    /// </summary>
+    /// <remarks>
+    /// The number is the line <b>as displayed</b>, the same one <c>data-line</c> carries. Where the
+    /// caller hides part of the class (annotations, a package's nested classes) that is not the line
+    /// in the class, and the caller maps it through <c>SourceElision.ToDisplayLine</c> first.
+    /// </remarks>
+    [Parameter]
+    public IReadOnlySet<int>? MarkedLines { get; set; }
+
+    /// <summary>
+    /// A line to scroll into the middle of the viewer, 1-based and as displayed (see
+    /// <see cref="MarkedLines"/>). Scrolled to after a render that changed it or the lines, so
+    /// showing another class with the same value scrolls again. Null, or a line the listing does not
+    /// have, scrolls nothing.
+    /// </summary>
+    [Parameter]
+    public int? ScrollToLine { get; set; }
+
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    private ElementReference _viewer;
+    private int? _scrolledTo;
+    private List<string>? _scrolledIn;
+
     private List<string> _htmlLines = new();
     private List<string>? _lastLines;
     private IReadOnlyCollection<string>? _lastWords;
@@ -51,6 +79,30 @@ public partial class CodeViewer
             _htmlLines = ToHtml(Lines, MisspelledWords, SearchTerm);
         }
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ScrollToLine == _scrolledTo && ReferenceEquals(Lines, _scrolledIn))
+            return;
+
+        _scrolledTo = ScrollToLine;
+        _scrolledIn = Lines;
+        if (ScrollToLine is not { } line || line < 1 || line > _htmlLines.Count)
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("spellCheck.scrollLineIntoView", _viewer, line);
+        }
+        catch (Exception)
+        {
+            // View may have been torn down; ignore.
+        }
+    }
+
+    /// <summary>The classes of one line's element: <c>code-line</c>, and <c>code-line-marked</c> when marked.</summary>
+    internal string LineClass(int lineNumber) =>
+        MarkedLines?.Contains(lineNumber) == true ? "code-line code-line-marked" : "code-line";
 
     /// <summary>
     /// The rendered form of a syntax-highlighted source listing: the markup tags the highlighter
