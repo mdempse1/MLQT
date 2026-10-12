@@ -823,7 +823,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("UpdateToLatest", ex);
         }
 
         return result;
@@ -1243,7 +1243,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("Commit", ex);
         }
 
         return result;
@@ -1295,7 +1295,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("RevertFiles", ex);
         }
 
         return result;
@@ -1352,7 +1352,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("SwitchBranch", ex);
         }
 
         return result;
@@ -1394,7 +1394,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("CreateBranch", ex);
         }
 
         return result;
@@ -1540,8 +1540,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("MergeBranch", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("MergeBranch", ex);
         }
         return result;
     }
@@ -1612,8 +1611,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("ResolveConflict", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("ResolveConflict", ex);
         }
         return result;
     }
@@ -1737,8 +1735,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("Push", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("Push", ex);
         }
         return result;
     }
@@ -1834,8 +1831,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("Rebase", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("Rebase", ex);
         }
         return result;
     }
@@ -1869,8 +1865,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("ContinueRebase", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("ContinueRebase", ex);
         }
         return result;
     }
@@ -1903,8 +1898,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("AbortRebase", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("AbortRebase", ex);
         }
         return result;
     }
@@ -1948,8 +1942,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("ForcePush", ex);
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RevisionControlLogger.Failed("ForcePush", ex);
         }
         return result;
     }

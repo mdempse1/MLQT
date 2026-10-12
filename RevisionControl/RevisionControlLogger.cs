@@ -23,10 +23,40 @@ internal static class RevisionControlLogger
     internal static void Info(string message) => Logger.Info(message);
 
     /// <summary>
-    /// Logs an exception from a revision control operation.
+    /// Logs an exception from a revision control operation, with its stack and inner exceptions.
     /// </summary>
+    /// <remarks>
+    /// At <c>Warn</c>, not <c>Debug</c>. Every caller has caught the exception and turned it into a
+    /// false, a null or an empty list, so this line is the only place the exception survives - and a
+    /// host that records Info and above, as a production host does, never saw it. An operation that
+    /// fails this way is not routine, so the line is worth its space.
+    /// </remarks>
     internal static void Error(string operation, Exception ex)
     {
-        Logger.Debug(ex, $"Operation failed: {operation}");
+        Logger.Warn(ex, $"Operation failed: {operation}");
+    }
+
+    /// <summary>
+    /// Logs the exception an operation failed with (<see cref="Error"/>) and returns the message its
+    /// result reports. The message is the exception's own followed by each inner exception's, because
+    /// the outer one alone is often a wrapper that names no cause: a
+    /// <see cref="TypeInitializationException"/> says only which type's initializer threw.
+    /// </summary>
+    internal static string Failed(string operation, Exception ex)
+    {
+        Error(operation, ex);
+        return Describe(ex);
+    }
+
+    /// <summary>The exception's message, then each inner exception's after an arrow.</summary>
+    internal static string Describe(Exception ex)
+    {
+        var parts = new List<string>();
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (!string.IsNullOrWhiteSpace(e.Message) && !parts.Contains(e.Message))
+                parts.Add(e.Message);
+        }
+        return parts.Count == 0 ? ex.GetType().FullName ?? "Unknown error" : string.Join(" -> ", parts);
     }
 }
