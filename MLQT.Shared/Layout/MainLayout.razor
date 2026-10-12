@@ -35,15 +35,6 @@
         position: relative;
     }
 
-    /* The grid a MudExSplitPanel wraps itself in fills its container, which is what lets the panes
-       take the window's height. Only that grid: this used to be every .mud-grid, and a MudGrid used
-       for layout inside a page that has a definite height - the Metrics tab's coverage grid - then
-       stretched to the page's height and left a blank space below its content. MetricsLayoutJourney
-       holds the one; the documentation screenshots show the other. */
-    .mud-grid:has(> .mud-ex-split-panel) {
-        height: 100%;
-    }
-
     .mud-navmenu {
         margin: 0;
         height: 100%;
@@ -243,85 +234,86 @@
         </MudTooltip>
     </MudAppBar>
     <MudMainContent Style="height:calc(100vh - 4px); width:calc(100vw - 8px);">
-        <MudExSplitPanel ColumnLayout="true" SplitterSize="4" SplitterColor="Color.Primary">
-            <Left>
-                <MudExSplitPanelItem MinSize="200" Style="width: 25%; min-width:200px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-0">
-                    <MudStack Row="false">
-                        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" >
-                            <MudTooltip Text="Add Repository" Arrow="true" Placement="Placement.Right">
-                                <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Color="Color.Primary" OnClick="OpenAddRepositoryDialog" Size="Size.Medium"/>
+        @* The split's proportions and each pane's minimum are in app.css (`mlqt-split`), because
+           MudSplitPanel takes one minimum for both panes and an initial size only in pixels. *@
+        <MudSplitPanel Class="mlqt-split mlqt-split-quarter" PanelGap="4" MinPanelSize="200"
+                       ClassDivider="mlqt-split-divider"
+                       ClassFirstPanel="mlqt-tree-pane pt-2 pb-2 pl-2"
+                       ClassSecondPanel="mlqt-tab-host mlqt-pane-min-400 pa-2">
+            <FirstPanel>
+                <MudStack Row="false">
+                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" >
+                        <MudTooltip Text="Add Repository" Arrow="true" Placement="Placement.Right">
+                            <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Color="Color.Primary" OnClick="OpenAddRepositoryDialog" Size="Size.Medium"/>
+                        </MudTooltip>
+                        @if (_settings.UI.RepositoryMode) {
+                            <MudTooltip Text="Library view"  Arrow="true" Placement="Placement.Right">
+                                <MudIconButton Icon="@Icons.Material.Filled.LocalLibrary" Color="Color.Primary" OnClick="ToggleView" Size="Size.Medium"/>
                             </MudTooltip>
-                            @if (_settings.UI.RepositoryMode) {
-                                <MudTooltip Text="Library view"  Arrow="true" Placement="Placement.Right">
-                                    <MudIconButton Icon="@Icons.Material.Filled.LocalLibrary" Color="Color.Primary" OnClick="ToggleView" Size="Size.Medium"/>
-                                </MudTooltip>
-                            }
-                            else
+                        }
+                        else
+                        {
+                            <MudTooltip Text="Repository view"  Arrow="true" Placement="Placement.Right">
+                                <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Primary" OnClick="ToggleView" Size="Size.Medium"/>
+                            </MudTooltip>
+                        }
+                        <MudBadge Content="@_pendingChangesCount" Color="Color.Error" Origin="Origin.CenterRight"
+                                 Visible="@(_pendingChangesCount > 0)" Overlap="true">
+                            <MudTooltip Text="@GetRefreshTooltip()" Arrow="true" Placement="Placement.Right">
+                                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                               Color="@(_pendingChangesCount > 0 ? Color.Warning : Color.Primary)"
+                                               Size="Size.Medium"
+                                               OnClick="RefreshLibrariesAsync"
+                                               Disabled="@(_isRefreshing || NavState.IsVcsWorkInProgress)"/>
+                            </MudTooltip>
+                        </MudBadge>
+                    </MudButtonGroup>
+                    <MudExpansionPanels MultiExpansion="true" Dense="true" Gutters="false" Elevation="2">
+                        @if (_settings.UI.RepositoryMode)
+                        {
+                            @foreach (var repo in RepositoryService.Repositories)
                             {
-                                <MudTooltip Text="Repository view"  Arrow="true" Placement="Placement.Right">
-                                    <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Primary" OnClick="ToggleView" Size="Size.Medium"/>
-                                </MudTooltip>
+                                @* Keyed, so a reorder moves each browser - its filter, busy flag and
+                                   expansion - with its repository rather than handing it on (B353). *@
+                                <LibraryBrowser @key="repo.Id" LibraryOnly="false" Repository="@repo" />
                             }
-                            <MudBadge Content="@_pendingChangesCount" Color="Color.Error" Origin="Origin.CenterRight"
-                                     Visible="@(_pendingChangesCount > 0)" Overlap="true">
-                                <MudTooltip Text="@GetRefreshTooltip()" Arrow="true" Placement="Placement.Right">
-                                    <MudIconButton Icon="@Icons.Material.Filled.Refresh"
-                                                   Color="@(_pendingChangesCount > 0 ? Color.Warning : Color.Primary)"
-                                                   Size="Size.Medium"
-                                                   OnClick="RefreshLibrariesAsync"
-                                                   Disabled="@(_isRefreshing || NavState.IsVcsWorkInProgress)"/>
-                                </MudTooltip>
-                            </MudBadge>
-                        </MudButtonGroup>
-                        <MudExpansionPanels MultiExpansion="true" Dense="true" Gutters="false" Elevation="2">
-                            @if (_settings.UI.RepositoryMode)
-                            {
-                                @foreach (var repo in RepositoryService.Repositories)
-                                {
-                                    @* Keyed, so a reorder moves each browser - its filter, busy flag and
-                                       expansion - with its repository rather than handing it on (B353). *@
-                                    <LibraryBrowser @key="repo.Id" LibraryOnly="false" Repository="@repo" />
-                                }
-                            }
-                            else
-                            {
-                                <LibraryBrowser LibraryOnly="true" />
-                            }
-                        </MudExpansionPanels>
-                    </MudStack>
-                </MudExSplitPanelItem>
-            </Left>
-            <Right>
+                        }
+                        else
+                        {
+                            <LibraryBrowser LibraryOnly="true" />
+                        }
+                    </MudExpansionPanels>
+                </MudStack>
+            </FirstPanel>
+            <SecondPanel>
                 @* `mlqt-tab-host` makes this pane a flex column so the tabs take the height that is
                    actually left rather than one computed from the viewport. See app.css: every page
                    in here used to subtract its own guess at the chrome above it (185px, 140px,
                    135px — three numbers for the same distance), and the Code Review page's was
                    right to within 12px, so anything that grew above it scrolled the whole page and
                    took the current-class box with it (B250). *@
-                <MudExSplitPanelItem MinSize="400" Style="width: 75%; min-width:400px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2 mlqt-tab-host">
-                    <MudStack Row="false" Style="gap:0px !important;">
-                        <CurrentModelDisplay />
-                        <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true">
-                            <MudTabPanel Icon="@Icons.Material.Filled.Code" ToolTip="Code Review and Findings">
-                                <CodeReview />
-                            </MudTabPanel>
-                            <MudTabPanel Icon="@Icons.Material.Filled.AccountTree" ToolTip="View Dependencies">
-                                <Dependencies />
-                            </MudTabPanel>
-                            <MudTabPanel Icon="@Icons.Material.Filled.FolderOpen" ToolTip="External Resources">
-                                <ExternalResources />
-                            </MudTabPanel>
-                            <MudTabPanel Icon="@Icons.Material.Filled.BarChart" ToolTip="Metrics">
-                                <MetricsDashboard />
-                            </MudTabPanel>
-                            <MudTabPanel Icon="@Icons.Material.Filled.Settings" ToolTip="Settings">
-                                <Settings />
-                            </MudTabPanel>
-                        </MudTabs>                          
-                    </MudStack>
-                </MudExSplitPanelItem>
-            </Right>
-        </MudExSplitPanel>
+                <MudStack Row="false" Style="gap:0px !important;">
+                    <CurrentModelDisplay />
+                    <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true">
+                        <MudTabPanel Icon="@Icons.Material.Filled.Code" ToolTip="Code Review and Findings">
+                            <CodeReview />
+                        </MudTabPanel>
+                        <MudTabPanel Icon="@Icons.Material.Filled.AccountTree" ToolTip="View Dependencies">
+                            <Dependencies />
+                        </MudTabPanel>
+                        <MudTabPanel Icon="@Icons.Material.Filled.FolderOpen" ToolTip="External Resources">
+                            <ExternalResources />
+                        </MudTabPanel>
+                        <MudTabPanel Icon="@Icons.Material.Filled.BarChart" ToolTip="Metrics">
+                            <MetricsDashboard />
+                        </MudTabPanel>
+                        <MudTabPanel Icon="@Icons.Material.Filled.Settings" ToolTip="Settings">
+                            <Settings />
+                        </MudTabPanel>
+                    </MudTabs>                          
+                </MudStack>
+            </SecondPanel>
+        </MudSplitPanel>
     </MudMainContent>
 </MudLayout>
 

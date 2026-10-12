@@ -1,5 +1,4 @@
-using Nextended.Core.COM;
-using Nextended.Core.DeepClone;
+using System.Text.Json;
 using ModelicaParser.StyleRules;
 
 namespace MLQT.Shared.Components;
@@ -376,8 +375,8 @@ public partial class SettingsRepositories : IDisposable
     internal void OnRepoClick(Repository repo)
     {
         _selectedItem = repo;
-        _ = SelectedSettings; // ensure StyleSettings is initialized before CloneDeep
-        _backupItem = _selectedItem.CloneDeep();
+        _ = SelectedSettings; // ensure StyleSettings is initialized before it is copied
+        _backupItem = BackupOf(_selectedItem);
         _editRepository = true;
         StateHasChanged();
     }
@@ -427,6 +426,24 @@ public partial class SettingsRepositories : IDisposable
         Snackbar.Add("Full format started for all files in repository...", Severity.Normal);
         StateHasChanged();
     }
+
+    /// <summary>
+    /// What <see cref="CancelChanges"/> puts back, taken before the dialog edits anything. The dialog
+    /// edits the repository's own settings object, so the copy has to be a separate one: it is taken
+    /// through the settings' JSON form, which is everything a settings file holds and so everything
+    /// the dialog can change.
+    /// </summary>
+    internal static Repository BackupOf(Repository repository) => new()
+    {
+        Id = repository.Id,
+        Name = repository.Name,
+        RemotePath = repository.RemotePath,
+        LocalPath = repository.LocalPath,
+        IsReferenceOnly = repository.IsReferenceOnly,
+        StyleSettings = repository.StyleSettings is null
+            ? null
+            : JsonSerializer.Deserialize<StyleCheckingSettings>(JsonSerializer.Serialize(repository.StyleSettings)),
+    };
 
     /// <summary>
     /// Puts back everything the dialog changed. "Reference only" too, and <b>through the service</b>

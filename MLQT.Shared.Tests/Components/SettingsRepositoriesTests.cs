@@ -133,4 +133,50 @@ public class SettingsRepositoriesTests
 
         Assert.True(styleChecks);
     }
+
+    /// <summary>
+    /// <see cref="SettingsRepositories.BackupOf"/> — what Cancel puts back. The dialog edits the
+    /// repository's own settings object, so a backup sharing it, or any collection in it, would
+    /// "restore" the edit it was taken to undo, and <see cref="SettingsRepositories.EffectOfEdit"/>
+    /// would compare the edited settings with themselves and ask for nothing to be redone.
+    /// </summary>
+    [Fact]
+    public void BackupOf_KeepsTheSettingsAsTheyWere_WhenTheRepositorysAreEdited()
+    {
+        var settings = Configured();
+        settings.ExcludedLibraries.Add("Modelica");
+        settings.FormattingExcludedModels.Add("Lib.Generated");
+        var repository = new MLQT.Services.DataTypes.Repository
+        {
+            Name = "Lib", RemotePath = "https://example.invalid/lib.git", LocalPath = "lib",
+            IsReferenceOnly = true, StyleSettings = settings,
+        };
+
+        var backup = SettingsRepositories.BackupOf(repository);
+
+        Assert.NotSame(settings, backup.StyleSettings);
+        var (formatting, styleChecks) = SettingsRepositories.EffectOfEdit(backup.StyleSettings!, settings);
+        Assert.False(formatting);
+        Assert.False(styleChecks);
+
+        settings.RuleSeverities[RuleIds.OneOfEachSection] = RuleSeverity.Error;
+        settings.ExcludedLibraries.Add("Buildings");
+        settings.FormattingExcludedModels.Clear();
+        settings.ApplyFormattingRules = false;
+
+        Assert.Equal(RuleSeverity.Warning, backup.StyleSettings!.RuleSeverities[RuleIds.OneOfEachSection]);
+        Assert.Equal(["Modelica"], backup.StyleSettings.ExcludedLibraries);
+        Assert.Equal(["Lib.Generated"], backup.StyleSettings.FormattingExcludedModels);
+        Assert.True(backup.StyleSettings.ApplyFormattingRules);
+        Assert.Equal(("Lib", "https://example.invalid/lib.git", "lib", true),
+            (backup.Name, backup.RemotePath, backup.LocalPath, backup.IsReferenceOnly));
+    }
+
+    [Fact]
+    public void BackupOf_ARepositoryWithNoSettings_HasNone()
+    {
+        var backup = SettingsRepositories.BackupOf(new MLQT.Services.DataTypes.Repository());
+
+        Assert.Null(backup.StyleSettings);
+    }
 }

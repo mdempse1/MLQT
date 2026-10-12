@@ -175,16 +175,70 @@ body * {
     min-height: 0;
 }
 
-/* A MudExSplitPanel that takes the room left over. Both elements are needed: the `Class` lands on
-   the grid wrapper and the panel itself is inside it, so styling only one leaves the other sizing
-   to its content — which is the whole of what this is trying to stop. */
-.mlqt-fill-splitter {
-    flex: 1 1 auto;
+/* ── The split panes ─────────────────────────────────────────────────────────────
+   Every resizable divide is a MudSplitPanel: the tree from the tabs, the code from the findings,
+   the resource tree from its details. It replaced MudBlazor.Extensions' MudExSplitPanel, the only
+   thing that package was here for, which brought a vulnerable ImageSharp in with it.
+
+   MudSplitPanel starts its panes in proportion only one way, which is 50/50: its script gives both
+   panes `width: 100%` (or `height`) and lets flexbox shrink them to fit. Its initial size is in
+   pixels, which no proportion of a window is. So the proportion is set by how much each pane gives
+   up in that shrink — flexbox takes from each pane in proportion to `flex-shrink` times its size,
+   and the two sizes start equal. A first pane giving up 3 parts in 4 is left a quarter. Dragging
+   writes pixel sizes that already fit, so after a drag the weights decide only how a window resize
+   is shared out.
+
+   Its one `MinPanelSize` is both panes' floor; a pane needing more says so with `min-width`, which
+   flexbox holds through a window resize as well as a drag.
+
+   `overflow: clip` because the divider's grab area is a pseudo-element reaching 12px past each of
+   its ends: on the divider running the window's full height that made the page 12px taller than the
+   window, and scrolling it carried the current-class box out of view (ResizablePanesJourney). Clip,
+   not hidden, so the split does not become a scroll container. */
+.mlqt-split {
+    height: 100%;
+    overflow: clip;
+}
+
+.mlqt-split > .child-panel {
+    min-width: 0;
     min-height: 0;
 }
 
-.mlqt-fill-splitter > .mud-ex-split-panel {
-    height: 100%;
+.mlqt-split-quarter > .child-panel:first-child {
+    flex-shrink: 3;
+}
+
+.mlqt-split-third > .child-panel:first-child {
+    flex-shrink: 2;
+}
+
+.mlqt-split-two-thirds > .child-panel:last-child {
+    flex-shrink: 2;
+}
+
+.mlqt-split > .child-panel.mlqt-pane-min-240 {
+    min-width: 240px;
+}
+
+.mlqt-split > .child-panel.mlqt-pane-min-400 {
+    min-width: 400px;
+}
+
+/* MudSplitPanel's divider is a gap with nothing in it; this draws the line the old splitter had. */
+.mlqt-split-divider {
+    background-color: var(--mud-palette-lines-default);
+}
+
+/* The tree beside the tabs is a list as long as the libraries, and scrolls in its pane. */
+.mlqt-tree-pane {
+    overflow: auto !important;
+}
+
+/* A split that takes the room left over in a page, rather than its parent's whole height. */
+.mlqt-fill-splitter {
+    flex: 1 1 0;
+    height: auto;
     min-height: 0;
 }
 
@@ -205,7 +259,7 @@ body * {
 /* ── The findings pane on the Code Review page ───────────────────────────────────
    One scrollbar, on the rows, and not a second one around the whole thing.
 
-   MudExSplitPanelItem gives its content `overflow: auto`, which is right for a pane whose content
+   The splitter it used to sit in gave its content `overflow: auto`, which is right for a pane whose content
    is a document and wrong for one holding a table that scrolls itself: as soon as the toolbar plus
    the table were taller than the pane, that outer box scrolled too, carrying the heading, the
    filters and the search box out of view along with the rows. Two scrollbars, and the one the user

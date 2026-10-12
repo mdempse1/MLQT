@@ -175,10 +175,10 @@
            of the truth. An alert is 34px, so a class with a syntax error scrolled the whole page
            (B250). `min-height: 0` is in app.css and is what lets this be shorter than the viewer
            inside it. *@
-        <MudExSplitPanel ColumnLayout="false" SplitterSize="4" SplitterColor="Color.Primary"
-                         Class="mt-1 mb-2 mlqt-fill-splitter">
-            <Left>
-                <MudExSplitPanelItem MinSize="120" Style="height: 65%; min-height: 120px; box-shadow: none;">
+        <MudSplitPanel Horizontal="true" PanelGap="4" MinPanelSize="120"
+                       ClassDivider="mlqt-split-divider"
+                       Class="mt-1 mb-2 mlqt-split mlqt-split-two-thirds mlqt-fill-splitter">
+            <FirstPanel>
         <MudPaper Elevation="1" Style="height: 100%; display: flex; flex-direction: column;">
         @if (_isDiffMode)
         {
@@ -232,10 +232,8 @@
             }
         }
         </MudPaper>
-                </MudExSplitPanelItem>
-            </Left>
-            <Right>
-                <MudExSplitPanelItem MinSize="120" Style="height: 35%; min-height: 120px; box-shadow: none;">
+            </FirstPanel>
+            <SecondPanel>
         @* mlqt-findings-pane is a handle for ResizablePanesJourney, which has to measure this pane
            to show that dragging the splitter changes it. MudBlazor's own classes are the wrong thing
            to measure against — they move with the library and say nothing about our layout. *@
@@ -348,9 +346,8 @@
                 </RowTemplate>
             </MudTable>
         </MudPaper>
-                </MudExSplitPanelItem>
-            </Right>
-        </MudExSplitPanel>
+            </SecondPanel>
+        </MudSplitPanel>
     </MudStack>
 </MudPaper>
 
