@@ -310,10 +310,22 @@ public sealed class TestHostFixture : IAsyncLifetime
         response.EnsureSuccessStatusCode();
     }
 
-    /// <summary>A test display name that a file system will accept.</summary>
-    private static string Sanitise(string name)
+    /// <summary>
+    /// What may not be in a trace's file name on any platform: NTFS's reserved characters, both
+    /// separators, and control characters.
+    /// </summary>
+    /// <remarks>
+    /// A fixed list rather than <see cref="Path.GetInvalidFileNameChars"/>, which on Linux is only
+    /// <c>/</c> and NUL. A theory's display name carries its arguments - <c>(layout: "breadthfirst")</c>
+    /// - and the runner wrote those quotes and colons into file names that upload-artifact then
+    /// refused, failing the upload step on the one run whose traces were wanted.
+    /// </remarks>
+    private static readonly char[] Unportable = ['"', ':', '<', '>', '|', '*', '?', '/', '\\'];
+
+    /// <summary>A test display name that a file system, and an artifact upload, will accept.</summary>
+    internal static string Sanitise(string name)
     {
-        var clean = new string([.. name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)]);
+        var clean = new string([.. name.Select(c => char.IsControl(c) || Unportable.Contains(c) ? '_' : c)]);
         return clean.Length <= 120 ? clean : clean[..120];
     }
 

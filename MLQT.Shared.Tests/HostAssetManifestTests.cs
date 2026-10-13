@@ -156,7 +156,7 @@ public class HostAssetManifestTests
         var scripts = HostAssetManifest.Scripts.ToList();
         var lastLibrary = scripts.FindLastIndex(s => s.Contains("/lib/"));
 
-        foreach (var own in new[] { "cytoscapeGraph.js", "diffViewer.js", "spellCheck.js" })
+        foreach (var own in new[] { "cytoscapeGraph.js", "diffViewer.js", "spellCheck.js", "mudBlazorWorkarounds.js" })
         {
             var index = scripts.FindIndex(s => s.EndsWith(own));
             Assert.True(index > lastLibrary, $"{own} must load after every library");

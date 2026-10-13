@@ -207,6 +207,16 @@ These are not host bugs; they are places where `MLQT.Shared` had never been aske
 - **Software rendering.** `GraphicsEnvironment.Probe()` logs one line on Linux at startup saying
   whether a DRM render node exists. Where there is none the webview paints every frame on the CPU and
   **any rendering measurement from that machine is a lower bound**, not a measurement (B141).
+- **A `:has()` selector can cost every DOM insertion.** MudBlazor 9.9.0 added
+  `tr:not(:has(>*))` to its sticky-header table rules. Under WebKit its presence in the stylesheet
+  alone - no matching table on the page - made recolouring a 5,000-line class take 75-110 s instead
+  of 3-4 s, about 230,000 child insertions each re-checking it; Chromium did not notice.
+  `MLQT.Shared/wwwroot/mudBlazorWorkarounds.js` takes that selector out at load, and
+  `MudBlazorWorkaroundsJourney` fails once MudBlazor stops shipping it, which is the moment to delete
+  the script. Found by the nightly WebKit run timing out `LargeClassLineLimitJourney` after the
+  MudBlazor 9.6 → 9.11 upgrade. **To find a rule like it**: delete groups of rules through
+  `document.styleSheets` in a diagnostic journey and time the slow step under each - CSS overrides
+  cannot test this, since adding rules never removes one.
 
 **Method note, and it is the general one:** running the manual checklist on Linux alone found one
 difference; running it again **with a Windows build open beside it** found four more. *"Does this look

@@ -64,6 +64,10 @@ public static class HostAssetManifest
         "_content/MLQT.Shared/cytoscapeGraph.js",
         "_content/MLQT.Shared/diffViewer.js",
         "_content/MLQT.Shared/spellCheck.js",
+
+        // Edits MudBlazor's stylesheet, so it has to come after the stylesheets - which every script
+        // here does, since a script waits for the sheets above it.
+        "_content/MLQT.Shared/mudBlazorWorkarounds.js",
     ];
 
     /// <summary>

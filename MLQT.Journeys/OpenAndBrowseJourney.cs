@@ -73,6 +73,7 @@ public class OpenAndBrowseJourney(TestHostFixture host)
                      ("cytoscapeGraph", "cytoscapeGraph.js"),
                      ("diffViewer", "diffViewer.js"),
                      ("spellCheck", "spellCheck.js"),
+                     ("mudBlazorWorkarounds", "mudBlazorWorkarounds.js"),
                      ("getDimensions", "the inline helper in the host page"),
                  })
         {

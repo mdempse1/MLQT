@@ -183,7 +183,7 @@ public partial class SelfTest
             // `klay` global and is only ever reached through cytoscape-klay, so the meaningful
             // question about it is whether that layout runs - which is the next probe's job.
             var missing = await JS.InvokeAsync<string[]>("eval", """
-                ['cytoscape','dagre','cytoscapeGraph','diffViewer','spellCheck','getDimensions']
+                ['cytoscape','dagre','cytoscapeGraph','diffViewer','spellCheck','mudBlazorWorkarounds','getDimensions']
                     .filter(g => typeof window[g] === 'undefined')
                 """);
             return (missing.Length == 0, missing.Length == 0 ? "all defined" : "missing: " + string.Join(", ", missing));
