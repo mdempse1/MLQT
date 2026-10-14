@@ -72,6 +72,10 @@ public static class MlqtMcpServerExtensions
         // Tracks whether the opt-in analysis passes have run this session (see DependencyTools).
         services.TryAddSingleton<SessionState>();
 
+        // A build whose tool parameters were renamed would bind no client's arguments, silently; fail
+        // here instead, saying why (B502).
+        ToolParameterCheck.Verify(typeof(ViewTools).Assembly);
+
         var toolUsageLogger = options?.ToolUsageLogger;
         var configureServer = options?.ConfigureServer;
 

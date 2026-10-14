@@ -195,28 +195,39 @@ and `ModelicaParser/.editorconfig` turns off RS0041 for those generated files on
 ### Names That Must Survive Obfuscation
 
 The MCP stack — the six assemblies above and `MLQT.McpServer` — ships inside a product protected by
-an obfuscator at its strongest settings, which renames **every** type, member, parameter and enum
-member, public ones included (B502, `Design/obfuscation.md`). So in those seven assemblies, nothing a
-file, a client or a native library reads may take its form from a .NET name at run time. `nameof` is
-fine: it is a literal by the time the compiler is done. What is not:
+an obfuscator at its strongest settings, which renames **every** type, member and parameter, public
+ones included, and **can delete an enum's members from metadata altogether** (B502,
+`Design/obfuscation.md`). So in those seven assemblies, nothing a file, a client or a native library
+reads may take its form from a .NET name at run time, and nothing may ask an enum about itself.
+`nameof` is fine: it is a literal by the time the compiler is done. What is not:
 
 - **JSON written to a file or sent to a client goes through a compiled contract**:
   `ModelicaGraphJson.Contracts`, `MlqtServicesJson` or the MCP server's `McpServerJson`. The source
   generator fixes every name and constructor call at build time. A new persisted or wire type is added
   to its context, and a `JsonContractAssert.MatchesReflection` test (TestSupport) holds it to the names
   reflection gives — so adding it changes no byte. Never pass such a type to `JsonSerializer` without
-  those options.
+  those options: by reflection, an obfuscated type can serialize as `{}`, its properties gone rather
+  than renamed, and since unknown properties are ignored on reading, nothing fails either way.
 - **No anonymous object is serialized.** Its names are reflected and its type cannot be listed in a
   contract; write a record. `ObfuscationReadinessTests` fails on any `new {` in the MCP server.
-- **An enum is never written as text with `ToString()` or interpolation.** Pin each member with
-  `[JsonStringEnumMemberName]` where a converter writes it (`RuleSeverity`), or map it explicitly
-  (`WireNames` in the MCP server), with a test that every member is covered.
+- **An enum is never written as text with `ToString()` or interpolation.** Map it explicitly — a
+  switch (`RuleSeverityText`, and `RuleSeverityJsonConverter` for files; `WireNames` in the MCP
+  server) — with a test that every member is covered. Under deletion `ToString()` gives a number.
+- **An enum's metadata is never read**: no `Enum.GetValues`, `GetNames`, `GetName`, `IsDefined`,
+  `Parse` or `TryParse`, and no reflection-based string-enum converter (`JsonStringEnumConverter`,
+  which builds its names that way). With the members deleted they return nothing, and an array sized
+  from `GetValues` has length zero. List the members where you need them and size anything from that
+  list (`DeclarationKinds.Order`). A test may use them: it runs on the plain build. Every test does,
+  which is why `EnumMetadataPolicyTests` holds the rule over the source instead.
 - **No `GetType().Name` or `typeof(T).Name`** in anything stored, sent, compared or used as a key —
   spell the name. In a message or a log line it is only harder to read, which the consumer's mapping
   file decodes.
 - **A P/Invoke names its `EntryPoint`**, or renaming the method changes what is looked up.
 - **An MCP tool class carries `[Obfuscation]`**, because the SDK takes each argument's name from the
-  C# parameter and nothing in code can pin it. `ObfuscationReadinessTests` holds all of them.
+  C# parameter and nothing in code can pin it. `ObfuscationReadinessTests` holds all of them. Whether
+  the attribute is honoured is the consumer's setting, not ours — an obfuscator may ignore it unless a
+  declarative-protection option is on, and say nothing — so `ToolParameterCheck` also refuses to
+  start a server whose tool parameters have been renamed, saying what to change.
 
 The tests run on the plain build. The proof is an obfuscated one: `build/obfuscation/mcp_session.py`
 runs a scripted MCP session against a server, and an obfuscated build's transcript must match the

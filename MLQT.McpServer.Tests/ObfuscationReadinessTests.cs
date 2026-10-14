@@ -111,6 +111,39 @@ public sealed class ObfuscationReadinessTests
     }
 
     [Fact]
+    public void TheServersOwnToolsPassTheParameterCheck()
+    {
+        ToolParameterCheck.Verify(Server);
+    }
+
+    [Fact]
+    public void RenamedToolParametersStopTheServerSayingWhy()
+    {
+        // What an obfuscator that renames parameters, with the exclusion attribute ignored, leaves
+        // behind: the tools' names intact in their attributes, their parameters not.
+        var renamed = typeof(RenamedTools).GetMethods(BindingFlags.Public | BindingFlags.Static);
+
+        var error = Assert.Throws<InvalidOperationException>(() => ToolParameterCheck.Verify(renamed));
+
+        Assert.Contains("'classId'", error.Message);
+        Assert.Contains("'a'", error.Message);
+        Assert.Contains("declarative protection", error.Message);
+    }
+
+    [Fact]
+    public void ToolsWhoseAttributesAreGoneStopTheServerToo()
+    {
+        Assert.Throws<InvalidOperationException>(() => ToolParameterCheck.Verify(Array.Empty<MethodInfo>()));
+    }
+
+    public static class RenamedTools
+    {
+        [McpServerTool(Name = "mlqt_get_class_info")] public static string A(string a) => a;
+        [McpServerTool(Name = "mlqt_load_library")] public static string B(string path) => path;
+        [McpServerTool(Name = "mlqt_check_style")] public static string C(string source, string settings) => source + settings;
+    }
+
+    [Fact]
     public void EveryEnumAToolWritesAsTextKeepsItsMembersName()
     {
         var mappings = typeof(WireNames).GetMethods(BindingFlags.Public | BindingFlags.Static)

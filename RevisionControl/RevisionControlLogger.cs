@@ -48,15 +48,30 @@ internal static class RevisionControlLogger
         return Describe(ex);
     }
 
-    /// <summary>The exception's message, then each inner exception's after an arrow.</summary>
+    /// <summary>
+    /// The exception's message, then each inner exception's after an arrow. An
+    /// <see cref="AggregateException"/> - what a failure inside a parallel loop or a task arrives as - is
+    /// described by every exception it holds rather than by its own wrapper's message, which names none
+    /// of them usefully.
+    /// </summary>
     internal static string Describe(Exception ex)
     {
         var parts = new List<string>();
-        for (var e = ex; e is not null; e = e.InnerException)
+        Collect(ex);
+        return parts.Count == 0 ? ex.GetType().FullName ?? "Unknown error" : string.Join(" -> ", parts);
+
+        void Collect(Exception e)
         {
+            if (e is AggregateException aggregate && aggregate.InnerExceptions.Count > 0)
+            {
+                foreach (var inner in aggregate.InnerExceptions)
+                    Collect(inner);
+                return;
+            }
             if (!string.IsNullOrWhiteSpace(e.Message) && !parts.Contains(e.Message))
                 parts.Add(e.Message);
+            if (e.InnerException is { } next)
+                Collect(next);
         }
-        return parts.Count == 0 ? ex.GetType().FullName ?? "Unknown error" : string.Join(" -> ", parts);
     }
 }

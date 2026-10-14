@@ -229,17 +229,6 @@ public sealed class Baseline
             .OrderBy(x => x.Id, StringComparer.Ordinal)
             .ToDictionary(x => x.Id, x => x.Severity, StringComparer.Ordinal);
 
-    // Spelled rather than ToString(): an obfuscated build renames the members (B502). The names match
-    // the ones RuleSeverity writes to settings and baseline files.
-    internal static string NameOf(RuleSeverity severity) => severity switch
-    {
-        RuleSeverity.Off => "Off",
-        RuleSeverity.Info => "Info",
-        RuleSeverity.Warning => "Warning",
-        RuleSeverity.Error => "Error",
-        _ => ((int)severity).ToString(System.Globalization.CultureInfo.InvariantCulture),
-    };
-
     // --- persistence ---------------------------------------------------------------------------
 
     // Version 2 added createdUtc/revision/branch; version 3 added the rules the baseline was
@@ -355,7 +344,7 @@ public sealed record RuleSetDrift(
         if (DisabledSince.Count > 0)
             yield return $"disabled since: {string.Join(", ", DisabledSince)}";
         foreach (var (ruleId, was, now) in SeverityChanged)
-            yield return $"severity changed: {ruleId} ({Baseline.NameOf(was)} -> {Baseline.NameOf(now)})";
+            yield return $"severity changed: {ruleId} ({RuleSeverityText.Of(was)} -> {RuleSeverityText.Of(now)})";
         if (ExclusionsChanged)
             yield return "the set of excluded libraries has changed";
         if (DependenciesMissing.Count > 0)

@@ -1,12 +1,14 @@
 # Obfuscation readiness (B502)
 
-**Verified on a protected build (see *Verification*); retire this note once it ships**, moving what is durable into `CODING_GUIDELINES.md`
-and the tests that hold it.
+**Verified on protected builds (see *Verification*); retire this note once it ships**, moving what
+is durable into `CODING_GUIDELINES.md` and the tests that hold it.
 
 A consumer building on MLQT ships the MCP stack inside its own product and protects it with an
-obfuscator at its strongest settings: renaming of every type, member, parameter and enum member,
-**public ones included** (it merges MLQT into its own assemblies), with string encryption,
-control-flow obfuscation, method-body encryption, anti-tamper and resource encryption.
+obfuscator at its strongest settings: renaming of every type, member and parameter, **public ones
+included** (it merges MLQT into its own executable), with string encryption, control-flow
+obfuscation, method-body encryption, code virtualization, call hiding, internalization of public
+types and resource encryption. **Internalization deletes an enum's members from metadata**, not just
+renames them; a consumer measured `Enum.GetValues` going from 5 to 0 on a five-member enum.
 
 **In scope**: the seven assemblies of that stack — `ModelicaParser`, `ModelicaGraph`,
 `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface`, `MLQT.Services`, `MLQT.McpServer`.
@@ -28,6 +30,10 @@ attribute scanning of MLQT's own types.
 | 3 | **Committed repository files**: `.mlqt/settings.json` (`StyleCheckingSettings`, `NamingConventionSettings`, `RuleSeverity` names), `.mlqt/baseline.json`, `.mlqt/metrics-history.json` | Writes files MLQT and the CLI cannot read, and cannot read theirs — silently, since unknown properties are ignored |
 | 4 | **Settings store** (`mcp-settings.json`, `settings.json`): `RepositorySettingsCollection` | The project list reads as empty; a store written by another build is lost |
 | 5 | **Dymola JSON-RPC**: three anonymous `{method, params, id}` envelopes; `CloseHandle` P/Invoke named by its method | No call reaches Dymola |
+| 6 | **Enum metadata**: `RuleSeverity` written by `JsonStringEnumConverter`, which reflects over the members; anything sized from or checking `Enum.GetValues`/`IsDefined` | With the members deleted, severities are written as numbers, and an array sized from `GetValues` has length zero |
+
+Reflection does not even produce renamed names under these settings: a record serialized by
+reflection comes out as `{}`, every property gone, and reads back as defaults - silent both ways.
 
 Constructor-bound records (`BaselineFile`, `MetricsSnapshot`, …) fail a second way: reflection
 binds constructor parameters to properties **by name**, so a build that renames the two differently
@@ -48,15 +54,20 @@ independent of names in the code wherever that is possible, and verified here by
   where the contract is MLQT's own, so a type left out of it fails loudly instead of quietly falling
   back to reflection. A test holds each context to the names reflection produces today, so the
   change moves no byte of any existing file or result.
-- **Enum names written as text** come from one explicit mapping (`[JsonStringEnumMemberName]` for
-  `RuleSeverity`, which the converter writes; a switch for the MCP results), held complete by a test.
+- **Enum names written as text** come from explicit switches - `RuleSeverityText` and
+  `RuleSeverityJsonConverter` for the files, `WireNames` for the MCP results - held complete by tests,
+  and **no enum's metadata is read** at all (`EnumMetadataPolicyTests`). The converter reads exactly
+  what the reflection converter read before B502, lower case included, which the first version of this
+  work had broken by pinning names with `[JsonStringEnumMemberName]`.
 - **No anonymous type is serialized** in scope; a source-scanning test holds it.
 - **P/Invoke names its entry point.**
 - **MCP tool parameter names are the one thing code cannot make name-independent** — the SDK reads
   `ParameterInfo.Name` — so the 17 tool classes carry `[Obfuscation]`, which an obfuscator that
-  honours `System.Reflection.ObfuscationAttribute` reads as "do not rename". A test holds
-  every tool class to it. (Measured since: with the strongest settings the obfuscator renames no
-  parameters anyway - see *Verification*.)
+  honours `System.Reflection.ObfuscationAttribute` reads as "do not rename". A test holds every tool
+  class to it. **Whether it is honoured is the consumer's setting**: one consumer found an obfuscator
+  ignoring the attribute unless its declarative-protection option was on, with no warning. So
+  `ToolParameterCheck` checks known parameters when the server is registered and refuses to start,
+  saying what to change, rather than bind no client's arguments.
 
 ## Done
 
@@ -107,3 +118,27 @@ MCP result record were renamed, members included - while the tool classes kept t
   warning - now spelled and held by `SpelledEnumNameTests`. The rest are in-memory keys, which agree
   within a run, debug text, and the runtime's own enums, which are not renamed. A name-based search
   had missed both, which is why the scan was semantic.
+
+**A second configuration, merged** (2026-10-14), matching a consumer's: all seven assemblies merged
+into the server's own, the library DLLs deleted and `deps.json` cut to match, with internalization,
+unprintable names, renaming of all parameters, method-body encryption, code virtualization, control
+flow 9, pre-JIT, call hiding, resource encryption and strong-name protection, anti-tamper off. Seven
+of the merged assembly's 44 enums were left with no members in metadata, so deletion was real.
+
+- **The session is identical** - all 66 tools - with the exclusion attribute honoured, with the
+  declarative-protection option off, with the attribute removed from the tool classes altogether,
+  and with the native-executable host.
+- **The file on disk is not what runs.** Its parameter table was empty and its resource names
+  scrambled, yet at run time the server reported every parameter name and the dictionaries loaded:
+  the protection restores both as the assembly loads. Inspecting a protected file says little about
+  its behaviour; only running it does, which is why the comparison is a session, not a scan.
+- **The attribute could not be shown necessary here**: with this version and these settings the tool
+  parameters survived without it. A consumer reports the opposite with its settings, so the
+  attribute and `ToolParameterCheck` both stay - the check turns a silent failure into a refusal to
+  start, and is tested against renamed parameters.
+- **Run the comparison with anti-tamper off.** A consumer measured anti-tamper producing builds that
+  fail their own integrity check at start-up, intermittently, from identical input (3 of 12 trials);
+  a session failing that way looks like a regression and is not one.
+- **The `--timings` keys** built from a rule visitor's type name reach only `CheckTimings` - the CLI's
+  `--timings` and the log - never a fingerprint or a file, unlike the analyzer names that once fed
+  fingerprints.

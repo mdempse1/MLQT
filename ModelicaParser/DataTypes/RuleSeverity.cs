@@ -8,16 +8,16 @@ namespace ModelicaParser.DataTypes;
 /// info are reported but do not fail the build.
 /// Serialized as a string (e.g. "Warning") so <c>.mlqt/settings.json</c> stays readable.
 ///
-/// <para><b>Each name is written down</b> rather than taken from the member, because these names are
-/// in every committed <c>.mlqt/settings.json</c> and baseline: an obfuscated build renames the
-/// members, and would otherwise write files nothing else can read (B502). A test holds each to its
-/// member's name.</para>
+/// <para><b>Written by <see cref="RuleSeverityJsonConverter"/></b>, whose names are spelled out in
+/// <see cref="RuleSeverityText"/>, never read from these members: an obfuscator may rename them or
+/// delete them from metadata, and these names are in every committed <c>.mlqt/settings.json</c> and
+/// baseline (B502).</para>
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<RuleSeverity>))]
+[JsonConverter(typeof(RuleSeverityJsonConverter))]
 public enum RuleSeverity
 {
-    [JsonStringEnumMemberName("Off")] Off,
-    [JsonStringEnumMemberName("Info")] Info,
-    [JsonStringEnumMemberName("Warning")] Warning,
-    [JsonStringEnumMemberName("Error")] Error
+    Off,
+    Info,
+    Warning,
+    Error
 }

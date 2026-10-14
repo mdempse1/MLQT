@@ -118,6 +118,13 @@ licence for the obfuscator, which is why it is here and not in CI.**
 anything `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation covers.** A difference is
 decoded with the obfuscator's mapping file.
 
+Protect it **merged into the server's own assembly**, as a consumer shipping one executable does,
+with renaming of all parameters and internalization on - the configuration where enum members are
+deleted and where `ToolParameterCheck` and the resource lookup matter - and **with anti-tamper off**:
+anti-tamper has been measured producing builds that intermittently fail their own integrity check
+at start-up, which would read here as a regression. A merged build needs `deps.json` cut to match,
+or the host refuses to start for want of the deleted library DLLs.
+
 ---
 
 ## What this list is not
