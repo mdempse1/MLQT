@@ -132,6 +132,13 @@ def session(exe, fixture, out):
     pictured = os.path.join(root, "Pictured.mo")
     with open(pictured, "w", encoding="utf-8", newline="\n") as f:
         f.write(PICTURED)
+    # A git working copy, so the changed-classes tool goes through LibGit2Sharp's native library.
+    # Fixed dates make the commit's hash the same every run, and no line-ending conversion keeps the
+    # one edit below an edit to one class.
+    git_env = {**os.environ, "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z", "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"}
+    for command in (["init", "-q"], ["config", "core.autocrlf", "false"], ["add", "-A"],
+                    ["-c", "user.name=check", "-c", "user.email=check@example.invalid", "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root, *command], check=True, env=git_env)
     transcript, timings = {}, {}
     server = Server(exe)
     try:
@@ -178,6 +185,19 @@ def session(exe, fixture, out):
             timings[label] = round((time.monotonic() - started) * 1000)
             transcript[label] = content_of(answer)
 
+        # An edit to one class, then the question only a VCS can answer.
+        package = os.path.join(root, "Libraries", "Smoke", "package.mo")
+        with open(package, encoding="utf-8", newline="") as f:
+            source = f.read()
+        with open(package, "w", encoding="utf-8", newline="") as f:
+            f.write(source.replace('"Has everything the rules ask for"', '"Has everything the rules ask for, and more"'))
+        # Read leniently: a build that renamed the field should show up as a difference, not a crash.
+        loaded = (transcript["load_repository"].get("content") or [{}])[0]
+        repository_id = loaded.get("repositoryId") if isinstance(loaded, dict) else None
+        transcript["changed_classes"] = content_of(server.request(
+            "tools/call", {"name": "mlqt_get_changed_classes", "arguments": {"repositoryId": repository_id}})) \
+            if repository_id else {"skipped": "load_repository returned no repositoryId"}
+
         settings = os.path.join(root, ".mlqt", "settings.json")
         transcript["settingsFile"] = open(settings, encoding="utf-8").read() if os.path.exists(settings) else None
     finally:
@@ -201,7 +221,15 @@ def time_check(exe, library, out):
         server.close()
     write(out, {"loadMs": round((loaded - started) * 1000), "checkMs": round((checked - loaded) * 1000),
                 "loadIsError": load["isError"], "checkIsError": check["isError"],
-                "check": normalise(check, library)})
+                "check": normalise(sorted_findings(check), library)})
+
+
+def sorted_findings(result):
+    """A check's findings in a fixed order: the server lists them as its workers finish."""
+    for block in result.get("content", []):
+        if isinstance(block, dict) and isinstance(block.get("findings"), list):
+            block["findings"].sort(key=lambda f: json.dumps(f, sort_keys=True))
+    return result
 
 
 def write(path, value):

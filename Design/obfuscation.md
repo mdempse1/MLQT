@@ -1,6 +1,6 @@
 # Obfuscation readiness (B502)
 
-**Not shipped. Retire this note when it is**, moving what is durable into `CODING_GUIDELINES.md`
+**Verified on a protected build (see *Verification*); retire this note once it ships**, moving what is durable into `CODING_GUIDELINES.md`
 and the tests that hold it.
 
 A consumer building on MLQT ships the MCP stack inside its own product and protects it with an
@@ -55,8 +55,8 @@ independent of names in the code wherever that is possible, and verified here by
 - **MCP tool parameter names are the one thing code cannot make name-independent** — the SDK reads
   `ParameterInfo.Name` — so the 17 tool classes carry `[Obfuscation]`, which an obfuscator that
   honours `System.Reflection.ObfuscationAttribute` reads as "do not rename". A test holds
-  every tool class to it. **Whether it keeps parameter names is to be confirmed on a protected
-  build.**
+  every tool class to it. (Measured since: with the strongest settings the obfuscator renames no
+  parameters anyway - see *Verification*.)
 
 ## Done
 
@@ -75,7 +75,27 @@ Its `--time-check` mode times a load and a check of a large library (control flo
 encryption on the ANTLR parser are the performance risk). It needs a licence for the obfuscator, so
 it is a release step (`Design/release-checklist.md` §7), not a CI gate.
 
-Open until then: whether `[Obfuscation]` keeps parameter names; whether resource encryption keeps
-`GetManifestResourceStream` working for the spelling dictionaries (`SpellChecker.OpenBundled`);
-whether method-body encryption and anti-tamper coexist with SkiaSharp, LibGit2Sharp and the parser's hot paths,
-and at what cost.
+Measured on 2026-10-14 with a trial of the obfuscator, all seven assemblies protected together:
+renaming of public names, string encryption, control flow at level 9, method-body encryption,
+anti-tamper, resource encryption. The mapping file confirms the renaming reached what the contracts
+protect - `StyleCheckingSettings`, `MetricsSnapshot`, `BaselineEntry`, `RepositorySettingsCollection` and every
+MCP result record were renamed, members included - while the tool classes kept their names.
+
+- **The protected server answers the session exactly as the plain one does**: the instructions,
+  all 66 input schemas, every result, quoted arguments, the `.mlqt/settings.json` it wrote, the
+  embedded dictionaries (spell check and suggestions), a SkiaSharp diagram image and a LibGit2Sharp
+  status. MSL loads and checks to the same 74 findings over 6,487 classes.
+- **The comparison catches a broken build**: the commit before this work, protected the same way, came
+  back with renamed result fields (`{"dbb8oue6SC": "Smoke.Described", ...}`), most results empty, a
+  different settings file and four broken argument schemas.
+- **Parameter names survived even before `[Obfuscation]`**: in that control, only the four tools taking
+  a record argument had a different schema. So with these settings the obfuscator does not rename
+  parameters, and the attribute is not what keeps them; it stays because it costs nothing and holds
+  the tool classes and methods under a configuration that does.
+- **Cost**: two runs loading MSL took 5.2 s and 2.9 s plain against 7.0 s and 6.0 s protected
+  (136% and 210%); its check, 0.39 s and 0.35 s against 0.66 s and 0.48 s. The first call into
+  protected code pays about a second once (`mlqt_server_info` 25 ms against 1,007 ms). The load is
+  parsing, so if a consumer finds it too slow, the generated ANTLR parser - partial classes, so an
+  attribute can be added beside them - is where to exclude control flow first.
+- **Not something obfuscation did**: `mlqt_check_library` lists its findings in the order its workers
+  finish, which differs between two plain runs. The session sorts them before comparing.
