@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaGraph;
@@ -17,6 +18,7 @@ namespace MLQT.McpServer.Tools;
 /// do. Generic VCS operations (commit, log, push, branch) are intentionally left to the CLI. Both
 /// tools are read-only.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class VcsTools
 {
@@ -134,8 +136,8 @@ public sealed class VcsTools
         var localCanon = string.IsNullOrEmpty(repo.LocalPath) ? null : Canon(repo.LocalPath);
 
         IEnumerable<(string Path, string Status)> changes = revision is null
-            ? _repositories.GetWorkingCopyChanges(repo.Id).Select(c => (c.Path, c.Status.ToString()))
-            : _repositories.GetChangedFiles(repo.Id, revision).Select(c => (c.Path, c.ChangeType.ToString()));
+            ? _repositories.GetWorkingCopyChanges(repo.Id).Select(c => (c.Path, WireNames.Of(c.Status)))
+            : _repositories.GetChangedFiles(repo.Id, revision).Select(c => (c.Path, WireNames.Of(c.ChangeType)));
 
         var files = new List<ChangedFileDto>();
         foreach (var (relPath, status) in changes)

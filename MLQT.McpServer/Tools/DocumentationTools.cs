@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using Antlr4.Runtime.Tree;
 using ModelContextProtocol.Server;
@@ -15,6 +16,7 @@ namespace MLQT.McpServer.Tools;
 /// mlqt_get_class_documentation. Each validates, parse-checks with rollback, refuses read-only files and
 /// refreshes dependencies; all support preview.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class DocumentationTools
 {

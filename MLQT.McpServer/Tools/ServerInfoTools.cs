@@ -1,6 +1,8 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.Services.Interfaces;
+using MLQT.McpServer.Dtos;
 
 namespace MLQT.McpServer.Tools;
 
@@ -8,6 +10,7 @@ namespace MLQT.McpServer.Tools;
 /// Basic server introspection tools. Also serves as the Phase 0 end-to-end smoke test that
 /// dependency injection and the MCP stdio transport are wired correctly.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class ServerInfoTools
 {
@@ -22,11 +25,6 @@ public sealed class ServerInfoTools
     public object GetServerInfo()
     {
         var libraries = _libraryData.Libraries;
-        return new
-        {
-            server = "MLQT MCP Server",
-            librariesLoaded = libraries.Count,
-            libraryNames = libraries.Select(l => l.Name).ToArray(),
-        };
+        return new ServerInfoResult("MLQT MCP Server", libraries.Count, libraries.Select(l => l.Name).ToArray());
     }
 }

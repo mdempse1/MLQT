@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
 using MLQT.McpServer.Tools;
@@ -85,7 +86,7 @@ public class ProseTests
     public void TheGuidanceBreaksALineOnlyBetweenParagraphsAndListItems(string topic)
     {
         var result = new GuidanceTools().GetGuidance(topic);
-        var text = (string)result.GetType().GetProperty("guidance")!.GetValue(result)!;
+        var text = Assert.IsType<GuidanceResult>(result).Guidance;
         AssertNoBreakInsideAParagraph(text);
     }
 

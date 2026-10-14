@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
@@ -15,6 +16,7 @@ namespace MLQT.McpServer.Tools;
 /// Read-only query and navigation tools over the classes in the loaded libraries. Class ids are
 /// fully-qualified dotted Modelica names (e.g. "Modelica.Blocks.Continuous.Integrator").
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class ClassQueryTools
 {
@@ -73,7 +75,7 @@ public sealed class ClassQueryTools
             node.HasFatalParseFailure,
             writable,
             ReadOnlySources.KindOf(node) == ReadOnlySourceKind.RecoveredFromDocumentation,
-            ReadOnlySources.KindOf(node)?.ToString());
+            ReadOnlySources.KindOf(node) is { } kind ? WireNames.Of(kind) : null);
     }
 
     [McpServerTool(Name = "mlqt_get_class_source")]

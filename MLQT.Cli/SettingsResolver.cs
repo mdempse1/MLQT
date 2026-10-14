@@ -34,7 +34,7 @@ internal static class SettingsResolver
         if (path is not null && File.Exists(path))
         {
             var json = File.ReadAllText(path);
-            var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(json)
+            var settings = StyleCheckingSettings.FromJson(json)
                 ?? throw new InvalidOperationException($"could not parse settings from '{path}'");
             return new ResolvedSettings(settings, path, DictionaryRootFor(path, libraryPath));
         }

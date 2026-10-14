@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ModelicaGraph;
 using ModelicaGraph.Analysis;
 
 namespace MLQT.Services.Helpers;
@@ -15,7 +16,8 @@ public static class MetricsHistoryStore
 {
     private const int MaxSnapshots = 500;
 
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+    // Compiled in, so an obfuscated build writes the names every other build reads (B502).
+    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, TypeInfoResolver = ModelicaGraphJson.Contracts };
 
     /// <summary>Per-user fallback location, used for libraries not loaded from a repository.</summary>
     public static string DefaultPath => Path.Combine(
@@ -34,7 +36,7 @@ public static class MetricsHistoryStore
         {
             if (!File.Exists(path))
                 return new();
-            return JsonSerializer.Deserialize<List<MetricsSnapshot>>(File.ReadAllText(path)) ?? new();
+            return JsonSerializer.Deserialize<List<MetricsSnapshot>>(File.ReadAllText(path), Options) ?? new();
         }
         catch
         {

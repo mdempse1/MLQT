@@ -49,7 +49,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             RevisionControlLogger.Error("CheckoutRevision", ex);
             throw new InvalidOperationException(
-                $"SVN checkout failed for '{repositoryPath}' at revision '{revision}' to '{outputPath}': {ex.Message}", ex);
+                $"SVN checkout failed for '{repositoryPath}' at revision '{revision}' to '{outputPath}': {RevisionControlLogger.Describe(ex)}", ex);
         }
     }
 

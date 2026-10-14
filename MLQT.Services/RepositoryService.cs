@@ -300,7 +300,7 @@ public class RepositoryService : IRepositoryService
             {
                 try
                 {
-                    var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(File.ReadAllText(settingsPath));
+                    var settings = StyleCheckingSettings.FromJson(File.ReadAllText(settingsPath));
                     repository.StyleSettings = settings;
                 }
                 catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or JsonException)
@@ -847,11 +847,21 @@ public class RepositoryService : IRepositoryService
         await SaveRepositorySettingsAsync();
     }
 
-    private static readonly JsonSerializerOptions SettingsJsonOptions = new() { WriteIndented = true, NewLine = "\n" };
+    /// <summary>
+    /// The name a repository's VCS is stored under in the settings store - spelled rather than taken
+    /// from <c>ToString()</c>, which an obfuscated build renames (B502).
+    /// </summary>
+    internal static string VcsTypeName(RepositoryVcsType vcsType) => vcsType switch
+    {
+        RepositoryVcsType.Local => "Local",
+        RepositoryVcsType.Git => "Git",
+        RepositoryVcsType.SVN => "SVN",
+        _ => ((int)vcsType).ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     /// <summary>The settings as they are compared against <see cref="Repository.SettingsOnDisk"/>.</summary>
     private static string SerializeSettings(StyleCheckingSettings? settings)
-        => JsonSerializer.Serialize(settings, SettingsJsonOptions);
+        => settings?.ToJson() ?? "null";
 
     /// <summary>
     /// Whether the existing settings file at <paramref name="settingsPath"/> can be written, found
@@ -970,7 +980,7 @@ public class RepositoryService : IRepositoryService
                     RemotePath = repo.RemotePath,
                     LocalPath = repo.LocalPath,
                     VcsRootPath = repo.VcsRootPath,
-                    VcsType = repo.VcsType.ToString(),
+                    VcsType = VcsTypeName(repo.VcsType),
                     PreferredRevision = repo.CurrentRevision,
                     AutoLoad = true,
                     IsReferenceOnly = repo.IsReferenceOnly,

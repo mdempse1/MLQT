@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using System.Diagnostics;
 using ModelContextProtocol.Server;
@@ -16,6 +17,7 @@ namespace MLQT.McpServer.Tools;
 /// built at load time — call mlqt_analyze_dependencies once (it can be slow on a large library) to
 /// populate them, then mlqt_get_dependencies / mlqt_find_usages / mlqt_analyze_impact return meaningful results.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class DependencyTools
 {

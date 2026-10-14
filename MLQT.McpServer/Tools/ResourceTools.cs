@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
@@ -13,6 +14,7 @@ namespace MLQT.McpServer.Tools;
 /// modelica:// URIs, Bitmap, and external-function annotations. Requires mlqt_analyze_dependencies to
 /// have been run (it populates the resource graph and validation warnings).
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class ResourceTools
 {
@@ -61,7 +63,7 @@ public sealed class ResourceTools
             return ToolDiagnostics.NotAnalyzed(_libraries, "looking up which classes reference a resource");
 
         var models = _resources.GetModelsReferencingResource(resolvedFilePath);
-        return new { resolvedFilePath, resourcesAnalyzed = _session.ResourcesAnalyzed, count = models.Count, models };
+        return new ResourceUsagesResult(resolvedFilePath, _session.ResourcesAnalyzed, models.Count, models);
     }
 
     [McpServerTool(Name = "mlqt_get_resource_warnings")]
@@ -80,13 +82,13 @@ public sealed class ResourceTools
 
         var all = _resources.GetWarnings();
         var page = all.Skip(offset).Take(limit)
-            .Select(w => new ResourceWarningDto(w.ModelId, w.ResourcePath, w.WarningType.ToString(), w.Message))
+            .Select(w => new ResourceWarningDto(w.ModelId, w.ResourcePath, WireNames.Of(w.WarningType), w.Message))
             .ToList();
 
         return new ResourceWarningsResult(all.Count, _session.ResourcesAnalyzed, offset, page.Count, page);
     }
 
     private static ResourceRefDto ToDto(ExternalResourceReference r) => new(
-        r.ModelId, r.RawPath, r.ResolvedPath, r.ReferenceType.ToString(), r.ParameterName,
+        r.ModelId, r.RawPath, r.ResolvedPath, WireNames.Of(r.ReferenceType), r.ParameterName,
         r.IsAbsolutePath, r.FileExists, r.IsImageFile, r.IsDirectory);
 }

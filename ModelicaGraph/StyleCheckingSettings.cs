@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using ModelicaParser.DataTypes;
@@ -9,6 +10,28 @@ namespace ModelicaGraph;
 
 public class StyleCheckingSettings
 {
+    /// <summary>
+    /// The form <c>.mlqt/settings.json</c> is written in: indented, with line feeds whatever the
+    /// platform, since the file is committed and read on both. Its contract is compiled in
+    /// (<see cref="ModelicaGraphJson"/>), so an obfuscated build writes the same names (B502).
+    /// </summary>
+    private static readonly JsonSerializerOptions SettingsFileOptions = new()
+    {
+        WriteIndented = true,
+        NewLine = "\n",
+        TypeInfoResolver = ModelicaGraphJson.Contracts,
+    };
+
+    /// <summary>These settings as <c>.mlqt/settings.json</c> holds them.</summary>
+    public string ToJson() => JsonSerializer.Serialize(this, SettingsFileOptions);
+
+    /// <summary>
+    /// Settings read from the text of a <c>.mlqt/settings.json</c>, or null when the text is the JSON
+    /// literal <c>null</c>. Throws <see cref="JsonException"/> on text that is not settings.
+    /// </summary>
+    public static StyleCheckingSettings? FromJson(string json) =>
+        JsonSerializer.Deserialize<StyleCheckingSettings>(json, SettingsFileOptions);
+
     // Commit message requirements
     public bool CommitRequiresIssueNumber { get; set; } = false;
     public bool IssueNumberAtEnd { get; set; } = false;

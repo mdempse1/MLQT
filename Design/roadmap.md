@@ -143,6 +143,17 @@ reach `mlqt check`, cannot be baselined and cannot fail a build — a library ca
 Declarative custom rules → compiled plugins; finally the boundary-brushing dimensional-analysis and
 structural equation-balance checks. See §4 and §2.
 
+### Alongside: obfuscation readiness (B502) — ✅ shipped 2026-10-14
+
+Consumers ship the MCP stack protected by an obfuscator at its strongest settings, merged into one
+executable, public names renamed and enum members deleted. Every contract taken from a .NET name at
+run time - MCP argument and result names, the committed `.mlqt/` files, the settings store, the
+finding export, Dymola's JSON-RPC, enum text - is now independent of names by construction, and no
+enum's metadata is read. Verified by a protected build answering a session over all 66 tools exactly
+as the plain one does. The rules and their guard tests are in `CODING_GUIDELINES.md` §Names That
+Must Survive Obfuscation; the verification is `Design/release-checklist.md` §7. The design note was
+retired with it.
+
 ### Deferred, with no place in the sequence
 
 **macOS.** Photino supports it and the intent predates the migration, but nothing depends on it and
@@ -225,7 +236,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B502**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B503**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row

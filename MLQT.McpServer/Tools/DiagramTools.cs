@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using ModelicaGraph.Analysis;
@@ -19,6 +20,7 @@ namespace MLQT.McpServer.Tools;
 /// (an extent is the component's bounding box {{x1,y1},{x2,y2}}). Auto-layout is not provided — set
 /// explicit placements.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class DiagramTools
 {

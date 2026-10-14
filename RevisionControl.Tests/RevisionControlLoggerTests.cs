@@ -31,6 +31,21 @@ public class RevisionControlLoggerTests
     }
 
     [Fact]
+    public void AnAggregate_IsDescribedByEveryExceptionItHolds()
+    {
+        // What a failure in a parallel loop arrives as: the wrapper's message names nothing useful.
+        var aggregate = new AggregateException(
+            new TypeInitializationException("Kinds", new IndexOutOfRangeException("Index was outside the bounds of the array.")),
+            new IOException("the remote hung up"));
+
+        var message = RevisionControlLogger.Describe(aggregate);
+
+        Assert.DoesNotContain("One or more errors occurred", message);
+        Assert.Contains("Index was outside the bounds of the array.", message);
+        Assert.Contains("the remote hung up", message);
+    }
+
+    [Fact]
     public void AnExceptionWithNoInner_IsDescribedByItsOwnMessage()
     {
         Assert.Equal("the remote hung up", RevisionControlLogger.Describe(new IOException("the remote hung up")));

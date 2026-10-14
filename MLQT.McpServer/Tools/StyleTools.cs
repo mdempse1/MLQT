@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
@@ -20,6 +21,7 @@ namespace MLQT.McpServer.Tools;
 /// load). Rule settings are per-repository: they come from each repo's .mlqt/settings.json (loaded
 /// by mlqt_load_repository), and mlqt_set_style_settings writes changes back there.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class StyleTools
 {

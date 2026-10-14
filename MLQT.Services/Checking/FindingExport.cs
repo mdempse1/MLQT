@@ -74,48 +74,74 @@ public static class FindingExport
         DateTime exportedAt,
         Func<LogMessage, string?>? statusOf = null)
     {
-        var payload = new
-        {
-            tool = ToolName,
-            exported = exportedAt.ToString("o"),
-            project = projectName,
-            findingCount = findings.Count,
-            findings = findings
+        var payload = new ExportDocument(
+            ToolName,
+            exportedAt.ToString("o"),
+            projectName,
+            findings.Count,
+            findings
                 .OrderBy(m => m.ModelName, StringComparer.Ordinal)
                 .ThenBy(m => m.LineNumber)
                 .ThenBy(m => m.RuleId ?? string.Empty, StringComparer.Ordinal)
-                .Select(m => new
-                {
-                    RuleId = m.RuleId,
+                .Select(m => new ExportedFinding(
+                    m.RuleId,
                     // The CLI writes the level on its own — "Warning", "Error", "Info" — so this does
                     // too, from the severity carried on the message rather than from its display
                     // string. The app's own list says "Style warning" to tell a style finding apart
                     // from a parse diagnostic at a glance; here `Source` already draws that line, and
                     // a second vocabulary in a file whose whole purpose is to be diffed against the
-                    // CLI's would make the severity column disagree on every row.
-                    Severity = m.StyleSeverity?.ToString() ?? m.Severity,
-                    Status = statusOf?.Invoke(m),
-                    Model = m.ModelName,
-                    Element = m.ElementPath,
-                    Line = ReportLocation.LineIn(locations.GetValueOrDefault(m.ModelName), m.LineNumber),
-                    ModelLine = m.LineNumber,
-                    Message = m.Summary,
-                    Fingerprint = m.Fingerprint,
-                    File = ReportLocation.RelativeFile(
+                    // CLI's would make the severity column disagree on every row. Spelled, not
+                    // ToString(), which an obfuscated build turns into a number (B502).
+                    m.StyleSeverity is { } style ? RuleSeverityText.Of(style) : m.Severity,
+                    statusOf?.Invoke(m),
+                    m.ModelName,
+                    m.ElementPath,
+                    ReportLocation.LineIn(locations.GetValueOrDefault(m.ModelName), m.LineNumber),
+                    m.LineNumber,
+                    m.Summary,
+                    m.Fingerprint,
+                    ReportLocation.RelativeFile(
                         locations.GetValueOrDefault(m.ModelName),
                         libraryRootByModel.GetValueOrDefault(m.ModelName)),
-                    Source = m.Source,
-                    Details = string.IsNullOrEmpty(m.Details) ? null : m.Details,
-                })
-                .ToList(),
-        };
+                    m.Source,
+                    string.IsNullOrEmpty(m.Details) ? null : m.Details))
+                .ToList());
 
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        });
+        return JsonSerializer.Serialize(payload, Options);
     }
+
+    // Compiled in, so an obfuscated build writes the field names a plain build and the CLI do (B502).
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        TypeInfoResolver = MlqtServicesJsonContext.Default,
+    };
+
+    /// <summary>The exported document. Its own fields are lower case, its findings' PascalCase - the
+    /// names the file has always had, and the CLI's report shares the findings' (B502: written down
+    /// rather than taken from the members).</summary>
+    internal sealed record ExportDocument(
+        [property: JsonPropertyName("tool")] string Tool,
+        [property: JsonPropertyName("exported")] string Exported,
+        [property: JsonPropertyName("project")] string? Project,
+        [property: JsonPropertyName("findingCount")] int FindingCount,
+        [property: JsonPropertyName("findings")] IReadOnlyList<ExportedFinding> Findings);
+
+    /// <summary>One finding in the export.</summary>
+    internal sealed record ExportedFinding(
+        [property: JsonPropertyName("RuleId")] string? RuleId,
+        [property: JsonPropertyName("Severity")] string? Severity,
+        [property: JsonPropertyName("Status")] string? Status,
+        [property: JsonPropertyName("Model")] string Model,
+        [property: JsonPropertyName("Element")] string? Element,
+        [property: JsonPropertyName("Line")] int Line,
+        [property: JsonPropertyName("ModelLine")] int ModelLine,
+        [property: JsonPropertyName("Message")] string Message,
+        [property: JsonPropertyName("Fingerprint")] string? Fingerprint,
+        [property: JsonPropertyName("File")] string? File,
+        [property: JsonPropertyName("Source")] string Source,
+        [property: JsonPropertyName("Details")] string? Details);
 
     /// <summary>The file name to write, which carries the moment so two exports never collide.</summary>
     public static string FileNameFor(DateTime exportedAt) =>

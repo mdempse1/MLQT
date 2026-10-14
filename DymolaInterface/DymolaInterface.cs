@@ -455,8 +455,7 @@ public class DymolaInterface : IDymolaSession
         using var client = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(2) };
         try
         {
-            var request = new { method = "ping", @params = (object?)null, id = 1 };
-            var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+            var content = new StringContent(JsonRpcRequest("ping", null, 1), Encoding.UTF8, "application/json");
             var response = await client.PostAsync($"http://{hostname}:{port}", content);
             return response.IsSuccessStatusCode;
         }
@@ -508,8 +507,7 @@ public class DymolaInterface : IDymolaSession
 
         try
         {
-            var request = new { method = "ping", @params = (object?)null, id = NextRequestId() };
-            var jsonRequest = JsonSerializer.Serialize(request);
+            var jsonRequest = JsonRpcRequest("ping", null, NextRequestId());
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
             using var limit = new CancellationTokenSource(ConnectionProbeTimeout);
             var response = _httpClient.PostAsync(_dymolaUrl, content, limit.Token).GetAwaiter().GetResult();
@@ -642,6 +640,30 @@ public class DymolaInterface : IDymolaSession
         return item;
     }
 
+    /// <summary>
+    /// The JSON-RPC request Dymola reads: <c>method</c>, <c>params</c>, <c>id</c>, in that order.
+    /// </summary>
+    /// <remarks>
+    /// Written with literal names, not as an anonymous object: an anonymous type's property names are
+    /// read by reflection at run time, and an obfuscated build renames them, so no request would
+    /// reach Dymola (B502). The parameters are strings, numbers, booleans and arrays of them, which
+    /// are the runtime's own types and keep their shape.
+    /// </remarks>
+    internal static string JsonRpcRequest(string method, object?[]? parameters, int id)
+    {
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("method", method);
+            writer.WritePropertyName("params");
+            JsonSerializer.Serialize(writer, parameters);
+            writer.WriteNumber("id", id);
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
     private object?[]? FixJsonParameterList(object?[]? parameters)
     {
         if (parameters is null) return null;
@@ -770,14 +792,10 @@ public class DymolaInterface : IDymolaSession
 
             int sentId = NextRequestId();
             var fixedParams = FixJsonParameterList(parameters) ?? Array.Empty<object?>();
-            var request = new
-            {
-                method = cmd.Replace("\\", "\\\\"),
-                @params = fixedParams.Length > 0 || !cmd.Contains("(") ? fixedParams : null,
-                id = sentId
-            };
-
-            var jsonRequest = JsonSerializer.Serialize(request);
+            var jsonRequest = JsonRpcRequest(
+                cmd.Replace("\\", "\\\\"),
+                fixedParams.Length > 0 || !cmd.Contains("(") ? fixedParams : null,
+                sentId);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
 
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

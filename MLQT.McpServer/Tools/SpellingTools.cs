@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaParser.Helpers;
@@ -19,6 +20,7 @@ namespace MLQT.McpServer.Tools;
 /// (set via mlqt_set_style_settings). mlqt_correct_spelling writes the updated file to disk and refreshes the
 /// graph unless preview is set. Typical workflow: mlqt_spell_check → mlqt_spelling_suggestions → mlqt_correct_spelling.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class SpellingTools
 {

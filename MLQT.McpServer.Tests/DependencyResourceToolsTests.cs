@@ -113,8 +113,10 @@ public class DependencyResourceToolsTests
         Assert.Contains(classRes.Resources, r => r.RawPath.Contains("missing.txt"));
 
         var resolved = classRes.Resources[0].ResolvedPath!;
-        var usages = res.FindResourceUsages(resolved);
-        Assert.IsNotType<ToolError>(usages);
+        var usages = ToolAssert.Ok<ResourceUsagesResult>(res.FindResourceUsages(resolved));
+        Assert.True(usages.ResourcesAnalyzed);
+        Assert.Equal(usages.Models.Count, usages.Count);
+        Assert.NotEmpty(usages.Models);
 
         var warnings = ToolAssert.Ok<ResourceWarningsResult>(res.GetResourceWarnings());
         Assert.True(warnings.Total >= 1);

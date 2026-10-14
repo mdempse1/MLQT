@@ -61,7 +61,7 @@ public sealed class JsonSettingsService : ISettingsService
 
             try
             {
-                return Task.FromResult(JsonSerializer.Deserialize<T>(json) ?? defaultValue);
+                return Task.FromResult(JsonSerializer.Deserialize<T>(json, MlqtServicesJson.SettingValues) ?? defaultValue);
             }
             catch (JsonException)
             {
@@ -76,7 +76,7 @@ public sealed class JsonSettingsService : ISettingsService
     {
         lock (_gate)
         {
-            _values[key] = JsonSerializer.Serialize(value);
+            _values[key] = JsonSerializer.Serialize(value, MlqtServicesJson.SettingValues);
             Flush();
         }
 

@@ -1,4 +1,4 @@
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
@@ -9,63 +9,68 @@ namespace MLQT.McpServer.Services;
 /// boolean as <c>"true"</c>, a number as <c>"5"</c>. The MCP SDK deserializes each argument strictly by
 /// its declared parameter type, so a quoted boolean throws an opaque "An error occurred invoking
 /// '&lt;tool&gt;'" before the tool method runs. This coerces such strings to the JSON type the parameter
-/// expects, guided by the tool method signatures, so it never touches a parameter that is genuinely a
-/// string. Done in the request filter (not via a JSON converter) so each tool's input schema keeps its
-/// precise <c>"type"</c>.
+/// expects, so it never touches a parameter that is genuinely a string. Done in the request filter
+/// (not via a JSON converter) so each tool's input schema keeps its precise <c>"type"</c>.
 /// </summary>
+/// <remarks>
+/// <b>Guided by each tool's input schema, not by reflecting over this assembly.</b> A server built on
+/// <see cref="MlqtMcpServerExtensions.AddMlqtMcpServer"/> registers tools of its own beside these, and
+/// the schema is the one description every registered tool has, so the host's tools are coerced as
+/// MLQT's are with nothing copied into it. The schema is what a client is told the parameter is, which
+/// is exactly what a quoted scalar has to be turned into.
+/// </remarks>
 internal static class ToolArgumentCoercion
 {
     /// <summary>The boolean- and number-typed parameter names of a single tool.</summary>
-    internal sealed record ScalarParameters(HashSet<string> Booleans, HashSet<string> Numbers);
-
-    private static readonly HashSet<Type> NumericTypes = new()
+    internal sealed record ScalarParameters(HashSet<string> Booleans, HashSet<string> Numbers)
     {
-        typeof(int), typeof(long), typeof(short), typeof(byte), typeof(sbyte),
-        typeof(uint), typeof(ulong), typeof(ushort), typeof(double), typeof(float), typeof(decimal),
-    };
+        public bool IsEmpty => Booleans.Count == 0 && Numbers.Count == 0;
+    }
+
+    // A tool's schema does not change once it is built, so it is read once per tool instance; keyed
+    // weakly, so a tool a host removes from the collection takes its entry with it.
+    private static readonly ConditionalWeakTable<McpServerTool, ScalarParameters> PerTool = new();
+
+    /// <summary>The scalar parameters of <paramref name="tool"/>, read from its input schema once.</summary>
+    public static ScalarParameters For(McpServerTool tool) =>
+        PerTool.GetValue(tool, t => ForSchema(t.ProtocolTool.InputSchema));
 
     /// <summary>
-    /// Reflect over every [McpServerTool] method in the assembly and record which of each tool's
-    /// parameters are boolean or numeric (unwrapping Nullable&lt;T&gt;). Tools with no such parameter are
-    /// omitted, so the filter can skip coercion entirely for them.
+    /// Which top-level properties of a tool's input schema are boolean, and which are integer or
+    /// number. A nullable parameter is advertised as <c>["boolean", "null"]</c>, so a type array counts
+    /// when it names the scalar.
     /// </summary>
-    public static Dictionary<string, ScalarParameters> BuildParameterMap(Assembly assembly)
+    public static ScalarParameters ForSchema(JsonElement schema)
     {
-        var map = new Dictionary<string, ScalarParameters>(StringComparer.Ordinal);
+        var booleans = new HashSet<string>(StringComparer.Ordinal);
+        var numbers = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var type in assembly.GetTypes())
+        if (schema.ValueKind == JsonValueKind.Object &&
+            schema.TryGetProperty("properties", out var properties) &&
+            properties.ValueKind == JsonValueKind.Object)
         {
-            if (type.GetCustomAttribute<McpServerToolTypeAttribute>() is null)
-                continue;
-
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+            foreach (var property in properties.EnumerateObject())
             {
-                var toolAttr = method.GetCustomAttribute<McpServerToolAttribute>();
-                if (toolAttr is null)
+                if (property.Value.ValueKind != JsonValueKind.Object ||
+                    !property.Value.TryGetProperty("type", out var type))
                     continue;
 
-                var toolName = string.IsNullOrEmpty(toolAttr.Name) ? method.Name : toolAttr.Name;
-                var booleans = new HashSet<string>(StringComparer.Ordinal);
-                var numbers = new HashSet<string>(StringComparer.Ordinal);
-
-                foreach (var p in method.GetParameters())
-                {
-                    if (p.Name is null)
-                        continue;
-                    var t = Nullable.GetUnderlyingType(p.ParameterType) ?? p.ParameterType;
-                    if (t == typeof(bool))
-                        booleans.Add(p.Name);
-                    else if (NumericTypes.Contains(t))
-                        numbers.Add(p.Name);
-                }
-
-                if (booleans.Count > 0 || numbers.Count > 0)
-                    map[toolName] = new ScalarParameters(booleans, numbers);
+                if (Names(type, "boolean"))
+                    booleans.Add(property.Name);
+                else if (Names(type, "integer") || Names(type, "number"))
+                    numbers.Add(property.Name);
             }
         }
 
-        return map;
+        return new ScalarParameters(booleans, numbers);
     }
+
+    private static bool Names(JsonElement type, string name) => type.ValueKind switch
+    {
+        JsonValueKind.String => type.ValueEquals(name),
+        JsonValueKind.Array => type.EnumerateArray().Any(t => t.ValueKind == JsonValueKind.String && t.ValueEquals(name)),
+        _ => false,
+    };
 
     /// <summary>
     /// Return an argument dictionary with any string-encoded boolean/number values (for the parameters

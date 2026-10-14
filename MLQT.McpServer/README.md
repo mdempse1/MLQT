@@ -37,7 +37,8 @@ logging on at that path, or to `off` to force it off.
 (e.g. `"standalone":"true"`, `"count":"5"`). A request filter coerces these to the JSON type the
 parameter actually declares before the argument is bound, so a quoted scalar behaves the same as the
 bare value instead of failing with an opaque "An error occurred invoking '<tool>'". The coercion is
-directed by each tool's method signature, so a parameter that is genuinely a string is never altered.
+directed by each tool's input schema, so a parameter that is genuinely a string is never altered, and a
+tool a host built on this server adds is covered as MLQT's are.
 
 ## What an agent is told
 
@@ -65,6 +66,46 @@ which every tool taking a class id goes through): nothing loaded; the id's libra
 how to load it; or the library loaded without that class, naming the deepest package of the id that
 does exist. A near match leads when there is one - the same id in another case, or classes elsewhere
 with the same last name, which is what an id missing its leading packages finds.
+
+## Building another server on this one
+
+`AddMlqtMcpServer` (`MlqtMcpServerExtensions.cs`) is the whole of MLQT's server except the process: it
+registers the services, the tools, the instructions and the coercion filter, and returns the
+`IMcpServerBuilder`. MLQT's own `Program.cs` is that call plus a stdio transport, a stderr console
+logger and the tool-usage logger. A host serving tools of its own does the same and adds them:
+
+```csharp
+builder.Services.AddSingleton<ISettingsService>(new InMemorySettings()); // before: TryAdd keeps it
+builder.Services
+    .AddMlqtMcpServer(new MlqtMcpServerOptions { ConfigureServer = o => o.ServerInstructions = MyText })
+    .WithTools<MyTools>()
+    .WithStdioServerTransport();
+```
+
+- **It sets the invariant culture**, as `AddMlqtCore` does; a host need not. It is the process-wide
+  default, so it reaches every thread of the host that sets no culture of its own - a host that
+  formats for its users sets its culture explicitly where it does.
+- **Every service is `TryAdd`ed**, so one a host registers first is kept. `HeadlessSettingsService`
+  creates and writes `%LocalAppData%/MLQT/mcp-settings.json`; a host that must write nothing there
+  registers its own `ISettingsService`.
+- **The coercion filter is the first call filter, so the outermost**: a filter the host adds after
+  sees the arguments already coerced, and the host's own tools are coerced too, from their schemas.
+- **It does not** choose a transport, add a logger, start the NLog file log, or construct a
+  `ToolUsageLogger` (which reads its marker file from MLQT's folder) unless the options pass one.
+- **Set `<ServerGarbageCollection>true</ServerGarbageCollection>` in the host's project**, as every
+  MLQT host does (B281): a check parses from every core, and under the default workstation GC it spends
+  most of its time suspended waiting for collections. `HostGarbageCollectionTests` holds MLQT's hosts
+  to it, and cannot see a host outside this repository.
+- **The instructions are MLQT's** unless `ConfigureServer` replaces them, which it runs after setting
+  them. A host whose tools differ should replace rather than append: MLQT's use 1,892 characters of
+  a 2,000-character budget, and Claude Code keeps only about the first 2,048, so appended text is
+  what gets dropped.
+
+**What a host may rely on** is `AddMlqtMcpServer`, `MlqtMcpServerOptions` and the `ToolUsageLogger`
+they name - held by `MlqtMcpServerSurfaceTests` rather than the public-API analyzer, which cannot track
+two types without listing every tool class and result type, public only because the SDK binds them -
+and the tool names, held by `ToolNamingTests`. A tool's result fields are not part of that promise; a
+host that depends on one pins it in its own tests.
 
 ## Key concepts
 
@@ -117,7 +158,8 @@ A style finding carries the severity the repository configured for its rule, as 
 
 ## Project layout
 
-- `Program.cs` — host, DI wiring (the desktop host's list, minus what needs a window), stdio MCP server.
+- `Program.cs` — the stdio host: transport, stderr logging, the tool-usage logger.
+- `MlqtMcpServerExtensions.cs` / `MlqtMcpServerOptions.cs` — `AddMlqtMcpServer`: DI wiring (the desktop host's list, minus what needs a window), tools, instructions, the coercion filter.
 - `Tools/` — one `[McpServerToolType]` class per group.
 - `Dtos/` — trimmed, serialization-friendly result types (no UI/layout fields).
 - `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, and the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`, `DiagramImage`).
@@ -125,6 +167,11 @@ A style finding carries the severity the repository configured for its rule, as 
   The check pipeline itself is **not** here: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` live in `MLQT.Services/Checking/`, shared with the CLI and the desktop app so all three report the same findings.
 - `Services/HeadlessSettingsService.cs` — JSON settings store, separate from the desktop application's.
 - `Services/SessionState.cs` — tracks whether opt-in analysis has run.
+- `Services/McpServerJson.cs` / `McpServerJsonContext.cs` — the options every tool is registered with, and the compiled JSON contracts of every record in `Dtos/`, so a client reads the same field names from an obfuscated build (B502). A new result or argument record is listed in the context; `ObfuscationReadinessTests` fails until it is.
+- `Services/ToolParameterCheck.cs` — refuses to start a server whose tool parameters have been renamed, which would otherwise bind no client's arguments.
+- `Services/ToolArgumentCoercion.cs` — turns a quoted boolean or number into the scalar a tool's input schema asks for.
+- `Services/ServerInstructions.cs`, `ToolUsageLogger.cs`, `McpHostSettings.cs` — the connect-time instructions, the opt-in usage log, and the generic host's settings.
+- `Helpers/WireNames.cs` — the text each enum in a result is sent as, spelled rather than taken from `ToString()`.
 - `dev/` — stdio test drivers (`smoke.sh`, `mcp_test.py`, `dep_test.py`, `vcs_test.py`).
 
 ## Tests
@@ -134,4 +181,11 @@ dotnet test MLQT.McpServer.Tests
 ```
 
 `MLQT.McpServer.Tests` exercises the tools against temporary Modelica libraries (real services; VCS
-tools use a mocked `IRepositoryService`).
+tools use a mocked `IRepositoryService`). Beyond the tools themselves:
+
+- `MlqtMcpServerExtensionsTests` run a real server and client over in-process pipes (`InProcessServer`):
+  the tool list, coercion of a host's own tools, filter order, instructions, `TryAdd`.
+- `MlqtMcpServerSurfaceTests` hold the surface a host built on this server is promised.
+- `ObfuscationReadinessTests` hold what an obfuscated build depends on: every record in the compiled
+  contracts with reflection's names, no anonymous object in any shipped assembly, enum text spelled,
+  `[Obfuscation]` on every tool class, and `ToolParameterCheck` refusing renamed parameters.

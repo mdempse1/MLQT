@@ -65,3 +65,7 @@ ModelicaGraph.Analysis.UnusedImportAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.UnusedMembersAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.UsesHygieneAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.WithinClauseAnalyzer.Name.get -> string!
+ModelicaGraph.ModelicaGraphJson
+static ModelicaGraph.ModelicaGraphJson.Contracts.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver!
+ModelicaGraph.StyleCheckingSettings.ToJson() -> string!
+static ModelicaGraph.StyleCheckingSettings.FromJson(string! json) -> ModelicaGraph.StyleCheckingSettings?

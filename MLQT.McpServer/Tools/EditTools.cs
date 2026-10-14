@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,6 +23,7 @@ namespace MLQT.McpServer.Tools;
 /// mlqt_rename_class is precise — it rewrites only the exact identifier tokens that resolve to the class
 /// (via the shared reference locator), not textual matches.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class EditTools
 {

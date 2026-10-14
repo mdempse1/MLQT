@@ -1,3 +1,4 @@
+using System.Reflection;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using System.ComponentModel;
@@ -18,6 +19,7 @@ namespace MLQT.McpServer.Tools;
 /// (every declaration), mlqt_get_class_documentation (prose), and mlqt_validate_class_references (undefined names).
 /// All are read-only and need only a loaded library (not mlqt_analyze_dependencies).
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class ViewTools
 {
@@ -189,7 +191,7 @@ public sealed class ViewTools
     }
 
     private static ClassElementView ToElementView(ResolvedElement m) => new(
-        m.Element.Kind.ToString().ToLowerInvariant(),
+        WireNames.Of(m.Element.Kind).ToLowerInvariant(),
         m.Element.Name,
         m.Element.Type,
         m.Element.Variability,

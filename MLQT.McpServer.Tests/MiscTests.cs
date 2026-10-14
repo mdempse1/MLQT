@@ -13,8 +13,8 @@ public class GuidanceToolsTests
         var tool = new GuidanceTools();
         var result = tool.GetGuidance();
         Assert.IsNotType<ToolError>(result);
-        Assert.Equal("overview", Prop(result, "topic"));
-        Assert.Contains("Load first", (string)Prop(result, "guidance")!);
+        Assert.Equal("overview", Assert.IsType<GuidanceResult>(result).Topic);
+        Assert.Contains("Load first", Assert.IsType<GuidanceResult>(result).Guidance);
     }
 
     public static TheoryData<string> AllTopics()
@@ -35,8 +35,8 @@ public class GuidanceToolsTests
     {
         var result = new GuidanceTools().GetGuidance(topic);
         Assert.IsNotType<ToolError>(result);
-        Assert.Equal(topic, Prop(result, "topic"));
-        Assert.NotEmpty((string)Prop(result, "guidance")!);
+        Assert.Equal(topic, Assert.IsType<GuidanceResult>(result).Topic);
+        Assert.NotEmpty(Assert.IsType<GuidanceResult>(result).Guidance);
     }
 
     [Fact]
@@ -63,14 +63,12 @@ public class GuidanceToolsTests
         // mlqt_list_findings page may be. Written out in prose, they go stale the moment either constant
         // moves — and a wrong number here is worse than none, because an agent that trusts it stops
         // paging early and reports a total it never read.
-        var style = (string)Prop(new GuidanceTools().GetGuidance("style"), "guidance")!;
-        var workflows = (string)Prop(new GuidanceTools().GetGuidance("workflows"), "guidance")!;
+        var style = Assert.IsType<GuidanceResult>(new GuidanceTools().GetGuidance("style")).Guidance;
+        var workflows = Assert.IsType<GuidanceResult>(new GuidanceTools().GetGuidance("workflows")).Guidance;
 
         Assert.Contains(StyleTools.MaxFindingLimit.ToString(), style);
         Assert.Contains(StyleTools.MaxReturnedFindings.ToString(), workflows);
     }
-
-    private static object? Prop(object o, string name) => o.GetType().GetProperty(name)!.GetValue(o);
 }
 
 public class HeadlessSettingsServiceTests
@@ -235,14 +233,12 @@ public class SessionStateAndServerInfoTests
         var info = new ServerInfoTools(host.Libraries);
 
         var before = info.GetServerInfo();
-        Assert.Equal(0, Prop(before, "librariesLoaded"));
+        Assert.Equal(0, Assert.IsType<ServerInfoResult>(before).LibrariesLoaded);
 
         host.Libraries.AddLibraryFromFileAsync(
             host.WriteMoFile("X.mo", "model X\n Real a;\nequation\n a=1;\nend X;")).GetAwaiter().GetResult();
 
         var after = info.GetServerInfo();
-        Assert.Equal(1, Prop(after, "librariesLoaded"));
+        Assert.Equal(1, Assert.IsType<ServerInfoResult>(after).LibrariesLoaded);
     }
-
-    private static object? Prop(object o, string name) => o.GetType().GetProperty(name)!.GetValue(o);
 }

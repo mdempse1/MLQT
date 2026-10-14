@@ -13,3 +13,12 @@ ModelicaParser.Comparison.CosmeticCategory.Documentation = 1 -> ModelicaParser.C
 ModelicaParser.Comparison.CosmeticCategory.Graphics = 0 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Tooling = 3 -> ModelicaParser.Comparison.CosmeticCategory
 static ModelicaParser.Comparison.SimulationAnnotations.CategoryOf(string! name) -> ModelicaParser.Comparison.CosmeticCategory?
+ModelicaParser.DataTypes.RuleSeverityText
+static ModelicaParser.DataTypes.RuleSeverityText.Of(ModelicaParser.DataTypes.RuleSeverity severity) -> string!
+static ModelicaParser.DataTypes.RuleSeverityText.TryParse(string? text, out ModelicaParser.DataTypes.RuleSeverity severity) -> bool
+ModelicaParser.DataTypes.RuleSeverityJsonConverter
+ModelicaParser.DataTypes.RuleSeverityJsonConverter.RuleSeverityJsonConverter() -> void
+override ModelicaParser.DataTypes.RuleSeverityJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> ModelicaParser.DataTypes.RuleSeverity
+override ModelicaParser.DataTypes.RuleSeverityJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, ModelicaParser.DataTypes.RuleSeverity value, System.Text.Json.JsonSerializerOptions! options) -> void
+override ModelicaParser.DataTypes.RuleSeverityJsonConverter.ReadAsPropertyName(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> ModelicaParser.DataTypes.RuleSeverity
+override ModelicaParser.DataTypes.RuleSeverityJsonConverter.WriteAsPropertyName(System.Text.Json.Utf8JsonWriter! writer, ModelicaParser.DataTypes.RuleSeverity value, System.Text.Json.JsonSerializerOptions! options) -> void

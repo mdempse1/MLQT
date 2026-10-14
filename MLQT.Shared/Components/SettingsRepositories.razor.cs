@@ -442,7 +442,7 @@ public partial class SettingsRepositories : IDisposable
         IsReferenceOnly = repository.IsReferenceOnly,
         StyleSettings = repository.StyleSettings is null
             ? null
-            : JsonSerializer.Deserialize<StyleCheckingSettings>(JsonSerializer.Serialize(repository.StyleSettings)),
+            : StyleCheckingSettings.FromJson(repository.StyleSettings.ToJson()),
     };
 
     /// <summary>
