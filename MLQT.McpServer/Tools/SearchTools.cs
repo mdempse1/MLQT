@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaGraph.Analysis;
@@ -16,6 +17,7 @@ namespace MLQT.McpServer.Tools;
 /// or by interface shape (class kind, parameter/connector counts, simulatability). Both scan the loaded
 /// libraries; results are capped by 'limit'.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class SearchTools
 {

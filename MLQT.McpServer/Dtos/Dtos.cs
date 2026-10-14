@@ -141,3 +141,15 @@ public sealed record PackageTreeNode(
 /// (e.g. no library loaded, class id not found). Tools return this instead of throwing so the
 /// consuming agent gets an actionable message rather than a transport-level error.</summary>
 public sealed record ToolError(string Error);
+
+/// <summary>What <c>mlqt_server_info</c> returns.</summary>
+public sealed record ServerInfoResult(string Server, int LibrariesLoaded, IReadOnlyList<string> LibraryNames);
+
+/// <summary>What <c>mlqt_unload_library</c> returns.</summary>
+public sealed record UnloadLibraryResult(bool Success, string UnloadedLibraryId, string Name);
+
+/// <summary>What <c>mlqt_find_resource_usages</c> returns: the classes referencing one resource.</summary>
+public sealed record ResourceUsagesResult(string ResolvedFilePath, bool ResourcesAnalyzed, int Count, IReadOnlyList<string> Models);
+
+/// <summary>What <c>mlqt_get_guidance</c> returns.</summary>
+public sealed record GuidanceResult(string Topic, string Guidance, IReadOnlyList<string> AvailableTopics);

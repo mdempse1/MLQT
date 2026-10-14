@@ -83,7 +83,7 @@ public static class MlqtMcpServerExtensions
                 o.ServerInstructions = ServerInstructions.Text;
                 configureServer?.Invoke(o);
             })
-            .WithToolsFromAssembly(typeof(ViewTools).Assembly)
+            .WithToolsFromAssembly(typeof(ViewTools).Assembly, McpServerJson.Options)
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 var toolName = context.Params?.Name ?? "(unknown)";

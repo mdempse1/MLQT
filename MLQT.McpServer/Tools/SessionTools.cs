@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
@@ -17,6 +18,7 @@ namespace MLQT.McpServer.Tools;
 /// in-memory graph, enumerate what is loaded, reload from disk, and unload. Almost every other tool
 /// requires a library to be loaded first, so these are the entry point.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class SessionTools
 {
@@ -85,7 +87,7 @@ public sealed class SessionTools
         }
 
         return new LoadRepositoryResult(
-            true, repo.Id, repo.Name, repo.VcsType.ToString(), null,
+            true, repo.Id, repo.Name, WireNames.Of(repo.VcsType), null,
             discovered, loaded, warnings);
     }
 
@@ -232,7 +234,7 @@ public sealed class SessionTools
                 "current branch and revision.")]
     public IReadOnlyList<RepositorySummary> ListRepositories()
         => _repositories.Repositories.Select(r => new RepositorySummary(
-            r.Id, r.Name, r.VcsType.ToString(), r.LocalPath, r.VcsRootPath,
+            r.Id, r.Name, WireNames.Of(r.VcsType), r.LocalPath, r.VcsRootPath,
             r.CurrentBranch, r.CurrentRevision, r.IsLoaded, r.LibraryIds.Count)).ToList();
 
     [McpServerTool(Name = "mlqt_discover_libraries")]
@@ -268,7 +270,7 @@ public sealed class SessionTools
             return error;
 
         _libraries.RemoveLibrary(match!.Id);
-        return new { success = true, unloadedLibraryId = match.Id, name = match.Name };
+        return new UnloadLibraryResult(true, match.Id, match.Name);
     }
 
     [McpServerTool(Name = "mlqt_reload")]
@@ -386,9 +388,9 @@ public sealed class SessionTools
         "impact or external-resource tools.";
 
     private LibrarySummary ToSummary(LoadedLibrary l) => new(
-        l.Id, l.Name, l.SourceType.ToString(), l.SourcePath,
+        l.Id, l.Name, WireNames.Of(l.SourceType), l.SourcePath,
         l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision,
-        DeclaredDependencies(l), l.Version, l.ReadOnlySource?.ToString());
+        DeclaredDependencies(l), l.Version, l.ReadOnlySource is { } readOnlySource ? WireNames.Of(readOnlySource) : null);
 
     // The library's declared dependencies (its top-level package's `uses(...)` annotation), so the caller
     // knows what else to load — most importantly the Modelica Standard Library, at the right version.

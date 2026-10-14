@@ -170,8 +170,9 @@ public class SessionAndClassToolsTests
         var err = ToolAssert.Error(session.UnloadLibrary("nope"));
         Assert.Contains("TestLib", err.Error); // error lists the loaded libraries to choose from
 
-        var ok = session.UnloadLibrary(libId);
-        Assert.IsNotType<ToolError>(ok);
+        var ok = ToolAssert.Ok<UnloadLibraryResult>(session.UnloadLibrary(libId));
+        Assert.True(ok.Success);
+        Assert.Equal(libId, ok.UnloadedLibraryId);
         Assert.Empty(session.ListLibraries());
     }
 
@@ -181,8 +182,8 @@ public class SessionAndClassToolsTests
         using var host = new TestHost();
         LoadPackage(host, out var session);
 
-        var ok = session.UnloadLibrary("TestLib"); // by name, not the GUID id
-        Assert.IsNotType<ToolError>(ok);
+        var ok = ToolAssert.Ok<UnloadLibraryResult>(session.UnloadLibrary("TestLib")); // by name, not the GUID id
+        Assert.Equal("TestLib", ok.Name);
         Assert.Empty(session.ListLibraries());
     }
 

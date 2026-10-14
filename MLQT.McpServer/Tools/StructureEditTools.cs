@@ -1,3 +1,4 @@
+using System.Reflection;
 using ModelicaGraph.Analysis;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
@@ -17,6 +18,7 @@ namespace MLQT.McpServer.Tools;
 /// can build up a model incrementally without re-sending the whole class. Each edit is validated,
 /// parse-checked with rollback, refuses read-only files, and refreshes dependencies. All support preview.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class StructureEditTools
 {

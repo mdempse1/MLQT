@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaGraph;
@@ -17,6 +18,7 @@ namespace MLQT.McpServer.Tools;
 /// mlqt_format_class formats the file containing a loaded class and, unless preview is set, writes the
 /// updated file to disk and refreshes the in-memory graph.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class FormattingTools
 {

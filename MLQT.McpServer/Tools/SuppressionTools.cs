@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaParser.Helpers;
@@ -16,6 +17,7 @@ namespace MLQT.McpServer.Tools;
 /// waiver stays put and is honoured by <c>mlqt check</c> and the desktop app everywhere findings are
 /// produced. Every write is parse-checked with rollback and refuses read-only files.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class SuppressionTools
 {

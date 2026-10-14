@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
@@ -9,6 +10,7 @@ namespace MLQT.McpServer.Tools;
 /// On-demand guidance for using this server effectively. Keeps per-tool descriptions short while
 /// giving an agent a place to learn the intended sequencing and workflows.
 /// </summary>
+[Obfuscation]
 [McpServerToolType]
 public sealed class GuidanceTools
 {
@@ -489,6 +491,6 @@ public sealed class GuidanceTools
             return new ToolError($"Unknown topic '{topic}'. Available topics: {string.Join(", ", Topics)}.");
 
         // Unwrapped: the text is hard-wrapped for the source file, and a wrap means nothing to an agent.
-        return new { topic = key.ToLowerInvariant(), guidance = Prose.Unwrap(text), availableTopics = Topics };
+        return new GuidanceResult(key.ToLowerInvariant(), Prose.Unwrap(text), Topics);
     }
 }
