@@ -90,6 +90,10 @@ builder.Services
   sees the arguments already coerced, and the host's own tools are coerced too, from their schemas.
 - **It does not** choose a transport, add a logger, start the NLog file log, or construct a
   `ToolUsageLogger` (which reads its marker file from MLQT's folder) unless the options pass one.
+- **Set `<ServerGarbageCollection>true</ServerGarbageCollection>` in the host's project**, as every
+  MLQT host does (B281): a check parses from every core, and under the default workstation GC it spends
+  most of its time suspended waiting for collections. `HostGarbageCollectionTests` holds MLQT's hosts
+  to it, and cannot see a host outside this repository.
 - **The instructions are MLQT's** unless `ConfigureServer` replaces them, which it runs after setting
   them. A host whose tools differ should replace rather than append: MLQT's use 1,892 of the roughly
   2,000 characters Claude Code keeps, so appended text is what gets dropped.

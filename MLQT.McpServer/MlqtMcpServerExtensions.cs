@@ -19,8 +19,9 @@ namespace MLQT.McpServer;
 /// <para><b>This and <see cref="MlqtMcpServerOptions"/> are the supported surface</b> of this assembly
 /// for a host built on it, with the tool names, which <c>ToolNamingTests</c> holds. The tool classes and
 /// their result types are public because the SDK needs them to be, not as a promise.
-/// <c>MlqtMcpServerSurfaceTests</c> holds the two types' members, in place of the public-API analyzer,
-/// which cannot track two types of an assembly without listing every other.</para>
+/// <c>MlqtMcpServerSurfaceTests</c> holds their members and those of the <see cref="ToolUsageLogger"/>
+/// the options name, in place of the public-API analyzer, which cannot track a few types of an assembly
+/// without listing every other.</para>
 /// <para><b>What it deliberately leaves to the host</b>: the transport, logging providers, the NLog file
 /// log (MLQT's server never starts it), and the <see cref="ToolUsageLogger"/>, which reads a marker file
 /// from MLQT's folder when it is constructed.</para>
