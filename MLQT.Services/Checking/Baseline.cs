@@ -236,7 +236,7 @@ public sealed class Baseline
     // committed baseline keeps working untouched, it just cannot report rule drift.
     private const int CurrentVersion = 3;
 
-    private sealed record BaselineFile(
+    internal sealed record BaselineFile(
         int Version,
         IReadOnlyList<BaselineEntry> Findings,
         DateTime? CreatedUtc = null,
@@ -250,7 +250,9 @@ public sealed class Baseline
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Compiled in, so an obfuscated build writes the names every other build reads (B502).
+        TypeInfoResolver = MlqtServicesJsonContext.Default,
     };
 
     public static Baseline Load(string path)

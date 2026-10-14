@@ -46,6 +46,7 @@
   <ItemGroup>
     <!-- Linked, not copied: the platform-rooted-path rule has one implementation. See its remarks. -->
     <Compile Include="../TestSupport/TestPaths.cs" Link="TestSupport/TestPaths.cs" />
+    <Compile Include="../TestSupport/JsonContractAssert.cs" Link="TestSupport/JsonContractAssert.cs" />
 
     <!-- MLQT.McpTester has no test project of its own and is deliberately standalone, so a
          ProjectReference would point the wrong way and drag a Photino window app into a headless

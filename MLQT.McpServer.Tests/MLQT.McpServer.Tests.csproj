@@ -45,6 +45,7 @@
          stored objects by reference, which is B205. -->
     <Compile Include="../TestSupport/InMemorySettingsService.cs" Link="TestSupport/InMemorySettingsService.cs" />
     <Compile Include="../TestSupport/SettingsServiceContract.cs" Link="TestSupport/SettingsServiceContract.cs" />
+    <Compile Include="../TestSupport/JsonContractAssert.cs" Link="TestSupport/JsonContractAssert.cs" />
 
     <!-- Project-wide, so the double keeps the name every existing test already calls it by. -->
     <Using Include="MLQT.TestSupport" />

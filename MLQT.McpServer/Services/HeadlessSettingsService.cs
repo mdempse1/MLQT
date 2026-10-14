@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using MLQT.Services;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.McpServer.Services;
@@ -43,7 +44,7 @@ public sealed class HeadlessSettingsService : ISettingsService
             if (!_values.TryGetValue(key, out var json) || string.IsNullOrEmpty(json))
                 return Task.FromResult(defaultValue);
 
-            var result = JsonSerializer.Deserialize<T>(json);
+            var result = JsonSerializer.Deserialize<T>(json, MlqtServicesJson.SettingValues);
             return Task.FromResult(result ?? defaultValue);
         }
         catch
@@ -56,7 +57,7 @@ public sealed class HeadlessSettingsService : ISettingsService
     /// <inheritdoc/>
     public Task SetAsync<T>(string key, T value)
     {
-        _values[key] = JsonSerializer.Serialize(value);
+        _values[key] = JsonSerializer.Serialize(value, MlqtServicesJson.SettingValues);
         Save();
         return Task.CompletedTask;
     }

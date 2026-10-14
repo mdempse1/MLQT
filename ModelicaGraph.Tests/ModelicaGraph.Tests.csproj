@@ -44,5 +44,6 @@
   <ItemGroup>
     <!-- Linked, not copied: the platform-rooted-path rule has one implementation. See its remarks. -->
     <Compile Include="../TestSupport/TestPaths.cs" Link="TestSupport/TestPaths.cs" />
+    <Compile Include="../TestSupport/JsonContractAssert.cs" Link="TestSupport/JsonContractAssert.cs" />
   </ItemGroup>
 </Project>

@@ -300,7 +300,7 @@ public class RepositoryService : IRepositoryService
             {
                 try
                 {
-                    var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(File.ReadAllText(settingsPath));
+                    var settings = StyleCheckingSettings.FromJson(File.ReadAllText(settingsPath));
                     repository.StyleSettings = settings;
                 }
                 catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or JsonException)
@@ -847,11 +847,9 @@ public class RepositoryService : IRepositoryService
         await SaveRepositorySettingsAsync();
     }
 
-    private static readonly JsonSerializerOptions SettingsJsonOptions = new() { WriteIndented = true, NewLine = "\n" };
-
     /// <summary>The settings as they are compared against <see cref="Repository.SettingsOnDisk"/>.</summary>
     private static string SerializeSettings(StyleCheckingSettings? settings)
-        => JsonSerializer.Serialize(settings, SettingsJsonOptions);
+        => settings?.ToJson() ?? "null";
 
     /// <summary>
     /// Whether the existing settings file at <paramref name="settingsPath"/> can be written, found
