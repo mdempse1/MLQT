@@ -10,13 +10,7 @@ namespace MLQT.Services;
 /// </summary>
 public static class LoggingService
 {
-    private static readonly Logger _logger;
     private static bool _isInitialized = false;
-
-    static LoggingService()
-    {
-        _logger = LogManager.GetCurrentClassLogger();
-    }
 
     /// <summary>
     /// Initializes the logging configuration.

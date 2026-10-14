@@ -47,8 +47,11 @@ public abstract class ModelCheckingServiceBase<TSession> : IModelCheckingService
     /// <summary>The session the last command went to, or null when there is none to ask.</summary>
     private protected TSession? Session { get; set; }
 
-    /// <summary>What log entries are filed under: the concrete service's name.</summary>
-    private protected string LogSource => GetType().Name;
+    /// <summary>
+    /// What log entries are filed under: the concrete service's name, spelled from the tool's rather
+    /// than read from the type, which an obfuscated build renames (B502).
+    /// </summary>
+    private protected string LogSource => ToolName + "CheckingService";
 
     private protected ModelCheckingServiceBase()
     {
