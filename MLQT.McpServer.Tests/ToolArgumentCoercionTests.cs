@@ -1,4 +1,7 @@
+using System.Reflection;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Server;
 using MLQT.McpServer.Services;
 using MLQT.McpServer.Tools;
 
@@ -71,16 +74,81 @@ public class ToolArgumentCoercionTests
     }
 
     [Fact]
-    public void BuildParameterMap_DiscoversBooleanParameters()
+    public void ForSchema_ReadsBooleansAndNumbers()
     {
-        var map = ToolArgumentCoercion.BuildParameterMap(typeof(EditTools).Assembly);
+        var schema = JsonDocument.Parse("""
+            {"type":"object","properties":{
+              "flag":{"type":"boolean","default":false},
+              "maybe":{"type":["boolean","null"]},
+              "count":{"type":"integer"},
+              "scale":{"type":["number","null"]},
+              "name":{"type":"string"},
+              "untyped":{}
+            }}
+            """).RootElement;
 
-        Assert.True(map.TryGetValue("mlqt_create_class", out var createClass));
-        Assert.Contains("standalone", createClass!.Booleans);
-        Assert.Contains("preview", createClass.Booleans);
+        var scalars = ToolArgumentCoercion.ForSchema(schema);
 
-        // A tool with no scalar parameters should not appear in the map.
-        Assert.True(map.TryGetValue("mlqt_add_component", out var addComponent));
-        Assert.Contains("preview", addComponent!.Booleans);
+        Assert.Equal(["flag", "maybe"], scalars.Booleans.Order(StringComparer.Ordinal));
+        Assert.Equal(["count", "scale"], scalars.Numbers.Order(StringComparer.Ordinal));
     }
+
+    [Fact]
+    public void ForSchema_WithoutPropertiesIsEmpty()
+    {
+        Assert.True(ToolArgumentCoercion.ForSchema(JsonDocument.Parse("""{"type":"object"}""").RootElement).IsEmpty);
+        Assert.True(ToolArgumentCoercion.ForSchema(JsonDocument.Parse("true").RootElement).IsEmpty);
+    }
+
+    /// <summary>
+    /// The schema is what the coercion reads now, where it once reflected over the tool methods. For
+    /// every MLQT tool the two must name the same parameters, or moving to the schema lost a coercion -
+    /// a quoted scalar the server used to accept and now refuses with an opaque error.
+    /// </summary>
+    [Fact]
+    public void ForSchema_AgreesWithEveryToolsSignature()
+    {
+        using var provider = new ServiceCollection().AddMlqtMcpServer().Services.BuildServiceProvider();
+        var tools = provider.GetServices<McpServerTool>().ToDictionary(t => t.ProtocolTool.Name, StringComparer.Ordinal);
+        var methods = typeof(EditTools).Assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+            .Select(m => (Method: m, Name: m.GetCustomAttribute<McpServerToolAttribute>()?.Name))
+            .Where(m => m.Name is not null)
+            .ToList();
+
+        Assert.Equal(methods.Count, tools.Count);
+        Assert.Contains(methods, m => m.Name == "mlqt_create_class"); // the query found the tools
+
+        foreach (var (method, name) in methods)
+        {
+            var scalars = ToolArgumentCoercion.For(tools[name!]);
+            var parameters = method.GetParameters()
+                .Select(p => (p.Name!, Type: Nullable.GetUnderlyingType(p.ParameterType) ?? p.ParameterType))
+                .ToList();
+
+            Assert.Equal(
+                parameters.Where(p => p.Type == typeof(bool)).Select(p => p.Item1).Order(StringComparer.Ordinal),
+                scalars.Booleans.Order(StringComparer.Ordinal));
+            Assert.Equal(
+                parameters.Where(p => NumericTypes.Contains(p.Type)).Select(p => p.Item1).Order(StringComparer.Ordinal),
+                scalars.Numbers.Order(StringComparer.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void For_ReadsEachToolOnce()
+    {
+        using var provider = new ServiceCollection().AddMlqtMcpServer().Services.BuildServiceProvider();
+        var tool = provider.GetServices<McpServerTool>().First(t => t.ProtocolTool.Name == "mlqt_create_class");
+
+        Assert.Same(ToolArgumentCoercion.For(tool), ToolArgumentCoercion.For(tool));
+        Assert.Contains("standalone", ToolArgumentCoercion.For(tool).Booleans);
+    }
+
+    private static readonly HashSet<Type> NumericTypes =
+    [
+        typeof(int), typeof(long), typeof(short), typeof(byte), typeof(sbyte),
+        typeof(uint), typeof(ulong), typeof(ushort), typeof(double), typeof(float), typeof(decimal),
+    ];
 }
