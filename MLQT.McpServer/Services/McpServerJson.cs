@@ -15,8 +15,8 @@ namespace MLQT.McpServer.Services;
 /// takes them from the record's members, which an obfuscated build renames. The source generator
 /// writes them into the assembly when it is built, before any obfuscator runs (B502). The SDK's
 /// resolver comes after this one, for its own protocol types.</para>
-/// <para><b>Every type in <c>Dtos/</c> must be listed below</b>, and <c>McpServerJsonTests</c> fails for
-/// one that is not - otherwise it would quietly go to the SDK's resolver, which reflects. A tool returns
+/// <para><b>Every type in <c>Dtos/</c> must be listed below</b>, and <c>ObfuscationReadinessTests</c> fails
+/// for one that is not - otherwise it would quietly go to the SDK's resolver, which reflects. A tool returns
 /// <c>object</c>, so the compiler cannot see which types reach the wire; a tool must return one of these
 /// records, never an anonymous object, which a test also holds.</para>
 /// </remarks>

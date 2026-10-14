@@ -11,8 +11,8 @@ namespace MLQT.McpServer.Helpers;
 /// <remarks>
 /// <b>Written down, never <c>ToString()</c></b>: these strings are part of what a client reads, and an
 /// obfuscated build renames enum members, so <c>ToString()</c> would send whatever the obfuscator chose
-/// (B502). Each is the member's own name, which <c>WireNamesTests</c> holds for every member of every
-/// enum here, so a member added without its line here fails a test instead of reaching a client as a
+/// (B502). Each is the member's own name, which <c>ObfuscationReadinessTests</c> holds for every member
+/// of every enum here, so a member added without its line here fails a test instead of reaching a client as a
 /// number.
 /// </remarks>
 internal static class WireNames

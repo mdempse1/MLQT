@@ -12,18 +12,42 @@ Usage:
 """
 import base64, hashlib, json, os, re, shutil, subprocess, sys, tempfile, threading, time
 
-TIME_KEY = re.compile(r"(?i)(elapsed|duration|Ms$|seconds$)")
+# Case matters for the suffixes: "items" ends in "ms" too, and must be compared, not masked.
+TIME_KEY = re.compile(r"(?i:elapsed|duration)|Ms$|Seconds$")
 GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
-PICTURED = """model Pictured "Has a diagram to draw"
-  Real x "A value" annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
-equation
-  x = 1;
-  annotation (Diagram(graphics={Rectangle(extent={{-50,-40},{50,40}}, lineColor={0,0,255}),
-    Text(extent={{-40,30},{40,10}}, textString="pictured")}));
+PICTURED = """package Pictured "Things with diagrams to draw"
+  connector Pin "A pin"
+    Real v;
+    flow Real i;
+    annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}}, fillColor={0,0,255},
+      fillPattern=FillPattern.Solid)}), Diagram(graphics={Rectangle(extent={{-40,-40},{40,40}},
+      fillColor={0,0,255}, fillPattern=FillPattern.Solid)}));
+  end Pin;
+
+  model Part "Two pins"
+    Pin p annotation (Placement(transformation(extent={{-110,-10},{-90,10}})));
+    Pin n annotation (Placement(transformation(extent={{90,-10},{110,10}})));
+  equation
+    p.i + n.i = 0;
+    annotation (Icon(graphics={Rectangle(extent={{-90,-40},{90,40}}, lineColor={0,0,0}),
+      Text(extent={{-80,30},{80,-30}}, textString="%name")}));
+  end Part;
+
+  model Wired "Two parts in a row"
+    Part a annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
+    Part b annotation (Placement(transformation(extent={{40,-10},{60,10}})));
+    Part c annotation (Placement(transformation(extent={{-10,-60},{10,-40}})));
+  equation
+    connect(a.n, b.p) annotation (Line(points={{-40,0},{40,0}}, color={0,0,255}));
+    annotation (Diagram(graphics={Text(extent={{-40,40},{40,20}}, textString="wired")}));
+  end Wired;
 end Pictured;
 """
+
+# Tools the session calls outside the lists in session(), by name.
+CALLED = {"mlqt_get_changed_classes", "mlqt_analyze_change_impact", "mlqt_unload_library"}
 
 MISSPELLED = """model P "A model"
   Real q "The postion of q";
@@ -176,10 +200,75 @@ def session(exe, fixture, out):
             ("find_usages", "mlqt_find_usages", {"classId": "Smoke.Fraction"}),
             # SkiaSharp's native rasteriser.
             ("load_pictured", "mlqt_load_library", {"path": pictured}),
-            ("diagram_image", "mlqt_get_diagram_image", {"classId": "Pictured", "width": 400}),
-            ("unload", "mlqt_unload_library", {"library": "Smoke"}),
+            ("diagram_image", "mlqt_get_diagram_image", {"classId": "Pictured.Wired", "width": 400}),
+        ]
+        # Every other tool once, so each one's own code has run under protection: the edits as
+        # previews, which run the edit in full and write nothing, then a few real writes and a reload.
+        calls += [
+            ("class_source", "mlqt_get_class_source", {"classId": "Smoke.Described", "includeAnnotations": True}),
+            ("search_classes", "mlqt_search_classes", {"query": "Described"}),
+            ("package_tree", "mlqt_get_package_tree", {"rootClassId": "Smoke", "maxDepth": 2}),
+            ("dependencies", "mlqt_get_dependencies", {"classId": "Smoke.UsesTheAlias"}),
+            ("impact", "mlqt_analyze_impact", {"classIds": ["Smoke.Fraction"]}),
+            ("diagram_layout", "mlqt_get_diagram_layout", {"classId": "Pictured.Wired"}),
+            ("list_connections", "mlqt_list_connections", {"classId": "Pictured.Wired"}),
+            ("class_elements", "mlqt_list_class_elements", {"classId": "Smoke.Undescribed", "includeProtected": True}),
+            ("class_documentation", "mlqt_get_class_documentation", {"classId": "Smoke.Described"}),
+            ("search_text", "mlqt_search_text", {"query": "imperfect"}),
+            ("search_by_interface", "mlqt_search_by_interface", {"classType": "model", "minParameters": 1}),
+            ("class_resources", "mlqt_get_class_resources", {"classId": "Smoke.Described"}),
+            ("resource_usages", "mlqt_find_resource_usages", {"resolvedFilePath": os.path.join(root, "none.txt")}),
+            ("resource_warnings", "mlqt_get_resource_warnings", {}),
+            ("discover_libraries", "mlqt_discover_libraries", {"repositoryId": "<from load_repository>"}),
+            ("format_code", "mlqt_format_code", {"source": 'model M "d"\n  Real   y=2   "yy";\nequation\n y=1;\nend M;'}),
+            ("format_class", "mlqt_format_class", {"classId": "Smoke.Undescribed", "declarationOrder": True, "preview": True}),
+            ("check_style", "mlqt_check_style",
+             {"source": MISSPELLED, "settings": {"spellCheckDescription": True, "classHasDescription": True}}),
+            ("check_class", "mlqt_check_class", {"classId": "Smoke.Undescribed", "settings": {"parameterHasDescription": True}}),
+            ("set_placement", "mlqt_set_component_placement",
+             {"classId": "Pictured.Wired", "componentName": "c", "x1": -10, "y1": -80, "x2": 10, "y2": -60, "preview": True}),
+            ("set_class_description", "mlqt_set_class_description",
+             {"classId": "Smoke.Undescribed", "description": "Now described", "preview": True}),
+            ("set_component_description", "mlqt_set_component_description",
+             {"classId": "Smoke.Undescribed", "componentName": "gain", "description": "The gain", "preview": True}),
+            ("set_class_documentation", "mlqt_set_class_documentation",
+             {"classId": "Smoke.Described", "info": "<html><p>Info</p></html>", "preview": True}),
+            ("update_class_source", "mlqt_update_class_source",
+             {"classId": "Smoke.Undescribed", "preview": True,
+              "newSource": 'model Undescribed "x"\n  parameter Real gain = 2;\n  Real state;\nend Undescribed;'}),
+            ("create_class", "mlqt_create_class", {"parentId": "Smoke", "source": 'model Added "A new one"\nend Added;', "preview": True}),
+            ("delete_class", "mlqt_delete_class", {"classId": "Smoke.UsesTheAlias", "preview": True}),
+            ("move_class", "mlqt_move_class", {"classId": "Smoke.Fraction", "newParentId": "Pictured", "preview": True}),
+            ("rename_class", "mlqt_rename_class", {"classId": "Smoke.Fraction", "newName": "Ratio", "preview": True}),
+            ("correct_spelling", "mlqt_correct_spelling",
+             {"classId": "Smoke.Described", "oldWord": "thing", "newWord": "item", "preview": True}),
+            ("add_component", "mlqt_add_component", {"classId": "Smoke.Undescribed", "type": "Real", "name": "extra", "preview": True}),
+            ("remove_component", "mlqt_remove_component", {"classId": "Smoke.Undescribed", "name": "state", "preview": True}),
+            ("set_modifier", "mlqt_set_component_modifier", {"classId": "Smoke.Undescribed", "name": "gain", "modifier": "= 3", "preview": True}),
+            ("add_extends", "mlqt_add_extends", {"classId": "Smoke.UsesTheAlias", "baseType": "Smoke.Undescribed", "preview": True}),
+            ("add_import", "mlqt_add_import", {"classId": "Smoke.Described", "import": "Modelica.Units.SI", "preview": True}),
+            ("add_equation", "mlqt_add_equation", {"classId": "Smoke.Undescribed", "equation": "state = gain", "preview": True}),
+            ("add_statement", "mlqt_add_statement", {"classId": "Smoke.Undescribed", "statement": "state := gain;", "preview": True}),
+            ("add_connection", "mlqt_add_connection", {"classId": "Pictured.Wired", "portA": "c.p", "portB": "a.p", "preview": True}),
+            ("remove_connection", "mlqt_remove_connection", {"classId": "Pictured.Wired", "portA": "a.n", "portB": "b.p", "preview": True}),
+            ("batch_edit", "mlqt_batch_edit", {"preview": True, "operations": [
+                {"op": "add_component", "classId": "Smoke.Undescribed", "type": "Real", "name": "y"},
+                {"op": "add_equation", "classId": "Smoke.Undescribed", "equation": "y = state"}]}),
+            ("suppress_rule", "mlqt_suppress_rule",
+             {"classId": "Smoke.Undescribed", "ruleId": "MLQT.Doc.ClassDescription", "reason": "check", "preview": True}),
+            ("accept_spelling", "mlqt_accept_spelling_in_class", {"classId": "Smoke.Described", "word": "Thingy", "preview": True}),
+            # Real writes, through the file persistence and encoding code, then a reload from disk.
+            ("write_description", "mlqt_set_class_description", {"classId": "Smoke.Undescribed", "description": "Now described"}),
+            ("write_suppression", "mlqt_suppress_rule",
+             {"classId": "Smoke.Undescribed", "ruleId": "MLQT.Doc.ParameterDescription", "reason": "check"}),
+            ("reload", "mlqt_reload", {}),
+            ("class_source_after_writes", "mlqt_get_class_source", {"classId": "Smoke.Undescribed"}),
         ]
         for label, tool, arguments in calls:
+            if "<from load_repository>" in arguments.values():
+                loaded = (transcript["load_repository"].get("content") or [{}])[0]
+                found = loaded.get("repositoryId") if isinstance(loaded, dict) else None
+                arguments = {k: (found or "") if v == "<from load_repository>" else v for k, v in arguments.items()}
             started = time.monotonic()
             answer = server.request("tools/call", {"name": tool, "arguments": arguments})
             timings[label] = round((time.monotonic() - started) * 1000)
@@ -197,6 +286,16 @@ def session(exe, fixture, out):
         transcript["changed_classes"] = content_of(server.request(
             "tools/call", {"name": "mlqt_get_changed_classes", "arguments": {"repositoryId": repository_id}})) \
             if repository_id else {"skipped": "load_repository returned no repositoryId"}
+        # The reload above reset the opt-in analysis, which the impact question needs.
+        transcript["reanalyze"] = content_of(server.request(
+            "tools/call", {"name": "mlqt_analyze_dependencies", "arguments": {}}))
+        transcript["change_impact"] = content_of(server.request(
+            "tools/call", {"name": "mlqt_analyze_change_impact", "arguments": {"repositoryId": repository_id}})) \
+            if repository_id else {"skipped": "load_repository returned no repositoryId"}
+        transcript["unload"] = content_of(server.request(
+            "tools/call", {"name": "mlqt_unload_library", "arguments": {"library": "Smoke"}}))
+        # Every tool was called, or the session no longer proves what it claims to.
+        transcript["toolsNotCalled"] = sorted(set(transcript["tools"]) - CALLED - {t for _, t, _ in calls})
 
         settings = os.path.join(root, ".mlqt", "settings.json")
         transcript["settingsFile"] = open(settings, encoding="utf-8").read() if os.path.exists(settings) else None

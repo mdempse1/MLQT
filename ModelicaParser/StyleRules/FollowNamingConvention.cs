@@ -313,6 +313,8 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
         NamingStyle.PascalCase => "PascalCase",
         NamingStyle.SnakeCase => "snake_case",
         NamingStyle.UpperCase => "UPPER_CASE",
-        _ => style.ToString()
+        // Spelled, never ToString(): the member's name is renamed in an obfuscated build. Any is the
+        // only other style, and a rule enforcing nothing never reports.
+        _ => "any style"
     };
 }

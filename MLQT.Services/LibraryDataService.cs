@@ -307,8 +307,9 @@ public class LibraryDataService : ILibraryDataService
         ArgumentNullException.ThrowIfNull(source);
         if (source.Kind != ReadOnlySourceKind.Supplied)
             throw new ArgumentException(
-                $"Only a supplied library is added this way; '{source.LibraryName}' is {source.Kind}, which " +
-                "has a loader of its own.", nameof(source));
+                // Described, not interpolated: an enum's own name is renamed in an obfuscated build.
+                $"Only a supplied library is added this way; '{source.LibraryName}' is not one but an " +
+                $"{Describe(source.Kind)}, which has a loader of its own.", nameof(source));
 
         var library = new LoadedLibrary
         {

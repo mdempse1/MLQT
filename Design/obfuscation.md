@@ -81,10 +81,11 @@ anti-tamper, resource encryption. The mapping file confirms the renaming reached
 protect - `StyleCheckingSettings`, `MetricsSnapshot`, `BaselineEntry`, `RepositorySettingsCollection` and every
 MCP result record were renamed, members included - while the tool classes kept their names.
 
-- **The protected server answers the session exactly as the plain one does**: the instructions,
-  all 66 input schemas, every result, quoted arguments, the `.mlqt/settings.json` it wrote, the
-  embedded dictionaries (spell check and suggestions), a SkiaSharp diagram image and a LibGit2Sharp
-  status. MSL loads and checks to the same 74 findings over 6,487 classes.
+- **The protected server answers the session exactly as the plain one does**, and the session calls
+  **every one of the 66 tools** successfully - the edits as previews, then real writes and a reload:
+  the instructions, all input schemas, every result, quoted arguments, the `.mlqt/settings.json` it
+  wrote, the embedded dictionaries, a SkiaSharp image of a wired diagram, a routed connection and a
+  LibGit2Sharp status. MSL loads and checks to the same 74 findings over 6,487 classes.
 - **The comparison catches a broken build**: the commit before this work, protected the same way, came
   back with renamed result fields (`{"dbb8oue6SC": "Smoke.Described", ...}`), most results empty, a
   different settings file and four broken argument schemas.
@@ -96,6 +97,13 @@ MCP result record were renamed, members included - while the tool classes kept t
   (136% and 210%); its check, 0.39 s and 0.35 s against 0.66 s and 0.48 s. The first call into
   protected code pays about a second once (`mlqt_server_info` 25 ms against 1,007 ms). The load is
   parsing, so if a consumer finds it too slow, the generated ANTLR parser - partial classes, so an
-  attribute can be added beside them - is where to exclude control flow first.
+  attribute can be added beside them - is where to exclude control flow first. The other hot spot is
+  the diagram image: 0.24 s plain against 3.8 s protected for the three-part wired fixture.
 - **Not something obfuscation did**: `mlqt_check_library` lists its findings in the order its workers
   finish, which differs between two plain runs. The session sorts them before comparing.
+- **A semantic scan for enums becoming text** (every interpolation, `ToString()`, concatenation and
+  formatting argument of an enum type, across the seven assemblies) found two more that are written
+  where a renamed name would matter - the VCS a settings store records, and a baseline's drift
+  warning - now spelled and held by `SpelledEnumNameTests`. The rest are in-memory keys, which agree
+  within a run, debug text, and the runtime's own enums, which are not renamed. A name-based search
+  had missed both, which is why the scan was semantic.
