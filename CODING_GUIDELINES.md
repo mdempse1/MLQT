@@ -192,6 +192,36 @@ public surface to two files beside the project:
 The ANTLR-generated parser has no nullable annotations, so its lines carry a leading `~` (oblivious)
 and `ModelicaParser/.editorconfig` turns off RS0041 for those generated files only.
 
+### Names That Must Survive Obfuscation
+
+The MCP stack — the six assemblies above and `MLQT.McpServer` — ships inside a product protected by
+an obfuscator at its strongest settings, which renames **every** type, member, parameter and enum
+member, public ones included (B502, `Design/obfuscation.md`). So in those seven assemblies, nothing a
+file, a client or a native library reads may take its form from a .NET name at run time. `nameof` is
+fine: it is a literal by the time the compiler is done. What is not:
+
+- **JSON written to a file or sent to a client goes through a compiled contract**:
+  `ModelicaGraphJson.Contracts`, `MlqtServicesJson` or the MCP server's `McpServerJson`. The source
+  generator fixes every name and constructor call at build time. A new persisted or wire type is added
+  to its context, and a `JsonContractAssert.MatchesReflection` test (TestSupport) holds it to the names
+  reflection gives — so adding it changes no byte. Never pass such a type to `JsonSerializer` without
+  those options.
+- **No anonymous object is serialized.** Its names are reflected and its type cannot be listed in a
+  contract; write a record. `ObfuscationReadinessTests` fails on any `new {` in the MCP server.
+- **An enum is never written as text with `ToString()` or interpolation.** Pin each member with
+  `[JsonStringEnumMemberName]` where a converter writes it (`RuleSeverity`), or map it explicitly
+  (`WireNames` in the MCP server), with a test that every member is covered.
+- **No `GetType().Name` or `typeof(T).Name`** in anything stored, sent, compared or used as a key —
+  spell the name. In a message or a log line it is only harder to read, which the consumer's mapping
+  file decodes.
+- **A P/Invoke names its `EntryPoint`**, or renaming the method changes what is looked up.
+- **An MCP tool class carries `[Obfuscation]`**, because the SDK takes each argument's name from the
+  C# parameter and nothing in code can pin it. `ObfuscationReadinessTests` holds all of them.
+
+The tests run on the plain build. The proof is an obfuscated one: `build/obfuscation/mcp_session.py`
+runs a scripted MCP session against a server, and an obfuscated build's transcript must match the
+plain build's (`Design/release-checklist.md` §7).
+
 ---
 
 ## C# Best Practices

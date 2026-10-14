@@ -58,13 +58,22 @@ independent of names in the code wherever that is possible, and verified here by
   every tool class to it. **Whether it keeps parameter names is to be confirmed on a protected
   build.**
 
+## Done
+
+All five rows above are fixed in code and held by tests on the plain build: `JsonContractTests`,
+`ServicesJsonContractTests`, `RuleSeverityNameTests`, `ObfuscationReadinessTests` (MCP results,
+anonymous objects, enum text, the tool classes' `[Obfuscation]`, the options reaching every tool) and
+`JsonRpcRequestTests`. Each guard was checked by breaking what it holds. The rules are in
+`CODING_GUIDELINES.md` §Names That Must Survive Obfuscation.
+
 ## Verification
 
-The tests above run on the unobfuscated build. The proof is a build protected at the strongest
-settings: the MCP server answering a scripted session over stdio, its results compared with the
-unprotected server's, and a check of a large library timed against it (control flow and string
-encryption on the ANTLR parser are the performance risk). That needs a licence for the obfuscator,
-so it is a release step, not a CI gate; `build/obfuscation/` will hold the comparison.
+The proof is a build protected at the strongest settings: the seven assemblies obfuscated together,
+then `build/obfuscation/mcp_session.py` - one scripted session over stdio, deterministic run to
+run - against the protected server and the plain one, whose two transcripts must be identical.
+Its `--time-check` mode times a load and a check of a large library (control flow and string
+encryption on the ANTLR parser are the performance risk). It needs a licence for the obfuscator, so
+it is a release step (`Design/release-checklist.md` §7), not a CI gate.
 
 Open until then: whether `[Obfuscation]` keeps parameter names; whether resource encryption keeps
 `GetManifestResourceStream` working for the spelling dictionaries (`SpellChecker.OpenBundled`);

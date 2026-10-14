@@ -98,6 +98,26 @@ prose that no longer matches the recorded one is a reason nobody has read since 
 `RevisionControl.Svn*` figure when one is present and names what it held back, because the Code
 Coverage job has no svn and a figure from here is one CI cannot reach (B266, and again in B191).
 
+## 7. Protect the MCP stack, and compare it with the plain one
+
+A consumer ships the MCP stack protected by an obfuscator at its strongest settings, public names
+included (B502). Publish `MLQT.McpServer`, protect a copy's seven stack assemblies together that
+way, and run the same scripted session against both builds:
+
+```powershell
+python build/obfuscation/mcp_session.py <plain>\MLQT.McpServer.exe TestFixtures\SarifSmoke plain.json
+python build/obfuscation/mcp_session.py <protected>\MLQT.McpServer.exe TestFixtures\SarifSmoke protected.json
+```
+
+The two transcripts must be identical: the instructions, every tool's input schema, the results,
+and the `.mlqt/settings.json` the session wrote. `--time-check <library>` times a load and a check
+with each build, where control flow and string encryption on the parser would show. **It needs a
+licence for the obfuscator, which is why it is here and not in CI.**
+
+**Required whenever the release carries a change to a JSON contract, an MCP tool's parameters, or
+anything `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation covers.** A difference is
+decoded with the obfuscator's mapping file.
+
 ---
 
 ## What this list is not

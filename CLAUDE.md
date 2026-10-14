@@ -429,7 +429,7 @@ own are the unit-consistency flagship, which has not started, and obfuscation re
 | `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, what was *decided against*, the *known open issues*, and the item-id rule |
 | `Design/unit-consistency.md` | **The design for the phase-3 unit / dimensional consistency check, not started**: what it builds on (measured), the unit algebra, three-state typing of an equation, the finding, the increments, and the questions the user decides first. Retire it when the check ships |
 | `Design/obfuscation.md` | **Obfuscation readiness (B502), in progress**: what renaming breaks in the MCP stack, the safe-by-construction approach, and what a protected build still has to confirm. Retire it when it ships |
-| `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity and resolution corpora (opt-in, so an ordinary run says nothing about them), the nightly WebKit rehearsal, and the `.deb` job that only a tag exercises. Adding to it is a decision that something *cannot* be a gate on every push |
+| `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity and resolution corpora (opt-in, so an ordinary run says nothing about them), the nightly WebKit rehearsal, the `.deb` job that only a tag exercises, and the protected-build comparison of the MCP stack. Adding to it is a decision that something *cannot* be a gate on every push |
 
 **A `Bnnn` in a comment, a test or a script is a backlog id.** They were issued, B1–B498, in
 `Design/backlog.md`, the working list until 2026-09-28. That file was retired once every item was
