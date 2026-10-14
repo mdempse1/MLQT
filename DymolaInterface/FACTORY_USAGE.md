@@ -11,7 +11,8 @@ Instead of directly instantiating `DymolaInterface` with constructor parameters,
 
 ## Service Registration
 
-The factory is registered by `AddMlqtCore()` for the desktop host, and in `Program.cs` for the MCP server:
+The factory is registered by `AddMlqtCore()` for the desktop host. The MCP server does not register it:
+checking a model with Dymola is out of its scope.
 
 ```csharp
 builder.Services.AddSingleton<IDymolaInterfaceFactory, DymolaInterfaceFactory>();

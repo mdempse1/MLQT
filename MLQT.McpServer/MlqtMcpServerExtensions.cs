@@ -45,6 +45,8 @@ public static class MlqtMcpServerExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        // Process-wide, deliberately: it reaches every thread of the host that sets no culture of its
+        // own, which the README says, so a host formatting for its users sets that culture itself.
         // Modelica source and the VCS protocols are culture-invariant: the decimal separator is always
         // '.', and ',' is never a thousands separator. Default every thread to the invariant culture so
         // number parsing/formatting is never corrupted by the host machine's locale, as AddMlqtCore does

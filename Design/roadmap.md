@@ -143,13 +143,16 @@ reach `mlqt check`, cannot be baselined and cannot fail a build — a library ca
 Declarative custom rules → compiled plugins; finally the boundary-brushing dimensional-analysis and
 structural equation-balance checks. See §4 and §2.
 
-### Alongside: obfuscation readiness (B502) — in progress
+### Alongside: obfuscation readiness (B502) — ✅ shipped 2026-10-14
 
-A consumer ships the MCP stack inside a product it protects with an obfuscator at the strongest
-settings, public names included. Every contract taken from a .NET name at run time - MCP argument
-and result names, the committed `.mlqt/` files, the settings store, Dymola's JSON-RPC - is made
-independent of names by construction, and a protected build is the proof. Plan and findings:
-`Design/obfuscation.md`.
+Consumers ship the MCP stack protected by an obfuscator at its strongest settings, merged into one
+executable, public names renamed and enum members deleted. Every contract taken from a .NET name at
+run time - MCP argument and result names, the committed `.mlqt/` files, the settings store, the
+finding export, Dymola's JSON-RPC, enum text - is now independent of names by construction, and no
+enum's metadata is read. Verified by a protected build answering a session over all 66 tools exactly
+as the plain one does. The rules and their guard tests are in `CODING_GUIDELINES.md` §Names That
+Must Survive Obfuscation; the verification is `Design/release-checklist.md` §7. The design note was
+retired with it.
 
 ### Deferred, with no place in the sequence
 

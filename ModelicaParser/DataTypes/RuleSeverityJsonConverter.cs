@@ -15,8 +15,9 @@ namespace ModelicaParser.DataTypes;
 /// names come from <see cref="RuleSeverityText"/> instead.</para>
 /// <para>Public because the JSON source generator in another assembly has to name it.</para>
 /// <para>It reads what the reflection converter read: a name in any case and with surrounding spaces,
-/// a number, a number in a string, and a comma-separated list, combined as flags. Nobody writes the
-/// last, but a file that has it still loads as it did.</para>
+/// a number, a number in a string, and a comma-separated list, combined as flags (with one trailing
+/// comma tolerated); and a severity as a dictionary key. Nobody writes a list, but a file that has
+/// one still loads as it did.</para>
 /// </remarks>
 public sealed class RuleSeverityJsonConverter : JsonConverter<RuleSeverity>
 {
@@ -40,13 +41,26 @@ public sealed class RuleSeverityJsonConverter : JsonConverter<RuleSeverity>
             writer.WriteNumberValue((int)value);
     }
 
+    /// <summary>A severity as a dictionary key, which the reflection converter supported too.</summary>
+    public override RuleSeverity ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        Parse(reader.GetString()) ?? throw new JsonException($"'{reader.GetString()}' is not a rule severity: Off, Info, Warning or Error.");
+
+    /// <inheritdoc cref="ReadAsPropertyName"/>
+    public override void WriteAsPropertyName(Utf8JsonWriter writer, RuleSeverity value, JsonSerializerOptions options) =>
+        writer.WritePropertyName(RuleSeverityText.Of(value));
+
     private static RuleSeverity? Parse(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return null;
 
+        // The reflection converter tolerated one trailing comma, and no other empty part.
+        var parts = text.Split(',');
+        if (parts.Length > 1 && parts[^1].Length == 0)
+            parts = parts[..^1];
+
         var combined = 0;
-        foreach (var part in text.Split(','))
+        foreach (var part in parts)
         {
             var trimmed = part.Trim();
             if (RuleSeverityText.TryParse(trimmed, out var named))

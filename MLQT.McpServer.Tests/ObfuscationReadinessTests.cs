@@ -14,7 +14,7 @@ namespace MLQT.McpServer.Tests;
 
 /// <summary>
 /// What a client reads from this server must not depend on a .NET name, because a consumer ships it
-/// obfuscated with every name changed, public ones included (B502, <c>Design/obfuscation.md</c>).
+/// obfuscated with every name changed, public ones included (B502; <c>CODING_GUIDELINES.md</c> §Names That Must Survive Obfuscation).
 ///
 /// <para>Each test holds one way a name reaches the wire: a result record's field names, an anonymous
 /// object's, an enum written with <c>ToString()</c>, and a tool parameter's name. The first three are
@@ -80,12 +80,13 @@ public sealed class ObfuscationReadinessTests
     }
 
     [Fact]
-    public void NoAnonymousObjectIsBuiltAnywhereInTheServer()
+    public void NoAnonymousObjectIsBuiltInAnyShippedAssembly()
     {
         // An anonymous type's property names are reflected at run time like any other, and the
         // compiler names the type itself, so it cannot be listed in a contract. Every result is a
-        // record in Dtos/ instead.
-        var offenders = SourceFiles()
+        // record in Dtos/ instead. All seven shipped assemblies, not just this one: the desktop app's
+        // finding export in MLQT.Services was missed once by a scan of the server alone.
+        var offenders = SourceFiles(Shipped)
             .SelectMany(file => Regex.Matches(File.ReadAllText(file), @"\bnew\s*\{")
                 .Select(m => $"{Path.GetFileName(file)} at offset {m.Index}"))
             .ToList();
@@ -193,11 +194,21 @@ public sealed class ObfuscationReadinessTests
         Assert.Equal(ToStringLedger.Length, calls.Count);
     }
 
-    private static IEnumerable<string> SourceFiles()
+    // The assemblies consumers ship obfuscated.
+    private static readonly string[] Shipped =
+    [
+        "ModelicaParser", "ModelicaGraph", "RevisionControl", "DymolaInterface",
+        "OpenModelicaInterface", "MLQT.Services", "MLQT.McpServer",
+    ];
+
+    private static IEnumerable<string> SourceFiles(params string[] projects)
     {
-        var root = Path.Combine(ToolCountTests.RepositoryRoot(), "MLQT.McpServer");
+        if (projects.Length == 0)
+            projects = ["MLQT.McpServer"];
         var separator = Path.DirectorySeparatorChar;
-        return Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        return projects
+            .SelectMany(project => Directory.EnumerateFiles(
+                Path.Combine(ToolCountTests.RepositoryRoot(), project), "*.cs", SearchOption.AllDirectories))
             .Where(f => !f.Contains($"{separator}obj{separator}") && !f.Contains($"{separator}bin{separator}"));
     }
 }

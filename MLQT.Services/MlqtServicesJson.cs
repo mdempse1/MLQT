@@ -1,8 +1,5 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using MLQT.Services.Checking;
-using MLQT.Services.DataTypes;
 
 namespace MLQT.Services;
 
@@ -18,9 +15,10 @@ namespace MLQT.Services;
 public static class MlqtServicesJson
 {
     /// <summary>
-    /// The options a settings store reads and writes one setting's value with. The repository list is
-    /// compiled in; a type a host defines for its own settings (the desktop app's display settings,
-    /// say) falls back to reflection, which is the host's business. Read-only.
+    /// The options a settings store reads and writes one setting's value with. The stack's own setting
+    /// types - the repository list, and the Dymola and OpenModelica settings - are compiled in; a type a
+    /// host defines for its own settings (the desktop app's display settings, say) falls back to
+    /// reflection, which is the host's business. Read-only.
     /// </summary>
     public static JsonSerializerOptions SettingValues { get; } = CreateSettingValues();
 
@@ -34,7 +32,3 @@ public static class MlqtServicesJson
         return options;
     }
 }
-
-[JsonSerializable(typeof(RepositorySettingsCollection))]
-[JsonSerializable(typeof(Baseline.BaselineFile))]
-internal sealed partial class MlqtServicesJsonContext : JsonSerializerContext;

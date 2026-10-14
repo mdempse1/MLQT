@@ -55,6 +55,43 @@ public class RuleSeverityNameTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<RuleSeverity>(json));
     }
 
+    [Theory]
+    [InlineData("\"Warning,\"", RuleSeverity.Warning)]
+    [InlineData("\"Info,Warning,\"", RuleSeverity.Error)]
+    public void ToleratesOneTrailingCommaAsTheReflectionConverterDid(string json, RuleSeverity expected)
+    {
+        Assert.Equal(expected, JsonSerializer.Deserialize<RuleSeverity>(json));
+    }
+
+    [Theory]
+    [InlineData("\",Warning\"")]
+    [InlineData("\",\"")]
+    [InlineData("\"Warning,,Error\"")]
+    [InlineData("\"Warning, x\"")]
+    [InlineData("false")]
+    [InlineData("{}")]
+    [InlineData("[1]")]
+    [InlineData("1.5")]
+    [InlineData("99999999999")]
+    public void RefusesEveryOtherShapeTheReflectionConverterRefused(string json)
+    {
+        var error = Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<RuleSeverity>(json));
+        Assert.Contains("rule severity", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IsADictionaryKeyByItsName()
+    {
+        // The reflection converter supported this, and RuleSeverity is public in an assembly others
+        // build on, so its converter has to keep doing so.
+        var json = JsonSerializer.Serialize(new Dictionary<RuleSeverity, int> { [RuleSeverity.Warning] = 1 });
+
+        Assert.Equal("""{"Warning":1}""", json);
+        Assert.Equal(RuleSeverity.Warning, JsonSerializer.Deserialize<Dictionary<RuleSeverity, int>>("""{"warning":1}""")!.Keys.Single());
+        Assert.Equal(RuleSeverity.Warning, JsonSerializer.Deserialize<Dictionary<RuleSeverity, int>>("""{"2":1}""")!.Keys.Single());
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Dictionary<RuleSeverity, int>>("""{"Bogus":1}"""));
+    }
+
     [Fact]
     public void WritesAnUnnamedValueAsItsNumber()
     {

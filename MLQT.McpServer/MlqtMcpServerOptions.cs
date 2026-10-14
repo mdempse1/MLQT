@@ -20,7 +20,7 @@ public sealed class MlqtMcpServerOptions
     /// Runs after MLQT has set its own server options, so a host can replace
     /// <see cref="McpServerOptions.ServerInstructions"/> - which a host whose tools differ from MLQT's
     /// usually should, since MLQT's describe loading and editing - or change anything else. Claude Code
-    /// keeps only about the first 2,000 characters of a server's instructions and MLQT's use most of
+    /// keeps only about the first 2,048 characters of a server's instructions and MLQT's use 1,892 of
     /// them, so text appended to them is the text that gets dropped.
     /// </summary>
     public Action<McpServerOptions>? ConfigureServer { get; init; }

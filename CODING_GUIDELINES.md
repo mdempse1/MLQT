@@ -196,8 +196,8 @@ and `ModelicaParser/.editorconfig` turns off RS0041 for those generated files on
 
 The MCP stack — the six assemblies above and `MLQT.McpServer` — ships inside a product protected by
 an obfuscator at its strongest settings, which renames **every** type, member and parameter, public
-ones included, and **can delete an enum's members from metadata altogether** (B502,
-`Design/obfuscation.md`). So in those seven assemblies, nothing a file, a client or a native library
+ones included, and **can delete an enum's members from metadata altogether** (B502). So in those
+seven assemblies, nothing a file, a client or a native library
 reads may take its form from a .NET name at run time, and nothing may ask an enum about itself.
 `nameof` is fine: it is a literal by the time the compiler is done. What is not:
 
@@ -209,7 +209,7 @@ reads may take its form from a .NET name at run time, and nothing may ask an enu
   those options: by reflection, an obfuscated type can serialize as `{}`, its properties gone rather
   than renamed, and since unknown properties are ignored on reading, nothing fails either way.
 - **No anonymous object is serialized.** Its names are reflected and its type cannot be listed in a
-  contract; write a record. `ObfuscationReadinessTests` fails on any `new {` in the MCP server.
+  contract; write a record. `ObfuscationReadinessTests` fails on any `new {` in the seven assemblies.
 - **An enum is never written as text with `ToString()` or interpolation.** Map it explicitly — a
   switch (`RuleSeverityText`, and `RuleSeverityJsonConverter` for files; `WireNames` in the MCP
   server) — with a test that every member is covered. Under deletion `ToString()` gives a number.
@@ -230,8 +230,10 @@ reads may take its form from a .NET name at run time, and nothing may ask an enu
   start a server whose tool parameters have been renamed, saying what to change.
 
 The tests run on the plain build. The proof is an obfuscated one: `build/obfuscation/mcp_session.py`
-runs a scripted MCP session against a server, and an obfuscated build's transcript must match the
-plain build's (`Design/release-checklist.md` §7).
+calls every MCP tool against a server, and an obfuscated build's transcript must match the plain
+build's (`Design/release-checklist.md` §7, which says how to protect it). Judge a protected build by
+running it, never by inspecting it: its metadata on disk can be emptied and scrambled and restored as
+it loads.
 
 ---
 

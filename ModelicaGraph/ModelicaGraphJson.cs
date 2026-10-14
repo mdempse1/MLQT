@@ -1,6 +1,4 @@
-using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using ModelicaGraph.Analysis;
 
 namespace ModelicaGraph;
 
@@ -20,7 +18,3 @@ public static class ModelicaGraphJson
     /// <summary>The compiled contracts, as a resolver for <c>JsonSerializerOptions.TypeInfoResolver</c>.</summary>
     public static IJsonTypeInfoResolver Contracts => ModelicaGraphJsonContext.Default;
 }
-
-[JsonSerializable(typeof(StyleCheckingSettings))]
-[JsonSerializable(typeof(List<MetricsSnapshot>))]
-internal sealed partial class ModelicaGraphJsonContext : JsonSerializerContext;

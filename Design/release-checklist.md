@@ -3,7 +3,8 @@
 What CI cannot do for you, and why each item is here. Everything else is already a gate on every
 push — this is only the work that needs a machine, a tool or a decision that no runner has.
 
-**Run these in order. Each one says what it proves and what it costs.**
+**Run these in order - except §7, which belongs before tagging. Each one says what it proves and
+what it costs.**
 
 ---
 
@@ -100,30 +101,50 @@ Coverage job has no svn and a figure from here is one CI cannot reach (B266, and
 
 ## 7. Protect the MCP stack, and compare it with the plain one
 
-A consumer ships the MCP stack protected by an obfuscator at its strongest settings, public names
-included (B502). Publish `MLQT.McpServer`, protect a copy's seven stack assemblies together that
-way, and run the same scripted session against both builds:
+**Do this before tagging (§5).** Consumers ship the MCP stack protected by an obfuscator at its
+strongest settings (B502), so a release is proven against such a build, configured the hardest way
+a consumer does:
+
+- **Merged**: the seven stack assemblies merged into the server's own, the library DLLs deleted, and
+  `deps.json` cut to match - or the host refuses to start for want of them.
+- **Renaming everything**: public names, all parameters, unprintable names, and public types
+  internalized - the setting that deletes enum members from metadata (measured: 7 of 44 enums left
+  with none). With string encryption, control flow at its highest level, method-body encryption,
+  code virtualization and call hiding.
+- **Anti-tamper off.** It has been measured producing builds that intermittently fail their own
+  integrity check at start-up (3 of 12 trials, from identical input), which would read here as a
+  regression.
+
+Then run the same scripted session against the plain build and the protected one. It needs Python 3
+and `git` (it makes the fixture copy a git working copy), and writes `<out>.timings.json` beside each
+transcript:
 
 ```powershell
 python build/obfuscation/mcp_session.py <plain>\MLQT.McpServer.exe TestFixtures\SarifSmoke plain.json
 python build/obfuscation/mcp_session.py <protected>\MLQT.McpServer.exe TestFixtures\SarifSmoke protected.json
 ```
 
-The two transcripts must be identical: the instructions, every tool's input schema, the results,
-and the `.mlqt/settings.json` the session wrote. `--time-check <library>` times a load and a check
-with each build, where control flow and string encryption on the parser would show. **It needs a
-licence for the obfuscator, which is why it is here and not in CI.**
+**The two transcripts must be identical**: the instructions, every tool's input schema, the result
+of a call to each of the 66 tools - edits as previews, then real writes and a reload, a wired diagram
+image, a routed connection, change impact over git - and the `.mlqt/settings.json` the session
+wrote. A difference is decoded with the obfuscator's mapping file. **Judge the build by running it,
+not by inspecting it**: a protected assembly's metadata on disk can be emptied (parameter names) and
+scrambled (resource names) and restored as it loads.
+
+To time a large library with each build, where control flow and string encryption on the parser show:
+
+```powershell
+python build/obfuscation/mcp_session.py <protected>\MLQT.McpServer.exe --time-check C:\Projects\Modelica\ModelicaStandardLibrary\Modelica protected-time.json
+```
+
+For reference (2026-10-14, MSL 4.1): a load took 123-210% of the plain time and a check 135-169%;
+the first call into protected code paid about a second once; and a wired diagram image took 3.8 s
+against 0.24 s. If a consumer finds the load too slow, the generated ANTLR parser (partial classes,
+so an attribute can be added beside them) is where to exclude control flow first.
 
 **Required whenever the release carries a change to a JSON contract, an MCP tool's parameters, or
-anything `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation covers.** A difference is
-decoded with the obfuscator's mapping file.
-
-Protect it **merged into the server's own assembly**, as a consumer shipping one executable does,
-with renaming of all parameters and internalization on - the configuration where enum members are
-deleted and where `ToolParameterCheck` and the resource lookup matter - and **with anti-tamper off**:
-anti-tamper has been measured producing builds that intermittently fail their own integrity check
-at start-up, which would read here as a regression. A merged build needs `deps.json` cut to match,
-or the host refuses to start for want of the deleted library DLLs.
+anything `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation covers.** It needs a licence for
+the obfuscator, which is why it is here and not in CI.
 
 ---
 

@@ -41,6 +41,37 @@ public class ServicesJsonContractTests
     }
 
     [Fact]
+    public void TheStacksOwnSettingTypesAreCompiledIn()
+    {
+        // The Dymola and OpenModelica settings live in two shipped assemblies, so they are the stack's
+        // own types and must not fall through to reflection (B502).
+        foreach (var type in new[] { typeof(DymolaInterface.DymolaSettings), typeof(OpenModelicaInterface.OpenModelicaSettings) })
+        {
+            JsonContractAssert.MatchesReflection(type, MlqtServicesJsonContext.Default);
+            Assert.Same(MlqtServicesJsonContext.Default, MlqtServicesJson.SettingValues.GetTypeInfo(type).OriginatingResolver);
+        }
+    }
+
+    [Fact]
+    public void ASettingWrittenByReflectionIsReadBackTheSame()
+    {
+        var dymola = new DymolaInterface.DymolaSettings { DymolaPath = @"C:\Dymolain64\Dymola.exe", PortNumber = 8082 };
+        var written = JsonSerializer.Serialize(dymola);
+
+        Assert.Equal(written, JsonSerializer.Serialize(dymola, MlqtServicesJson.SettingValues));
+        var read = JsonSerializer.Deserialize<DymolaInterface.DymolaSettings>(written, MlqtServicesJson.SettingValues)!;
+        Assert.Equal(8082, read.PortNumber);
+        Assert.Equal(dymola.DymolaPath, read.DymolaPath);
+    }
+
+    [Fact]
+    public void TheFindingExportContractIsCompiledIn()
+    {
+        JsonContractAssert.MatchesReflection(typeof(FindingExport.ExportDocument), MlqtServicesJsonContext.Default,
+            new() { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+    }
+
+    [Fact]
     public void TheSettingsStoreStillWritesAHostsOwnTypes()
     {
         var json = JsonSerializer.Serialize(new HostSetting("dark", 3), MlqtServicesJson.SettingValues);

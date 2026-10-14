@@ -82,7 +82,9 @@ builder.Services
     .WithStdioServerTransport();
 ```
 
-- **It sets the invariant culture**, as `AddMlqtCore` does; a host need not.
+- **It sets the invariant culture**, as `AddMlqtCore` does; a host need not. It is the process-wide
+  default, so it reaches every thread of the host that sets no culture of its own - a host that
+  formats for its users sets its culture explicitly where it does.
 - **Every service is `TryAdd`ed**, so one a host registers first is kept. `HeadlessSettingsService`
   creates and writes `%LocalAppData%/MLQT/mcp-settings.json`; a host that must write nothing there
   registers its own `ISettingsService`.
@@ -95,8 +97,9 @@ builder.Services
   most of its time suspended waiting for collections. `HostGarbageCollectionTests` holds MLQT's hosts
   to it, and cannot see a host outside this repository.
 - **The instructions are MLQT's** unless `ConfigureServer` replaces them, which it runs after setting
-  them. A host whose tools differ should replace rather than append: MLQT's use 1,892 of the roughly
-  2,000 characters Claude Code keeps, so appended text is what gets dropped.
+  them. A host whose tools differ should replace rather than append: MLQT's use 1,892 characters of
+  a 2,000-character budget, and Claude Code keeps only about the first 2,048, so appended text is
+  what gets dropped.
 
 **What a host may rely on** is `AddMlqtMcpServer`, `MlqtMcpServerOptions` and the `ToolUsageLogger`
 they name - held by `MlqtMcpServerSurfaceTests` rather than the public-API analyzer, which cannot track
@@ -164,6 +167,11 @@ A style finding carries the severity the repository configured for its rule, as 
   The check pipeline itself is **not** here: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` live in `MLQT.Services/Checking/`, shared with the CLI and the desktop app so all three report the same findings.
 - `Services/HeadlessSettingsService.cs` — JSON settings store, separate from the desktop application's.
 - `Services/SessionState.cs` — tracks whether opt-in analysis has run.
+- `Services/McpServerJson.cs` / `McpServerJsonContext.cs` — the options every tool is registered with, and the compiled JSON contracts of every record in `Dtos/`, so a client reads the same field names from an obfuscated build (B502). A new result or argument record is listed in the context; `ObfuscationReadinessTests` fails until it is.
+- `Services/ToolParameterCheck.cs` — refuses to start a server whose tool parameters have been renamed, which would otherwise bind no client's arguments.
+- `Services/ToolArgumentCoercion.cs` — turns a quoted boolean or number into the scalar a tool's input schema asks for.
+- `Services/ServerInstructions.cs`, `ToolUsageLogger.cs`, `McpHostSettings.cs` — the connect-time instructions, the opt-in usage log, and the generic host's settings.
+- `Helpers/WireNames.cs` — the text each enum in a result is sent as, spelled rather than taken from `ToString()`.
 - `dev/` — stdio test drivers (`smoke.sh`, `mcp_test.py`, `dep_test.py`, `vcs_test.py`).
 
 ## Tests
@@ -173,4 +181,11 @@ dotnet test MLQT.McpServer.Tests
 ```
 
 `MLQT.McpServer.Tests` exercises the tools against temporary Modelica libraries (real services; VCS
-tools use a mocked `IRepositoryService`).
+tools use a mocked `IRepositoryService`). Beyond the tools themselves:
+
+- `MlqtMcpServerExtensionsTests` run a real server and client over in-process pipes (`InProcessServer`):
+  the tool list, coercion of a host's own tools, filter order, instructions, `TryAdd`.
+- `MlqtMcpServerSurfaceTests` hold the surface a host built on this server is promised.
+- `ObfuscationReadinessTests` hold what an obfuscated build depends on: every record in the compiled
+  contracts with reflection's names, no anonymous object in any shipped assembly, enum text spelled,
+  `[Obfuscation]` on every tool class, and `ToolParameterCheck` refusing renamed parameters.

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Xunit;
 
@@ -57,9 +58,9 @@ internal static class JsonContractAssert
                 case JsonTypeInfoKind.Object:
                     objects++;
                     Assert.Equal(
-                        theirs.Properties.Select(p => $"{p.Name}: {p.PropertyType}"),
-                        mine.Properties.Select(p => $"{p.Name}: {p.PropertyType}"));
-                    foreach (var property in mine.Properties)
+                        theirs.Properties.Where(Written).Select(p => $"{p.Name}: {p.PropertyType}"),
+                        mine.Properties.Where(Written).Select(p => $"{p.Name}: {p.PropertyType}"));
+                    foreach (var property in mine.Properties.Where(Written))
                         Walk(property.PropertyType);
                     break;
                 case JsonTypeInfoKind.Enumerable:
@@ -72,6 +73,15 @@ internal static class JsonContractAssert
             }
         }
     }
+
+    // A property marked [JsonIgnore] for good is in both lists but never read or written, and the
+    // generator types it as object since it builds nothing for it - no getter, no setter, no
+    // attributes; reflection keeps the attribute. Either way it is not part of the contract.
+    private static bool Written(JsonPropertyInfo property) =>
+        (property.Get is not null || property.Set is not null) &&
+        property.AttributeProvider?.GetCustomAttributes(typeof(JsonIgnoreAttribute), inherit: true)
+            .OfType<JsonIgnoreAttribute>()
+            .Any(a => a.Condition == JsonIgnoreCondition.Always) != true;
 
     private static JsonSerializerOptions With(JsonSerializerOptions? like, IJsonTypeInfoResolver resolver)
     {

@@ -244,6 +244,59 @@ public class FindingExportTests
     }
 
     [Fact]
+    public void TheFileIsWhatTheAnonymousObjectsWrote()
+    {
+        // The export moved from anonymous objects, whose names an obfuscated build loses, to records
+        // with their names written down (B502). This rebuilds the old payload exactly as it was built
+        // and holds the new output to it byte for byte: field order, the two casings, nulls omitted.
+        var findings = new List<LogMessage>
+        {
+            Finding("Lib.B", "MLQT.Doc.ClassDescription", 3, element: "gain", details: "why", severity: RuleSeverity.Error),
+            Finding("Lib.A", "MLQT.Doc.ParameterDescription", 7),
+            new("Lib.A", "Error", 1, "Parser error", "") { Source = "Parser", RuleId = "MLQT.Parse.SyntaxError" },
+        };
+        var locations = Locations(("Lib.A", Path.Combine("C:", "lib", "A.mo"), 10), ("Lib.B", Path.Combine("C:", "lib", "B.mo"), 1));
+        var roots = new Dictionary<string, string> { ["Lib.A"] = Path.Combine("C:", "lib"), ["Lib.B"] = Path.Combine("C:", "lib") };
+        var at = new DateTime(2026, 10, 14, 9, 0, 0, DateTimeKind.Utc);
+        Func<LogMessage, string?> status = m => m.RuleId == "MLQT.Doc.ParameterDescription" ? "AcceptedDebt" : null;
+
+        var old = new
+        {
+            tool = FindingExport.ToolName,
+            exported = at.ToString("o"),
+            project = (string?)"Project",
+            findingCount = findings.Count,
+            findings = findings
+                .OrderBy(m => m.ModelName, StringComparer.Ordinal)
+                .ThenBy(m => m.LineNumber)
+                .ThenBy(m => m.RuleId ?? string.Empty, StringComparer.Ordinal)
+                .Select(m => new
+                {
+                    RuleId = m.RuleId,
+                    Severity = m.StyleSeverity?.ToString() ?? m.Severity,
+                    Status = status(m),
+                    Model = m.ModelName,
+                    Element = m.ElementPath,
+                    Line = ReportLocation.LineIn(locations.GetValueOrDefault(m.ModelName), m.LineNumber),
+                    ModelLine = m.LineNumber,
+                    Message = m.Summary,
+                    Fingerprint = m.Fingerprint,
+                    File = ReportLocation.RelativeFile(locations.GetValueOrDefault(m.ModelName), roots.GetValueOrDefault(m.ModelName)),
+                    Source = m.Source,
+                    Details = string.IsNullOrEmpty(m.Details) ? null : m.Details,
+                })
+                .ToList(),
+        };
+        var expected = JsonSerializer.Serialize(old, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        });
+
+        Assert.Equal(expected, FindingExport.ToJson(findings, locations, roots, "Project", at, status));
+    }
+
+    [Fact]
     public void TheFileNameCarriesTheMoment()
     {
         // Two exports in one session must not overwrite each other.
