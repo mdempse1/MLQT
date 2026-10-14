@@ -114,6 +114,8 @@ internal static class IsolatedProcess
         IntPtr processAttributes, IntPtr threadAttributes, bool inheritHandles, uint creationFlags,
         string environment, string? currentDirectory, ref StartupInfo startupInfo, out ProcessInformation processInformation);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    // The entry point is named because an obfuscator may rename the method, and without it the
+    // method's own name is what is looked up in kernel32 (B502).
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "CloseHandle")]
     private static extern bool CloseHandle(IntPtr handle);
 }
