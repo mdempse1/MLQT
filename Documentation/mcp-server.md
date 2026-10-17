@@ -209,6 +209,22 @@ The server exposes 66 tools. The full list is in [MLQT.McpServer/README.md](../M
 | **External resources** | List resources a class references and report resource warnings |
 | **Modelica-aware VCS** | Map a diff to the classes it changed and analyse that change's impact |
 
+## Checking that types resolve
+
+`mlqt_validate_class_references` reports the component types and `extends` base classes that do not
+resolve to a loaded class: a misspelt `Modelica.Blocks.Sources.Sinee`, or a library that was never
+loaded. Give it `class_id` for one class (a package is checked with every class inside it) or
+`library_id` for a whole library: one call covers them all. Each unresolved reference names its class,
+its line in the class's source, and its file and line on disk; the list is ordered by class and paged
+with `limit`/`offset`, and `unresolvedCount` is the total. Classes whose source would not parse are
+listed in `unreadable` rather than skipped silently. Load the libraries the code depends on first, or
+every reference into them is reported.
+
+The style setting `validateModelReferences` is a different check, despite its name: it reports
+`modelica://` links in strings such as documentation HTML that name a class that is not loaded. No
+style rule checks type references. The setting keeps its name because it is what each repository's
+`.mlqt/settings.json` stores; its description in the tool schema says what it does.
+
 ## Automatic diagram connections
 
 When you position components on the diagram with `mlqt_set_component_placement`, the server automatically draws the connection lines: any `connect(...)` whose two components are both placed gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. It is enough to position the components — no separate call is needed, and moving a component re-routes the lines that touch it.

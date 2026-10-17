@@ -268,6 +268,8 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT automati
 |---------|---------|---------|-------------|
 | **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
+It does **not** check that the types a class uses (component types, `extends` base classes) resolve; no style rule does. The MCP server's `mlqt_validate_class_references` does that, for a class or a whole library — see [MCP server](mcp-server.md#checking-that-types-resolve).
+
 The reference validator handles several edge cases found in real Modelica libraries:
 
 - **Quoted identifiers** — URIs like `modelica://ModelicaReference.Operators.'semiLinear()'` are matched exactly, preserving the single-quoted identifier including any special characters such as parentheses

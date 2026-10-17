@@ -145,7 +145,9 @@ public sealed class StyleTools
                 "are also stored for mlqt_list_findings. By default the rules come from the class's repository " +
                 "(.mlqt/settings.json); pass a 'settings' object to override for this run. This is NOT a compile " +
                 "check: it does not translate the model or check types, units or equation balance - use a " +
-                "simulator's check (e.g. check_model) for that.")]
+                "simulator's check (e.g. check_model) for that. Nor does any rule check that the types a class " +
+                "uses resolve (validateModelReferences checks modelica:// links in documentation): use " +
+                "mlqt_validate_class_references for a misspelt or missing type.")]
     public object CheckClass(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -188,7 +190,9 @@ public sealed class StyleTools
                 "for mlqt_list_findings. By default each library is checked with its own repository settings " +
                 "(.mlqt/settings.json); pass 'settings' to override for every class. If an enabled rule " +
                 "needs cross-model dependencies (e.g. unused-class), dependency analysis is run first " +
-                "automatically (matching the GUI and CLI). Can be slow on a big library.")]
+                "automatically (matching the GUI and CLI). Can be slow on a big library. To find component " +
+                "or extends types that do not resolve, use mlqt_validate_class_references with library_id - " +
+                "no setting here does that.")]
     public async Task<object> CheckLibrary(
         [Description("Optional: one library to check, by its id (GUID from mlqt_list_libraries) or its name " +
                      "(e.g. 'Modelica'). Omit to check every loaded library. Not a class id.")]
@@ -456,29 +460,12 @@ public sealed class StyleTools
         string modelId, string category, string severity, int modelLine,
         string summary, string details, string source)
     {
-        var location = ResolveLocation(_libraries.GetModelById(modelId));
+        var location = ClassFileLocation.Of(_libraries.CombinedGraph, _libraries.GetModelById(modelId));
 
         return new FindingItem(
             modelId, category, severity,
             location?.FileLine(modelLine) ?? modelLine, modelLine,
             summary, details, source, location?.FilePath);
-    }
-
-    /// <summary>
-    /// Where a class sits on disk and how its lines map to the file's, or null when that is unknown
-    /// (a class with no file, a snippet). Built per class rather than through
-    /// <c>ClassLocation.ForGraph</c>, which walks every file in the graph - too much work when a
-    /// reference set of tens of thousands of classes is loaded and a handful have findings.
-    /// </summary>
-    private ClassLocation? ResolveLocation(ModelNode? node)
-    {
-        if (node?.ContainingFileId is null)
-            return null;
-
-        var file = _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId);
-        return string.IsNullOrEmpty(file?.FilePath)
-            ? null
-            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile, node.TrimElision);
     }
 
     private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> findings, int modelsChecked)

@@ -239,8 +239,11 @@ public sealed class GuidanceTools
               naming its branches (e.g. ['for i in 1:n']); that equation is also in equations, verbatim.
               Inherited behaviour is NOT merged (unlike members) — basesWithBehavior points to
               the base classes that declare behaviour, query those directly for the full picture.
-            - mlqt_validate_class_references(classId): lists referenced types (component types + extends) that do
-              not resolve to a loaded class — catches typos and missing dependencies after writing/editing.
+            - mlqt_validate_class_references(classId | libraryId, limit?, offset?): lists referenced types
+              (component types + extends) that do not resolve to a loaded class — catches typos and missing
+              dependencies after writing/editing. A package id covers every class inside it and libraryId a
+              whole library, in ONE paged call, each hit with its class, file and line: do not go class by
+              class. (The validateModelReferences style setting is different: it checks modelica:// links.)
               Classes a base declares (a replaceable Medium, say) are found as Modelica finds them; a
               redeclare is not modelled, so treat hits as candidates and make sure referenced libraries
               are loaded.

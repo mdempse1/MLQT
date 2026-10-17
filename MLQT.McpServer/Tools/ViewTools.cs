@@ -1,5 +1,7 @@
 using System.Reflection;
 using ModelicaGraph.Analysis;
+using ModelicaParser.Helpers;
+using MLQT.Services.Checking;
 using ModelicaGraph.DataTypes;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
@@ -291,54 +293,120 @@ public sealed class ViewTools
         return result;
     }
 
+    /// <summary>The largest page mlqt_validate_class_references returns; a bigger limit is clamped, not refused.</summary>
+    internal const int MaxReferenceLimit = 1000;
+
     [McpServerTool(Name = "mlqt_validate_class_references")]
-    [Description("Check that the types a Modelica class references (its component types and extends base classes) " +
-                "resolve to loaded classes, and report those that do not — useful after writing or editing " +
-                "a class to catch typos and missing dependencies. Resolution uses exact, import and " +
-                "package-relative lookup AND names inherited via extends (an inherited type is not flagged). " +
-                "Still best-effort for uncommon import forms, so load the referenced libraries so their " +
-                "classes can resolve before treating a name as genuinely undefined.")]
+    [Description("Check that the types Modelica classes reference (their component types and extends base classes) " +
+                "resolve to loaded classes, and report those that do not - the way to find a misspelt or missing " +
+                "type name, after writing or editing code or when looking for a broken reference. Give class_id " +
+                "for one class (a package is checked with every class inside it), or library_id for a whole " +
+                "library: ONE call covers every class in it, so there is no need to call it class by class. Each " +
+                "unresolved reference names its class, its line in that class's source, and its file and line on " +
+                "disk; they are ordered by class and paged with limit/offset, and unresolvedCount is the total. " +
+                "Resolution uses exact, import and package-relative lookup AND names inherited via extends (an " +
+                "inherited type is not flagged). Load the libraries the code uses (e.g. the MSL) first, or every " +
+                "reference into them is reported as unresolved. This is not what mlqt_check_library's " +
+                "validateModelReferences setting does - that checks modelica:// links in documentation.")]
     public object ValidateClassReferences(
-        [Description("Fully-qualified class id to validate.")] string classId)
+        [Description("A class id, e.g. 'MyLib.Pumps.Pump'. A package, or any class with classes nested in it, " +
+                     "is checked together with everything inside it. Give this or library_id, not both.")]
+        string? classId = null,
+        [Description("A whole library to check, by its id (GUID from mlqt_list_libraries) or its name " +
+                     "(e.g. 'MyLib'). Give this or class_id, not both.")]
+        string? libraryId = null,
+        [Description("Max unresolved references to return (default 100, max 1000).")] int limit = 100,
+        [Description("Unresolved references to skip for pagination (default 0).")] int offset = 0)
     {
-        if (Load(classId, out var node, out var iface, out var error))
-            return error!;
+        if (classId is not null && libraryId is not null)
+            return new ToolError("Give class_id or library_id, not both: class_id checks a class and everything " +
+                                 "inside it, library_id a whole library.");
+        if (classId is null && libraryId is null)
+            return new ToolError("Give class_id (a class, or a package to check everything inside it) or " +
+                                 "library_id (a whole library).");
 
-        var imports = ImportNames(iface!);
-        var checkedCount = 0;
-        var unresolved = new List<UnresolvedReference>();
+        limit = Math.Clamp(limit, 1, MaxReferenceLimit);
+        offset = Math.Max(offset, 0);
 
-        foreach (var e in iface!.Elements)
+        string scopeId;
+        IEnumerable<ModelNode> scope;
+        if (classId is not null)
         {
-            string? type;
-            string kind;
-            if (e.Kind == ClassElementKind.Component)
-            {
-                type = e.Type;
-                kind = "component-type";
-            }
-            else if (e.Kind == ClassElementKind.Extends)
-            {
-                type = e.Type;
-                kind = "extends";
-            }
-            else
-            {
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(type) || TypeResolver.IsPredefined(type))
-                continue;
-
-            checkedCount++;
-            if (TypeResolver.ResolveWithInheritance(_libraries.CombinedGraph, node!.Id, type, imports) is null)
-                unresolved.Add(new UnresolvedReference(type!.TrimStart('.').Trim(), kind, e.Line));
+            // The named class keeps the errors the one-class form always gave: not found, or unreadable.
+            if (Load(classId, out var root, out _, out var error))
+                return error!;
+            scopeId = root!.Id;
+            scope = _libraries.GetAllModels().Where(m => ModelicaName.IsInSubtree(m.Id, root.Id));
+        }
+        else
+        {
+            if (ToolDiagnostics.RequireLibrary(_libraries, "validating references") is { } noLib)
+                return noLib;
+            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId!);
+            if (error is not null)
+                return error;
+            scopeId = library!.Name;
+            scope = library.ModelIds.Select(_libraries.GetModelById).OfType<ModelNode>();
         }
 
-        const string note = "Resolution covers the class's own scope plus names inherited via extends. It " +
+        var graph = _libraries.CombinedGraph;
+        var classesChecked = 0;
+        var checkedCount = 0;
+        var unreadable = new List<string>();
+        var unresolved = new List<UnresolvedReference>();
+
+        foreach (var node in scope.OrderBy(m => m.Id, StringComparer.Ordinal))
+        {
+            // Borrowed, not kept: a library's worth of parse trees held at once is what Borrow exists to
+            // prevent, and the interface is all that is needed from each.
+            var iface = node.IsParseFailurePlaceholder
+                ? null
+                : node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract, ifUnparseable: null);
+            if (iface is null)
+            {
+                unreadable.Add(node.Id);
+                continue;
+            }
+
+            classesChecked++;
+            var imports = ImportNames(iface);
+            ClassLocation? location = null;
+            foreach (var (type, kind, line) in ReferencedTypes(iface))
+            {
+                checkedCount++;
+                if (TypeResolver.ResolveWithInheritance(graph, node.Id, type, imports) is not null)
+                    continue;
+                location ??= ClassFileLocation.Of(graph, node);
+                unresolved.Add(new UnresolvedReference(
+                    type.TrimStart('.').Trim(), kind, line, node.Id, location?.FilePath, location?.FileLine(line)));
+            }
+        }
+
+        const string note = "Resolution covers each class's own scope plus names inherited via extends. It " +
                             "is still best-effort for uncommon import forms, so ensure the referenced " +
                             "libraries are loaded before treating a name as genuinely undefined.";
-        return new ReferenceValidationResult(node!.Id, checkedCount, unresolved.Count, unresolved, note);
+        var page = unresolved.Skip(offset).Take(limit).ToList();
+        return new ReferenceValidationResult(
+            scopeId, checkedCount, unresolved.Count, page, note,
+            classesChecked, offset, page.Count, unreadable.Count == 0 ? null : unreadable);
+    }
+
+    /// <summary>The types a class names that must resolve: each component's type and each extends
+    /// clause's base, less the predefined types.</summary>
+    private static IEnumerable<(string Type, string Kind, int Line)> ReferencedTypes(ClassInterface iface)
+    {
+        foreach (var e in iface.Elements)
+        {
+            var kind = e.Kind switch
+            {
+                ClassElementKind.Component => "component-type",
+                ClassElementKind.Extends => "extends",
+                _ => null,
+            };
+            if (kind is null || string.IsNullOrWhiteSpace(e.Type) || TypeResolver.IsPredefined(e.Type))
+                continue;
+            yield return (e.Type, kind, e.Line);
+        }
     }
 
     // Resolves the class, guards parse health, and extracts its interface. Returns true (with a populated

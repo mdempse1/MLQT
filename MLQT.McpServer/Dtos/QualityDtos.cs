@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using ModelicaGraph;
 using ModelicaParser.StyleRules;
 
@@ -35,6 +36,12 @@ public sealed class StyleSettingsInput
     public bool? FollowNamingConvention { get; set; }
     public bool? SpellCheckDescription { get; set; }
     public bool? SpellCheckDocumentation { get; set; }
+    /// <summary>The name is older than this server and is kept because it is what each repository's
+    /// .mlqt/settings.json stores; the description is what stops an agent reading it as a type check.</summary>
+    [Description("Checks modelica:// links to classes, written in strings such as Documentation HTML, and reports " +
+                 "each one naming a class that is not loaded. It does NOT check type references: a component " +
+                 "type or extends base that does not resolve (e.g. a misspelt 'Modelica.Blocks.Sources.Sinee') " +
+                 "is found by mlqt_validate_class_references, which checks a whole library in one call.")]
     public bool? ValidateModelReferences { get; set; }
 
     // Wave-1 analyses (Phase 6). Structure/uses/unused-class are graph analyses; they only produce
