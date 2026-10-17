@@ -487,7 +487,7 @@ a consumer can resolve. Run on every push by `build-and-test.yml`; run it locall
 to measure how well an agent uses the MCP server (pass rate, tool calls, errors, calls that bypass MLQT,
 tokens), so a change to the toolset can be compared run against run. **It calls the model and costs
 money**, so nothing runs it automatically; `python build/mcp-eval.py check-tasks` is free and proves no
-task passes on the untouched fixture. The fixture's flaws are deliberate - see its README.
+task passes on the untouched fixture, and `analyse` reports the same figures for real sessions from their saved transcripts, also without calling a model. The fixture's flaws are deliberate - see its README.
 
 ## Test Cases
 

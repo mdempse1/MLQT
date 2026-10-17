@@ -343,6 +343,28 @@ Each run calls the model and is charged: a task costs roughly $0.20–0.40 at th
 
 **A new task needs checks that fail before it is done** — `check-tasks` runs every task's checks against the untouched fixture with an empty answer and fails if any task passes there, since a check that holds before the agent starts measures nothing.
 
+### Analysing real sessions
+
+The tasks are small and fixed; real work is neither. `analyse` reads sessions as Claude Code saved them — `~/.claude/projects/<folder>/<session id>.jsonl`, with each session's subagents in `<session id>/subagents/` beside it — and reports the same per-tool figures as a run. Since there is nothing to check, it reports no pass rate. It calls no model.
+
+```bash
+python build/mcp-eval.py analyse --project C:/Projects/MyLib --latest 3 \
+    --server-log %LocalAppData%/MLQT/mcp-tool-usage.jsonl --library-dir C:/Projects/MyLib
+python build/mcp-eval.py analyse <session>.jsonl [<session>.jsonl ...]   # or a directory of them
+```
+
+`--project` picks the newest sessions saved for a folder. The report goes to `McpEvalRuns/<time>-analyse/` and holds:
+
+- **per session:** calls, MLQT calls and their errors, ToolSearch calls, bypasses and tokens;
+- **per tool:** MLQT's tools first, with each one's errors, result size and, given `--server-log`, server time;
+- **unused tools:** the MLQT tools no session called, from the server's own tool list (it starts the newest build to ask, or `--server`);
+- **detail:** each MLQT error, the bypass calls, and each session's MLQT calls in order.
+
+Two things differ from a harness run:
+
+- **A bypass needs a Modelica target.** A real session may also work outside Modelica, so a Read, Edit, Write, Grep or Glob counts as a bypass only when the file or path it is aimed at is a `.mo` file, a `package.order` or under a `--library-dir`. A shell command is judged on its whole text, so its count is approximate. **For a session given only to Modelica work, pass `--dedicated`**: every built-in file or shell call then counts, as in a harness run, all of them are listed with their input, and the call sequences show every call. This is how to see what an agent does for itself that MLQT could have done.
+- **The server log is matched by time.** It carries no session id, so two sessions running at once share each other's server times. For a clean comparison, give each experiment its own log with `MLQT_MCP_TOOL_LOG`, set in the server's `env` in your client configuration, and restart the client so the server starts with it.
+
 The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value.
 
 ## When the client says the server disconnected
