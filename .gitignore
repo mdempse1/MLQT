@@ -407,3 +407,6 @@ AllTestCoverage/
 # whole solution produces hundreds of megabytes of per-mutant detail.
 MutationReport/
 StrykerOutput/
+
+# MCP tool evaluation runs (build/mcp-eval.py)
+McpEvalRuns/

@@ -298,6 +298,35 @@ Tool-usage logging is **off by default**. To turn it on, create a file named `mc
 
 The `MLQT_MCP_TOOL_LOG` environment variable overrides the marker file: set it to a path to force logging on at that path (regardless of the marker file), or to `off` to force it off.
 
+## Measuring how well the toolset works (evaluation harness)
+
+The log above says what one agent did; `build/mcp-eval.py` says how well agents do **across a fixed set of tasks**, so a change to the toolset — a description reworded, two tools merged, one removed — can be judged by the numbers rather than by impression. It runs each task in [TestFixtures/McpEval/tasks.json](../TestFixtures/McpEval/tasks.json) headless through Claude Code (`claude -p --output-format stream-json`) against a fresh copy of a small fixture library, with this server as the only MCP server and its tool-usage log pointed at that run. It then checks the files and the answer, and reads the transcript for what the agent did.
+
+```bash
+python build/mcp-eval.py check-tasks                     # free: proves every task fails before it is done
+python build/mcp-eval.py run --msl <MSL>/Modelica --label baseline --repeats 3 --parallel 3
+python build/mcp-eval.py compare McpEvalRuns/<baseline> McpEvalRuns/<candidate>
+```
+
+`--msl` (or `MLQT_EVAL_MSL`) is the directory holding the Modelica Standard Library's `package.mo`. The server is the newest build under `MLQT.McpServer/bin` unless `--server` names one, so **build it first**. Each run folder in `McpEvalRuns/` (git-ignored) holds `report.md`, `results.json`, and per run the prompt, the transcript, the server's log and the diff the agent left.
+
+The report gives, per task and over all of them:
+
+| Measure | What it says |
+|---|---|
+| **Pass** | every check of the task held — the files changed as asked, or the answer named what it should |
+| **Calls / MLQT** | tool calls in all, and those to this server. Many redundant calls point at a tool returning too little or needing a mode it lacks |
+| **Errors** | tool results flagged as errors. Many for invalid parameters point at a description or schema |
+| **Bypass** | calls to the agent's own file tools (Read, Grep, Glob, Edit, Write). The work directory holds only Modelica, so each is Modelica read or changed without MLQT |
+| **Expected tools** | whether the agent reached for a tool the task was written for (`expected_tools`, alternatives separated by `\|`). Informational: a different route that passes is not a failure |
+| **Tokens, seconds, cost** | from the run's final `result` event |
+
+and, per tool, its calls, errors, mean result size and mean server time, plus the **tools no run called**.
+
+Each run calls the model and is charged: a task costs roughly $0.20–0.40 at the default model, so all twelve tasks three times is around $10. `--tool-search false` loads every tool definition up front instead of on demand, which is the setting to compare a large toolset against a small one under. `--setting-sources` defaults to `project`, which leaves your own Claude Code settings and hooks out of the run.
+
+**A new task needs checks that fail before it is done** — `check-tasks` runs every task's checks against the untouched fixture with an empty answer and fails if any task passes there, since a check that holds before the agent starts measures nothing.
+
 The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value.
 
 ## When the client says the server disconnected

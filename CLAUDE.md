@@ -378,7 +378,7 @@ User-facing documentation is in `Documentation/`:
 | `file-monitoring.md` | Change detection, debouncing, refresh button |
 | `modelica-concepts.md` | Modelica language primer for non-Modelica users |
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
-| `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
+| `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging, the evaluation harness |
 | `cli.md` | Headless `mlqt` CLI: install, `check` options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown/review), baseline/ratchet, `compare` for missing classes, `hook` for the git pre-commit gate, `review` for pull-request comments, exit codes |
 | `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub, comment on a pull request, install the pre-commit hook |
 | `troubleshooting.md` | Common findings, FAQ |
@@ -482,6 +482,12 @@ Update project readme files when changes are made.
 path (`Libraries/Smoke`). `build/validate-sarif.ps1` checks a report generated from it against the
 SARIF 2.1.0 schema with `Sarif.Multitool`, and the nesting is what proves `--sarif-base` writes paths
 a consumer can resolve. Run on every push by `build-and-test.yml`; run it locally the same way.
+
+`TestFixtures/McpEval/` is the library and task list `build/mcp-eval.py` runs Claude Code against
+to measure how well an agent uses the MCP server (pass rate, tool calls, errors, calls that bypass MLQT,
+tokens), so a change to the toolset can be compared run against run. **It calls the model and costs
+money**, so nothing runs it automatically; `python build/mcp-eval.py check-tasks` is free and proves no
+task passes on the untouched fixture. The fixture's flaws are deliberate - see its README.
 
 ## Test Cases
 
