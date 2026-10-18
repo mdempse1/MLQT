@@ -41,6 +41,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURE = REPO / "TestFixtures" / "McpEval"
+NOT_LIBRARIES = {"scenarios"}
 SERVER_NAME = "mlqt"
 MCP_PREFIX = f"mcp__{SERVER_NAME}__"
 # Claude Code's own tools that can read, search or change files without the server.
@@ -100,7 +101,10 @@ def find_claude():
 
 def prepare_workdir(keep_root):
     work = Path(tempfile.mkdtemp(prefix="mlqt-eval-", dir=keep_root))
-    shutil.copytree(FIXTURE / "EvalLib", work / "EvalLib")
+    # Every library in the fixture, so a task can load EvalLib's neighbours too; not the scenarios,
+    # which are prompts for a person to run, not part of any library.
+    for library in sorted(d for d in FIXTURE.iterdir() if d.is_dir() and d.name not in NOT_LIBRARIES):
+        shutil.copytree(library, work / library.name)
     git = ["git", "-c", "user.name=mcp-eval", "-c", "user.email=mcp-eval@localhost", "-c", "core.autocrlf=false"]
     for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "fixture"]):
         subprocess.run(git + args, cwd=work, check=True, capture_output=True)
@@ -108,8 +112,10 @@ def prepare_workdir(keep_root):
 
 
 def render_prompt(preamble, task, work, msl):
-    lib = str(work / "EvalLib")
-    return (preamble + "\n\n" + task["prompt"]).replace("{lib}", lib).replace("{msl}", str(msl))
+    text = preamble + "\n\n" + task["prompt"]
+    for key, value in (("{lib}", work / "EvalLib"), ("{work}", work), ("{msl}", msl)):
+        text = text.replace(key, str(value).replace("\\", "/"))
+    return text
 
 
 def kill_tree(proc):
@@ -132,7 +138,7 @@ def run_one(task, repeat, ctx):
     mcp_config.write_text(json.dumps({"mcpServers": {SERVER_NAME: {
         "command": str(ctx["server"]),
         "args": [],
-        "env": {"MLQT_MCP_TOOL_LOG": str(server_log.resolve())},
+        "env": {**ctx["server_env"], "MLQT_MCP_TOOL_LOG": str(server_log.resolve())},
     }}}, indent=2), encoding="utf-8")
 
     cmd = [ctx["claude"], "-p",
@@ -417,10 +423,12 @@ def write_report(run_dir, results, config):
 
     lines = [f"# MCP tool evaluation - {config.get('label') or run_dir.name}", ""]
     lines += ["| Setting | Value |", "|---|---|"]
-    for key in ("started", "model", "server", "server_built", "tool_search", "repeats", "allowed_tools"):
+    for key in ("started", "model", "server", "server_built", "server_env", "tool_search", "repeats", "allowed_tools"):
         value = config.get(key)
         if key == "model" and not value:
             value = ", ".join(sorted({r.get("model", "") for r in results})) or "(default)"
+        if key == "server_env":
+            value = ", ".join(f"{k}={v}" for k, v in (value or {}).items()) or "(none)"
         lines.append(f"| {key} | {', '.join(value) if isinstance(value, list) else value} |")
     lines.append(f"| MLQT tools offered | {len(available)} |")
     lines.append("")
@@ -755,6 +763,18 @@ def cmd_analyse(args):
 
 # --------------------------------------------------------------------------------------------- commands
 
+def parse_server_env(items):
+    env = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip():
+            sys.exit(f"--server-env takes KEY=VALUE, not {item!r}")
+        if key.strip() == "MLQT_MCP_TOOL_LOG":
+            sys.exit("--server-env cannot set MLQT_MCP_TOOL_LOG: the harness sets each run's log")
+        env[key.strip()] = value
+    return env
+
+
 def cmd_run(args):
     spec = json.loads((FIXTURE / "tasks.json").read_text(encoding="utf-8"))
     tasks = spec["tasks"]
@@ -770,6 +790,7 @@ def cmd_run(args):
         sys.exit("pass --msl (or set MLQT_EVAL_MSL) to the Modelica Standard Library directory holding package.mo")
 
     server = find_server(args.server)
+    server_env = parse_server_env(args.server_env)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = Path(args.output or REPO / "McpEvalRuns") / (stamp + (f"-{args.label}" if args.label else ""))
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -778,13 +799,14 @@ def cmd_run(args):
         "label": args.label, "started": stamp, "model": args.model, "server": str(server),
         "server_built": datetime.datetime.fromtimestamp(server.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
         "tool_search": args.tool_search or "(Claude Code default)", "repeats": args.repeats,
-        "allowed_tools": args.allowed_tools, "tasks": [t["id"] for t in tasks],
+        "allowed_tools": args.allowed_tools, "server_env": server_env, "tasks": [t["id"] for t in tasks],
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     ctx = {"run_dir": run_dir, "server": server, "claude": find_claude(), "msl": Path(msl).resolve(),
            "preamble": spec.get("preamble", ""), "model": args.model, "tool_search": args.tool_search,
            "timeout": args.timeout, "allowed_tools": args.allowed_tools, "keep_work": args.keep_work,
+           "server_env": server_env,
            "setting_sources": args.setting_sources, "work_root": None}
 
     jobs = [(t, r) for r in range(1, args.repeats + 1) for t in tasks]
@@ -868,6 +890,8 @@ def main():
                      help=f"tools the agent may use without asking (default: {' '.join(DEFAULT_ALLOWED)})")
     run.add_argument("--setting-sources", default="project",
                      help="claude --setting-sources; the default leaves out your user settings and hooks")
+    run.add_argument("--server-env", action="append", default=[], metavar="KEY=VALUE",
+                     help="an environment variable for the MLQT server, e.g. MLQT_MCP_TOOLSET=consolidated (repeatable)")
     run.add_argument("--timeout", type=int, default=600, help="seconds before a run is killed (default 600)")
     run.add_argument("--label", help="name for this run, used in the folder name and the report")
     run.add_argument("--output", help="where run folders go (default: McpEvalRuns/ at the repository root)")
@@ -905,6 +929,8 @@ def main():
     check.set_defaults(func=cmd_check_tasks)
 
     args = parser.parse_args()
+    # The reports use arrows and dashes; a Windows console's code page cannot print them.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(args.func(args))
 
 

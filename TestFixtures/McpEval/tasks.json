@@ -1,5 +1,5 @@
 {
-  "preamble": "You are working on a Modelica project. The library EvalLib is in the directory {lib}. It depends on the Modelica Standard Library 4.1.0, which is at {msl}. Do not ask questions; complete the task and finish with a short answer.",
+  "preamble": "You are working on a Modelica project. The library EvalLib is in the directory {lib}; the project's other libraries are beside it in {work}. It depends on the Modelica Standard Library 4.1.0, which is at {msl}. Do not ask questions; complete the task and finish with a short answer.",
   "tasks": [
     {
       "id": "read-interface",
@@ -41,7 +41,7 @@
       "checks": [
         { "type": "answer_matches", "pattern": "EvalLib\\.Examples\\.SimpleLoop" },
         { "type": "answer_matches", "pattern": "EvalLib\\.Examples\\.FilteredLoop" },
-        { "type": "answer_not_matches", "pattern": "EvalLib\\.Examples\\.NoisySource" }
+        { "type": "answer_not_matches", "pattern": "EvalLib\\.Examples\\.NoisySource(?![^\\n]*\\bnot\\b)" }
       ]
     },
     {
@@ -128,6 +128,75 @@
         { "type": "glob_matches", "glob": "EvalLib/Examples/**/*.mo", "pattern": "connect\\s*\\(\\s*step\\.y\\s*,\\s*lag\\.u\\s*\\)" },
         { "type": "glob_matches", "glob": "EvalLib/Examples/**/*.mo", "pattern": "connect\\s*\\(\\s*lag\\.y\\s*,\\s*integrator\\.u\\s*\\)" },
         { "type": "glob_matches", "glob": "EvalLib/Examples/**/*.mo", "pattern": "StopTime\\s*=\\s*5\\b" }
+      ]
+    },
+    {
+      "id": "patch-class",
+      "group": "edit",
+      "prompt": "In EvalLib.Blocks.FirstOrderLag, change the default of T to 0.25 and add a parameter Real k = 1 with the description \"Gain applied to the input\", so that the equation becomes T*der(y) = k*u - y. Change nothing else in the class.",
+      "expected_tools": ["edit_class|update_class_source|set_component_modifier|add_component|batch_edit"],
+      "checks": [
+        { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "parameter\\s+Modelica\\.Units\\.SI\\.Time\\s+T\\s*=\\s*0\\.25\\b" },
+        { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "parameter\\s+Real\\s+k\\s*=\\s*1\\s*\"Gain applied to the input\"" },
+        { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "T\\s*\\*\\s*der\\s*\\(\\s*y\\s*\\)\\s*=\\s*k\\s*\\*\\s*u\\s*-\\s*y\\s*;" },
+        { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "\"Tiem constant of the lag\"" },
+        { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "Documentation\\s*\\(\\s*info\\s*=" }
+      ]
+    },
+    {
+      "id": "find-in-code",
+      "group": "search",
+      "prompt": "Which classes in EvalLib set the parameter T of one of their components through a modifier, as in lag(T = ...)? List them by fully qualified name.",
+      "expected_tools": ["find"],
+      "checks": [
+        { "type": "answer_matches", "pattern": "EvalLib\\.Examples\\.FilteredLoop" },
+        { "type": "answer_not_matches", "pattern": "EvalLib\\.Examples\\.(NoisySource|SimpleLoop)" }
+      ]
+    },
+    {
+      "id": "build-package",
+      "group": "author",
+      "prompt": "Create a package EvalLib.Sources containing four blocks, each extending Modelica.Blocks.Interfaces.SO: Constant, with parameter Real k = 1 and y = k; Ramp, with parameters Real height = 1 and Real duration = 1 and y = height*min(time/duration, 1); Delayed, with parameters Real height = 1 and Real startTime = 0 and y = if time < startTime then 0 else height; and Sawtooth, with parameters Real period = 1 and Real amplitude = 1 and y = amplitude*(time/period - floor(time/period)).",
+      "expected_tools": ["create_class|write_class"],
+      "checks": [
+        { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "package\\s+Sources\\b" },
+        { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "block\\s+Constant\\b[\\s\\S]*extends\\s+Modelica\\.Blocks\\.Interfaces\\.SO[\\s\\S]*y\\s*=\\s*k\\s*;[\\s\\S]*end\\s+Constant\\s*;" },
+        { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "block\\s+Ramp\\b[\\s\\S]*extends\\s+Modelica\\.Blocks\\.Interfaces\\.SO[\\s\\S]*min\\s*\\([\\s\\S]*end\\s+Ramp\\s*;" },
+        { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "block\\s+Delayed\\b[\\s\\S]*extends\\s+Modelica\\.Blocks\\.Interfaces\\.SO[\\s\\S]*if\\s+time\\s*<\\s*startTime[\\s\\S]*end\\s+Delayed\\s*;" },
+        { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "block\\s+Sawtooth\\b[\\s\\S]*extends\\s+Modelica\\.Blocks\\.Interfaces\\.SO[\\s\\S]*floor\\s*\\([\\s\\S]*end\\s+Sawtooth\\s*;" },
+        { "type": "file_matches", "path": "EvalLib/package.order", "pattern": "(?m)^Sources\\s*$" }
+      ]
+    },
+    {
+      "id": "format-library",
+      "group": "format",
+      "prompt": "The library EvalApp, in {work}/EvalApp, was written without regard to layout. Format every class in it with MLQT's formatter, and write the result to disk.",
+      "expected_tools": ["format_class|format"],
+      "checks": [
+        { "type": "file_not_matches", "path": "EvalApp/Demo.mo", "pattern": "\\);[ \t]*EvalDep\\.Scale" },
+        { "type": "file_matches", "path": "EvalApp/Demo.mo", "pattern": "annotation\\s*\\(\\s*\n\\s+experiment\\(StopTime\\s*=\\s*1\\)\\s*\n\\s*\\);" },
+        { "type": "file_not_matches", "path": "EvalApp/TwoStage.mo", "pattern": ";[ \t]*(EvalDep\\.Scale|connect)\\b" },
+        { "type": "file_matches", "path": "EvalApp/TwoStage.mo", "pattern": "connect\\(ramp\\.y, first\\.u\\);[ \t]*\r?\n[ \t]*connect\\(first\\.y, second\\.u\\);" }
+      ]
+    },
+    {
+      "id": "load-dependencies",
+      "group": "load",
+      "prompt": "Load the library EvalApp, in {work}/EvalApp, into MLQT together with everything it depends on. Then tell me which version of EvalDep MLQT has loaded, and the directory it came from.",
+      "expected_tools": ["load_library|load_repository|load"],
+      "checks": [
+        { "type": "answer_matches", "pattern": "\\b1\\.0\\.0\\b" },
+        { "type": "answer_matches", "pattern": "mlqt-eval-[^/\\\\\\s`]+[/\\\\]EvalDep(?![ \\w])" }
+      ]
+    },
+    {
+      "id": "load-simulator-set",
+      "group": "load",
+      "prompt": "Dymola was started with a startup script that ran openModel(\"{work}/EvalApp/package.mo\") and openModel(\"{work}/vendor/EvalDep 2.0.0/package.mo\"). Load the same libraries into MLQT, plus whatever else EvalApp needs, and tell me which version of EvalDep MLQT has loaded and the directory it came from.",
+      "expected_tools": ["load_library|load_repository|load"],
+      "checks": [
+        { "type": "answer_matches", "pattern": "\\b2\\.0\\.0\\b" },
+        { "type": "answer_matches", "pattern": "(?i)vendor" }
       ]
     }
   ]

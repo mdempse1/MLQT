@@ -1,6 +1,6 @@
 # MCP evaluation fixture
 
-The library and the tasks [build/mcp-eval.py](../../build/mcp-eval.py) runs an agent against, to measure
+The libraries and the tasks [build/mcp-eval.py](../../build/mcp-eval.py) runs an agent against, to measure
 how well it uses the MLQT MCP server. See [Measuring how well the toolset works](../../Documentation/mcp-server.md#measuring-how-well-the-toolset-works-evaluation-harness).
 
 `EvalLib` is small and **deliberately imperfect**. Each flaw is there for a task, so do not fix one:
@@ -12,13 +12,24 @@ how well it uses the MLQT MCP server. See [Measuring how well the toolset works]
 | `Examples.NoisySource` declares `Modelica.Blocks.Sources.Sinee`, which does not exist | `fix-broken-reference` |
 | `Blocks.FirstOrderLag.y_start` has no description | free for a style task |
 
-It uses the Modelica Standard Library 4.1.0, which is not in the repository: the harness is told
+Beside it are three more, for the tasks that load and format libraries. Every folder here except
+`scenarios` is copied into each run's work directory:
+
+| Library | Version | What it is for |
+|---|---|---|
+| `EvalApp` | — | Needs `EvalDep` 1.0.0. Its classes are **deliberately badly laid out**, for `format-library`. Its own `uses` is what `load-dependencies` follows |
+| `EvalDep` | 1.0.0 | The copy beside `EvalApp`, which `uses` asks for: what `load-dependencies` should find |
+| `vendor/EvalDep 2.0.0` | 2.0.0 | Another copy, declaring `conversion(noneFromVersion="1.0.0")`. `load-simulator-set` names it as the one a simulator's startup script opened, so it must win over the copy a search finds |
+
+They use the Modelica Standard Library 4.1.0, which is not in the repository: the harness is told
 where it is with `--msl`.
+
+`scenarios/` holds two real-world scenarios, run by hand rather than by the harness. See its README.
 
 ## Adding a task
 
 A task in `tasks.json` has an `id`, a `group`, a `prompt` (the shared `preamble` goes in front of it,
-with `{lib}` and `{msl}` filled in), the `expected_tools` it was written for (alternatives separated
+with `{lib}` (EvalLib), `{work}` (the work directory) and `{msl}` filled in, all with forward slashes), the `expected_tools` it was written for (alternatives separated
 by `|`, matched without the `mlqt_` prefix), and `checks`:
 
 | Check | Passes when |
