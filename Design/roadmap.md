@@ -154,6 +154,16 @@ as the plain one does. The rules and their guard tests are in `CODING_GUIDELINES
 Must Survive Obfuscation; the verification is `Design/release-checklist.md` §7. The design note was
 retired with it.
 
+### Alongside: MCP tool consolidation (B503) — planned
+
+The MCP server goes from 66 tools to 16. The tools agents use for workflows are kept, and the gaps that send them
+round MLQT are closed: a text-patch edit, a search over code, many classes in one call, a whole-library
+format, and bounded answers. Measured first: in four real model-building sessions, at least 117 writes
+to `.mo` files and about 240 reads went through the agent's own shell and file tools, while 44–59 of
+the 66 tools went uncalled. The steps, their exit criteria and the full mapping are in
+`Design/mcp-tool-consolidation.md`. Its first piece shipped early: `mlqt_validate_class_references`
+checks a whole library in one call (2026-10-17).
+
 ### Deferred, with no place in the sequence
 
 **macOS.** Photino supports it and the intent predates the migration, but nothing depends on it and
@@ -236,7 +246,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B503**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B504**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
