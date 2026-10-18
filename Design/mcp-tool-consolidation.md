@@ -76,7 +76,7 @@ in one call, and bounded answers. Merging is what keeps the surface from growing
 
 | # | Tool | Writes | Replaces | New behaviour |
 |--:|---|---|---|---|
-| 1 | `mlqt_load` | memory | `load_repository`, `load_library`, `discover_libraries` | Finds the kind from the path (working copy, directory of libraries, one library, one file). `discover_only` lists without loading. `with_dependencies` loads what the `uses` annotation names when it can find it, and says which it could not |
+| 1 | `mlqt_load` | memory | `load_repository`, `load_library`, `discover_libraries` | Finds the kind from the path (working copy, directory of libraries, one library, one file). Takes **a list of paths**, all loaded explicitly, or a startup `script` to read (*When the simulator's session decides*). `discover_only` lists without loading. `with_dependencies` (default on) loads what the `uses` annotations name, searched as *Finding dependencies* below; `tool` (`dymola` / `openmodelica` / `none`) says whose library folders to search |
 | 2 | `mlqt_session` | memory | `server_info`, `list_libraries`, `list_repositories`, `unload_library`, `reload` | `action`: `status` (the default) / `unload` / `reload`. `status` is concise: names, versions, counts and dependencies still missing |
 | 3 | `mlqt_create_library` | disk | — | Unchanged |
 | 4 | `mlqt_find` | no | `search_classes`, `search_text`, `search_by_interface`, `list_classes` | `match`: `name` / `text` / `code` / `interface`, with the filters each has today. **`code` is new**: it returns matching lines of class source as class id, line and snippet, the grep an agent runs today, but over every loaded class and the MSL |
@@ -100,6 +100,133 @@ become parts of `mlqt_check`'s answer.
 `mlqt_create_library` starts a project. `mlqt_list_findings` reads stored results without re-running
 a check. Folding any of these into a neighbour would give that neighbour a second job with a
 different answer shape.
+
+## Finding dependencies
+
+`mlqt_load` loads a library's dependencies itself, so an agent no longer has to find the MSL. Without
+them, types do not resolve, and in the 2026-10-18 sessions agents read the MSL straight from the
+install folders instead.
+
+**What the tools do** (from the Modelica specification 3.6, the Dymola 2026x Refresh 1 manuals and the
+OpenModelica 1.27 User's Guide):
+
+- **The specification** (§13.3) searches MODELICAPATH "in the specified order" and leaves what
+  MODELICAPATH contains to the tool. It allows a version to guide the search. It names four forms a
+  library may be stored in: `Name.mo`, `Name Version.mo`, `Name/package.mo` and `Name Version/package.mo`.
+  A larger `versionBuild` is a later maintenance release (§18.8).
+- **Dymola** searches MODELICAPATH, and puts `<install>/Modelica/Library` first in it. It searches the
+  directories enclosing a loaded package **after** MODELICAPATH by default, or before it with
+  `Advanced.Modelica.EnclosingDirectoryModelicaPath = 1`. The first library loaded fixes the MSL
+  version for the session.
+- **OpenModelica** searches its library path: `%AppData%\.openmodelica\libraries` on Windows,
+  `~/.openmodelica/libraries` on Linux, or `OPENMODELICALIBRARY` when that is set. It does not read
+  the `MODELICAPATH` variable. It also looks beside a package opened from disk, at a point the guide
+  does not document. A versioned `uses` loads only a folder whose name carries that version. If that
+  version is missing, it takes the newest installed version whose `conversion(noneFromVersion=...)`
+  covers it. Its libraries carry a build suffix, as in `Modelica 4.1.0+maint.om`.
+
+**The order MLQT searches**, first match wins:
+
+1. **Libraries already loaded.** A dependency already in the session is used as it is if it was
+   loaded explicitly (see below), whatever its version. One found by an earlier search is used if its
+   version satisfies `uses`. A different searched version already loaded is reported as a conflict,
+   and nothing is loaded over it, as Dymola refuses to mix MSL versions.
+2. **Sibling directories:** the directory holding the library being loaded, then the root of its
+   repository. This is Dymola's flag-1 order, not its default. It is chosen because a library
+   checked out beside the one being worked on is the copy the project is developed against. Version
+   matching keeps a stale sibling from winning: a sibling is taken only if its version satisfies
+   `uses`.
+3. **The simulation tool's library folders**, for the `tool` named. For Dymola that is
+   `<install>/Modelica/Library`. For OpenModelica it is the user library path above. The install is
+   the one set in MLQT's External Tools settings if there is one; otherwise the newest found by
+   `DymolaSettings.FindInstalledDymola` or `OpenModelicaSettings.FindInstalledOmc`, which already
+   exist.
+4. **`MODELICAPATH`**, in its order.
+
+**Which version is taken.** In each place, all four storage forms are looked for. A version is read
+from the folder or file name, then from the package's `version` annotation, and a build suffix is
+ignored when comparing.
+
+- An exact match is taken first. Among several, the one with the larger build is taken.
+- Otherwise the newest version whose `conversion(noneFromVersion=...)` covers the required one is
+  taken, as OpenModelica does, and the answer says so.
+- Otherwise nothing is loaded. The answer lists every candidate seen and where.
+- An unversioned copy is taken only when `uses` names no version.
+- An encrypted library (`package.moe`, common in Dymola's library folder) loads read-only, as it does
+  today.
+
+Dependencies of dependencies are followed in the same way: the MSL's own `uses` names `Complex` and
+`ModelicaServices`. **The answer names each dependency loaded, the version, where it was found and by
+which rule.** It also names each dependency that was not found. A search an agent cannot see would be
+no better than the guessing it replaces.
+
+### When the simulator's session decides
+
+Many Dymola users do not set MODELICAPATH to find the libraries they work with. Each project needs
+different versions of them, so a **startup script** opens the right ones when Dymola starts: `.mos`
+lines such as `openModel("C:/Libs/CoreLib 2026.1/package.mo")`. The Dymola MCP server can be told to
+run the same script. For such a user **the libraries the simulator has loaded are the truth**, and no
+search MLQT does will find them reliably. Its first search may even find another version first.
+
+So a library can come into MLQT in two ways, and **MLQT records which way each one came**:
+
+- **Explicitly:** a path the caller passed to `mlqt_load`. This wins. If the library is already
+  loaded as a searched dependency, at another version or from another path, that copy is unloaded and
+  the explicit one loaded in its place. The answer names both. Dependency analysis is re-run for the
+  classes that used it. If an explicit copy is already loaded from another path, the call is refused
+  unless `replace: true`. Two explicit copies disagreeing means the caller has to choose.
+- **By search:** found for a `uses`, by the order above. It never replaces anything.
+
+An explicit library whose version differs from what another library's `uses` asks for is kept, with a
+warning in the answer: the simulator is using that version, so MLQT must use it too.
+
+To support this, `mlqt_load` takes **a list of paths**. All of them are loaded explicitly first, and
+only then is the search run, for what is still missing. One call reproduces a startup script's set
+without the search getting in first. `mlqt_session status` shows each library's version, path and
+whether it came explicitly or by search.
+
+**Where the set comes from depends on the tool.**
+
+- **OpenModelica can be asked.** `getLoadedLibraries()` lists each loaded library with its directory.
+- **Dymola cannot.** It has no command that reports which libraries are loaded or where they came
+  from. **The startup script is the record**, so `mlqt_load` takes `script`: the path of a `.mos` file,
+  which it **reads but does not run**.
+
+**What reading a script means.** The script is walked in order, keeping the three things Dymola keeps
+as it runs one: the current directory, the ModelicaPath and the libraries opened. A function is
+recognised bare (`openModel`) or fully qualified (`DymolaCommands.SimulatorAPI.openModel`). A Dymola
+command written without parentheses, as `cd C:/Work`, is read too.
+
+| Command | What reading it does |
+|---|---|
+| `openModel(path, mustRead, changeDirectory)` | Loads `path` explicitly, resolving a relative path against the current directory. Then, as Dymola does by default (`changeDirectory=true`), makes the file's folder the current directory |
+| `openModelFile(modelName, path, version)` | With `path`, loads that file. Without it, finds `modelName` at `version` along the script's ModelicaPath, using the version rules above, and loads it explicitly |
+| `DymolaCommands.System.AddModelicaPath(path)` | Appends the directory to the script's ModelicaPath. That path starts as Dymola's own: `<install>/Modelica/Library`, then `MODELICAPATH` |
+| `cd(dir)` | Changes the current directory |
+| `RunScript(script, silent, scriptDir)` | Reads that script too, in place, once only, so a script that runs itself does not loop |
+| `import Name` | Loads the top-level library `Name` if it is not already loaded, as Dymola does in a script, and does nothing if it is. It is found along the script's ModelicaPath as it stands at that line, taking the first copy found, as Dymola's search does. `import A.B` loads `A`. It does not create an alias |
+
+A path argument is read when it is a string literal, a string variable assigned a literal earlier in
+the script, or a `+` concatenation of those. Every other line, and any argument it cannot work out,
+for example one computed by a function, is **reported with its line number** and not guessed at.
+The current directory starts as the script's own folder, unless the caller passes the directory
+Dymola starts in. The answer lists every library loaded with the script line that loaded it.
+
+**Getting the script.** The guidance tells the agent to ask the user for the startup script. If the
+Dymola MCP server was given one, the agent uses that path. An agent cannot recover it from Dymola.
+
+**The guidance gives this order.** It is in the `simulators` topic, and one sentence of the server
+instructions points to it:
+
+1. **Dymola:** ask the user for the startup script, and call `mlqt_load` with `script`.
+   **OpenModelica:** call `getLoadedLibraries()`, and pass all the directories to `mlqt_load` in one
+   call.
+2. Leave `with_dependencies` on, so the search fills in only what the script or the simulator did not
+   load.
+3. If the simulator's set changes, for example when the user switches to another project's script,
+   load again. The explicit libraries replace what was there.
+4. With no script and no running simulator, fall back to the search alone, and say in the answer
+   which versions it found. The user can then correct them.
 
 ## How it is built
 
@@ -133,8 +260,15 @@ and read with `analyse --dedicated`.
   - find every use of a name in code;
   - build a package of four or more classes;
   - format a whole library;
-  - load a library together with its dependencies.
+  - load a library together with its dependencies;
+  - load the versions a simulator has loaded, when a search would find another version first. The
+    fixture gets a small dependency in two versions, one beside `EvalLib` and one elsewhere, and the
+    prompt says which one the simulator has loaded.
   Each new task must pass `check-tasks`.
+- Collect real startup scripts, with the user's permission, and save them as fixtures for the script
+  reader, with the libraries each should load. They should cover nested `RunScript` calls,
+  `AddModelicaPath` followed by `openModelFile` by name, and relative paths after `openModel` has
+  changed directory.
 - Give the harness `--server-env KEY=VALUE` (passed into the MCP config's `env`), so a run can choose
   `MLQT_MCP_TOOLSET`.
 - Save the prompts of the four real sessions as `TestFixtures/McpEval/scenarios/`. They need Dymola or
@@ -153,7 +287,11 @@ This step needs no switch, and it pays off on its own.
 - Let `create_class` take several classes, and let `format_class` take a library.
 - Make `get_resource_warnings`, `load_repository`, `get_package_tree` and `list_libraries` concise by
   default, and page them.
-- Let `load_library` and `load_repository` load the dependencies their `uses` annotations name.
+- Let `load_library` and `load_repository` load the dependencies their `uses` annotations name, in
+  the order and by the version rules of *Finding dependencies*, with the `tool` parameter. Record
+  whether each library came explicitly or by search, let an explicit load replace a searched one,
+  take a list of paths, read a Dymola startup script, and update the `simulators` guidance to the
+  order above.
 
 **Exit criterion:** compared with the 2026-10-18 sessions, at least half fewer writes to `.mo` files
 outside MLQT and at least half fewer `reload` calls. Fewer reads outside MLQT. No drop in harness pass
@@ -194,7 +332,10 @@ any merge.
 | A `replace` matches more than once, or not at all | It must match exactly once within the class, as Claude's own `Edit` requires, and the error says how many matches there were. The patched class must parse before anything is written |
 | `mlqt_get_class` with many classes and views returns a huge answer | Concise by default. A total character budget per call, with a note naming what was left out and how to ask for it |
 | Fewer, wider tools need longer descriptions | Kept under about 1,000 characters, with the detail in `mlqt_get_guidance`. Step 3 is run with Tool Search off too, so the up-front cost of the definitions is measured, not assumed |
-| Loading dependencies finds the wrong MSL version | Load only a version that matches the `uses` annotation. Otherwise report what was found and load nothing |
+| Loading dependencies finds the wrong version, or a stale sibling | A copy is taken only if its version satisfies `uses`. A version already loaded is never replaced. The answer names where each dependency came from, so a wrong pick is visible |
+| A startup script computes a path the reader cannot work out | The line is reported with its number, and the answer says which libraries may be missing because of it. The agent can pass that path itself |
+| An explicit load replaces a library other classes were analysed against | The replaced copy is named in the answer, and dependency analysis is re-run for the classes that used it |
+| Sibling-first differs from Dymola's default order | It is Dymola's documented alternative order, and version matching makes the two agree whenever the sibling's version is the one `uses` asks for |
 | The consolidated set is no better | Step 1 is worth having on its own. If step 3 fails twice, ship step 1, keep the current names, and record the merge under *Decided against* with the numbers |
 
 ## For the user to decide before step 2
@@ -203,9 +344,6 @@ any merge.
    only `replace`? The recommendation is to keep them. `add_connection` refuses incompatible
    connectors and routes the line on the diagram, and `remove_component` takes the component's
    connections with it; a text patch does neither. Drop any that are still uncalled after step 3.
-2. **Where dependencies are looked for.** `MODELICAPATH`, the libraries folders of the installed
-   Dymola and OpenModelica, and the repositories already loaded, in that order? Or only paths the user
-   configures?
-3. **Cut over in one release, or keep the old names alongside for one release?** The recommendation is
+2. **Cut over in one release, or keep the old names alongside for one release?** The recommendation is
    one release: a second surface kept "for compatibility" is exactly the two-implementations shape this
    repository avoids, and every host known today builds MLQT from source.
