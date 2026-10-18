@@ -137,10 +137,17 @@ OpenModelica 1.27 User's Guide):
    matching keeps a stale sibling from winning: a sibling is taken only if its version satisfies
    `uses`.
 3. **The simulation tool's library folders**, for the `tool` named. For Dymola that is
-   `<install>/Modelica/Library`. For OpenModelica it is the user library path above. The install is
-   the one set in MLQT's External Tools settings if there is one; otherwise the newest found by
-   `DymolaSettings.FindInstalledDymola` or `OpenModelicaSettings.FindInstalledOmc`, which already
-   exist.
+   `<install>/Modelica/Library`. For OpenModelica it is the user library path above. Which install is
+   searched is decided in this order:
+   1. `tool_install` passed to `mlqt_load`: the install folder or executable. A machine often has
+      many Dymola releases, and the one the user runs is not necessarily the newest.
+   2. The tool paths in the desktop app's External Tools settings (`settings.json`), read and nothing
+      else. The server keeps its own `mcp-settings.json` so that an agent does not inherit a project
+      a person had open, and a tool's path is not a project.
+   3. The newest install found by `DymolaSettings.FindInstalledDymola` or
+      `OpenModelicaSettings.FindInstalledOmc`, which already exist.
+
+   The answer always names the install it searched.
 4. **`MODELICAPATH`**, in its order.
 
 **Which version is taken.** In each place, all four storage forms are looked for. A version is read
@@ -250,7 +257,7 @@ comparison (`Design/release-checklist.md` §7) is re-run against the new set bef
 ## Steps
 
 Each step is measured before the next one starts. "Measured" means a harness run (`mcp-eval.py run
---repeats 3`) compared with the baseline, plus, from step 1 on, the four real sessions' prompts re-run
+--repeats 3`) compared with the baseline, plus, from step 1 on, the two real-world scenarios of step 0 re-run
 and read with `analyse --dedicated`.
 
 ### 0. Make the harness able to see the change
@@ -265,14 +272,18 @@ and read with `analyse --dedicated`.
     fixture gets a small dependency in two versions, one beside `EvalLib` and one elsewhere, and the
     prompt says which one the simulator has loaded.
   Each new task must pass `check-tasks`.
-- Collect real startup scripts, with the user's permission, and save them as fixtures for the script
-  reader, with the libraries each should load. They should cover nested `RunScript` calls,
+- Take two or three of the user's real Dymola startup scripts, anonymise them, and save them as
+  fixtures for the script reader, each with the libraries it should load. Client names and paths are
+  replaced before anything is committed, and the structure is kept. They should cover nested `RunScript` calls,
   `AddModelicaPath` followed by `openModelFile` by name, and relative paths after `openModel` has
   changed directory.
 - Give the harness `--server-env KEY=VALUE` (passed into the MCP config's `env`), so a run can choose
   `MLQT_MCP_TOOLSET`.
-- Save the prompts of the four real sessions as `TestFixtures/McpEval/scenarios/`. They need Dymola or
-  OpenModelica, so they are run by hand and read with `analyse --dedicated`.
+- Write **two real-world scenarios** in `TestFixtures/McpEval/scenarios/`, one with Dymola and one
+  with OpenModelica. Each is cut down from one of the 2026-10-18 sessions to 30–60 minutes of work.
+  The full sessions took 1–27 hours and 32–329 million input tokens, too much to repeat at every
+  comparison. Each scenario is run by hand and read with `analyse --dedicated`. Run each once on the
+  current set to give the baseline that steps 1 and 3 compare against.
 - Re-run the baseline with the new tasks, with Tool Search on and with it off
   (`--tool-search false`).
 
@@ -293,7 +304,7 @@ This step needs no switch, and it pays off on its own.
   take a list of paths, read a Dymola startup script, and update the `simulators` guidance to the
   order above.
 
-**Exit criterion:** compared with the 2026-10-18 sessions, at least half fewer writes to `.mo` files
+**Exit criterion:** compared with the scenarios' step 0 runs, at least half fewer writes to `.mo` files
 outside MLQT and at least half fewer `reload` calls. Fewer reads outside MLQT. No drop in harness pass
 rate.
 
@@ -305,7 +316,7 @@ test suite.
 ### 3. Compare the two sets
 
 Run the harness, with all tasks 3 times each, under both values of `MLQT_MCP_TOOLSET`, with Tool
-Search on and off. Then re-run two of the real scenarios on each set.
+Search on and off. Then re-run the two real-world scenarios on each set.
 
 **Exit criterion for the consolidated set:**
 - pass rate no lower;
@@ -338,12 +349,21 @@ any merge.
 | Sibling-first differs from Dymola's default order | It is Dymola's documented alternative order, and version matching makes the two agree whenever the sibling's version is the one `uses` asks for |
 | The consolidated set is no better | Step 1 is worth having on its own. If step 3 fails twice, ship step 1, keep the current names, and record the merge under *Decided against* with the numbers |
 
-## For the user to decide before step 2
+## Decisions (2026-10-18)
 
-1. **The element-level operations.** Keep the structural operations inside `mlqt_edit_class`, or keep
-   only `replace`? The recommendation is to keep them. `add_connection` refuses incompatible
-   connectors and routes the line on the diagram, and `remove_component` takes the component's
-   connections with it; a text patch does neither. Drop any that are still uncalled after step 3.
-2. **Cut over in one release, or keep the old names alongside for one release?** The recommendation is
-   one release: a second surface kept "for compatibility" is exactly the two-implementations shape this
-   repository avoids, and every host known today builds MLQT from source.
+The user's answers to the questions this note left open:
+
+1. **The element-level operations stay** inside `mlqt_edit_class`, beside `replace`.
+   `add_connection` refuses incompatible connectors and routes the line on the diagram, and
+   `remove_component` takes the component's connections with it; a text patch does neither. They
+   are re-evaluated after step 3, and any still uncalled are dropped then.
+2. **Dependencies are searched** as *Finding dependencies* sets out: libraries already loaded,
+   sibling directories, the simulation tool's library folders, then MODELICAPATH. Explicit loads,
+   including those read from a Dymola startup script, win.
+3. **The install searched** is chosen by a `tool_install` parameter, then by the desktop app's
+   External Tools paths (read only), then by the newest install detected.
+4. **Startup-script fixtures** come from two or three of the user's real scripts, anonymised.
+5. **The real-world checks** are two cut-down scenarios, not the four full sessions.
+6. **The cut-over is a single release.** The old names are not kept alongside the new ones, and the
+   `Toolset` switch exists only for the comparison in step 3. It is deleted at the cut-over with the
+   old tools.
