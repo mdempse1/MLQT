@@ -245,7 +245,7 @@ public class StartupScriptReaderTests
     {
         using var f = new Fixture();
         using var host = new TestHost();
-        var tools = new MLQT.McpServer.Tools.LoadTools(host.Libraries, host.Repositories, host.Session)
+        var tools = new MLQT.McpServer.Tools.LoadTools(host.Libraries, host.Repositories, host.Resources, host.Session)
         {
             DesktopSettingsDirectory = null,
             Environment_ = k => k == "USERNAME" ? "testuser" : null,
@@ -270,7 +270,7 @@ public class StartupScriptReaderTests
     {
         using var f = new Fixture();
         using var host = new TestHost();
-        var tools = new MLQT.McpServer.Tools.LoadTools(host.Libraries, host.Repositories, host.Session)
+        var tools = new MLQT.McpServer.Tools.LoadTools(host.Libraries, host.Repositories, host.Resources, host.Session)
         {
             DesktopSettingsDirectory = null,
             Environment_ = _ => null,

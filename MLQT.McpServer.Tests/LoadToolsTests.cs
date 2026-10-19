@@ -53,7 +53,7 @@ public class LoadToolsTests
             File.WriteAllText(Path.Combine(Path_(folder), "package.mo"), packageMo);
         }
 
-        public LoadTools Tools() => new(Host.Libraries, Host.Repositories, Host.Session)
+        public LoadTools Tools() => new(Host.Libraries, Host.Repositories, Host.Resources, Host.Session)
         {
             DesktopSettingsDirectory = null,
             Environment_ = key => Environment.GetValueOrDefault(key),
@@ -97,6 +97,41 @@ public class LoadToolsTests
         Assert.Empty(res.NotFound);
         Assert.Equal(Path.Combine(w.Root, "Dymola"), res.ToolInstall);
         Assert.Equal("as given", res.ToolInstallChosen);
+    }
+
+    // ---- A folder of libraries is a repository (B503) ------------------------------------------
+    //
+    // The consolidated set has no mlqt_load_repository, so mlqt_load takes a working copy or a folder of
+    // libraries itself: without it, no repository's style settings or changes could be reached.
+
+    [Fact]
+    public async Task AFolderOfLibraries_IsLoadedAsARepository_AndEachLibraryIsExplicit()
+    {
+        using var w = new World();
+        w.Write("Repo/LibA", Package("LibA"));
+        w.Write("Repo/LibB", Package("LibB"));
+
+        var res = await w.Load("Repo");
+
+        var repository = Assert.Single(res.Repositories!);
+        Assert.True(repository.Success);
+        Assert.Contains(w.Host.Repositories.Repositories, r => r.Id == repository.RepositoryId);
+        foreach (var name in new[] { "LibA", "LibB" })
+            Assert.Equal(("explicit", "in repository 'Repo'"), (Named(res, name).Origin, Named(res, name).FoundBy));
+    }
+
+    [Fact]
+    public async Task DiscoverOnly_ListsARepositorysLibraries_AndLoadsNothing()
+    {
+        using var w = new World();
+        w.Write("Repo/LibA", Package("LibA"));
+        w.Write("Repo/LibB", Package("LibB"));
+
+        var res = ToolAssert.Ok<LoadResult>(await w.Tools().Load([w.Path_("Repo")], discoverOnly: true));
+
+        Assert.Equal(["LibA", "LibB"], Assert.Single(res.Repositories!).DiscoveredLibraries.Select(d => d.LibraryName).Order());
+        Assert.Empty(w.Host.Libraries.Libraries);
+        Assert.Empty(res.Loaded);
     }
 
     // ---- Another install: the search decides again (B504) -------------------------------------

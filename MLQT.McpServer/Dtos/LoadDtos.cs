@@ -31,7 +31,8 @@ public sealed record LoadResult(
     string? ToolInstall,
     string? ToolInstallChosen,
     IReadOnlyList<string> ToolFolders,
-    ScriptReadingResult? Script = null);
+    ScriptReadingResult? Script = null,
+    IReadOnlyList<LoadRepositoryResult>? Repositories = null);
 
 /// <summary>A library a startup script opens: its path, the script line, and how (with the nested script
 /// and line when <c>RunScript</c> did it).</summary>

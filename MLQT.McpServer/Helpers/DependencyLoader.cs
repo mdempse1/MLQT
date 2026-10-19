@@ -38,6 +38,17 @@ internal sealed class DependencyLoader
     private readonly List<MissingDependency> _notFound = [];
     private readonly List<string> _warnings = [];
     private readonly List<string> _errors = [];
+    private readonly List<LoadRepositoryResult> _repositoriesLoaded = [];
+
+    /// <summary>
+    /// Loads a directory that holds no library of its own - a working copy, or a folder of libraries - as
+    /// <c>mlqt_load_repository</c> does, so its settings and changes are known; with false, only discovers
+    /// its libraries. Set by the tool, so that there is one implementation of it (B503).
+    /// </summary>
+    public Func<string, bool, Task<LoadRepositoryResult>>? LoadRepository { get; init; }
+
+    /// <summary>Discover a repository's libraries without loading them.</summary>
+    public bool DiscoverOnly { get; init; }
 
     public DependencyLoader(ILibraryDataService libraries, IRepositoryService repositories, SessionState session,
         Func<string, string?> environment)
@@ -68,7 +79,8 @@ internal sealed class DependencyLoader
         if (withDependencies && tool.Note is { } note && tool.Folders.Count == 0)
             _warnings.Add(note);
 
-        return new LoadResult(_loaded, _replaced, _notFound, _warnings, _errors, tool.Install, tool.InstallReason, tool.Folders);
+        return new LoadResult(_loaded, _replaced, _notFound, _warnings, _errors, tool.Install, tool.InstallReason, tool.Folders,
+            Repositories: _repositoriesLoaded.Count > 0 ? _repositoriesLoaded : null);
     }
 
     /// <summary>
@@ -130,6 +142,14 @@ internal sealed class DependencyLoader
             return;
         }
 
+        // A directory with no package.mo of its own is a working copy or a folder of libraries.
+        if (LoadRepository is { } loadRepository && Directory.Exists(root) &&
+            !File.Exists(Path.Combine(root, "package.mo")) && !File.Exists(Path.Combine(root, "package.moe")))
+        {
+            await LoadRepositoryAsync(loadRepository, root);
+            return;
+        }
+
         var name = NameFromPath(root);
         var existing = _libraries.Libraries.FirstOrDefault(l => l.Name == name);
         if (existing is not null)
@@ -157,6 +177,23 @@ internal sealed class DependencyLoader
         if (existing is not null)
             _replaced.Add(new ReplacedLibraryItem(name, existing.Version, existing.SourcePath, library.Version, library.SourcePath));
         _loaded.Add(Item(library, Explicit, "given", null, null));
+    }
+
+    // Each library the repository holds is one the caller named, as if its path had been given.
+    private async Task LoadRepositoryAsync(Func<string, bool, Task<LoadRepositoryResult>> loadRepository, string root)
+    {
+        var result = await loadRepository(root, !DiscoverOnly);
+        _repositoriesLoaded.Add(result);
+        if (!result.Success)
+        {
+            _errors.Add(result.ErrorMessage ?? $"'{root}' could not be loaded as a repository.");
+            return;
+        }
+        foreach (var library in _libraries.Libraries.Where(l => l.RepositoryId == result.RepositoryId))
+        {
+            _session.LibraryOrigins[library.Id] = Explicit;
+            _loaded.Add(Item(library, Explicit, $"in repository '{result.Name}'", null, null));
+        }
     }
 
     private async Task LoadDependenciesAsync(ToolFolders tool)

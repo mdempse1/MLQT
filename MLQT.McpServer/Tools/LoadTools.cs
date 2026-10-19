@@ -20,12 +20,15 @@ public sealed class LoadTools
     private readonly ILibraryDataService _libraries;
     private readonly IRepositoryService _repositories;
     private readonly SessionState _session;
+    private readonly SessionTools _sessionTools;
 
-    public LoadTools(ILibraryDataService libraries, IRepositoryService repositories, SessionState session)
+    public LoadTools(ILibraryDataService libraries, IRepositoryService repositories, IExternalResourceService resources,
+        SessionState session)
     {
         _libraries = libraries;
         _repositories = repositories;
         _session = session;
+        _sessionTools = new SessionTools(libraries, repositories, resources, session);
     }
 
     /// <summary>Where the desktop app keeps its settings, read for the tool's install path. A test sets it.</summary>
@@ -46,7 +49,9 @@ public sealed class LoadTools
                  "tool's library folders (tool: 'dymola' or 'openmodelica'; toolInstall picks which install), " +
                  "then on MODELICAPATH. Naming another install than an earlier load used searches again from it, in place of what that search found. The exact version wins, else the newest copy declaring " +
                  "noneFromVersion for it, else nothing is loaded and every copy seen is listed. The answer " +
-                 "names each library, its version, path and how it was found.")]
+                 "names each library, its version, path and how it was found. A path holding no package.mo of " +
+                 "its own - a Git or SVN working copy, or a folder of libraries - is loaded as a repository, so " +
+                 "its style settings and changes are known; discoverOnly lists its libraries without loading.")]
     public async Task<object> Load(
         [Description("Library folders, package.mo files or single .mo files, in the order to load them.")]
         IReadOnlyList<string>? paths = null,
@@ -61,7 +66,9 @@ public sealed class LoadTools
         string? script = null,
         [Description("For script: the folder Dymola starts in, for the script's relative paths. Default: the " +
                      "script's own folder.")]
-        string? startDirectory = null)
+        string? startDirectory = null,
+        [Description("List the libraries in each repository path without loading anything. Default false.")]
+        bool discoverOnly = false)
     {
         if ((paths is null || paths.Count == 0) && string.IsNullOrWhiteSpace(script))
             return new ToolError("Name at least one library in paths, or a startup script in script.");
@@ -69,7 +76,11 @@ public sealed class LoadTools
             return new ToolError($"tool must be 'dymola', 'openmodelica' or 'none', not '{tool}'.");
 
         var folders = ToolLibraryFolders.For(tool, toolInstall, DesktopSettingsDirectory, Environment_);
-        var loader = new DependencyLoader(_libraries, _repositories, _session, Environment_);
+        var loader = new DependencyLoader(_libraries, _repositories, _session, Environment_)
+        {
+            LoadRepository = async (path, loadLibraries) => await _sessionTools.LoadRepository(path, loadLibraries: loadLibraries),
+            DiscoverOnly = discoverOnly,
+        };
 
         var all = new List<string>();
         ScriptReadingResult? reading = null;
@@ -94,7 +105,7 @@ public sealed class LoadTools
         if (paths is not null)
             all.AddRange(paths);
 
-        var result = await loader.LoadAsync(all, withDependencies, replace, folders);
+        var result = await loader.LoadAsync(all, withDependencies && !discoverOnly, replace, folders);
         return result with { Script = reading };
     }
 }
