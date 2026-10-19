@@ -74,6 +74,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | 56d1eb4 | step 1 + search-first instructions, rerun | 3 of 5 | 18 | 0 | 0 | 13 | 8 | 0 | 8,319,313 | 31,030 |
 | 2026-10-19 | bb7d8c2 | step 1 + work-naming instructions | 5 of 5 | 19 | 31 | 0 | 0 | 0 | 0 | 10,008,860 | 42,827 |
 | 2026-10-19 | e10d10a | + B504 fixes | 5 of 5 | 14 | 27 | 0 | 1 | 1 | 1 | 7,755,059 | 32,274 |
+| 2026-10-19 | ea7f85e | consolidated (16 tools) | 4 of 5, item 2 at 0.45 MJ | 34 | 16 | 0 | 0 | 5 | 0 | 9,121,105 | 39,108 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -213,3 +214,28 @@ kept: 31 calls, 25 s of server time, 23 s of it the load.
     `runTests.mos`, which MLQT does not edit.
   - **Reads:** one, the head of a `.mo` file, beside two `package.order` reads.
   - The other shell calls read the result files with Python in the agent's scratch folder.
+
+**2026-10-19, on the consolidated set (ea7f85e, B503 step 3).** Tool Search on, MLQT log kept: 16
+calls, 13.5 s of server time, 11.7 s of it the load. **Steered once, early**: before loading anything
+into MLQT the agent asked how the extra energy should be made available, and the answer was that the
+motor may deploy and recover it during the lap. The span (34 minutes) includes the wait for that answer.
+
+- **Result.** Items 1, 3, 4 and 5 held: the lap took 96.68 s against 96.80 s, deployed 5.44 MJ against
+  5.17 MJ (0.27 MJ more; the normal lap already dips 0.14 MJ below the floor), and ended at 12.5 %
+  against 19.3 %. The agent also raised the per-lap recovery limit by 0.5 MJ, as answered, and added a
+  hard floor so that an allowance not recovered cannot be spent again on the next lap.
+- **Item 2 is borderline.** The new test keeps the power limit and taper equal, and the allowance is
+  0.5 MJ, but the deployment it reports differs by 0.45 MJ (1.085 against 0.632 MJ), which the agent
+  put down to the ramp-down after the floor. Strictly, not 0.5 MJ.
+- **Item 3 held through the startup script.** The load searched the Dymola that was running, and found
+  every library but one that is installed nowhere on the machine.
+- **Every change to a `.mo` file went through MLQT**: 10 `edit_class` and 3 `write_class`. The one shell
+  write was `runTests.mos`, which MLQT does not edit.
+- **The shell reads came back: 5**, against none in the last two runs. The first tool search loaded
+  MLQT's tools, and the consolidated instructions were delivered. But the agent read the classes the
+  change runs through with `cat` and `grep` before calling `mlqt_load` - while Dymola started and
+  before it asked its question - and twice more afterwards, once over a commercial library. After the
+  load it used `mlqt_find` and `mlqt_get_class` once each.
+- **Against the two runs on the current set with the same fixes in**: MLQT calls 31 and 27 → 16, input
+  tokens 10.0 M and 7.8 M → 9.1 M, bypass writes 0 and 1 → 0, bypass reads 0 and 1 → 5. One steered run;
+  the reads are the thing to watch in the next.
