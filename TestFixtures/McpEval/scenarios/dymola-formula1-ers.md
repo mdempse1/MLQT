@@ -71,6 +71,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-18 | fa80416 | current | 4 of 5 | 25 | 2 | 0 | 10 | 7 | 0 | 10,714,006 | 45,340 |
 | 2026-10-19 | e6e94ba | current + step 1 | 5 of 5 | 17 | 13 | 0 | 0 | 7 | 0 | 8,068,590 | 42,972 |
 | 2026-10-19 | 56d1eb4 | step 1 + search-first instructions | 4 of 5, item 3 unverified | 22 | 2 | 0 | 19 | 5 | 0 | 11,695,180 | 43,170 |
+| 2026-10-19 | 56d1eb4 | step 1 + search-first instructions, rerun | 3 of 5 | 18 | 0 | 0 | 13 | 8 | 0 | 8,319,313 | 31,030 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -143,3 +144,21 @@ allowed when the per-lap limit is switched off, so the run was steered once.
   led with searching, and named only `mlqt_load` and `mlqt_find` for an agent to load. In the harness
   that moved searching to MLQT; here, with no search to do, nothing named the edit tools. One run
   each is not enough to be sure that is the cause.
+
+**2026-10-19, the same build again.** Run to see whether the run before was variance. Tool Search
+on, no steering. The transcript shows MLQT connected and its instructions delivered as written.
+
+- **Result.** Items 1, 2 and 4 held. **Item 3 failed**: MLQT was never called, so it loaded nothing.
+  **Item 5 failed**: the agent raised the per-lap deployment limit by 0.5 MJ, and since that limit is
+  switched off in this model (1e9 J), both laps were identical to the digit, 96.796 s and 5.168 MJ.
+  It reported that overtake mode makes no difference on this lap. It did not see that the energy has
+  to come from below the state-of-charge floor, which the battery reaches 45 s in. The run before
+  asked the user that question; this one did not ask.
+- **No MLQT calls at all.** The agent's three tool searches loaded only the simulator's tools.
+  - **Writes:** 13 to the library: 6 `Edit`, 3 Python find-and-replace scripts and 2 `sed -i` on
+    `.mo` files, a `Write` of the new test, and a heredoc writing the new experiment.
+  - **Reads:** 8 shell reads of `.mo` files, three of them `grep` over two commercial libraries.
+- **Two runs on this wording, 2 and 0 MLQT calls; one on the step 1 wording, 13.** That is no longer
+  one run against one. The step 1 opening sentence named the work - "read, create or edit Modelica
+  code" - and the agent used MLQT for every edit; the search-first sentence names questions and
+  searching, and in both runs the agent edited with its own tools without searching for MLQT's.
