@@ -80,16 +80,26 @@ public sealed class GuidanceTools
             Load every library into BOTH servers. Each starts empty, and loading into one does nothing
             for the other — if you loaded the MSL into the simulator, MLQT still has nothing, and its
             searches find nothing:
-            - Into MLQT: mlqt_load_library(path), with the library's directory or its package.mo. For the
-              MSL that is the Modelica directory, plus Complex and ModelicaServices beside it.
-            - Into the simulator: its own load_library, usually by name ('Modelica').
-            For the path MLQT needs, ask the simulator where it loaded the library from: in OpenModelica,
-            getLoadedLibraries() (through its raw-command tool) lists each loaded library with its
-            directory. If neither knows, ask the user.
+            - Into the simulator: its own load_library, usually by name ('Modelica'), or the user's startup
+              script.
+            - Into MLQT: mlqt_load(paths, tool), in this order:
+              1. The libraries the simulator has loaded, all in one call, so that MLQT has the same versions.
+                 OpenModelica: getLoadedLibraries() (through its raw-command tool) lists each with its
+                 directory. Dymola cannot say what it has loaded: ask the user for their startup script and
+                 load the libraries its openModel / openModelFile lines open. If the Dymola server was given
+                 a startup script, that is the one.
+              2. Leave withDependencies on, with tool 'dymola' or 'openmodelica': what those libraries use
+                 and nothing loaded is then found beside them, in the tool's library folders and on
+                 MODELICAPATH - the MSL, Complex and ModelicaServices included. tool_install picks the install
+                 when it is not the one in MLQT's settings or the newest.
+              3. Read the answer: each library's version and where it came from, and anything not found.
+              4. If the simulator's set changes - another project's startup script - load the new paths. What
+                 you name explicitly replaces what a search found.
+              With no simulator and no script, load the user's own library: the search finds the rest.
 
             Example — find and simulate an MSL example, such as a PID controller:
               1. Simulator: load_library 'Modelica'; then getLoadedLibraries() for the directories.
-              2. MLQT: mlqt_load_library on the Modelica, Complex and ModelicaServices directories.
+              2. MLQT: mlqt_load with the Modelica directory and tool 'openmodelica'; its dependencies follow.
               3. MLQT: mlqt_search_text 'PID' (or mlqt_search_by_interface for simulatable models) to find
                  the example, and mlqt_get_class_documentation / mlqt_get_class_interface to understand it.
               4. Simulator: simulate the class id MLQT found, and read the results there.

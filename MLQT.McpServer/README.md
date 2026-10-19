@@ -135,7 +135,7 @@ host that depends on one pins it in its own tests.
 | Group | Tools |
 |-------|-------|
 | Meta | `mlqt_get_guidance`, `mlqt_server_info` |
-| Session / library | `mlqt_create_library`, `mlqt_load_repository`, `mlqt_load_library`, `mlqt_list_libraries`, `mlqt_list_repositories`, `mlqt_discover_libraries`, `mlqt_reload`, `mlqt_unload_library` |
+| Session / library | `mlqt_load` (paths, then their dependencies), `mlqt_create_library`, `mlqt_load_repository`, `mlqt_load_library`, `mlqt_list_libraries`, `mlqt_list_repositories`, `mlqt_discover_libraries`, `mlqt_reload`, `mlqt_unload_library` |
 | Class query | `mlqt_get_class_info`, `mlqt_get_class_source`, `mlqt_list_classes`, `mlqt_search_classes`, `mlqt_get_package_tree` |
 | Class views | `mlqt_get_class_interface`, `mlqt_list_class_elements`, `mlqt_get_class_documentation`, `mlqt_get_class_behavior`, `mlqt_validate_class_references` |
 | Search | `mlqt_find` (by name, text, interface or code), `mlqt_search_text`, `mlqt_search_by_interface` |

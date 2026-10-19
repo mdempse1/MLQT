@@ -38,11 +38,10 @@ internal static class ServerInstructions
         libraries are refused, and the dependency graph stays current.
 
         MLQT starts EMPTY and keeps its own session: every mlqt_ tool, the searches included, sees
-        only libraries loaded into MLQT. Before using them, load each one with mlqt_load_library (its
-        directory, package.mo or one .mo file) or mlqt_load_repository (a Git/SVN working copy), and
-        its dependencies - the load summary lists them, usually the MSL. A simulator's load_library
-        does NOT load anything here. For the path of a library a simulator has loaded, ask it
-        (OpenModelica: getLoadedLibraries()).
+        only libraries loaded into MLQT. Load with mlqt_load: the paths of every library the user's
+        simulator has loaded (OpenModelica: getLoadedLibraries(); Dymola: the user's startup script),
+        and tool 'dymola' or 'openmodelica'; it loads their dependencies too, the MSL included. A
+        simulator's load_library does NOT load anything here. mlqt_load_repository loads a working copy.
 
         Beside a simulator's server (OpenModelica, Dymola): MLQT owns the source files; the simulator
         compiles, checks equations and simulates. Write code with MLQT, then load or reload that FILE

@@ -133,6 +133,33 @@ update those names: in Claude Code, `mcp__mlqt__load_library` becomes `mcp__mlqt
 `mlqt_batch_edit`'s and `mlqt_edit_class`'s operations keep their names (`add_component`,
 `add_connection`, …), and also accept them written with the prefix.
 
+## Loading dependencies
+
+A library resolves only beside the libraries it uses. Without them, types stay unresolved, and an agent falls back to reading the MSL straight from a simulator's install folder. `mlqt_load` loads them for you.
+
+**First, the libraries you name.** Pass the paths of every library the user's simulator has loaded, in one call. They are loaded first, as given, so that MLQT has the versions the simulator has.
+- With OpenModelica, `getLoadedLibraries()` lists them.
+- Dymola cannot say what it has loaded. If the user loads their libraries with a startup script, the libraries that script opens are the ones to pass.
+
+A library you name replaces a copy an earlier search loaded. Two copies you named yourself need `replace: true`, because then you have to choose.
+
+**Then what they use.** With `withDependencies` on (the default), each library their `uses` annotations name that nothing has loaded is looked for, in this order:
+1. the folder holding the library that needs it, then its repository's root;
+2. the simulation tool's library folders, for `tool: "dymola"` or `"openmodelica"`:
+   - Dymola: `<install>/Modelica/Library`;
+   - OpenModelica: the user's library folder (`%AppData%\.openmodelica\libraries`, `~/.openmodelica/libraries`), or `OPENMODELICALIBRARY`.
+
+   The install is `tool_install` if given, else the one in the desktop app's External Tools settings, else the newest found. The settings file is only read, never written;
+3. MODELICAPATH.
+
+**Which copy is taken:**
+- The exact version asked for wins. Of two copies of one release, the larger build wins, so `Modelica 4.1.0+maint.om` is taken over `Modelica 4.1.0`.
+- Failing that, the newest copy whose `conversion(noneFromVersion=...)` names the version asked for.
+- Failing that, nothing is loaded, and the answer lists every copy it saw.
+- A search never replaces a library already loaded. If a loaded version differs from the one asked for, the answer warns. A library you named is kept, because it is what the simulator uses.
+
+The answer names each library, its version, its path, whether you named it or the search found it, where, and by which rule.
+
 ## Working beside a simulator
 
 MLQT checks Modelica **source**; it does not compile or simulate it. To close the loop, connect a
@@ -191,11 +218,11 @@ else.
 
 ## What the tools cover
 
-The server exposes 68 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 69 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
-| **Session / library** | Create, load, list, reload and unload libraries and repositories |
+| **Session / library** | Create, load, list, reload and unload libraries and repositories. `mlqt_load` takes the paths of the libraries the user's simulator has loaded, and then finds what they depend on: beside them, in the simulation tool's library folders, and on MODELICAPATH, choosing the version their `uses` annotations ask for. See [Loading dependencies](#loading-dependencies) |
 | **Class query** | Look up a class's info and source, list and search classes, browse the package tree |
 | **Class views** | Compact interface / elements / documentation / behaviour summaries; reference validation |
 | **Search** | `mlqt_find` finds classes by name, documentation prose, shape, or **a line of their code** (`match: code`), covering every loaded library. Code search is the one to use instead of grep: it names the innermost class for each line, with its file line. `mlqt_search_text` and `mlqt_search_by_interface` remain |
