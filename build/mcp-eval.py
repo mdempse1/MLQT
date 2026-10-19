@@ -478,7 +478,10 @@ def write_report(run_dir, results, config):
 # harness run. Three differences from stream-json: there is no init or result event, so tokens come from
 # each assistant message's usage and the time from the first and last timestamps; one message is written
 # as several lines that repeat its usage, so usage is taken once per message id; and a subagent's work is
-# in <session id>/subagents/*.jsonl beside it. A real session may also work outside Modelica, so a
+# in <session id>/subagents/*.jsonl beside it. A headless run's transcript (claude -p, stream-json) has a
+# result event, and its usage is taken instead: there each assistant event carries the usage of its
+# message's start, where output_tokens is a few tokens, so summing them reported 502 of 64,323. A real
+# session may also work outside Modelica, so a
 # built-in file tool counts as a bypass only when it names a .mo file, a package.order or one of
 # --library-dir - unless --dedicated says the sessions did nothing but Modelica work through MLQT, when
 # every one counts, as it does in a harness run.
@@ -531,10 +534,13 @@ def analyse_session(path, library_dirs, include_subagents, server_entries, dedic
         files += sorted(subagents.glob("*.jsonl"))
 
     calls, by_id, usage, models, stamps = [], {}, {}, set(), []
+    final = None
     for f in files:
         for event in load_events(f):
             if event.get("timestamp"):
                 stamps.append(event["timestamp"])
+            if event.get("type") == "result" and f == path:
+                final = event
             message = event.get("message") or {}
             content = message.get("content")
             if event.get("type") == "assistant":
@@ -566,6 +572,8 @@ def analyse_session(path, library_dirs, include_subagents, server_entries, dedic
     stamps.sort()
     start = parse_time(stamps[0]) if stamps else None
     end = parse_time(stamps[-1]) if stamps else None
+    if final and final.get("usage"):
+        usage = {("result", ""): final["usage"]}
     in_window = [s for s in server_entries
                  if start and start - datetime.timedelta(minutes=1) <= s["at"] <= end + datetime.timedelta(minutes=1)]
     return {
