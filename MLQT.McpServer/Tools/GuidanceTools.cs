@@ -88,7 +88,8 @@ public sealed class GuidanceTools
                  directory. Dymola cannot say what it has loaded: ask the user for their startup script (if
                  the Dymola server was given one, that is the one) and pass it as mlqt_load's script. It is
                  read, not run: the libraries its openModel, openModelFile and import lines open are loaded,
-                 following its cd, RunScript and ModelicaPath changes, and any line it cannot work out is
+                 following its cd, RunScript and ModelicaPath changes, and a loader function it calls in a
+                 library it opened is followed through its if branches. Any line it cannot work out is
                  listed - ask the user about those, or pass the path yourself.
               2. Leave withDependencies on, with tool 'dymola' or 'openmodelica': what those libraries use
                  and nothing loaded is then found beside them, in the tool's library folders and on

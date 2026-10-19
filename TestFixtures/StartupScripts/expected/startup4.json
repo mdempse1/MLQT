@@ -35,7 +35,7 @@
       "version": "0.3.0",
       "path": "Shared/Plotting/package.mo",
       "line": 15,
-      "via": "RunScript more.mos line 3: openModelFile by name"
+      "via": "RunScript more.mos line 3: openModelFile by name, along the ModelicaPath"
     }
   ],
   "notLoaded": [

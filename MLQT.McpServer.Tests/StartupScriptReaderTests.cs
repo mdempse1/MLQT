@@ -46,7 +46,7 @@ public class StartupScriptReaderTests
     private static string? Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
-    public static TheoryData<string> Scripts => ["startup1.mos", "startup3.mos", "startup4.mos"];
+    public static TheoryData<string> Scripts => ["startup1.mos", "startup2.mos", "startup3.mos", "startup4.mos"];
 
     [Theory]
     [MemberData(nameof(Scripts))]
@@ -63,9 +63,8 @@ public class StartupScriptReaderTests
             .Select(l => (Path: f.Relative(Path.Combine(f.Root, l.Path)), l.Line)).ToList();
         Assert.Equal(wantLoads, reading.Loads.Select(l => (f.Relative(l.Path), l.Line)).ToList());
 
-        var wantVia = expected.GetProperty("loads").EnumerateArray().Select(l => Str(l, "via")!).ToList();
-        for (var i = 0; i < wantVia.Count; i++)
-            Assert.StartsWith(wantVia[i].Split(" > ")[0], reading.Loads[i].Via);
+        Assert.Equal(expected.GetProperty("loads").EnumerateArray().Select(l => Str(l, "via")!).ToList(),
+            reading.Loads.Select(l => l.Via).ToList());
 
         foreach (var notLoaded in expected.GetProperty("notLoaded").EnumerateArray())
             Assert.DoesNotContain(f.Relative(Path.Combine(f.Root, Str(notLoaded, "path")!)), reading.Loads.Select(l => f.Relative(l.Path)));
@@ -80,17 +79,90 @@ public class StartupScriptReaderTests
         Assert.Equal(added, reading.ModelicaPathAdded.Select(f.Relative).ToList());
     }
 
-    [Fact]
-    public void AScriptThatCallsAFunctionOfALibraryItOpened_ReportsTheCall_ForNow()
-    {
-        // startup2's libraries are opened by MyTools.OpenTrunk(); following such a call is the next step.
-        using var f = new Fixture();
-        var reading = f.Read("startup2.mos", new Dictionary<string, string>());
+    private const string Opener = """
+          function Open
+            input String root;
+            input Boolean a = true;
+            input Boolean b = false;
+          algorithm
+            if a and not b then
+              openModel(root + "/A/package.mo", changeDirectory=false);
+            elseif b then
+              openModel(root + "/B/package.mo", changeDirectory=false);
+            else
+              openModel(root + "/C/package.mo", changeDirectory=false);
+            end if;
+          end Open;
+        """;
 
-        Assert.Equal("Libraries/MyTools", f.Relative(Assert.Single(reading.Loads).Path));
-        var call = Assert.Single(reading.Unresolved);
-        Assert.Equal(5, call.Line);
-        Assert.Contains("MyTools.OpenTrunk", call.Reason);
+    private static string[] Leaves(ScriptReading r) => r.Loads.Skip(1).Select(l => Path.GetFileName(Path.GetDirectoryName(l.Path)!)).ToArray();
+
+    [Fact]
+    public void AFunctionCall_TakesTheBranchItsArgumentsPick()
+    {
+        using var host = new TestHost();
+
+        // Defaults; a named argument; a positional one.
+        Assert.Equal(["A"], Leaves(ReadLoaderAt(host, Opener, "Loader.Open(R)")));
+        Assert.Equal(["B"], Leaves(ReadLoaderAt(host, Opener, "Loader.Open(R, b=true)")));
+        Assert.Equal(["C"], Leaves(ReadLoaderAt(host, Opener, "Loader.Open(R, false)")));
+    }
+
+    /// <summary>A loader library in a folder of its own beside libraries A, B and C, and a script that opens
+    /// it and makes <paramref name="call"/>, with R in it standing for that folder.</summary>
+    private static ScriptReading ReadLoaderAt(TestHost host, string functions, string call)
+    {
+        var dir = host.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(dir, "Loader"));
+        foreach (var name in new[] { "A", "B", "C" })
+        {
+            Directory.CreateDirectory(Path.Combine(dir, name));
+            File.WriteAllText(Path.Combine(dir, name, "package.mo"), $"within;\npackage {name}\nend {name};\n");
+        }
+        File.WriteAllText(Path.Combine(dir, "Loader", "package.mo"), "within;\npackage Loader\n" + functions + "end Loader;\n");
+        var script = Path.Combine(dir, "s.mos");
+        var root = dir.Replace('\\', '/');
+        File.WriteAllText(script, $"openModel(\"{root}/Loader/package.mo\");\n{call.Replace("R", $"\"{root}\"")};\n");
+        return new StartupScriptReader(_ => null, []).Read(script);
+    }
+
+    [Fact]
+    public void WhatAFunctionCannotHaveWorkedOut_IsReported_WithTheFunctionAndLine()
+    {
+        using var host = new TestHost();
+        const string functions = """
+              function Loop
+                input Integer n = 3;
+              algorithm
+                for i in 1:n loop
+                  openModel("x");
+                end for;
+                if n > 2 then
+                  openModel("y");
+                end if;
+              end Loop;
+            """;
+
+        var reading = ReadLoaderAt(host, functions, "Loader.Loop()");
+
+        Assert.Single(reading.Loads); // the loader itself
+        Assert.Contains(reading.Unresolved, u => u.File == "Loader.Loop" && u.Reason.Contains("for loop"));
+        Assert.Contains(reading.Unresolved, u => u.File == "Loader.Loop" && u.Reason.Contains("n > 2"));
+    }
+
+    [Fact]
+    public void AFunctionThatCannotBeFound_OrCallsTooDeep_IsReported()
+    {
+        using var host = new TestHost();
+        const string functions = """
+              function Again
+              algorithm
+                Loader.Again();
+              end Again;
+            """;
+
+        Assert.Contains(ReadLoaderAt(host, functions, "Loader.Missing()").Unresolved, u => u.Reason.Contains("source was not found"));
+        Assert.Contains(ReadLoaderAt(host, functions, "Loader.Again()").Unresolved, u => u.Reason.Contains("more than 5 functions deep"));
     }
 
     [Fact]
