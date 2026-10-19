@@ -30,6 +30,8 @@ namespace MLQT.McpServer.Services;
 [JsonSerializable(typeof(ClassSearchItem))]
 [JsonSerializable(typeof(ClassSearchResult))]
 [JsonSerializable(typeof(ClassSourceResult))]
+[JsonSerializable(typeof(CodeSearchItem))]
+[JsonSerializable(typeof(CodeSearchResult))]
 [JsonSerializable(typeof(ConnectionView))]
 [JsonSerializable(typeof(ConnectionsResult))]
 [JsonSerializable(typeof(ConnectorView))]

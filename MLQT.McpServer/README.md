@@ -138,7 +138,7 @@ host that depends on one pins it in its own tests.
 | Session / library | `mlqt_create_library`, `mlqt_load_repository`, `mlqt_load_library`, `mlqt_list_libraries`, `mlqt_list_repositories`, `mlqt_discover_libraries`, `mlqt_reload`, `mlqt_unload_library` |
 | Class query | `mlqt_get_class_info`, `mlqt_get_class_source`, `mlqt_list_classes`, `mlqt_search_classes`, `mlqt_get_package_tree` |
 | Class views | `mlqt_get_class_interface`, `mlqt_list_class_elements`, `mlqt_get_class_documentation`, `mlqt_get_class_behavior`, `mlqt_validate_class_references` |
-| Search | `mlqt_search_text`, `mlqt_search_by_interface` |
+| Search | `mlqt_find` (by name, text, interface or code), `mlqt_search_text`, `mlqt_search_by_interface` |
 | Documentation | `mlqt_set_class_description`, `mlqt_set_component_description`, `mlqt_set_class_documentation` (read with `mlqt_get_class_documentation`) |
 | Diagram | `mlqt_get_diagram_layout`, `mlqt_get_diagram_image` (renders the diagram as a PNG), `mlqt_set_component_placement` |
 | Dependencies & impact | `mlqt_analyze_dependencies`, `mlqt_get_dependencies`, `mlqt_find_usages`, `mlqt_analyze_impact` |

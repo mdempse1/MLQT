@@ -126,9 +126,17 @@ public sealed class GuidanceTools
               -> mlqt_get_class_info -> mlqt_get_class_source (include_annotations=false for compact structural code).
 
             Find a class when you don't know its name:
-              mlqt_search_classes (by id substring), mlqt_search_text (by description/documentation prose, e.g.
-              'PID controller'), or mlqt_search_by_interface (by shape: class type, has connectors/parameters,
-              simulatable via an experiment annotation).
+              mlqt_find with match 'name' (id substring), 'text' (description/documentation prose, e.g.
+              'PID controller') or 'interface' (by shape: class type, has connectors/parameters, simulatable via
+              an experiment annotation). mlqt_search_classes, mlqt_search_text and mlqt_search_by_interface do
+              the same one at a time.
+
+            Find code - where a name is used, a Placement, a connect, a parameter declaration:
+              mlqt_find with match 'code' and the text to look for, e.g. 'connect(motor.' or 'parameter Real T'.
+              It searches every line of every loaded class, MSL included, and gives each line's innermost class
+              and file line. Use it instead of grep or your own file search, which miss libraries loaded from
+              elsewhere and cannot say which class a line belongs to. regex=true and ignoreCase=true refine it;
+              library limits it to one library.
 
             Understand how to USE a class without reading its source (cheap):
               mlqt_get_class_interface (parameters, connectors, function signature) and mlqt_get_class_documentation

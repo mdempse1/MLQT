@@ -254,6 +254,7 @@ def session(exe, fixture, out):
             ("batch_edit", "mlqt_batch_edit", {"preview": True, "operations": [
                 {"op": "add_component", "classId": "Smoke.Undescribed", "type": "Real", "name": "y"},
                 {"op": "add_equation", "classId": "Smoke.Undescribed", "equation": "y = state"}]}),
+            ("find_code", "mlqt_find", {"query": "parameter Real", "match": "code", "limit": 5}),
             ("edit_class", "mlqt_edit_class", {"classId": "Smoke.Undescribed", "preview": True, "operations": [
                 {"op": "replace", "old": "parameter Real gain = 1;", "new": "parameter Real gain = 2;"},
                 {"op": "add_component", "type": "Real", "name": "y"}]}),

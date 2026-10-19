@@ -191,14 +191,14 @@ else.
 
 ## What the tools cover
 
-The server exposes 67 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 68 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
 | **Session / library** | Create, load, list, reload and unload libraries and repositories |
 | **Class query** | Look up a class's info and source, list and search classes, browse the package tree |
 | **Class views** | Compact interface / elements / documentation / behaviour summaries; reference validation |
-| **Search** | Find classes by documentation prose (`mlqt_search_text`) or by shape (`mlqt_search_by_interface`) |
+| **Search** | `mlqt_find` finds classes by name, documentation prose, shape, or **a line of their code** (`match: code`), covering every loaded library. Code search is the one to use instead of grep: it names the innermost class for each line, with its file line. `mlqt_search_text` and `mlqt_search_by_interface` remain |
 | **Editing** | Whole-class and element-level authoring. `mlqt_edit_class` changes part of one class with a list of operations, all or none, including a `replace` of text that occurs once in it; `mlqt_batch_edit` applies element operations across classes |
 | **Documentation** | Set description strings and the `Documentation(info/revisions)` HTML |
 | **Diagram** | Read and set component `Placement`, render the diagram as an image; connection lines are drawn automatically (below) |

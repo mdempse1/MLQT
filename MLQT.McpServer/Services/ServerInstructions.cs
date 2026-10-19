@@ -51,7 +51,7 @@ internal static class ServerInstructions
         After a file changes outside MLQT, call mlqt_reload.
 
         Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator); find one with
-        mlqt_search_classes or mlqt_search_text. Read with mlqt_get_class_interface (how to use a
+        mlqt_find, which also searches lines of code (match: code) - use it, not grep. Read with mlqt_get_class_interface (how to use a
         class) or mlqt_get_class_source; change part of a class with mlqt_edit_class (replace, or
         add_component, add_connection ...), a whole one with mlqt_create_class. New project:
         mlqt_create_library.
