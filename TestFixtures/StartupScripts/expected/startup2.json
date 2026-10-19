@@ -1,0 +1,45 @@
+{
+  "script": "startup2.mos",
+  "environment": {},
+  "loads": [
+    {
+      "library": "MyTools",
+      "version": null,
+      "path": "Libraries/MyTools/package.mo",
+      "line": 3,
+      "via": "openModel"
+    },
+    {
+      "library": "VehicleDyn",
+      "version": "2026.1",
+      "path": "Libraries/VehicleDyn/package.mo",
+      "line": 5,
+      "via": "MyTools.OpenTrunk() > DymolaCommands.SimulatorAPI.openModel"
+    },
+    {
+      "library": "EngineDyn",
+      "version": "2026.1",
+      "path": "Libraries/EngineDyn/package.mo",
+      "line": 5,
+      "via": "MyTools.OpenTrunk() > MyTools.OpenPowertrain(path) > DymolaCommands.SimulatorAPI.openModel"
+    }
+  ],
+  "notLoaded": [
+    {
+      "path": "Libraries/Modelica 3.2.3/package.mo",
+      "reason": "input modelica is false by default"
+    },
+    {
+      "path": "Libraries/VehicleInterfaces 1.2.5/package.mo",
+      "reason": "input vehicleInterfaces is false by default"
+    },
+    {
+      "path": "Libraries/EngineDynTests/package.mo",
+      "reason": "input withTests of OpenPowertrain is false by default"
+    }
+  ],
+  "ignored": [],
+  "unresolved": [],
+  "currentDirectory": "Libraries/MyTools",
+  "modelicaPathSet": null
+}

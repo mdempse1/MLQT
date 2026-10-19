@@ -1,0 +1,18 @@
+// Synthetic: written for the reader's tests, not taken from a user. It covers what the three real
+// scripts do not: a nested script, a directory added to the ModelicaPath and then a library opened
+// by name and version, relative paths after openModel has changed directory, and import.
+
+cd("{root}/Projects");
+DymolaCommands.System.AddModelicaPath("{root}/Shared");
+
+// By name: two versions of Common are on the path, so the version decides.
+openModelFile("Common", version="1.0");
+
+// Changes directory to {root}/Projects/Rig, so the relative path below is read from there.
+openModel("Rig/package.mo");
+openModel("../RigTests/package.mo", changeDirectory=false);
+
+RunScript("more.mos", scriptDir="{root}/Projects/scripts");
+
+// Already loaded by more.mos, so this loads nothing.
+import Units;

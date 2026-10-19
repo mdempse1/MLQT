@@ -212,12 +212,44 @@ command written without parentheses, as `cd C:/Work`, is read too.
 | `cd(dir)` | Changes the current directory |
 | `RunScript(script, silent, scriptDir)` | Reads that script too, in place, once only, so a script that runs itself does not loop |
 | `import Name` | Loads the top-level library `Name` if it is not already loaded, as Dymola does in a script, and does nothing if it is. It is found along the script's ModelicaPath as it stands at that line, taking the first copy found, as Dymola's search does. `import A.B` loads `A`. It does not create an alias |
+| `Utilities.setenv("MODELICAPATH", path)` | Sets the script's ModelicaPath to `path`, for any later line that opens a library by name |
+| `Lib.F(args)`, a function of a library the script has opened | Follows the call; see below |
 
-A path argument is read when it is a string literal, a string variable assigned a literal earlier in
-the script, or a `+` concatenation of those. Every other line, and any argument it cannot work out,
-for example one computed by a function, is **reported with its line number** and not guessed at.
+**Reading values.** A path argument is read when it is:
+- a string literal;
+- a string variable assigned earlier in the script, or in the function being followed;
+- `Modelica.Utilities.System.getEnvironmentVariable(name)`, read from the server's environment, which
+  is the user's on the same machine; or
+- a `+` concatenation of these.
+
+**A backslash in a string is a path separator.** Users write Windows paths as
+`"C:\Libs\CoreLib\package.mo"`, and Dymola accepts them, although in Modelica a backslash starts an
+escape. Only `\"` and `\\` are read as escapes. Any other backslash is kept, so a folder beginning
+with `n` or `t` is not read as a control character.
+
+**What the answer reports.** It lists every library loaded, with the script line that loaded it,
+and the chain of calls when a function did. Every other line goes in one of two lists:
+- **ignored**: lines known to load nothing, such as `Advanced.*` settings, a comment, or an
+  expression whose value is not kept;
+- **unresolved**: lines the reader could not work out, each with its line number, and nothing guessed.
+
 The current directory starts as the script's own folder, unless the caller passes the directory
-Dymola starts in. The answer lists every library loaded with the script line that loaded it.
+Dymola starts in.
+
+**Following a function the script calls.** Some users keep the loading in a small library of their
+own. The script opens it, then calls a function that opens the others, sometimes through further
+functions of the same library. The reader follows such a call when the function belongs to a
+library the script has already opened. It works out the function's algorithm by:
+- binding each input to the value the call passes, or else to its default;
+- following string and Boolean assignments;
+- taking the `if` / `elseif` / `else` branch its condition picks. A condition may use Boolean
+  inputs and variables, literals, `not`, `and` and `or`;
+- following calls to other functions of the same library, to a depth of five.
+
+Anything else stops that branch and is reported as unresolved, with the function and line: a loop, a
+condition on a number, a value returned by a call. That covers a loader written as a list of choices,
+which is what such libraries are, without building an interpreter. It is a separate step after the
+plain reader.
 
 **Getting the script.** The guidance tells the agent to ask the user for the startup script. If the
 Dymola MCP server was given one, the agent uses that path. An agent cannot recover it from Dymola.
@@ -272,11 +304,12 @@ and read with `analyse --dedicated`.
     fixture gets a small dependency in two versions, one beside `EvalLib` and one elsewhere, and the
     prompt says which one the simulator has loaded.
   Each new task must pass `check-tasks`.
-- Take two or three of the user's real Dymola startup scripts, anonymise them, and save them as
-  fixtures for the script reader, each with the libraries it should load. Client names and paths are
-  replaced before anything is committed, and the structure is kept. They should cover nested `RunScript` calls,
-  `AddModelicaPath` followed by `openModelFile` by name, and relative paths after `openModel` has
-  changed directory.
+- Fixtures for the script reader, in `TestFixtures/StartupScripts`. Done 2026-10-19.
+  - Three real users' scripts, anonymised, plus one synthetic script for what they do not cover:
+    `RunScript`, `AddModelicaPath` with `openModelFile` by name, relative paths and `import`.
+  - Dummy libraries at the paths the scripts open.
+  - The expected result of reading each script.
+  - Absolute paths are written as `{root}`, which a test replaces with a temporary copy of the folder.
 - Give the harness `--server-env KEY=VALUE` (passed into the MCP config's `env`), so a run can choose
   `MLQT_MCP_TOOLSET`.
 - Write **two real-world scenarios** in `TestFixtures/McpEval/scenarios/`, one with Dymola and one

@@ -1,0 +1,3 @@
+// Run by startup4.mos through RunScript.
+import Units;
+DymolaCommands.SimulatorAPI.openModelFile("Plotting");

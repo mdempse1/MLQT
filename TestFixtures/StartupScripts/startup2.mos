@@ -1,0 +1,5 @@
+parentDir = "{root}\Libraries";
+
+openModel(parentDir + "\MyTools\package.mo");
+
+MyTools.OpenTrunk();

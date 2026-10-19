@@ -1,0 +1,59 @@
+{
+  "script": "startup4.mos",
+  "environment": {},
+  "loads": [
+    {
+      "library": "Common",
+      "version": "1.0",
+      "path": "Shared/Common 1.0/package.mo",
+      "line": 9,
+      "via": "openModelFile by name, along the ModelicaPath"
+    },
+    {
+      "library": "Rig",
+      "version": "1.0.0",
+      "path": "Projects/Rig/package.mo",
+      "line": 12,
+      "via": "openModel"
+    },
+    {
+      "library": "RigTests",
+      "version": "1.0.0",
+      "path": "Projects/RigTests/package.mo",
+      "line": 13,
+      "via": "openModel"
+    },
+    {
+      "library": "Units",
+      "version": "1.1.0",
+      "path": "Shared/Units/package.mo",
+      "line": 15,
+      "via": "RunScript more.mos line 2: import"
+    },
+    {
+      "library": "Plotting",
+      "version": "0.3.0",
+      "path": "Shared/Plotting/package.mo",
+      "line": 15,
+      "via": "RunScript more.mos line 3: openModelFile by name"
+    }
+  ],
+  "notLoaded": [
+    {
+      "path": "Shared/Common 2.0/package.mo",
+      "reason": "openModelFile asks for version 1.0"
+    }
+  ],
+  "ignored": [
+    {
+      "line": 18,
+      "reason": "import of a library already loaded; it loads nothing"
+    }
+  ],
+  "unresolved": [],
+  "currentDirectory": "Projects/Rig",
+  "modelicaPathSet": null,
+  "modelicaPathAdded": [
+    "Shared"
+  ]
+}
