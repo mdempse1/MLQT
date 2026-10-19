@@ -73,6 +73,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | 56d1eb4 | step 1 + search-first instructions | 4 of 5, item 3 unverified | 22 | 2 | 0 | 19 | 5 | 0 | 11,695,180 | 43,170 |
 | 2026-10-19 | 56d1eb4 | step 1 + search-first instructions, rerun | 3 of 5 | 18 | 0 | 0 | 13 | 8 | 0 | 8,319,313 | 31,030 |
 | 2026-10-19 | bb7d8c2 | step 1 + work-naming instructions | 5 of 5 | 19 | 31 | 0 | 0 | 0 | 0 | 10,008,860 | 42,827 |
+| 2026-10-19 | e10d10a | + B504 fixes | 5 of 5 | 14 | 27 | 0 | 1 | 1 | 1 | 7,755,059 | 32,274 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -191,3 +192,24 @@ kept: 31 calls, 25 s of server time, 23 s of it the load.
   the two search-first runs, the same task went from 2 and 0 MLQT calls to 31. That is the
   difference between an opening sentence naming questions and one naming read, search, create and
   edit, with a tool to load for each.
+
+**2026-10-19, with the B504 fixes (e10d10a).** Tool Search on, no steering, MLQT log kept: 27 calls,
+10.7 s of server time, 8.9 s of it the load.
+
+- **Result.** All five items held. With overtake mode the lap took 96.57 s against 96.89 s,
+  deployed 5.48 MJ against 5.17 MJ (0.31 MJ more), and ended at 11.8 % against 19.3 %. The agent
+  again took the energy from below the state-of-charge floor without asking. There was no separate
+  `check_model` call; both laps translated and simulated.
+- **The dependency search used the Dymola that was running.** Detection found the beta's folder
+  and `mlqt_load` searched its library folder, saying so (`toolInstallChosen`: the newest found).
+  The two libraries missing at their versions in the last run were found. Of the four, one is an
+  encrypted library with no usable documentation, which the answer said, and one is installed
+  nowhere on the machine.
+- **MLQT did almost all of it.** The first tool search loaded MLQT's tools. Of 79 tool calls, 27
+  were MLQT: 1 `load`, 10 `get_class_source`, 5 `find`, 8 `edit_class`, 2 `create_class`, 1 `reload`.
+  - **Writes:** one to a `.mo` file outside MLQT: `sed -i` renaming every `normal.controlBus.` in
+    the new test, followed by `mlqt_reload`. `mlqt_edit_class`'s `replace` refuses text that occurs
+    more than once, which is the likely reason. One more `sed -i` added the new test to
+    `runTests.mos`, which MLQT does not edit.
+  - **Reads:** one, the head of a `.mo` file, beside two `package.order` reads.
+  - The other shell calls read the result files with Python in the agent's scratch folder.
