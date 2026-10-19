@@ -292,7 +292,7 @@ public sealed class ClassQueryTools
         return tree;
     }
 
-    private const int DefaultTreeNodes = 200;
+    internal const int DefaultTreeNodes = 200;
 
     /// <summary>How many more nodes may have their children listed, shared across one call (B503: a whole
     /// tree came back at 30k characters in the 2026-10-18 sessions).</summary>

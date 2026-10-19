@@ -101,7 +101,7 @@ public sealed class ObfuscationReadinessTests
         // name, which nothing in code can pin. An obfuscator that honours ObfuscationAttribute reads a
         // plain [Obfuscation] as "exclude from renaming".
         var toolClasses = Server.GetTypes().Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null).ToList();
-        Assert.Equal(21, toolClasses.Count);
+        Assert.Equal(22, toolClasses.Count);
 
         Assert.All(toolClasses, type =>
         {
