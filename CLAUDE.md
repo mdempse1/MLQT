@@ -422,13 +422,13 @@ committing from the merge dialog's own dirty phase. `skill-gui-testing.md` has t
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
 forward plan and what a release needs beyond CI. **Read the roadmap before starting anything
 substantial.** These four are the whole of `Design/`; two pieces of work are planned in notes of their
-own, the unit-consistency flagship and the MCP tool consolidation, and neither has started.
+own: the unit-consistency flagship, not started, and the MCP tool consolidation, under way.
 
 | Document | Covers |
 |----------|--------|
 | `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, what was *decided against*, the *known open issues*, and the item-id rule |
 | `Design/unit-consistency.md` | **The design for the phase-3 unit / dimensional consistency check, not started**: what it builds on (measured), the unit algebra, three-state typing of an equation, the finding, the increments, and the questions the user decides first. Retire it when the check ships |
-| `Design/mcp-tool-consolidation.md` | **The plan for B503, not started**: the MCP server from 66 tools to 16, what was measured first and what it showed, the target set with every current tool mapped to it, how dependencies are found, the steps and their exit criteria, and the user's decisions. Retire it when the consolidated set ships |
+| `Design/mcp-tool-consolidation.md` | **The plan for B503, step 1 done and step 2 under way**: the MCP server from 66 tools to 16, what was measured first and what it showed, the target set with every current tool mapped to it, how dependencies are found, the steps and their exit criteria, and the user's decisions. Retire it when the consolidated set ships |
 | `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity and resolution corpora (opt-in, so an ordinary run says nothing about them), the nightly WebKit rehearsal, the `.deb` job that only a tag exercises, and the protected-build comparison of the MCP stack. Adding to it is a decision that something *cannot* be a gate on every push |
 
 **A `Bnnn` in a comment, a test or a script is a backlog id.** They were issued, B1–B498, in

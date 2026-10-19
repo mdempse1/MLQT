@@ -1,6 +1,7 @@
 # MCP tool consolidation — design note
 
-**Status: not started.** This is the plan for roadmap item **B503**: the MCP server's tool surface goes
+**Status: step 1 done (2026-10-19, results under step 1); step 2 under way.** This is the plan for
+roadmap item **B503**: the MCP server's tool surface goes
 from 66 tools to 16. It has two aims. The first is to close the gaps that send an agent round MLQT to
 its own shell and file tools. The second is to merge the tools that overlap. Written 2026-10-18, from
 the measurements below. Retire this note when the consolidated set ships: move what is durable into
@@ -340,6 +341,60 @@ This step needs no switch, and it pays off on its own.
 **Exit criterion:** compared with the scenarios' step 0 runs, at least half fewer writes to `.mo` files
 outside MLQT and at least half fewer `reload` calls. Fewer reads outside MLQT. No drop in harness pass
 rate.
+
+#### Step 1 results (2026-10-19) — met
+
+Step 1 added five tools beside the 66, so these runs offered 71. `mlqt_load`, `mlqt_find`,
+`mlqt_edit_class`, `mlqt_write_class` and `mlqt_format` are already the shape of members of the
+consolidated set. Each scenario's runs, with every figure, are in its file under
+`TestFixtures/McpEval/scenarios/`.
+
+| Measure | Step 0 | After step 1 |
+|---|---|---|
+| Harness, 18 tasks × 3, Tool Search on: calls per run | 6.8 | 4.6 |
+| …bypass calls, all runs | 51 | 25 |
+| …cost per run | $0.171 | $0.158 |
+| Harness, Tool Search off: calls per run | 6.1 | 4.0 |
+| …bypass calls, all runs | 40 | 8 |
+| OpenModelica axle: *Done when* | 8 of 8 | 8 of 8 |
+| …MLQT calls / bypass writes / bypass reads / `reload` | 26 / 9 / 3 / 1 | 12 / 2 / 0 / 0 |
+| …input tokens | 4.4 M | 2.5 M |
+| Dymola energy recovery: *Done when* | 4 of 5 | 5 of 5 |
+| …MLQT calls / bypass writes / bypass reads / `reload` | 2 / 10 / 7 / 0 | 27 / 1 / 1 / 1 |
+| …minutes | 25 | 14 |
+
+The Dymola column is the last of five runs, with every fix below in it; the OpenModelica one needed
+none of them. Every harness run passed in both columns. The two bypass writes in the OpenModelica run
+were to the agent's own scratch folder, not the library.
+
+What the runs taught, in the order it was learned:
+
+- **Deferred tools lose to the agent's own.** With Tool Search on, both search tasks used Grep in
+  every run, because nothing told the agent `mlqt_find` existed until it searched for it. Marking
+  `mlqt_find` and `mlqt_load` to load up front (`anthropic/alwaysLoad`) fixed that, and was reverted:
+  it puts their definitions into every session the server is registered for, Modelica or not. The
+  connect-time instructions are sent anyway, so they are where to steer.
+- **The instructions must name the work, not the question.** An opening sentence leading with
+  questions and searching moved the search tasks to `mlqt_find` and lost the Dymola scenario: two runs
+  with 2 and 0 MLQT calls, and 19 and 13 library writes around it. The wording that won both names the
+  work - "read, search, create or edit Modelica code" - keeps the reasons a write through MLQT is safe,
+  and, for deferred tools, names one tool to load for each kind of work: `mlqt_load`, `mlqt_find`,
+  `mlqt_get_class_source`, `mlqt_edit_class`. The first tool search then loaded MLQT's tools before
+  any read. **The consolidated set's instructions must keep that shape under the new names.**
+- **Listing an edit tool's operations matters.** With `mlqt_edit_class`'s operations cut from the
+  instructions to save characters, `add-and-connect` searched for the separate tools and took 8.2
+  calls instead of 4.
+- **The newest install found need not be the one running (B504).** Detection did not find a beta's
+  folder, so the dependency search used an older release's libraries. Fixed: every release folder is
+  ranked, the answer says why that install was chosen, and a load naming another install searches
+  again in place of what the first search found.
+- **A repeated text needs `replace` with `all: true`.** The last `.mo` write round MLQT was a `sed`
+  renaming one name throughout a class, which `replace` refused because it occurred twice.
+- **Agents still pick the old single-purpose tools where they exist** - `set_component_modifier`,
+  `set_class_description`, `rename_class`, `get_class_source`, `get_package_tree` - beside the new
+  ones. Step 3 shows whether the consolidated set, which has only the new shapes, does better.
+- **The tool count was mostly hidden** by Tool Search. Step 3 runs with it off as well, where the
+  count costs most.
 
 ### 2. Build the consolidated set behind the switch
 
