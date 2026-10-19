@@ -16,4 +16,11 @@ public sealed class SessionState
     /// never replaces anything (<c>Design/mcp-tool-consolidation.md</c>, B503).
     /// </summary>
     internal Dictionary<string, string> LibraryOrigins { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The simulation tool install whose library folders the last dependency search used, or null when
+    /// none has. A later <c>mlqt_load</c> naming another install searches again from it, in place of what
+    /// the earlier search found: the newest install on a machine need not be the one running (B504).
+    /// </summary>
+    internal string? SearchInstall { get; set; }
 }

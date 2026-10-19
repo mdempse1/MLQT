@@ -44,7 +44,7 @@ public sealed class LoadTools
                  "withDependencies (default true), each library their uses annotations name and nothing has " +
                  "loaded is searched for: beside the library that needs it, in its repository, in the simulation " +
                  "tool's library folders (tool: 'dymola' or 'openmodelica'; toolInstall picks which install), " +
-                 "then on MODELICAPATH. The exact version wins, else the newest copy declaring " +
+                 "then on MODELICAPATH. Naming another install than an earlier load used searches again from it, in place of what that search found. The exact version wins, else the newest copy declaring " +
                  "noneFromVersion for it, else nothing is loaded and every copy seen is listed. The answer " +
                  "names each library, its version, path and how it was found.")]
     public async Task<object> Load(

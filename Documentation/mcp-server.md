@@ -149,7 +149,7 @@ A library you name replaces a copy an earlier search loaded. Two copies you name
    - Dymola: `<install>/Modelica/Library`;
    - OpenModelica: the user's library folder (`%AppData%\.openmodelica\libraries`, `~/.openmodelica/libraries`), or `OPENMODELICALIBRARY`.
 
-   The install is `toolInstall` if given, else the one in the desktop app's External Tools settings, else the newest found. The answer says which (`toolInstallChosen`), because the newest Dymola on a machine need not be the one the simulator is running: when it is not, pass `toolInstall`. The settings file is only read, never written;
+   The install is `toolInstall` if given, else the one in the desktop app's External Tools settings, else the newest found. The answer says which (`toolInstallChosen`), because the newest Dymola on a machine need not be the one the simulator is running: when it is not, pass `toolInstall`. A load naming another install than the session's last search used unloads the libraries that search found - not those you named - and searches again from the new one; the answer lists each that moved under `replaced`, and says which it no longer finds. The settings file is only read, never written;
 3. MODELICAPATH.
 
 **Which copy is taken:**

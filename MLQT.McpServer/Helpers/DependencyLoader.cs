@@ -18,7 +18,9 @@ namespace MLQT.McpServer.Helpers;
 /// library that needs it, its repository's root, the simulation tool's library folders, then
 /// MODELICAPATH. The first exact version found wins, the largest build of it; failing that, the newest
 /// copy declaring <c>conversion(noneFromVersion=...)</c> for the version asked for; failing that, nothing,
-/// and every copy seen is reported. A search never replaces a library already loaded.</para>
+/// and every copy seen is reported. A search never replaces a library already loaded - except that a load
+/// naming another tool install than the last search used unloads what searches found, and searches again
+/// (B504).</para>
 /// </remarks>
 internal sealed class DependencyLoader
 {
@@ -56,13 +58,64 @@ internal sealed class DependencyLoader
             await LoadExplicitAsync(path, replace);
 
         if (withDependencies)
+        {
+            var unloaded = SearchAgainIfTheInstallChanged(tool.Install);
             await LoadDependenciesAsync(tool);
+            ReportWhatTheNewSearchFound(unloaded);
+        }
 
         // A tool was named but nothing of it was found: say so, since the search was narrower than asked.
         if (withDependencies && tool.Note is { } note && tool.Folders.Count == 0)
             _warnings.Add(note);
 
         return new LoadResult(_loaded, _replaced, _notFound, _warnings, _errors, tool.Install, tool.InstallReason, tool.Folders);
+    }
+
+    /// <summary>
+    /// When <paramref name="install"/> is not the install the session's last search used, unloads every
+    /// library a search found, so the search about to run decides them all again from the new one. A
+    /// search never replaces a loaded library, so without this a second load naming the install that is
+    /// running only filled the gaps, and kept the old install's copies of the rest (B504). The libraries
+    /// the caller named stay. Returns what was unloaded.
+    /// </summary>
+    private List<(string Name, string? Version, string Path)> SearchAgainIfTheInstallChanged(string? install)
+    {
+        var unloaded = new List<(string Name, string? Version, string Path)>();
+        if (install is null)
+            return unloaded;
+        var previous = _session.SearchInstall;
+        _session.SearchInstall = install;
+        if (previous is null || SamePath(previous, install))
+            return unloaded;
+
+        foreach (var library in _libraries.Libraries.Where(l => OriginOf(l) == Search).ToList())
+        {
+            unloaded.Add((library.Name, library.Version, library.SourcePath));
+            _libraries.RemoveLibrary(library.Id);
+            _session.LibraryOrigins.Remove(library.Id);
+        }
+        if (unloaded.Count > 0)
+        {
+            _session.DependenciesAnalyzed = false;
+            _session.ResourcesAnalyzed = false;
+            _warnings.Add($"The tool install changed from '{previous}' to '{install}', so the {unloaded.Count} " +
+                          "libraries the earlier search found were unloaded and searched for again.");
+        }
+        return unloaded;
+    }
+
+    // Each library unloaded for a new install: replaced when the search found it somewhere else, said
+    // when it found nothing; one found again at the same path is as it was.
+    private void ReportWhatTheNewSearchFound(List<(string Name, string? Version, string Path)> unloaded)
+    {
+        foreach (var (name, version, path) in unloaded)
+        {
+            var now = _libraries.Libraries.FirstOrDefault(l => l.Name == name);
+            if (now is null)
+                _warnings.Add($"{name} {version} from '{path}' was unloaded for the new install, and no copy of it was found there.");
+            else if (!SamePath(now.SourcePath, path))
+                _replaced.Add(new ReplacedLibraryItem(name, version, path, now.Version, now.SourcePath));
+        }
     }
 
     private string OriginOf(LoadedLibrary library) =>

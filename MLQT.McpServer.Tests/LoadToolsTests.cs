@@ -59,8 +59,23 @@ public class LoadToolsTests
             Environment_ = key => Environment.GetValueOrDefault(key),
         };
 
-        public async Task<LoadResult> Load(params string[] relative) =>
-            ToolAssert.Ok<LoadResult>(await Tools().Load(relative.Select(Path_).ToList(), tool: "dymola", toolInstall: DymolaExe));
+        public async Task<LoadResult> Load(params string[] relative) => await LoadWith(DymolaExe, relative);
+
+        public async Task<LoadResult> LoadWith(string dymolaExe, params string[] relative) =>
+            ToolAssert.Ok<LoadResult>(await Tools().Load(relative.Select(Path_).ToList(), tool: "dymola", toolInstall: dymolaExe));
+
+        /// <summary>A second Dymola install, with its own library folder; <paramref name="withBase"/> puts a
+        /// copy of Base in it.</summary>
+        public string SecondInstall(bool withBase)
+        {
+            Directory.CreateDirectory(Path_("Dymola2/Modelica/Library"));
+            if (withBase)
+                Write("Dymola2/Modelica/Library/Base 1.0", Package("Base"));
+            Directory.CreateDirectory(Path_("Dymola2/bin64"));
+            var exe = Path_("Dymola2/bin64/dymola.exe");
+            File.WriteAllText(exe, "not a real Dymola");
+            return exe;
+        }
 
         public void Dispose() => Host.Dispose();
     }
@@ -82,6 +97,75 @@ public class LoadToolsTests
         Assert.Empty(res.NotFound);
         Assert.Equal(Path.Combine(w.Root, "Dymola"), res.ToolInstall);
         Assert.Equal("as given", res.ToolInstallChosen);
+    }
+
+    // ---- Another install: the search decides again (B504) -------------------------------------
+    //
+    // A search never replaces a loaded library, so a second load naming the install the simulator is
+    // really running only filled the gaps and kept the first install's copies of everything else.
+
+    [Fact]
+    public async Task AnotherInstall_SearchesAgain_InPlaceOfWhatTheFirstSearchFound()
+    {
+        using var w = new World();
+        await w.Load("Project/App");
+        var second = w.SecondInstall(withBase: true);
+
+        var res = await w.LoadWith(second, "Project/App");
+
+        Assert.Equal("already loaded", Named(res, "App").FoundBy);     // what the caller named stays
+        var replaced = Assert.Single(res.Replaced);                     // only Base moved
+        Assert.Equal(("Base", w.Path_("Dymola/Modelica/Library/Base 1.0"), w.Path_("Dymola2/Modelica/Library/Base 1.0")),
+            (replaced.Name, replaced.OldPath, replaced.NewPath));
+        var bases = w.Host.Libraries.Libraries.Where(l => l.Name == "Base").ToList();
+        Assert.Equal(w.Path_("Dymola2/Modelica/Library/Base 1.0"), Assert.Single(bases).SourcePath);
+        // Found beside App and on MODELICAPATH: unloaded, found again where they were.
+        Assert.Equal("beside App", Named(res, "Dep").FoundBy);
+        Assert.Equal("MODELICAPATH", Named(res, "Extra").FoundBy);
+        Assert.Contains(res.Warnings, x => x.Contains("tool install changed") && x.Contains("3 libraries"));
+        Assert.Equal(Path.Combine(w.Root, "Dymola2"), res.ToolInstall);
+    }
+
+    [Fact]
+    public async Task TheSameInstallAgain_ChangesNothing()
+    {
+        using var w = new World();
+        await w.Load("Project/App");
+        var before = w.Host.Libraries.Libraries.Single(l => l.Name == "Base").Id;
+
+        var res = await w.Load("Project/App");
+
+        Assert.Empty(res.Replaced);
+        Assert.DoesNotContain(res.Warnings, x => x.Contains("tool install changed"));
+        Assert.Equal(before, w.Host.Libraries.Libraries.Single(l => l.Name == "Base").Id);   // not reloaded
+    }
+
+    [Fact]
+    public async Task ALibraryTheNewInstallDoesNotHave_IsUnloaded_AndSaidSo()
+    {
+        using var w = new World();
+        await w.Load("Project/App");
+        var second = w.SecondInstall(withBase: false);
+
+        var res = await w.LoadWith(second, "Project/App");
+
+        Assert.DoesNotContain(w.Host.Libraries.Libraries, l => l.Name == "Base");
+        Assert.Contains(res.NotFound, m => m.Name == "Base");
+        Assert.Contains(res.Warnings, x => x.Contains("Base") && x.Contains("no copy of it was found there"));
+    }
+
+    [Fact]
+    public async Task ALibraryNamedExplicitly_StaysWhenTheInstallChanges()
+    {
+        using var w = new World();
+        await w.Load("Project/App", "Dymola/Modelica/Library/Base 1.0");
+        var second = w.SecondInstall(withBase: true);
+
+        var res = await w.LoadWith(second, "Project/App");
+
+        Assert.Empty(res.Replaced);
+        Assert.Equal(w.Path_("Dymola/Modelica/Library/Base 1.0"),
+            w.Host.Libraries.Libraries.Single(l => l.Name == "Base").SourcePath);
     }
 
     [Fact]
