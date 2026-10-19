@@ -19,7 +19,8 @@ public sealed record MissingDependency(string Name, string? Version, string Requ
 /// <summary>
 /// What <c>mlqt_load</c> did: the libraries it loaded, in order, and those already loaded that a
 /// dependency was satisfied by; what an explicit load replaced; what it could not find; and the tool
-/// folders it searched.
+/// install, why that one (<c>ToolInstallChosen</c>: as given, from the desktop settings, or the newest
+/// found), and the folders of it searched.
 /// </summary>
 public sealed record LoadResult(
     IReadOnlyList<LoadedLibraryItem> Loaded,
@@ -28,6 +29,7 @@ public sealed record LoadResult(
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Errors,
     string? ToolInstall,
+    string? ToolInstallChosen,
     IReadOnlyList<string> ToolFolders,
     ScriptReadingResult? Script = null);
 

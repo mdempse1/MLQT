@@ -94,8 +94,12 @@ public class DymolaSettings : IJsonOnDeserialized
     /// Where auto-detection looks for Dymola, in order.
     /// </summary>
     /// <remarks>
-    /// <para><b>Windows:</b> <c>bin64\dymola.exe</c> under each of <see cref="CandidateInstallNames"/>
-    /// in Program Files, newest first; then <c>dymola.exe</c> in each folder on <c>PATH</c>.</para>
+    /// <para><b>Windows:</b> <c>bin64\dymola.exe</c> under each folder in Program Files named for a
+    /// Dymola release, newest first in release order (<see cref="WindowsInstallsNewestFirst"/>); then
+    /// <c>dymola.exe</c> in each folder on <c>PATH</c>. Only the names in
+    /// <see cref="CandidateInstallNames"/> were probed, so a beta's folder was never found, and the
+    /// MCP server's dependency search used an older release's libraries than the Dymola running
+    /// (B504).</para>
     ///
     /// <para><b>Linux:</b> Dassault's installation guide puts Dymola in
     /// <c>/opt/dymola-&lt;version&gt;-x86_64</c> and installs a launcher script,
@@ -112,8 +116,8 @@ public class DymolaSettings : IJsonOnDeserialized
     {
         if (windows)
         {
-            foreach (var name in CandidateInstallNames(newestYear))
-                yield return Path.Combine(programFiles, name, "bin64", "dymola.exe");
+            foreach (var install in WindowsInstallsNewestFirst(programFiles, newestYear))
+                yield return Path.Combine(install, "bin64", "dymola.exe");
         }
         else
         {
@@ -170,7 +174,57 @@ public class DymolaSettings : IJsonOnDeserialized
     }
 
     /// <summary>
-    /// The install folders auto-detection looks for, newest release first: for each year from
+    /// A Windows release's folder name: <c>Dymola 2026x</c>, <c>Dymola 2026x Refresh 1</c>, <c>Dymola
+    /// 2030x Beta 2</c>, a refresh's beta (<c>Dymola 2026x Refresh 1 Beta 1</c>), or a spring release
+    /// (<c>Dymola 2023</c>). Anything else in the name is ignored for ordering.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex WindowsReleaseName = new(
+        @"^Dymola (?<year>\d{4})(?<x>x?)(?:\s+Refresh\s*(?<refresh>\d+))?(?:\s+Beta\s*(?<beta>\d*))?\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The folders of <paramref name="programFiles"/> named for a Dymola release from
+    /// <see cref="OldestDetectedYear"/> to <paramref name="newestYear"/>, newest first in release
+    /// order: by year, a year's <c>x</c> release after its spring one, a refresh after the release it
+    /// refreshes, and a beta just before the release of its name - after everything older. Empty when
+    /// the folder cannot be read.
+    /// </summary>
+    private static IEnumerable<string> WindowsInstallsNewestFirst(string programFiles, int newestYear)
+    {
+        string[] folders;
+        try
+        {
+            if (!Directory.Exists(programFiles))
+                return [];
+            folders = Directory.GetDirectories(programFiles, "Dymola *");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+
+        static int Number(System.Text.RegularExpressions.Group g) =>
+            g.Success && g.Value.Length > 0 ? int.Parse(g.Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
+
+        return folders
+            .Select(path => (path, match: WindowsReleaseName.Match(Path.GetFileName(path))))
+            .Where(e => e.match.Success)
+            .Select(e => (e.path, year: Number(e.match.Groups["year"]), x: e.match.Groups["x"].Length,
+                refresh: Number(e.match.Groups["refresh"]), beta: e.match.Groups["beta"].Success,
+                betaNumber: Number(e.match.Groups["beta"])))
+            .Where(e => e.year >= OldestDetectedYear && e.year <= newestYear)
+            .OrderByDescending(e => e.year)
+            .ThenByDescending(e => e.x)
+            .ThenByDescending(e => e.refresh)
+            .ThenBy(e => e.beta)                    // the release before its betas
+            .ThenByDescending(e => e.betaNumber)
+            .ThenByDescending(e => e.path, StringComparer.Ordinal)
+            .Select(e => e.path);
+    }
+
+    /// <summary>
+    /// The install folders auto-detection looked for before it listed Program Files (B504), newest
+    /// release first: for each year from
     /// <paramref name="newestYear"/> back to <see cref="OldestDetectedYear"/>, <c>Dymola {year}x
     /// Refresh 1</c>, <c>Dymola {year}x</c> and <c>Dymola {year}</c>.
     /// </summary>
@@ -196,18 +250,11 @@ public class DymolaSettings : IJsonOnDeserialized
     }
 
     /// <summary>
-    /// The newest <c>bin64/dymola.exe</c> under <paramref name="programFiles"/>, among
-    /// <see cref="CandidateInstallNames"/>; empty when there is none.
+    /// The newest <c>bin64/dymola.exe</c> under <paramref name="programFiles"/>, among its folders
+    /// named for a Dymola release; empty when there is none.
     /// </summary>
-    public static string FindInstalledDymola(string programFiles, int newestYear)
-    {
-        foreach (var name in CandidateInstallNames(newestYear))
-        {
-            var path = Path.Combine(programFiles, name, "bin64", "dymola.exe");
-            if (File.Exists(path))
-                return path;
-        }
-
-        return string.Empty;
-    }
+    public static string FindInstalledDymola(string programFiles, int newestYear) =>
+        WindowsInstallsNewestFirst(programFiles, newestYear)
+            .Select(install => Path.Combine(install, "bin64", "dymola.exe"))
+            .FirstOrDefault(File.Exists) ?? string.Empty;
 }

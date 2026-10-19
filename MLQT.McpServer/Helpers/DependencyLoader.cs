@@ -62,7 +62,7 @@ internal sealed class DependencyLoader
         if (withDependencies && tool.Note is { } note && tool.Folders.Count == 0)
             _warnings.Add(note);
 
-        return new LoadResult(_loaded, _replaced, _notFound, _warnings, _errors, tool.Install, tool.Folders);
+        return new LoadResult(_loaded, _replaced, _notFound, _warnings, _errors, tool.Install, tool.InstallReason, tool.Folders);
     }
 
     private string OriginOf(LoadedLibrary library) =>

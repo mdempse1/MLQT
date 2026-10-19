@@ -93,7 +93,7 @@ public sealed class GuidanceTools
                  listed - ask the user about those, or pass the path yourself.
               2. Leave withDependencies on, with tool 'dymola' or 'openmodelica': what those libraries use
                  and nothing loaded is then found beside them, in the tool's library folders and on
-                 MODELICAPATH - the MSL, Complex and ModelicaServices included. tool_install picks the install
+                 MODELICAPATH - the MSL, Complex and ModelicaServices included. toolInstall picks the install
                  when it is not the one in MLQT's settings or the newest.
               3. Read the answer: each library's version and where it came from, and anything not found.
               4. If the simulator's set changes - another project's startup script - load the new paths. What

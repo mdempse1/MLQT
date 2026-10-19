@@ -4,8 +4,9 @@ using OpenModelicaInterface;
 
 namespace MLQT.McpServer.Helpers;
 
-/// <summary>Where a simulation tool keeps the libraries it loads, and which install that came from.</summary>
-internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Install, string? Note);
+/// <summary>Where a simulation tool keeps the libraries it loads, which install that came from, and why
+/// that install (<see cref="InstallReason"/>).</summary>
+internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Install, string? Note, string? InstallReason = null);
 
 /// <summary>
 /// The library folders of the simulation tool a user works with, for the dependency search
@@ -35,14 +36,15 @@ internal static class ToolLibraryFolders
                 return new ToolFolders([], null, null);
             case "dymola":
             {
-                var (install, from) = Choose(toolInstall, () => DesktopDymola(desktopSettingsDirectory),
+                var (install, from, reason) = Choose(toolInstall, () => DesktopDymola(desktopSettingsDirectory),
                     DymolaSettings.FindInstalledDymola);
                 if (install is null)
-                    return new ToolFolders([], null, "No Dymola install was found; pass tool_install with its folder.");
+                    return new ToolFolders([], null, "No Dymola install was found; pass toolInstall with its folder.");
                 var root = InstallRoot(install);
                 var library = Path.Combine(root, "Modelica", "Library");
                 return new ToolFolders(Directory.Exists(library) ? [library] : [], root,
-                    Directory.Exists(library) ? $"Dymola install {from}." : $"Dymola install {from} has no {library}.");
+                    Directory.Exists(library) ? $"Dymola install {from}." : $"Dymola install {from} has no {library}.",
+                    reason);
             }
             case "openmodelica":
             {
@@ -53,7 +55,7 @@ internal static class ToolLibraryFolders
                     folders.Add(OperatingSystem.IsWindows()
                         ? Path.Combine(environment("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".openmodelica", "libraries")
                         : Path.Combine(environment("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openmodelica", "libraries"));
-                var (install, from) = Choose(toolInstall, () => DesktopOmc(desktopSettingsDirectory), OpenModelicaSettings.FindInstalledOmc);
+                var (install, from, reason) = Choose(toolInstall, () => DesktopOmc(desktopSettingsDirectory), OpenModelicaSettings.FindInstalledOmc);
                 string? root = null;
                 if (install is not null)
                 {
@@ -63,22 +65,31 @@ internal static class ToolLibraryFolders
                         folders.Add(bundled);
                 }
                 return new ToolFolders(folders.Where(Directory.Exists).ToList(), root,
-                    root is null ? "OpenModelica's user library folder." : $"OpenModelica's user library folder, and install {from}.");
+                    root is null ? "OpenModelica's user library folder." : $"OpenModelica's user library folder, and install {from}.",
+                    reason);
             }
             default:
                 return new ToolFolders([], null, $"tool must be 'dymola', 'openmodelica' or 'none', not '{tool}'.");
         }
     }
 
+    /// <summary>What the answer says when the install was detected: the newest release on the machine
+    /// need not be the one the simulator is running, and only the caller can know that (B504).</summary>
+    internal const string DetectedReason =
+        "the newest found on this machine; if the simulator is running another release, pass toolInstall";
+
     // The caller's choice, else the desktop settings, else detection, saying which it was.
-    private static (string? Install, string From) Choose(string? given, Func<string?> desktop, Func<string> detect)
+    private static (string? Install, string From, string? Reason) Choose(string? given, Func<string?> desktop, Func<string> detect)
     {
         if (!string.IsNullOrWhiteSpace(given))
-            return (given, $"'{given}', as given");
+            return (given, $"'{given}', as given", "as given");
         if (desktop() is { Length: > 0 } fromSettings)
-            return (fromSettings, $"'{fromSettings}', from the desktop app's External Tools settings");
+            return (fromSettings, $"'{fromSettings}', from the desktop app's External Tools settings",
+                "from the desktop app's External Tools settings");
         var detected = detect();
-        return string.IsNullOrEmpty(detected) ? (null, string.Empty) : (detected, $"'{detected}', the newest found");
+        return string.IsNullOrEmpty(detected)
+            ? (null, string.Empty, null)
+            : (detected, $"'{detected}', the newest found", DetectedReason);
     }
 
     /// <summary>The install folder for an executable or a folder: <c>bin64\dymola.exe</c> and

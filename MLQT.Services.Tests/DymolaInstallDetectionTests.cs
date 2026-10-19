@@ -75,6 +75,68 @@ public sealed class DymolaInstallDetectionTests : IDisposable
         Assert.DoesNotContain(DymolaSettings.CandidateInstallNames(2027), n => n.Contains("2020"));
     }
 
+    // ---- Every folder named for a release, betas included (B504) -------------------------------
+    //
+    // Only the three names per year were probed, so a beta was never found: the MCP server's
+    // dependency search then used an older release's libraries than the Dymola running.
+
+    [Fact]
+    public void ABetaOfALaterRelease_IsTakenBeforeEverythingOlder()
+    {
+        Install("Dymola 2028x");
+        Install("Dymola 2028x Refresh 1");
+        var beta = Install("Dymola 2029x Beta 2");
+
+        Assert.Equal(beta, DymolaSettings.FindInstalledDymola(_programFiles, newestYear: 2029));
+    }
+
+    [Fact]
+    public void AReleaseIsTakenBeforeItsOwnBetas_AndALaterBetaBeforeAnEarlierOne()
+    {
+        Install("Dymola 2029x Beta 1");
+        var beta2 = Install("Dymola 2029x Beta 2");
+        Assert.Equal(beta2, DymolaSettings.FindInstalledDymola(_programFiles, newestYear: 2029));
+
+        var release = Install("Dymola 2029x");
+        Assert.Equal(release, DymolaSettings.FindInstalledDymola(_programFiles, newestYear: 2029));
+    }
+
+    [Fact]
+    public void ARefreshsBeta_ComesBetweenTheReleaseAndTheRefresh()
+    {
+        Install("Dymola 2028x");
+        var refreshBeta = Install("Dymola 2028x Refresh 1 Beta 1");
+        Assert.Equal(refreshBeta, DymolaSettings.FindInstalledDymola(_programFiles, newestYear: 2029));
+
+        var refresh = Install("Dymola 2028x Refresh 1");
+        Assert.Equal(refresh, DymolaSettings.FindInstalledDymola(_programFiles, newestYear: 2029));
+    }
+
+    [Fact]
+    public void AFolderNotNamedForARelease_OrOneWithoutDymolaInIt_IsNotTaken()
+    {
+        Install("Dymola Tools");
+        Directory.CreateDirectory(Path.Combine(_programFiles, "Dymola 2028x", "bin64"));   // no dymola.exe
+
+        Assert.Equal("", DymolaSettings.FindInstalledDymola(_programFiles, newestYear: 2029));
+    }
+
+    [Fact]
+    public void OnWindows_TheCandidatesAreTheInstalledReleases_NewestFirst_ThenThePath()
+    {
+        Install("Dymola 2026x");
+        Install("Dymola 2029x Beta 2");
+        Install("Dymola 2028x Refresh 1");
+        var tools = Path.Combine(_programFiles, "tools");
+
+        Assert.Equal(
+            [Path.Combine(_programFiles, "Dymola 2029x Beta 2", "bin64", "dymola.exe"),
+             Path.Combine(_programFiles, "Dymola 2028x Refresh 1", "bin64", "dymola.exe"),
+             Path.Combine(_programFiles, "Dymola 2026x", "bin64", "dymola.exe"),
+             Path.Combine(tools, "dymola.exe")],
+            DymolaSettings.CandidateDymolaPaths(windows: true, _programFiles, tools, newestYear: 2029));
+    }
+
     [Fact]
     public void TheCandidatesAreExactlyTheThreeNamesPerYear_NewestFirst()
     {

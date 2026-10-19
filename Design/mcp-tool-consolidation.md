@@ -139,7 +139,7 @@ OpenModelica 1.27 User's Guide):
 3. **The simulation tool's library folders**, for the `tool` named. For Dymola that is
    `<install>/Modelica/Library`. For OpenModelica it is the user library path above. Which install is
    searched is decided in this order:
-   1. `tool_install` passed to `mlqt_load`: the install folder or executable. A machine often has
+   1. `toolInstall` passed to `mlqt_load`: the install folder or executable. A machine often has
       many Dymola releases, and the one the user runs is not necessarily the newest.
    2. The tool paths in the desktop app's External Tools settings (`settings.json`), read and nothing
       else. The server keeps its own `mcp-settings.json` so that an agent does not inherit a project
@@ -393,7 +393,7 @@ The user's answers to the questions this note left open:
 2. **Dependencies are searched** as *Finding dependencies* sets out: libraries already loaded,
    sibling directories, the simulation tool's library folders, then MODELICAPATH. Explicit loads,
    including those read from a Dymola startup script, win.
-3. **The install searched** is chosen by a `tool_install` parameter, then by the desktop app's
+3. **The install searched** is chosen by a `toolInstall` parameter, then by the desktop app's
    External Tools paths (read only), then by the newest install detected.
 4. **Startup-script fixtures** come from two or three of the user's real scripts, anonymised.
 5. **The real-world checks** are two cut-down scenarios, not the four full sessions.

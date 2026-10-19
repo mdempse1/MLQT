@@ -81,6 +81,18 @@ public class LoadToolsTests
         Assert.Equal("MODELICAPATH", Named(res, "Extra").FoundBy);
         Assert.Empty(res.NotFound);
         Assert.Equal(Path.Combine(w.Root, "Dymola"), res.ToolInstall);
+        Assert.Equal("as given", res.ToolInstallChosen);
+    }
+
+    [Fact]
+    public void ADetectedInstall_SaysToPassAParameterTheToolHas()
+    {
+        // B504: the newest Dymola found need not be the one running, and only the agent can know
+        // that - so the answer names the parameter to pass, which must be one mlqt_load has.
+        var parameters = typeof(LoadTools).GetMethod(nameof(LoadTools.Load))!.GetParameters().Select(p => p.Name);
+
+        Assert.Contains("toolInstall", parameters);
+        Assert.Contains("pass toolInstall", ToolLibraryFolders.DetectedReason);
     }
 
     [Fact]
@@ -298,6 +310,7 @@ public class ToolLibraryFoldersTests
         Assert.Equal(install, folders.Install);
         Assert.Equal(Path.Combine(install, "Modelica", "Library"), Assert.Single(folders.Folders));
         Assert.Contains("desktop app", folders.Note);
+        Assert.Equal("from the desktop app's External Tools settings", folders.InstallReason);
     }
 
     [Fact]

@@ -16,11 +16,12 @@ MLQT can integrate with **Dymola** and **OpenModelica** to check your Modelica m
 ### Auto-Detection
 
 MLQT attempts to auto-detect installed tools on startup:
-- **Dymola**: Looks in `Program Files` for `bin64\dymola.exe` under a folder named `Dymola {year}x Refresh 1`,
-  `Dymola {year}x` or `Dymola {year}` — for example `Dymola 2026x Refresh 1`, `Dymola 2024x` or
-  `Dymola 2023` — for every year from next year's back to 2021, and takes the newest it finds.
-  Anything else (Dymola 2020 or earlier, a renamed folder, another drive) is set by hand, or found
-  as `dymola.exe` in a folder on `PATH`, which is looked at after Program Files. On Linux, see
+- **Dymola**: Looks in `Program Files` for `bin64\dymola.exe` under every folder named for a release
+  from 2021 to next year's — `Dymola 2023`, `Dymola 2024x`, `Dymola 2026x Refresh 1`, a beta such as
+  `Dymola {year}x Beta 2` — and takes the newest in release order. A beta counts as newer than every
+  earlier release and older than the release of its own name. Anything else (Dymola 2020 or earlier,
+  a renamed folder, another drive) is set by hand, or found as `dymola.exe` in a folder on `PATH`,
+  which is looked at after Program Files. On Linux, see
   [Dymola on Linux](#dymola-on-linux)
 - **OpenModelica**: on Windows, looks in `Program Files` for the installer's versioned folders
   (`OpenModelica1.26.0-64bit\bin\omc.exe` and so on, newest first, back to 1.21), then for `omc.exe`
