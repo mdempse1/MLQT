@@ -196,12 +196,46 @@ public class SessionAndClassToolsTests
 
         var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot));
         Assert.True(result.Success);
-        Assert.Contains(result.DiscoveredLibraries, d => d.LibraryName == "TestLib");
-        Assert.NotEmpty(result.LoadedLibraries);
+        // Everything discovered was loaded, so by default the discovered list is not repeated (B503).
+        Assert.Empty(result.DiscoveredLibraries);
+        Assert.Contains(result.LoadedLibraries, l => l.Name == "TestLib");
 
         var repos = session.ListRepositories();
         Assert.Single(repos);
         Assert.Equal(result.RepositoryId, repos[0].Id);
+    }
+
+    [Fact]
+    public async Task LoadRepository_Detailed_ListsWhatItDiscovered_EvenWhenAllWasLoaded()
+    {
+        using var host = new TestHost();
+        var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+        var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot, detailed: true));
+        Assert.Contains(result.DiscoveredLibraries, d => d.LibraryName == "TestLib");
+    }
+
+    [Fact]
+    public async Task ListLibraries_ByDefault_ListsOnlyTheDependenciesNotLoaded()
+    {
+        using var host = new TestHost();
+        var needy = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Needy\n  model M\n  end M;\n  annotation (uses(Helper(version=\"1.0\"), Gone(version=\"2.0\")));\nend Needy;\n",
+        });
+        var helper = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Helper\n  model H\n  end H;\nend Helper;\n",
+        });
+        await host.Libraries.AddLibraryFromDirectoryAsync(needy);
+        await host.Libraries.AddLibraryFromDirectoryAsync(helper);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+        var concise = session.ListLibraries().Single(l => l.Name == "Needy");
+        Assert.Equal(["Gone"], concise.Dependencies.Select(d => d.Name).ToArray());
+        var detailed = session.ListLibraries(detailed: true).Single(l => l.Name == "Needy");
+        Assert.Equal(["Gone", "Helper"], detailed.Dependencies.Select(d => d.Name).Order().ToArray());
     }
 
     [Fact]
@@ -384,5 +418,20 @@ public class SessionAndClassToolsTests
         Assert.NotNull(testLib.Children);
 
         Assert.IsType<ToolError>(query.GetPackageTree("TestLib.Nope"));
+    }
+
+    [Fact]
+    public void GetPackageTree_StopsExpandingAtMaxNodes_KeepingTheChildCount()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+
+        var root = Assert.Single(ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree("TestLib", maxDepth: 1, maxNodes: 1)));
+        Assert.NotNull(root.Children); // the one node the budget allows
+
+        var unexpanded = Assert.Single(ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree("TestLib", maxDepth: 2, maxNodes: 1)));
+        Assert.All(unexpanded.Children!, child => Assert.Null(child.Children));
+        Assert.Equal(3, unexpanded.ChildCount);
     }
 }

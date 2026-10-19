@@ -256,6 +256,9 @@ def session(exe, fixture, out):
                 {"op": "add_equation", "classId": "Smoke.Undescribed", "equation": "y = state"}]}),
             ("load_with_dependencies", "mlqt_load",
              {"paths": [os.path.join(root, "Libraries", "Smoke")], "withDependencies": True}),
+            ("write_class", "mlqt_write_class", {"preview": True, "classes": [
+                {"parentId": "Smoke", "source": "model Written \"written\"\n  Real x;\nend Written;"}]}),
+            ("format_library", "mlqt_format", {"library": "Smoke", "preview": True}),
             ("find_code", "mlqt_find", {"query": "parameter Real", "match": "code", "limit": 5}),
             ("edit_class", "mlqt_edit_class", {"classId": "Smoke.Undescribed", "preview": True, "operations": [
                 {"op": "replace", "old": "parameter Real gain = 1;", "new": "parameter Real gain = 2;"},

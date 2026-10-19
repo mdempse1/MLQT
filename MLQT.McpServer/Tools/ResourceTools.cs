@@ -71,7 +71,7 @@ public sealed class ResourceTools
                 "that don't exist, and non-portable absolute-path references. Requires mlqt_analyze_dependencies. " +
                 "Paginated with limit/offset.")]
     public object GetResourceWarnings(
-        [Description("Max warnings to return (default 200, max 1000).")] int limit = 200,
+        [Description("Max warnings to return (default 25, max 1000). Total counts them all; page with offset.")] int limit = 25,
         [Description("Warnings to skip for pagination (default 0).")] int offset = 0)
     {
         if (!_session.ResourcesAnalyzed)

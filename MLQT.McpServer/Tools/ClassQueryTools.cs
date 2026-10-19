@@ -245,12 +245,16 @@ public sealed class ClassQueryTools
     [Description("Get the hierarchical tree of Modelica packages and classes. Without root_class_id, returns the top-level " +
                 "classes of every library loaded into MLQT. With root_class_id, returns that class and its nested " +
                 "children. max_depth bounds how many levels are expanded (default 1 = immediate children); " +
-                "each node reports its childCount so you can drill in with further calls. Use this to " +
-                "navigate structure; use mlqt_list_classes for a flat, filterable listing.")]
+                "each node reports its childCount so you can drill in with further calls. At most " +
+                "maxNodes nodes are expanded (default 200): a node with a childCount but no children was " +
+                "not expanded - ask for it as root_class_id. Use this to " +
+                "navigate structure; use mlqt_find for a flat, filterable listing.")]
     public object GetPackageTree(
         [Description("Optional class id to root the tree at. Omit for all libraries' top-level classes.")]
         string? rootClassId = null,
-        [Description("How many levels to expand (default 1, max 8).")] int maxDepth = 1)
+        [Description("How many levels to expand (default 1, max 8).")] int maxDepth = 1,
+        [Description("Most nodes to expand children for (default 200). The tree of a large library at depth 2 or more " +
+                     "runs to tens of thousands of characters otherwise.")] int maxNodes = DefaultTreeNodes)
     {
         // Asked about one class with nothing loaded: name the library that class is in.
         if (rootClassId is not null && _libraries.Libraries.Count == 0)
@@ -278,8 +282,9 @@ public sealed class ClassQueryTools
             rootIds = _libraries.Libraries.SelectMany(l => l.TopLevelModelIds);
         }
 
+        var budget = new NodeBudget(Math.Max(maxNodes, 1));
         var tree = rootIds
-            .Select(id => BuildTree(id, childrenByParent, depth: 0, maxDepth))
+            .Select(id => BuildTree(id, childrenByParent, depth: 0, maxDepth, budget))
             .Where(n => n is not null)
             .Cast<PackageTreeNode>()
             .ToList();
@@ -287,7 +292,16 @@ public sealed class ClassQueryTools
         return tree;
     }
 
-    private PackageTreeNode? BuildTree(string id, Dictionary<string, List<string>> childrenByParent, int depth, int maxDepth)
+    private const int DefaultTreeNodes = 200;
+
+    /// <summary>How many more nodes may have their children listed, shared across one call (B503: a whole
+    /// tree came back at 30k characters in the 2026-10-18 sessions).</summary>
+    private sealed class NodeBudget(int left)
+    {
+        public int Left { get; set; } = left;
+    }
+
+    private PackageTreeNode? BuildTree(string id, Dictionary<string, List<string>> childrenByParent, int depth, int maxDepth, NodeBudget budget)
     {
         var node = _libraries.GetModelById(id);
         if (node is null)
@@ -297,10 +311,11 @@ public sealed class ClassQueryTools
         var childCount = childIds?.Count ?? 0;
 
         IReadOnlyList<PackageTreeNode>? children = null;
-        if (childCount > 0 && depth < maxDepth)
+        if (childCount > 0 && depth < maxDepth && budget.Left > 0)
         {
+            budget.Left--;
             children = childIds!
-                .Select(childId => BuildTree(childId, childrenByParent, depth + 1, maxDepth))
+                .Select(childId => BuildTree(childId, childrenByParent, depth + 1, maxDepth, budget))
                 .Where(n => n is not null)
                 .Cast<PackageTreeNode>()
                 .ToList();

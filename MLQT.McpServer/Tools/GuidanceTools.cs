@@ -279,6 +279,9 @@ public sealed class GuidanceTools
               first step of a new project). Then add classes with mlqt_create_class.
 
             Whole-class:
+            - mlqt_write_class(classes[]): write several whole classes in one call, each {parentId, source,
+              standalone?}, in order, so a later one can go in a package an earlier one created. A class that
+              exists is replaced only with replace=true. Use it to build a package of classes in one call.
             - mlqt_create_class(parentId, source): add a class from complete source; a directory package gets a
               standalone .mo file, otherwise it is nested (force with standalone true/false).
             - mlqt_update_class_source(classId, newSource): replace a class's body verbatim, SAME name (to
@@ -476,6 +479,9 @@ public sealed class GuidanceTools
 
         ["formatting"] = """
             Formatting. MLQT only formats COMPLETE class definitions, never loose fragments:
+            - mlqt_format(classId | library | source): one tool for all three. library formats every file of a
+              loaded library in one call - use it rather than mlqt_format_class once per file. A file with
+              syntax errors, or holding a class excluded from formatting, is left alone and listed.
             - mlqt_format_code(source, ...): stateless. The source must be one or more whole class definitions
               (model / block / package / record / function / connector / type ... end Name;). It CANNOT
               format a bare equation, a single declaration, or an expression — wrap the fragment in a class

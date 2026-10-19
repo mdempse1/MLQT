@@ -144,9 +144,9 @@ host that depends on one pins it in its own tests.
 | Dependencies & impact | `mlqt_analyze_dependencies`, `mlqt_get_dependencies`, `mlqt_find_usages`, `mlqt_analyze_impact` |
 | Code quality | `mlqt_get_style_settings`, `mlqt_set_style_settings`, `mlqt_check_style`, `mlqt_check_class`, `mlqt_check_library`, `mlqt_list_findings`, `mlqt_suppress_rule`, `mlqt_accept_spelling_in_class` |
 | Spelling | `mlqt_spell_check`, `mlqt_spelling_suggestions`, `mlqt_correct_spelling` |
-| Editing (class) | `mlqt_create_class`, `mlqt_update_class_source`, `mlqt_rename_class`, `mlqt_move_class`, `mlqt_delete_class` |
+| Editing (class) | `mlqt_write_class` (several at once), `mlqt_create_class`, `mlqt_update_class_source`, `mlqt_rename_class`, `mlqt_move_class`, `mlqt_delete_class` |
 | Editing (elements) | `mlqt_add_component`, `mlqt_remove_component`, `mlqt_set_component_modifier`, `mlqt_add_extends`, `mlqt_add_import`, `mlqt_add_equation`, `mlqt_add_statement`, `mlqt_add_connection`, `mlqt_remove_connection`, `mlqt_list_connections`, `mlqt_batch_edit`, `mlqt_edit_class` |
-| Formatting | `mlqt_format_code`, `mlqt_format_class` |
+| Formatting | `mlqt_format` (a class's file, a library, or text), `mlqt_format_code`, `mlqt_format_class` |
 | External resources | `mlqt_get_class_resources`, `mlqt_find_resource_usages`, `mlqt_get_resource_warnings` |
 | Modelica-aware VCS | `mlqt_get_changed_classes`, `mlqt_analyze_change_impact` |
 

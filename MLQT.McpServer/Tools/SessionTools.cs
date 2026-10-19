@@ -50,7 +50,10 @@ public sealed class SessionTools
         [Description("Absolute path to the local repository working copy or directory.")] string path,
         [Description("Optional display name; derived from the path if omitted.")] string? name = null,
         [Description("Load all discovered libraries into memory (default true). Set false to only " +
-                     "discover them without loading.")] bool loadLibraries = true)
+                     "discover them without loading.")] bool loadLibraries = true,
+        [Description("List every library's declared dependencies, and the discovered libraries even when all were " +
+                     "loaded. Default false: only dependencies not loaded are listed, which is what needs doing.")]
+        bool detailed = false)
     {
         var result = await _repositories.AddRepositoryAsync(
             path, checkoutPath: null, name: name, startMonitoring: false);
@@ -82,13 +85,16 @@ public sealed class SessionTools
             await _repositories.LoadLibrariesAsync(repo.Id);
             loaded = _libraries.Libraries
                 .Where(l => l.RepositoryId == repo.Id)
-                .Select(ToSummary)
+                .Select(l => ToSummary(l, detailed))
                 .ToList();
         }
 
+        // Once everything discovered is loaded, the discovered list repeats the loaded one (B503: one such
+        // answer was 31k characters).
+        var allLoaded = loadLibraries && discovered.All(d => loaded.Any(l => l.Name == d.LibraryName));
         return new LoadRepositoryResult(
             true, repo.Id, repo.Name, WireNames.Of(repo.VcsType), null,
-            discovered, loaded, warnings);
+            detailed || !allLoaded ? discovered : [], loaded, warnings);
     }
 
     [McpServerTool(Name = "mlqt_create_library")]
@@ -225,9 +231,11 @@ public sealed class SessionTools
     [Description("List the Modelica libraries loaded into MLQT, with their model counts. Only " +
                 "mlqt_load_library / mlqt_load_repository load them: a library a simulator has loaded is not " +
                 "here. An empty list means nothing is loaded yet - load what you need before using the " +
-                "other mlqt_ tools.")]
-    public IReadOnlyList<LibrarySummary> ListLibraries()
-        => _libraries.Libraries.Select(ToSummary).ToList();
+                "other mlqt_ tools. Each library lists the dependencies it declares that are not loaded; " +
+                "detailed=true lists all of them.")]
+    public IReadOnlyList<LibrarySummary> ListLibraries(
+        [Description("List every declared dependency, loaded or not. Default false.")] bool detailed = false)
+        => _libraries.Libraries.Select(l => ToSummary(l, detailed)).ToList();
 
     [McpServerTool(Name = "mlqt_list_repositories")]
     [Description("List all repositories of Modelica libraries added this session, with their VCS type, " +
@@ -387,10 +395,14 @@ public sealed class SessionTools
         "Opt-in analysis was reset by the reload — run mlqt_analyze_dependencies again before using dependency, " +
         "impact or external-resource tools.";
 
-    private LibrarySummary ToSummary(LoadedLibrary l) => new(
+    private LibrarySummary ToSummary(LoadedLibrary l) => ToSummary(l, detailed: true);
+
+    // Concise lists only the dependencies not loaded: those are the ones an agent has to act on.
+    private LibrarySummary ToSummary(LoadedLibrary l, bool detailed) => new(
         l.Id, l.Name, WireNames.Of(l.SourceType), l.SourcePath,
         l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision,
-        DeclaredDependencies(l), l.Version, l.ReadOnlySource is { } readOnlySource ? WireNames.Of(readOnlySource) : null);
+        detailed ? DeclaredDependencies(l) : DeclaredDependencies(l).Where(d => _libraries.Libraries.All(x => x.Name != d.Name)).ToList(),
+        l.Version, l.ReadOnlySource is { } readOnlySource ? WireNames.Of(readOnlySource) : null);
 
     // The library's declared dependencies (its top-level package's `uses(...)` annotation), so the caller
     // knows what else to load — most importantly the Modelica Standard Library, at the right version.
