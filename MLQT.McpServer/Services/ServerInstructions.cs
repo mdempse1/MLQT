@@ -31,13 +31,13 @@ internal static class ServerInstructions
 
     private const string Raw =
         """
-        MLQT reads, writes, refactors, checks and formats Modelica (.mo) source on disk. Whenever you
-        read, search, create or edit Modelica code, use these mlqt_ tools rather than file tools, grep
-        or the shell: every write is parse-checked (nothing is written if it would not parse), a rename
-        or move rewrites every reference, the file keeps its encoding and line endings, read-only
-        libraries are refused, and the dependency graph stays current. Search with mlqt_find: match
-        'code' finds lines in every loaded library, MSL included, and names each one's class. If mlqt_ tools are deferred, load mlqt_load and mlqt_find with
-        tool search first.
+        MLQT reads, searches, writes, refactors, checks and formats Modelica (.mo) source. For any
+        Modelica work - questions like which class does X included, even about a library you could
+        grep - use these mlqt_ tools rather than grep, file tools or the
+        shell: load the library with mlqt_load, then search with mlqt_find (match 'code' finds lines of
+        source and names each one's class). If mlqt_ tools are deferred, your first step is a tool
+        search for mlqt_load and mlqt_find. Every write is parse-checked first, a rename or move rewrites every reference, files keep their encoding and
+        line endings, and read-only libraries are refused.
 
         MLQT starts EMPTY and keeps its own session: every mlqt_ tool sees only libraries loaded
         into MLQT. Load with mlqt_load: the paths of every library the user's
