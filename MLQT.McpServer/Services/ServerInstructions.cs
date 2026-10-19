@@ -32,13 +32,15 @@ internal static class ServerInstructions
     private const string Raw =
         """
         MLQT reads, writes, refactors, checks and formats Modelica (.mo) source on disk. Whenever you
-        read, create or edit Modelica code, use these mlqt_ tools rather than file read/edit/write or
-        shell tools: every write is parse-checked (nothing is written if it would not parse), a rename
+        read, search, create or edit Modelica code, use these mlqt_ tools rather than file tools, grep
+        or the shell: every write is parse-checked (nothing is written if it would not parse), a rename
         or move rewrites every reference, the file keeps its encoding and line endings, read-only
-        libraries are refused, and the dependency graph stays current.
+        libraries are refused, and the dependency graph stays current. Search with mlqt_find: match
+        'code' finds lines in every loaded library, MSL included, and names each one's class. If mlqt_ tools are deferred, load mlqt_load and mlqt_find with
+        tool search first.
 
-        MLQT starts EMPTY and keeps its own session: every mlqt_ tool, the searches included, sees
-        only libraries loaded into MLQT. Load with mlqt_load: the paths of every library the user's
+        MLQT starts EMPTY and keeps its own session: every mlqt_ tool sees only libraries loaded
+        into MLQT. Load with mlqt_load: the paths of every library the user's
         simulator has loaded (OpenModelica: getLoadedLibraries(); Dymola: pass the user's startup script as script),
         and tool 'dymola' or 'openmodelica'; it loads their dependencies too, the MSL included. A
         simulator's load_library does NOT load anything here. mlqt_load_repository loads a working copy.
@@ -49,8 +51,7 @@ internal static class ServerInstructions
         simulator's load_string. mlqt_check_class is a style/spelling check, not a compile check.
         After a file changes outside MLQT, call mlqt_reload.
 
-        Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator); find one with
-        mlqt_find, which also searches lines of code (match: code) - use it, not grep. Read with mlqt_get_class_interface (how to use a
+        Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator). Read with mlqt_get_class_interface (how to use a
         class) or mlqt_get_class_source; change part of a class with mlqt_edit_class (replace, or
         add_component, add_connection ...), a whole one with mlqt_create_class. New project:
         mlqt_create_library.
