@@ -78,6 +78,7 @@ The rest are out of 8.
 | 2026-10-18 | fa80416 | current, corner only | 5 of 5 | 9 | 22 | 0 | 0 | 1 | 0 | 2,938,085 | 54,203 |
 | 2026-10-18 | fa80416 | current | 8 of 8 | 11 | 26 | 0 | 9 | 3 | 1 | 4,412,294 | 63,417 |
 | 2026-10-19 | e6e94ba | current + step 1 | 8 of 8 | 10 | 12 | 0 | 2 | 0 | 0 | 2,537,480 | 57,088 |
+| 2026-10-19 | ea7f85e | consolidated (16 tools) | 8 of 8 | 11 | 19 | 0 | 0 | 0 | 0 | 2,792,857 | 64,323 |
 
 **2026-10-18, current toolset, corner only.** Run headless (`claude -p`, Bash and PowerShell allowed),
 cost $2.37. All five items held: OpenModelica checked the rig (3,365 equations and variables) and
@@ -115,3 +116,19 @@ steered 13.48° and the outside 12.82°.
 - **No reads outside MLQT and no `reload`**, against 3 and 1.
 - **The criterion is met**: bypass writes 9 → 2 and `reload` 1 → 0. MLQT calls fell from 26 to 12, input
   tokens from 4.4 M to 2.5 M.
+
+**2026-10-19, on the consolidated set (B503 step 3).** Run the same way, with
+`MLQT_MCP_TOOLSET=consolidated`, cost $2.65. All eight items held: OpenModelica checked the corner rig
+(2,988 equations and variables), all three rigs simulated, the wheels gave −1.18° camber and −0.12° toe
+at +50 mm, mirrored to about 1e-13°, and at 30 mm of rack the inside wheel steered 13.73° and the
+outside 12.87°.
+- **One corner class from the start**: `McPhersonCorner` had a `leftSide` parameter before the axle
+  was built, so there was no earlier left-only version to change. Seven `write_class` and five
+  `edit_class` calls built and tuned the library; no `.mo` file was read or written outside MLQT, and
+  there was no `reload`.
+- **No scratch model this time**: to sweep the inner tie-rod height the agent passed the simulator a
+  parameter override, where the step 1 run wrote a throwaway model. The one bypass call listed the
+  empty run folder.
+- **Against the step 1 run**: 44 tool calls against 57, and bypass writes 2 → 0, but MLQT calls 12 → 19
+  and input tokens 2.5 M → 2.8 M (+10%). One run each, and the two did different amounts of work - this
+  one split the corner into seven component classes - so the token figure is not yet a finding.
