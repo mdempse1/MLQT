@@ -130,8 +130,8 @@ does not namespace tools by server puts both in one list, and in every client th
 "call load_library" is ambiguous. If you allowed tools by name in your client's permission settings,
 update those names: in Claude Code, `mcp__mlqt__load_library` becomes `mcp__mlqt__mlqt_load_library`.
 
-`mlqt_batch_edit`'s operations keep their names (`add_component`, `add_connection`, …), and also accept
-them written with the prefix.
+`mlqt_batch_edit`'s and `mlqt_edit_class`'s operations keep their names (`add_component`,
+`add_connection`, …), and also accept them written with the prefix.
 
 ## Working beside a simulator
 
@@ -191,7 +191,7 @@ else.
 
 ## What the tools cover
 
-The server exposes 66 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 67 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
@@ -199,7 +199,7 @@ The server exposes 66 tools. The full list is in [MLQT.McpServer/README.md](../M
 | **Class query** | Look up a class's info and source, list and search classes, browse the package tree |
 | **Class views** | Compact interface / elements / documentation / behaviour summaries; reference validation |
 | **Search** | Find classes by documentation prose (`mlqt_search_text`) or by shape (`mlqt_search_by_interface`) |
-| **Editing** | Whole-class and element-level authoring, plus atomic `mlqt_batch_edit` |
+| **Editing** | Whole-class and element-level authoring. `mlqt_edit_class` changes part of one class with a list of operations, all or none, including a `replace` of text that occurs once in it; `mlqt_batch_edit` applies element operations across classes |
 | **Documentation** | Set description strings and the `Documentation(info/revisions)` HTML |
 | **Diagram** | Read and set component `Placement`, render the diagram as an image; connection lines are drawn automatically (below) |
 | **Dependencies & impact** | Analyse dependencies, find usages, assess the impact of a change |

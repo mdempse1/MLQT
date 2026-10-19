@@ -762,7 +762,7 @@ public sealed class StructureEditTools
             var (ctx, error) = ClassBodyEditor.Open(_libraries, op.ClassId);
             if (error is not null)
                 return new ToolError($"Operation {i} ({op.Op} on '{op.ClassId}'): {((ToolError)error).Error}");
-            snapshots.TryAdd(ctx!.FilePath, await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath));
+            await EditRollback.SnapshotAsync(snapshots, ctx!.FilePath);
         }
 
         // Apply in order; each op writes and reloads, so later ops see earlier ones.
@@ -814,20 +814,8 @@ public sealed class StructureEditTools
         _ => Task.FromResult<object>(new ToolError($"Unknown operation '{op.Op}'."))
     };
 
-    // Restore every file that was actually modified back to its snapshot, then reload/refresh.
-    private async Task RollbackAsync(Dictionary<string, string> snapshots)
-    {
-        var affected = new List<string>();
-        foreach (var (path, original) in snapshots)
-        {
-            if (!File.Exists(path) || ModelicaFileEncoding.ReadAllTextOnly(path) == original)
-                continue; // untouched (e.g. an op failed before writing this file)
-            await ModelicaFileEncoding.WriteAllTextAsync(path, original);
-            affected.AddRange(await _libraries.ReloadFileAsync(path));
-        }
-        if (affected.Count > 0)
-            await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
-    }
+    private Task RollbackAsync(Dictionary<string, string> snapshots) =>
+        EditRollback.RestoreAsync(snapshots, _libraries, _resources, _session);
 
     // Normalise the modifier field into the text that follows a component name:
     //   'k=2, r=34'  -> '(k=2, r=34)'   a modifier list is wrapped in parentheses

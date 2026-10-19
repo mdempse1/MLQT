@@ -104,8 +104,8 @@ public sealed class GuidanceTools
               Modelica, use the simulator's check_model (or equivalent).
 
             The edit-and-simulate loop:
-              1. Read and edit with MLQT (mlqt_get_class_source, mlqt_update_class_source, the surgical
-                 tools, mlqt_batch_edit). The result is written to disk.
+              1. Read and edit with MLQT (mlqt_get_class_source, then mlqt_edit_class to change part of a
+                 class, or mlqt_update_class_source for all of it). The result is written to disk.
               2. Load or reload that FILE in the simulator (e.g. load_file on the edited .mo, or the
                  library's package.mo). A simulator does not see an edit until it re-reads the file.
               3. Check or simulate there, and read its errors.
@@ -297,9 +297,18 @@ public sealed class GuidanceTools
               as listed (e.g. 'a[i]'), leaving the loop or branch in place.
             - The add_* tools take an optional comment placed as a // line above the element.
 
+            Change part of a class - the usual edit:
+            - mlqt_edit_class(classId, operations[]): one class, a list of operations applied in order and all
+              or none. replace {old, new} swaps text that occurs exactly once in the class - use it instead of
+              your own file edit or a script, then there is nothing to reload. Copy the old text from
+              mlqt_get_class_source with includeAnnotations=true, indentation included. The other operations
+              are the element tools above by name (add_component, add_connection, set_component_modifier ...),
+              plus set_component_placement, the description and documentation setters, suppress_rule,
+              accept_spelling and correct_spelling, each with that tool's fields minus classId.
+
             Build a whole model atomically:
-            - mlqt_batch_edit(operations[]): apply a sequence of the surgical ops all-or-nothing; later ops see
-              earlier ones (add components, then connect them). Any failure rolls the whole batch back.
+            - mlqt_edit_class does this for one class. mlqt_batch_edit(operations[]) does the same across
+              classes, each operation naming its own classId; any failure rolls the whole batch back.
 
             Documentation & comments:
             - mlqt_set_class_description / mlqt_set_component_description (the "..." strings), mlqt_set_class_documentation
