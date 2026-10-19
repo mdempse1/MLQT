@@ -27,7 +27,10 @@ public sealed class FindTools
         _search = new SearchTools(libraries);
     }
 
+    // Loaded up front even where a client defers MCP tools (Claude Code's Tool Search): with it deferred,
+    // agents searched with their own always-loaded Grep and never found this tool (B503 step 1 harness).
     [McpServerTool(Name = "mlqt_find")]
+    [McpMeta(AlwaysLoad.Key, true)]
     [Description("Find Modelica classes in the libraries loaded into MLQT. match picks how: " +
                  "'name' (default) - class ids containing query, or with no query a page of every class, " +
                  "filtered by library and classType; 'text' - description or documentation prose containing " +

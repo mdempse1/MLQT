@@ -34,6 +34,19 @@ public sealed class MlqtMcpServerExtensionsTests
     }
 
     [Fact]
+    public async Task OnlyLoadAndFind_AskToBeLoadedUpFront()
+    {
+        // A client that defers tools still loads these: an agent needs them before it knows to search.
+        await using var server = await InProcessServer.StartAsync();
+
+        var alwaysLoaded = (await server.Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+            .Where(t => t.ProtocolTool.Meta?["anthropic/alwaysLoad"]?.GetValue<bool>() == true)
+            .Select(t => t.Name).Order(StringComparer.Ordinal);
+
+        Assert.Equal(["mlqt_find", "mlqt_load"], alwaysLoaded);
+    }
+
+    [Fact]
     public async Task AcceptsAQuotedBoolean()
     {
         await using var server = await InProcessServer.StartAsync();
