@@ -1,6 +1,6 @@
 # MCP tool consolidation — design note
 
-**Status: step 1 done (2026-10-19, results under step 1); step 2 under way.** This is the plan for
+**Status: steps 1 and 2 done (2026-10-19, results under each); step 3 next.** This is the plan for
 roadmap item **B503**: the MCP server's tool surface goes
 from 66 tools to 16. It has two aims. The first is to close the gaps that send an agent round MLQT to
 its own shell and file tools. The second is to merge the tools that overlap. Written 2026-10-18, from
@@ -400,6 +400,35 @@ What the runs taught, in the order it was learned:
 
 All 16 tools, the rewritten instructions and guidance, and the annotations. Both sets pass the full
 test suite.
+
+#### Step 2 results (2026-10-19) — built
+
+`MlqtMcpServerOptions.Toolset` and `MLQT_MCP_TOOLSET=consolidated` serve the 16; the current set, the
+default, is still the 71. Every tool of the assembly is registered and the set not chosen is removed
+afterwards, because the two share tools - sometimes in one class with a tool only one set has.
+
+- **Nine tools are in both sets**: the five step 1 built, and the four kept separate on purpose.
+- **Seven are facades** - `mlqt_session`, `mlqt_browse`, `mlqt_style_settings`, `mlqt_get_class`,
+  `mlqt_refactor_class`, `mlqt_check`, `mlqt_dependencies` - that call the current tools rather than
+  repeat them, so the sets cannot drift while they are compared. Each view, check, action and mode is
+  tested against the tool it replaces.
+- **The instructions keep the shape step 1 found**: the work named, and one tool to load for each kind
+  of it (`mlqt_load`, `mlqt_find`, `mlqt_get_class`, `mlqt_edit_class`). **The guidance** has the same
+  12 topics, rewritten; a test fails if a topic or the instructions name a tool the set does not serve.
+  `mlqt_get_guidance` picks its topics from the tools the server actually registered.
+- **Annotations**: every one of the 16 says whether it is read-only, destructive and idempotent.
+- **The harness** needs no second task list: each expected-tools group lists the consolidated tool beside
+  the current ones.
+
+Three things the table above did not say, found while building:
+- **`mlqt_load` takes a working copy or a folder of libraries**, as the table has it replacing
+  `load_repository` and `discover_libraries` (with `discoverOnly`). Without that no repository - so no
+  style settings and no working-copy changes - could be reached in the consolidated set.
+- **The facades that need the dependency analysis run it**: `mlqt_dependencies`, `mlqt_refactor_class`,
+  and the resources view and check. The current tools' error points at `mlqt_analyze_dependencies`,
+  which the consolidated set does not have.
+- **`mlqt_edit_class` changes one class.** `batch_edit`'s operations across classes have no home in the
+  16; an agent calls `mlqt_edit_class` once per class. Step 3 shows whether that costs calls.
 
 ### 3. Compare the two sets
 

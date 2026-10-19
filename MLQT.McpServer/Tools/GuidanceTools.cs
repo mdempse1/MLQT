@@ -3,6 +3,8 @@ using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.McpServer.Services;
+using Microsoft.Extensions.Options;
 
 namespace MLQT.McpServer.Tools;
 
@@ -14,6 +16,18 @@ namespace MLQT.McpServer.Tools;
 [McpServerToolType]
 public sealed class GuidanceTools
 {
+    private readonly bool _consolidated;
+
+    /// <summary>
+    /// The guidance for the tools the server actually serves: the consolidated set's topics when it
+    /// serves a tool only that set has, read from the server's own tool collection rather than told.
+    /// </summary>
+    public GuidanceTools(IOptions<McpServerOptions>? server = null)
+        => _consolidated = server?.Value.ToolCollection is { } tools &&
+                           Toolsets.ConsolidatedOnly.Any(name => tools.TryGetPrimitive(name, out _));
+
+    /// <summary>For a test: the guidance of one set.</summary>
+    internal GuidanceTools(McpToolset toolset) => _consolidated = toolset == McpToolset.Consolidated;
     /// <summary>
     /// The topics offered, in the order they are listed to an agent. Held to <c>Guidance</c>'s own
     /// keys by a test: the two are a list and a dictionary of the same thing, and a topic advertised
@@ -527,7 +541,7 @@ public sealed class GuidanceTools
         string? topic = null)
     {
         var key = string.IsNullOrWhiteSpace(topic) ? "overview" : topic.Trim();
-        if (!Guidance.TryGetValue(key, out var text))
+        if (!(_consolidated ? ConsolidatedGuidance.Guidance : Guidance).TryGetValue(key, out var text))
             return new ToolError($"Unknown topic '{topic}'. Available topics: {string.Join(", ", Topics)}.");
 
         // Unwrapped: the text is hard-wrapped for the source file, and a wrap means nothing to an agent.

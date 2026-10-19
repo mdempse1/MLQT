@@ -61,20 +61,26 @@ public class ToolNamingTests
         Assert.True(unknown.Count == 0, "Names that are no tool:\n" + string.Join("\n", unknown));
     }
 
-    [Fact]
-    public void TheInstructionsFitInWhatAClientKeeps()
+    // Each set's instructions, the consolidated set's as well as the current one's (B503).
+    public static TheoryData<McpToolset> BothToolsets => [McpToolset.Current, McpToolset.Consolidated];
+
+    [Theory]
+    [MemberData(nameof(BothToolsets))]
+    public void TheInstructionsFitInWhatAClientKeeps(McpToolset toolset)
     {
         // Claude Code keeps about the first 2,048 characters of a server's instructions. The version
         // these replaced ran to 5,000 and was cut off before it said anything about editing.
-        Assert.True(ServerInstructions.Text.Length <= ServerInstructions.Budget,
-            $"The instructions are {ServerInstructions.Text.Length} characters; the budget is " +
+        var text = ServerInstructions.For(toolset);
+        Assert.True(text.Length <= ServerInstructions.Budget,
+            $"The instructions are {text.Length} characters; the budget is " +
             $"{ServerInstructions.Budget}. Move detail into mlqt_get_guidance.");
     }
 
-    [Fact]
-    public void TheInstructionsSayWhenToUseTheseToolsAndPointToEveryTopic()
+    [Theory]
+    [MemberData(nameof(BothToolsets))]
+    public void TheInstructionsSayWhenToUseTheseToolsAndPointToEveryTopic(McpToolset toolset)
     {
-        var text = ServerInstructions.Text;
+        var text = ServerInstructions.For(toolset);
 
         // The first thing said is when to reach for these tools at all: an agent's own file tools
         // are always available, and without a reason to prefer these it does not.
@@ -86,12 +92,13 @@ public class ToolNamingTests
         Assert.All(GuidanceTools.Topics, topic => Assert.Contains(topic, text));
     }
 
-    [Fact]
-    public void TheInstructionsSayMlqtHasASessionOfItsOwn()
+    [Theory]
+    [MemberData(nameof(BothToolsets))]
+    public void TheInstructionsSayMlqtHasASessionOfItsOwn(McpToolset toolset)
     {
         // An agent loaded the MSL with a simulator's load_library and then searched with MLQT, taking
         // one server's session for the other's. Said second, right after when to use these tools.
-        var paragraphs = ServerInstructions.Text.Split("\n\n");
+        var paragraphs = ServerInstructions.For(toolset).Split("\n\n");
         Assert.Contains("starts EMPTY", paragraphs[1]);
         Assert.Contains("does NOT load anything here", paragraphs[1]);
         Assert.Contains("getLoadedLibraries()", paragraphs[1]);

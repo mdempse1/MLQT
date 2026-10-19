@@ -98,7 +98,7 @@ public static class MlqtMcpServerExtensions
         return services
             .AddMcpServer(o =>
             {
-                o.ServerInstructions = ServerInstructions.Text;
+                o.ServerInstructions = ServerInstructions.For(toolset);
                 configureServer?.Invoke(o);
             })
             .WithToolsFromAssembly(typeof(ViewTools).Assembly, McpServerJson.Options)
