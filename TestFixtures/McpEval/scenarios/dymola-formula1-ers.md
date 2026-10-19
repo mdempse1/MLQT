@@ -69,6 +69,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | Date | MLQT commit | Toolset | Done when (of 5) | Minutes | MLQT calls | MLQT errors | Bypass writes | Bypass reads | `reload` | Tokens in | Tokens out |
 |---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | 2026-10-18 | fa80416 | current | 4 of 5 | 25 | 2 | 0 | 10 | 7 | 0 | 10,714,006 | 45,340 |
+| 2026-10-19 | e6e94ba | current + step 1 | 5 of 5 | 17 | 13 | 0 | 0 | 7 | 0 | 8,068,590 | 42,972 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -92,3 +93,32 @@ so this run was steered once. Its MLQT log was not kept, so there are no server 
     7 `open_model` and 3 `erase_classes`. `get_job_status` was polled 29 times while simulations ran.
 - **The plan's step 1 targets these gaps:** a `replace` edit in place of the Python scripts, code
   search in place of `grep`, and loading what a startup script opens.
+
+**2026-10-19, after step 1.** Run interactively on the test machine, with no steering. Tool Search
+was on, and the build predates the instructions that point searches at `mlqt_find`. Its MLQT log
+was not kept, so there are no server times.
+
+- **Result.** All five items held.
+  - With overtake mode the lap took 96.52 s against 96.80 s.
+  - It deployed 5.57 MJ against 5.17 MJ, 0.40 MJ more. The new test shows the allowance at 0.500 MJ;
+    the rest went on recovering 0.03 MJ less and on deployment after the line.
+  - The state of charge at the line was 10.2 % against 19.3 %.
+  - The agent removed the library's existing `overtakeMode`, which switched the speed taper, rather
+    than renaming it as the baseline run did.
+- **Item 3 held, but not through the startup script.** The agent read the script, saw that it
+  pointed at an earlier copy of the run folder, and passed the four libraries to `mlqt_load` by path
+  from this one. Given the script as `script`, MLQT would have loaded the other copy. That is the
+  script's fault, not the reader's: Dymola would have loaded it too, as the agent said.
+- **Every change to a `.mo` file went through MLQT.** Of 74 tool calls, 13 were MLQT: 2 `load`,
+  10 `edit_class` and 1 `create_class`, the new test.
+  - **Writes:** none to a `.mo` file, against 10. Two went to `runTests.mos`, the library's test
+    script, which MLQT does not edit: adding the new test, and giving each test its own stop time.
+    The rest were the agent's scratch files: a corrected copy of the startup script, a script to run
+    both laps, and a Python script that summarised the results.
+  - **Reads:** 7 shell reads of `.mo` files, unchanged: `cat` of the classes the change runs through,
+    `grep` and `sed -n` over a commercial library, and `diff -rq` between the two copies of the run
+    folder. `mlqt_find` and `mlqt_get_class_source` were not called; the next run, with the revised
+    instructions, measures whether they replace these.
+  - **`reload`:** none. `get_job_status` was polled 17 times while simulations ran, against 29.
+- **Step 1's criterion is met**: bypass writes to the library 10 → 0, with `reload` still 0. The run
+  took 17 minutes against 25, and 8.1 M input tokens against 10.7 M.
