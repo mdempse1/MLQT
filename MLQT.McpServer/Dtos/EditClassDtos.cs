@@ -8,9 +8,10 @@ public sealed class ClassEditOperation
 {
     public string Op { get; set; } = string.Empty;
 
-    // replace
+    // replace; All replaces every occurrence of Old rather than requiring exactly one
     public string? Old { get; set; }
     public string? New { get; set; }
+    public bool? All { get; set; }
 
     // The element operations, named as the fields of the mlqt_ tools that do the same edit.
     public string? Type { get; set; }

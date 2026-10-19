@@ -110,6 +110,70 @@ public class EditClassToolsTests
         using var host = new TestHost();
         var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.Lag", [Replace("Real", "Integer")]));
         Assert.Contains("occurs 3 times", err.Error);
+        Assert.Contains("all=true", err.Error);
+    }
+
+    // ---- all=true: every occurrence ------------------------------------------------------------
+    //
+    // A name used throughout a class was renamed with a shell sed in the Dymola scenario, because
+    // replace refused text that occurs twice.
+
+    private static ClassEditOperation ReplaceAll(string old, string @new) =>
+        new() { Op = "replace", Old = old, New = @new, All = true };
+
+    [Fact]
+    public async Task ReplaceAll_ChangesEveryOccurrence_AndSaysHowMany()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<EditClassResult>(await Load(host).EditClass("P.Lag", [ReplaceAll("T", "Tau")]));
+
+        var src = Source(host, "P.Lag");
+        Assert.Contains("parameter Real Tau = 0.1", src);
+        Assert.Contains("Tau*der(y) = u - y;", src);
+        Assert.DoesNotContain("T*der", src);
+        Assert.Equal("Operation 0: Replaced 2 occurrences.", Assert.Single(res.Notes));
+        Assert.Contains("parameter Real k = 1", Source(host, "P.M"));   // only the class named
+    }
+
+    [Fact]
+    public async Task ReplaceAll_OfTextThatOccursOnce_IsAnOrdinaryReplace()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<EditClassResult>(await Load(host).EditClass("P.Lag", [ReplaceAll("u - y", "u - 2*y")]));
+
+        Assert.Contains("T*der(y) = u - 2*y;", Source(host, "P.Lag"));
+        Assert.Equal("Operation 0: Replaced 1 occurrence.", Assert.Single(res.Notes));
+    }
+
+    [Fact]
+    public async Task ReplaceAll_StillRefusesTextThatIsNotThere()
+    {
+        using var host = new TestHost();
+        var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.Lag", [ReplaceAll("Boolean", "Integer")]));
+
+        Assert.Contains("not in 'P.Lag'", err.Error);
+    }
+
+    [Fact]
+    public async Task ReplaceAll_IsParseChecked_AndWritesNothingThatWouldNotParse()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = FileText(host, "P.Lag");
+
+        var err = Assert.IsType<ToolError>(await tools.EditClass("P.Lag", [ReplaceAll("Real", "Real(")]));
+
+        Assert.Contains("Nothing was changed", err.Error);
+        Assert.Equal(before, FileText(host, "P.Lag"));
+    }
+
+    [Fact]
+    public async Task ReplaceAll_StillRefusesToRenameTheClass()
+    {
+        using var host = new TestHost();
+        var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.Lag", [ReplaceAll("Lag", "Delay")]));
+
+        Assert.Contains("mlqt_rename_class", err.Error);
     }
 
     [Fact]

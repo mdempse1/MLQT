@@ -324,7 +324,8 @@ public sealed class GuidanceTools
             Change part of a class - the usual edit:
             - mlqt_edit_class(classId, operations[]): one class, a list of operations applied in order and all
               or none. replace {old, new} swaps text that occurs exactly once in the class - use it instead of
-              your own file edit or a script, then there is nothing to reload. Copy the old text from
+              your own file edit or a script, then there is nothing to reload. With all=true it swaps every
+              occurrence - a name used throughout the class - instead of a sed, and says how many. Copy the old text from
               mlqt_get_class_source with includeAnnotations=true, indentation included. The other operations
               are the element tools above by name (add_component, add_connection, set_component_modifier ...),
               plus set_component_placement, the description and documentation setters, suppress_rule,

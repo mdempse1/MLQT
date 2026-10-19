@@ -50,7 +50,7 @@ public sealed class EditClassTools
     /// <summary>Each operation and the fields it must be given; the error for a missing one lists them.</summary>
     internal static readonly IReadOnlyDictionary<string, string[]> Operations = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
-        ["replace"] = ["old", "new"],
+        ["replace"] = ["old", "new", "all?"],
         ["add_component"] = ["type", "name"],
         ["remove_component"] = ["name"],
         ["set_component_modifier"] = ["name", "modifier"],
@@ -73,7 +73,8 @@ public sealed class EditClassTools
     [Description("Change part of one Modelica class with a list of operations, applied in order and all or none. " +
                  "The usual one is replace: {\"op\":\"replace\",\"old\":\"y = k*u;\",\"new\":\"y = k*u + offset;\"} " +
                  "swaps text that must occur exactly once in the class, as written in its file - copy it from " +
-                 "mlqt_get_class_source with includeAnnotations=true. The others take the fields of the mlqt_ " +
+                 "mlqt_get_class_source with includeAnnotations=true; with \"all\":true it swaps every occurrence " +
+                 "(a name used throughout the class), and says how many. The others take the fields of the mlqt_ " +
                  "tool of the same name: add_component{type,name,modifier?,description?,visibility?}, " +
                  "remove_component{name}, set_component_modifier{name,modifier}, add_extends{baseType}, " +
                  "add_import{import}, add_equation{equation}, add_statement{statement}, add_connection{portA,portB} " +
@@ -171,7 +172,7 @@ public sealed class EditClassTools
 
     private Task<object> Dispatch(string classId, ClassEditOperation o) => OpName(o.Op) switch
     {
-        "replace" => Replace(classId, o.Old!, o.New!),
+        "replace" => Replace(classId, o.Old!, o.New!, o.All == true),
         "add_component" => _structure.AddComponent(classId, o.Type!, o.Name!, o.Modifier, o.Description, o.Comment,
             o.Visibility ?? "public", o.Prefix, o.ConstrainedBy, o.Condition),
         "remove_component" => _structure.RemoveComponent(classId, o.Name!),
@@ -194,12 +195,15 @@ public sealed class EditClassTools
     };
 
     /// <summary>
-    /// Replace the one occurrence of <paramref name="oldText"/> in the class's source. Line endings are
+    /// Replace the one occurrence of <paramref name="oldText"/> in the class's source, or with
+    /// <paramref name="all"/> every occurrence: a name used throughout a class is otherwise renamed with a
+    /// shell <c>sed</c>, as an agent did in the Dymola scenario (B503). Either way text that is not there
+    /// is refused, and the result is parse-checked before it is written. Line endings are
     /// matched whichever the caller used, since an agent's text has the line feeds it was given and the
     /// file may have carriage returns too. Nothing else is loose: indentation and spacing must match, so a
     /// near miss is an error naming what to do rather than a guess about which text was meant.
     /// </summary>
-    private async Task<object> Replace(string classId, string oldText, string newText)
+    private async Task<object> Replace(string classId, string oldText, string newText, bool all)
     {
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
@@ -218,13 +222,19 @@ public sealed class EditClassTools
                 $"The text to replace is not in '{classId}'. It must match the class's source exactly, indentation " +
                 "and spacing included. Copy it from mlqt_get_class_source with includeAnnotations=true: by default " +
                 "that hides annotations, so its text is not all of the class.");
-        if (count > 1)
+        if (count > 1 && !all)
             return new ToolError(
                 $"The text to replace occurs {count} times in '{classId}'. Include more of the text around it, so " +
-                "that it occurs once.");
+                "that it occurs once, or pass all=true to replace every occurrence.");
 
-        var at = code.IndexOf(find, StringComparison.Ordinal);
-        var newCode = code[..at] + with + code[(at + find.Length)..];
+        string newCode;
+        if (all)
+            newCode = code.Replace(find, with, StringComparison.Ordinal);
+        else
+        {
+            var at = code.IndexOf(find, StringComparison.Ordinal);
+            newCode = code[..at] + with + code[(at + find.Length)..];
+        }
 
         // A changed name would leave the graph holding a class that is no longer in the file, and miss
         // every reference to it; that is what mlqt_rename_class is for.
@@ -235,7 +245,12 @@ public sealed class EditClassTools
                 $"The replacement would rename the class from '{oldName}' to '{newName}'. Use mlqt_rename_class, " +
                 "which also changes every reference to it.");
 
-        return await ClassBodyEditor.ApplyAsync(_libraries, _resources, _session, ctx, newCode, preview: false, "edit the class");
+        var applied = await ClassBodyEditor.ApplyAsync(_libraries, _resources, _session, ctx, newCode, preview: false, "edit the class");
+        // How many, as a note on the answer: replacing more than the caller meant is the risk of all=true.
+        return all && applied is ClassEditResult result
+            ? new StructureEditResult(classId, result.FilePath, result.PreviewOnly, Changed: true, result.AffectedCount,
+                result.NewFileContent, $"Replaced {count} occurrence{(count == 1 ? "" : "s")}.")
+            : applied;
     }
 
     private static string Normalise(string text, string eol) =>
