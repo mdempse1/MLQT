@@ -41,8 +41,7 @@ public sealed class MlqtMcpServerExtensionsTests
         var listed = (await server.Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .Select(t => t.Name).Order(StringComparer.Ordinal).ToList();
 
-        // Until every consolidated tool is built, the set is those of its names that exist.
-        Assert.Equal(ToolCountTests.DeclaredTools().Where(Toolsets.Consolidated.Contains).Order(StringComparer.Ordinal), listed);
+        Assert.Equal(Toolsets.Consolidated.Order(StringComparer.Ordinal), listed);
         Assert.Contains("mlqt_edit_class", listed);
         Assert.DoesNotContain("mlqt_add_component", listed);
     }

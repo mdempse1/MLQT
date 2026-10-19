@@ -21,3 +21,18 @@ public sealed record ClassViews(
 
 /// <summary>What <c>mlqt_get_class</c> read: each class asked for, in order.</summary>
 public sealed record GetClassResult(IReadOnlyList<ClassViews> Classes);
+
+/// <summary>What <c>mlqt_check</c> ran: each check asked for, holding what its own tool answers (an error
+/// included), and for spelling the suggestions for each word it flagged.</summary>
+public sealed record CheckFacadeResult(
+    object? Style,
+    object? Spelling,
+    IReadOnlyList<SpellSuggestionsResult>? SpellingSuggestions,
+    object? References,
+    object? Resources);
+
+/// <summary>One class's answer from <c>mlqt_dependencies</c>: what it uses, or what uses it.</summary>
+public sealed record ClassDependencies(string ClassId, object Answer);
+
+/// <summary>What <c>mlqt_dependencies</c> found for each class asked about, in order.</summary>
+public sealed record DependenciesFacadeResult(string Direction, IReadOnlyList<ClassDependencies> Classes);

@@ -16,6 +16,12 @@ public sealed class ToolsetTests
     }
 
     [Fact]
+    public void EveryConsolidatedTool_IsATool()
+    {
+        Assert.Subset(ToolCountTests.DeclaredTools().ToHashSet(StringComparer.Ordinal), Toolsets.Consolidated.ToHashSet(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void TheToolsBothSetsHave_AreTheConsolidatedOnesThatAreNotFacades()
     {
         var shared = ToolCountTests.DeclaredTools()
