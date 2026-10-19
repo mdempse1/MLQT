@@ -70,6 +70,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 |---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | 2026-10-18 | fa80416 | current | 4 of 5 | 25 | 2 | 0 | 10 | 7 | 0 | 10,714,006 | 45,340 |
 | 2026-10-19 | e6e94ba | current + step 1 | 5 of 5 | 17 | 13 | 0 | 0 | 7 | 0 | 8,068,590 | 42,972 |
+| 2026-10-19 | 56d1eb4 | step 1 + search-first instructions | 4 of 5, item 3 unverified | 22 | 2 | 0 | 19 | 5 | 0 | 11,695,180 | 43,170 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -122,3 +123,23 @@ was not kept, so there are no server times.
   - **`reload`:** none. `get_job_status` was polled 17 times while simulations ran, against 29.
 - **Step 1's criterion is met**: bypass writes to the library 10 → 0, with `reload` still 0. The run
   took 17 minutes against 25, and 8.1 M input tokens against 10.7 M.
+
+**2026-10-19, with the search-first instructions (0c23e76).** Run interactively on the test machine,
+Tool Search on, with the MLQT log kept. The agent asked one question, how the extra energy should be
+allowed when the per-lap limit is switched off, so the run was steered once.
+
+- **Result.** Items 1, 2, 4 and 5 held: the lap took 96.66 s against 96.79 s, deployed 5.60 MJ against
+  5.17 MJ (0.43 MJ more, 0.50 MJ of it from the allowance), and ended at 9.5 % against 19.3 %. Item 3
+  is unverified: the agent passed the startup script to `mlqt_load`, and the analysis does not keep
+  what the load answered.
+- **The library was changed almost entirely around MLQT.** Of 95 tool calls, 2 were MLQT, both after
+  the edits had begun: one `load` (9.1 s) and one `get_class_source` of a commercial library's class
+  (8 ms). The agent's first tool search loaded only the simulator's tools.
+  - **Writes:** 19 to the library: 3 `Edit`, 8 Python find-and-replace scripts and 4 `sed -i` on
+    `.mo` files, 2 `Write` of new classes, and 2 writes to a `package.order`.
+  - **Reads:** 5 shell reads of `.mo` files.
+- **What changed in the instructions.** The opening sentence had said to use MLQT whenever you
+  "read, create or edit Modelica code". The revision replaced that with "for any Modelica work",
+  led with searching, and named only `mlqt_load` and `mlqt_find` for an agent to load. In the harness
+  that moved searching to MLQT; here, with no search to do, nothing named the edit tools. One run
+  each is not enough to be sure that is the cause.
