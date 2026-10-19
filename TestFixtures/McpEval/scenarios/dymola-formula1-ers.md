@@ -68,4 +68,27 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 
 | Date | MLQT commit | Toolset | Done when (of 5) | Minutes | MLQT calls | MLQT errors | Bypass writes | Bypass reads | `reload` | Tokens in | Tokens out |
 |---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| | | current | | | | | | | | | |
+| 2026-10-18 | fa80416 | current | 4 of 5 | 25 | 2 | 0 | 10 | 7 | 0 | 10,714,006 | 45,340 |
+
+**2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
+The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
+so this run was steered once. Its MLQT log was not kept, so there are no server times.
+
+- **Result.** Items 1, 2, 4 and 5 held.
+  - With overtake mode the lap took 96.58 s against 96.79 s.
+  - It deployed 5.48 MJ against 5.17 MJ, 0.31 MJ more.
+  - The state of charge at the line was 11.8 % against 19.3 %.
+  - The agent found that the library already had an `overtakeMode` that switched the speed taper. It
+    renamed that `overtakeTaper` and gave the name to the new mode.
+- **Item 3 failed.** MLQT loaded only `Formula1`. Dymola ran the startup script, but the agent never
+  loaded the three libraries it opens into MLQT. It read them through the shell instead: `grep` and
+  `sed` over two of the commercial libraries.
+- **Almost everything went round MLQT.** Of 105 tool calls, 2 were MLQT: one `load_library` and one
+  `create_class`, the new test.
+  - **Writes:** 10, all through the shell. That is 8 Python find-and-replace scripts on `.mo` files,
+    one `sed -i` and one `printf` into a `package.order`.
+  - **Reads:** 7 shell reads of `.mo` files: `cat`, `grep`, `sed -n` and `find`.
+  - **`reload`:** none in MLQT, because MLQT was never kept in step. The simulator reloaded instead:
+    7 `open_model` and 3 `erase_classes`. `get_job_status` was polled 29 times while simulations ran.
+- **The plan's step 1 targets these gaps:** a `replace` edit in place of the Python scripts, code
+  search in place of `grep`, and loading what a startup script opens.
