@@ -66,6 +66,7 @@ namespace MLQT.McpServer.Services;
 [JsonSerializable(typeof(LoadRepositoryResult))]
 [JsonSerializable(typeof(LoadResult))]
 [JsonSerializable(typeof(SessionStatus))]
+[JsonSerializable(typeof(SessionResetResult))]
 [JsonSerializable(typeof(ClassViews))]
 [JsonSerializable(typeof(GetClassResult))]
 [JsonSerializable(typeof(CheckFacadeResult))]

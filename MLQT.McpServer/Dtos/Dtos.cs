@@ -22,7 +22,10 @@ public sealed record LibrarySummary(
     // Null for a library read from source. Otherwise why it is read-only - "RecoveredFromDocumentation"
     // (an encrypted library rebuilt from its help files) or "Supplied" (classes a host supplied that are
     // not the vendor's source): its classes answer every query and can never be edited.
-    string? ReadOnlySource);
+    string? ReadOnlySource,
+    // When it was loaded (UTC), so that a library this conversation did not load - one an earlier
+    // conversation or another task using this server loaded - can be told apart (B505).
+    string? LoadedAt = null);
 
 /// <summary>A dependency a library declares via its <c>uses</c> annotation, e.g. Modelica 4.0.0.</summary>
 public sealed record LibraryDependency(string Name, string? Version);
@@ -147,6 +150,10 @@ public sealed record ServerInfoResult(string Server, int LibrariesLoaded, IReadO
 
 /// <summary>What <c>mlqt_unload_library</c> returns.</summary>
 public sealed record UnloadLibraryResult(bool Success, string UnloadedLibraryId, string Name);
+
+/// <summary>What a reset unloaded, the libraries a host supplied that it kept, and how many repositories it
+/// removed.</summary>
+public sealed record SessionResetResult(IReadOnlyList<string> Unloaded, IReadOnlyList<string> Kept, int RepositoriesRemoved);
 
 /// <summary>What <c>mlqt_find_resource_usages</c> returns: the classes referencing one resource.</summary>
 public sealed record ResourceUsagesResult(string ResolvedFilePath, bool ResourcesAnalyzed, int Count, IReadOnlyList<string> Models);

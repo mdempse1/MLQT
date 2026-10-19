@@ -228,12 +228,15 @@ B492 and B496 are intermittent journey failures, each seen once and not reproduc
 recurs, find the cause from its evidence. Never add a retry.**
 
 B501 is a limitation found while fixing how omc and Dymola are started, not a failure anyone has seen.
+B505 is a limitation of the MCP server found measuring B503; what can be said and refused without a
+change of design is in place, and the rest is a design item.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
 | B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
 | B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and a host that puts omc in a Job Object ends it when that host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
+| B505 | Tasks that share one MLQT MCP server share one session. A client keeps its servers across `/clear` and new sessions, subagents use their parent's, and sessions of one app running at once may share them; MCP gives a server no conversation id, and MLQT holds one copy of each library under ids that do not say whose. So a conversation can inherit what an earlier one loaded, and two tasks editing their own copies of one library would edit one copy. In place: every library says when it was loaded, a second copy is refused with why and what replacing it does (whatever its folder is called), a reset goes back to empty, and `analyse` flags a run whose server was not new. Until the design below, the documentation says to give each such task a server of its own | Design sessions scoped to a workspace inside one server: each task's libraries kept apart, keyed by the folder they were loaded from, with every call naming its workspace - an id `mlqt_load` returns, or the client's MCP roots where it sends them. Every tool takes part, so it needs a design note of its own |
 
 ---
 
@@ -246,7 +249,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B505**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B506**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row

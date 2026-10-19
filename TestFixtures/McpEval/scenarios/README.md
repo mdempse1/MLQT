@@ -20,13 +20,16 @@ where the sessions they come from took 1–27 hours.
 2. **Register the simulator's MCP server** the scenario names, and nothing else that touches Modelica.
 3. **Make an empty folder** for the run, outside any repository, and `git init` it, so the VCS tools
    have something to work with.
-4. **Restart Claude**, so the servers start with the new settings, and open a new Code session in that
-   folder.
+4. **Quit Claude completely and start it again** - the app, not only the session - so the servers start
+   new, with the new settings, and open a new Code session in that folder. A new session alone can keep
+   the previous run's MLQT server, with that run's libraries still loaded: a run on 2026-10-19 did, and
+   cannot be compared. Before pasting the prompt, check that this run's log file does not exist yet.
 5. **Paste the scenario's prompt as it is written.** Answer a question only with the answer the scenario
    gives. Otherwise do not steer: a nudge makes the run incomparable.
 6. When the agent says it is done, or after 90 minutes, stop. Note whether each item under *Done
    when* holds.
-7. Read the session:
+7. Read the session. `analyse` warns when the server log has calls from before the session started -
+   a server that was not new, or a log shared with another run:
 
    ```bash
    python build/mcp-eval.py analyse --project <run folder> --latest 1 --dedicated --server-log <log> --label <scenario>-<label>

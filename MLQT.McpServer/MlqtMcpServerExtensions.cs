@@ -86,12 +86,19 @@ public static class MlqtMcpServerExtensions
 
         // While the consolidated set is served, an answer names the tools it has: the facades call the
         // current tools, whose errors and notes name current tools (B503). Gone at the cut-over.
-        CallToolResult Named(CallToolResult result)
+        CallToolResult Named(CallToolResult result, IServiceProvider? provider)
         {
+            Note(provider);
             if (toolset == McpToolset.Consolidated)
                 foreach (var block in result.Content.OfType<TextContentBlock>())
                     block.Text = ConsolidatedNames.Rewrite(block.Text);
             return result;
+        }
+
+        static void Note(IServiceProvider? provider)
+        {
+            if (provider?.GetService<SessionState>() is { } session && provider.GetService<ILibraryDataService>() is { } libraries)
+                session.NoteLibraries(libraries.Libraries.Select(l => l.Id));
         }
 
         // Every tool of the assembly is registered, and the set not chosen is taken out after the SDK has
@@ -127,13 +134,16 @@ public static class MlqtMcpServerExtensions
                     ToolArgumentCoercion.For(tool) is { IsEmpty: false } scalars)
                     context.Params.Arguments = ToolArgumentCoercion.Coerce(args, scalars);
 
+                // When each library came in, timed by the call that loaded it, whatever loaded it (B505).
+                Note(context.Services);
+
                 if (toolUsageLogger is null)
-                    return Named(await next(context, cancellationToken));
+                    return Named(await next(context, cancellationToken), context.Services);
 
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    var result = Named(await next(context, cancellationToken));
+                    var result = Named(await next(context, cancellationToken), context.Services);
                     toolUsageLogger.Record(toolName, context.Params?.Arguments, stopwatch.ElapsedMilliseconds, result.IsError ?? false);
                     return result;
                 }

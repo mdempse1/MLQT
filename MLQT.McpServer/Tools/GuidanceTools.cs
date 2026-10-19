@@ -58,6 +58,9 @@ public sealed class GuidanceTools
               starts empty and has its own session: a library loaded into a simulator is not loaded here
               (see the 'simulators' topic). To start a NEW project, mlqt_create_library writes and loads
               an empty top-level library.
+            - The session can outlive your conversation, and be shared with other tasks: each library says when
+              it was loaded. A second copy of a loaded library is refused - replace it only if you loaded the
+              first. mlqt_unload_library with all=true goes back to empty.
             - Load the dependencies too. Nearly every library builds on the Modelica Standard Library (MSL),
               and loading a library does NOT load what it uses — but its load summary lists them (from its
               `uses` annotation) with the version it expects. Load each one; ask the user for the path if

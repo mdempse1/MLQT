@@ -111,7 +111,8 @@ internal sealed class DependencyLoader
             _session.DependenciesAnalyzed = false;
             _session.ResourcesAnalyzed = false;
             _warnings.Add($"The tool install changed from '{previous}' to '{install}', so the {unloaded.Count} " +
-                          "libraries the earlier search found were unloaded and searched for again.");
+                          "libraries the earlier search found were unloaded and searched for again. If other " +
+                          "work is using this MLQT server, its dependencies changed with them.");
         }
         return unloaded;
     }
@@ -129,6 +130,21 @@ internal sealed class DependencyLoader
                 _replaced.Add(new ReplacedLibraryItem(name, version, path, now.Version, now.SourcePath));
         }
     }
+
+    /// <summary>
+    /// The refusal for a second copy of a library the caller already named. MLQT holds one copy of each
+    /// library and a class id does not say whose, so the copy loaded may be another task's, or an earlier
+    /// conversation's: this said only "pass replace=true", and a task that did would have moved the other's
+    /// edits onto its own copy without either knowing (B505). It says how old the copy is, and what
+    /// replacing it does, so that the caller can tell whether it is its own.
+    /// </summary>
+    private string AnotherCopy(string name, LoadedLibrary existing, string path) =>
+        $"'{name}' is already loaded from '{existing.SourcePath}', loaded {_session.LoadedAgo(existing.Id)}, and " +
+        $"'{path}' is another copy. MLQT holds one copy of a library, and a class id does not say whose: if " +
+        "this conversation did not load that copy, it may be another task's using this MLQT server, or an " +
+        $"earlier conversation's. Replacing it unloads it, and every later MLQT edit to {name}'s classes - that " +
+        "other work's included - goes to this copy. Pass replace=true only if this conversation loaded the " +
+        "other copy, or the user says so; otherwise ask the user. mlqt_session shows what is loaded and when.";
 
     private string OriginOf(LoadedLibrary library) =>
         _session.LibraryOrigins.TryGetValue(library.Id, out var origin) ? origin : Explicit;
@@ -162,8 +178,7 @@ internal sealed class DependencyLoader
             }
             if (OriginOf(existing) == Explicit && !replace)
             {
-                _errors.Add($"'{name}' is already loaded from '{existing.SourcePath}', and '{path}' is another copy. " +
-                            "Pass replace=true to load this one in its place.");
+                _errors.Add(AnotherCopy(name, existing, path));
                 return;
             }
             _libraries.RemoveLibrary(existing.Id);
@@ -173,9 +188,27 @@ internal sealed class DependencyLoader
         var library = await TryLoadAsync(root);
         if (library is null)
             return;
+
+        // A copy in a folder not named after its library - a clone called Formula1-copy - is known for what
+        // it is only once loaded. Without this it was loaded beside the first copy, silently, and every
+        // class id still answered with the first: a second task's edits went to the first task's files (B505).
+        if (existing is null &&
+            _libraries.Libraries.FirstOrDefault(l => l.Id != library.Id && l.Name == library.Name) is { } twin)
+        {
+            if (OriginOf(twin) == Explicit && !replace)
+            {
+                _libraries.RemoveLibrary(library.Id);
+                _errors.Add(AnotherCopy(library.Name, twin, path));
+                return;
+            }
+            _libraries.RemoveLibrary(twin.Id);
+            _session.LibraryOrigins.Remove(twin.Id);
+            existing = twin;
+        }
+
         _session.LibraryOrigins[library.Id] = Explicit;
         if (existing is not null)
-            _replaced.Add(new ReplacedLibraryItem(name, existing.Version, existing.SourcePath, library.Version, library.SourcePath));
+            _replaced.Add(new ReplacedLibraryItem(library.Name, existing.Version, existing.SourcePath, library.Version, library.SourcePath));
         _loaded.Add(Item(library, Explicit, "given", null, null));
     }
 

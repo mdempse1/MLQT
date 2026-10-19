@@ -40,6 +40,9 @@ internal static class ConsolidatedGuidance
               .mo files, a Git/SVN working copy or folder of libraries, or a Dymola startup script, and
               loads what they use too. mlqt_session shows what is loaded. To start a NEW project,
               mlqt_create_library writes and loads an empty top-level library.
+            - The session can outlive your conversation, and be shared with other tasks: each library says when
+              it was loaded. A second copy of a loaded library is refused - replace it only if you loaded the
+              first. mlqt_session with action 'reset' goes back to empty.
             - Class ids are fully-qualified dotted names, e.g. 'Modelica.Blocks.Continuous.Integrator'.
               Find one with mlqt_find. Library and repository ids are GUIDs, but their names (e.g.
               "Modelica") work too.

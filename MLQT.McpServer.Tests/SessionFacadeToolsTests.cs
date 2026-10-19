@@ -97,7 +97,7 @@ public class SessionFacadeToolsTests
 
         var err = Assert.IsType<ToolError>(await Tools(host).Session("list"));
 
-        Assert.Contains("'status', 'unload' or 'reload'", err.Error);
+        Assert.Contains("'status', 'unload', 'reload' or 'reset'", err.Error);
     }
 
     [Fact]

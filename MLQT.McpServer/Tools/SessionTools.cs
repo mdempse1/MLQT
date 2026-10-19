@@ -28,15 +28,17 @@ public sealed class SessionTools
     private readonly IRepositoryService _repositories;
     private readonly IExternalResourceService _resources;
     private readonly SessionState _session;
+    private readonly ICodeReviewService? _codeReview;
 
     public SessionTools(
         ILibraryDataService libraries, IRepositoryService repositories,
-        IExternalResourceService resources, SessionState session)
+        IExternalResourceService resources, SessionState session, ICodeReviewService? codeReview = null)
     {
         _libraries = libraries;
         _repositories = repositories;
         _resources = resources;
         _session = session;
+        _codeReview = codeReview;
     }
 
     [McpServerTool(Name = "mlqt_load_repository")]
@@ -267,18 +269,45 @@ public sealed class SessionTools
     [McpServerTool(Name = "mlqt_unload_library")]
     [Description("Unload a loaded Modelica library, removing its models from the in-memory graph. Identify the " +
                 "library by EITHER its id (the opaque GUID in the 'id' field from mlqt_list_libraries) OR its " +
-                "name (the 'name' field, e.g. 'Modelica'). The name is usually the convenient choice.")]
+                "name (the 'name' field, e.g. 'Modelica'). The name is usually the convenient choice. all=true " +
+                "unloads every library and repository instead and forgets the findings, to start new work from " +
+                "empty - this MLQT server may have outlived the conversation that loaded them.")]
     public object UnloadLibrary(
         [Description("The library to unload: its id (GUID from mlqt_list_libraries's 'id' field) or its name " +
-                     "(e.g. 'Modelica'). Not a class id.")]
-        string library)
+                     "(e.g. 'Modelica'). Not a class id. Omit with all=true.")]
+        string? library = null,
+        [Description("Unload everything instead, back to an empty session. Default false.")] bool all = false)
     {
+        if (all)
+            return Reset();
+        if (string.IsNullOrWhiteSpace(library))
+            return new ToolError("Name the library to unload, or pass all=true to unload everything.");
+
         var (match, error) = EntityResolver.ResolveLibrary(_libraries, library);
         if (error is not null)
             return error;
 
         _libraries.RemoveLibrary(match!.Id);
         return new UnloadLibraryResult(true, match.Id, match.Name);
+    }
+
+    /// <summary>
+    /// Back to an empty session: every repository and library unloaded, the findings and the session's
+    /// analysis forgotten. A library the host supplied from memory is kept - only the host can supply it
+    /// again - and named. The way to start new work on a server an earlier conversation, or another
+    /// task, has used (B505).
+    /// </summary>
+    internal SessionResetResult Reset()
+    {
+        var kept = _libraries.Libraries.Where(IsSupplied).Select(l => l.Name).ToList();
+        var repositories = _repositories.Repositories.Count;
+        var unloaded = _libraries.Libraries.Where(l => !IsSupplied(l)).Select(l => l.Name).ToList();
+        _repositories.ClearAllRepositories();
+        foreach (var library in _libraries.Libraries.Where(l => !IsSupplied(l)).ToList())
+            _libraries.RemoveLibrary(library.Id);
+        _codeReview?.ClearLogMessages();
+        _session.Reset();
+        return new SessionResetResult(unloaded, kept, repositories);
     }
 
     [McpServerTool(Name = "mlqt_reload")]
@@ -402,7 +431,8 @@ public sealed class SessionTools
         l.Id, l.Name, WireNames.Of(l.SourceType), l.SourcePath,
         l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision,
         detailed ? DeclaredDependencies(l) : DeclaredDependencies(l).Where(d => _libraries.Libraries.All(x => x.Name != d.Name)).ToList(),
-        l.Version, l.ReadOnlySource is { } readOnlySource ? WireNames.Of(readOnlySource) : null);
+        l.Version, l.ReadOnlySource is { } readOnlySource ? WireNames.Of(readOnlySource) : null,
+        _session.LoadedAt(l.Id).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture));
 
     // The library's declared dependencies (its top-level package's `uses(...)` annotation), so the caller
     // knows what else to load — most importantly the Modelica Standard Library, at the right version.

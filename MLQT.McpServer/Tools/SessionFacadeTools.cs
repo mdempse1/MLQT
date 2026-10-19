@@ -24,7 +24,7 @@ public sealed class SessionFacadeTools
         IExternalResourceService resources, ICodeReviewService codeReview, ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager, SessionState session)
     {
-        _sessionTools = new SessionTools(libraries, repositories, resources, session);
+        _sessionTools = new SessionTools(libraries, repositories, resources, session, codeReview);
         _classes = new ClassQueryTools(libraries);
         _style = new StyleTools(libraries, codeReview, repositories, customDictionary, dictionaryManager, session);
     }
@@ -33,11 +33,14 @@ public sealed class SessionFacadeTools
     [Description("The Modelica libraries MLQT has loaded, and changing that. action 'status' (the default): each library loaded, " +
                  "its version, class count and the dependencies it declares that are not loaded, and each " +
                  "repository with its branch and revision - an empty list means nothing is loaded yet, so call " +
-                 "mlqt_load. 'unload': remove the library named by library (its name, e.g. 'Modelica', or id). " +
+                 "mlqt_load. Each library says when it was loaded: this server may have outlived the conversation " +
+                 "that loaded it, or serve another task. 'unload': remove the library named by library (its " +
+                 "name, e.g. 'Modelica', or id). 'reset': unload everything and forget the findings, to start " +
+                 "new work from empty. " +
                  "'reload': re-read from disk what changed outside MLQT - target is a .mo file, or a library " +
                  "or repository by name or id, or nothing for everything.")]
     public async Task<object> Session(
-        [Description("'status' (default), 'unload' or 'reload'.")] string action = "status",
+        [Description("'status' (default), 'unload', 'reload' or 'reset'.")] string action = "status",
         [Description("For 'unload': the library's name or id.")] string? library = null,
         [Description("For 'reload': a .mo file, or a library or repository name or id. Omit for everything.")]
         string? target = null,
@@ -53,8 +56,10 @@ public sealed class SessionFacadeTools
                     : _sessionTools.UnloadLibrary(library);
             case "reload":
                 return await _sessionTools.Reload(target);
+            case "reset":
+                return _sessionTools.Reset();
             default:
-                return new ToolError($"action must be 'status', 'unload' or 'reload', not '{action}'.");
+                return new ToolError($"action must be 'status', 'unload', 'reload' or 'reset', not '{action}'.");
         }
     }
 

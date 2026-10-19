@@ -576,6 +576,10 @@ def analyse_session(path, library_dirs, include_subagents, server_entries, dedic
         usage = {("result", ""): final["usage"]}
     in_window = [s for s in server_entries
                  if start and start - datetime.timedelta(minutes=1) <= s["at"] <= end + datetime.timedelta(minutes=1)]
+    # A server that served something before this session - an earlier conversation, or another task - may
+    # have held libraries it had not loaded (B505); a log reused across runs reads the same, and is as bad
+    # for a comparison.
+    before = [s for s in server_entries if start and s["at"] < start - datetime.timedelta(minutes=1)]
     return {
         "run": path.stem, "file": str(path), "subagent_files": len(files) - 1,
         "started": start.astimezone().strftime("%Y-%m-%d %H:%M") if start else "",
@@ -592,6 +596,8 @@ def analyse_session(path, library_dirs, include_subagents, server_entries, dedic
         "bypass_calls": sum(c["bypass"] for c in calls),
         "calls": calls,
         "server": [{"tool": s["tool"], "ms": s["ms"], "error": s["error"]} for s in in_window],
+        "server_calls_before": len(before),
+        "server_last_before": before[-1]["at"].astimezone().strftime("%Y-%m-%d %H:%M") if before else None,
     }
 
 
@@ -680,6 +686,13 @@ def write_session_report(out_dir, results, config, available):
     if config.get("server_log"):
         lines += ["The server log has no session id: its entries are matched to a session by time, so two "
                   "sessions running at once share each other's.", ""]
+    for r in results:
+        if r.get("server_calls_before"):
+            lines += [f"**Warning - `{r['run'][:8]}` may not have had a new MLQT server.** The server log has "
+                      f"{r['server_calls_before']} calls from before the session started, the last at "
+                      f"{r['server_last_before']}. Either the server served earlier work, and may have held its "
+                      "libraries, or the log is shared with another run. Restart the client and give each run a "
+                      "log of its own before comparing it.", ""]
 
     lines += ["## Sessions", "",
               "| Session | Started | Span (min) | Model | Calls | MLQT | MLQT errors | ToolSearch | Bypass | Tokens in | Tokens out |",

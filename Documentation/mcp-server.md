@@ -162,6 +162,15 @@ A library you name replaces a copy an earlier search loaded. Two copies you name
 
 The answer names each library, its version, its path, whether you named it or the search found it, where, and by which rule.
 
+## A server that outlives a conversation, or serves several
+
+An MCP server runs as long as its client keeps it. Claude Code keeps its servers across `/clear` and a new session in the same process, and the desktop app across its sessions, so an MLQT server can hold what an **earlier conversation** loaded. Subagents of one session use its servers, and so may sessions of one app running at once, so a server can also be **shared by tasks working at the same time**. MCP gives a server no conversation id, so MLQT cannot tell these apart. What it does instead:
+- **Every library says when it was loaded** (`loadedAt` in `mlqt_session`'s and `mlqt_list_libraries`' answers), so an agent can see that what is loaded predates it.
+- **A second copy of a library is refused, and the refusal says why.** MLQT holds one copy of each library, and a class id does not say whose. The refusal says when the loaded copy came in, that it may be another task's or an earlier conversation's, and that replacing it moves every later edit to that library's classes - the other work's included - onto the new copy. Pass `replace: true` only when the conversation loaded the other copy itself, or the user says so. This holds whatever the copy's folder is called: a clone in `Formula1-copy` is recognised as `Formula1` once loaded.
+- **A reset goes back to empty**: `mlqt_session` with action `reset`, or `mlqt_unload_library` with `all: true`. Every library and repository is unloaded and the findings and analysis are forgotten. A library a host supplied from memory is kept, since only the host can supply it again.
+
+**Tasks that edit their own copies of one library at the same time each need a server of their own** - a separate `claude` process for each. Sharing one server, they share one copy (B505).
+
 ## Working beside a simulator
 
 MLQT checks Modelica **source**; it does not compile or simulate it. To close the loop, connect a

@@ -171,6 +171,7 @@ public sealed class ObfuscationReadinessTests
         ("Prose.cs", "return result.ToString();", "a StringBuilder"),
         ("WireNames.cs", "Convert.ToInt64(value", "the number of an unnamed enum value, deliberately"),
         ("ToolUsageLogger.cs", "DateTime.UtcNow.ToString(\"o\")", "a timestamp"),
+        ("SessionTools.cs", "_session.LoadedAt(l.Id).ToString(", "a timestamp, in a fixed invariant format"),
         ("ToolUsageLogger.cs", "isError.ToString()", "a bool"),
         ("EditTools.cs", "return builder.ToString();", "a StringBuilder"),
         ("EditTools.cs", "return builder.ToString();", "a StringBuilder"),
