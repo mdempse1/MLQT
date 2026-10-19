@@ -77,6 +77,7 @@ The rest are out of 8.
 |---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | 2026-10-18 | fa80416 | current, corner only | 5 of 5 | 9 | 22 | 0 | 0 | 1 | 0 | 2,938,085 | 54,203 |
 | 2026-10-18 | fa80416 | current | 8 of 8 | 11 | 26 | 0 | 9 | 3 | 1 | 4,412,294 | 63,417 |
+| 2026-10-19 | e6e94ba | current + step 1 | 8 of 8 | 10 | 12 | 0 | 2 | 0 | 0 | 2,537,480 | 57,088 |
 
 **2026-10-18, current toolset, corner only.** Run headless (`claude -p`, Bash and PowerShell allowed),
 cost $2.37. All five items held: OpenModelica checked the rig (3,365 equations and variables) and
@@ -103,3 +104,14 @@ eight items held.
   geometry, the PowerShell calls that ran it, and a folder listing.
 
 Step 1's criterion compares against this row: at least half fewer bypass writes and `reload` calls.
+
+**2026-10-19, after step 1.** Run the same way, cost $2.38. All eight items held: the corner gained a
+`side` parameter (`left` is `side=1`, `right` is `side=-1`), all three rigs checked and simulated, the
+wheels gave −0.90° camber and −0.09° toe at +50 mm, mirrored, and at 30 mm of rack the inside wheel
+steered 13.48° and the outside 12.82°.
+- **The library was changed only through MLQT**: 3 `write_class` and 2 `edit_class`, where step 0
+  had 9 `Edit` calls on its `.mo` files. The 2 bypass writes were a throwaway model the agent wrote
+  in its own scratch folder to sweep a parameter in the simulator, not the library.
+- **No reads outside MLQT and no `reload`**, against 3 and 1.
+- **The criterion is met**: bypass writes 9 → 2 and `reload` 1 → 0. MLQT calls fell from 26 to 12, input
+  tokens from 4.4 M to 2.5 M.
