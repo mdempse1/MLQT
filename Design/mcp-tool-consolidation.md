@@ -1,6 +1,6 @@
 # MCP tool consolidation — design note
 
-**Status: steps 1 and 2 done (2026-10-19, results under each); step 3 next.** This is the plan for
+**Status: steps 1 and 2 done; step 3's harness comparison done (2026-10-19, results under each); the scenarios on the consolidated set next.** This is the plan for
 roadmap item **B503**: the MCP server's tool surface goes
 from 66 tools to 16. It has two aims. The first is to close the gaps that send an agent round MLQT to
 its own shell and file tools. The second is to merge the tools that overlap. Written 2026-10-18, from
@@ -443,6 +443,44 @@ Search on and off. Then re-run the two real-world scenarios on each set.
 
 If it fails on parameter errors, fix the descriptions and examples and run again before going back on
 any merge.
+
+#### Step 3 harness results (2026-10-19)
+
+All 18 tasks 3 times each, both sets, Tool Search on and off: 216 runs, every one passed.
+
+| Measure, per run | Current (71), TS on | Consolidated (16), TS on | Current, TS off | Consolidated, TS off |
+|---|--:|--:|--:|--:|
+| Pass rate | 100% | 100% | 100% | 100% |
+| Tool calls | 4.9 | 4.3 | 4.0 | 3.6 |
+| Tool errors | 0.02 | 0.00 | 0.00 | 0.00 |
+| Bypass calls, all 54 runs | 11 | 9 | 4 | 6 |
+| Input tokens | 205 k | 185 k | 386 k | 271 k |
+| Cost | $0.166 | $0.157 | $0.256 | $0.199 |
+
+**On the totals the consolidated set meets every criterion but one**: as many passes, fewer calls, fewer
+tokens and no parameter errors in either mode. With Tool Search off it costs 30% fewer input tokens and
+22% less, which is where the tool count was expected to tell. The exception is bypasses with Tool Search
+off, 6 against 4.
+
+**Per task it is not uniform.** The largest gains are `rename-class` (11.7 → 5.3 calls with Tool Search
+on: one `mlqt_refactor_class`, which runs the analysis itself), `impact` (6.0 → 3.7), `build-model`
+(6.7 → 4.0) and `build-package` (6.7 → 5.0). Six tasks take 0.3 to 1 call more, which with three
+repeats is one or three calls in all:
+- `read-interface` (+1, Tool Search on): the agent called `mlqt_load` and `mlqt_get_class` at once, so the
+  read answered before the load had finished and was repeated.
+- `describe-class`, `load-dependencies`, `create-block`: a call checking the work just done - a
+  `get_class` after `edit_class`, an `mlqt_session` after `mlqt_load`, and for `create-block` a shell read
+  of the new file and `package.order` (the bypasses, 0 → 1 and 0 → 0.3).
+- `find-by-description` with Tool Search off: an `mlqt_browse` before the read.
+- `rename-class` with Tool Search off: bypasses 1.3 → 1.7, the same `grep` for anything left that the
+  current set's runs make.
+
+**Found while reading the runs: messages name tools the consolidated set does not serve.** The error for
+an unknown class says to find it with `mlqt_search_classes`; others say to run `mlqt_analyze_dependencies`
+or load with `mlqt_load_library`. About a hundred string literals in the shared code do this, most in
+`ToolDiagnostics`, `EditTools`, `EntityResolver` and `SessionTools`. No run failed on one, but each is a
+pointer to nothing. They are fixed before the scenarios are run on the consolidated set: the common ones
+can name tools both sets have (`mlqt_find`, `mlqt_load`), and the rest change at the cut-over anyway.
 
 ### 4. Cut over
 
