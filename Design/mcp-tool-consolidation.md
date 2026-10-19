@@ -479,8 +479,12 @@ repeats is one or three calls in all:
 an unknown class says to find it with `mlqt_search_classes`; others say to run `mlqt_analyze_dependencies`
 or load with `mlqt_load_library`. About a hundred string literals in the shared code do this, most in
 `ToolDiagnostics`, `EditTools`, `EntityResolver` and `SessionTools`. No run failed on one, but each is a
-pointer to nothing. They are fixed before the scenarios are run on the consolidated set: the common ones
-can name tools both sets have (`mlqt_find`, `mlqt_load`), and the rest change at the cut-over anyway.
+pointer to nothing. **Fixed before the scenarios**, in two layers:
+- where one wording is right in both sets, at the source: every hint to load or to search now names
+  `mlqt_load` or `mlqt_find`, which both sets serve;
+- for the rest, `ConsolidatedNames` rewrites each current-only tool in an answer to the consolidated
+  tool that does its job - the plan's mapping table, held by a test to every current-only tool - while
+  the consolidated set is served. It goes at the cut-over, with the messages it rewrites.
 
 ### 4. Cut over
 

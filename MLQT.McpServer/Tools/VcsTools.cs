@@ -59,7 +59,7 @@ public sealed class VcsTools
         if (repoError is not null)
             return repoError;
         if (ToolDiagnostics.RequireLibrary(_libraries,
-                "mapping changed files to classes (mlqt_load_repository loads the repository's libraries by default)") is { } noLib)
+                "mapping changed files to classes (mlqt_load, given the working copy, loads its libraries)") is { } noLib)
             return noLib;
 
         var files = ResolveChangedFiles(repo!, revision);

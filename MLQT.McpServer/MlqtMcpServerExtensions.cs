@@ -7,6 +7,7 @@ using MLQT.McpServer.Tools;
 using MLQT.Services;
 using MLQT.Services.Checking;
 using MLQT.Services.Interfaces;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace MLQT.McpServer;
@@ -83,6 +84,16 @@ public static class MlqtMcpServerExtensions
         var configureServer = options?.ConfigureServer;
         var toolset = options?.Toolset ?? McpToolset.Current;
 
+        // While the consolidated set is served, an answer names the tools it has: the facades call the
+        // current tools, whose errors and notes name current tools (B503). Gone at the cut-over.
+        CallToolResult Named(CallToolResult result)
+        {
+            if (toolset == McpToolset.Consolidated)
+                foreach (var block in result.Content.OfType<TextContentBlock>())
+                    block.Text = ConsolidatedNames.Rewrite(block.Text);
+            return result;
+        }
+
         // Every tool of the assembly is registered, and the set not chosen is taken out after the SDK has
         // collected them: the two sets share tools, some of them in one class with a tool only one set has.
         services.PostConfigure<McpServerOptions>(o =>
@@ -117,12 +128,12 @@ public static class MlqtMcpServerExtensions
                     context.Params.Arguments = ToolArgumentCoercion.Coerce(args, scalars);
 
                 if (toolUsageLogger is null)
-                    return await next(context, cancellationToken);
+                    return Named(await next(context, cancellationToken));
 
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    var result = await next(context, cancellationToken);
+                    var result = Named(await next(context, cancellationToken));
                     toolUsageLogger.Record(toolName, context.Params?.Arguments, stopwatch.ElapsedMilliseconds, result.IsError ?? false);
                     return result;
                 }

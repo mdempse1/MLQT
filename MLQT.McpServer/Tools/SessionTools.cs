@@ -76,7 +76,7 @@ public sealed class SessionTools
         {
             warnings.Add(
                 $"No Modelica libraries (directories containing package.mo) were found under '{path}'. " +
-                "If the library lives in a subfolder, pass that subfolder to mlqt_load_repository or mlqt_load_library.");
+                "If the library lives in a subfolder, pass that subfolder to mlqt_load.");
         }
 
         var loaded = new List<LibrarySummary>();
@@ -219,9 +219,9 @@ public sealed class SessionTools
         {
             _libraries.RemoveLibrary(library.Id);
             return new ToolError(
-                $"No Modelica models were found at '{path}'. Point mlqt_load_library at a library directory " +
-                "containing a package.mo file, or a single .mo file. For a repository whose libraries live " +
-                "in subfolders, use mlqt_load_repository instead.");
+                $"No Modelica models were found at '{path}'. Point mlqt_load at a library directory " +
+                "containing a package.mo file, a single .mo file, or a repository whose libraries live " +
+                "in subfolders.");
         }
 
         return ToSummary(library);

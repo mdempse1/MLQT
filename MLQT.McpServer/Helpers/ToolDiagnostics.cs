@@ -20,9 +20,9 @@ internal static class ToolDiagnostics
     public static string NothingLoaded(string whatFor) =>
         $"Nothing is loaded into MLQT, and {whatFor} needs a loaded library. MLQT is a separate server with its own " +
         "session: a library loaded into a simulator (e.g. OpenModelica or Dymola) is not loaded here. " +
-        "Load each library you need with mlqt_load_library, giving its directory, its package.mo or a single " +
-        ".mo file (mlqt_load_repository for a Git/SVN working copy), and its dependencies too - usually the " +
-        "Modelica Standard Library. If a simulator already has the library loaded, ask it for the path: in " +
+        "Load each library you need with mlqt_load, giving its directory, its package.mo, a single .mo file " +
+        "or a Git/SVN working copy; it loads their dependencies too - usually the Modelica Standard " +
+        "Library. If a simulator already has the library loaded, ask it for the path: in " +
         "OpenModelica, getLoadedLibraries() lists each loaded library with its directory.";
 
     /// <summary>
@@ -49,9 +49,9 @@ internal static class ToolDiagnostics
                 ? $"{(classIds.Count == 1 ? "It is" : "They are")} in library '{roots[0]}'"
                 : $"They are in libraries {string.Join(", ", roots.Select(r => $"'{r}'"))}";
             steps.Add(
-                $"{which}: load {(roots.Count == 1 ? "it" : "each")} with mlqt_load_library, giving the library's " +
-                "directory or its package.mo (mlqt_load_repository for a Git/SVN working copy), then retry. " +
-                "Load its dependencies too - the load summary lists them" +
+                $"{which}: load {(roots.Count == 1 ? "it" : "each")} with mlqt_load, giving the library's " +
+                "directory, its package.mo or a Git/SVN working copy, then retry. mlqt_load finds its " +
+                "dependencies too" +
                 (roots.Contains("Modelica") ? " (for the Modelica Standard Library, Complex and ModelicaServices)." : "."));
         }
 
@@ -59,8 +59,8 @@ internal static class ToolDiagnostics
             steps.Add(
                 $"{string.Join(", ", bare.Select(id => $"'{id}'"))} names no library: class ids are fully-qualified " +
                 "names starting with their library's (e.g. 'Modelica.Blocks.Examples.PID_Controller' is in library " +
-                "'Modelica'). Load the library the class is in with mlqt_load_library, then use its full id - " +
-                "mlqt_search_classes finds it once the library is loaded.");
+                "'Modelica'). Load the library the class is in with mlqt_load, then use its full id - " +
+                "mlqt_find finds it once the library is loaded.");
 
         var path = roots.Count == 1 ? $"'{roots[0]}'" : "a library";
         return $"{opening} {string.Join(" ", steps)} MLQT is a separate server with its own session: a library a " +
@@ -70,8 +70,8 @@ internal static class ToolDiagnostics
 
     /// <summary>How to look for a class whose id is not known, said the same way wherever it is said.</summary>
     private const string SearchTools =
-        "Find it by name with mlqt_search_classes, by its description or documentation with " +
-        "mlqt_search_text, or by shape with mlqt_search_by_interface.";
+        "Find it with mlqt_find: by name (match 'name'), by its description or documentation ('text'), " +
+        "or by shape ('interface').";
 
     /// <summary>The most near-matches a not-found message lists, so it stays a message.</summary>
     internal const int MaxSuggestions = 5;
@@ -110,7 +110,7 @@ internal static class ToolDiagnostics
                 ? string.Join(", ", loaded)
                 : string.Join(", ", loaded.Take(10)) + $" and {loaded.Count - 10} more";
             var howToLoad =
-                "load it with mlqt_load_library (its directory or package.mo) - a library a simulator has " +
+                "load it with mlqt_load (its directory or package.mo) - a library a simulator has " +
                 "loaded is not loaded here; in OpenModelica, getLoadedLibraries() gives its path.";
 
             // A class of that name exists: the id most likely lost its leading packages, and that class

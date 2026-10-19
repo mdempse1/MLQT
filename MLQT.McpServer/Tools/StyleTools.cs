@@ -426,7 +426,8 @@ public sealed class StyleTools
         if (repos.Count == 0)
             return requireRepo
                 ? (null, new ToolError("No repository is loaded. Per-repository style settings require a " +
-                    "repository — use mlqt_load_repository. Libraries loaded via mlqt_load_library have no .mlqt/settings.json."))
+                    "repository - load its working copy with mlqt_load. A library loaded by its own folder has no " +
+                    ".mlqt/settings.json."))
                 : (null, null);
 
         return (null, new ToolError(

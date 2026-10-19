@@ -49,7 +49,7 @@ public class DependencyResourceToolsTests
         using var host = new TestHost();
         var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
         var err = ToolAssert.Error(deps.GetDependencies("Modelica.Blocks.Continuous.Integrator"));
-        Assert.Contains("load_", err.Error);
+        Assert.Contains("mlqt_load", err.Error);
     }
 
     [Fact]

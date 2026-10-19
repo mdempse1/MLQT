@@ -41,7 +41,7 @@ public class ClassNotFoundTests
 
         Assert.StartsWith(
             "Nothing is loaded into MLQT, so class 'Modelica.Blocks.Continuous.LimPID' cannot be found. " +
-            "It is in library 'Modelica': load it with mlqt_load_library, giving the library's directory or its package.mo", err);
+            "It is in library 'Modelica': load it with mlqt_load, giving the library's directory, its package.mo or a Git/SVN working copy", err);
         Assert.Contains("(for the Modelica Standard Library, Complex and ModelicaServices)", err);
         Assert.Contains("If a simulator has 'Modelica' loaded, ask it for the path", err);
         Assert.Contains("getLoadedLibraries()", err);
@@ -53,8 +53,8 @@ public class ClassNotFoundTests
         using var host = new TestHost();
         var err = ToolAssert.Error(new ClassQueryTools(host.Libraries).GetClassInfo("Buildings.Fluid.Movers.FlowControlled_m_flow")).Error;
 
-        Assert.Contains("It is in library 'Buildings': load it with mlqt_load_library", err);
-        Assert.Contains("the load summary lists them.", err);
+        Assert.Contains("It is in library 'Buildings': load it with mlqt_load,", err);
+        Assert.Contains("mlqt_load finds its dependencies too.", err);
         Assert.DoesNotContain("ModelicaServices", err);
     }
 
@@ -79,7 +79,7 @@ public class ClassNotFoundTests
 
         Assert.StartsWith(
             "Nothing is loaded into MLQT, so none of 'Modelica.A.B', 'Buildings.C', 'Modelica.D' can be found. " +
-            "They are in libraries 'Modelica', 'Buildings': load each with mlqt_load_library", err);
+            "They are in libraries 'Modelica', 'Buildings': load each with mlqt_load", err);
     }
 
     [Fact]
@@ -106,10 +106,10 @@ public class ClassNotFoundTests
 
         Assert.StartsWith("Library 'Modelica' is not loaded into MLQT, so 'Modelica.Blocks.Continuous.LimPID' cannot be found.", err);
         Assert.Contains("Loaded: Lib.", err);
-        Assert.Contains("mlqt_load_library", err);
+        Assert.Contains("mlqt_load", err);
         Assert.Contains("simulator", err);
         Assert.Contains("getLoadedLibraries()", err);
-        Assert.Contains("mlqt_search_classes", err);
+        Assert.Contains("mlqt_find", err);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public class ClassNotFoundTests
         Assert.StartsWith(
             "No class 'Modelica.Blocks.Continuous.Integrator' is loaded into MLQT. " +
             "Classes named 'Integrator' that do exist: 'Lib.Sub.Integrator'.", err);
-        Assert.Contains("If you meant a library 'Modelica', which is not loaded (loaded: Lib), load it with mlqt_load_library", err);
+        Assert.Contains("If you meant a library 'Modelica', which is not loaded (loaded: Lib), load it with mlqt_load ", err);
     }
 
     [Fact]
@@ -134,11 +134,12 @@ public class ClassNotFoundTests
 
         Assert.StartsWith("Library 'Lib' is loaded and has 'Lib.Sub', but no class 'Lib.Sub.Deeper.Integratr'", err);
         Assert.Contains("mlqt_get_package_tree with root_class_id 'Lib.Sub'", err);
-        Assert.Contains("mlqt_search_classes", err);
-        Assert.Contains("mlqt_search_text", err);
-        Assert.Contains("mlqt_search_by_interface", err);
+        Assert.Contains("mlqt_find", err);
+        Assert.Contains("match 'name'", err);
+        Assert.Contains("('text')", err);
+        Assert.Contains("('interface')", err);
         // Not "load it": the library is loaded.
-        Assert.DoesNotContain("mlqt_load_library", err);
+        Assert.DoesNotContain("mlqt_load", err);
     }
 
     [Fact]
@@ -180,7 +181,7 @@ public class ClassNotFoundTests
 
         Assert.StartsWith("No class or library 'Nope' is loaded into MLQT.", err);
         Assert.Contains("fully-qualified", err);
-        Assert.Contains("mlqt_search_classes", err);
+        Assert.Contains("mlqt_find", err);
     }
 
     [Fact]

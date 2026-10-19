@@ -42,7 +42,7 @@ internal static class EntityResolver
     {
         var all = repositories.Repositories;
         if (all.Count == 0)
-            return (null, new ToolError("No repositories have been added. Use mlqt_load_repository first."));
+            return (null, new ToolError("No repositories have been added. Load a working copy with mlqt_load first."));
 
         var byId = repositories.GetRepository(idOrName);
         if (byId is not null)
