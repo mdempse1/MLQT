@@ -366,7 +366,7 @@ The report gives, per task and over all of them:
 
 and, per tool, its calls, errors, mean result size and mean server time, plus the **tools no run called**.
 
-Each run calls the model and is charged: a task costs roughly $0.20–0.40 at the default model, so all eighteen tasks three times is around $15. `--tool-search false` loads every tool definition up front instead of on demand, which is the setting to compare a large toolset against a small one under. `--server-env KEY=VALUE` (repeatable) sets an environment variable for the MLQT server, so one build can be run in two configurations. `--setting-sources` defaults to `project`, which leaves your own Claude Code settings and hooks out of the run.
+Each run calls the model and is charged: a task costs roughly $0.20–0.40 at the default model, so all eighteen tasks three times is around $15. `--tool-search false` loads every tool definition up front instead of on demand, which is the setting to compare a large toolset against a small one under. `--server-env KEY=VALUE` (repeatable) sets an environment variable for the MLQT server, so one build can be run in two configurations: `--server-env MLQT_MCP_TOOLSET=consolidated` serves the 16-tool set being built to replace the current one (B503), and is how the two are compared. `--setting-sources` defaults to `project`, which leaves your own Claude Code settings and hooks out of the run.
 
 **A new task needs checks that fail before it is done** — `check-tasks` runs every task's checks against the untouched fixture with an empty answer and fails if any task passes there, since a check that holds before the agent starts measures nothing.
 

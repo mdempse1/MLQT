@@ -7,6 +7,7 @@ using MLQT.McpServer.Tools;
 using MLQT.Services;
 using MLQT.Services.Checking;
 using MLQT.Services.Interfaces;
+using ModelContextProtocol.Server;
 
 namespace MLQT.McpServer;
 
@@ -80,6 +81,17 @@ public static class MlqtMcpServerExtensions
 
         var toolUsageLogger = options?.ToolUsageLogger;
         var configureServer = options?.ConfigureServer;
+        var toolset = options?.Toolset ?? McpToolset.Current;
+
+        // Every tool of the assembly is registered, and the set not chosen is taken out after the SDK has
+        // collected them: the two sets share tools, some of them in one class with a tool only one set has.
+        services.PostConfigure<McpServerOptions>(o =>
+        {
+            if (o.ToolCollection is not { } tools)
+                return;
+            foreach (var tool in tools.Where(t => !Toolsets.Includes(toolset, t.ProtocolTool.Name)).ToList())
+                tools.Remove(tool);
+        });
 
         // The instructions are returned in the initialize response; see ServerInstructions for what they
         // must fit in and why. mlqt_get_guidance gives fuller, on-demand recipes.

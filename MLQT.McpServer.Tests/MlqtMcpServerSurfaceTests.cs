@@ -20,10 +20,14 @@ public sealed class MlqtMcpServerSurfaceTests
     {
         Assert.Equal(
         [
+            "MLQT.McpServer.McpToolset.Consolidated = 1",
+            "MLQT.McpServer.McpToolset.Current = 0",
+            "MLQT.McpServer.McpToolset.value__ : Int32",
             "MLQT.McpServer.MlqtMcpServerExtensions.AddMlqtMcpServer(IServiceCollection, MlqtMcpServerOptions) -> IMcpServerBuilder",
             "MLQT.McpServer.MlqtMcpServerOptions..ctor()",
             "MLQT.McpServer.MlqtMcpServerOptions.ConfigureServer { get; init; } : Action`1",
             "MLQT.McpServer.MlqtMcpServerOptions.ToolUsageLogger { get; init; } : ToolUsageLogger",
+            "MLQT.McpServer.MlqtMcpServerOptions.Toolset { get; init; } : McpToolset",
             "MLQT.McpServer.Services.ToolUsageLogger..ctor()",
             "MLQT.McpServer.Services.ToolUsageLogger..ctor(String)",
             "MLQT.McpServer.Services.ToolUsageLogger.EnableMarkerFileName = mcp-tool-logging.enabled",
@@ -32,7 +36,7 @@ public sealed class MlqtMcpServerSurfaceTests
             "MLQT.McpServer.Services.ToolUsageLogger.LogPath { get; } : String",
             "MLQT.McpServer.Services.ToolUsageLogger.Record(String, IEnumerable`1, Int64, Boolean) -> Void",
         ],
-        Surface(typeof(MlqtMcpServerExtensions), typeof(MlqtMcpServerOptions), typeof(Services.ToolUsageLogger)));
+        Surface(typeof(McpToolset), typeof(MlqtMcpServerExtensions), typeof(MlqtMcpServerOptions), typeof(Services.ToolUsageLogger)));
     }
 
     [Fact]

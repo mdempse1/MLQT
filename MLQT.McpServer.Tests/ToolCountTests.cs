@@ -42,6 +42,11 @@ public class ToolCountTests
             .Where(name => name is not null)
             .Select(name => name!)];
 
+    /// <summary>The tools the current set serves: every declared one but the consolidated set's facades.
+    /// The count the documentation states is this one until the cut-over.</summary>
+    internal static List<string> CurrentTools() =>
+        [.. DeclaredTools().Where(name => !Services.Toolsets.ConsolidatedOnly.Contains(name))];
+
     [Fact]
     public void TheDocumentationQuotesTheNumberOfToolsThereActuallyAre()
     {
@@ -56,7 +61,7 @@ public class ToolCountTests
         var stated = Regex.Match(doc, @"The server exposes (?<count>\d+) tools\.");
 
         Assert.True(stated.Success, "Documentation/mcp-server.md no longer states how many tools there are");
-        Assert.Equal(tools.Count, int.Parse(stated.Groups["count"].Value));
+        Assert.Equal(CurrentTools().Count, int.Parse(stated.Groups["count"].Value));
     }
 
     [Fact]

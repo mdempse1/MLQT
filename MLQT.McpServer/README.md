@@ -97,12 +97,16 @@ builder.Services
   most of its time suspended waiting for collections. `HostGarbageCollectionTests` holds MLQT's hosts
   to it, and cannot see a host outside this repository.
 - **The instructions are MLQT's** unless `ConfigureServer` replaces them, which it runs after setting
-  them. A host whose tools differ should replace rather than append: MLQT's use 1,892 characters of
+  them. A host whose tools differ should replace rather than append: MLQT's use 1,998 characters of
   a 2,000-character budget, and Claude Code keeps only about the first 2,048, so appended text is
   what gets dropped.
+- **`Toolset` chooses which tools are registered**, while the consolidated set is measured against
+  the current one (B503): `McpToolset.Current`, the default, or `McpToolset.Consolidated`. MLQT's own
+  server reads `MLQT_MCP_TOOLSET` (`current` or `consolidated`). Both go at the cut-over, with the
+  current set; nothing should come to depend on them.
 
 **What a host may rely on** is `AddMlqtMcpServer`, `MlqtMcpServerOptions` and the `ToolUsageLogger`
-they name - held by `MlqtMcpServerSurfaceTests` rather than the public-API analyzer, which cannot track
+and `McpToolset` they name - held by `MlqtMcpServerSurfaceTests` rather than the public-API analyzer, which cannot track
 two types without listing every tool class and result type, public only because the SDK binds them -
 and the tool names, held by `ToolNamingTests`. A tool's result fields are not part of that promise; a
 host that depends on one pins it in its own tests.

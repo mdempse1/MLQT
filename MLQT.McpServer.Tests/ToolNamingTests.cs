@@ -46,6 +46,8 @@ public class ToolNamingTests
         var files = Directory.EnumerateFiles(Path.Combine(root, "MLQT.McpServer"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
                         !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            // Names the consolidated set while it is built (B503); ToolsetTests holds it to the tools.
+            .Where(f => Path.GetFileName(f) != "Toolsets.cs")
             .Append(Path.Combine(root, "MLQT.McpServer", "README.md"))
             .Concat(Directory.EnumerateFiles(Path.Combine(root, "Documentation"), "*.md"))
             .ToList();

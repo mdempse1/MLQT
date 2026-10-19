@@ -30,7 +30,32 @@ public sealed class MlqtMcpServerExtensionsTests
         var listed = (await server.Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .Select(t => t.Name).Order(StringComparer.Ordinal);
 
-        Assert.Equal(ToolCountTests.DeclaredTools().Order(StringComparer.Ordinal), listed);
+        Assert.Equal(ToolCountTests.CurrentTools().Order(StringComparer.Ordinal), listed);
+    }
+
+    [Fact]
+    public async Task TheConsolidatedToolset_ServesOnlyItsTools()
+    {
+        await using var server = await InProcessServer.StartAsync(new MlqtMcpServerOptions { Toolset = McpToolset.Consolidated });
+
+        var listed = (await server.Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+            .Select(t => t.Name).Order(StringComparer.Ordinal).ToList();
+
+        // Until every consolidated tool is built, the set is those of its names that exist.
+        Assert.Equal(ToolCountTests.DeclaredTools().Where(Toolsets.Consolidated.Contains).Order(StringComparer.Ordinal), listed);
+        Assert.Contains("mlqt_edit_class", listed);
+        Assert.DoesNotContain("mlqt_add_component", listed);
+    }
+
+    [Fact]
+    public async Task TheConsolidatedToolset_StillCoercesAndAnswers()
+    {
+        await using var server = await InProcessServer.StartAsync(new MlqtMcpServerOptions { Toolset = McpToolset.Consolidated });
+
+        var result = await server.CallAsync("mlqt_create_library",
+            new() { ["name"] = "Lib", ["directory"] = server.TempDirectory(), ["preview"] = "true" });
+
+        Assert.NotEqual(true, result.IsError);
     }
 
     [Fact]

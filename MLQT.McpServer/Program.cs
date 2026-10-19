@@ -23,8 +23,16 @@ builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogL
 // it off.
 var toolUsageLogger = new ToolUsageLogger();
 
+// Which set of tools to serve, while the consolidated set is measured against the current one (B503):
+// MLQT_MCP_TOOLSET=consolidated. An unknown value serves the current set and says so.
+var toolsetVariable = Environment.GetEnvironmentVariable("MLQT_MCP_TOOLSET");
+var toolset = Toolsets.FromEnvironment(toolsetVariable);
+if (toolset is null)
+    await Console.Error.WriteLineAsync(
+        $"[mcp] MLQT_MCP_TOOLSET='{toolsetVariable}' is not 'current' or 'consolidated'; serving the current set.");
+
 builder.Services
-    .AddMlqtMcpServer(new MlqtMcpServerOptions { ToolUsageLogger = toolUsageLogger })
+    .AddMlqtMcpServer(new MlqtMcpServerOptions { ToolUsageLogger = toolUsageLogger, Toolset = toolset ?? McpToolset.Current })
     .WithStdioServerTransport();
 
 if (toolUsageLogger.LogPath is { } logPath)
