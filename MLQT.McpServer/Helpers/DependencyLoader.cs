@@ -29,6 +29,7 @@ internal sealed class DependencyLoader
     private readonly IRepositoryService _repositories;
     private readonly SessionState _session;
     private readonly Func<string, string?> _environment;
+    private readonly List<(string Folder, string FoundBy)> _extraFolders = [];
 
     private readonly List<LoadedLibraryItem> _loaded = [];
     private readonly List<ReplacedLibraryItem> _replaced = [];
@@ -44,6 +45,10 @@ internal sealed class DependencyLoader
         _session = session;
         _environment = environment;
     }
+
+    /// <summary>Folders a startup script added to its ModelicaPath, searched after the tool's own.</summary>
+    public void AddSearchFolders(IEnumerable<string> folders, string foundBy) =>
+        _extraFolders.AddRange(folders.Select(f => (f, foundBy)));
 
     public async Task<LoadResult> LoadAsync(IReadOnlyList<string> paths, bool withDependencies, bool replace, ToolFolders tool)
     {
@@ -92,7 +97,7 @@ internal sealed class DependencyLoader
             _session.LibraryOrigins.Remove(existing.Id);
         }
 
-        var library = await TryLoadAsync(path);
+        var library = await TryLoadAsync(root);
         if (library is null)
             return;
         _session.LibraryOrigins[library.Id] = Explicit;
@@ -127,9 +132,10 @@ internal sealed class DependencyLoader
                 foreach (var sibling in SiblingFolders(library))
                     folders.Add(sibling);
                 folders.AddRange(tool.Folders.Select(f => (f, "the tool's library folder")));
+                folders.AddRange(_extraFolders);
                 folders.AddRange(modelicaPath.Select(f => (f, "MODELICAPATH")));
 
-                var (chosen, foundBy, rule, seen) = Choose(dependency, wanted, folders);
+                var (chosen, foundBy, rule, seen) = LibraryChoice.Choose(dependency, wanted, folders);
                 if (chosen is null)
                 {
                     _notFound.Add(new MissingDependency(dependency, versionText, library.Name,
@@ -145,49 +151,6 @@ internal sealed class DependencyLoader
                 queue.Enqueue(loaded);
             }
         }
-    }
-
-    // The search's choice among every copy seen, in the order the folders were given.
-    private static (LibraryCandidate? Chosen, string? FoundBy, string? Rule, List<LibraryCandidate> Seen) Choose(
-        string name, ModelicaVersion? wanted, List<(string Folder, string FoundBy)> folders)
-    {
-        var byFolder = new List<(string FoundBy, IReadOnlyList<LibraryCandidate> Candidates)>();
-        var seenFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (folder, foundBy) in folders)
-        {
-            if (!seenFolders.Add(Path.GetFullPath(folder)))
-                continue;
-            byFolder.Add((foundBy, LibraryCandidates.Find(folder, name)));
-        }
-        var seen = byFolder.SelectMany(f => f.Candidates).ToList();
-
-        if (wanted is null)
-        {
-            foreach (var (foundBy, candidates) in byFolder.Where(f => f.Candidates.Count > 0))
-            {
-                var unversioned = candidates.FirstOrDefault(c => IsUnversioned(c.Path, name));
-                return (unversioned ?? candidates.OrderByDescending(c => c.Version).First(), foundBy,
-                    unversioned is not null ? "no version asked for" : "no version asked for; the newest", seen);
-            }
-            return (null, null, null, seen);
-        }
-
-        foreach (var (foundBy, candidates) in byFolder)
-        {
-            var exact = candidates.Where(c => c.Version is not null && c.Version.SameReleaseAs(wanted))
-                .OrderByDescending(c => c.Version).FirstOrDefault();
-            if (exact is not null)
-                return (exact, foundBy, "the version asked for", seen);
-        }
-        foreach (var (foundBy, candidates) in byFolder)
-        {
-            var compatible = candidates.Where(c => c.NoneFromVersions.Any(v => v.SameReleaseAs(wanted)))
-                .OrderByDescending(c => c.Version).FirstOrDefault();
-            if (compatible is not null)
-                return (compatible, foundBy,
-                    $"version {compatible.Version?.Text ?? "?"}, which declares conversion(noneFromVersion=\"{wanted.Text}\")", seen);
-        }
-        return (null, null, null, seen);
     }
 
     private void NoteVersion(LoadedLibrary present, string name, ModelicaVersion? wanted, string requiredBy)
@@ -223,6 +186,13 @@ internal sealed class DependencyLoader
 
     private async Task<LoadedLibrary?> TryLoadAsync(string path)
     {
+        if (path.EndsWith(".moe", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+        {
+            _warnings.Add($"'{path}' is an encrypted library in a single file. MLQT reads an encrypted library " +
+                          "only as a folder holding a package.moe, from its generated documentation, so this one " +
+                          "was not loaded; references into it will not resolve.");
+            return null;
+        }
         LoadedLibrary library;
         try
         {
@@ -241,7 +211,11 @@ internal sealed class DependencyLoader
         if (library.ModelIds.Count == 0)
         {
             _libraries.RemoveLibrary(library.Id);
-            _errors.Add($"No Modelica classes were found at '{path}'.");
+            if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+                _warnings.Add($"'{library.Name}' at '{path}' is an encrypted library that ships no usable documentation, " +
+                              "so none of its classes could be recovered; references into it will not resolve.");
+            else
+                _errors.Add($"No Modelica classes were found at '{path}'.");
             return null;
         }
         return library;
@@ -271,9 +245,6 @@ internal sealed class DependencyLoader
         var space = leaf.IndexOf(' ');
         return space > 0 ? leaf[..space] : leaf;
     }
-
-    private static bool IsUnversioned(string path, string name) =>
-        Path.GetFileName(path.TrimEnd('/', '\\')) is var leaf && (leaf == name || leaf == name + ".mo");
 
     private static bool SamePath(string a, string b) =>
         string.Equals(Path.GetFullPath(a).TrimEnd('/', '\\'), Path.GetFullPath(b).TrimEnd('/', '\\'),

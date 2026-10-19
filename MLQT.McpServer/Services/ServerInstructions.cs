@@ -39,7 +39,7 @@ internal static class ServerInstructions
 
         MLQT starts EMPTY and keeps its own session: every mlqt_ tool, the searches included, sees
         only libraries loaded into MLQT. Load with mlqt_load: the paths of every library the user's
-        simulator has loaded (OpenModelica: getLoadedLibraries(); Dymola: the user's startup script),
+        simulator has loaded (OpenModelica: getLoadedLibraries(); Dymola: pass the user's startup script as script),
         and tool 'dymola' or 'openmodelica'; it loads their dependencies too, the MSL included. A
         simulator's load_library does NOT load anything here. mlqt_load_repository loads a working copy.
 

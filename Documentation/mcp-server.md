@@ -139,7 +139,7 @@ A library resolves only beside the libraries it uses. Without them, types stay u
 
 **First, the libraries you name.** Pass the paths of every library the user's simulator has loaded, in one call. They are loaded first, as given, so that MLQT has the versions the simulator has.
 - With OpenModelica, `getLoadedLibraries()` lists them.
-- Dymola cannot say what it has loaded. If the user loads their libraries with a startup script, the libraries that script opens are the ones to pass.
+- Dymola cannot say what it has loaded. If the user loads their libraries with a startup script, pass the script as `script`. It is **read, not run**. The libraries opened by its `openModel`, `openModelFile` and `import` lines are loaded, following its `cd`, `RunScript`, `AddModelicaPath` and MODELICAPATH changes. A backslash in a path is a folder separator, as Dymola reads it. A path built from string variables and `getEnvironmentVariable` is worked out. Anything else is listed with its line rather than guessed at, and so is a call to a function in the user's own library that does the loading. Lines that load nothing, such as `Advanced.*` settings, are listed as ignored.
 
 A library you name replaces a copy an earlier search loaded. Two copies you named yourself need `replace: true`, because then you have to choose.
 

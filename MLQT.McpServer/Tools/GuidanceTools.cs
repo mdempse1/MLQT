@@ -85,9 +85,11 @@ public sealed class GuidanceTools
             - Into MLQT: mlqt_load(paths, tool), in this order:
               1. The libraries the simulator has loaded, all in one call, so that MLQT has the same versions.
                  OpenModelica: getLoadedLibraries() (through its raw-command tool) lists each with its
-                 directory. Dymola cannot say what it has loaded: ask the user for their startup script and
-                 load the libraries its openModel / openModelFile lines open. If the Dymola server was given
-                 a startup script, that is the one.
+                 directory. Dymola cannot say what it has loaded: ask the user for their startup script (if
+                 the Dymola server was given one, that is the one) and pass it as mlqt_load's script. It is
+                 read, not run: the libraries its openModel, openModelFile and import lines open are loaded,
+                 following its cd, RunScript and ModelicaPath changes, and any line it cannot work out is
+                 listed - ask the user about those, or pass the path yourself.
               2. Leave withDependencies on, with tool 'dymola' or 'openmodelica': what those libraries use
                  and nothing loaded is then found beside them, in the tool's library folders and on
                  MODELICAPATH - the MSL, Complex and ModelicaServices included. tool_install picks the install

@@ -28,4 +28,24 @@ public sealed record LoadResult(
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Errors,
     string? ToolInstall,
-    IReadOnlyList<string> ToolFolders);
+    IReadOnlyList<string> ToolFolders,
+    ScriptReadingResult? Script = null);
+
+/// <summary>A library a startup script opens: its path, the script line, and how (with the nested script
+/// and line when <c>RunScript</c> did it).</summary>
+public sealed record ScriptLoadItem(string Path, int Line, string Via);
+
+/// <summary>A startup-script line that loads nothing, or that could not be worked out, and why.</summary>
+public sealed record ScriptLineItem(string File, int Line, string Text, string Reason);
+
+/// <summary>What reading a startup script found: the libraries it opens, in order; the lines that load
+/// nothing; the lines that could not be worked out; and where it leaves the current directory and the
+/// ModelicaPath.</summary>
+public sealed record ScriptReadingResult(
+    string Script,
+    IReadOnlyList<ScriptLoadItem> Loads,
+    IReadOnlyList<ScriptLineItem> Ignored,
+    IReadOnlyList<ScriptLineItem> Unresolved,
+    string CurrentDirectory,
+    string? ModelicaPathSet,
+    IReadOnlyList<string> ModelicaPathAdded);
