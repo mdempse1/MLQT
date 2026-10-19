@@ -72,6 +72,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | e6e94ba | current + step 1 | 5 of 5 | 17 | 13 | 0 | 0 | 7 | 0 | 8,068,590 | 42,972 |
 | 2026-10-19 | 56d1eb4 | step 1 + search-first instructions | 4 of 5, item 3 unverified | 22 | 2 | 0 | 19 | 5 | 0 | 11,695,180 | 43,170 |
 | 2026-10-19 | 56d1eb4 | step 1 + search-first instructions, rerun | 3 of 5 | 18 | 0 | 0 | 13 | 8 | 0 | 8,319,313 | 31,030 |
+| 2026-10-19 | bb7d8c2 | step 1 + work-naming instructions | 5 of 5 | 19 | 31 | 0 | 0 | 0 | 0 | 10,008,860 | 42,827 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -162,3 +163,31 @@ on, no steering. The transcript shows MLQT connected and its instructions delive
   one run against one. The step 1 opening sentence named the work - "read, create or edit Modelica
   code" - and the agent used MLQT for every edit; the search-first sentence names questions and
   searching, and in both runs the agent edited with its own tools without searching for MLQT's.
+
+**2026-10-19, with the work-naming instructions (bb7d8c2).** Tool Search on, no steering, MLQT log
+kept: 31 calls, 25 s of server time, 23 s of it the load.
+
+- **Result.** All five items held, the first run to do so without being steered.
+  - With overtake mode the lap took 96.57 s against 96.79 s, deployed 5.48 MJ against 5.17 MJ
+    (0.31 MJ more: of the 0.50 MJ allowance, 0.13 MJ went mid-lap and was refilled under braking),
+    and ended at 11.7 % against 19.3 %.
+  - The agent saw that the energy had to come from below the state-of-charge floor, without asking.
+    It renamed the existing taper switch `overtakeTaper`, as the baseline run did.
+- **Item 3 held through the startup script.** `mlqt_load` with `script` loaded the four libraries and
+  `Formula1` from the run folder, then the MSL and the other libraries they use from Dymola's
+  library folder.
+- **The work was done through MLQT.** The agent's first tool search loaded MLQT's tools, before
+  any read. Of 91 tool calls, 31 were MLQT: 1 `load`, 1 `get_package_tree`, 9 `get_class_source`,
+  3 `find` (`match: code`), 15 `edit_class` and 2 `create_class`.
+  - **Writes and reads:** none outside MLQT. The one shell call listed the folder and printed the
+    startup script.
+  - **`reload`:** none. `get_job_status` was polled 21 times.
+- **The dependency search used an older Dymola than the one running (B504).** The Dymola server
+  started a beta release; MLQT's detection does not look for a beta's folder, so it searched the
+  newest release it does look for. Four libraries the commercial libraries name were then not found
+  at their versions; the nearest copies were a patch release older. It did not affect this run,
+  which only read and changed `Formula1`.
+- **Against the baseline:** bypass writes 10 → 0, bypass reads 7 → 0, MLQT calls 2 → 31. Against
+  the two search-first runs, the same task went from 2 and 0 MLQT calls to 31. That is the
+  difference between an opening sentence naming questions and one naming read, search, create and
+  edit, with a tool to load for each.

@@ -228,12 +228,14 @@ B492 and B496 are intermittent journey failures, each seen once and not reproduc
 recurs, find the cause from its evidence. Never add a retry.**
 
 B501 is a limitation found while fixing how omc and Dymola are started, not a failure anyone has seen.
+B504 was found measuring B503's Dymola scenario; nothing it decided was wrong for that run.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
 | B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
 | B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and a host that puts omc in a Job Object ends it when that host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
+| B504 | Dymola detection on Windows probes three folder names per year (`Dymola <year>x Refresh 1`, `Dymola <year>x`, `Dymola <year>`), so it never finds a beta's folder (`Dymola <year>x Beta <n>`) or any other name. `mlqt_load` with `tool: 'dymola'` then searched an older release's library folder than the Dymola the session was running, and four libraries were not found at the versions the commercial libraries name. The desktop app's auto-detection has the same blind spot | List the `Dymola *` folders in Program Files and rank them as the Linux path does (`NewestFirst`), a beta below the release of its name; and consider saying in `mlqt_load`'s answer which install was used and why, so an agent can pass `toolInstall` when the simulator reports a different one |
 
 ---
 
@@ -246,7 +248,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B504**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B505**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
