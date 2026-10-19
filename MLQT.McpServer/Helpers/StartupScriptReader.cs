@@ -122,7 +122,7 @@ internal sealed class StartupScriptReader
 
         if (Import.Match(statement) is { Success: true } import)
         {
-            var library = import.Groups[1].Value.Split('.')[0];
+            var library = ModelicaName.RootLibraryOf(import.Groups[1].Value);
             if (_opened.ContainsKey(library))
             {
                 Ignore("import of a library already loaded; it loads nothing");
@@ -170,7 +170,7 @@ internal sealed class StartupScriptReader
                         Unresolve("openModelFile: the model name could not be worked out");
                         return;
                     }
-                    var library = modelName.Split('.')[0];
+                    var library = ModelicaName.RootLibraryOf(modelName);
                     var version = ModelicaVersion.Parse(Value(Argument(args, 2, "version"), frame));
                     var pick = LibraryChoice.Choose(library, version, _modelicaPath.Select(f => (f, "ModelicaPath")));
                     if (pick.Chosen is null)
@@ -245,7 +245,7 @@ internal sealed class StartupScriptReader
                     return;
             }
 
-            if (_opened.TryGetValue(name.Split('.')[0], out var libraryRoot) && name.Contains('.'))
+            if (_opened.TryGetValue(ModelicaName.RootLibraryOf(name), out var libraryRoot) && !ModelicaName.IsSimple(name))
                 Follow(name, call.Groups[2].Value, args, libraryRoot, file, line, reportLine, via, frame);
             else
                 Unresolve($"{name} is not a command the reader knows");
@@ -460,7 +460,7 @@ internal sealed class StartupScriptReader
     /// following the folders of its packages and then the files that could hold it.</summary>
     private static string? FunctionSource(string root, string name)
     {
-        var segments = name.Split('.')[1..];
+        var segments = ModelicaName.Segments(name).Skip(1).ToArray();
         if (segments.Length == 0)
             return null;
         var files = new List<string>();
@@ -512,7 +512,7 @@ internal sealed class StartupScriptReader
         return Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(_cwd, p));
     }
 
-    private static string Leaf(string name) => name.Contains('.') ? name[(name.LastIndexOf('.') + 1)..] : name;
+    private static string Leaf(string name) => ModelicaName.LeafOf(name);
 
     // The value of a string expression: literals, string variables and getEnvironmentVariable joined by '+'.
     private string? Value(string? expression, Frame frame)
