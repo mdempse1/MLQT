@@ -44,7 +44,7 @@ public sealed class AnalysisFacadeTools
         _vcs = new VcsTools(libraries, repositories, impact, session);
     }
 
-    [McpServerTool(Name = "mlqt_check")]
+    [McpServerTool(Name = "mlqt_check", ReadOnly = true, OpenWorld = false)]
     [Description("Check Modelica code: one class (classId), a library (libraryId, or nothing for the one " +
                  "loaded), or source text that is not in a file (source). checks picks what to run, default " +
                  "['style']: 'style' (the repository's style rules), 'spelling' (descriptions and documentation, " +
@@ -109,7 +109,7 @@ public sealed class AnalysisFacadeTools
             .OfType<SpellSuggestionsResult>()
             .ToList();
 
-    [McpServerTool(Name = "mlqt_dependencies")]
+    [McpServerTool(Name = "mlqt_dependencies", ReadOnly = true, OpenWorld = false)]
     [Description("What uses what among the loaded Modelica classes. Give one target. classIds with direction " +
                  "'uses' (what each class refers to) or 'used_by' (what refers to it); transitive=true with " +
                  "'used_by' is everything affected by changing them, through every level. repositoryId: the " +

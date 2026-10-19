@@ -515,7 +515,7 @@ public sealed class GuidanceTools
             """,
     };
 
-    [McpServerTool(Name = "mlqt_get_guidance")]
+    [McpServerTool(Name = "mlqt_get_guidance", ReadOnly = true, OpenWorld = false)]
     [Description("Get guidance on reading, editing and checking Modelica code with MLQT's tools. Call with " +
                 "no topic for an overview and the list of topics, or a topic for focused recipes. Read " +
                 "'simulators' when a Modelica simulator's server (OpenModelica, Dymola) is also connected. " +

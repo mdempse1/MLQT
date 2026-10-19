@@ -29,7 +29,7 @@ public sealed class SessionFacadeTools
         _style = new StyleTools(libraries, codeReview, repositories, customDictionary, dictionaryManager, session);
     }
 
-    [McpServerTool(Name = "mlqt_session")]
+    [McpServerTool(Name = "mlqt_session", ReadOnly = true, OpenWorld = false)]
     [Description("The Modelica libraries MLQT has loaded, and changing that. action 'status' (the default): each library loaded, " +
                  "its version, class count and the dependencies it declares that are not loaded, and each " +
                  "repository with its branch and revision - an empty list means nothing is loaded yet, so call " +
@@ -58,7 +58,7 @@ public sealed class SessionFacadeTools
         }
     }
 
-    [McpServerTool(Name = "mlqt_browse")]
+    [McpServerTool(Name = "mlqt_browse", ReadOnly = true, OpenWorld = false)]
     [Description("The package tree of the loaded Modelica libraries, from root (a class id) or from every library's " +
                  "top, depth levels down: each class's id, kind and description, and how many children it " +
                  "has. A large tree is cut at maxNodes, and says so; browse a sub-package to see more.")]
@@ -69,7 +69,7 @@ public sealed class SessionFacadeTools
         [Description("Most classes to return (default 200).")] int maxNodes = ClassQueryTools.DefaultTreeNodes)
         => _classes.GetPackageTree(root, depth, maxNodes);
 
-    [McpServerTool(Name = "mlqt_style_settings")]
+    [McpServerTool(Name = "mlqt_style_settings", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("A repository's Modelica style-checking rules and spell-check languages, from its .mlqt/settings.json. " +
                  "With no settings, returns them. With settings, merges them in and writes the file - pass only " +
                  "the rules you are changing; the rest are kept. With one repository loaded, repositoryId is " +

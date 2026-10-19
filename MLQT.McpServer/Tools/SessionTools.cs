@@ -97,7 +97,7 @@ public sealed class SessionTools
             detailed || !allLoaded ? discovered : [], loaded, warnings);
     }
 
-    [McpServerTool(Name = "mlqt_create_library")]
+    [McpServerTool(Name = "mlqt_create_library", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
     [Description("Create a brand-new, empty top-level Modelica library on disk — the first step of a new " +
                 "project. Writes a directory named after the library, containing a package.mo (a top-level " +
                 "'package Name ... end Name;') and an empty package.order, then loads it so you can add " +

@@ -35,7 +35,7 @@ public sealed class LoadTools
     /// <summary>The environment read for MODELICAPATH and OpenModelica's folders. A test sets it.</summary>
     internal Func<string, string?> Environment_ { get; set; } = Environment.GetEnvironmentVariable;
 
-    [McpServerTool(Name = "mlqt_load")]
+    [McpServerTool(Name = "mlqt_load", ReadOnly = true, OpenWorld = false)]
     [Description("Load Modelica libraries into MLQT by path, and what they depend on. Pass every library the " +
                  "user's simulator has loaded: they are loaded first, as given, and win over any other copy - " +
                  "a library already loaded by an earlier search is replaced. With OpenModelica, get them from " +

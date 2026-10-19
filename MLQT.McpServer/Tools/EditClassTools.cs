@@ -69,7 +69,7 @@ public sealed class EditClassTools
         ["correct_spelling"] = ["word", "newWord"],
     };
 
-    [McpServerTool(Name = "mlqt_edit_class")]
+    [McpServerTool(Name = "mlqt_edit_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Change part of one Modelica class with a list of operations, applied in order and all or none. " +
                  "The usual one is replace: {\"op\":\"replace\",\"old\":\"y = k*u;\",\"new\":\"y = k*u + offset;\"} " +
                  "swaps text that must occur exactly once in the class, as written in its file - copy it from " +

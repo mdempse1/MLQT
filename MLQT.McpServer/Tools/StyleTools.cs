@@ -337,7 +337,7 @@ public sealed class StyleTools
         }
     }
 
-    [McpServerTool(Name = "mlqt_list_findings")]
+    [McpServerTool(Name = "mlqt_list_findings", ReadOnly = true, OpenWorld = false)]
     [Description("List findings currently known for the loaded Modelica libraries: parse errors (available " +
                 "immediately after loading) plus style/spell findings from any check that has been run " +
                 "(mlqt_check_class / mlqt_check_library). Filter by severity, source ('Parser' or 'StyleChecking'), " +

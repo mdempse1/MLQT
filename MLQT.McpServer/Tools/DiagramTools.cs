@@ -79,7 +79,7 @@ public sealed class DiagramTools
         return new DiagramLayoutResult(classId, components, connections);
     }
 
-    [McpServerTool(Name = "mlqt_get_diagram_image")]
+    [McpServerTool(Name = "mlqt_get_diagram_image", ReadOnly = true, OpenWorld = false)]
     [Description("Render a Modelica class's diagram as a PNG image and return it, so you can LOOK at a layout " +
                 "rather than read its coordinates back. Each component is drawn with its own type's " +
                 "icon at its Placement, with the connection lines between them; a component whose type " +

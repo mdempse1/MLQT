@@ -48,7 +48,7 @@ public sealed class ClassFacadeTools
         _edit = new EditTools(libraries, resources, session);
     }
 
-    [McpServerTool(Name = "mlqt_get_class")]
+    [McpServerTool(Name = "mlqt_get_class", ReadOnly = true, OpenWorld = false)]
     [Description("Read one or more Modelica classes by full id, in the views asked for (default info and " +
                  "source). Views: 'info' (kind, file, description, parent and children), 'source' (the code; " +
                  "annotations hidden unless includeAnnotations=true - copy edit text with them shown), " +
@@ -107,7 +107,7 @@ public sealed class ClassFacadeTools
         return new GetClassResult(classes);
     }
 
-    [McpServerTool(Name = "mlqt_refactor_class")]
+    [McpServerTool(Name = "mlqt_refactor_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Rename, move or delete a Modelica class. action 'rename' takes newName (the new short name) " +
                  "and 'move' takes newParentId (the package it goes into); both rewrite every reference to it " +
                  "across the loaded libraries, and refuse a change that would make a reference mean something " +

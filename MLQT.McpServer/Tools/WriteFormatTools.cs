@@ -31,7 +31,7 @@ public sealed class WriteFormatTools
         _formatting = new FormattingTools(libraries, repositories, resources, session);
     }
 
-    [McpServerTool(Name = "mlqt_write_class")]
+    [McpServerTool(Name = "mlqt_write_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Write one or more whole Modelica classes, each {parentId, source, standalone?}: a class not yet " +
                  "in its parent is created there, placed on disk as mlqt_create_class does. One already there is " +
                  "replaced only with replace=true, so a mistaken name cannot overwrite a class. Classes are written " +
@@ -92,7 +92,7 @@ public sealed class WriteFormatTools
                 $" Written before it: {string.Join(", ", written.Select(w => w.ClassId))}; nothing after it was tried."));
     }
 
-    [McpServerTool(Name = "mlqt_format")]
+    [McpServerTool(Name = "mlqt_format", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Format Modelica code with MLQT's formatter. Give exactly one of: classId (the file holding " +
                  "that class), library (every file of a loaded library, by name or id) or source (text, returned " +
                  "formatted; nothing is written). The ordering options are those of mlqt_format_class. A file " +

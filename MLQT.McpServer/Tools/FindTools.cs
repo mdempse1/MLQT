@@ -27,7 +27,7 @@ public sealed class FindTools
         _search = new SearchTools(libraries);
     }
 
-    [McpServerTool(Name = "mlqt_find")]
+    [McpServerTool(Name = "mlqt_find", ReadOnly = true, OpenWorld = false)]
     [Description("Find Modelica classes in the libraries loaded into MLQT. match picks how: " +
                  "'name' (default) - class ids containing query, or with no query a page of every class, " +
                  "filtered by library and classType; 'text' - description or documentation prose containing " +
