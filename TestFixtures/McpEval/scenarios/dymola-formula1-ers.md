@@ -75,6 +75,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | bb7d8c2 | step 1 + work-naming instructions | 5 of 5 | 19 | 31 | 0 | 0 | 0 | 0 | 10,008,860 | 42,827 |
 | 2026-10-19 | e10d10a | + B504 fixes | 5 of 5 | 14 | 27 | 0 | 1 | 1 | 1 | 7,755,059 | 32,274 |
 | 2026-10-19 | ea7f85e | consolidated (16 tools) | 4 of 5, item 2 at 0.45 MJ | 34 | 16 | 0 | 0 | 5 | 0 | 9,121,105 | 39,108 |
+| 2026-10-19 | ea7f85e | consolidated (16 tools), rerun | 5 of 5 | 37 | 18 | 1 | 7 | 5 | 0 | 19,337,751 | 69,510 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -239,3 +240,22 @@ motor may deploy and recover it during the lap. The span (34 minutes) includes t
 - **Against the two runs on the current set with the same fixes in**: MLQT calls 31 and 27 → 16, input
   tokens 10.0 M and 7.8 M → 9.1 M, bypass writes 0 and 1 → 0, bypass reads 0 and 1 → 5. One steered run;
   the reads are the thing to watch in the next.
+
+**2026-10-19, the consolidated set again.** No question asked, no steering. **Not a clean run**: the
+MLQT server was the one the previous run had used, with that run's libraries still loaded from its
+own folder, so the first `mlqt_load` refused every library as another copy of one already loaded. The
+agent loaded again with `replace: true`, and every edit afterwards went to this run's copy. Restart
+the client between runs, as the README says, so that each has a server of its own.
+
+- **Result.** All five items held, the new test checking exactly 0.5 MJ more per lap with the power and
+  taper unchanged. The lap took 96.49 s against 96.80 s and deployed 5.61 MJ against 5.17 MJ (0.444 MJ
+  more: the full allowance less what the faster lap recovered), ending at 9.1 % against 19.3 %.
+- **MLQT made the edits to the existing classes** - 10 `edit_class`, one of which failed because the
+  agent's own JSON would not parse - and `write_class` created the new test.
+- **The new test and the documentation were then patched around MLQT: 7 writes.** A `sed -i` renaming
+  every `socNormal.controlBus.` in the test (what `replace` with `all: true` is for), four Python
+  find-and-replace scripts on the test, one on `FlyingLap`'s documentation after the failed
+  `edit_class`, and a `printf` rewriting `Tests/package.order`. Two more went to `runTests.mos`.
+- **Reads: 5 again**, `cat`, `grep` and `sed -n` over the classes the change runs through.
+- **The costliest run of the scenario**: 37 minutes, 19.3 M input tokens. The agent spent most of it
+  on the test, re-running the whole suite and reading results with Python scripts.

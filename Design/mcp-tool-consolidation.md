@@ -486,6 +486,32 @@ pointer to nothing. **Fixed before the scenarios**, in two layers:
   tool that does its job - the plan's mapping table, held by a test to every current-only tool - while
   the consolidated set is served. It goes at the cut-over, with the messages it rewrites.
 
+#### Step 3 scenario results (2026-10-19)
+
+Each set's runs with the same fixes in (B504, the work-naming instructions); the full records are in the
+scenario files.
+
+| Run | *Done when* | MLQT calls | Bypass writes | Bypass reads | Input tokens |
+|---|--:|--:|--:|--:|--:|
+| OpenModelica, current (step 1) | 8 of 8 | 12 | 2, scratch only | 0 | 2.5 M |
+| OpenModelica, consolidated | 8 of 8 | 19 | 0 | 0 | 2.8 M |
+| Dymola, current (bb7d8c2) | 5 of 5 | 31 | 0 | 0 | 10.0 M |
+| Dymola, current (e10d10a) | 5 of 5 | 27 | 1 | 1 | 7.8 M |
+| Dymola, consolidated, steered once | 4 of 5 | 16 | 0 | 5 | 9.1 M |
+| Dymola, consolidated, server reused | 5 of 5 | 18 | 7 | 5 | 19.3 M |
+
+**The scenarios do not bear the harness out.** OpenModelica is even. In Dymola both consolidated runs
+read the classes the change runs through with the shell (5 reads each, against 0 and 1), most of them
+before or instead of `mlqt_get_class`; the second also patched the test it had just created, and its own
+documentation, with Python and `sed`. The criterion - bypasses no higher - is not met on this scenario.
+
+Neither consolidated run was clean: one was steered by an early question, the other inherited the
+previous run's server. And the current set's own Dymola runs went from 2 MLQT calls to 31 on the
+instructions' wording alone, so four runs is little to go on. But the reads are the same in both
+consolidated runs, and the step 1 lesson points at a cause: the agent reaches for MLQT where the tool
+it needs is named for the work. The current set names a tool for reading source, `mlqt_get_class_source`;
+the consolidated set has one tool for every read, whose default answer is info and source together.
+
 ### 4. Cut over
 
 - Register only the consolidated set, and delete the switch and the old tool methods.
