@@ -101,7 +101,7 @@ public sealed class ObfuscationReadinessTests
         // name, which nothing in code can pin. An obfuscator that honours ObfuscationAttribute reads a
         // plain [Obfuscation] as "exclude from renaming".
         var toolClasses = Server.GetTypes().Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null).ToList();
-        Assert.Equal(24, toolClasses.Count);
+        Assert.Equal(11, toolClasses.Count);
 
         Assert.All(toolClasses, type =>
         {
@@ -126,7 +126,7 @@ public sealed class ObfuscationReadinessTests
 
         var error = Assert.Throws<InvalidOperationException>(() => ToolParameterCheck.Verify(renamed));
 
-        Assert.Contains("'classId'", error.Message);
+        Assert.Contains("'classIds'", error.Message);
         Assert.Contains("'a'", error.Message);
         Assert.Contains("declarative protection", error.Message);
     }
@@ -139,9 +139,9 @@ public sealed class ObfuscationReadinessTests
 
     public static class RenamedTools
     {
-        [McpServerTool(Name = "mlqt_get_class_info")] public static string A(string a) => a;
-        [McpServerTool(Name = "mlqt_load_library")] public static string B(string path) => path;
-        [McpServerTool(Name = "mlqt_check_style")] public static string C(string source, string settings) => source + settings;
+        [McpServerTool(Name = "mlqt_get_class")] public static string A(string a) => a;
+        [McpServerTool(Name = "mlqt_load")] public static string B(string paths) => paths;
+        [McpServerTool(Name = "mlqt_check")] public static string C(string source, string settings) => source + settings;
     }
 
     [Fact]

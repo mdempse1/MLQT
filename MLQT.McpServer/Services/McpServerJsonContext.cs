@@ -6,10 +6,6 @@ namespace MLQT.McpServer.Services;
 /// <summary>The generated contracts behind <see cref="McpServerJson"/>: every result and argument record
 /// in <c>Dtos/</c>, which <c>ObfuscationReadinessTests</c> holds this list to.</summary>
 [JsonSerializable(typeof(AnalyzeDependenciesResult))]
-[JsonSerializable(typeof(BatchEditResult))]
-[JsonSerializable(typeof(BatchFileChange))]
-[JsonSerializable(typeof(BatchOperation))]
-[JsonSerializable(typeof(IReadOnlyList<BatchOperation>))]
 [JsonSerializable(typeof(BehaviorLineView))]
 [JsonSerializable(typeof(CandidateItem))]
 [JsonSerializable(typeof(ChangeImpactResult))]
@@ -92,7 +88,6 @@ namespace MLQT.McpServer.Services;
 [JsonSerializable(typeof(ResourceUsagesResult))]
 [JsonSerializable(typeof(ResourceWarningDto))]
 [JsonSerializable(typeof(ResourceWarningsResult))]
-[JsonSerializable(typeof(ServerInfoResult))]
 [JsonSerializable(typeof(SetStyleSettingsResult))]
 [JsonSerializable(typeof(SpellCheckResult))]
 [JsonSerializable(typeof(SpellSuggestionsResult))]

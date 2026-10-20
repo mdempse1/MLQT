@@ -24,10 +24,4 @@ public sealed class MlqtMcpServerOptions
     /// them, so text appended to them is the text that gets dropped.
     /// </summary>
     public Action<McpServerOptions>? ConfigureServer { get; init; }
-
-    /// <summary>
-    /// Which set of tools to register: <see cref="McpToolset.Current"/> (the default) or the consolidated
-    /// set being measured against it (B503). Temporary: it goes at the cut-over, with the current set.
-    /// </summary>
-    public McpToolset Toolset { get; init; }
 }

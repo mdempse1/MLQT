@@ -56,7 +56,7 @@ public sealed record LoadRepositoryResult(
     IReadOnlyList<LibrarySummary> LoadedLibraries,
     IReadOnlyList<string> Warnings);
 
-/// <summary>Result of the mlqt_reload tool: what scope was re-read from disk.</summary>
+/// <summary>What <c>mlqt_session</c>'s reload returns: what scope was re-read from disk.</summary>
 /// <param name="NotReloaded">Loaded libraries the reload left as they were: those a host supplied
 /// from memory, which have nothing on disk to re-read.</param>
 public sealed record ReloadResult(
@@ -145,17 +145,14 @@ public sealed record PackageTreeNode(
 /// consuming agent gets an actionable message rather than a transport-level error.</summary>
 public sealed record ToolError(string Error);
 
-/// <summary>What <c>mlqt_server_info</c> returns.</summary>
-public sealed record ServerInfoResult(string Server, int LibrariesLoaded, IReadOnlyList<string> LibraryNames);
-
-/// <summary>What <c>mlqt_unload_library</c> returns.</summary>
+/// <summary>What <c>mlqt_session</c>'s unload returns.</summary>
 public sealed record UnloadLibraryResult(bool Success, string UnloadedLibraryId, string Name);
 
 /// <summary>What a reset unloaded, the libraries a host supplied that it kept, and how many repositories it
 /// removed.</summary>
 public sealed record SessionResetResult(IReadOnlyList<string> Unloaded, IReadOnlyList<string> Kept, int RepositoriesRemoved);
 
-/// <summary>What <c>mlqt_find_resource_usages</c> returns: the classes referencing one resource.</summary>
+/// <summary>What <c>mlqt_dependencies</c> returns: the classes referencing one resource.</summary>
 public sealed record ResourceUsagesResult(string ResolvedFilePath, bool ResourcesAnalyzed, int Count, IReadOnlyList<string> Models);
 
 /// <summary>What <c>mlqt_get_guidance</c> returns.</summary>

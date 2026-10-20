@@ -173,7 +173,7 @@ public class EditClassToolsTests
         using var host = new TestHost();
         var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.Lag", [ReplaceAll("Lag", "Delay")]));
 
-        Assert.Contains("mlqt_rename_class", err.Error);
+        Assert.Contains("mlqt_refactor_class's rename", err.Error);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class EditClassToolsTests
         using var host = new TestHost();
         var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.Lag",
             [Replace("block Lag \"a first order lag\"", "block Delay \"a first order lag\""),]));
-        Assert.Contains("mlqt_rename_class", err.Error);
+        Assert.Contains("mlqt_refactor_class's rename", err.Error);
         Assert.Contains("block Lag", Source(host, "P.Lag"));
     }
 
@@ -302,17 +302,26 @@ public class EditClassToolsTests
             new() { Op = "correct_spelling", Word = "modell", NewWord = "model" },
             new() { Op = "accept_spelling", Word = "Zorbit", Reason = "a name" },
             new() { Op = "suppress_rule", RuleId = "MLQT.Doc.ParameterDescription", Component = "k", Reason = "test" },
-            new() { Op = "add_import", Import = "SI = Modelica.Units.SI" },
-            new() { Op = "add_statement", Statement = "a := k" },
         ], preview: true));
 
-        Assert.Equal(6, res.OperationsApplied);
+        Assert.Equal(4, res.OperationsApplied);
         var text = res.NewFileContent!;
         Assert.Contains("<p>The model.</p>", text);
         Assert.Contains("spelling=\"Zorbit\"", text);
         Assert.Contains("MLQT.Doc.ParameterDescription", text);
-        Assert.Contains("import SI = Modelica.Units.SI;", text);
-        Assert.Contains("a := k;", text);
+    }
+
+    // An extends clause, an import and an algorithm statement are replace edits since B503 step 4; their
+    // own operations were never called in any recorded run.
+    [Theory]
+    [InlineData("add_extends")]
+    [InlineData("add_import")]
+    [InlineData("add_statement")]
+    public async Task TheRetiredTextInsertions_AreUnknownOperations(string op)
+    {
+        using var host = new TestHost();
+        var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.M", [new() { Op = op }]));
+        Assert.Contains($"unknown op '{op}'", err.Error);
     }
 
     [Fact]
@@ -345,14 +354,12 @@ public class EditClassToolsTests
             new() { Op = "remove_connection", PortA = "a.n", PortB = "b.p" },
             new() { Op = "add_connection", PortA = "b.n", PortB = "a.p" },
             new() { Op = "set_component_placement", Name = "a", X1 = -40, Y1 = -10, X2 = -20, Y2 = 10 },
-            new() { Op = "add_extends", BaseType = "W.Part" },
         ], preview: true));
 
         var text = res.NewFileContent!;
         Assert.DoesNotContain("connect(a.n, b.p)", text);
         Assert.Contains("connect(b.n, a.p)", text);
         Assert.Contains("extent={{-40,-10},{-20,10}}", text.Replace(" ", ""));
-        Assert.Contains("extends W.Part;", text);
     }
 
     [Fact]

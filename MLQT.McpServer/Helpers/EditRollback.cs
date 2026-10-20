@@ -6,9 +6,8 @@ namespace MLQT.McpServer.Helpers;
 
 /// <summary>
 /// Undoing a sequence of edits that has to succeed or fail as a whole: each file the sequence may touch
-/// is read before the first edit, and every one that has changed is written back and reloaded. Shared by
-/// <c>mlqt_batch_edit</c> and <c>mlqt_edit_class</c>, so the two cannot disagree about what "rolled back"
-/// means.
+/// is read before the first edit, and every one that has changed is written back and reloaded. Used by
+/// <c>mlqt_edit_class</c>, whose operations apply all together or not at all.
 /// </summary>
 internal static class EditRollback
 {

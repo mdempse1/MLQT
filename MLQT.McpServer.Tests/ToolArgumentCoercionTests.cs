@@ -118,7 +118,7 @@ public class ToolArgumentCoercionTests
             .ToList();
 
         Assert.Equal(methods.Count, tools.Count);
-        Assert.Contains(methods, m => m.Name == "mlqt_create_class"); // the query found the tools
+        Assert.Contains(methods, m => m.Name == "mlqt_create_library"); // the query found the tools
 
         foreach (var (method, name) in methods)
         {
@@ -140,10 +140,10 @@ public class ToolArgumentCoercionTests
     public void For_ReadsEachToolOnce()
     {
         using var provider = new ServiceCollection().AddMlqtMcpServer().Services.BuildServiceProvider();
-        var tool = provider.GetServices<McpServerTool>().First(t => t.ProtocolTool.Name == "mlqt_create_class");
+        var tool = provider.GetServices<McpServerTool>().First(t => t.ProtocolTool.Name == "mlqt_create_library");
 
         Assert.Same(ToolArgumentCoercion.For(tool), ToolArgumentCoercion.For(tool));
-        Assert.Contains("standalone", ToolArgumentCoercion.For(tool).Booleans);
+        Assert.Contains("loadIntoSession", ToolArgumentCoercion.For(tool).Booleans);
     }
 
     private static readonly HashSet<Type> NumericTypes =

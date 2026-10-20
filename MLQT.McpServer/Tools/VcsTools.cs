@@ -19,7 +19,6 @@ namespace MLQT.McpServer.Tools;
 /// tools are read-only.
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class VcsTools
 {
     private const int MaxImpactLimit = 2000;
@@ -41,18 +40,8 @@ public sealed class VcsTools
         _session = session;
     }
 
-    [McpServerTool(Name = "mlqt_get_changed_classes")]
-    [Description("Map the changed Modelica files in a repository to the classes they contain — the " +
-                "bridge from a diff to the semantic graph. With no revision, uses the uncommitted " +
-                "working-copy changes; with a revision (commit hash / SVN revision), uses the files " +
-                "changed in that revision. Only .mo files within the loaded library are considered. " +
-                "Note: classes in newly-added files that aren't loaded yet won't resolve until reloaded. " +
-                "Read-only.")]
-    public object GetChangedClasses(
-        [Description("The repository's id (GUID from mlqt_load_repository / mlqt_list_repositories) or its name. " +
-                     "Not a filesystem path.")]
+    internal object GetChangedClasses(
         string repositoryId,
-        [Description("Optional revision (commit hash / SVN revision). Omit for uncommitted working-copy changes.")]
         string? revision = null)
     {
         var (repo, repoError) = EntityResolver.ResolveRepository(_repositories, repositoryId);
@@ -70,26 +59,18 @@ public sealed class VcsTools
             repositoryId, revision ?? "workingCopy", files.Count, allClassIds.Count, files, allClassIds);
     }
 
-    [McpServerTool(Name = "mlqt_analyze_change_impact")]
-    [Description("The blast-radius tool: take the Modelica classes changed in a repository (uncommitted working " +
-                "copy, or a given revision), then compute the full transitive set of classes that depend " +
-                "on them. Answers 'what does this change affect downstream'. Requires mlqt_analyze_dependencies " +
-                "to have been run (for the dependency graph). Read-only.")]
-    public object AnalyzeChangeImpact(
-        [Description("The repository's id (GUID from mlqt_load_repository / mlqt_list_repositories) or its name. " +
-                     "Not a filesystem path.")]
+    internal object AnalyzeChangeImpact(
         string repositoryId,
-        [Description("Optional revision. Omit for uncommitted working-copy changes.")]
         string? revision = null,
-        [Description("Max impact detail rows to return (default 100, max 2000).")] int limit = 100,
-        [Description("Detail rows to skip for pagination (default 0).")] int offset = 0)
+        int limit = 100,
+        int offset = 0)
     {
         var (repo, repoError) = EntityResolver.ResolveRepository(_repositories, repositoryId);
         if (repoError is not null)
             return repoError;
         if (!_session.DependenciesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries,
-                "analysing change impact (use mlqt_get_changed_classes to see the changed classes without analysis)");
+                "analysing change impact");
 
         limit = Math.Clamp(limit, 1, MaxImpactLimit);
         offset = Math.Max(offset, 0);

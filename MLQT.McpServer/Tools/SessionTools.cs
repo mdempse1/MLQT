@@ -41,22 +41,23 @@ public sealed class SessionTools
         _codeReview = codeReview;
     }
 
-    [McpServerTool(Name = "mlqt_load_repository")]
-    [Description("Add a version-controlled repository (Git or SVN working copy) or a plain directory " +
-                "that contains one or more Modelica libraries, then load the discovered libraries into " +
-                "memory. Auto-detects the VCS type and discovers libraries (each is a directory with a " +
-                "package.mo). Use this for a checked-out repository root such as the Modelica Standard " +
-                "Library. For a single library folder or .mo file, use mlqt_load_library instead. Read-only: " +
-                "this never modifies the repository.")]
-    public async Task<LoadRepositoryResult> LoadRepository(
-        [Description("Absolute path to the local repository working copy or directory.")] string path,
-        [Description("Optional display name; derived from the path if omitted.")] string? name = null,
-        [Description("Load all discovered libraries into memory (default true). Set false to only " +
-                     "discover them without loading.")] bool loadLibraries = true,
-        [Description("List every library's declared dependencies, and the discovered libraries even when all were " +
-                     "loaded. Default false: only dependencies not loaded are listed, which is what needs doing.")]
+    internal async Task<LoadRepositoryResult> LoadRepository(
+        string path,
+        string? name = null,
+        bool loadLibraries = true,
         bool detailed = false)
     {
+        // The same working copy again - loaded after a discoverOnly look at it, say - is the repository
+        // already registered, not a second one: with two, everything that defaults to "the one repository
+        // loaded" no longer knows which, and a reset reported each library twice.
+        if (_repositories.Repositories.FirstOrDefault(r => SameFolder(r.LocalPath, path)) is { } known)
+        {
+            var again = (await _repositories.DiscoverLibrariesAsync(known.Id))
+                .Select(d => new DiscoveredLibrarySummary(d.LibraryName, d.RelativePath, d.FullPath))
+                .ToList();
+            return await Answer(known, again, [], path, loadLibraries, detailed);
+        }
+
         var result = await _repositories.AddRepositoryAsync(
             path, checkoutPath: null, name: name, startMonitoring: false);
 
@@ -68,12 +69,20 @@ public sealed class SessionTools
                 [], [], result.Warnings);
         }
 
-        var repo = result.Repository;
         var discovered = result.DiscoveredLibraries
             .Select(d => new DiscoveredLibrarySummary(d.LibraryName, d.RelativePath, d.FullPath))
             .ToList();
+        return await Answer(result.Repository, discovered, result.Warnings, path, loadLibraries, detailed);
+    }
 
-        var warnings = result.Warnings.ToList();
+    private static bool SameFolder(string a, string b) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private async Task<LoadRepositoryResult> Answer(Repository repo, List<DiscoveredLibrarySummary> discovered,
+        IEnumerable<string> addWarnings, string path, bool loadLibraries, bool detailed)
+    {
+        var warnings = addWarnings.ToList();
         if (discovered.Count == 0)
         {
             warnings.Add(
@@ -103,7 +112,7 @@ public sealed class SessionTools
     [Description("Create a brand-new, empty top-level Modelica library on disk — the first step of a new " +
                 "project. Writes a directory named after the library, containing a package.mo (a top-level " +
                 "'package Name ... end Name;') and an empty package.order, then loads it so you can add " +
-                "classes with mlqt_create_class. Provide the library name (a Modelica identifier) and the " +
+                "classes with mlqt_write_class. Provide the library name (a Modelica identifier) and the " +
                 "directory to create it in (the library folder is created inside it, and missing parent " +
                 "folders are created). Optionally a description and a version. Fails if the target folder " +
                 "already exists. Set preview=true to see the package.mo without writing anything.")]
@@ -156,127 +165,18 @@ public sealed class SessionTools
         return new CreateLibraryResult(name, libraryDir, library.Id, Loaded: true, PreviewOnly: false, null);
     }
 
-    [McpServerTool(Name = "mlqt_load_library")]
-    [Description("Load a single Modelica library's source into MLQT from a PATH, so the mlqt_ tools can read, " +
-                "edit and check it. This is separate from a simulator's load_library: load into each " +
-                "server that needs it. Not via a repository: pass either the library " +
-                "directory (containing package.mo), the path to its package.mo, or a single standalone .mo " +
-                "file. Pointing at a package.mo loads the WHOLE library (its directory, including standalone " +
-                "child .mo files), not just that one file. Also accepts an ENCRYPTED library (a directory " +
-                "holding a package.moe): its classes are recovered from the vendor's generated help " +
-                "documentation, giving names, descriptions, base classes and whether each has an icon — " +
-                "enough for references into it to resolve — but no source, so it is read-only and is never " +
-                "reported on. Returns the loaded library summary. For a " +
-                "repository root containing several libraries, use mlqt_load_repository instead.")]
-    public async Task<object> LoadLibrary(
-        [Description("Absolute path to a library directory, its package.mo, or a single standalone .mo file.")]
-        string path)
-    {
-        LoadedLibrary library;
-        try
-        {
-            // How each shape of path loads — a directory, a package.mo meaning its whole library, a
-            // standalone .mo file, an encrypted package.moe — is decided in one place for every
-            // surface, so this tool cannot fall out of step with the app or the CLI.
-            library = await _libraries.AddLibraryFromPathAsync(path);
-        }
-        catch (ArgumentException)
-        {
-            return new ToolError(
-                $"Path not found, or not a .mo file / directory: '{path}'. Pass an absolute path to a " +
-                "library directory containing a package.mo file, or to a single .mo file.");
-        }
-
-        if (library.SourceType == LibrarySourceType.EncryptedDirectory)
-        {
-            // Asked first: this library's index is empty too, and "ships no documentation" would be
-            // the wrong thing to say about a library whose classes are all available from source.
-            if (library.SupersededBy is { } source)
-            {
-                var winner = ReadOnlySources.IsInMemoryPath(source)
-                    ? "a supplied copy of it, which takes precedence over one recovered from documentation,"
-                    : "readable source for it";
-                return new ToolError(
-                    $"'{library.Name}' at '{path}' is an encrypted library, and {winner} is already loaded " +
-                    $"from '{source}'. That copy is used instead, whole: an encrypted build is never loaded " +
-                    "beside a copy of the same library that outranks it, because the two are often different " +
-                    "releases. Nothing further was loaded.");
-            }
-
-            if (library.ModelIds.Count == 0)
-            {
-                _libraries.RemoveLibrary(library.Id);
-                return new ToolError(
-                    $"'{library.Name}' at '{path}' is an encrypted library that ships no usable " +
-                    "documentation, so none of its classes could be recovered. References into it will " +
-                    "stay unresolved; there is nothing to load.");
-            }
-
-            return ToSummary(library);
-        }
-
-        // A directory with no package.mo (or an empty one) loads nothing — tell the caller how to fix it
-        // rather than returning an empty library that looks loaded.
-        if (library.ModelIds.Count == 0)
-        {
-            _libraries.RemoveLibrary(library.Id);
-            return new ToolError(
-                $"No Modelica models were found at '{path}'. Point mlqt_load at a library directory " +
-                "containing a package.mo file, a single .mo file, or a repository whose libraries live " +
-                "in subfolders.");
-        }
-
-        return ToSummary(library);
-    }
-
-    [McpServerTool(Name = "mlqt_list_libraries")]
-    [Description("List the Modelica libraries loaded into MLQT, with their model counts. Only " +
-                "mlqt_load_library / mlqt_load_repository load them: a library a simulator has loaded is not " +
-                "here. An empty list means nothing is loaded yet - load what you need before using the " +
-                "other mlqt_ tools. Each library lists the dependencies it declares that are not loaded; " +
-                "detailed=true lists all of them.")]
-    public IReadOnlyList<LibrarySummary> ListLibraries(
-        [Description("List every declared dependency, loaded or not. Default false.")] bool detailed = false)
+    internal IReadOnlyList<LibrarySummary> ListLibraries(
+        bool detailed = false)
         => _libraries.Libraries.Select(l => ToSummary(l, detailed)).ToList();
 
-    [McpServerTool(Name = "mlqt_list_repositories")]
-    [Description("List all repositories of Modelica libraries added this session, with their VCS type, " +
-                "current branch and revision.")]
-    public IReadOnlyList<RepositorySummary> ListRepositories()
+    internal IReadOnlyList<RepositorySummary> ListRepositories()
         => _repositories.Repositories.Select(r => new RepositorySummary(
             r.Id, r.Name, WireNames.Of(r.VcsType), r.LocalPath, r.VcsRootPath,
             r.CurrentBranch, r.CurrentRevision, r.IsLoaded, r.LibraryIds.Count)).ToList();
 
-    [McpServerTool(Name = "mlqt_discover_libraries")]
-    [Description("Discover the Modelica libraries within an already-added repository without loading " +
-                "them. Returns each library's name and path. Identify the repository by its id (the " +
-                "GUID from mlqt_load_repository / mlqt_list_repositories) or its name — not a filesystem path.")]
-    public async Task<object> DiscoverLibraries(
-        [Description("The repository's id (GUID from mlqt_load_repository / mlqt_list_repositories) or its name. " +
-                     "Not a filesystem path.")]
-        string repositoryId)
-    {
-        var (repo, error) = EntityResolver.ResolveRepository(_repositories, repositoryId);
-        if (error is not null)
-            return error;
-
-        var discovered = await _repositories.DiscoverLibrariesAsync(repo!.Id);
-        return discovered
-            .Select(d => new DiscoveredLibrarySummary(d.LibraryName, d.RelativePath, d.FullPath))
-            .ToList();
-    }
-
-    [McpServerTool(Name = "mlqt_unload_library")]
-    [Description("Unload a loaded Modelica library, removing its models from the in-memory graph. Identify the " +
-                "library by EITHER its id (the opaque GUID in the 'id' field from mlqt_list_libraries) OR its " +
-                "name (the 'name' field, e.g. 'Modelica'). The name is usually the convenient choice. all=true " +
-                "unloads every library and repository instead and forgets the findings, to start new work from " +
-                "empty - this MLQT server may have outlived the conversation that loaded them.")]
-    public object UnloadLibrary(
-        [Description("The library to unload: its id (GUID from mlqt_list_libraries's 'id' field) or its name " +
-                     "(e.g. 'Modelica'). Not a class id. Omit with all=true.")]
+    internal object UnloadLibrary(
         string? library = null,
-        [Description("Unload everything instead, back to an empty session. Default false.")] bool all = false)
+        bool all = false)
     {
         if (all)
             return Reset();
@@ -310,17 +210,7 @@ public sealed class SessionTools
         return new SessionResetResult(unloaded, kept, repositories);
     }
 
-    [McpServerTool(Name = "mlqt_reload")]
-    [Description("Re-read Modelica source from disk into the in-memory graph, for when files have changed " +
-                "outside this server (a manual edit, a VCS pull/checkout, or a simulator or another tool " +
-                "writing a file). With no target, " +
-                "reloads everything currently loaded. With a target, reload just that: a .mo file path, or a " +
-                "library/repository by id or name. Reloading a library or repository (or everything) resets " +
-                "opt-in analysis, so re-run mlqt_analyze_dependencies afterwards; reloading a single file keeps " +
-                "the dependency graph current incrementally. A library the host supplied from memory has nothing " +
-                "on disk to re-read, and is left loaded as it is.")]
-    public async Task<object> Reload(
-        [Description("Optional: a .mo file path, or a library/repository id or name. Omit to reload everything.")]
+    internal async Task<object> Reload(
         string? target = null)
     {
         // Single file.
@@ -421,7 +311,7 @@ public sealed class SessionTools
     }
 
     private const string AnalysisResetNote =
-        "Opt-in analysis was reset by the reload — run mlqt_analyze_dependencies again before using dependency, " +
+        "Opt-in analysis was reset by the reload — run mlqt_dependencies again before using dependency, " +
         "impact or external-resource tools.";
 
     private LibrarySummary ToSummary(LoadedLibrary l) => ToSummary(l, detailed: true);

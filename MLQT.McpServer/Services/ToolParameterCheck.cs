@@ -21,9 +21,9 @@ internal static class ToolParameterCheck
     // change both sides of the comparison.
     private static readonly (string Tool, string[] Parameters)[] Known =
     [
-        ("mlqt_get_class_info", ["classId"]),
-        ("mlqt_load_library", ["path"]),
-        ("mlqt_check_style", ["source", "settings"]),
+        ("mlqt_get_class", ["classIds"]),
+        ("mlqt_load", ["paths"]),
+        ("mlqt_check", ["source", "settings"]),
     ];
 
     public static void Verify(Assembly toolAssembly) => Verify(ToolMethods(toolAssembly));

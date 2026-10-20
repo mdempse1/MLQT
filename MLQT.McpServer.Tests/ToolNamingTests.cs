@@ -52,7 +52,7 @@ public class ToolNamingTests
         Assert.True(files.Count > 20, $"only {files.Count} files found; the search is wrong");
 
         var unknown = (from file in files
-                       from Match m in MentionedTool.Matches(File.ReadAllText(file))
+                       from Match m in MentionedTool.Matches(WithoutTheMapping(File.ReadAllText(file)))
                        where !tools.Contains(m.Value)
                        select $"{Path.GetRelativePath(root, file)}: {m.Value}")
                       .Distinct()
@@ -61,26 +61,47 @@ public class ToolNamingTests
         Assert.True(unknown.Count == 0, "Names that are no tool:\n" + string.Join("\n", unknown));
     }
 
-    // Each set's instructions, the consolidated set's as well as the current one's (B503).
-    public static TheoryData<McpToolset> BothToolsets => [McpToolset.Current, McpToolset.Consolidated];
+    /// <summary>The section of the server's documentation that names each retired tool beside the one
+    /// that replaced it (B503) - naming them is its job - and nothing else.</summary>
+    internal const string MappingHeading = "## Moving from the 66 tools";
 
-    [Theory]
-    [MemberData(nameof(BothToolsets))]
-    public void TheInstructionsFitInWhatAClientKeeps(McpToolset toolset)
+    private static string WithoutTheMapping(string text)
+    {
+        var start = text.IndexOf(MappingHeading, StringComparison.Ordinal);
+        if (start < 0)
+            return text;
+        var end = text.IndexOf("\n## ", start + MappingHeading.Length, StringComparison.Ordinal);
+        return text[..start] + (end < 0 ? string.Empty : text[end..]);
+    }
+
+    // The exemption is the mapping, not the file: a retired name outside it is still caught.
+    [Fact]
+    public void TheMappingIsTheOnlyPlaceARetiredNameMayAppear()
+    {
+        var doc = File.ReadAllText(Path.Combine(ToolCountTests.RepositoryRoot(), "Documentation", "mcp-server.md"));
+        var start = doc.IndexOf(MappingHeading, StringComparison.Ordinal);
+
+        Assert.True(start >= 0, "Documentation/mcp-server.md no longer has the mapping from the 66 tools");
+        Assert.Contains("mlqt_get_class_source", doc[start..]);
+        Assert.DoesNotContain("mlqt_get_class_source", WithoutTheMapping($"x {MappingHeading}\nmlqt_get_class_source\n## Next\n"));
+        Assert.Contains("mlqt_get_class_source", WithoutTheMapping($"mlqt_get_class_source {MappingHeading}\n## Next\n"));
+    }
+
+    [Fact]
+    public void TheInstructionsFitInWhatAClientKeeps()
     {
         // Claude Code keeps about the first 2,048 characters of a server's instructions. The version
         // these replaced ran to 5,000 and was cut off before it said anything about editing.
-        var text = ServerInstructions.For(toolset);
+        var text = ServerInstructions.Text;
         Assert.True(text.Length <= ServerInstructions.Budget,
             $"The instructions are {text.Length} characters; the budget is " +
             $"{ServerInstructions.Budget}. Move detail into mlqt_get_guidance.");
     }
 
-    [Theory]
-    [MemberData(nameof(BothToolsets))]
-    public void TheInstructionsSayWhenToUseTheseToolsAndPointToEveryTopic(McpToolset toolset)
+    [Fact]
+    public void TheInstructionsSayWhenToUseTheseToolsAndPointToEveryTopic()
     {
-        var text = ServerInstructions.For(toolset);
+        var text = ServerInstructions.Text;
 
         // The first thing said is when to reach for these tools at all: an agent's own file tools
         // are always available, and without a reason to prefer these it does not.
@@ -92,13 +113,12 @@ public class ToolNamingTests
         Assert.All(GuidanceTools.Topics, topic => Assert.Contains(topic, text));
     }
 
-    [Theory]
-    [MemberData(nameof(BothToolsets))]
-    public void TheInstructionsSayMlqtHasASessionOfItsOwn(McpToolset toolset)
+    [Fact]
+    public void TheInstructionsSayMlqtHasASessionOfItsOwn()
     {
         // An agent loaded the MSL with a simulator's load_library and then searched with MLQT, taking
         // one server's session for the other's. Said second, right after when to use these tools.
-        var paragraphs = ServerInstructions.For(toolset).Split("\n\n");
+        var paragraphs = ServerInstructions.Text.Split("\n\n");
         Assert.Contains("starts EMPTY", paragraphs[1]);
         Assert.Contains("does NOT load anything here", paragraphs[1]);
         Assert.Contains("getLoadedLibraries()", paragraphs[1]);

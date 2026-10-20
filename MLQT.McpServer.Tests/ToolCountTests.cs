@@ -42,11 +42,6 @@ public class ToolCountTests
             .Where(name => name is not null)
             .Select(name => name!)];
 
-    /// <summary>The tools the current set serves: every declared one but the consolidated set's facades.
-    /// The count the documentation states is this one until the cut-over.</summary>
-    internal static List<string> CurrentTools() =>
-        [.. DeclaredTools().Where(name => !Services.Toolsets.ConsolidatedOnly.Contains(name))];
-
     [Fact]
     public void TheDocumentationQuotesTheNumberOfToolsThereActuallyAre()
     {
@@ -54,21 +49,21 @@ public class ToolCountTests
 
         // Not zero, or every assertion below is trivially satisfied by a reflection query that
         // stopped matching — which is the failure this file exists to prevent.
-        Assert.True(tools.Count > 30, $"only {tools.Count} tools found; the reflection query is wrong");
+        Assert.True(tools.Count > 10, $"only {tools.Count} tools found; the reflection query is wrong");
         Assert.Equal(tools.Count, tools.Distinct(StringComparer.Ordinal).Count());
 
         var doc = File.ReadAllText(Path.Combine(RepositoryRoot(), "Documentation", "mcp-server.md"));
         var stated = Regex.Match(doc, @"The server exposes (?<count>\d+) tools\.");
 
         Assert.True(stated.Success, "Documentation/mcp-server.md no longer states how many tools there are");
-        Assert.Equal(CurrentTools().Count, int.Parse(stated.Groups["count"].Value));
+        Assert.Equal(tools.Count, int.Parse(stated.Groups["count"].Value));
     }
 
     [Fact]
     public void EveryToolIsNamedInLowerSnakeCase()
     {
         // The naming every existing tool follows, and the only thing a client sees. Worth stating
-        // once here rather than being noticed by an agent as an inconsistency in a list of 66.
+        // once here rather than being noticed by an agent as an inconsistency in the list.
         Assert.All(DeclaredTools(), name =>
             Assert.Matches("^[a-z][a-z0-9]*(_[a-z0-9]+)*$", name));
     }

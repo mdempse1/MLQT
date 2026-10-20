@@ -29,49 +29,7 @@ internal static class ServerInstructions
     /// </summary>
     internal static readonly string Text = Prose.Unwrap(Raw);
 
-    /// <summary>
-    /// The consolidated set's instructions (B503): the same shape as <see cref="Text"/>, which is what won
-    /// the step 1 scenarios - the opening names the work, and for deferred tools one tool to load for each
-    /// kind of it - under the 16 tools' names.
-    /// </summary>
-    internal static readonly string ConsolidatedText = Prose.Unwrap(ConsolidatedRaw);
-
-    /// <summary>The instructions for <paramref name="toolset"/>.</summary>
-    internal static string For(McpToolset toolset) => toolset == McpToolset.Consolidated ? ConsolidatedText : Text;
-
     private const string Raw =
-        """
-        MLQT reads, searches, writes, refactors, checks and formats Modelica (.mo) source. Whenever you
-        read, search, create or edit Modelica code - a question about a library included - use these
-        mlqt_ tools rather than file tools, grep or the shell: every write is parse-checked (nothing is
-        written if it would not parse), a rename or move rewrites every reference, files keep their
-        encoding and line endings, and read-only libraries are refused. If mlqt_ tools are deferred,
-        load them with a tool search before you first read or change a .mo file: mlqt_load,
-        mlqt_find, mlqt_get_class_source, mlqt_edit_class.
-
-        MLQT starts EMPTY and keeps its own session: every mlqt_ tool sees only libraries loaded
-        into MLQT. Load with mlqt_load: the paths of every library the user's
-        simulator has loaded (OpenModelica: getLoadedLibraries(); Dymola: pass the user's startup script as script),
-        and tool 'dymola' or 'openmodelica'; it loads their dependencies too, the MSL included. A
-        simulator's load_library does NOT load anything here. mlqt_load_repository loads a working copy.
-
-        Beside a simulator's server (OpenModelica, Dymola): MLQT owns the source files; the simulator
-        compiles, checks equations and simulates. Write code with MLQT, then load or reload that FILE
-        in the simulator before checking or simulating it - never author code through the
-        simulator's load_string. mlqt_check_class is a style/spelling check, not a compile check.
-        After a file changes outside MLQT, call mlqt_reload.
-
-        Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator). Find a class, or a
-        line of code, with mlqt_find. Read with mlqt_get_class_interface (how to use a class) or
-        mlqt_get_class_source; change part of a class with mlqt_edit_class (replace,
-        add_component, add_connection), a whole one with
-        mlqt_create_class. New project: mlqt_create_library.
-
-        Call mlqt_get_guidance for recipes. Topics: overview, workflows, simulators, views, editing,
-        diagrams, dependencies, style, spelling, formatting, vcs, resources.
-        """;
-
-    private const string ConsolidatedRaw =
         """
         MLQT reads, searches, writes, refactors, checks and formats Modelica (.mo) source. Whenever you
         read, search, create or edit Modelica code - a question about a library included - use these

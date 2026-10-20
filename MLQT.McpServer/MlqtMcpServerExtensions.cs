@@ -82,16 +82,11 @@ public static class MlqtMcpServerExtensions
 
         var toolUsageLogger = options?.ToolUsageLogger;
         var configureServer = options?.ConfigureServer;
-        var toolset = options?.Toolset ?? McpToolset.Current;
 
-        // While the consolidated set is served, an answer names the tools it has: the facades call the
-        // current tools, whose errors and notes name current tools (B503). Gone at the cut-over.
-        CallToolResult Named(CallToolResult result, IServiceProvider? provider)
+        // An answer can load libraries as well as a load, so each call is noted after it as well as before.
+        CallToolResult Noted(CallToolResult result, IServiceProvider? provider)
         {
             Note(provider);
-            if (toolset == McpToolset.Consolidated)
-                foreach (var block in result.Content.OfType<TextContentBlock>())
-                    block.Text = ConsolidatedNames.Rewrite(block.Text);
             return result;
         }
 
@@ -101,22 +96,12 @@ public static class MlqtMcpServerExtensions
                 session.NoteLibraries(libraries.Libraries.Select(l => l.Id));
         }
 
-        // Every tool of the assembly is registered, and the set not chosen is taken out after the SDK has
-        // collected them: the two sets share tools, some of them in one class with a tool only one set has.
-        services.PostConfigure<McpServerOptions>(o =>
-        {
-            if (o.ToolCollection is not { } tools)
-                return;
-            foreach (var tool in tools.Where(t => !Toolsets.Includes(toolset, t.ProtocolTool.Name)).ToList())
-                tools.Remove(tool);
-        });
-
         // The instructions are returned in the initialize response; see ServerInstructions for what they
         // must fit in and why. mlqt_get_guidance gives fuller, on-demand recipes.
         return services
             .AddMcpServer(o =>
             {
-                o.ServerInstructions = ServerInstructions.For(toolset);
+                o.ServerInstructions = ServerInstructions.Text;
                 configureServer?.Invoke(o);
             })
             .WithToolsFromAssembly(typeof(ViewTools).Assembly, McpServerJson.Options)
@@ -138,12 +123,12 @@ public static class MlqtMcpServerExtensions
                 Note(context.Services);
 
                 if (toolUsageLogger is null)
-                    return Named(await next(context, cancellationToken), context.Services);
+                    return Noted(await next(context, cancellationToken), context.Services);
 
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    var result = Named(await next(context, cancellationToken), context.Services);
+                    var result = Noted(await next(context, cancellationToken), context.Services);
                     toolUsageLogger.Record(toolName, context.Params?.Arguments, stopwatch.ElapsedMilliseconds, result.IsError ?? false);
                     return result;
                 }

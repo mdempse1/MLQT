@@ -5,7 +5,7 @@
       "id": "read-interface",
       "group": "read",
       "prompt": "What parameters does Modelica.Blocks.Continuous.Integrator have, and what are their default values?",
-      "expected_tools": ["get_class_interface|list_class_elements|get_class_source|get_class"],
+      "expected_tools": ["get_class"],
       "checks": [
         { "type": "answer_matches", "pattern": "\\buse_reset\\b" },
         { "type": "answer_matches", "pattern": "\\binitType\\b" },
@@ -16,7 +16,7 @@
       "id": "find-by-description",
       "group": "search",
       "prompt": "Which class in EvalLib smooths a signal with a first order lag? Give its fully qualified name.",
-      "expected_tools": ["search_text|search_classes|list_classes|get_package_tree|find|browse"],
+      "expected_tools": ["find|browse"],
       "checks": [
         { "type": "answer_matches", "pattern": "EvalLib\\.Blocks\\.FirstOrderLag" }
       ]
@@ -25,7 +25,7 @@
       "id": "explain-model",
       "group": "read",
       "prompt": "Explain what EvalLib.Examples.FilteredLoop does: list each of its components with its type and parameter values, and describe how they are connected.",
-      "expected_tools": ["get_class_behavior|list_connections|get_class_source|get_class", "list_class_elements|get_class_interface|get_class_source|get_class"],
+      "expected_tools": ["get_class", "get_class"],
       "checks": [
         { "type": "answer_matches", "pattern": "\\bamplifier\\b" },
         { "type": "answer_matches", "pattern": "\\blag\\b" },
@@ -37,7 +37,7 @@
       "id": "impact",
       "group": "dependencies",
       "prompt": "If I change EvalLib.Blocks.Gain, which classes in EvalLib would be affected? List them by fully qualified name.",
-      "expected_tools": ["find_usages|analyze_impact|dependencies"],
+      "expected_tools": ["dependencies"],
       "checks": [
         { "type": "answer_matches", "pattern": "EvalLib\\.Examples\\.SimpleLoop" },
         { "type": "answer_matches", "pattern": "EvalLib\\.Examples\\.FilteredLoop" },
@@ -48,7 +48,7 @@
       "id": "set-parameter",
       "group": "edit",
       "prompt": "In EvalLib.Examples.SimpleLoop, change the gain of the component named gain to 2.5.",
-      "expected_tools": ["set_component_modifier|batch_edit|edit_class"],
+      "expected_tools": ["edit_class"],
       "checks": [
         { "type": "file_matches", "path": "EvalLib/Examples/SimpleLoop.mo", "pattern": "EvalLib\\.Blocks\\.Gain\\s+gain\\s*\\(\\s*k\\s*=\\s*2\\.5\\s*\\)" },
         { "type": "file_not_matches", "path": "EvalLib/Examples/SimpleLoop.mo", "pattern": "k\\s*=\\s*4\\b" }
@@ -58,7 +58,7 @@
       "id": "add-and-connect",
       "group": "edit",
       "prompt": "In EvalLib.Examples.SimpleLoop, add a Modelica.Blocks.Continuous.Derivative component named derivative1 and connect its input to the output of gain.",
-      "expected_tools": ["add_component|batch_edit|edit_class", "add_connection|batch_edit|edit_class"],
+      "expected_tools": ["edit_class", "edit_class"],
       "checks": [
         { "type": "file_matches", "path": "EvalLib/Examples/SimpleLoop.mo", "pattern": "Modelica\\.Blocks\\.Continuous\\.Derivative\\s+derivative1\\b" },
         { "type": "file_matches", "path": "EvalLib/Examples/SimpleLoop.mo", "pattern": "connect\\s*\\(\\s*(gain\\.y\\s*,\\s*derivative1\\.u|derivative1\\.u\\s*,\\s*gain\\.y)\\s*\\)" },
@@ -69,7 +69,7 @@
       "id": "create-block",
       "group": "author",
       "prompt": "Create a new block EvalLib.Blocks.Offset that extends Modelica.Blocks.Interfaces.SISO, has a parameter Real offset = 0 with the description \"Value added to the input\", and computes y = u + offset.",
-      "expected_tools": ["create_class|write_class"],
+      "expected_tools": ["write_class"],
       "checks": [
         { "type": "glob_matches", "glob": "EvalLib/Blocks/**/*.mo", "pattern": "block\\s+Offset\\b[\\s\\S]*extends\\s+Modelica\\.Blocks\\.Interfaces\\.SISO[\\s\\S]*parameter\\s+Real\\s+offset\\s*=\\s*0\\s*\"Value added to the input\"[\\s\\S]*y\\s*=\\s*u\\s*\\+\\s*offset[\\s\\S]*end\\s+Offset\\s*;" },
         { "type": "file_matches", "path": "EvalLib/Blocks/package.order", "pattern": "(?m)^Offset$" }
@@ -79,7 +79,7 @@
       "id": "describe-class",
       "group": "document",
       "prompt": "EvalLib.Examples.SimpleLoop has no description string. Give it the description \"A sine wave, amplified and integrated\".",
-      "expected_tools": ["set_class_description|edit_class"],
+      "expected_tools": ["edit_class"],
       "checks": [
         { "type": "file_matches", "path": "EvalLib/Examples/SimpleLoop.mo", "pattern": "model\\s+SimpleLoop\\s+\"A sine wave, amplified and integrated\"" }
       ]
@@ -88,7 +88,7 @@
       "id": "fix-spelling",
       "group": "check",
       "prompt": "Find and fix the spelling mistakes in the description strings and documentation of EvalLib.Blocks.FirstOrderLag.",
-      "expected_tools": ["spell_check|check_class|check", "correct_spelling|set_class_description|set_component_description|set_class_documentation|update_class_source|edit_class|write_class"],
+      "expected_tools": ["check", "edit_class|write_class"],
       "checks": [
         { "type": "file_not_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "(?i)\\b(frist|tiem)\\b" },
         { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "\"First order lag" },
@@ -99,7 +99,7 @@
       "id": "fix-broken-reference",
       "group": "check",
       "prompt": "Check EvalLib for type references that do not resolve, and fix any you find.",
-      "expected_tools": ["validate_class_references|check_library|list_findings|check"],
+      "expected_tools": ["list_findings|check"],
       "checks": [
         { "type": "file_not_matches", "path": "EvalLib/Examples/NoisySource.mo", "pattern": "Sinee" },
         { "type": "file_matches", "path": "EvalLib/Examples/NoisySource.mo", "pattern": "Modelica\\.Blocks\\.Sources\\.Sine\\s+source" }
@@ -109,7 +109,7 @@
       "id": "rename-class",
       "group": "refactor",
       "prompt": "Rename EvalLib.Blocks.Gain to EvalLib.Blocks.Amplifier and update everything that refers to it.",
-      "expected_tools": ["rename_class|refactor_class"],
+      "expected_tools": ["refactor_class"],
       "checks": [
         { "type": "glob_not_matches", "glob": "EvalLib/**/*.mo", "pattern": "Blocks\\.Gain\\b" },
         { "type": "file_matches", "path": "EvalLib/Examples/SimpleLoop.mo", "pattern": "EvalLib\\.Blocks\\.Amplifier\\s+gain" },
@@ -121,7 +121,7 @@
       "id": "build-model",
       "group": "author",
       "prompt": "Create a new model EvalLib.Examples.StepResponse containing a Modelica.Blocks.Sources.Step named step, an EvalLib.Blocks.FirstOrderLag named lag with T = 0.5, and a Modelica.Blocks.Continuous.Integrator named integrator. Connect step to lag and lag to integrator, and give the model an experiment annotation with StopTime = 5.",
-      "expected_tools": ["create_class|write_class", "add_component|batch_edit|create_class|edit_class|write_class", "add_connection|batch_edit|create_class|edit_class|write_class"],
+      "expected_tools": ["write_class", "edit_class|write_class", "edit_class|write_class"],
       "checks": [
         { "type": "glob_matches", "glob": "EvalLib/Examples/**/*.mo", "pattern": "model\\s+StepResponse\\b[\\s\\S]*end\\s+StepResponse\\s*;" },
         { "type": "glob_matches", "glob": "EvalLib/Examples/**/*.mo", "pattern": "EvalLib\\.Blocks\\.FirstOrderLag\\s+lag\\s*\\(\\s*T\\s*=\\s*0\\.5\\s*\\)" },
@@ -134,7 +134,7 @@
       "id": "patch-class",
       "group": "edit",
       "prompt": "In EvalLib.Blocks.FirstOrderLag, change the default of T to 0.25 and add a parameter Real k = 1 with the description \"Gain applied to the input\", so that the equation becomes T*der(y) = k*u - y. Change nothing else in the class.",
-      "expected_tools": ["edit_class|update_class_source|set_component_modifier|add_component|batch_edit"],
+      "expected_tools": ["edit_class"],
       "checks": [
         { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "parameter\\s+Modelica\\.Units\\.SI\\.Time\\s+T\\s*=\\s*0\\.25\\b" },
         { "type": "file_matches", "path": "EvalLib/Blocks/FirstOrderLag.mo", "pattern": "parameter\\s+Real\\s+k\\s*=\\s*1\\s*\"Gain applied to the input\"" },
@@ -157,7 +157,7 @@
       "id": "build-package",
       "group": "author",
       "prompt": "Create a package EvalLib.Sources containing four blocks, each extending Modelica.Blocks.Interfaces.SO: Constant, with parameter Real k = 1 and y = k; Ramp, with parameters Real height = 1 and Real duration = 1 and y = height*min(time/duration, 1); Delayed, with parameters Real height = 1 and Real startTime = 0 and y = if time < startTime then 0 else height; and Sawtooth, with parameters Real period = 1 and Real amplitude = 1 and y = amplitude*(time/period - floor(time/period)).",
-      "expected_tools": ["create_class|write_class"],
+      "expected_tools": ["write_class"],
       "checks": [
         { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "package\\s+Sources\\b" },
         { "type": "glob_matches", "glob": "EvalLib/Sources/**/*.mo", "pattern": "block\\s+Constant\\b[\\s\\S]*extends\\s+Modelica\\.Blocks\\.Interfaces\\.SO[\\s\\S]*y\\s*=\\s*k\\s*;[\\s\\S]*end\\s+Constant\\s*;" },
@@ -171,7 +171,7 @@
       "id": "format-library",
       "group": "format",
       "prompt": "The library EvalApp, in {work}/EvalApp, was written without regard to layout. Format every class in it with MLQT's formatter, and write the result to disk.",
-      "expected_tools": ["format_class|format"],
+      "expected_tools": ["format"],
       "checks": [
         { "type": "file_not_matches", "path": "EvalApp/Demo.mo", "pattern": "\\);[ \t]*EvalDep\\.Scale" },
         { "type": "file_matches", "path": "EvalApp/Demo.mo", "pattern": "annotation\\s*\\(\\s*\n\\s+experiment\\(StopTime\\s*=\\s*1\\)\\s*\n\\s*\\);" },
@@ -183,7 +183,7 @@
       "id": "load-dependencies",
       "group": "load",
       "prompt": "Load the library EvalApp, in {work}/EvalApp, into MLQT together with everything it depends on. Then tell me which version of EvalDep MLQT has loaded, and the directory it came from.",
-      "expected_tools": ["load_library|load_repository|load"],
+      "expected_tools": ["load"],
       "checks": [
         { "type": "answer_matches", "pattern": "\\b1\\.0\\.0\\b" },
         { "type": "answer_matches", "pattern": "mlqt-eval-[^/\\\\\\s`]+[/\\\\]EvalDep(?![ \\w])" }
@@ -193,7 +193,7 @@
       "id": "load-simulator-set",
       "group": "load",
       "prompt": "Dymola was started with a startup script that ran openModel(\"{work}/EvalApp/package.mo\") and openModel(\"{work}/vendor/EvalDep 2.0.0/package.mo\"). Load the same libraries into MLQT, plus whatever else EvalApp needs, and tell me which version of EvalDep MLQT has loaded and the directory it came from.",
-      "expected_tools": ["load_library|load_repository|load"],
+      "expected_tools": ["load"],
       "checks": [
         { "type": "answer_matches", "pattern": "\\b2\\.0\\.0\\b" },
         { "type": "answer_matches", "pattern": "(?i)vendor" }

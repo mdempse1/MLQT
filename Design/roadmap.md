@@ -30,7 +30,7 @@ by shared root cause; all sixteen are complete. What it delivered:
 | **Rules and formatting** | `ComponentsBeforeClasses`, `DeclarationOrder`, `SingleFilePackage` and a match-Dymola package-order option; excision instead of re-rendering in the trimmer; every write keeps its file's final newline and line endings; formatting exclusion written as `__MLQT(format=false)` |
 | **Performance** | A Claytex check went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
 | **External tools and revision control** | A result dialog, dead-session recovery, a time limit per tool and Cancel reaching a running check, for both Dymola and OpenModelica; tags and detached HEAD, history diffs against the predecessor, and revision content decoded by MLQT's encoding funnel |
-| **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class_source` elides rather than re-renders, so its lines match the findings |
+| **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class`'s source view elides rather than re-renders, so its lines match the findings |
 | **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
 
 **Then the end-of-branch review of 2026-09-25 opened B302–B369**, with eight reviewers each reading
@@ -154,15 +154,19 @@ as the plain one does. The rules and their guard tests are in `CODING_GUIDELINES
 Must Survive Obfuscation; the verification is `Design/release-checklist.md` §7. The design note was
 retired with it.
 
-### Alongside: MCP tool consolidation (B503) — planned
+### Alongside: MCP tool consolidation (B503) — done, ships in the next release
 
-The MCP server goes from 66 tools to 16. The tools agents use for workflows are kept, and the gaps that send them
-round MLQT are closed: a text-patch edit, a search over code, many classes in one call, a whole-library
-format, and bounded answers. Measured first: in four real model-building sessions, at least 117 writes
-to `.mo` files and about 240 reads went through the agent's own shell and file tools, while 44–59 of
-the 66 tools went uncalled. The steps, their exit criteria and the full mapping are in
-`Design/mcp-tool-consolidation.md`. Its first piece shipped early: `mlqt_validate_class_references`
-checks a whole library in one call (2026-10-17).
+The MCP server went from 66 tools to 16 (cut over 2026-10-20). The gaps that sent agents round MLQT
+were closed first: a text-patch edit, a search over code, many classes in one call, a whole-library
+format, dependencies found and loaded, a Dymola startup script read, and bounded answers. Measured
+before: in four real model-building sessions, at least 117 writes to `.mo` files and about 240 reads
+went through the agent's own shell and file tools, while 44–59 of the 66 tools went uncalled. After:
+the harness on the 16 is better on aggregate, and both real-world scenarios are level on shell reads
+and writes with the 66 at their best. `Documentation/mcp-server.md` §Moving from the 66 tools maps
+each old tool for hosts and clients; `.claude/skills/skill-mcp-library-loading.md` keeps how loading
+works and what the measurements taught. The plan, `Design/mcp-tool-consolidation.md`, was retired
+when it landed, and its history has every measurement. Before the release, re-run the protected-build
+comparison of `Design/release-checklist.md` §7 against the 16.
 
 ### Deferred, with no place in the sequence
 

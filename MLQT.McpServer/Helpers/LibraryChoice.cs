@@ -6,7 +6,7 @@ internal sealed record LibraryPick(LibraryCandidate? Chosen, string? FoundBy, st
 /// <summary>
 /// The one rule for choosing among copies of a library found along a list of folders, used by the
 /// dependency search and by a startup script's <c>openModelFile</c> and <c>import</c> by name
-/// (<c>Design/mcp-tool-consolidation.md</c>, *Which version is taken*). Folders count in the order given.
+/// (<c>.claude/skills/skill-mcp-library-loading.md</c>, *Which version is taken*). Folders count in the order given.
 /// </summary>
 /// <remarks>
 /// With a version asked for: the first folder holding that release wins, and the largest build of it;

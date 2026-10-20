@@ -4,7 +4,7 @@ using MLQT.McpServer.Tools;
 namespace MLQT.McpServer.Tests;
 
 /// <summary>
-/// mlqt_validate_class_references over more than one class: a package and everything inside it, or a
+/// mlqt_check's references check over more than one class: a package and everything inside it, or a
 /// whole library, in one paged call. The evaluation harness found agents calling the one-class form
 /// five to eight times to find a single misspelt type in an eight-class library.
 /// </summary>

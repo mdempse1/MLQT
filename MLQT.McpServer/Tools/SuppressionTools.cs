@@ -18,7 +18,6 @@ namespace MLQT.McpServer.Tools;
 /// produced. Every write is parse-checked with rollback and refuses read-only files.
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class SuppressionTools
 {
     private readonly ILibraryDataService _libraries;
@@ -32,31 +31,12 @@ public sealed class SuppressionTools
         _session = session;
     }
 
-    [McpServerTool(Name = "mlqt_suppress_rule")]
-    [Description("Suppress a style-check rule for a Modelica class (or one of its components) by adding a " +
-                "'__MLQT(suppress=\"<ruleId>\")' vendor annotation to the source. Use this to waive a finding " +
-                "that is a false positive or an accepted exception — the waiver is written into the .mo file, " +
-                "survives reformatting, and is honoured by both 'mlqt check' and the desktop app. Pass the " +
-                "ruleId exactly as reported (e.g. 'MLQT.Doc.ParameterDescription'; the short form " +
-                "without the 'MLQT.' prefix and the wildcard '*' are also accepted). Give 'component' to scope " +
-                "the waiver to a single component (e.g. a parameter) rather than the whole class. A class-level " +
-                "waiver also covers every class nested in it, so suppressing on a package waives the rule for " +
-                "the whole sub-package (useful for generated code such as Dymola's _fmu import models). An optional " +
-                "'reason' is recorded as 'reason=\"…\"' alongside the suppression. Merges into any existing " +
-                "'__MLQT' annotation rather than duplicating it. Fails if the class/component is not found or " +
-                "the result would not parse. Set preview=true to see the file text without writing.")]
-    public async Task<object> SuppressRule(
-        [Description("Fully-qualified id of the class the finding is in.")] string classId,
-        [Description("The rule id to suppress, exactly as reported (e.g. " +
-                     "'MLQT.Doc.ParameterDescription'). The short form without the 'MLQT.' prefix " +
-                     "and the wildcard '*' (suppress all rules here) are also accepted.")]
+    internal async Task<object> SuppressRule(
+        string classId,
         string ruleId,
-        [Description("Optional component name to scope the waiver to a single component (a parameter, " +
-                     "variable or connector). Omit to suppress the rule for the whole class.")]
         string? component = null,
-        [Description("Optional human-readable reason, recorded as reason=\"…\" in the annotation.")]
         string? reason = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "suppress a rule") is { } readOnlyClass)
             return readOnlyClass;
@@ -115,23 +95,11 @@ public sealed class SuppressionTools
         return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, note);
     }
 
-    [McpServerTool(Name = "mlqt_accept_spelling_in_class")]
-    [Description("Accept a word as correctly spelled in one Modelica class by adding a " +
-                "'__MLQT(spelling=\"<word>\")' vendor annotation to its source. Use this for a term that is " +
-                "right here but is not the library's vocabulary generally — it silences the spelling findings " +
-                "for that word in that class (and any class nested in it) only, and leaves every other misspelling " +
-                "reported. " +
-                "For a term the whole repository uses, add it to the repository's accepted spellings " +
-                "(.mlqt/dictionary.txt) instead; to waive spelling for a class entirely, suppress " +
-                "'MLQT.Spelling.Description' / 'MLQT.Spelling.Documentation' with mlqt_suppress_rule. The possessive " +
-                "of an accepted word is accepted too, so pass the word itself ('Stodola', not \"Stodola's\"). " +
-                "Merges into any existing '__MLQT' annotation. Set preview=true to see the file text without writing.")]
-    public async Task<object> AcceptSpellingInClass(
-        [Description("Fully-qualified id of the class the misspelling was reported in.")] string classId,
-        [Description("The word to accept, exactly as it appears in the text.")] string word,
-        [Description("Optional human-readable reason, recorded as reason=\"…\" in the annotation.")]
+    internal async Task<object> AcceptSpellingInClass(
+        string classId,
+        string word,
         string? reason = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "accept a spelling") is { } readOnlyClass)
             return readOnlyClass;

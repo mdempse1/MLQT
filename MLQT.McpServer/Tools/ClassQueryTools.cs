@@ -17,7 +17,6 @@ namespace MLQT.McpServer.Tools;
 /// fully-qualified dotted Modelica names (e.g. "Modelica.Blocks.Continuous.Integrator").
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class ClassQueryTools
 {
     private const int MaxListLimit = 1000;
@@ -27,20 +26,7 @@ public sealed class ClassQueryTools
 
     public ClassQueryTools(ILibraryDataService libraries) => _libraries = libraries;
 
-    [McpServerTool(Name = "mlqt_get_class_info")]
-    [Description("Get structural metadata for a single Modelica class by its fully-qualified id: " +
-                "class type (model/block/package/function/record/connector/type/class), whether it is " +
-                "partial, its containing file and line span, package version, 'uses' dependencies from " +
-                "the annotation, whether it carries an experiment() annotation (i.e. is simulatable), " +
-                "parse health, and whether the class was recovered from a vendor's documentation " +
-                "rather than read from source (recoveredFromDocumentation - an encrypted library; " +
-                "such a class is never writable, and mlqt_get_class_interface says what was recovered), " +
-                "and readOnlySource, which is set for every class that can never be edited - " +
-                "'Supplied' for a library a host supplied that is not the vendor's source. " +
-                "Does NOT return the source code (use mlqt_get_class_source) or the dependency " +
-                "graph (use mlqt_get_dependencies / mlqt_find_usages).")]
-    public object GetClassInfo(
-        [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
+    internal object GetClassInfo(
         string classId)
     {
         var node = _libraries.GetModelById(classId);
@@ -78,21 +64,8 @@ public sealed class ClassQueryTools
             ReadOnlySources.KindOf(node) is { } kind ? WireNames.Of(kind) : null);
     }
 
-    [McpServerTool(Name = "mlqt_get_class_source")]
-    [Description("Get the Modelica source code for a class - use this rather than reading the .mo file, which may hold " +
-                "many classes and their annotations. By default (include_annotations=false) the " +
-                "graphical/experiment/Documentation annotations are removed, returning just the " +
-                "structural code — much smaller, and still valid parseable Modelica. Either way you " +
-                "get the class's own text and not a reformat of it: each line is the file's line " +
-                "with any annotation cut out of it, still at its original number (an annotation " +
-                "written on its own lines leaves them blank), so the 'modelLine' of a finding from " +
-                "mlqt_list_findings indexes this text directly. Set include_annotations=true to keep the " +
-                "annotations.")]
-    public object GetClassSource(
-        [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
+    internal object GetClassSource(
         string classId,
-        [Description("Include annotation blocks (icons, diagrams, experiment, Documentation). " +
-                     "Default false, which strips them to reduce size.")]
         bool includeAnnotations = false)
     {
         var node = _libraries.GetModelById(classId);
@@ -115,7 +88,7 @@ public sealed class ClassQueryTools
             // ElisionFinder takes the annotations out and leaves every other character as written.
             // It reports the lines left empty rather than deleting them, and they are blanked here
             // rather than dropped: an agent holds no line map, so preserving the numbering is what
-            // makes mlqt_get_class_source and mlqt_list_findings describe the same text.
+            // makes mlqt_get_class's source view and mlqt_list_findings describe the same text.
             var (spliced, elision) = ElisionFinder.WithoutAnnotations(
                 ModelicaParserHelper.Parse(code), code, elidedTextMustParse: true);
             var stripped = string.Join("\n", elision.Blank(spliced.Split('\n')));
@@ -128,20 +101,11 @@ public sealed class ClassQueryTools
         }
     }
 
-    [McpServerTool(Name = "mlqt_list_classes")]
-    [Description("List Modelica classes across the libraries loaded into MLQT (not a simulator's), with optional filtering by library and by " +
-                "class type. Paginated: results are ordered by id; use offset/limit to page. Returns the " +
-                "total match count so you know how many pages remain. Use mlqt_search_classes to find classes " +
-                "by name substring instead.")]
-    public object ListClasses(
-        [Description("Optional: restrict to one library, by its id (GUID from mlqt_list_libraries) or its " +
-                     "name (e.g. 'Modelica'). Omit for all libraries. Not a class id.")]
+    internal object ListClasses(
         string? libraryId = null,
-        [Description("Optional class type filter, e.g. 'model', 'package', 'function', 'block', " +
-                     "'record', 'connector', 'type'.")]
         string? classType = null,
-        [Description("Max items to return (default 100, max 1000).")] int limit = 100,
-        [Description("Number of items to skip for pagination (default 0).")] int offset = 0)
+        int limit = 100,
+        int offset = 0)
     {
         if (ToolDiagnostics.RequireLibrary(_libraries, "listing classes") is { } noLib)
             return noLib;
@@ -176,17 +140,9 @@ public sealed class ClassQueryTools
         return new ClassListResult(ordered.Count, offset, page.Count, page);
     }
 
-    [McpServerTool(Name = "mlqt_search_classes")]
-    [Description("Find Modelica classes whose fully-qualified id contains the given text (case-insensitive). " +
-                "Searches only libraries loaded into MLQT with mlqt_load_library, not those a simulator has loaded. " +
-                "Matches on the id, so 'Integrator' finds 'Modelica.Blocks.Continuous.Integrator'. " +
-                "Results are ordered with exact leaf-name matches first, then by id, and each carries the " +
-                "class's description and a short documentation snippet so you can judge relevance (e.g. which " +
-                "joint to use for a kinematic loop) without opening each one. Use for locating a class when " +
-                "you don't know its full path.")]
-    public object SearchClasses(
-        [Description("Substring to search for within class ids (case-insensitive).")] string query,
-        [Description("Max results to return (default 50, max 1000).")] int limit = 50)
+    internal object SearchClasses(
+        string query,
+        int limit = 50)
     {
         if (string.IsNullOrWhiteSpace(query))
             return new ToolError("query must be a non-empty search string.");
@@ -241,20 +197,10 @@ public sealed class ClassQueryTools
         return text.Length > 200 ? text[..200].TrimEnd() + "…" : text;
     }
 
-    [McpServerTool(Name = "mlqt_get_package_tree")]
-    [Description("Get the hierarchical tree of Modelica packages and classes. Without root_class_id, returns the top-level " +
-                "classes of every library loaded into MLQT. With root_class_id, returns that class and its nested " +
-                "children. max_depth bounds how many levels are expanded (default 1 = immediate children); " +
-                "each node reports its childCount so you can drill in with further calls. At most " +
-                "maxNodes nodes are expanded (default 200): a node with a childCount but no children was " +
-                "not expanded - ask for it as root_class_id. Use this to " +
-                "navigate structure; use mlqt_find for a flat, filterable listing.")]
-    public object GetPackageTree(
-        [Description("Optional class id to root the tree at. Omit for all libraries' top-level classes.")]
+    internal object GetPackageTree(
         string? rootClassId = null,
-        [Description("How many levels to expand (default 1, max 8).")] int maxDepth = 1,
-        [Description("Most nodes to expand children for (default 200). The tree of a large library at depth 2 or more " +
-                     "runs to tens of thousands of characters otherwise.")] int maxNodes = DefaultTreeNodes)
+        int maxDepth = 1,
+        int maxNodes = DefaultTreeNodes)
     {
         // Asked about one class with nothing loaded: name the library that class is in.
         if (rootClassId is not null && _libraries.Libraries.Count == 0)

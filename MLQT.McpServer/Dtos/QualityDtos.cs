@@ -9,9 +9,9 @@ namespace MLQT.McpServer.Dtos;
 /// spell-check dictionary languages.
 ///
 /// <para><b>Every toggle is optional.</b> A rule you do not mention is left exactly as it was when
-/// saving with <c>mlqt_set_style_settings</c> — so enabling one rule does not switch off the rest — and
+/// saving with <c>mlqt_style_settings</c> — so enabling one rule does not switch off the rest — and
 /// counts as off for a one-off run through a check tool, which starts from a blank settings object.
-/// Read the current values with <c>mlqt_get_style_settings</c>, change what you want, and pass back
+/// Read the current values with <c>mlqt_style_settings</c>, change what you want, and pass back
 /// either the whole object or just the keys you are changing.</para>
 ///
 /// <para>The nested naming-convention configuration is not exposed here and is preserved untouched
@@ -41,11 +41,11 @@ public sealed class StyleSettingsInput
     [Description("Checks modelica:// links to classes, written in strings such as Documentation HTML, and reports " +
                  "each one naming a class that is not loaded. It does NOT check type references: a component " +
                  "type or extends base that does not resolve (e.g. a misspelt 'Modelica.Blocks.Sources.Sinee') " +
-                 "is found by mlqt_validate_class_references, which checks a whole library in one call.")]
+                 "is found by mlqt_check's references check, which checks a whole library in one call.")]
     public bool? ValidateModelReferences { get; set; }
 
     // Wave-1 analyses (Phase 6). Structure/uses/unused-class are graph analyses; they only produce
-    // findings from mlqt_check_library after mlqt_analyze_dependencies has run (except package.order).
+    // findings from mlqt_check after mlqt_dependencies has run (except package.order).
     public bool? CheckDuplicateDeclarations { get; set; }
     public bool? CheckDuplicateImports { get; set; }
     public bool? CheckMissingUnits { get; set; }
@@ -152,7 +152,7 @@ public sealed class StyleSettingsInput
     ///
     /// <para>A rule reports whether it is <em>switched on</em>, not whether it would currently run:
     /// the ordering rules are inert while <c>OneOfEachSection</c> is off, and reporting those as
-    /// <c>false</c> would mean a read-modify-write round trip through <c>mlqt_set_style_settings</c>
+    /// <c>false</c> would mean a read-modify-write round trip through <c>mlqt_style_settings</c>
     /// silently discarded them. Same distinction, and the same reason, as the settings dialog's —
     /// see <see cref="StyleCheckingSettings.IsRuleSwitchedOn"/>.</para>
     /// </summary>
@@ -284,36 +284,6 @@ public sealed record MoveClassResult(
     int FilesChanged,
     IReadOnlyList<string> BrokenReferencesInMovedClass,
     string Note);
-
-/// <summary>One operation in a mlqt_batch_edit. Op names the surgical edit; the other fields carry its
-/// arguments (only those relevant to the chosen Op are used).</summary>
-public sealed class BatchOperation
-{
-    public string Op { get; set; } = string.Empty;
-    public string ClassId { get; set; } = string.Empty;
-    public string? Type { get; set; }
-    public string? Name { get; set; }
-    public string? Modifier { get; set; }
-    public string? Description { get; set; }
-    public string? BaseType { get; set; }
-    public string? Import { get; set; }
-    public string? Equation { get; set; }
-    public string? Statement { get; set; }
-    public string? PortA { get; set; }
-    public string? PortB { get; set; }
-    public string? Comment { get; set; }
-    public string? Visibility { get; set; }
-    public string? Prefix { get; set; }
-    public string? ConstrainedBy { get; set; }
-    public string? Condition { get; set; }
-}
-
-public sealed record BatchFileChange(string FilePath, string? NewContent);
-
-public sealed record BatchEditResult(
-    bool PreviewOnly,
-    int OperationsApplied,
-    IReadOnlyList<BatchFileChange> Files);
 
 public sealed record StructureEditResult(
     string ClassId,

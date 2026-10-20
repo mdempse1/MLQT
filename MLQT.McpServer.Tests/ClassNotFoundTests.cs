@@ -133,7 +133,7 @@ public class ClassNotFoundTests
         var err = ToolAssert.Error(Load(host).GetClassInfo("Lib.Sub.Deeper.Integratr")).Error;
 
         Assert.StartsWith("Library 'Lib' is loaded and has 'Lib.Sub', but no class 'Lib.Sub.Deeper.Integratr'", err);
-        Assert.Contains("mlqt_get_package_tree with root_class_id 'Lib.Sub'", err);
+        Assert.Contains("mlqt_browse with root_class_id 'Lib.Sub'", err);
         Assert.Contains("mlqt_find", err);
         Assert.Contains("match 'name'", err);
         Assert.Contains("('text')", err);
@@ -149,7 +149,7 @@ public class ClassNotFoundTests
         var err = ToolAssert.Error(Load(host).GetClassInfo("Lib.Nope")).Error;
 
         Assert.StartsWith("Library 'Lib' is loaded, but has no class 'Lib.Nope'.", err);
-        Assert.DoesNotContain("mlqt_get_package_tree", err);
+        Assert.DoesNotContain("mlqt_browse", err);
     }
 
     [Fact]

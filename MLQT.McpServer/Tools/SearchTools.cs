@@ -18,7 +18,6 @@ namespace MLQT.McpServer.Tools;
 /// libraries; results are capped by 'limit'.
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class SearchTools
 {
     private const int MaxLimit = 200;
@@ -27,16 +26,9 @@ public sealed class SearchTools
 
     public SearchTools(ILibraryDataService libraries) => _libraries = libraries;
 
-    [McpServerTool(Name = "mlqt_search_text")]
-    [Description("Find Modelica classes whose description or Documentation prose contains the given text " +
-                "(case-insensitive) — e.g. 'PID controller' or 'heat exchanger' — for when you don't know " +
-                "the class name. Searches only libraries loaded into MLQT (not a simulator's), and only the human-readable text, not code identifiers (use mlqt_search_classes " +
-                "for name matching). Returns where it matched and a snippet. Scans loaded classes, so the " +
-                "first search after loading a large library is slower (results are cached).")]
-    public object SearchText(
-        [Description("Text to look for in class descriptions and documentation (case-insensitive).")]
+    internal object SearchText(
         string query,
-        [Description("Max results to return (default 50, max 200).")] int limit = 50)
+        int limit = 50)
     {
         if (string.IsNullOrWhiteSpace(query))
             return new ToolError("query must be a non-empty search string.");
@@ -84,21 +76,13 @@ public sealed class SearchTools
         return new TextSearchResult(total, items.Count, items);
     }
 
-    [McpServerTool(Name = "mlqt_search_by_interface")]
-    [Description("Find Modelica classes by interface shape rather than name — e.g. simulatable models, blocks with " +
-                "connectors, or classes with parameters. Searches only libraries loaded into MLQT, not a simulator's. Filter by class type, name substring, whether it " +
-                "has an experiment() annotation (simulatable), and minimum parameter/connector counts " +
-                "(counts include inherited members). Returns each match's parameter and connector counts.")]
-    public object SearchByInterface(
-        [Description("Optional class type filter, e.g. 'model', 'block', 'connector', 'function'.")]
+    internal object SearchByInterface(
         string? classType = null,
-        [Description("Optional substring the class id must contain (case-insensitive).")]
         string? namePattern = null,
-        [Description("Optional: require (true) or exclude (false) an experiment() annotation (simulatable).")]
         bool? hasExperiment = null,
-        [Description("Optional minimum number of parameters/constants.")] int minParameters = 0,
-        [Description("Optional minimum number of connectors.")] int minConnectors = 0,
-        [Description("Max results to return (default 50, max 200).")] int limit = 50)
+        int minParameters = 0,
+        int minConnectors = 0,
+        int limit = 50)
     {
         if (ToolDiagnostics.RequireLibrary(_libraries, "searching by interface") is { } noLib)
             return noLib;

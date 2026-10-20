@@ -87,7 +87,7 @@ public class FindingLineTests
     public void TheModelLineIndexesGetClassSource_AnnotationsOrNot()
     {
         // The third relationship, and the one B218 broke: an agent reads a class through
-        // mlqt_get_class_source and then reads findings against it. mlqt_get_class_source used to re-render
+        // mlqt_get_class's source view and then reads findings against it. mlqt_get_class's source view used to re-render
         // the class when it stripped annotations, so modelLine indexed a text nobody had.
         using var host = Library(PackageWithAnAnnotationAboveTheFinding, "M\n");
         Style(host).CheckLibrary(settings: new StyleSettingsInput { ParameterHasDescription = true })
@@ -126,7 +126,7 @@ public class FindingLineTests
     public void ACheckDoesNotAddASecondCopyOfEveryParseError()
     {
         // A check records parse errors on the review list as well as leaving them on the graph, and
-        // mlqt_list_findings used to report both — so calling mlqt_check_library added a second copy of every
+        // mlqt_list_findings used to report both — so calling mlqt_check added a second copy of every
         // parse error, differing from the first only in which line it named. The graph is the answer.
         using var host = BrokenLibrary();
         var style = Style(host);

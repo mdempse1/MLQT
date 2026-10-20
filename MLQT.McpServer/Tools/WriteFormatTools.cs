@@ -33,8 +33,8 @@ public sealed class WriteFormatTools
 
     [McpServerTool(Name = "mlqt_write_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Write one or more whole Modelica classes, each {parentId, source, standalone?}: a class not yet " +
-                 "in its parent is created there, placed on disk as mlqt_create_class does and listed in its package.order, which " +
-                 "the answer names. One already there is " +
+                 "in its parent is created there - in a file of its own in a directory package, else inside its " +
+                 "parent's file - and listed in its package.order, which the answer names. One already there is " +
                  "replaced only with replace=true, so a mistaken name cannot overwrite a class. Classes are written " +
                  "in order, so a later one can go in a package an earlier one created; if one fails, the ones " +
                  "before it stay written and none after it is tried. To change part of a class, use " +
@@ -97,7 +97,7 @@ public sealed class WriteFormatTools
     [McpServerTool(Name = "mlqt_format", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Format Modelica code with MLQT's formatter. Give exactly one of: classId (the file holding " +
                  "that class), library (every file of a loaded library, by name or id) or source (text, returned " +
-                 "formatted; nothing is written). The ordering options are those of mlqt_format_class. A file " +
+                 "formatted; nothing is written). A file " +
                  "with syntax errors, or with a class excluded from formatting, is left as it is and reported. " +
                  "preview=true formats without writing.")]
     public async Task<object> Format(
@@ -107,7 +107,7 @@ public sealed class WriteFormatTools
         [Description("Emit at most one of each section; default false.")] bool oneOfEachSection = false,
         [Description("Move import statements to the top; default false.")] bool importStatementsFirst = false,
         [Description("Order component declarations before nested class definitions; default false.")] bool componentsBeforeClasses = false,
-        [Description("Order declarations as mlqt_format_class's declarationOrder does; default false.")] bool declarationOrder = false,
+        [Description(FormattingTools.DeclarationOrderDescription)] bool declarationOrder = false,
         [Description("Format without writing; default false.")] bool preview = false)
     {
         var given = new[] { classId, library, source }.Count(x => !string.IsNullOrWhiteSpace(x));

@@ -912,7 +912,7 @@ def main():
     run.add_argument("--setting-sources", default="project",
                      help="claude --setting-sources; the default leaves out your user settings and hooks")
     run.add_argument("--server-env", action="append", default=[], metavar="KEY=VALUE",
-                     help="an environment variable for the MLQT server, e.g. MLQT_MCP_TOOLSET=consolidated (repeatable)")
+                     help="an environment variable for the MLQT server, e.g. MLQT_MCP_TOOL_LOG=off (repeatable)")
     run.add_argument("--timeout", type=int, default=600, help="seconds before a run is killed (default 600)")
     run.add_argument("--label", help="name for this run, used in the folder name and the report")
     run.add_argument("--output", help="where run folders go (default: McpEvalRuns/ at the repository root)")

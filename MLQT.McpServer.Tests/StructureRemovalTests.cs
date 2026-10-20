@@ -166,7 +166,7 @@ public class StructureRemovalTests
     }
 
     /// <summary>
-    /// <c>mlqt_remove_connection</c> goes through the one shared <c>RemoveWholeLine</c> that
+    /// <c>mlqt_edit_class's remove_connection</c> goes through the one shared <c>RemoveWholeLine</c> that
     /// <c>RemoveComponent</c>'s sole-on-line branch now also uses, so it is the same promise about
     /// a different statement.
     /// </summary>

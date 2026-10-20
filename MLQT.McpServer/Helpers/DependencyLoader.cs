@@ -7,8 +7,8 @@ namespace MLQT.McpServer.Helpers;
 
 /// <summary>
 /// Loads the libraries a caller names and, if asked, what they depend on (B503,
-/// <c>Design/mcp-tool-consolidation.md</c>, *Finding dependencies* and *When the simulator's session
-/// decides*).
+/// <c>.claude/skills/skill-mcp-library-loading.md</c>, *Finding dependencies* and *When the simulator's
+/// session decides*).
 /// </summary>
 /// <remarks>
 /// <para><b>Explicit first.</b> Every path the caller passes is loaded before anything is searched for, so a
@@ -42,7 +42,7 @@ internal sealed class DependencyLoader
 
     /// <summary>
     /// Loads a directory that holds no library of its own - a working copy, or a folder of libraries - as
-    /// <c>mlqt_load_repository</c> does, so its settings and changes are known; with false, only discovers
+    /// <c>mlqt_load</c> does, so its settings and changes are known; with false, only discovers
     /// its libraries. Set by the tool, so that there is one implementation of it (B503).
     /// </summary>
     public Func<string, bool, Task<LoadRepositoryResult>>? LoadRepository { get; init; }
@@ -146,6 +146,9 @@ internal sealed class DependencyLoader
         "other work's included - goes to this copy. Pass replace=true only if this conversation loaded the " +
         "other copy, or the user says so; otherwise ask the user. mlqt_session shows what is loaded and when.";
 
+    private static string Superseded(string name, string path, string source) =>
+        $"'{name}' at '{path}' is encrypted, and a readable copy is already loaded from '{source}', which is used instead.";
+
     private string OriginOf(LoadedLibrary library) =>
         _session.LibraryOrigins.TryGetValue(library.Id, out var origin) ? origin : Explicit;
 
@@ -174,6 +177,14 @@ internal sealed class DependencyLoader
             {
                 _session.LibraryOrigins[existing.Id] = Explicit;
                 _loaded.Add(Item(existing, Explicit, "already loaded", null, null));
+                return;
+            }
+            // An encrypted build beside readable source is not another copy to choose between: the source
+            // wins whole (B268), so it is said, not refused - a refusal offers replace, which would swap
+            // the source for a build with none.
+            if (!existing.IsReadOnly && File.Exists(Path.Combine(root, "package.moe")))
+            {
+                _warnings.Add(Superseded(name, path, existing.SourcePath));
                 return;
             }
             if (OriginOf(existing) == Explicit && !replace)
@@ -222,11 +233,16 @@ internal sealed class DependencyLoader
             _errors.Add(result.ErrorMessage ?? $"'{root}' could not be loaded as a repository.");
             return;
         }
+        var count = _loaded.Count;
         foreach (var library in _libraries.Libraries.Where(l => l.RepositoryId == result.RepositoryId))
         {
             _session.LibraryOrigins[library.Id] = Explicit;
             _loaded.Add(Item(library, Explicit, $"in repository '{result.Name}'", null, null));
         }
+        // A folder with no library in it, an empty one or a mistyped one, loaded nothing and said nothing.
+        if (_loaded.Count == count && result.DiscoveredLibraries.Count == 0)
+            _errors.Add($"No Modelica classes were found at '{root}'. Point mlqt_load at a library folder holding a " +
+                        "package.mo, a single .mo file, or a working copy whose libraries live in subfolders.");
     }
 
     private async Task LoadDependenciesAsync(ToolFolders tool)
@@ -328,7 +344,7 @@ internal sealed class DependencyLoader
         }
         if (library.SupersededBy is { } source)
         {
-            _warnings.Add($"'{library.Name}' at '{path}' is encrypted, and a readable copy is already loaded from '{source}', which is used instead.");
+            _warnings.Add(Superseded(library.Name, path, source));
             return null;
         }
         if (library.ModelIds.Count == 0)

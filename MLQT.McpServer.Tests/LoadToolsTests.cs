@@ -101,7 +101,7 @@ public class LoadToolsTests
 
     // ---- A folder of libraries is a repository (B503) ------------------------------------------
     //
-    // The consolidated set has no mlqt_load_repository, so mlqt_load takes a working copy or a folder of
+    // The consolidated set has no mlqt_load, so mlqt_load takes a working copy or a folder of
     // libraries itself: without it, no repository's style settings or changes could be reached.
 
     [Fact]

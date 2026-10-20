@@ -7,7 +7,7 @@ namespace MLQT.McpServer.Helpers;
 /// <summary>
 /// Produces state-aware <see cref="ToolError"/> messages. The server knows whether a library is
 /// loaded and whether the opt-in analysis has run, so a failing tool can tell the caller the exact
-/// next step (load a library, run mlqt_analyze_dependencies, fix the id) rather than a generic message.
+/// next step (load a library, run mlqt_dependencies, fix the id) rather than a generic message.
 /// </summary>
 internal static class ToolDiagnostics
 {
@@ -134,7 +134,7 @@ internal static class ToolDiagnostics
         var where = nearest is null || nearest == root
             ? $"Library '{root}' is loaded, but has no class '{classId}'."
             : $"Library '{root}' is loaded and has '{nearest}', but no class '{classId}' in it - " +
-              $"mlqt_get_package_tree with root_class_id '{nearest}' lists what is there.";
+              $"mlqt_browse with root_class_id '{nearest}' lists what is there.";
         var elsewhere = sameLeaf.Count > 0 ? " " + SameLeafSentence(sameLeaf, classId) : "";
 
         return new ToolError($"{where}{elsewhere} {SearchTools}");
@@ -196,15 +196,15 @@ internal static class ToolDiagnostics
         return null;
     }
 
-    /// <summary>Message for tools that need mlqt_analyze_dependencies to have run. Adapts to whether a
+    /// <summary>Message for tools that need mlqt_dependencies to have run. Adapts to whether a
     /// library is even loaded yet.</summary>
     public static ToolError NotAnalyzed(ILibraryDataService libraries, string whatFor)
     {
         if (libraries.Libraries.Count == 0)
-            return new ToolError(NothingLoaded(whatFor) + " Then run mlqt_analyze_dependencies.");
+            return new ToolError(NothingLoaded(whatFor) + " Then run mlqt_dependencies.");
 
         return new ToolError(
-            $"Dependencies have not been analyzed yet. Run mlqt_analyze_dependencies first (it builds the " +
+            $"Dependencies have not been analyzed yet. Run mlqt_dependencies first (it builds the " +
             $"dependency graph and external-resource index), then {whatFor}.");
     }
 }

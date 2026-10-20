@@ -10,7 +10,7 @@ internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Instal
 
 /// <summary>
 /// The library folders of the simulation tool a user works with, for the dependency search
-/// (<c>Design/mcp-tool-consolidation.md</c>, *Finding dependencies*).
+/// (<c>.claude/skills/skill-mcp-library-loading.md</c>, *Finding dependencies*).
 /// </summary>
 /// <remarks>
 /// <para><b>Which install.</b> A machine often has many Dymola releases, and the one in use is not

@@ -2,8 +2,8 @@
 
 Two cut-down versions of real model-building sessions, run by hand: one with Dymola beside MLQT, one
 with OpenModelica. The harness tasks in `../tasks.json` are small and can be checked automatically.
-These are not, but they are the work the MCP server exists for, and the consolidation plan
-(`Design/mcp-tool-consolidation.md`, B503) compares the tool sets on them. Each takes 30–60 minutes,
+These are not, but they are the work the MCP server exists for, and the tool consolidation (B503,
+66 tools to 16) was judged on them. Each takes 30–60 minutes,
 where the sessions they come from took 1–27 hours.
 
 | Scenario | Simulator | Cut down from |
@@ -16,7 +16,6 @@ where the sessions they come from took 1–27 hours.
 1. **Build and publish the MLQT server you are measuring**, and note the commit. Point the `mlqt`
    entry of the Claude configuration at it. Give that entry its own log for this run:
    `"env": { "MLQT_MCP_TOOL_LOG": "<folder>/mlqt-tool-usage-<scenario>-<label>.jsonl" }`.
-   For the comparison in the plan's step 3, also set `MLQT_MCP_TOOLSET` there.
 2. **Register the simulator's MCP server** the scenario names, and nothing else that touches Modelica.
 3. **Make an empty folder** for the run, outside any repository, and `git init` it, so the VCS tools
    have something to work with.

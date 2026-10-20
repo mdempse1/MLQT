@@ -67,7 +67,7 @@ public class SharedServerStateTests
     [Fact]
     public async Task EveryCallTimesTheLibraries_AndTheStatusSaysWhen()
     {
-        await using var server = await InProcessServer.StartAsync(new MlqtMcpServerOptions { Toolset = McpToolset.Consolidated });
+        await using var server = await InProcessServer.StartAsync();
         await server.CallAsync("mlqt_create_library", new() { ["name"] = "Lib", ["directory"] = server.TempDirectory() });
 
         var status = MlqtMcpServerExtensionsTests.Text(await server.CallAsync("mlqt_session", []));

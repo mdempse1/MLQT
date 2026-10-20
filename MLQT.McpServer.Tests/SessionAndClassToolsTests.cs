@@ -28,47 +28,35 @@ public class SessionAndClassToolsTests
     {
         var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
         session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
-        var result = session.LoadLibrary(dir).GetAwaiter().GetResult();
-        ToolAssert.Ok<LibrarySummary>(result);
+        Assert.NotEmpty(host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult().ModelIds);
         return dir;
     }
 
+    // mlqt_load, one path and no dependency search, as the retired mlqt_load was: how each shape
+    // of path loads, and what it says when one loads nothing.
+    private static async Task<LoadResult> LoadOne(TestHost host, string path) =>
+        ToolAssert.Ok<LoadResult>(await new LoadTools(host.Libraries, host.Repositories, host.Resources, host.Session)
+        {
+            DesktopSettingsDirectory = null,
+            Environment_ = _ => null,
+        }.Load([path], withDependencies: false));
+
     [Fact]
-    public async Task LoadLibrary_FromDirectory_LoadsModels()
+    public async Task Load_FromDirectory_LoadsModels()
     {
         using var host = new TestHost();
         var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
-        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(dir));
+        var res = await LoadOne(host, dir);
 
-        Assert.Equal("TestLib", summary.Name);
-        Assert.Equal("Directory", summary.SourceType);
-        Assert.True(summary.ModelCount >= 4);
-        Assert.Equal(1, summary.TopLevelModelCount);
+        Assert.Equal("TestLib", Assert.Single(res.Loaded).Name);
+        var library = Assert.Single(host.Libraries.Libraries);
+        Assert.Equal(MLQT.Services.DataTypes.LibrarySourceType.Directory, library.SourceType);
+        Assert.True(library.ModelIds.Count >= 4);
     }
 
     [Fact]
-    public async Task LoadLibrary_SurfacesDeclaredDependencies()
-    {
-        using var host = new TestHost();
-        var dir = host.WriteLibraryDir(new Dictionary<string, string>
-        {
-            ["package.mo"] =
-                "within;\npackage Dep \"d\"\n  model M\n    Real x;\n  end M;\n" +
-                "  annotation (uses(Modelica(version=\"4.0.0\")));\nend Dep;",
-        });
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
-
-        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(dir));
-
-        var msl = Assert.Single(summary.Dependencies);
-        Assert.Equal("Modelica", msl.Name);
-        Assert.Equal("4.0.0", msl.Version);
-    }
-
-    [Fact]
-    public async Task LoadLibrary_FromPackageMoPath_LoadsWholeLibrary()
+    public async Task Load_FromPackageMoPath_LoadsWholeLibrary()
     {
         using var host = new TestHost();
         // A directory package: package.mo defines the library (with one nested class), and Extra is a
@@ -79,50 +67,46 @@ public class SessionAndClassToolsTests
             ["Extra.mo"] = "within MyLib;\nmodel Extra \"e\"\n  Real x;\nend Extra;",
             ["package.order"] = "Inner\nExtra\n",
         });
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
-
         // Pointing at the package.mo file loads the whole library, not just that file.
-        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(Path.Combine(dir, "package.mo")));
+        var res = await LoadOne(host, Path.Combine(dir, "package.mo"));
 
-        Assert.Equal("MyLib", summary.Name);
-        Assert.Equal("Directory", summary.SourceType);
+        Assert.Equal("MyLib", Assert.Single(res.Loaded).Name);
+        Assert.Equal(MLQT.Services.DataTypes.LibrarySourceType.Directory, Assert.Single(host.Libraries.Libraries).SourceType);
         Assert.NotNull(host.Libraries.GetModelById("MyLib.Inner"));
         Assert.NotNull(host.Libraries.GetModelById("MyLib.Extra")); // the standalone child was included
     }
 
     [Fact]
-    public async Task LoadLibrary_FromSingleFile_Loads()
+    public async Task Load_FromSingleFile_Loads()
     {
         using var host = new TestHost();
         var path = host.WriteMoFile("Thing.mo", "model Thing \"t\"\n  Real x;\nequation\n x=1;\nend Thing;");
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
-        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(path));
-        Assert.Equal("File", summary.SourceType);
+        await LoadOne(host, path);
+
+        Assert.Equal(MLQT.Services.DataTypes.LibrarySourceType.File, Assert.Single(host.Libraries.Libraries).SourceType);
     }
 
     [Fact]
-    public async Task LoadLibrary_EmptyDirectory_GuidesToPackageMo()
+    public async Task Load_EmptyDirectory_SaysSo_AndLeavesNothingLoaded()
     {
         using var host = new TestHost();
-        var emptyDir = host.NewTempDir();
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
-        var err = ToolAssert.Error(await session.LoadLibrary(emptyDir));
-        Assert.Contains("No Modelica models", err.Error);
-        Assert.Empty(session.ListLibraries()); // the empty library was not left loaded
+        var res = await LoadOne(host, host.NewTempDir());
+
+        Assert.Contains("No Modelica classes were found", Assert.Single(res.Errors));
+        Assert.Empty(host.Libraries.Libraries); // the empty library was not left loaded
     }
 
     [Fact]
-    public async Task LoadLibrary_EncryptedCopyOfLoadedSource_SaysTheSourceIsUsed()
+    public async Task Load_EncryptedCopyOfLoadedSource_SaysTheSourceIsUsed()
     {
         // B268: an encrypted build of a library whose source is loaded is retired on arrival, so its
         // index is empty - exactly like one that ships no documentation. The tool has to say which,
         // because the two call for opposite responses from the agent reading it.
         using var host = new TestHost();
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
         var source = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
-        ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(source));
+        await LoadOne(host, source);
 
         var encrypted = Path.Combine(host.NewTempDir(), "TestLib 2.0.0");
         Directory.CreateDirectory(Path.Combine(encrypted, "help"));
@@ -132,21 +116,23 @@ public class SessionAndClassToolsTests
             "<h2><a name=\"TestLib\"></a>TestLib</h2>" +
             "<p><span class=\"ModelicaDescription\">encrypted</span></p></body></html>");
 
-        var err = ToolAssert.Error(await session.LoadLibrary(encrypted));
+        var res = await LoadOne(host, encrypted);
 
-        Assert.Contains("readable source for it is already loaded", err.Error);
-        Assert.DoesNotContain("no usable documentation", err.Error);
-        Assert.Equal("Directory", Assert.Single(session.ListLibraries()).SourceType);
+        var warning = Assert.Single(res.Warnings);
+        Assert.Contains("a readable copy is already loaded", warning);
+        Assert.DoesNotContain("no usable documentation", warning);
+        Assert.Empty(res.Loaded);
+        Assert.Equal(MLQT.Services.DataTypes.LibrarySourceType.Directory, Assert.Single(host.Libraries.Libraries).SourceType);
     }
 
     [Fact]
-    public async Task LoadLibrary_BadPath_ReturnsError()
+    public async Task Load_BadPath_ReturnsError()
     {
         using var host = new TestHost();
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
-        var result = await session.LoadLibrary(Path.Combine(Path.GetTempPath(), "does-not-exist-xyz"));
-        Assert.Contains("not found", ToolAssert.Error(result).Error);
+        var res = await LoadOne(host, Path.Combine(Path.GetTempPath(), "does-not-exist-xyz"));
+
+        Assert.Contains("is not a library folder, a package.mo or a .mo file", Assert.Single(res.Errors));
     }
 
     [Fact]
@@ -239,7 +225,7 @@ public class SessionAndClassToolsTests
     }
 
     [Fact]
-    public async Task LoadRepository_DiscoverOnly_ThenDiscoverTool()
+    public async Task LoadRepository_DiscoverOnly_ListsWithoutLoading()
     {
         using var host = new TestHost();
         var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
@@ -248,9 +234,25 @@ public class SessionAndClassToolsTests
         var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot, loadLibraries: false));
         Assert.Empty(result.LoadedLibraries);
         Assert.Contains(result.DiscoveredLibraries, d => d.LibraryName == "TestLib");
+        Assert.Empty(host.Libraries.Libraries);
+    }
 
-        var discovered = await session.DiscoverLibraries(result.RepositoryId!);
-        Assert.IsNotType<ToolError>(discovered);
+    // A look first and then the load is the natural order with mlqt_load's discoverOnly, and registered
+    // the working copy twice: everything defaulting to "the one repository loaded" stopped knowing which.
+    [Fact]
+    public async Task LoadRepository_Again_IsTheSameRepository()
+    {
+        using var host = new TestHost();
+        var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+        var look = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot, loadLibraries: false));
+        var load = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot + Path.DirectorySeparatorChar));
+
+        Assert.Equal(look.RepositoryId, load.RepositoryId);
+        Assert.Single(session.ListRepositories());
+        Assert.Contains(load.LoadedLibraries, l => l.Name == "TestLib");
+        Assert.Single(host.Libraries.Libraries);
     }
 
     [Fact]
@@ -259,15 +261,6 @@ public class SessionAndClassToolsTests
         using var host = new TestHost();
         var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
         Assert.Empty(session.ListRepositories());
-    }
-
-    [Fact]
-    public async Task DiscoverLibraries_UnknownRepo_Errors()
-    {
-        using var host = new TestHost();
-        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
-        var result = await session.DiscoverLibraries("no-such-repo");
-        Assert.IsType<ToolError>(result);
     }
 
     [Fact]

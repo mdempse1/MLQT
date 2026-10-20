@@ -150,7 +150,7 @@ public sealed class ClassFacadeTools
     }
 
     /// <summary>Runs the dependency and resource analysis when the session has not, as
-    /// <c>mlqt_analyze_dependencies</c> would; null when it has run, else its error.</summary>
+    /// <c>mlqt_dependencies</c> would; null when it has run, else its error.</summary>
     private async Task<ToolError?> AnalyseFirstAsync()
     {
         if (_session.DependenciesAnalyzed)

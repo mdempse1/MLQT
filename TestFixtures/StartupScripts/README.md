@@ -1,8 +1,8 @@
 # Startup-script fixtures
 
 Dymola cannot say which libraries it has loaded. For a user who opens their libraries with a startup
-script, that script is the record. So the MCP tool consolidation (`Design/mcp-tool-consolidation.md`,
-B503) has `mlqt_load` **read a startup script without running it**, and load what it opens. These
+script, that script is the record. So `mlqt_load` **reads a startup script without running it**, and
+loads what it opens (B503; how it reads one is in `.claude/skills/skill-mcp-library-loading.md`). These
 fixtures are what that reader is tested against.
 
 `startup1`–`startup3` are real users' scripts. `startup4.mos` is synthetic: it was written for the

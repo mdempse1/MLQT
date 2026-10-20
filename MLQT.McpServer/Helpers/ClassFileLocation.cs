@@ -6,7 +6,7 @@ namespace MLQT.McpServer.Helpers;
 
 /// <summary>
 /// Where a class sits on disk, for a tool that reports a class-relative line and wants to give the
-/// file line beside it - mlqt_list_findings and mlqt_validate_class_references.
+/// file line beside it - mlqt_list_findings and mlqt_check's references check.
 /// </summary>
 internal static class ClassFileLocation
 {

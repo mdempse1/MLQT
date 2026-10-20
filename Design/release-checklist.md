@@ -125,9 +125,11 @@ python build/obfuscation/mcp_session.py <protected>\MLQT.McpServer.exe TestFixtu
 ```
 
 **The two transcripts must be identical**: the instructions, every tool's input schema, the result
-of a call to each of the 66 tools - edits as previews, then real writes and a reload, a wired diagram
-image, a routed connection, change impact over git - and the `.mlqt/settings.json` the session
-wrote. A difference is decoded with the obfuscator's mapping file. **Judge the build by running it,
+of calls to each of the 16 tools, covering every view, action, check and edit operation - edits as
+previews, then real writes and a reload, a wired diagram image, a routed connection, change impact
+over git - and the `.mlqt/settings.json` the session wrote. `toolsNotCalled` in the transcript must be
+empty. The session was ported to the 16 tools at B503's cut-over and has not yet been run against a
+protected build of them; the reference figures below are from the 66. A difference is decoded with the obfuscator's mapping file. **Judge the build by running it,
 not by inspecting it**: a protected assembly's metadata on disk can be emptied (parameter names) and
 scrambled (resource names) and restored as it loads.
 

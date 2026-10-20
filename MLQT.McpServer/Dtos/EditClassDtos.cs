@@ -13,15 +13,12 @@ public sealed class ClassEditOperation
     public string? New { get; set; }
     public bool? All { get; set; }
 
-    // The element operations, named as the fields of the mlqt_ tools that do the same edit.
+    // The element operations.
     public string? Type { get; set; }
     public string? Name { get; set; }
     public string? Modifier { get; set; }
     public string? Description { get; set; }
-    public string? BaseType { get; set; }
-    public string? Import { get; set; }
     public string? Equation { get; set; }
-    public string? Statement { get; set; }
     public string? PortA { get; set; }
     public string? PortB { get; set; }
     public string? Comment { get; set; }
