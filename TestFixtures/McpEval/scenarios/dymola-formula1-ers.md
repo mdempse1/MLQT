@@ -77,6 +77,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | ea7f85e | consolidated (16 tools) | 4 of 5, item 2 at 0.45 MJ | 34 | 16 | 0 | 0 | 5 | 0 | 9,121,105 | 39,108 |
 | 2026-10-19 | ea7f85e | consolidated (16 tools), rerun | 5 of 5 | 37 | 18 | 1 | 7 | 5 | 0 | 19,337,751 | 69,510 |
 | 2026-10-20 | ea7f85e | consolidated (16 tools), clean rerun | 5 of 5 | 14 | 15 | 0 | 1 | 5 | 0 | 7,772,790 | 41,921 |
+| 2026-10-20 | 0854b15 | consolidated + read-first `get_class` | 4 of 5, item 5 no gain | 14 | 16 | 0 | 0 | 1 | 0 | 6,476,508 | 26,626 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -278,3 +279,27 @@ asked and there was no steering.
   `Read` on the overflow of that output, `grep -rn` over the `.mo` files, and `cat` and `sed -n` over
   four more. It used `mlqt_get_class` twice (a commercial library's interface, and the class it was
   about to edit, with annotations) and `mlqt_find` once.
+
+**2026-10-20, with `mlqt_get_class` pointed at reading files (0854b15).** Two changes since the last
+run: `mlqt_get_class`'s description now says to use it rather than `cat`, `grep` or reading the `.mo`
+files however small the library, and to ask for every class a change runs through in one call. And
+`mlqt_write_class`'s answer names the `package.order` it listed a new class in. Claude was restarted
+first. The server log holds the session's 16 calls and nothing earlier. No steering.
+
+- **Result: 4 of 5. Item 5 failed, as in the second run on 56d1eb4.** The agent raised the per-lap
+  deployment limit by 0.5 MJ. That limit is switched off in this model (1e9 J), so both laps were
+  identical: 96.80 s, 5.168 MJ, 19.3 %. It said so, explained that the battery floor is what stops
+  deployment, and gave the user the two ways to get a gain, both of which change a limit the prompt
+  says to keep. Items 1-4 held. The new test sets a 1 MJ per-lap cap of its own and shows the
+  overtake controller carrying on to 1.5 MJ at the same power and taper. The whole test suite passed.
+  That is a modelling decision, not a tool one: the tool use is the best on either set.
+- **Reads: 1, against 5 in each of the three runs before.** The agent read the classes with
+  `mlqt_get_class`, four calls: the first for seven classes' source, the next two for three each, and the last
+  for one diagram layout. The
+  one shell read was `head -5 Tests/package.mo`, beside `cat` of `Tests/package.order` and
+  `runTests.mos`.
+- **Writes: none to a `.mo` file or `package.order` outside MLQT**: 8 `edit_class` and one
+  `write_class`. After `write_class` the agent printed `package.order`, saw the new test listed and
+  left it alone. The test is listed once. The one shell write was `runTests.mos`, which MLQT does not
+  edit.
+- **The cheapest run of the scenario**: 14 minutes, 6.5 M input tokens and 26.6 k output tokens.

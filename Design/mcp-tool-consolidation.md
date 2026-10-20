@@ -500,6 +500,7 @@ scenario files.
 | Dymola, consolidated, steered once | 4 of 5 | 16 | 0 | 5 | 9.1 M |
 | Dymola, consolidated, server reused | 5 of 5 | 18 | 7 | 5 | 19.3 M |
 | Dymola, consolidated, clean (2026-10-20) | 5 of 5 | 15 | 1 | 5 | 7.8 M |
+| Dymola, consolidated + read-first `get_class` (0854b15) | 4 of 5 | 16 | 0 | 1 | 6.5 M |
 
 **The scenarios do not bear the harness out.** OpenModelica is even. In Dymola all three consolidated
 runs read the classes the change runs through with the shell, 5 reads each against 0 and 1. Most of
@@ -521,6 +522,16 @@ description says neither. The one bypass write in the clean run was also the ser
 `write_class` registered the new class in `package.order` without saying so, and the agent added it a
 second time, leaving it listed twice. The answer now names the `package.order` (0854b15), and the
 `mlqt_get_class` description now says to use it rather than reading the files.
+
+**With both fixes in, the reads went from 5 to 1 and the bypass writes to none** (0854b15). The agent
+read classes with `mlqt_get_class` several at a time, seven in its first call. It printed
+`package.order` after `write_class` and left the new test listed once. It was the cheapest Dymola run
+on either set: 14 minutes, 6.5 M input tokens. That is one run, but it is what the cause pointed to.
+On this run the consolidated set is level with the current set's best runs, 0 and 1 reads against 1.
+Item 5 failed for a modelling reason that has nothing to do with the tools: the agent raised a limit
+the model has switched off, so the lap was unchanged, and it said so. A run on the 56d1eb4 build did
+the same. A second run on this build would show whether the reads stay down. The step 3 criterion,
+bypasses no higher, is now met on both scenarios.
 
 ### 4. Cut over
 
