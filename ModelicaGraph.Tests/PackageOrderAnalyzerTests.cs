@@ -55,6 +55,36 @@ public class PackageOrderAnalyzerTests
     }
 
     [Fact]
+    public void DuplicateEntry_IsFlaggedOncePerName_WithItsCount()
+    {
+        var f = Analyze(Build(new[] { "A", "B", "A", "B", "A" }, "A", "B"));
+        var duplicates = f.Where(x => x.Discriminator == "duplicate").OrderBy(x => x.ElementPath).ToList();
+        Assert.Equal(new[] { "A", "B" }, duplicates.Select(x => x.ElementPath));
+        Assert.All(duplicates, d => Assert.Equal("P", d.ModelId));
+        Assert.Contains("'A' 3 times", duplicates[0].Message);
+        Assert.Contains("'B' 2 times", duplicates[1].Message);
+        Assert.Equal(2, f.Count); // nothing stale or missing besides
+    }
+
+    [Fact]
+    public void DuplicateEntry_DifferingOnlyByTrailingWhitespaceOrCR_IsADuplicate()
+    {
+        var f = Analyze(Build(new[] { "A", "B", "A \t", "B\r" }, "A", "B"));
+        Assert.Equal(new[] { "A", "B" },
+            f.Where(x => x.Discriminator == "duplicate").Select(x => x.ElementPath).OrderBy(x => x));
+    }
+
+    [Fact]
+    public void DuplicateEntry_IsReportedWhenMatchingDymola()
+    {
+        var graph = Build(new[] { "A", "A" }, "A");
+        var settings = new StyleCheckingSettings { CheckPackageOrder = true, PackageOrderMatchesDymola = true };
+        var ctx = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
+        var f = GraphAnalysisRunner.Run(ctx).Where(x => x.RuleId == RuleIds.PackageOrder).ToList();
+        Assert.Equal("A", Assert.Single(f, x => x.Discriminator == "duplicate").ElementPath);
+    }
+
+    [Fact]
     public void ConstantEntry_IsNotStale()
     {
         // 'c' is a package-level constant (a member, not a class) — a legitimate package.order entry.
