@@ -27,8 +27,12 @@ internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Instal
 /// </remarks>
 internal static class ToolLibraryFolders
 {
+    /// <param name="findDymola">Detection of the newest Dymola, <see cref="DymolaSettings.FindInstalledDymola"/>
+    /// unless a test says otherwise: what it finds is the machine's, so a test on a machine with Dymola and
+    /// one on a build agent without it would otherwise run different code.</param>
+    /// <param name="findOmc">The same for OpenModelica, <see cref="OpenModelicaSettings.FindInstalledOmc"/>.</param>
     public static ToolFolders For(string? tool, string? toolInstall, string? desktopSettingsDirectory,
-        Func<string, string?> environment)
+        Func<string, string?> environment, Func<string>? findDymola = null, Func<string>? findOmc = null)
     {
         switch (tool?.Trim().ToLowerInvariant())
         {
@@ -37,7 +41,7 @@ internal static class ToolLibraryFolders
             case "dymola":
             {
                 var (install, from, reason) = Choose(toolInstall, () => DesktopDymola(desktopSettingsDirectory),
-                    DymolaSettings.FindInstalledDymola);
+                    findDymola ?? DymolaSettings.FindInstalledDymola);
                 if (install is null)
                     return new ToolFolders([], null, "No Dymola install was found; pass toolInstall with its folder.");
                 var root = InstallRoot(install);
@@ -55,7 +59,8 @@ internal static class ToolLibraryFolders
                     folders.Add(OperatingSystem.IsWindows()
                         ? Path.Combine(environment("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".openmodelica", "libraries")
                         : Path.Combine(environment("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openmodelica", "libraries"));
-                var (install, from, reason) = Choose(toolInstall, () => DesktopOmc(desktopSettingsDirectory), OpenModelicaSettings.FindInstalledOmc);
+                var (install, from, reason) = Choose(toolInstall, () => DesktopOmc(desktopSettingsDirectory),
+                    findOmc ?? OpenModelicaSettings.FindInstalledOmc);
                 string? root = null;
                 if (install is not null)
                 {

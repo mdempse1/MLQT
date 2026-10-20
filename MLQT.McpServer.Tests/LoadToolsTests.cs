@@ -389,6 +389,33 @@ public class LibraryCandidatesTests
     [Fact]
     public void AFolderThatIsNotThere_HasNoCandidates() =>
         Assert.Empty(LibraryCandidates.Find(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")), "Lib"));
+
+    // Dymola's library folder holds encrypted builds beside readable ones; a build agent has no such
+    // folder, so these are made here rather than found.
+    [Fact]
+    public void AnEncryptedBuild_IsACandidate_WithTheVersionInItsName()
+    {
+        using var host = new TestHost();
+        var dir = host.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(dir, "Lib 4.0"));
+        File.WriteAllText(Path.Combine(dir, "Lib 4.0", "package.moe"), "not readable");
+
+        var found = Assert.Single(LibraryCandidates.Find(dir, "Lib"));
+
+        Assert.True(found.Encrypted);
+        Assert.Equal("4.0", found.Version?.Text);
+        Assert.Empty(found.NoneFromVersions);
+    }
+
+    [Fact]
+    public void AFolderNamedForTheLibrary_WithNoPackageInIt_IsNoCandidate()
+    {
+        using var host = new TestHost();
+        var dir = host.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(dir, "Lib 1.0", "Resources"));
+
+        Assert.Empty(LibraryCandidates.Find(dir, "Lib"));
+    }
 }
 
 public class ToolLibraryFoldersTests
@@ -445,4 +472,127 @@ public class ToolLibraryFoldersTests
 
     [Fact]
     public void NoTool_SearchesNoToolFolder() => Assert.Empty(ToolLibraryFolders.For(null, null, null, _ => null).Folders);
+
+    // What detection finds is the machine's: each case below is given its answer, so a machine with
+    // Dymola and OpenModelica installed and a build agent with neither run the same code.
+    private static string Install(TestHost host, string exe, params string[] folders)
+    {
+        var root = host.NewTempDir();
+        foreach (var folder in folders)
+            Directory.CreateDirectory(Path.Combine(root, folder.Replace('/', Path.DirectorySeparatorChar)));
+        var path = Path.Combine(root, exe.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "x");
+        return path;
+    }
+
+    [Fact]
+    public void Dymola_IsDetected_WhenNoneIsGivenOrSet_AndSaysToPassToolInstall()
+    {
+        using var host = new TestHost();
+        var exe = Install(host, "bin64/dymola.exe", "Modelica/Library");
+
+        var folders = ToolLibraryFolders.For("dymola", null, null, _ => null, findDymola: () => exe);
+
+        Assert.Equal(ToolLibraryFolders.InstallRoot(exe), folders.Install);
+        Assert.Single(folders.Folders);
+        Assert.Contains("the newest found", folders.Note);
+        Assert.Equal(ToolLibraryFolders.DetectedReason, folders.InstallReason);
+    }
+
+    [Fact]
+    public void Dymola_NotFoundAnywhere_SaysToPassToolInstall()
+    {
+        var folders = ToolLibraryFolders.For("dymola", null, null, _ => null, findDymola: () => "");
+
+        Assert.Empty(folders.Folders);
+        Assert.Null(folders.Install);
+        Assert.Contains("pass toolInstall", folders.Note);
+    }
+
+    [Fact]
+    public void Dymola_GivenAnInstallWithNoLibraryFolder_SaysSo()
+    {
+        using var host = new TestHost();
+        var exe = Install(host, "bin64/dymola.exe");
+
+        var folders = ToolLibraryFolders.For("dymola", exe, null, _ => null, findDymola: () => "");
+
+        Assert.Empty(folders.Folders);
+        Assert.Contains("has no", folders.Note);
+        Assert.Equal("as given", folders.InstallReason);
+    }
+
+    [Fact]
+    public void AnUnknownTool_IsNamedInTheNote()
+    {
+        var folders = ToolLibraryFolders.For("simulink", null, null, _ => null);
+
+        Assert.Empty(folders.Folders);
+        Assert.Contains("'simulink'", folders.Note);
+    }
+
+    [Fact]
+    public void OpenModelica_SearchesTheUsersLibraryFolder_AndAnOlderInstallsBundledOne()
+    {
+        using var host = new TestHost();
+        var home = host.NewTempDir();
+        var user = Path.Combine(home, ".openmodelica", "libraries");
+        Directory.CreateDirectory(user);
+        var omc = Install(host, "bin/omc.exe", "lib/omlibrary");
+
+        var folders = ToolLibraryFolders.For("openmodelica", null, null,
+            key => key is "APPDATA" or "HOME" ? home : null, findOmc: () => omc);
+
+        var root = ToolLibraryFolders.InstallRoot(omc);
+        Assert.Equal([user, Path.Combine(root, "lib", "omlibrary")], folders.Folders);
+        Assert.Equal(root, folders.Install);
+        Assert.Contains("and install", folders.Note);
+        Assert.Equal(ToolLibraryFolders.DetectedReason, folders.InstallReason);
+    }
+
+    [Fact]
+    public void OpenModelica_WithNoInstall_SearchesOnlyTheUsersFolder_AndLeavesOutOneThatIsNotThere()
+    {
+        using var host = new TestHost();
+        var home = host.NewTempDir();   // no .openmodelica under it
+
+        var folders = ToolLibraryFolders.For("openmodelica", null, null,
+            key => key is "APPDATA" or "HOME" ? home : null, findOmc: () => "");
+
+        Assert.Empty(folders.Folders);
+        Assert.Null(folders.Install);
+        Assert.Equal("OpenModelica's user library folder.", folders.Note);
+    }
+
+    [Fact]
+    public void OpenModelica_IsTakenFromTheDesktopSettings_WhenNoneIsGiven()
+    {
+        using var host = new TestHost();
+        var omc = Install(host, "bin/omc.exe");
+        var settings = host.NewTempDir();
+        var openModelica = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string> { ["OmcPath"] = omc });
+        File.WriteAllText(Path.Combine(settings, "settings.json"),
+            System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string> { ["OpenModelica"] = openModelica }));
+
+        var folders = ToolLibraryFolders.For("openmodelica", null, settings, _ => null, findOmc: () => "");
+
+        Assert.Equal(ToolLibraryFolders.InstallRoot(omc), folders.Install);
+        Assert.Equal("from the desktop app's External Tools settings", folders.InstallReason);
+    }
+
+    // A settings file the desktop app left half-written is no reason to fail a load: it is read only to
+    // choose an install, and detection is the next choice.
+    [Fact]
+    public void ADesktopSettingsFileThatWillNotRead_FallsBackToDetection()
+    {
+        using var host = new TestHost();
+        var exe = Install(host, "bin64/dymola.exe", "Modelica/Library");
+        var settings = host.NewTempDir();
+        File.WriteAllText(Path.Combine(settings, "settings.json"), "{ not json");
+
+        var folders = ToolLibraryFolders.For("dymola", null, settings, _ => null, findDymola: () => exe);
+
+        Assert.Equal(ToolLibraryFolders.DetectedReason, folders.InstallReason);
+    }
 }
