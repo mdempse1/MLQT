@@ -76,6 +76,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | e10d10a | + B504 fixes | 5 of 5 | 14 | 27 | 0 | 1 | 1 | 1 | 7,755,059 | 32,274 |
 | 2026-10-19 | ea7f85e | consolidated (16 tools) | 4 of 5, item 2 at 0.45 MJ | 34 | 16 | 0 | 0 | 5 | 0 | 9,121,105 | 39,108 |
 | 2026-10-19 | ea7f85e | consolidated (16 tools), rerun | 5 of 5 | 37 | 18 | 1 | 7 | 5 | 0 | 19,337,751 | 69,510 |
+| 2026-10-20 | ea7f85e | consolidated (16 tools), clean rerun | 5 of 5 | 14 | 15 | 0 | 1 | 5 | 0 | 7,772,790 | 41,921 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -259,3 +260,21 @@ the client between runs, as the README says, so that each has a server of its ow
 - **Reads: 5 again**, `cat`, `grep` and `sed -n` over the classes the change runs through.
 - **The costliest run of the scenario**: 37 minutes, 19.3 M input tokens. The agent spent most of it
   on the test, re-running the whole suite and reading results with Python scripts.
+
+**2026-10-20, the consolidated set, clean.** Claude was quit and started again first. The server log
+holds the session's 15 calls and nothing earlier, and `analyse` gives no warning. No question was
+asked and there was no steering.
+
+- **Result.** All five items held. The new test runs two controllers side by side and checks exactly
+  0.5 MJ more per lap, with the power and taper unchanged. The lap took 96.52 s against 96.80 s and
+  deployed 5.57 MJ against 5.17 MJ (0.40 MJ more, because the normal lap already overshoots its floor).
+  It ended at 10.1 % against 19.3 %. The fastest of the scenario's runs: 14 minutes, 7.8 M input tokens.
+- **Every change to a `.mo` file went through MLQT**: 10 `edit_class` and one `write_class`. The
+  `write_class` added the new test to `Tests/package.order` too, but its answer did not say so. So the
+  agent added it again with `sed -i`, which almost certainly left the test listed twice. That is the
+  one bypass write. Two more `sed -i` went to `runTests.mos`, which MLQT does not edit.
+- **Reads: 5 again**, and this time all of them after `mlqt_load`. With the library listed, the agent
+  said "Small library - I'll read the relevant files directly". It then ran `cat` over nine files,
+  `Read` on the overflow of that output, `grep -rn` over the `.mo` files, and `cat` and `sed -n` over
+  four more. It used `mlqt_get_class` twice (a commercial library's interface, and the class it was
+  about to edit, with annotations) and `mlqt_find` once.

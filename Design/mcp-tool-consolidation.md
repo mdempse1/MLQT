@@ -499,18 +499,27 @@ scenario files.
 | Dymola, current (e10d10a) | 5 of 5 | 27 | 1 | 1 | 7.8 M |
 | Dymola, consolidated, steered once | 4 of 5 | 16 | 0 | 5 | 9.1 M |
 | Dymola, consolidated, server reused | 5 of 5 | 18 | 7 | 5 | 19.3 M |
+| Dymola, consolidated, clean (2026-10-20) | 5 of 5 | 15 | 1 | 5 | 7.8 M |
 
-**The scenarios do not bear the harness out.** OpenModelica is even. In Dymola both consolidated runs
-read the classes the change runs through with the shell (5 reads each, against 0 and 1), most of them
-before or instead of `mlqt_get_class`; the second also patched the test it had just created, and its own
-documentation, with Python and `sed`. The criterion - bypasses no higher - is not met on this scenario.
+**The scenarios do not bear the harness out.** OpenModelica is even. In Dymola all three consolidated
+runs read the classes the change runs through with the shell, 5 reads each against 0 and 1. Most of
+those reads came before or instead of `mlqt_get_class`. The second run also patched the test it had just
+created, and its own documentation, with Python and `sed`. The criterion - bypasses no higher - is not
+met on this scenario.
 
-Neither consolidated run was clean: one was steered by an early question, the other inherited the
-previous run's server. And the current set's own Dymola runs went from 2 MLQT calls to 31 on the
-instructions' wording alone, so four runs is little to go on. But the reads are the same in both
-consolidated runs, and the step 1 lesson points at a cause: the agent reaches for MLQT where the tool
-it needs is named for the work. The current set names a tool for reading source, `mlqt_get_class_source`;
-the consolidated set has one tool for every read, whose default answer is info and source together.
+The first two runs were not clean: one was steered by an early question, and the other inherited the
+previous run's server. The third was clean, and it was the fastest and cheapest Dymola run on either
+set, but it read the same way. In it the agent loaded with MLQT first, listed the library, said it was
+small and read the files directly. So the reads are not about the state of the server, or about not
+knowing MLQT is there.
+
+The step 1 lesson points at a cause: the agent reaches for MLQT where the tool it needs is named for
+the work. The current set names a tool for reading source, and its description says to use it
+"rather than reading the .mo file", because a file may hold many classes and their annotations.
+`mlqt_get_class` is one tool for every read, its default answer is info and source together, and its
+description says neither. The one bypass write in the clean run was also the server's doing:
+`write_class` registered the new class in `package.order` without saying so, and the agent added it a
+second time.
 
 ### 4. Cut over
 
