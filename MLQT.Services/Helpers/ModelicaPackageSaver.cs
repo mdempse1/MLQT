@@ -824,10 +824,17 @@ public class ModelicaPackageSaver
     {
         var packageOrderList = new List<string>();
 
-        // Get stored package.order
+        // Get stored package.order, each entry once and trimmed: a name listed twice is what
+        // MLQT.Structure.PackageOrder reports as a duplicate, and the first place it is listed is the
+        // one kept. Trimmed because some load paths store the lines as read, and "A " would
+        // otherwise not match the child "A" below and be listed a second time.
         if (model.PackageOrder is string[] storedOrder)
         {
-            packageOrderList.AddRange(storedOrder);
+            foreach (var entry in storedOrder.Select(e => e.Trim()))
+            {
+                if (entry.Length > 0 && !packageOrderList.Contains(entry))
+                    packageOrderList.Add(entry);
+            }
         }
 
         // Get nested children order
