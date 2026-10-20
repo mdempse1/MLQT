@@ -192,7 +192,7 @@ public sealed class CoverageMeasurer
     // MissingUnits rule's own lookup, with both of the caches B174 found the time in: the question
     // memoised, not only the answer, and each class's extends chain collected once rather than once
     // per component. This had neither - it called UnitResolver with a cache keyed by the class a type
-    // resolved to and no ancestor cache - and measured 2,946s of thread-time on Claytex against the
+    // resolved to and no ancestor cache - and measured 2,946s of thread-time on a large user library against the
     // rule's 367s for the same questions about the same components (B261).
     private readonly Func<string, string, (bool IsRealDerived, bool TypeHasUnit)> _unitLookup;
 

@@ -1,3 +1,8 @@
+---
+name: gui-testing
+description: "The four test layers over MLQT.Shared, verify-by-mutation, guard tests, MLQT.TestHost and the Playwright journeys, and the coverage of MLQT.Shared. Use when writing or changing tests over MLQT.Shared, working in MLQT.Shared.Tests, MLQT.TestHost or MLQT.Journeys, adding a /selftest probe, or adding a guard test that holds a documented rule to the code."
+---
+
 # GUI Testing Skill
 
 Load this skill when writing or changing tests over `MLQT.Shared`, working in `MLQT.Shared.Tests`,
@@ -6,7 +11,7 @@ documented rule to the code.
 
 The layered harness exists because 71% of the UI source was once inside `@code { }` blocks and
 unreachable by any test without starting a renderer. The **code-behind policy** in
-[CODING_GUIDELINES.md](../../CODING_GUIDELINES.md) §Blazor Patterns is what makes Layer 1 possible;
+[CODING_GUIDELINES.md](../../../CODING_GUIDELINES.md) §Blazor Patterns is what makes Layer 1 possible;
 `MLQT.Shared.Tests/CodeBehindPolicyTests.cs` is what holds it.
 
 ## The four layers, and which one a test belongs in
@@ -16,7 +21,7 @@ unreachable by any test without starting a renderer. The **code-behind policy** 
 | **1 — direct** | `MLQT.Shared.Tests` | no renderer | The default. The handler is a method on a `.razor.cs` partial; call it and assert |
 | **1b — bUnit** | `MLQT.Shared.Tests`, over `MlqtComponentTestBase` | a render tree | The behaviour **cannot exist** without one |
 | **2 — journeys** | `MLQT.Journeys` → `MLQT.TestHost` via Playwright | a real browser | A user path crossing service boundaries |
-| **3 — probes** | `MLQT.Shared/Pages/SelfTest.razor` | the real desktop host | A question only the shipping host can answer — see `skill-desktop-host.md` |
+| **3 — probes** | `MLQT.Shared/Pages/SelfTest.razor` | the real desktop host | A question only the shipping host can answer — see `.claude/skills/desktop-host/SKILL.md` |
 
 Promote, never weaken: **if a journey ever needs behaviour Blazor Server cannot express, that is a
 signal to promote the test to Layer 3**, not to weaken Layer 3.
@@ -121,7 +126,7 @@ Existing guards worth copying the shape of:
 | `RuleDocumentationTests` | The catalogue and `settings-reference.md` agree, including the exact labels |
 | `DocumentedCommandTests` | Every flag combination the documentation prints is run by some test |
 | `HostAssetManifestTests` | Each host page carries the same assets in the same order, and each one loads |
-| `MarkdownTableTests` | The tables in `Design/` and `CLAUDE.md` are still tables |
+| `MarkdownTableTests` | The tables in `Design/`, every `CLAUDE.md` and every skill are still tables |
 | `WorkflowPlatformParityTests` | The two CI legs hold each other in both directions |
 | `TestRunnerScriptTests`, `DebianPackageTests`, `WindowsInstallerTests`, `ReleaseVersionTests` | The build and packaging scripts, read as text, because the file system cannot answer on Windows |
 
@@ -231,50 +236,9 @@ probes against it, and that needs a WebKitGTK that launches.
 
 ## Documentation screenshots are generated, not taken
 
-`MLQT.Journeys/DocumentationScreenshots` drives the real components through `MLQT.TestHost` against
-the fixture library and writes each image as the file the markdown already links to.
-
-```powershell
-$env:MLQT_DOC_SCREENSHOTS = "Documentation/Images"
-MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
-```
-
-Run it **on its own, by that filter** — the journeys share one host, so a full-suite run reaches it
-with libraries and settings another journey left behind. With the variable unset it writes nothing.
-
-**The caption in the markdown is the specification for the shot.** Where the two disagree it is usually
-the picture that is wrong, which is the point of being able to regenerate them. MLQT prints the full
-path of what it describes, so the fixture repository is written under the shared documents folder for
-these runs — a temp directory named after a GUID under a developer's profile would have gone into the
-manual.
-
-**What stays a photograph, and why:** anything needing Dymola (`code-review-4`, and `code-review-5`
-because the Finding Details dialog only opens for a finding carrying `Details`, which a style rule does
-not produce), `metrics-1`, and anything showing the window frame.
-
-**`metrics-1` was looked at and left** (B473): its caption is the Metrics tab *over the Modelica
-Standard Library*, and what the picture shows is what only a real library gives — coverage figures
-across thousands of classes, and a burndown drawn from snapshots saved over months. The fixture has
-eleven classes and one run; a picture of it would be a Metrics tab with a single point where the
-trend should be, which is not what metrics-dashboard.md is describing. Retake it by hand, from MSL,
-when the tab changes.
-
-**What used to be and no longer is (B152):** the six SVN shots and `settings-reference-4` (that section
-renders only for an SVN repository) come from the SVN fixture, added last in the run after the Git
-repository is removed — both fixtures hold a library called `Lib`, and two in one project would be the
-same class ids twice. The SVN repository requires an issue number, so the commit dialog draws the Issue
-ID field its caption asks for. `git-operations-6`, the merge dialog's ready-to-merge phase, was
-"unreachable" because MLQT re-reads working-copy status only after a VCS operation *in the
-application* — and the dirty phase's own **Commit Changes** button is one: commit from there and the
-dialog checks again and moves on, which is the path git-operations.md describes. It is the last Git
-scene, because it commits. The generator therefore needs `svn` and `svnadmin`; it fails naming them
-rather than skipping the pictures.
-
-**The Dymola pair was looked at and left** (2026-09-27, not attempted): `code-review-4` is the
-progress dialog *part way* through a run, which on an eleven-class fixture is a race between the
-shot and the checks, run by a Dymola that has to start, take a licence and open its own window on
-the desktop first; and `code-review-5` needs a class that *fails* a Dymola check, which the fixture
-does not have and which would appear in the tree of every other picture if it did.
+`MLQT.Journeys/DocumentationScreenshots` is a journey too, but what it is for is the manual: how to
+run it (with an **absolute** output path), which shots stay photographs and why, are in the
+`user-documentation` skill.
 
 ## Coverage
 

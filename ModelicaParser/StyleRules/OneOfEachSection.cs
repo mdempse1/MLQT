@@ -52,7 +52,7 @@ public class OneOfEachSection : VisitorWithModelNameTracking
             var child = children[i];
 
             // Asked of the node, never of its text - see SectionKeyword. This loop was 59% of coverage
-            // measurement on Claytex and the whole of this rule's cost.
+            // measurement on a large user library and the whole of this rule's cost.
             var keyword = SectionKeyword.Of(child);
             if (keyword == "public")
             {

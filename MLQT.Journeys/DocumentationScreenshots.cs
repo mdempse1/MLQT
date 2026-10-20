@@ -13,7 +13,7 @@ namespace MLQT.Journeys;
 /// <para>Off unless <c>MLQT_DOC_SCREENSHOTS</c> names a directory, so an ordinary run does not write
 /// to the repository. Run it with:</para>
 /// <code>
-/// $env:MLQT_DOC_SCREENSHOTS = "C:\Projects\MLQT\Documentation\Images"   # absolute - see CLAUDE.md
+/// $env:MLQT_DOC_SCREENSHOTS = "C:\Projects\MLQT\Documentation\Images"   # absolute - see the user-documentation skill
 /// MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
 /// </code>
 ///
@@ -46,7 +46,7 @@ namespace MLQT.Journeys;
 /// size, a native file dialog — needs a photograph of the real Photino host, because nothing can
 /// drive that automatically - a CDP-driven WebView2 is work that cannot be carried to WebKitGTK. Nor
 /// does it produce the two Dymola pictures (a check caught part way, and a finding only a failed
-/// check carries). Those stay photographs, and CLAUDE.md lists them. The SVN pictures used to be on that list and are not: an SVN repository needs no
+/// check carries). Those stay photographs, and the user-documentation skill lists them. The SVN pictures used to be on that list and are not: an SVN repository needs no
 /// server, only <c>svnadmin create</c>, so this run needs <c>svn</c> and <c>svnadmin</c> installed.</para>
 /// </remarks>
 [Collection(JourneyCollection.Name)]

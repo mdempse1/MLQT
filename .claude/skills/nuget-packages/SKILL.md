@@ -1,3 +1,8 @@
+---
+name: nuget-packages
+description: "Every NuGet package the solution uses, with its purpose and licence. Use when adding, removing or upgrading a package."
+---
+
 # NuGet Packages Skill
 
 This skill documents all NuGet packages used in the MLQT solution.

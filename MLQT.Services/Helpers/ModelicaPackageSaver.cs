@@ -190,7 +190,7 @@ public class ModelicaPackageSaver
         // The stored ModelicaCode is the extracted class body without a 'within' clause.
         // The file written to disk must carry the within clause so that, when the library is
         // reloaded, the standalone file re-parses with the correct package context and the model
-        // regenerates its original hierarchical ID (e.g. "VeSyMA.EnergyStorage.Summary.Null"
+        // regenerates its original hierarchical ID (e.g. "VehicleLib.EnergyStorage.Summary.Null"
         // rather than a detached "Null"). Mirror the full-save path (PreParseModelsParallel) and
         // prepend the within clause for rendering, without mutating the stored within-less body.
         var sourceCode = WithinClause.Ensure(fileOwner.Definition.ModelicaCode ?? "", fileOwner.ParentModelName);

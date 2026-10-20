@@ -7,18 +7,18 @@ namespace ModelicaGraph.Tests;
 /// <summary>
 /// That an <c>#include</c> is looked for in every declared <c>IncludeDirectory</c> (B211).
 ///
-/// <para>Reported from <c>VeSyMA.Roads.Functions.Internal.readNormal</c>, which declares</para>
+/// <para>Reported from <c>VehicleLib.Roads.Functions.Internal.readNormal</c>, which declares</para>
 /// <code>
 /// Include={"#include \"speedProfile.c\"","#include \"generic_road.c\"","#include \"ModelicaTables.c\""},
-/// IncludeDirectory={"modelica://VeSyMA/Resources/Include","modelica://Claytex/Resources/Include"}
+/// IncludeDirectory={"modelica://VehicleLib/Resources/Include","modelica://VendorLib/Resources/Include"}
 /// </code>
 /// <para>Both are arrays, and the resolution loop assigned each directory to a single variable, so
-/// only the last survived. Every header in the class was then looked for in Claytex's directory
-/// alone, and <c>generic_road.c</c> — which is in VeSyMA's — was reported missing from a directory
+/// only the last survived. Every header in the class was then looked for in VendorLib's directory
+/// alone, and <c>generic_road.c</c> — which is in VehicleLib's — was reported missing from a directory
 /// it was never meant to be in.</para>
 ///
 /// <para>It had a second symptom worth knowing, because it looks like a different bug: the file
-/// <i>did</i> appear in the tree, under VeSyMA, put there by the directory scan, and said no model
+/// <i>did</i> appear in the tree, under VehicleLib, put there by the directory scan, and said no model
 /// referenced it. The reference had gone to a separate node under the wrong directory. Resolving to
 /// the right directory reunites the two, because the node is keyed by path.</para>
 /// </summary>

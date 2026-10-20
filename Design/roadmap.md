@@ -28,7 +28,7 @@ by shared root cause; all sixteen are complete. What it delivered:
 | **The kind of change** | `ModelicaParser/Comparison/` tells a simulation-affecting edit from a graphical or documentation one; the library browser marks **M** / **G** and filters by it |
 | **Correctness under the graph** | An unparseable file keeps a placeholder and its diagnostic; one watcher per watched path; `modelica://` resolves against the referencing library's copy, then the readable one; an encrypted library is never loaded beside source for the same library; `ModelicaLanguage` keeps the built-ins out of the graph |
 | **Rules and formatting** | `ComponentsBeforeClasses`, `DeclarationOrder`, `SingleFilePackage` and a match-Dymola package-order option; excision instead of re-rendering in the trimmer; every write keeps its file's final newline and line endings; formatting exclusion written as `__MLQT(format=false)` |
-| **Performance** | A Claytex check went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
+| **Performance** | A check of a large user library went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
 | **External tools and revision control** | A result dialog, dead-session recovery, a time limit per tool and Cancel reaching a running check, for both Dymola and OpenModelica; tags and detached HEAD, history diffs against the predecessor, and revision content decoded by MLQT's encoding funnel |
 | **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class`'s source view elides rather than re-renders, so its lines match the findings |
 | **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
@@ -77,6 +77,25 @@ it and no macOS machine has been mentioned as available. Code signing (no suppli
 installers are unsigned) and arm64 (nobody has a machine to test on) are deliberate omissions rather
 than outstanding work.
 
+### Retired design notes
+
+**The per-phase design notes were retired on 2026-09-17**, once phases 1–7 had all shipped. What
+they held that outlives them is now in the code, in `CODING_GUIDELINES.md`, and in the skills —
+`encrypted-libraries`, `desktop-host` and `gui-testing` are the three written specifically to carry
+that material. **Phase 1 (release feedback) followed on 2026-09-25**: its plan
+(`phase-1-release-feedback.md`) and the viewer-fidelity analysis behind its central decision
+(`analysis-viewer-fidelity.md`) were retired into `CODING_GUIDELINES.md` (§Testing and §Working a
+Defect), the skills, and the code — the classifier, `ClassSource` and `CodeReview.Show` carry their
+own measurements. **Obfuscation readiness (B502) followed on 2026-10-14**: `obfuscation.md` was
+retired into `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation (the rules, each with its
+guard test) and `Design/release-checklist.md` §7 (the protected-build comparison and its reference
+measurements). **The MCP tool consolidation (B503) followed on 2026-10-20**: `mcp-tool-consolidation.md`
+was retired into `Documentation/mcp-server.md` (the 16 tools, and the mapping from the 66 for hosts
+and clients), `.claude/skills/mcp-library-loading/SKILL.md` (how dependencies are found and a startup
+script read, and what the measurements taught about getting agents to use the tools), and the server
+instructions and guidance. Git history has the notes themselves if the reasoning behind a delivered
+decision is ever needed.
+
 ---
 
 ## Locked sequencing
@@ -113,9 +132,9 @@ What it leaves as candidates rather than work:
 - **Units and truncation in diagram labels.** `mlqt_get_diagram_image` substitutes `%parameter` values but
   writes no unit and does not cut text to the icon's width. The unit needs unit resolution and a
   decision about how to show it (B278).
-- **Server GC in the desktop app over a long session.** It was measured in the CLI, where a Claytex
-  check fell from 242 s to 70.5 s. The desktop host is set the same way, but nobody has measured its
-  memory and responsiveness over a long session. Confirm it on the next long Claytex session (B281).
+- **Server GC in the desktop app over a long session.** It was measured in the CLI, where a check of a
+  large user library fell from 242 s to 70.5 s. The desktop host is set the same way, but nobody has measured its
+  memory and responsiveness over a long session. Confirm it on the next long session over a large library (B281).
 
 **How a phase is kept whole**, which this one learned twice: every open item names a work package or
 is a roadmap candidate. An item filed as "separable at any point" is never scheduled once the package
@@ -163,7 +182,7 @@ before: in four real model-building sessions, at least 117 writes to `.mo` files
 went through the agent's own shell and file tools, while 44–59 of the 66 tools went uncalled. After:
 the harness on the 16 is better on aggregate, and both real-world scenarios are level on shell reads
 and writes with the 66 at their best. `Documentation/mcp-server.md` §Moving from the 66 tools maps
-each old tool for hosts and clients; `.claude/skills/skill-mcp-library-loading.md` keeps how loading
+each old tool for hosts and clients; `.claude/skills/mcp-library-loading/SKILL.md` keeps how loading
 works and what the measurements taught. The plan, `Design/mcp-tool-consolidation.md`, was retired
 when it landed, and its history has every measurement. Before the release, re-run the protected-build
 comparison of `Design/release-checklist.md` §7 against the 16.
@@ -238,7 +257,7 @@ change of design is in place, and the rest is a design item.
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
-| B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
+| B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`.claude/skills/gui-testing/SKILL.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
 | B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and a host that puts omc in a Job Object ends it when that host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
 | B505 | Tasks that share one MLQT MCP server share one session. A client keeps its servers across `/clear` and new sessions, subagents use their parent's, and sessions of one app running at once may share them; MCP gives a server no conversation id, and MLQT holds one copy of each library under ids that do not say whose. So a conversation can inherit what an earlier one loaded, and two tasks editing their own copies of one library would edit one copy. In place: every library says when it was loaded, a second copy is refused with why and what replacing it does (whatever its folder is called), a reset goes back to empty, and `analyse` flags a run whose server was not new. Until the design below, the documentation says to give each such task a server of its own | Design sessions scoped to a workspace inside one server: each task's libraries kept apart, keyed by the folder they were loaded from, with every call naming its workspace - an id `mlqt_load` returns, or the client's MCP roots where it sends them. Every tool takes part, so it needs a design note of its own |
 
@@ -277,7 +296,7 @@ not MAUI plus a second host.
 | **Single cross-platform desktop host (Photino.Blazor)** replacing MAUI | ⭐⭐⭐ | L | **✅ shipped 2026-09-10.** In-process webview, so direct filesystem and git/svn access are kept and `MLQT.Shared` is reused unchanged. The MAUI project is deleted and `PortabilityTests` is the tombstone |
 | **WebKitGTK interop spike** (Cytoscape.js, MudBlazor, highlighting) | — | S | **✅ answered on both platforms** — 16 `/selftest` probes, zero differences against the MAUI baseline under WebKitGTK and WebView2 alike. Cytoscape and MudBlazor both work, and the syntax highlighting was never at risk: it is CSS over server-rendered spans, not a JS library |
 | **Platform-service ports** (file dialog, power/sleep, settings paths) | ⭐⭐ | M | **✅ shipped** — the picker is Photino's own native dialogs on both platforms, sleep prevention is Win32 on Windows and a `systemd-inhibit` lock on Linux, and settings are a JSON file that is no longer host-specific at all. Existing users' MAUI `Preferences` migrate themselves on first run |
-| **GUI test harness** (the code-behind sweep, unit + bUnit tests, the Playwright test host, `/selftest`) | ⭐⭐⭐ | L | **✅ shipped** — and it is what made the host swap a small change. See `skill-gui-testing.md` |
+| **GUI test harness** (the code-behind sweep, unit + bUnit tests, the Playwright test host, `/selftest`) | ⭐⭐⭐ | L | **✅ shipped** — and it is what made the host swap a small change. See `.claude/skills/gui-testing/SKILL.md` |
 | **macOS** | ⭐ | ? | **Deferred.** Photino supports it and `FilePickerService` already had an NSOpenPanel branch under MAUI, so the intent predates this. No machine, no dependency on it |
 | **arm64** | ⭐ | S/M | **Not built.** The host is a plain `net10.0` application with no platform-specific project, so this is a runner and a test pass rather than a port |
 | **Code signing** | ⭐⭐ | S | **Not done.** Both installers are unsigned and SmartScreen warns on first run; a certificate and a supplier are still to be decided |
@@ -307,7 +326,7 @@ expected-invisible namespaces) + encrypted-file detection + an explicit treat-as
 Severity follows confidence.
 
 **Encrypted libraries move *individual classes* from state 2 to state 1** (shipped — see
-[encrypted-libraries.md](../Documentation/encrypted-libraries.md) and `skill-encrypted-libraries.md`).
+[encrypted-libraries.md](../Documentation/encrypted-libraries.md) and `.claude/skills/encrypted-libraries/SKILL.md`).
 MLQT reads the vendor's generated help HTML and recovers each documented class's name, description,
 base classes and whether it has an icon, so references into commercial libraries resolve and inherited
 icons are seen. Resolution against documentation is **asymmetric**: a hit is reliable, but a miss is
@@ -378,7 +397,7 @@ directly: warnings report but do not fail, errors fail.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | **✅ shipped** — `RuleSeverities`, with per-repository Off/Info/Warning/Error selectors in the settings UI |
-| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`; a class-level `suppress`/`spelling` reaches every class nested in it, so one annotation waives a sub-package (Dymola's `_fmu` import models were ~65% of a Claytex check). Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
+| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`; a class-level `suppress`/`spelling` reaches every class nested in it, so one annotation waives a sub-package (Dymola's `_fmu` import models were ~65% of a large user library's findings). Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
 | **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | **✅ shipped** — see §5 |
 | **Custom-rule authoring — declarative tier** (config-driven shape checks) | ⭐⭐ | L | **Phase 3.** The 80%: annotation-present, identifier-regex, banned-`extends`. No compilation; CI-safe. Registers a rule id + severity |
 | **Custom-rule authoring — compiled-plugin tier** (`VisitorWithModelNameTracking`) | ⭐⭐ | XL | **Phase 3.** Full parse-tree power escape hatch. ⚠ Loading compiled code in CI is a supply-chain consideration |

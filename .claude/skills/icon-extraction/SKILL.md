@@ -1,3 +1,8 @@
+---
+name: icon-extraction
+description: "Extracting Modelica Icon annotations and rendering them as SVG (IconExtractor, IconSvgRenderer). Use when working on icon parsing or rendering."
+---
+
 # Icon Extraction Skill
 
 This skill covers extracting Modelica Icon annotations and rendering them as SVG for display in the UI.

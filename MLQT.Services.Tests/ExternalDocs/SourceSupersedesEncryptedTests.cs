@@ -88,8 +88,8 @@ public class SourceSupersedesEncryptedTests : IDisposable
     private async Task<LibraryDataService> LoadBothAsync(bool encryptedFirst)
     {
         var service = new LibraryDataService();
-        var encrypted = WriteEncrypted("Claytex");
-        var source = WriteSource("Claytex");
+        var encrypted = WriteEncrypted("VendorLib");
+        var source = WriteSource("VendorLib");
 
         await service.AddLibraryFromPathAsync(encryptedFirst ? encrypted : source);
         await service.AddLibraryFromPathAsync(encryptedFirst ? source : encrypted);
@@ -108,10 +108,10 @@ public class SourceSupersedesEncryptedTests : IDisposable
     [Fact]
     public void ReadableSourceArriving_RetiresTheEncryptedCopy()
     {
-        var encrypted = Library("Claytex", encrypted: true);
-        var other = Library("Suspensions", encrypted: true);
+        var encrypted = Library("VendorLib", encrypted: true);
+        var other = Library("SuspensionLib", encrypted: true);
 
-        var retired = LibraryPrecedence.Retires(Library("Claytex", encrypted: false), [encrypted, other]);
+        var retired = LibraryPrecedence.Retires(Library("VendorLib", encrypted: false), [encrypted, other]);
 
         Assert.Same(encrypted, Assert.Single(retired));
     }
@@ -119,9 +119,9 @@ public class SourceSupersedesEncryptedTests : IDisposable
     [Fact]
     public void AnEncryptedCopyArrivingAfterSource_RetiresItself()
     {
-        var arriving = Library("Claytex", encrypted: true);
+        var arriving = Library("VendorLib", encrypted: true);
 
-        var retired = LibraryPrecedence.Retires(arriving, [Library("Claytex", encrypted: false)]);
+        var retired = LibraryPrecedence.Retires(arriving, [Library("VendorLib", encrypted: false)]);
 
         Assert.Same(arriving, Assert.Single(retired));
     }
@@ -132,24 +132,24 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // Every other vendor library in the folder: the ordinary case, and the one that must not
         // lose anything to this rule.
         Assert.Empty(LibraryPrecedence.Retires(
-            Library("Claytex", encrypted: true), [Library("Suspensions", encrypted: false)]));
+            Library("VendorLib", encrypted: true), [Library("SuspensionLib", encrypted: false)]));
         Assert.Empty(LibraryPrecedence.Retires(
-            Library("Claytex", encrypted: false), [Library("Suspensions", encrypted: true)]));
+            Library("VendorLib", encrypted: false), [Library("SuspensionLib", encrypted: true)]));
     }
 
     [Fact]
     public void TwoCopiesOfTheSameKind_AreNotThisRulesBusiness()
     {
         Assert.Empty(LibraryPrecedence.Retires(
-            Library("Claytex", encrypted: false), [Library("Claytex", encrypted: false)]));
+            Library("VendorLib", encrypted: false), [Library("VendorLib", encrypted: false)]));
         Assert.Empty(LibraryPrecedence.Retires(
-            Library("Claytex", encrypted: true), [Library("Claytex", encrypted: true)]));
+            Library("VendorLib", encrypted: true), [Library("VendorLib", encrypted: true)]));
     }
 
     [Theory]
-    [InlineData("Claytex", "Claytex", true)]
-    [InlineData("Claytex", "claytex", false)]   // Modelica names are case-sensitive
-    [InlineData("Claytex", "ClaytexExtra", false)]
+    [InlineData("VendorLib", "VendorLib", true)]
+    [InlineData("VendorLib", "vendorlib", false)]   // Modelica names are case-sensitive
+    [InlineData("VendorLib", "VendorLibExtra", false)]
     [InlineData("", "", false)]                 // an unknown name matches nothing, even itself
     [InlineData(null, null, false)]
     public void SameLibrary_IsTheExactTopLevelName(string? a, string? b, bool same)
@@ -160,10 +160,10 @@ public class SourceSupersedesEncryptedTests : IDisposable
     [Fact]
     public void ReadableSourceFor_NamesWhereTheSourceIs()
     {
-        var readable = new[] { ("Suspensions", "/a"), ("Claytex", "/b") };
+        var readable = new[] { ("SuspensionLib", "/a"), ("VendorLib", "/b") };
 
-        Assert.Equal("/b", LibraryPrecedence.ReadableSourceFor("Claytex", readable));
-        Assert.Null(LibraryPrecedence.ReadableSourceFor("VeSyMA", readable));
+        Assert.Equal("/b", LibraryPrecedence.ReadableSourceFor("VendorLib", readable));
+        Assert.Null(LibraryPrecedence.ReadableSourceFor("VehicleLib", readable));
         Assert.Null(LibraryPrecedence.ReadableSourceFor(null, readable));
     }
 
@@ -177,7 +177,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
         var service = await LoadBothAsync(encryptedFirst);
 
         var only = Assert.Single(service.Libraries);
-        Assert.Equal("Claytex", only.Name);
+        Assert.Equal("VendorLib", only.Name);
         Assert.NotEqual(LibrarySourceType.EncryptedDirectory, only.SourceType);
     }
 
@@ -191,8 +191,8 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // source first, the stub builder skipped Widget and added Gadget anyway.
         var service = await LoadBothAsync(encryptedFirst);
 
-        Assert.Null(service.GetModelById("Claytex.Gadget"));
-        Assert.False(service.GetModelById("Claytex.Widget")!.IsExternalStub);
+        Assert.Null(service.GetModelById("VendorLib.Gadget"));
+        Assert.False(service.GetModelById("VendorLib.Widget")!.IsExternalStub);
         Assert.DoesNotContain(service.CombinedGraph.ModelNodes, m => m.IsExternalStub);
     }
 
@@ -206,7 +206,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
         var service = await LoadBothAsync(encryptedFirst);
 
         var claims = service.Libraries.SelectMany(l => l.ModelIds.Select(id => (Library: l, Id: id))).ToList();
-        Assert.Equal(["Claytex", "Claytex.Widget"], claims.Select(c => c.Id).Order(StringComparer.Ordinal));
+        Assert.Equal(["VendorLib", "VendorLib.Widget"], claims.Select(c => c.Id).Order(StringComparer.Ordinal));
         Assert.All(claims, c =>
         {
             var node = service.GetModelById(c.Id);
@@ -234,9 +234,9 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // The caller gets the library object back either way. Empty is what makes the reference-
         // library loader's "contributed nothing" branch take it, instead of counting it as loaded.
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteSource("Claytex"));
+        await service.AddLibraryFromPathAsync(WriteSource("VendorLib"));
 
-        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("Claytex"));
+        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("VendorLib"));
 
         Assert.Empty(encrypted.ModelIds);
         Assert.Empty(encrypted.TopLevelModelIds);
@@ -251,10 +251,10 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // so a library whose source is checked out costs a directory probe rather than a parse of its
         // documentation and a graph of stubs built to be thrown away.
         var service = new LibraryDataService();
-        var source = WriteSource("Claytex");
+        var source = WriteSource("VendorLib");
         await service.AddLibraryFromPathAsync(source);
 
-        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("Claytex"));
+        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("VendorLib"));
 
         Assert.Null(encrypted.DocumentedClassCount);   // the documentation was never read
         Assert.Equal(source, encrypted.SupersededBy);
@@ -267,12 +267,12 @@ public class SourceSupersedesEncryptedTests : IDisposable
     public async Task AnEncryptedLibraryWithNoSourceCopy_IsUntouched()
     {
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteSource("Suspensions"));
+        await service.AddLibraryFromPathAsync(WriteSource("SuspensionLib"));
 
-        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("Claytex"));
+        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("VendorLib"));
 
         Assert.Contains(service.Libraries, l => l.Id == encrypted.Id);
-        Assert.True(service.GetModelById("Claytex.Gadget")!.IsExternalStub);
+        Assert.True(service.GetModelById("VendorLib.Gadget")!.IsExternalStub);
     }
 
     [Fact]
@@ -282,17 +282,17 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // encrypted library that lost classes to source still listed them — so removing the vendor
         // copy deleted the user's own classes from the graph. Reached here by an encrypted library
         // whose directory is named differently from the classes it documents, which the name rule
-        // cannot see, so the two really do both list Claytex.Widget.
+        // cannot see, so the two really do both list VendorLib.Widget.
         var service = new LibraryDataService();
-        var vendor = await service.AddLibraryFromPathAsync(WriteEncrypted("Vendor", classesOf: "Claytex"));
-        await service.AddLibraryFromPathAsync(WriteSource("Claytex"));
-        Assert.Contains("Claytex.Widget", vendor.ModelIds);
+        var vendor = await service.AddLibraryFromPathAsync(WriteEncrypted("Supplier", classesOf: "VendorLib"));
+        await service.AddLibraryFromPathAsync(WriteSource("VendorLib"));
+        Assert.Contains("VendorLib.Widget", vendor.ModelIds);
 
         service.RemoveLibrary(vendor.Id);
 
-        Assert.False(service.GetModelById("Claytex.Widget")!.IsExternalStub);
-        Assert.NotNull(service.GetModelById("Claytex"));
-        Assert.Null(service.GetModelById("Claytex.Gadget"));   // the vendor's own class does go
+        Assert.False(service.GetModelById("VendorLib.Widget")!.IsExternalStub);
+        Assert.NotNull(service.GetModelById("VendorLib"));
+        Assert.Null(service.GetModelById("VendorLib.Gadget"));   // the vendor's own class does go
     }
 
     // ---------------------------------------------------------------- through RepositoryService
@@ -310,9 +310,9 @@ public class SourceSupersedesEncryptedTests : IDisposable
         var repositories = Repositories(libraries);
         var tool = Path.Combine(_root, "tool");
         var checkout = Path.Combine(_root, "checkout");
-        WriteEncrypted("Claytex", parent: "tool");
-        WriteEncrypted("Suspensions", parent: "tool");
-        WriteSource("Claytex", parent: "checkout");
+        WriteEncrypted("VendorLib", parent: "tool");
+        WriteEncrypted("SuspensionLib", parent: "tool");
+        WriteSource("VendorLib", parent: "checkout");
 
         var toolRepo = (await repositories.AddRepositoryAsync(tool, checkoutPath: null, startMonitoring: false)).Repository!;
         var checkoutRepo = (await repositories.AddRepositoryAsync(checkout, checkoutPath: null, startMonitoring: false)).Repository!;
@@ -321,11 +321,11 @@ public class SourceSupersedesEncryptedTests : IDisposable
             repositories.LoadLibrariesAsync(checkoutRepo.Id));
 
         Assert.Equal(
-            [("Claytex", false), ("Suspensions", true)],
+            [("SuspensionLib", true), ("VendorLib", false)],
             libraries.Libraries
                 .Select(l => (l.Name, l.SourceType == LibrarySourceType.EncryptedDirectory))
                 .OrderBy(l => l.Name, StringComparer.Ordinal));
-        Assert.Null(libraries.GetModelById("Claytex.Gadget"));
+        Assert.Null(libraries.GetModelById("VendorLib.Gadget"));
     }
 
     [Fact]
@@ -335,20 +335,20 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // afterwards. Nothing was skipped up front, so it is the registration that has to retire it.
         var libraries = new LibraryDataService();
         var repositories = Repositories(libraries);
-        WriteEncrypted("Claytex", parent: "tool");
+        WriteEncrypted("VendorLib", parent: "tool");
         var toolRepo = (await repositories.AddRepositoryAsync(
             Path.Combine(_root, "tool"), checkoutPath: null, startMonitoring: false)).Repository!;
         await repositories.LoadLibrariesAsync(toolRepo.Id);
-        Assert.True(libraries.GetModelById("Claytex.Gadget")!.IsExternalStub);
+        Assert.True(libraries.GetModelById("VendorLib.Gadget")!.IsExternalStub);
 
-        WriteSource("Claytex", parent: "checkout");
+        WriteSource("VendorLib", parent: "checkout");
         var checkoutRepo = (await repositories.AddRepositoryAsync(
             Path.Combine(_root, "checkout"), checkoutPath: null, startMonitoring: false)).Repository!;
         await repositories.LoadLibrariesAsync(checkoutRepo.Id);
 
         var only = Assert.Single(libraries.Libraries);
         Assert.NotEqual(LibrarySourceType.EncryptedDirectory, only.SourceType);
-        Assert.Null(libraries.GetModelById("Claytex.Gadget"));
+        Assert.Null(libraries.GetModelById("VendorLib.Gadget"));
     }
 
     [Fact]
@@ -360,7 +360,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
         var libraries = new LibraryDataService();
         var repositories = Repositories(libraries);
         await repositories.LoadRepositorySettingsAsync();   // an active project to reload
-        WriteSource("Claytex", parent: "checkout");
+        WriteSource("VendorLib", parent: "checkout");
         var checkout = (await repositories.AddRepositoryAsync(
             Path.Combine(_root, "checkout"), checkoutPath: null, startMonitoring: false)).Repository!;
         Assert.False(repositories.RepositoryRemovedSinceProjectLoad);
@@ -378,7 +378,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // The add dialog's Cancel removes the repository it half-added without unloading anything,
         // so nothing that was standing in for anything has gone.
         var repositories = Repositories(new LibraryDataService());
-        WriteSource("Claytex", parent: "checkout");
+        WriteSource("VendorLib", parent: "checkout");
         var checkout = (await repositories.AddRepositoryAsync(
             Path.Combine(_root, "checkout"), checkoutPath: null, startMonitoring: false)).Repository!;
 

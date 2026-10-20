@@ -151,7 +151,7 @@ public class LoadSelectorModificationAnalyzer : modelicaBaseVisitor<object?>
     /// <c>StripQuotes(modExpr.GetText())</c> — the raw text of whatever was bound — so
     /// <c>fileName_1={fileName_1_xr,fileName_1_yr,fileName_1_zr}</c> became a path, was resolved
     /// against the class's own directory, and was reported as a missing file named after the
-    /// expression. Claytex produces several of these.</para>
+    /// expression. A large user library produces several of these.</para>
     ///
     /// <para>An array, a reference to another parameter, a concatenation or a function call has a
     /// value only when the model is translated. MLQT cannot resolve it and therefore cannot say it is

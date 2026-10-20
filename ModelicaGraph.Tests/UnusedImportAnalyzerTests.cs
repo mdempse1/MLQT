@@ -41,10 +41,10 @@ public class UnusedImportAnalyzerTests
     [Fact]
     public void ImportUsedOnlyByAClassInAnotherFile_IsNotFlagged()
     {
-        // The reported case: Claytex/package.mo declares the imports, the classes that use them are
-        // separate .mo files under Claytex/.
-        var root = Package("Claytex", "package Claytex \"lib\"\n  import SI = Modelica.Units.SI;\nend Claytex;");
-        var child = Model("Claytex.Shaft", "model Shaft \"s\"\n  SI.Angle phi;\nend Shaft;");
+        // The reported case: VendorLib/package.mo declares the imports, the classes that use them are
+        // separate .mo files under VendorLib/.
+        var root = Package("VendorLib", "package VendorLib \"lib\"\n  import SI = Modelica.Units.SI;\nend VendorLib;");
+        var child = Model("VendorLib.Shaft", "model Shaft \"s\"\n  SI.Angle phi;\nend Shaft;");
 
         Assert.DoesNotContain(Run(root, child), f => f.RuleId == RuleIds.UnusedImport);
     }

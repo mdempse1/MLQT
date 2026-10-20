@@ -80,7 +80,7 @@ public class CodeReviewToolbarJourney(TestHostFixture host) : IDisposable
     /// <summary>
     /// B249 — one size across the toolbar. Measured, "Go to class" was 32px tall where everything
     /// beside it was 44, which is what "a different size from the rest" turned out to mean; the
-    /// whole row then went to <c>Size.Small</c>, which is what CLAUDE.md asks for and what the rest
+    /// whole row then went to <c>Size.Small</c>, which is what MLQT.Shared/CLAUDE.md asks for and what the rest
     /// of the application already uses.
     ///
     /// <para>Asserted as agreement rather than as a number. A test naming 34px would fail on a

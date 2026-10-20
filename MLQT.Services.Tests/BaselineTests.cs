@@ -231,11 +231,11 @@ public class BaselineTests
     {
         var settings = Rules(RuleIds.ClassDescription);
         var baseline = Baseline.FromFindings(
-            [F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings, ["Modelica", "Claytex"]);
+            [F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings, ["Modelica", "VendorLib"]);
 
         var drift = baseline.DriftFrom(settings, ["Modelica"]);
 
-        Assert.Equal(["Claytex"], drift.DependenciesMissing);
+        Assert.Equal(["VendorLib"], drift.DependenciesMissing);
         Assert.True(drift.HasDrifted);
     }
 
@@ -247,9 +247,9 @@ public class BaselineTests
         // against the source - "not loaded this time, pass --dependency" would be false advice.
         var settings = Rules(RuleIds.ClassDescription);
         var baseline = Baseline.FromFindings(
-            [F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings, ["Modelica", "Claytex"]);
+            [F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings, ["Modelica", "VendorLib"]);
 
-        var drift = baseline.DriftFrom(settings, ["Modelica"], loadedFromSource: ["Claytex"]);
+        var drift = baseline.DriftFrom(settings, ["Modelica"], loadedFromSource: ["VendorLib"]);
 
         Assert.Empty(drift.DependenciesMissing);
         Assert.False(drift.HasDrifted);

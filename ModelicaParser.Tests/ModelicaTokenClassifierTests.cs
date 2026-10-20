@@ -228,7 +228,7 @@ public class ModelicaTokenClassifierTests
     ///
     /// <para><b>What still survives in the emit loop, and why it is not worth chasing.</b> Measured
     /// after these tests: 22 survivors became 19, 84.72% became 86.81%, and what is left there is
-    /// equivalent — read, as CLAUDE.md asks, rather than scored:</para>
+    /// equivalent — read, as the test-tooling skill asks, rather than scored:</para>
     /// <list type="bullet">
     /// <item>the <c>StringBuilder</c> capacity arithmetic, which changes no output;</item>
     /// <item><c>i &lt; stream.Size</c> to <c>&lt;=</c>, unreachable because the EOF <c>break</c>

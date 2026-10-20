@@ -600,7 +600,7 @@ package FordVDLOpen ""FordVDLOpen - Ford Performance Confidential Source Code Li
   annotation (
     Documentation(revisions=""<html>
 <p>2019.08.07 Version 1.00 - Original Release of FordVDLOpen. <\p>
-<p>2020.02.14 Version 1.01 - Update to Claytex/VeSyMA library 2019.2. </p>
+<p>2020.02.14 Version 1.01 - Update to VendorLib/VehicleLib library 2019.2. </p>
 </html>""));
 end FordVDLOpen;";
 

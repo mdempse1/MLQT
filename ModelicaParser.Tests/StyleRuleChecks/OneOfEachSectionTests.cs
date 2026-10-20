@@ -524,7 +524,7 @@ end SimpleModel;
   }
   // The section counting reads keywords as terminals and an element list by whether it holds any
   // token, rather than rebuilding each child's text (B261 follow-up: that was the whole of this rule's
-  // cost on Claytex). These pin the answers the text comparison gave, so the cheaper test cannot
+  // cost on a large user library). These pin the answers the text comparison gave, so the cheaper test cannot
   // quietly count differently.
 
   [Fact]

@@ -87,11 +87,11 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
     [InlineData(false)]
     public async Task TheLibraryAppearsOnceInTheTree(bool encryptedFirst)
     {
-        var service = await LoadBothAsync("Claytex", encryptedFirst);
+        var service = await LoadBothAsync("VendorLib", encryptedFirst);
 
         var topLevel = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(1, topLevel.Count(m => m.Id == "Claytex"));
+        Assert.Equal(1, topLevel.Count(m => m.Id == "VendorLib"));
     }
 
     [Theory]
@@ -101,13 +101,13 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
     {
         // Source wins in the graph, so the source library is the one that owns the class — and the
         // one whose repository should show it, whichever order the two were loaded in.
-        var service = await LoadBothAsync("Claytex", encryptedFirst);
+        var service = await LoadBothAsync("VendorLib", encryptedFirst);
 
-        var claytex = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "Claytex");
-        var owner = service.Libraries.Single(l => l.Id == claytex.LibraryId);
+        var vendorlib = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "VendorLib");
+        var owner = service.Libraries.Single(l => l.Id == vendorlib.LibraryId);
 
         Assert.NotEqual(LibrarySourceType.EncryptedDirectory, owner.SourceType);
-        Assert.False(claytex.IsExternalStub);
+        Assert.False(vendorlib.IsExternalStub);
     }
 
     [Theory]
@@ -117,12 +117,12 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
     {
         // The two copies list different children — the encrypted one knows only what its
         // documentation named. Expanding the package must show the source's children.
-        var service = await LoadBothAsync("Claytex", encryptedFirst);
+        var service = await LoadBothAsync("VendorLib", encryptedFirst);
 
-        var claytex = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "Claytex");
-        var children = await service.GetChildModelsAsync(claytex);
+        var vendorlib = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "VendorLib");
+        var children = await service.GetChildModelsAsync(vendorlib);
 
-        var widget = Assert.Single(children, c => c.Id == "Claytex.Widget");
+        var widget = Assert.Single(children, c => c.Id == "VendorLib.Widget");
         Assert.False(widget.IsExternalStub);
     }
 
@@ -137,8 +137,8 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // the id is listed by both libraries and the node is replaced underneath. Summing
         // ModelIds.Count over the libraries therefore gave a different answer depending on which
         // parallel load happened to finish first.
-        var sourceFirst = await LoadBothAsync("Claytex", encryptedFirst: false);
-        var encryptedFirst = await LoadBothAsync("Suspensions", encryptedFirst: true);
+        var sourceFirst = await LoadBothAsync("VendorLib", encryptedFirst: false);
+        var encryptedFirst = await LoadBothAsync("SuspensionLib", encryptedFirst: true);
 
         Assert.Equal(2, sourceFirst.TotalModelCount);
         Assert.Equal(sourceFirst.TotalModelCount, encryptedFirst.TotalModelCount);
@@ -153,10 +153,10 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // copy must not change the total. It is the number the deferred-analysis threshold is
         // compared against, so an inflated one silently changes when the application defers its
         // analysis instead of running it.
-        var both = await LoadBothAsync("Claytex", encryptedFirst);
+        var both = await LoadBothAsync("VendorLib", encryptedFirst);
 
         var justSource = new LibraryDataService();
-        await justSource.AddLibraryFromPathAsync(WriteSource("Claytex"));
+        await justSource.AddLibraryFromPathAsync(WriteSource("VendorLib"));
 
         // Stated absolutely as well as relatively: the library is the package and its Widget, so the
         // answer is two. Comparing two counts alone is satisfied by an implementation that returns
@@ -171,11 +171,11 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // The other direction, so "count each class once" cannot be satisfied by counting too few:
         // two libraries sharing no classes contribute both their sets.
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteSource("Claytex"));
+        await service.AddLibraryFromPathAsync(WriteSource("VendorLib"));
 
         Assert.Equal(2, service.TotalModelCount);
 
-        await service.AddLibraryFromPathAsync(WriteSource("Suspensions"));
+        await service.AddLibraryFromPathAsync(WriteSource("SuspensionLib"));
 
         Assert.Equal(4, service.TotalModelCount);
     }
@@ -187,7 +187,7 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // index still lists the ids it shared with it - the indexes are per library and the removal
         // is per node. Counting those would report classes that are no longer loaded, which is the
         // reverse of the double-count and just as wrong.
-        var service = await LoadBothAsync("Claytex", encryptedFirst: true);
+        var service = await LoadBothAsync("VendorLib", encryptedFirst: true);
         var source = service.Libraries.Single(l => l.SourceType != LibrarySourceType.EncryptedDirectory);
 
         service.RemoveLibrary(source.Id);
@@ -201,9 +201,9 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // The fix must not make encrypted libraries disappear when there is no source copy to
         // prefer — that is the ordinary case for every other vendor library in the folder.
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteEncrypted("Suspensions"));
+        await service.AddLibraryFromPathAsync(WriteEncrypted("SuspensionLib"));
 
-        var top = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "Suspensions");
+        var top = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "SuspensionLib");
         var owner = service.Libraries.Single(l => l.Id == top.LibraryId);
 
         Assert.Equal(LibrarySourceType.EncryptedDirectory, owner.SourceType);

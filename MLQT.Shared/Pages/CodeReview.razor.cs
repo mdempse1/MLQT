@@ -150,7 +150,7 @@ public partial class CodeReview : IAsyncDisposable
     ///
     /// <para><b>The browser's limit, not MLQT's.</b> The viewer puts every line into the page as an
     /// element of its own with a span per token, and a Dymola FMU import model of 106,354 lines
-    /// (<c>Engines.Examples.CAREM.I2.I2SiNa900ccInterface_fmu</c>, 6.1 MB) left the webview's
+    /// (<c>EngineLib.Examples.LargeEngine_fmu</c>, 6.1 MB) left the webview's
     /// renderer at a full core for more than five minutes with the app frozen behind it. MLQT's own
     /// part of that render, parse and colouring included, took 1.7 s. The real fix is a viewer that
     /// only lays out the lines in view; until then this keeps one class from hanging the app.</para>
@@ -160,7 +160,7 @@ public partial class CodeReview : IAsyncDisposable
     /// 6.9 s — worse than linear — and at 20,000 the page was blocked for so long that its Blazor
     /// connection dropped. 5,000 is the most that still opens in about two seconds. A package hides
     /// its nested classes before this counts, so a large package of small classes rarely meets it;
-    /// the Claytex files that did at the time were 17k–242k lines, all generated.</para>
+    /// the files in a large user library that did at the time were 17k–242k lines, all generated.</para>
     /// </summary>
     internal const int MaxShownLines = 5_000;
 

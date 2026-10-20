@@ -12,7 +12,7 @@ namespace MLQT.Services.Tests;
 /// through the pipeline every surface shares.
 ///
 /// <para>The case it exists for is generated code: the Dymola <c>_fmu</c> import models were ~65% of a
-/// Claytex check's findings, and before this a waiver had to be written on each of their classes. Each
+/// large user library's findings, and before this a waiver had to be written on each of their classes. Each
 /// nested class here is a node of its own, whose tree does not hold the package's annotation — so
 /// this is the path through <see cref="StyleCheckContext.EnclosingSuppressions"/>, not the one a
 /// single class's own directives take.</para>

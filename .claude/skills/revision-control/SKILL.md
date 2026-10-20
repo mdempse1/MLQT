@@ -1,3 +1,8 @@
+---
+name: revision-control
+description: "The RevisionControl library - Git/SVN integration, workspace reuse and revision comparison. Use when working on RevisionControl or on the VCS operations built on it."
+---
+
 # RevisionControl Skill
 
 The RevisionControl project is a standalone, reusable library for integrating with version control systems.

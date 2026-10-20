@@ -111,7 +111,7 @@ public class EncryptedLibraryDetectorTests : IDisposable
     {
         // Roughly a third of the shipped libraries carry no libraryinfo.mos at all, so the
         // directory name is the only source for them.
-        var path = MakeLibrary("VeSyMA 2026.1");
+        var path = MakeLibrary("VehicleLib 2026.1");
 
         Assert.Equal("2026.1", EncryptedLibraryDetector.Detect(path)!.Version);
     }

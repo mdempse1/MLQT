@@ -1,3 +1,8 @@
+---
+name: cytoscape
+description: "The CytoscapeGraph component, cytoscapeGraph.js, layout options and script loading. Use when working on graph visualizations, the CytoscapeGraph component or the Dependencies page network diagram."
+---
+
 # Cytoscape Graph Skill
 
 Load this skill when working on graph visualizations, the `CytoscapeGraph` component, `cytoscapeGraph.js`, or the Dependencies page network diagram.

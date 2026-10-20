@@ -34,7 +34,7 @@ public class SuppliedLibraryTests : IDisposable
 
     // ---------------------------------------------------------------- fixtures
 
-    /// <summary>A supplied copy of Claytex: the package and its Widget, with Widget's interface.</summary>
+    /// <summary>A supplied copy of VendorLib: the package and its Widget, with Widget's interface.</summary>
     /// <summary>
     /// <paramref name="version"/> is what the source claims; <paramref name="annotated"/>, when set, is
     /// the <c>version</c> annotation its top-level package carries, which is what counts.
@@ -44,7 +44,7 @@ public class SuppliedLibraryTests : IDisposable
         Action? onRead = null) : IReadOnlyClassSource
     {
         public int Reads { get; private set; }
-        public string LibraryName => "Claytex";
+        public string LibraryName => "VendorLib";
         public string? LibraryVersion => version;
         public ReadOnlySourceKind Kind => ReadOnlySourceKind.Supplied;
         public string? Location => null;
@@ -60,9 +60,9 @@ public class SuppliedLibraryTests : IDisposable
             {
                 Texts =
                 [
-                    new SuppliedText("Claytex/package.mo",
-                        "within;\npackage Claytex \"Claytex supplied\"\n  model Widget \"A widget\"\n" +
-                        "    parameter Real k = 1 \"gain\";\n  end Widget;\n" + annotation + "end Claytex;\n")
+                    new SuppliedText("VendorLib/package.mo",
+                        "within;\npackage VendorLib \"VendorLib supplied\"\n  model Widget \"A widget\"\n" +
+                        "    parameter Real k = 1 \"gain\";\n  end Widget;\n" + annotation + "end VendorLib;\n")
                 ]
             };
         }
@@ -71,32 +71,32 @@ public class SuppliedLibraryTests : IDisposable
     /// <summary>The checkout of the same library.</summary>
     private string WriteSource()
     {
-        var lib = Path.Combine(_root, "source", "Claytex");
+        var lib = Path.Combine(_root, "source", "VendorLib");
         Directory.CreateDirectory(lib);
         File.WriteAllText(Path.Combine(lib, "package.mo"),
-            "package Claytex \"Claytex from source\"\n  model Widget \"A widget\"\n  end Widget;\nend Claytex;\n");
+            "package VendorLib \"VendorLib from source\"\n  model Widget \"A widget\"\n  end Widget;\nend VendorLib;\n");
         return lib;
     }
 
     /// <summary>The installed encrypted build, version 2026.1: Widget, and a Gadget the supplied copy lacks.</summary>
     private string WriteEncrypted()
     {
-        var lib = Path.Combine(_root, "tool", "Claytex 2026.1");
+        var lib = Path.Combine(_root, "tool", "VendorLib 2026.1");
         var help = Path.Combine(lib, "help");
         Directory.CreateDirectory(help);
         File.WriteAllText(Path.Combine(lib, "package.moe"), "not readable");
 
         static string Row(string simple) =>
-            $"<tr><td><img src=\"Claytex.{simple}S.png\" alt=\"Claytex.{simple}\">&nbsp;" +
-            $"<a href=\"Claytex.html#Claytex.{simple}\">{simple}</a></td><td>{simple}</td></tr>\n";
+            $"<tr><td><img src=\"VendorLib.{simple}S.png\" alt=\"VendorLib.{simple}\">&nbsp;" +
+            $"<a href=\"VendorLib.html#VendorLib.{simple}\">{simple}</a></td><td>{simple}</td></tr>\n";
         static string Heading(string simple) =>
-            $"<h2><img src=\"Claytex.{simple}I.png\" alt=\"Claytex.{simple}\">" +
-            $"<a name=\"Claytex.{simple}\"></a>{simple}</h2>";
+            $"<h2><img src=\"VendorLib.{simple}I.png\" alt=\"VendorLib.{simple}\">" +
+            $"<a name=\"VendorLib.{simple}\"></a>{simple}</h2>";
 
-        File.WriteAllText(Path.Combine(help, "Claytex.html"),
+        File.WriteAllText(Path.Combine(help, "VendorLib.html"),
             "<html><head><meta name=\"HTML-Generator\" content=\"Dymola\"></head><body>" +
-            "<h2><a name=\"Claytex\"></a>Claytex</h2>" +
-            "<p><span class=\"ModelicaDescription\">Claytex encrypted</span></p>" +
+            "<h2><a name=\"VendorLib\"></a>VendorLib</h2>" +
+            "<p><span class=\"ModelicaDescription\">VendorLib encrypted</span></p>" +
             "<h3>Package Content</h3>" +
             "<table summary=\"Package Content\" class=\"ModelicaTablePackageContent\">\n" +
             "<tr><th>Name</th><th>Description</th></tr>\n" +
@@ -124,13 +124,13 @@ public class SuppliedLibraryTests : IDisposable
         var library = await service.AddLibraryFromSourceAsync(new Source());
 
         Assert.Same(library, Assert.Single(service.Libraries));
-        Assert.Equal("Claytex", library.Name);
+        Assert.Equal("VendorLib", library.Name);
         Assert.Equal("2026.1", library.Version);
         Assert.Equal(LibrarySourceType.Supplied, library.SourceType);
         Assert.Equal(ReadOnlySourceKind.Supplied, library.ReadOnlySource);
         Assert.True(library.IsReadOnly);
-        Assert.Equal("mlqt-readonly://Claytex", library.SourcePath);
-        Assert.Equal(["Claytex", "Claytex.Widget"], library.ModelIds.Order());
+        Assert.Equal("mlqt-readonly://VendorLib", library.SourcePath);
+        Assert.Equal(["VendorLib", "VendorLib.Widget"], library.ModelIds.Order());
     }
 
     [Fact]
@@ -139,10 +139,10 @@ public class SuppliedLibraryTests : IDisposable
         var service = new LibraryDataService();
         var library = await service.AddLibraryFromSourceAsync(new Source());
 
-        var widget = Model(service, "Claytex.Widget");
+        var widget = Model(service, "VendorLib.Widget");
         Assert.True(widget.IsExternalStub);
         Assert.StartsWith("// From a test host - not the vendor's source.\n", widget.Definition.ModelicaCode);
-        Assert.Same(library, service.GetOwningLibrary("Claytex.Widget"));
+        Assert.Same(library, service.GetOwningLibrary("VendorLib.Widget"));
         Assert.NotNull(widget.ContainingFileId);
         var file = service.CombinedGraph.GetNode<FileNode>(widget.ContainingFileId);
         Assert.NotNull(file);
@@ -215,7 +215,7 @@ public class SuppliedLibraryTests : IDisposable
     [Fact]
     public async Task ItsResources_ResolveUnderTheResourceRootItNames()
     {
-        var installed = Path.Combine(_root, "installed", "Claytex 2026.1");
+        var installed = Path.Combine(_root, "installed", "VendorLib 2026.1");
         Directory.CreateDirectory(Path.Combine(installed, "Resources"));
         var data = Path.Combine(installed, "Resources", "data.txt");
         File.WriteAllText(data, "1 2 3");
@@ -238,7 +238,7 @@ public class SuppliedLibraryTests : IDisposable
         Directory.CreateDirectory(user);
         File.WriteAllText(Path.Combine(user, "package.mo"),
             "package MyLib\n  model Uses\n" +
-            "    parameter String f = Modelica.Utilities.Files.loadResource(\"modelica://Claytex/Resources/data.txt\");\n" +
+            "    parameter String f = Modelica.Utilities.Files.loadResource(\"modelica://VendorLib/Resources/data.txt\");\n" +
             "  end Uses;\nend MyLib;\n");
         await service.AddLibraryFromDirectoryAsync(user);
         await service.EnsureDependenciesAnalyzedAsync();
@@ -357,8 +357,8 @@ public class SuppliedLibraryTests : IDisposable
         Assert.Equal(ReadOnlySourceKind.Supplied, only.ReadOnlySource);
         Assert.Equal(only.SourcePath, encrypted.SupersededBy);
         // Whole, not class by class: the encrypted build's Gadget is not left behind.
-        Assert.Null(service.GetModelById("Claytex.Gadget"));
-        Assert.Equal(ReadOnlySourceKind.Supplied, ReadOnlySources.KindOf(Model(service, "Claytex.Widget")));
+        Assert.Null(service.GetModelById("VendorLib.Gadget"));
+        Assert.Equal(ReadOnlySourceKind.Supplied, ReadOnlySources.KindOf(Model(service, "VendorLib.Widget")));
         Assert.DoesNotContain(service.CombinedGraph.FileNodes, f => ExternalStubBuilder.IsEncryptedPackageFile(f.FilePath));
     }
 
@@ -377,9 +377,9 @@ public class SuppliedLibraryTests : IDisposable
         var only = Assert.Single(service.Libraries);
         Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation, only.ReadOnlySource);
         Assert.Equal(only.SourcePath, supplied.SupersededBy);
-        Assert.NotNull(service.GetModelById("Claytex.Gadget"));
+        Assert.NotNull(service.GetModelById("VendorLib.Gadget"));
         Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation,
-            ReadOnlySources.KindOf(Model(service, "Claytex.Widget")));
+            ReadOnlySources.KindOf(Model(service, "VendorLib.Widget")));
     }
 
     [Fact]
@@ -410,8 +410,8 @@ public class SuppliedLibraryTests : IDisposable
         Assert.Equal(1, stale.Reads);
         Assert.NotNull(supplied.SupersededBy);
         Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation, Assert.Single(service.Libraries).ReadOnlySource);
-        Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation, ReadOnlySources.KindOf(Model(service, "Claytex.Widget")));
-        Assert.NotNull(service.GetModelById("Claytex.Gadget"));
+        Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation, ReadOnlySources.KindOf(Model(service, "VendorLib.Widget")));
+        Assert.NotNull(service.GetModelById("VendorLib.Gadget"));
         Assert.DoesNotContain(service.CombinedGraph.FileNodes, f => ReadOnlySources.IsInMemoryPath(f.FilePath));
     }
 
@@ -436,14 +436,14 @@ public class SuppliedLibraryTests : IDisposable
         // Not "already loaded": a supplied copy describing another release gives way to the build
         // installed, and only the precedence rule knows the versions.
         var supplied = Library(ReadOnlySourceKind.Supplied, "2025.2");
-        supplied.SourcePath = "mlqt-readonly://Claytex";
+        supplied.SourcePath = "mlqt-readonly://VendorLib";
         var recovered = Library(ReadOnlySourceKind.RecoveredFromDocumentation, "2026.1");
-        recovered.SourcePath = Path.Combine(_root, "elsewhere", "Claytex");
-        var candidate = Path.Combine(_root, "tool", "Claytex 2026.1");
+        recovered.SourcePath = Path.Combine(_root, "elsewhere", "VendorLib");
+        var candidate = Path.Combine(_root, "tool", "VendorLib 2026.1");
 
-        Assert.Null(ReferenceLibraryRules.ReasonToSkip(candidate, isEncrypted: true, "Claytex", [supplied], true));
+        Assert.Null(ReferenceLibraryRules.ReasonToSkip(candidate, isEncrypted: true, "VendorLib", [supplied], true));
         // The control: beside another encrypted copy it is a second copy of something present.
-        Assert.NotNull(ReferenceLibraryRules.ReasonToSkip(candidate, isEncrypted: true, "Claytex", [recovered], true));
+        Assert.NotNull(ReferenceLibraryRules.ReasonToSkip(candidate, isEncrypted: true, "VendorLib", [recovered], true));
     }
 
     [Fact]
@@ -503,8 +503,8 @@ public class SuppliedLibraryTests : IDisposable
         var recovered = Library(ReadOnlySourceKind.RecoveredFromDocumentation);
 
         Assert.Equal(LibraryPrecedence.Retires(source, [recovered]), SourceSupersedesEncrypted.Retires(source, [recovered]));
-        Assert.True(SourceSupersedesEncrypted.SameLibrary("Claytex", "Claytex"));
-        Assert.Equal("/b", SourceSupersedesEncrypted.ReadableSourceFor("Claytex", [("Claytex", "/b")]));
+        Assert.True(SourceSupersedesEncrypted.SameLibrary("VendorLib", "VendorLib"));
+        Assert.Equal("/b", SourceSupersedesEncrypted.ReadableSourceFor("VendorLib", [("VendorLib", "/b")]));
     }
 #pragma warning restore CS0618
 
@@ -512,7 +512,7 @@ public class SuppliedLibraryTests : IDisposable
 
     private static LoadedLibrary Library(ReadOnlySourceKind? kind, string? version = null) => new()
     {
-        Name = "Claytex",
+        Name = "VendorLib",
         Version = version,
         SourceType = kind switch
         {

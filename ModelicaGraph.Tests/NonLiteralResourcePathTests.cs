@@ -7,7 +7,7 @@ namespace ModelicaGraph.Tests;
 /// <summary>
 /// That a resource path MLQT cannot know is not reported as a missing file (B210).
 ///
-/// <para>Reported from Claytex as
+/// <para>Reported from a user library as
 /// <c>Resource file not found: ...\Bushes\Components\{fileName_1_xr,fileName_1_yr,fileName_1_zr}</c> —
 /// the text of an array expression, treated as a relative path and resolved against the class's own
 /// directory. A modification's value was taken as raw text, so anything bound to a file-valued
@@ -133,7 +133,7 @@ public class NonLiteralResourcePathTests : IDisposable
     [Fact]
     public async Task AComposedLoadResourceArgumentIsNotAResource()
     {
-        // The second half of B210, found in Claytex's Functions.Files.packageFile:
+        // The second half of B210, found in a user library's Functions.Files.packageFile:
         //     loadResource("modelica://" + packageName + "/package.mo")
         // Every literal inside the call used to be captured, so this produced two resources and the
         // second - "/package.mo" - was reported as a missing file.

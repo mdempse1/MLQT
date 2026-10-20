@@ -1,10 +1,13 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this repository.
+This file provides guidance to Claude Code when working with this repository. It holds what every
+session needs; **detail lives where it is used** — a `CLAUDE.md` in each major project (loaded when
+you work in that folder) and the skills in `.claude/skills/` (loaded by their description). Keep this
+file under about 200 lines: add detail to those, not here.
 
 ## Project Overview
 
-MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview: **`MLQT.Photino`, on Windows and Linux** — WebView2 and WebKitGTK respectively. It was a .NET MAUI application until phase 7b-8 (2026-09-10), which deleted that host after verifying Photino against it on all 16 `/selftest` probes on both platforms. Nothing in the repository depends on MAUI now, `PortabilityTests` is what keeps it that way, and `skill-desktop-host.md` carries what the host work taught.
+MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview: **`MLQT.Photino`, on Windows and Linux** — WebView2 and WebKitGTK respectively. It was a .NET MAUI application until phase 7b-8 (2026-09-10), which deleted that host after verifying Photino against it on all 16 `/selftest` probes on both platforms. Nothing in the repository depends on MAUI now, `PortabilityTests` is what keeps it that way, and the `desktop-host` skill carries what the host work taught.
 
 The MLQT UI is intended to be a users primary way to manage Modelica libraries in revision control systems and supports SVN and Git. The intention is for users to work with MLQT to review and commit changes, pull updates, create new branches and push changes to the revision control system. It also provides static analysis of Modelica code to understand the impact of changes, apply formatting rules and check code against style guidelines.
 
@@ -12,17 +15,18 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 
 ## Solution Structure
 
-- **MLQT.Shared** / **MLQT.Shared.Tests** - Shared Blazor components, pages, layouts, services. Component logic lives in `.razor.cs` code-behind partials (see below); the test project holds the code-behind policy guards, the bUnit harness and the frozen MAUI conformance baseline
-- **MLQT.Photino** - **The desktop host**, on Photino.Blazor (Windows and Linux). `Program.cs` is the whole of it: `AddMlqtCore()` plus the three platform services, the window, its icon and placement, and the one-time settings migration from the retired MAUI host
-- **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
-- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer with no UI at all. **Every tool is `mlqt_`-prefixed**, so it cannot be confused with a simulator's server beside it, and the connect-time instructions (`Services/ServerInstructions.cs`) **stay under 2,000 characters**, because Claude Code drops what follows; detail goes in `mlqt_get_guidance`. `ToolNamingTests` holds both. **Another server can be built on it** with `AddMlqtMcpServer` (`MlqtMcpServerExtensions.cs`), which is the whole server bar the process - `Program.cs` is it plus stdio; every service is `TryAdd`ed, so a host's own registration wins, and the coercion filter reads each tool's schema, so a host's tools are coerced too. That method, its options (and the `ToolUsageLogger` they name) and the tool names are the promised surface (`MlqtMcpServerSurfaceTests`, `ToolNamingTests`), not the assembly's other public types. See `MLQT.McpServer/README.md`
-- **MLQT.McpTester** - Photino Blazor desktop app (Windows and Linux) for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results - **images included**, shown as pictures rather than as `[image content]`, which is what makes `mlqt_get_diagram_image` worth having here. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
-- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt` CLI, shipped inside each platform's installer rather than as a `dotnet tool` (7b-7: `dotnet tool install` is an SDK command, so packaging it that way obliged a build agent to install the SDK to run a linter). `mlqt check` style-checks a Modelica library and emits console/JSON/JUnit/SARIF/TeamCity/markdown output with CI exit codes, reusing the shared check pipeline in `MLQT.Services/Checking/`; `mlqt baseline` manages the accepted-debt file; `mlqt compare` lists the classes one copy of a library has that another does not, matching on full Modelica name so a restructure on disk is not a difference; `mlqt hook` installs the check as a git pre-commit hook. See `Documentation/cli.md`
-- **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
-- **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
-- **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration
-- **DymolaInterface** / **DymolaInterface.Tests** - Dymola HTTP JSON-RPC interface
-- **OpenModelicaInterface** / **OpenModelicaInterface.Tests** - OpenModelica ZeroMQ interface
+| Project (+ `.Tests`) | What it is | Detail |
+|---|---|---|
+| **MLQT.Shared** | Shared Blazor components, pages, layouts, `AppState`; logic in `.razor.cs` code-behind | `MLQT.Shared/CLAUDE.md`, `gui-testing` skill |
+| **MLQT.Photino** | **The desktop host**, Photino.Blazor on Windows and Linux. `Program.cs` is the whole of it: `AddMlqtCore()`, the three platform services, the window, settings migration from MAUI | `desktop-host` skill |
+| **MLQT.Services** | Business logic services and the shared check pipeline (`Checking/`) | `MLQT.Services/CLAUDE.md` |
+| **MLQT.McpServer** | Headless MCP server over stdio; every tool `mlqt_`-prefixed; `AddMlqtMcpServer` lets another server be built on it | `MLQT.McpServer/CLAUDE.md`, `README.md` |
+| **MLQT.McpTester** | Photino app for testing any stdio MCP server by hand, images included | `MLQT.McpTester/README.md` |
+| **MLQT.Cli** | Headless `mlqt` CLI (`check`, `baseline`, `compare`, `hook`), shipped in the installers | `MLQT.Cli/CLAUDE.md`, `Documentation/cli.md` |
+| **ModelicaParser** | ANTLR-based Modelica parser, renderer, highlighter, style rules | `ModelicaParser/CLAUDE.md` |
+| **ModelicaGraph** | Directed graph for file/model relationships, resolution, whole-graph analyses | `ModelicaGraph/CLAUDE.md` |
+| **RevisionControl** | Git/SVN integration | `revision-control` skill |
+| **DymolaInterface** / **OpenModelicaInterface** | Dymola HTTP JSON-RPC / OpenModelica ZeroMQ interfaces | `simulation-tools` skill |
 
 **Six of these are built on outside this repository.** Other projects build `ModelicaParser`,
 `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and `MLQT.Services`
@@ -44,27 +48,15 @@ Actions runner - `TreatWarningsAsErrors` is on, except NuGet's vulnerability aud
 only warns, so check the output: `CI=true dotnet build MLQT.slnx -c Release` is what CI will say.
 
 ```bash
-# Build entire solution
-dotnet build MLQT.slnx
-
-# Run tests for a project
-dotnet test MLQT.Services.Tests
-dotnet test ModelicaParser.Tests
-dotnet test ModelicaGraph.Tests
-
-# Run every suite, including the parts of two that no CI job runs - see Test Cases below
-pwsh ./build/run-all-tests.ps1
-
-# Run the desktop application (Windows and Linux)
-dotnet run --project MLQT.Photino/MLQT.Photino.csproj
-
-# Publish the three shipping tools into one tree and prove each of them runs (phase 7b-7)
-build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
-
-# Build the Linux installer from that tree, and prove the packaged tools run (phase 7b-7)
-build/publish-tools.sh --runtime linux-x64 --self-contained --allow-missing-svn --version 1.2.3 --output publish/linux-x64
-build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
+dotnet build MLQT.slnx                                   # build everything
+dotnet test MLQT.Services.Tests                          # one suite
+pwsh ./build/run-all-tests.ps1                           # every suite, more than CI runs
+dotnet run --project MLQT.Photino/MLQT.Photino.csproj    # the desktop app (Windows and Linux)
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn   # installer tree + smoke tests
 ```
+
+Building, the installers and CI are written up for contributors in `BUILDING.md`; cutting a release
+in `RELEASING.md`.
 
 ### Editing files and running commands without a prompt
 
@@ -92,8 +84,6 @@ None of the Edit or Write calls asked. So:
 
 ## Architecture Patterns
 
-### Platform Abstraction
-
 Services that could be used outside Blazor are in `MLQT.Services/` with interfaces in `MLQT.Services/Interfaces/`.
 
 **Pattern for platform-specific services:**
@@ -109,50 +99,18 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
    in a host. Every host calls it, so a service registered in one host and not another is a class of
    bug that stops existing
 
-### Core Services
+**Adding a feature:** define the interface in the appropriate `Interfaces/` folder, implement it in
+`MLQT.Services/` or `MLQT.Shared/Services/`, register it as a singleton in `AddMlqtCore()`, use events
+for cross-component communication, and keep business logic in services, not Razor components.
 
-**Reusable .NET services** (in `MLQT.Services/`):
+**The core services** (`ILibraryDataService`, `IRepositoryService`, `IFileMonitoringService`,
+`IStyleCheckingService`, `IModelChangeClassifier`, the model-checking services and the rest) each have
+rules a caller must keep — the one way to ask which library owns a class, the one status query per
+working copy, how to pause the monitor. **Read `MLQT.Services/CLAUDE.md` before calling one.**
 
-| Service | Purpose |
-|---------|---------|
-| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run. `GetOwningLibrary(modelId)` is the **only** way to ask which library a class belongs to — never `Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))`, which returns whichever load finished first; `LibraryOwnershipPolicyTests` holds every read of a library's `ModelIds` to a ledger. An encrypted library is **never loaded beside readable source for the same library** (`LibraryPrecedence`, B268): the source wins whole, so the vendor build contributes no classes the checkout has deleted. `AddLibraryFromSourceAsync(IReadOnlyClassSource)` adds a library a host **supplies from memory** — read-only through the same loader as an encrypted one, and ranked between them: readable source > supplied > recovered from documentation, except that a supplied copy naming a different version from the installed encrypted build gives way to it, and a second supplied copy of a library is not loaded. A supplied library may only hold classes of its own name - one declared outside it is refused before it reaches the graph - and read-only loads of one library name run one at a time. A library's `Version` is its top-level package's `version` annotation; a version in its directory name, or a source's claim, only fills in when there is none. Ask `LoadedLibrary.IsReadOnly`, never `SourceType == EncryptedDirectory`, for "may this be touched?" — and in an MCP tool that edits a class, `ReadOnlyClassGuard.Refuse` first |
-| **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations. `GetWorkingCopyChanges` runs **one status query per working copy at a time**, shared by every caller that arrives while it runs (B293) — two libraries checked out in one tree share it (B330) — never call the VCS for status yourself. `GetRepositoriesSharingWorkingCopy` is the group a VCS operation acts on: two libraries checked out in one tree are two repositories, and whatever follows an operation (monitor pause, reload, analysis) must reach all of them (B301). `RelocateLibraryAsync` is how a library that was one `.mo` file becomes the directory Format All expanded it into — its `SourcePath`, `RelativePathInRepository` and the repository's `DiscoveredLibraries` together, so the state is what a project reload would give (B417). `RefreshRepositoryAsync` keeps which classes the reload changed - source that differs, and everything below a package whose `__MLQT` waivers or imports now reach it differently - until the VCS pipeline takes them with `TakeClassesChangedByReload`, because neither the paused monitor nor the VCS status can name what an update committed (B499) |
-| **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing. A VCS operation holds the monitor off with a `MonitorPause` (`MLQT.Shared/Helpers`), which starts it again on disposal unless it was handed to the `VcsFilesChanged` pipeline — never with a bare `StopMonitoring`/`StartMonitoring` pair (B296) |
-| **ICodeReviewService** | Log messages and findings from parsing/style checking |
-| **EncryptedLibraryDetector** | Recognises an encrypted library (`package.moe`) and reads its name/version — versioned directory name first, `libraryinfo.mos` as fallback |
-| **IBaselineStatusService** | Classifies findings against each repository's committed baseline (new / touched / accepted), so the Code Review list can be narrowed to what the working copy changed. "Touched" = pending commit, not a commit-to-commit diff. `Refresh()` is a working-copy scan of every repository on the calling thread; from the UI use `RefreshAsync()`, which queues one on the pool and never lets two overlap (B293) |
-| **IModelChangeClassifier** | The one place a repository is asked what kind of change each model carries (B191). Finds the committed version of each changed file, hands both to `ClassChangeClassifier`, and keys the answer by `ModelNode.Id`. **Absence from the result means the question was not asked**, not that nothing changed — an unchanged class in a modified file is present and `Unchanged`. A class that reads as added is looked for by name in the committed versions of the other changed and deleted files (and a rename's `OldPath`), so a class moved between files is compared with where it came from (B350). Cached per file against its size, write time and the repository's revision, and cleared on a project change |
-| **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count. Cancellation and finding removal are scoped to the repository being re-checked — a project holds several, each with rules of its own |
-| **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
-| **IExternalResourceService** | External resource analysis, validation, and monitoring |
-| **ICustomDictionaryService** | Accepted spellings per repository (`<repo>/.mlqt/dictionary.txt`, committed with the code so the app and CLI accept the same words). `DictionaryScope` decides which repository's list applies to a class |
-| **IDictionaryManagerService** | Hunspell dictionary management (bundled + imported at `%LocalAppData%/MLQT/Dictionaries/`) |
-| **IModelCheckingService** | Interface for external tool checking (Dymola, OpenModelica) |
-| **DymolaCheckingService** / **OpenModelicaCheckingService** | Model checking via Dymola's HTTP JSON-RPC and omc's ZeroMQ. **One shape, written once** in `ModelCheckingServiceBase<TSession>` (B398): the run, its progress and cancellation, the package fan-out, and the check sequence (clear the log, check, read the log). Each service supplies only what differs — its session factory, how it opens a library, and how it turns its tool's way of saying "no verdict" into a `CheckAnswer` — so a fix to shared behaviour goes in the base, never in one tool. What they promise is still asserted **once**, in `MLQT.Services.Tests/ModelCheckingServiceContract.cs`, and run against both — the copy in each of them that was not shared is exactly where a promise went unkept on one path (B229/B272). `CheckSingleModelAsync` is the only place a check happens; `CheckModelAsync` opens the library and calls it. Both take their session from a factory that returns **`IDymolaInterface`/`IOpenModelicaInterface`**, not the concrete class: the concrete one's every method is a round trip to a running tool, so with it in that signature none of this could be tested without one installed. Each tool has a **Check time limit** (External Tools tab; 0 is none) and Cancel reaches a check in flight: a timeout is reported as `ModelCheckResult.TimedOut`, never as a failed model, and the log is not read after one — Dymola is still busy (`IDymolaInterface.LastOutcome` says so, since every command answers `false` whatever went wrong), and omc has closed its session (B262, B263). **When MLQT exits, `ExternalToolShutdown` ends omc with its process tree and leaves Dymola running** — the user's decision, both platforms: each factory's `Shutdown()` is "MLQT is exiting", never "stop this session", and Dymola's only detaches (B493) |
-| **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`, `~/.local/share/MLQT/` on Linux). **File only** — the console target is off unless `MLQT_LOG_CONSOLE` is set, so the log file is the single place to look |
-
-### The shared check pipeline (`MLQT.Services/Checking/`)
-
-Not services — the primitives that keep the desktop app, `mlqt check` and the MCP server reporting
-the **same findings with the same line numbers**. Change the primitive, never one tool's path.
-
-| Type | Role |
-|------|------|
-| **LibraryCheckSession** | `Check(...)` — the whole answer for a set of models: parse diagnostics, the per-class rules in parallel, then the whole-graph analyses. The CLI and MCP call this |
-| **StyleCheckRunner** | The per-class entry point *every* surface funnels through, including the GUI's workers, which is why the external-stub guard and the coverage measurement live here |
-| **StyleCheckContext** | The once-per-run inputs (spell checker, known ids, icon and inherited-name callbacks, unit lookup, coverage measurer) built once instead of per class |
-| **ParserErrorReporter** | Parse diagnostics as `Finding`s. Always reported, never configurable, never baselined — `RuleIds.IsDiagnostic` is that question |
-| **Baseline** / **FindingClassifier** | The accepted-debt ledger, New/AcceptedDebt/TouchedDebt classification, and drift against the rules the baseline was taken with |
-| **ClassLocation** | Where a class starts in its file. Findings carry class-relative lines; every report maps them through this |
-| **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` owns which system a path belongs to |
-| **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation. **Only where a child really is inline** — one that already lives in its own file is not in the package's source, so re-rendering the package around it rewrote the text and lost the line mapping for nothing (B230) |
-| **CheckTimings** (in `ModelicaGraph/Analysis/`) | Where a run's time went, per phase: parse, each rule by name, each analysis, and the shared work a rule triggers. One instance per run, passed through the contexts. `mlqt check --timings` prints it; the desktop app logs it. **Use `MeasureNested` for anything lazy and cached**, or the first caller to reach it is billed for it and reads as the slow one (B128) |
-
-**Every host runs server GC** (`<ServerGarbageCollection>` in the CLI, MCP server and Photino projects). A check
-parses tens of thousands of classes from every core, and under the default workstation GC the threads spent most
-of their time suspended waiting for collections: Claytex took 242s under workstation GC and 70.5s under server GC,
-with the same findings and about the same peak memory (B281). `HostGarbageCollectionTests` holds the setting —
-the parallel graph analyzers are *slower* than serial ones without it.
+**The shared check pipeline** (`MLQT.Services/Checking/`) keeps the desktop app, `mlqt check` and the
+MCP server reporting the **same findings with the same line numbers**. Change the primitive, never
+one tool's path. Every host runs server GC (B281).
 
 **Platform-specific services** — the whole of what a host contributes, registered in
 `MLQT.Photino/Program.cs`:
@@ -163,52 +121,14 @@ the parallel graph analyzers are *slower* than serial ones without it.
 | **IPowerManagementService** | `MLQT.Photino/Services/PowerManagementService.cs` | Prevents system sleep during long operations — `SetThreadExecutionState` on Windows, an inhibit lock held through `systemd-inhibit` on Linux |
 | **ISettingsService** | `MLQT.Services/JsonSettingsService.cs` | Settings persistence, as JSON under `%LocalAppData%/MLQT` (`~/.local/share/MLQT`). Not host-specific at all any more, which is why it is in `MLQT.Services`; `MauiPreferencesFile` is read once on first run to bring a pre-7b user's settings across |
 
-### Application State (AppState)
+**Application state and UI** (`MLQT.Shared/CLAUDE.md` has the whole of both): cross-component events
+are on `AppState`, and you call its methods (`ChangeModelID()`, `VcsFilesChanged()`, ...) rather than
+assigning its properties, because the method is what raises the event. UI is MudBlazor, Small and
+Dense, minimal spacing; component logic goes in a `.razor.cs` code-behind with `[Inject]` properties;
+Razor event handlers use `await InvokeAsync(StateHasChanged)`.
 
-Centralized state container in `MLQT.Shared/Models/AppState.cs`:
-- **Model Selection**: `ModelID`, `SelectedModelIDs`, `SelectionMode`
-- **Deferred Analysis**: `IsDeferredMode`, `HasDependencyAnalysisRun`, `HasStyleCheckingRun`, `HasExternalResourcesAnalyzed`
-- **Events**:
-  - Model/UI: `OnChangeModel`, `OnSelectedModelsChanged`, `OnEnableMultiSelect`, `OnModelContentChanged`, `OnThemeChanged`
-  - Settings: `OnSaveSettings`, `OnClearLogMessages`, `OnRepositorySettingsApplied`
-  - VCS: `OnVcsFilesChanged`, `OnVcsModelsChanged`, `OnVcsWorkChanged` — `IsVcsWorkInProgress` is true while a VCS operation or the analysis pipeline one started is running, and no VCS operation may start then (B326); take `BeginVcsWork()`, and queue pipelines through `VcsPipelineQueue` (`MLQT.Shared/Helpers`), which counts them from the moment they are queued. Format All Files is VCS work too, and goes through its `TryEnqueue`, which refuses while any VCS work runs (B385)
-  - Projects: `OnProjectSwitchStarting`, `OnProjectChanged`, `OnProjectSwitchAbandoned` (a switch that ended without `OnProjectChanged`; B435). A switch from the settings panel goes through `SettingsRepositories.SwitchToProjectAsync`, which raises the first and, when the project did not change, the last
-  - Deferred analysis: `OnRunDeferredDependencies`, `OnRunDeferredStyleChecking`, `OnRunDeferredExternalResources`, `OnRunAllDeferredAnalysis`, `OnDeferredAnalysisCompleted`
-  - Formatting: `OnFormatChangedFilesForCommit`
-- Use the methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) rather than assigning the property, **wherever the property has one** — the method is what raises the event, and an assignment leaves every subscriber unaware. A few members are plain session memory with no event and no method (`MetricsScope`, which the Metrics tab writes so its scope survives the tab being recreated); those are assigned directly and say so at the declaration
-- AppState carries no "library loaded/cleared" state — the set of loaded libraries is published by
-  `ILibraryDataService.OnLibrariesChanged`/`OnTreeDataChanged` and `IRepositoryService.OnProjectChanged`
-
-### User Interface
-
-UI components should be used from MudBlazor.  Any custom components should be created as Components in MLQT.Shared.
-
-Use the following styling guidelines
-* Use Small size options when available
-* Use Dense styling options when available
-* Use minimal padding and margin spacing
-* RowStack components should have spacing=0
-
-**Typography.** `Typo.body1` is the default for ordinary text and `Typo.body2` for code, file paths
-and de-emphasised values — but the UI uses a hierarchy above that, and a component built to
-"body1 for everything" looks wrong beside the ones already there. What the existing components do:
-
-| Typo | Used for |
-|------|----------|
-| `h6` | A dialog's title |
-| `subtitle1` | The name of the thing a panel is about (a repository, an external tool) |
-| `subtitle2` | A section heading inside a panel |
-| `body1` | Ordinary text — the default, and by far the most common |
-| `body2` | Modelica code, file paths, and values shown beside a label |
-| `caption` | Explanatory text under a control, and secondary detail in a tree |
-
-**Component logic goes in a code-behind file** (`Foo.razor` + `Foo.razor.cs` with `public partial class Foo`), not in an `@code { }` block — an `@code` block is for a component with no logic worth testing. Services in such a component are injected with `[Inject]` properties, not `@inject` directives, because a directive-injected service cannot be set by a test. The full rule, including which components are exempt, is in `CODING_GUIDELINES.md` §Blazor Patterns. The sweep is done — all 31 logic-bearing components are converted and `MLQT.Shared.Tests/CodeBehindPolicyTests.cs` holds the line.
-
-**Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
-
-**A dialog the application opens and closes** — a progress dialog, shown while work runs — is a `ProgressDialog` (`Components/ProgressDialog.razor`), never `<MudDialog @bind-Visible="_running">`. MudBlazor opens an inline dialog asynchronously, and a flag cleared before the dialog has finished opening is written back to `true` when it does: work faster than a browser round trip left "Formatting all files" on screen for good (the B414 journey on CI). A dialog the user opens and closes with its own buttons cannot be withdrawn before it has opened, and stays a plain bound `MudDialog`.
-
-**Graph Visualization**: Interactive network graphs use the `CytoscapeGraph` component (`Components/CytoscapeGraph.razor`) backed by Cytoscape.js. It accepts generic `DiagramNode`/`DiagramEdge` parameters. See `skill-cytoscape.md` for full details.
+**Logging** is file only (`%LocalAppData%/MLQT/`, `~/.local/share/MLQT/` on Linux) unless
+`MLQT_LOG_CONSOLE` is set, so the log file is the single place to look.
 
 ## Key Files
 
@@ -219,110 +139,12 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 | `MLQT.Photino/Program.cs` | The desktop host: the window, the three platform services, settings migration |
 | `MLQT.Shared/Layout/MainLayout.razor` | Main layout, analysis pipeline orchestration |
 | `MLQT.Shared/Models/AppState.cs` | Application state and cross-component events |
-| `MLQT.Shared/Components/LibraryBrowser.razor` | Model tree navigation, VCS operation UI |
-| `MLQT.Shared/Components/SettingsRepositories.razor` | Repository settings with formatting/style rules |
-| `MLQT.Shared/Pages/CodeReview.razor` | Code viewer, diff, findings, external tool checks |
-| `MLQT.Shared/Pages/Dependencies.razor` | Impact analysis with Cytoscape network graph |
-| `ModelicaParser/modelica.g4` | ANTLR grammar |
-| `ModelicaParser/Helpers/ModelicaParserHelper.cs` | Parser utilities |
-| `ModelicaParser/StyleRules/VisitorWithModelNameTracking.cs` | Base class for all style rule visitors |
-| `ModelicaParser/DataTypes/Finding.cs` | The structured finding every rule and analysis emits — rule id, severity, element identity, reformat-stable fingerprint |
-| `ModelicaParser/Comparison/ClassChangeClassifier.cs` / `SimulationAnnotations.cs` | What kind of change an edit is, and which annotations a translator acts on |
-| `ModelicaParser/StyleRules/RuleIds.cs` / `RuleCatalog.cs` | The rule registry: the id constants, and each rule's title, category, default severity, governor, prerequisite and whether it is on by default. **A new rule needs no registering anywhere else that lists rules** — the settings dialog's Static analysis section and the Code Review rule filter are both derived, and three guards hold that chain: `EveryRuleId_IsRegistered` (id → catalogue), `RuleSettingsLayout.UnreachableRules()` (catalogue → dialog) and `CodeReviewRuleFilterTests` (catalogue → filter, by title) |
-| `ModelicaGraph/DirectedGraph.cs` | Main graph structure |
-| `ModelicaGraph/GraphBuilder.cs` | Loads libraries, analyzes dependencies |
-| `ModelicaGraph/StyleChecking.cs` | Orchestrates all per-class style rule checks |
-| `ModelicaGraph/StyleCheckingSettings.cs` | Persisted style/formatting settings, and the severity map every rule resolves through |
-| `ModelicaGraph/RuleSettingsLayout.cs` | Where each rule is set in the settings dialog — held to `RuleCatalog` by a test |
-| `ModelicaGraph/ClassSuppressions.cs` | The one read of a class's `__MLQT` directives, kept on the class |
-| `ModelicaGraph/Analysis/GraphAnalysisRunner.cs` | Runs the whole-graph analyses (`IGraphAnalyzer`), stamps severities, applies suppression |
-| `ModelicaGraph/Analysis/MetricsCalculator.cs` | Coverage/size figures and `CoverageMeasurer`, the per-class measurement |
-| `ModelicaGraph/Analysis/CoverageDimensions.cs` | Which coverage dimensions apply — to a repository (`TrackedFor`) and to one class (`ForClass`) |
-| `MLQT.Services/Checking/LibraryCheckSession.cs` | The shared load→check pipeline: parse diagnostics, per-class rules, graph analyses |
-| `MLQT.Services/Checking/StyleCheckRunner.cs` / `StyleCheckContext.cs` | Per-class entry point every surface funnels through, and its once-per-run inputs |
-| `MLQT.Services/Checking/Baseline.cs` | The accepted-debt ledger, its drift detection, and `FindingClassifier` |
-| `MLQT.Services/Checking/ClassLocation.cs` | Where a class starts in its file — turns a class-relative finding line into a file line |
-| `MLQT.Services/LibraryDataService.cs` | Library management |
-| `MLQT.Services/RepositoryService.cs` | VCS repository operations |
-| `MLQT.Services/StyleCheckingService.cs` | Background style checking with workers |
-| `MLQT.Services/Helpers/StyleCheckingWorker.cs` | Parallel style checking per repository |
-| `MLQT.Services/Helpers/ModelicaPackageSaver.cs` | Code formatting and file saving |
-| `MLQT.Cli/CheckPipeline.cs` / `CheckRunner.cs` | The CLI's load+check, and the gate/report/exit-code layer over it |
+| `ModelicaParser/StyleRules/RuleIds.cs` / `RuleCatalog.cs` | The rule registry — a new rule needs no registering anywhere else (see `ModelicaParser/CLAUDE.md`) |
+| `MLQT.Services/Checking/LibraryCheckSession.cs` | The shared load→check pipeline |
 | `RevisionControl/Interfaces/IRevisionControlSystem.cs` | Unified Git/SVN interface |
 | `RevisionControl/Interfaces/ILineLevelDiff.cs` | Line-level diff, implemented by Git only — why a pull-request review needs Git |
 
-## ModelicaParser Project
-
-ANTLR 4 based parser for Modelica source code. Includes code formatting, icon extraction, style rule checking, and external resource extraction.
-
-```csharp
-using ModelicaParser;
-
-// Parse Modelica code
-var parseTree = ModelicaParserHelper.Parse(modelicaSourceCode);
-
-// Extract model definitions
-var models = ModelicaParserHelper.ExtractModels(modelicaCode);
-```
-
-**Key subsystems:**
-- **ModelicaParserHelper** - Parsing and model extraction
-- **ModelicaRenderer** (`Visitors/`) - Code formatting with configurable rules. **A save-path tool**: it rebuilds the text, so anything that only needs to *show* code uses the two below instead. Its tag-emitting mode (`renderForCodeEditor: true`) has no production caller now; it survives as the independent implementation the classifier's colour agreement is measured against, so fix its colouring rather than delete it
-- **ModelicaTokenClassifier** (`Visitors/`) - **Syntax highlighting that does not rewrite the code.** Emits the source verbatim with each token wrapped in the same `<CATEGORY>` tag the renderer would have given it, driven by character offsets so the output is the file character for character (measured exact over 8,367 files / 1.1M lines, and agreeing with the renderer's colours on 99.998% of 2.2M word tokens). Three tiers — parse tree, lexer only, verbatim — so a class that will not parse is still coloured. Text inside a tag is raw for `CodeViewer` to encode; everything outside one is encoded here
-- **SourceElision** (`Helpers/`) / **ElisionFinder** (`Visitors/`) - **Hiding part of a class without rebuilding the rest.** Ordered, non-overlapping line ranges, each optionally replaced by one marker line, plus `ToSourceLine`/`ToDisplayLine` — monotone, so inverting it is arithmetic. One mechanism for the four things that hide something: hide-annotations, hiding a package's nested classes (on for every package), the MCP annotation strip, and the package trimmer. `ElisionFinder` elides a construct **as a unit or not at all** — one sharing a line with real code is left alone rather than leaving a fragment on screen
-- **IconExtractor** (`Visitors/`) / **IconSvgRenderer** (`Icons/`) - Modelica icon annotation to SVG. `IconExtractor.ExtractDiagram` reads the *Diagram* layer with the same machinery
-- **DiagramSvgRenderer** (`Icons/`) - **a whole diagram, not one icon**: each component's icon scaled into its `Placement` (a reversed extent is Modelica's mirroring, so it is a negative scale rather than a case), rotated about the transformation's `origin` rather than the box centre, `%name` resolved, the connection lines, and the class's own diagram graphics underneath. It **shows what falls outside the declared coordinate system** and outlines the canvas, where a Modelica viewer clips — for the MCP server's `mlqt_get_diagram_image`, whose caller cannot see the model any other way, a component placed off-canvas is the most useful thing a picture can say (B196). **Six rules it is easy to get wrong, every one of them found by comparing a render against Dymola's and none of them by a test**: a Placement's `extent` is stated *relative to its `origin`* and means nothing without it; the components on a diagram include the **inherited** ones, which for a Modelica block is usually all of them; a **connector placed on a diagram is drawn with its Diagram layer, not its Icon layer** — Modelica gives it both, they are different drawings, and the icon one is several times the size; a component also draws **its own type's connectors on its icon**, at their `iconTransformation` or, where there is none (most of MSL), at their `transformation`; **`lineThickness` and `arrowSize` are millimetres**, a length on the page rather than in the drawing, so how many coordinate units they come to depends on the zoom and a constant gives a diagram ten-pixel outlines; a reversed extent **mirrors the drawing but not the writing**, because a label still has to be read; and a component declared `if <expr>` **does not exist** where that expression is false, so an instance's icon shows only the ports it actually has. What its parameters are set to answers that and the `%J`-style references in its labels both, through `ModelicaGraph/Analysis/ComponentValues.cs` — the instance's own modification, then the type's default. **`PortOf`/`ToParent` are where a connection line ends**: the MCP router (`DiagramGeometry`) asks them, with the `DiagramComponent` the image draws, rather than working the transform out a second time — it once read the connector's diagram-layer placement against the wrong coordinate system and wrote lines into files that ended where nothing was drawn (B314). A component a base contributes is placed through that extends clause's `IconMap`/`DiagramMap` (`CoordinateMap`, composed by `DiagramGeometry.BaseMaps`) before either of them sees it, as the base's graphics are (B420, B436)
-- **ConnectClauses** (`Visitors/`) - **The one reader of a class's `connect` equations**, nested ones included: each `ConnectClause` carries its ports, its span, the offset of the `;` ending its equation (`Semicolon`, read from the tree because a description between the clause and it may hold a `;` of its own) and the `for`/`if`/`when` branches it sits in (`Scopes`, `IsNested`, `InLoop`). A connect in a `for` loop is how an array of components is wired, and three readers that looked only at an equation section's direct children reported such a model as unwired while `mlqt_get_class`'s connections view found its connections. `BehaviorExtractor`, `ClassBodyLocator`, the diagram image and `ConnectionLineAnnotator` all read through it; a caller that must treat a nested connect differently asks `IsNested` (the annotator leaves those as written) rather than reading less. `mlqt_edit_class`'s remove_component uses it to take the component's connects with it, nested ones included
-- **ExternalResourceExtractor** (`Visitors/`) - Extract resource references from parse trees
-- **ExternalDocs** (`ExternalDocs/`) - `DymolaHelpParser`/`DymolaHelpReader` recover classes (name, description, extends, has-icon) from a vendor's generated help HTML, for encrypted libraries with no readable source. Scanning is **tag-oriented, never line-oriented** — Dymola 2024x Refresh 1 emits a junk token where newlines belong
-- **Comparison** (`Comparison/`) - **What kind of change an edit is.** `ClassChangeClassifier` compares two versions of a file class by class and answers `Unchanged` / `Cosmetic` / `AffectsSimulation` / `Added` / `Unknown`, by reducing each class to a canonical token stream (comments, description strings and display-only annotations removed) plus its own source verbatim — **both excluding its nested classes**, which carry their own answers, so editing one class does not mark every package above it. `SimulationAnnotations` is the list of display-only annotation names and **everything not on it is significant**, vendor annotations included: calling a graphical edit significant costs a second look, the reverse hides a real change. **What the canonical stream drops is kept by kind**: each display-only name has one `CosmeticCategory` (`SimulationAnnotations.CategoryOf`), and a `ClassSignature` carries the class's dropped annotations as `Graphics`, `Documentation` (description strings too), `Dialog` and `Tooling`, each sorted as the kept ones are, so a caller can tell "only the graphics changed" from `ClassSignatures.Of` without repeating the list. A new display-only name needs a category, and `EveryDisplayOnlyName_HasACategory` holds that `ClassSignatures.Of` refuses a file with any parse error and catches anything the visitor throws, which is why the visitor assumes a well-formed tree — the failure mode is `Unknown`, and a signature missing an equation would report a real change as no change
-- **StyleRules** (`StyleRules/`) - Style rule visitors (extends `VisitorWithModelNameTracking` base class). Visitors only check the outermost class — nested class definitions are skipped because each has its own `ModelNode` and is checked independently
-- **SpellChecking** (`SpellChecking/`) - Hunspell-based spell checker, text extraction, and embedded dictionaries
-- **WithinClause** (`Helpers/`) - **The only place that adds or removes a leading `within ...;` clause.** A within clause belongs to a *file*, not a class: a `ModelNode`'s stored `ModelicaCode` never carries one, while text written to a `.mo` file always must (or the file re-parses with no package context and its classes come back with detached IDs). Use `Ensure` when rendering to disk and `Strip` before storing rendered text back on a node. Never hand-roll the check — the versions drifted, some guarding against a clause that was already there and some not, and a formatter that assumed a model's code had none wrote a second clause into every file it touched. The grammar accepts at most one clause, so a duplicate is a syntax error, not a silent corruption. **The same goes for the rest of a file's text outside the class** (B445) — a licence header above `within`, a comment after the clause or after the last `end X;`: `FileLevelText` (`Helpers/`) reads it **once at load**, onto `ModelNode.FileText` of the class that heads the file (null everywhere else), and it is **never** in `ModelicaCode`. A writer rebuilding a file from stored source passes it to `WithinClause.Ensure(source, parent, owner.FileText)` / `Set(...)`, which put it back exactly as written; a writer that *renders* uses `FileText.Formatted().ApplyTo(rendered)`, which is the renderer's own output for those comments, so Format All and the incremental formatter (which renders the file from disk) write the same file. It stays with its class: a rename keeps it, a move takes it along, and a split puts it on the new `package.mo`
-- **ModelicaLanguage** (`Helpers/`) - **The language's own names, written down once**: the predefined types, the built-in operators and functions, `Connections` and unqualified `rooted`. Checked *before* a name is looked up in the graph, because resolution binds a simple name to any node it finds - so a library holding a class called `rooted` collected an edge to it from every model calling the operator, and `MLQT.Structure.UsesUndeclared` then reported a library of that name as undeclared (B246). **Ordinal, because Modelica is**: comparing case-insensitively dropped `Modelica.Blocks.Math.Sum`, `Max`, `Abs`, `Sign`, `Sqrt`, `Sin`, `Cos`, `Exp` and `Log` out of the graph. `PredefinedTypes` is the narrower question a resolver asks, and is where `TypeResolver` and `DymolaHelpParser` now get theirs
-- **ModelicaName** (`Helpers/`) - **The only way to take a Modelica name apart**: `Segments`, `EnclosingPackageOf`, `LeafOf`, `RootLibraryOf`, `EnclosingNamesOf`. A quoted identifier may contain a dot - `Lib.'a.b'.C` is three segments - and some twenty places split names with `Split('.')` or `LastIndexOf('.')`, each reading such a name differently from the resolver. `ModelicaNameSplitPolicyTests` holds a ledger of the dot-splits left in production code - every `Split`/`IndexOf`/`LastIndexOf` overload, the dot as a char or a string, and `Contains('.')` or counting dots, which ask "is this top-level?" and "how deep?" the same naive way - each with the reason it is not a Modelica name. `IsSimple` is "one segment" - a top-level class or a directly named component - and `Abbreviated` the shortened form a narrow column shows
-- **CompositionAnnotations** (`Helpers/`) - **Which of a class body's annotations is which**: the leading class annotation, the external clause's, and the trailing class annotation. All three are direct children of `composition`, so `composition.annotation()` lists whichever are present and **an index says nothing about which one an entry is** - `[0]` taken as the external clause's gave a function's leading `annotation(Inline=true)` to its clause and moved `Library="lib"` to the class on save (B446). Ask `Of(...)`/`External(...)`/`ClassLevel(...)` instead; never index `annotation()` on a composition
-- **`GetText()` drops the whitespace between tokens** - harmless for a name or a number, and it destroys an expression: `use_reset and use_set` comes back as the single identifier `use_resetanduse_set`, which resolves to nothing and reads as "undecidable" rather than as a bug (B277, B317). Read any expression, condition, binding or modification value by rebuilding it from its tokens with the spaces between them, as `ClassInterfaceExtractor.SourceText` does, never with `GetText()`
-- **ModelicaFileEncoding** (`Helpers/`) - **All `.mo`/`package.order` reads and writes must go through this**, and `ModelicaFileAccessPolicyTests` now holds the line: every raw `File.ReadAllText`/`WriteAllText` in production code has to be in its ledger with a reason saying what it reads or writes, so a new one fails until somebody says which it is. Modelica files declare no encoding and the population is mixed: older libraries use single-byte Windows-1252, most files are BOM-less UTF-8. Encoding is detected per file (BOM → strict UTF-8 → Latin-1 fallback, which cannot fail) and **written back in the encoding it was read in**. A read here paired with a plain `File.WriteAllText` re-encodes the decoded characters and corrupts the file, progressively, on every save. It also owns **how a file ends and what its line endings are**: `EnsureFinalNewline` is applied by every write and is public so a caller comparing "what is on disk" against "what we would write" can compare like with like, and `ForFile` writes the text back with the endings the file already had. The renderer joins with a line feed, so without that every save rewrote a CRLF library as LF — invisible to `git diff`, which normalises it away, and reported by LibGit2Sharp, which does not, as every file modified (B251). That rule is here because the alternative was tried — the incremental formatter appended `"\n"` from the initial commit and the full library save did not, so which path last touched a file decided how it ended, and a user who ran **Format All Files** over a library the incremental path had formatted got every file back modified with nothing changed in any of them (B236)
-
-**Grammar modification**: Edit `modelica.g4`, then `dotnet build` to regenerate parser code.
-
-## ModelicaGraph Project
-
-Directed graph for tracking file/model relationships, dependencies, external resources, and style checking.
-
-**Node Types:**
-- `FileNode` - Represents a Modelica file
-- `ModelNode` - Represents a Modelica model with definition, dependencies, and `HasExperimentAnnotation` flag
-- `ResourceFileNode` - Represents an external resource file
-- `ResourceDirectoryNode` - Represents an external resource directory
-
-**Key Classes:**
-- `DirectedGraph` - Main graph structure with node/edge management. `DependenciesAnalyzed` is the single source of truth for whether `UsedModelIds`/`UsedByModelIds` are populated — never infer it by checking whether some model happens to have edges
-- `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
-- `ExternalStubBuilder` - Turns `DocumentedClass` records into graph nodes by synthesizing a minimal Modelica declaration, so every parse-tree-based consumer resolves them unchanged. Nodes are flagged `ModelNode.IsExternalStub`: never reported on, never written
-- `IReadOnlyClassSource` / `ReadOnlySourceLoader` / `ReadOnlySources` (`ReadOnlySources/`) - **The one way a read-only library comes in**, recovered from documentation or supplied from memory as Modelica text. Read-only is decided once per level: the class (`IsExternalStub`, set before it reaches the graph), the file (`ReadOnlySources.IsReadOnlyPath`: a `.moe`, or under `mlqt-readonly://`, never on disk — every write path asks it) and the library (`LoadedLibrary.IsReadOnly`). `ReadOnlySources.Precedence` is the one rank between copies of a class or library; `KindOf(node)` tells readable, supplied and recovered classes apart. See `skill-encrypted-libraries.md`
-- `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
-- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule findings) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags). `SeverityFor(id)` is the **only** way to ask what a rule will do — it resolves governors, prerequisites and formatter-derived levels, none of which are visible in the raw `RuleSeverities` map. `StampSeverities` is the one place configuration is applied to findings
-- `ModelDefinition.Borrow` - **The convention for reading a class you do not own.** Parses if needed, runs the work, and releases the tree again *only if this call is what parsed it*. Read it before adding any `EnsureParsed()`: the two halves have come apart in both directions, and a walk that keeps a base class's tree accumulates over tens of thousands of classes. The bulk load pass in `GraphBuilder` is the deliberate exception, and says so
-- `ClassSuppressions.For(definition, modelId)` - **The only read of a class's `__MLQT` directives.** A class-level `suppress` or `spelling` reaches **every class nested in the one carrying it** — one annotation on a package waives a rule for the sub-package, which is how Dymola's generated `_fmu` models are quieted. Inside one tree `SuppressionSet.IsSuppressed` sees the nesting itself; a class in a node of its own reaches its packages' directives through `ClassSuppressions.Enclosing(graph, id)`, which the checker (via `StyleCheckContext.EnclosingSuppressions`) and `GraphAnalysisRunner` both ask. Component-level waivers and `format=false`/`preserveOrder` stay with their own class. Three passes want the same answer about the same class in one run — the checker, the coverage measurer and the graph analyses — and each used to walk the tree for itself. Kept on the class as `SuppressionSet.Empty` when there is nothing, so a library of tens of thousands costs a reference each
-- `ClassImports.For(definition)` - **The imports a class declares, read once and kept on the class.** Name lookup asks each *enclosing* class for its imports as well as the class's own - MSL declares `import Modelica.Units.SI;` once in `Modelica.Blocks` for every block below it - so a package is asked hundreds of times per run. `TypeResolver.ResolveName` is the one lookup, and dependency analysis's `ReferenceResolver` delegates to it; the two had drifted, and neither saw an enclosing package's imports (B292). **The innermost scope wins**: each scope's classes, then the classes it inherits, then its imports - qualified and alias imports before wildcards, whatever order they are written in (MLS §13.2.1) - from the class outward, and the name as written - matched at the root - last. **Only the first segment is looked up**; each later one is a member of the class before it, nested or through its bases (a short class's included), and once the first is bound the search is over - `Medium.ThermodynamicState` under `replaceable package Medium = PartialMedium` is `PartialMedium.ThermodynamicState`, and if that is not there the name means nothing rather than a package's own `Medium.ThermodynamicState` further out. `TypeResolver.ResolveNamePath` says how it got there: the class per segment and how the first was bound (`NameBinding` - own, inherited, import, alias, wildcard, root, global), which is what a rename or move asks. Trying the root first let a top-level `Constants` answer for `Lib.Constants`. Lookup **stops at an `encapsulated` class**, root included - which is why such a class imports what it uses - and `ClassImports.IsEncapsulated` answers that once per class, beside its imports. A leading dot is the one exception to all of it, and is passed as `global` because the callers strip it; the grammar keeps a type name's dot outside `name`, so `ReferenceResolver.GetQualifiedName` puts it back
-- `FormattingExclusion.Excludes(model, settings)` - **The only answer to "must the formatter write this class back unchanged?"**, over both mechanisms: the `FormattingExcludedModels` name list and `__MLQT(format=false)` / `preserveOrder=true`. Asked per caller instead, the annotation reached the full library save and not the incremental format — the path that runs at startup and after every VCS operation — so the rename-safe mechanism the docs recommend was the one the formatter ignored. Note this is a **different question** from the one the checker and the dashboard ask: writing is per rendered definition (the renderer rewrites a class's whole source or none of it), reporting is per class (`SuppressionSet.PreservesFormatting`)
-
-**`Analysis/` — the whole-graph half (phase 6):**
-- `IGraphAnalyzer` / `GraphAnalysisContext` / `GraphAnalysisRunner` - Analyses that need the graph rather than one class: `PackageOrderAnalyzer`, `UsesHygieneAnalyzer`, `UnusedClassAnalyzer`, `UnusedImportAnalyzer`, `UnusedMembersAnalyzer`, `ShadowingAnalyzer`. `RequiresDependencyAnalysis(settings)` says whether the edges are needed first
-- `TypeResolver` / `ClassElementResolver` / `UnitResolver` - Inheritance- and import-aware resolution. They cache **the answer, not the tree**. `UnitResolver.ResolveAttributes` gives the `unit`/`displayUnit`/`quantity` strings a type chain fixes (`UnitAttributes`, nearest definition winning per attribute), each link a short alias or a long-form `type` around one `extends` - the form a type with an `equalityConstraint` must take; `Resolve` is its yes/no view and shares its cache. `ResolveWithInheritance` adds a class's **ancestors' nested classes**, and nothing else of their scope: a base's packages and imports are not inherited (MLS §5.3.1, §13.2.1), so a name written in a base is resolved by asking with the base's id - which is what `ResolvedElement.OwnerId` is for. They are looked for **at each scope, after its own classes and before its imports and enclosing packages** - where Modelica looks - so a base's replaceable `Medium` wins over a package's own. Dependency analysis and the reference locator resolve that way too (`ReferenceResolver`); only the walk of a class's own bases (`DirectBases`) resolves an `extends` name differently, with `ResolveBase`: without the class's **own** inherited classes, which that clause is bringing in, and with the enclosing packages' - `P.M`'s `extends PartialThing` is `Q.PartialThing` when `P extends Q`. What a class extends is read once and kept on it (`ClassImports.BasesOf`), with its imports and `encapsulated` flag, so walking a chain costs no parse. Passing `null` imports means "read the class's own"; `[]` means none. `ClassElementResolver.ReferencesIn(graph, class, ...)` is the one way to ask what a component reference (`inertia1.flange_b.tau`, `shafts[2].phi`, `Modelica.Constants.pi`) names: the element per segment and the class the last one's type is, with subscripts dropped, protected members reachable only from the class itself, enclosing classes lending their constants only (and nothing past an `encapsulated` one), and class-qualified names looked up as the language does. Make one per class, pass it an `InterfaceCache` and an `AncestorCache`, and drop it when the class is done: it keeps that class's members for its own lifetime and puts only the types references pass through into the run's cache (B147). `ResolveReference` is the one-shot form. `ComponentReferences.Start` answers only where a reference starts - the class it goes through and how many segments name it, `Modelica.Constants` in `Modelica.Constants.pi`, `Types.Init` in an enumeration literal - and is what **dependency analysis and the reference locator** ask when a name is not a class by its whole name: before it, those uses linked to nothing, so the classes read as unused and a rename left them behind. A locator site carries the class each segment named and how the first was bound (`ReferenceSite.SegmentIds`, `FirstSegmentBinding`), and the moves that re-qualify references **leave a site as written while it still means its class** (`EditTools.StillMeansItsClass`): `Medium.State` under a base's replaceable `Medium` stays relative - the full name would fix it to the base's default and undo every `redeclare` - until the class it names leaves the base, and a name an import brings in stays because the import clause is re-qualified instead. A name whose leading segments go through a target and whose last does not (`Medium.State` where `Medium = Water`) is a site for those leading segments. `mlqt_refactor_class`'s rename targets the class **and every class inside it**, and rewrites the segment of each site that spells the old name (`EditTools.RenamedSegment`) - `Pkg` in `Pkg.State` and `Root.Pkg.State` - leaving a relative name inside the class, an alias's `P.State`, and an alias or local short class **that happens to share the class's name** as written - the first segment is renamed only where it was bound to the class. **Renaming a replaceable class renames every `redeclare` of it** (`ReferenceLocator.Redeclarations`): in an extends clause's, a component's or a short class's modification, nested ones included (`h(b(redeclare package Medium = W))`), and the body-level `redeclare package Medium` of each class extending it, with the names that class writes through its own. A redeclare can sit any number of modifications deep (`h(b(redeclare ...))` in a class that only uses `Holder`), so for a replaceable class every class reaching a derived one through its users is looked in, not only the direct users. **It refuses a new name that is already taken where a renamed reference is written** (`Analysis/NameCapture`): a reference starting with the new name is looked up from its own class outward, and a nearer class or component of that name would answer for it - the file parses and the reference silently means something else. The moves that write full names refuse the same way (`NameCapture.ForFullNames`): a full name starting with `Root` means something else where a class declares a `Root`, and nothing at all inside an `encapsulated` class - judged, for a reference inside the moving class, where it is going rather than where it was. An import clause is skipped by both checks: it is looked up from the top. **An `import` clause's name is global** (MLS §13.2.1), so dependency analysis and the locator resolve it from the top (`ReferenceResolver.GetReferenceName`); resolved from the class outward, an encapsulated class's imports linked to nothing. **A short class is an extends clause in all but syntax**: `Collect` lists `model R2 = Resistor(R = 2)`'s base's members with its modifications applied, and `DirectBases`/`BaseClasses` name its base - a diagram takes its components from one and its wiring and graphics from the other, so they must agree (B316), and `ResolvedElement.ModifiedIn` names the class a modified default is written in, which is where its names resolve. **So is a class extends** (`redeclare record extends ThermodynamicState`, which every medium uses): its base is not looked up as a name, which found the class itself, but is the class of that name its *enclosing* class inherits (MLS §7.3.1) - `ClassElementResolver.ResolveBaseOf`, which both `DirectBases` and `Collect` go through, so a medium's own `state.T` reaches `PartialMedium`'s
-- `MetricsCalculator` / `CoverageMeasurer` - The dashboard's figures, and the per-class measurement the checker triggers while it still holds the tree
-- `CoverageDimensions` - `TrackedFor(settings)` for a repository, `ForClass(...)` for one class. **`ForClass` is the single narrowing**: every way of taking a class out of scope (`ExcludedLibraries`, `FormattingExcludedModels`, `__MLQT(format=false)`) is asked there, because each arrived separately and each was taught to the checker before anything asked what it meant for the report
-
-```csharp
-var graph = new DirectedGraph();
-var fileNode = new FileNode("file1", "Models.mo");
-var modelNode = new ModelNode("model1", "MyModel", modelicaCode);
-graph.AddNode(fileNode);
-graph.AddNode(modelNode);
-graph.AddFileContainsModel("file1", "model1");
-```
+Each project's `CLAUDE.md` lists its own key files.
 
 ## Modelica Package Structure
 
@@ -331,116 +153,20 @@ graph.AddFileContainsModel("file1", "model1");
 - **Non-standalone classes** must be nested in parent package.mo
 - `ModelicaRenderer` supports selective class exclusion when generating package.mo
 
-## External Resources System
+## Where the Detail Lives
 
-External resources (data files, C libraries, images) are tracked as graph nodes:
+**Project `CLAUDE.md` files** — `ModelicaParser/`, `ModelicaGraph/`, `MLQT.Services/`, `MLQT.Shared/`,
+`MLQT.McpServer/`, `MLQT.Cli/`. Each is read when you work in its folder.
 
-- **ResourceFileNode** - Files referenced via `loadResource()`, `Bitmap`, external annotations
-- **ResourceDirectoryNode** - Directories from `IncludeDirectory`, `LibraryDirectory`, `SourceDirectory` annotations
-- **ResourceEdge** - Links models to resources with metadata (RawPath, ReferenceType, ParameterName)
+**Skills** (`.claude/skills/<name>/SKILL.md`, chosen by their description): `revision-control`,
+`simulation-tools`, `external-resources`, `icon-extraction`, `nuget-packages`, `cytoscape`,
+`spell-checking`, `naming-conventions`, `encrypted-libraries`, `desktop-host`, `gui-testing`,
+`mcp-library-loading`, `test-tooling` and `user-documentation`. A skill's `description` is what
+decides when it is loaded, so it names the files and tasks it covers.
 
-**Reference Types:** (`ResourceReferenceType` enum)
-- `LoadResource` - `Modelica.Utilities.Files.loadResource()` calls
-- `LoadResourceParameter` - a parameter whose default value is a `loadResource()` call
-- `UriReference` - `modelica://` URIs in documentation/Bitmap
-- `LoadSelector` - Parameters with `loadSelector` annotation
-- `ExternalInclude/Library/IncludeDirectory/LibraryDirectory/SourceDirectory` - External function annotations
-
-**External Resources Page** (`Pages/ExternalResources.razor`):
-- Tree view of all referenced resources organized by directory
-- Different icons for annotated directories (Include=Code, Library=LibraryBooks, Source=DataObject)
-- Click files or annotated directories to see referencing models
-- Filter by file type (Data, C/C++, Libs, Images, Documentation)
-
-## Adding New Features
-
-1. Define interface in appropriate `Interfaces/` folder
-2. Implement in `MLQT.Services/` or `MLQT.Shared/Services/`
-3. Register as singleton in `AddMlqtCore()` (`MLQT.Shared/MlqtServiceCollectionExtensions.cs`)
-4. Use events for cross-component communication
-5. Keep business logic in services, not Razor components
-
-## Skills (Load on Demand)
-
-Detailed documentation for specialized subsystems is available in `.claude/skills/`:
-
-| Skill | When to Load |
-|-------|--------------|
-| `skill-revision-control.md` | Git/SVN integration, workspace reuse, revision comparison |
-| `skill-simulation-tools.md` | Dymola and OpenModelica interfaces |
-| `skill-external-resources.md` | External resource extraction, resolution, graph nodes |
-| `skill-icon-extraction.md` | Modelica icon parsing and SVG rendering |
-| `skill-nuget-packages.md` | NuGet package details and licenses |
-| `skill-cytoscape.md` | CytoscapeGraph component, cytoscapeGraph.js, layout options, script loading |
-| `skill-spell-checking.md` | Spell checking system: SpellChecker, dictionaries, custom words, style rule visitors, UI integration |
-| `skill-naming-conventions.md` | Naming convention checking: NamingValidator, NamingStyle, presets, FollowNamingConvention visitor, exception names |
-| `skill-encrypted-libraries.md` | Reading a vendor's generated help HTML: `DymolaHelpParser`, stub synthesis, `IsExternalStub` write guards, asymmetric resolution, accuracy; read-only class sources, supplied libraries and their precedence |
-| `skill-desktop-host.md` | The Photino host: `HostAssetManifest`, the silent failure modes, window placement and icons, the three platform services, WebKitGTK-vs-WebView2 differences, `/selftest` |
-| `skill-gui-testing.md` | The four test layers over `MLQT.Shared`, verify-by-mutation, guard tests, `MLQT.TestHost` + Playwright journeys, generated documentation screenshots |
-| `skill-mcp-library-loading.md` | How `mlqt_load` finds dependencies and which version it takes, reading a Dymola startup script, and what the B503 measurements taught about getting agents to use the MCP tools (instruction wording, descriptions, fresh servers for runs) |
-
-## User Documentation
-
-User-facing documentation is in `Documentation/`:
-
-| Document | Covers |
-|----------|--------|
-| `installation.md` | Both installers: the Linux `.deb` and the Windows setup, what each puts where, and removing them |
-| `getting-started.md` | Prerequisites, project/repo setup, first steps |
-| `library-browser.md` | Tree navigation, VCS status indicators, view modes |
-| `code-review.md` | Code viewer, diff, findings, external tool checks, formatting exclusion toggle |
-| `code-formatting.md` | Formatting rules, triggers, incremental vs full, exclusion |
-| `settings-reference.md` | All settings: style rules, formatting, spell check, SVN branch dirs, JSON schema |
-| `dependency-analysis.md` | Impact analysis, Cytoscape graph, layout options |
-| `external-resources.md` | Resource tracking, tree view, file type filters |
-| `metrics-dashboard.md` | Metrics tab: coverage dimensions, scope and sub-library comparison, the trend and its snapshots |
-| `encrypted-libraries.md` | Commercial `package.moe` libraries: what is recovered from vendor help HTML, accuracy, reference-library setup |
-| `external-tools.md` | Dymola and OpenModelica configuration |
-| `naming-conventions.md` | Naming styles, presets, exception names |
-| `spell-checking.md` | Dictionaries, custom words, Code Review workflow |
-| `git-operations.md` | Pull, commit, branch, merge, rebase, push, PR, history |
-| `svn-operations.md` | Update, commit, branch, merge, tree conflicts, configurable branch dirs |
-| `file-monitoring.md` | Change detection, debouncing, refresh button |
-| `modelica-concepts.md` | Modelica language primer for non-Modelica users |
-| `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
-| `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging, the evaluation harness |
-| `cli.md` | Headless `mlqt` CLI: install, `check` options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown/review), baseline/ratchet, `compare` for missing classes, `hook` for the git pre-commit gate, `review` for pull-request comments, exit codes |
-| `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub, comment on a pull request, install the pre-commit hook |
-| `troubleshooting.md` | Common findings, FAQ |
-**The screenshots are generated, not taken.** `MLQT.Journeys/DocumentationScreenshots` drives the
-real components in a real browser through `MLQT.TestHost`, against the fixture library, and writes
-each image as the file the markdown already links to:
-
-```powershell
-$env:MLQT_DOC_SCREENSHOTS = "C:\Projects\MLQT\Documentation\Images"   # absolute - see below
-MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
-```
-
-**Give it an absolute path.** A relative one resolves against the *test executable's* directory, not
-the repository, so `Documentation/Images` quietly writes 44 pictures into
-`MLQT.Journeys/bin/Release/net10.0/` and `git status` shows nothing changed — which reads as "the UI
-did not move" rather than as "the pictures went somewhere else".
-
-**Expect a larger diff than the change.** The fixture builds a fresh git repository each run, so
-every shot showing the commit hash differs whether or not the UI did. That is the cost of pictures
-generated from a real repository, not a reason to hand-pick which ones to keep.
-
-Run it **on its own, by that filter**: the journeys share one host, so a full-suite run reaches it
-with libraries and settings another journey left behind. With the variable unset it does nothing, so
-an ordinary run never writes to the repository.
-
-**The caption in the markdown is the specification for the shot.** Where the two disagree, one of
-them is wrong - and it is usually the picture, which is the point of being able to regenerate them.
-A handful cannot be produced this way at all and stay photographs: the two Dymola shots
-(`code-review-4`, and `code-review-5` because the Finding Details dialog opens only for a finding
-carrying `Details`, which a style rule never produces), `metrics-1` (the Metrics tab over the
-Modelica Standard Library, with a burndown built from months of snapshots — the fixture's eleven
-classes and a single run give neither the numbers nor the trend the page is about) and anything
-showing the window frame. **The
-SVN shots are generated** (B152): an SVN "server" is only a repository directory, so the fixture
-makes one with `svnadmin create` and checks trunk out over `file://` — which means the generator
-now needs `svn` and `svnadmin` on the machine that runs it. So is `git-operations-6`, reached by
-committing from the merge dialog's own dirty phase. `skill-gui-testing.md` has the detail.
+**User documentation** is in `Documentation/` (the `user-documentation` skill indexes it, and holds how
+its screenshots are generated rather than taken). **Contributor documentation** is `BUILDING.md` and
+`RELEASING.md`.
 
 ## Planning and Design Notes
 
@@ -451,7 +177,7 @@ own: the unit-consistency flagship, not started.
 
 | Document | Covers |
 |----------|--------|
-| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, what was *decided against*, the *known open issues*, and the item-id rule |
+| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, which design notes were retired into what, what was *decided against*, the *known open issues*, and the item-id rule |
 | `Design/unit-consistency.md` | **The design for the phase-3 unit / dimensional consistency check, not started**: what it builds on (measured), the unit algebra, three-state typing of an equation, the finding, the increments, and the questions the user decides first. Retire it when the check ships |
 | `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity and resolution corpora (opt-in, so an ordinary run says nothing about them), the nightly WebKit rehearsal, the `.deb` job that only a tag exercises, and the protected-build comparison of the MCP stack. Adding to it is a decision that something *cannot* be a gate on every push |
 
@@ -464,23 +190,6 @@ was closed. **An id is never reused.** A new item continues from the number the 
 section states, and `MLQT.Cli.Tests/MarkdownTableTests.cs` holds that every id in the roadmap is
 unique and below it.
 
-**The per-phase design notes were retired on 2026-09-17**, once phases 1–7 had all shipped. What
-they held that outlives them is now in the code, in `CODING_GUIDELINES.md`, and in the skill files —
-`skill-encrypted-libraries.md`, `skill-desktop-host.md` and `skill-gui-testing.md` are the three
-written specifically to carry that material. **Phase 1 (release feedback) followed on 2026-09-25**:
-its plan (`phase-1-release-feedback.md`) and the viewer-fidelity analysis behind its central decision
-(`analysis-viewer-fidelity.md`) were retired into `CODING_GUIDELINES.md` (§Testing and §Working a
-Defect), the skills, and the code — the classifier, `ClassSource` and `CodeReview.Show` carry their
-own measurements. **Obfuscation readiness (B502) followed on 2026-10-14**: `obfuscation.md` was
-retired into `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation (the rules, each with its
-guard test) and `Design/release-checklist.md` §7 (the protected-build comparison and its reference
-measurements). **The MCP tool consolidation (B503) followed on 2026-10-20**: `mcp-tool-consolidation.md`
-was retired into `Documentation/mcp-server.md` (the 16 tools, and the mapping from the 66 for hosts
-and clients), `.claude/skills/skill-mcp-library-loading.md` (how dependencies are found and a startup
-script read, and what the measurements taught about getting agents to use the tools), and the server
-instructions and guidance. Git history has the notes themselves if the reasoning behind a delivered decision
-is ever needed.
-
 **Write a design note for a phase that has not shipped**, not for one that has: a note describing
 what was planned rather than what exists is worse than no note, and every review of this repository
 found notes that had drifted into exactly that. Retire it when the phase lands and move what is
@@ -488,11 +197,12 @@ durable into the code, the guidelines or a skill.
 
 ## Documentation Maintenance
 
-Update this file when:
-- Adding new projects or major features
-- Changing architectural patterns
-- Modifying service interfaces
-- Adding/removing NuGet packages
+Update this file only for what every session needs — a new project, a changed architectural pattern.
+Put the rest where it is used:
+- A project's services, types and traps → that project's `CLAUDE.md`
+- A subsystem that spans projects, or a procedure (testing, packaging, docs) → a skill; adding or
+  removing a NuGet package → the `nuget-packages` skill
+- A user-visible change → its page in `Documentation/`, and the project's README
 
 Update `Design/roadmap.md` when:
 - A phase ships, or a decision changes the agreed sequencing
@@ -501,391 +211,32 @@ Update `Design/roadmap.md` when:
   or the guidelines)
 - Something is deliberately not done (*Decided against, for now*, with what would reopen it)
 
-Update relevant skill files for specialized subsystem changes.
-
-Update project readme files when changes are made.
-
-## Test Fixtures
-
-`TestFixtures/SarifSmoke/` is a deliberately imperfect Modelica library committed at a **nested**
-path (`Libraries/Smoke`). `build/validate-sarif.ps1` checks a report generated from it against the
-SARIF 2.1.0 schema with `Sarif.Multitool`, and the nesting is what proves `--sarif-base` writes paths
-a consumer can resolve. Run on every push by `build-and-test.yml`; run it locally the same way.
-
-`TestFixtures/McpEval/` is the library and task list `build/mcp-eval.py` runs Claude Code against
-to measure how well an agent uses the MCP server (pass rate, tool calls, errors, calls that bypass MLQT,
-tokens), so a change to the toolset can be compared run against run. **It calls the model and costs
-money**, so nothing runs it automatically; `python build/mcp-eval.py check-tasks` is free and proves no
-task passes on the untouched fixture, and `analyse` reports the same figures for real sessions from their saved transcripts, also without calling a model. The fixture's flaws are deliberate - see its README.
+`MLQT.Cli.Tests/MarkdownTableTests.cs` checks every table in `Design/`, every `CLAUDE.md` and every
+skill: a blank line between rows, or an unescaped `|` in a cell (even inside backticks), fails it.
 
 ## Test Cases
 
 Comprehensive tests are required for all classes with the goal being >80% coverage for each class.  The ModelicaParser assembly requires >95% coverage for all classes as this is critical to the project.
 
-Two scripts answer two different questions. Run the first before pushing; run the second when you
-have added a class or moved code between them.
-
-### "Do all the tests pass?" — `build/run-all-tests.ps1`
-
 ```powershell
-./build/run-all-tests.ps1                        # all 10 suites, ~4 minutes
-./build/run-all-tests.ps1 -Coverage              # ...with a per-assembly coverage summary
-./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # what CI runs, against the current build
-./build/run-all-tests.ps1 -Configuration Debug   # Release by default, to match CI
+./build/run-all-tests.ps1                        # all 10 suites, ~4 minutes - run before pushing
+./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # what CI runs, on a machine without Dymola or omc
+./build/check-coverage.ps1                       # the per-class coverage ratchet CI enforces
 ```
 
-`-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
-only visible here: what the classes needing a live Dymola or omc add to `DymolaInterface` and
-`OpenModelicaInterface` (the gate measures those two from their tool-free classes only, B438), and the
-~8 points the browser journeys add to `MLQT.Shared` by exercising the real UI. With `-CoreOnly` the
-two tool assemblies are still in the summary, measured from their tool-free classes and marked so
-(B437). Both scripts take their assembly lists from
-`build/CoverageAssemblies.ps1`, so they cannot disagree about what "our code" means.
-
-It runs **every** suite, which is more than CI does and more than the coverage gate does:
-
-| | Suites |
-|---|---|
-| `run-all-tests.ps1` | all 10 — the 7 below, plus `DymolaInterface.Tests`, `OpenModelicaInterface.Tests` and `MLQT.Journeys` |
-| CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform, plus the Dymola and OpenModelica suites **without their tool classes** (B399); `ui-journeys` runs the journeys on both |
-| `check-coverage.ps1` | the same as CI's test jobs — the 7, plus the Dymola and OpenModelica suites without their tool classes (B438); the journeys contribute no gated coverage |
-
-**The suite list is read from `MLQT.slnx`**, not written out in the script, so a test project added to
-the solution is picked up without anyone remembering a list. This repository has been bitten by the
-same rule having two implementations often enough that a list would be a defect waiting to happen.
-
-**Three suites need something the machine may not have** and are the reason this script exists at all:
-`DymolaInterface.Tests` (a live Dymola) and `OpenModelicaInterface.Tests` (a live `omc`) run in CI
-**only without the classes that drive the tool**, so this is the only thing that runs those;
-`MLQT.Journeys` needs `pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once.
-On a machine without Dymola or OpenModelica, use `-CoreOnly`, which runs the two suites as CI does.
-
-**A class that needs a live tool says so with a trait** — `[Trait("Requires", "Dymola")]` or
-`[Trait("Requires", "OpenModelica")]` — and CI runs the rest with `--filter "Requires!=Dymola"` /
-`"Requires!=OpenModelica"` (B399). Most of the Dymola suite needs no Dymola: wire format against a
-fake handler, socket stubs, spawn environment. Each suite's `ToolTraitTests` fails when a class using
-the tool's fixture is not marked; a class that starts the tool some other way (`TimeLimitTests`) has
-to be marked by hand. `LiveToolTestFilterTests` holds the filter strings to the traits.
-
-**A fourth is partly in that position.** `RevisionControl.Tests` has three classes that need an svn
-client — `SvnIntegrationTests`, `SvnIntegrationAdvancedTests` and `SvnMergeCommitTests` — and
-`MLQT.Services.Tests` has one, `RepositoryServiceSvnIntegrationTests` (B471), so CI runs both suites
-with a filter that excludes exactly those four, and this script applies it **only when the machine
-has no svn**. The filter is the same string in four files and a test holds them together
-(`MLQT.Shared.Tests/SvnTestFilterTests.cs`), because it was once the substring `Svn`: that also
-excluded six classes needing no svn at all, hid 281 of the suite's 673 tests from every automated
-run, and hid a failing one among them (B266). **Classify a test by what it needs, never by what it is
-called.**
-
-**Every SVN test builds its own repository** — `TestSupport/SvnTestRepository.cs`, with
-`svnadmin create` into a temporary folder, the way the Git tests use `Repository.Init`. It is linked
-into `RevisionControl.Tests` and `MLQT.Services.Tests` as `InMemorySettingsService` is, not copied.
-The tests once shared one repository and working copy kept at a fixed path on the developer's
-machine, and because they commit, two runs at once (two worktrees, two agents) moved HEAD under each
-other and failed a test that passed alone (B426); on every other machine they returned before
-asserting anything (B471). Never point a test at a fixed repository or working copy on the machine.
-The `RevisionControl.Tests` classes CI runs take `SvnWorkingCopyFixture`, which is empty where svn is
-not installed, so there they still return early.
-
-**A raw string literal's line endings are the checkout's, and a fixture must never be searched for
-one.** `"""..."""` carries whatever the *.cs file* carries — CRLF on a Windows checkout, LF on a
-runner with `core.autocrlf` off — so `fixture.Replace("x;\r\n", "")` matches on one platform and
-silently does nothing on the other, leaving a test that asserts against an edit that was never made.
-Normalise the fixture where it is declared and search for `\n`. The same rule in the other
-direction: **never write a path as `@"C:\repo\..."`** — on Linux a backslash is an ordinary
-character, so such a path is one segment and every `Path.Combine` against it disagrees. Build test
-paths with `Path.Combine` from `Path.GetTempPath()`, and give a VCS a forward-slashed relative path,
-which is what Git reports on both. Both of these have shipped green on Windows and failed on the
-Linux job — see B255, and again in WP7. **Neither is worth a guard test**: the shapes are
-indistinguishable from the forty-odd files that use a drive-letter string as test data or search
-text they built with CRLF themselves, so the check would be noise.
-
-**A failure is a failure, whichever suite it is in.** An earlier version excused the tool-dependent
-suites by category on the grounds that the machine might not have the tool, and immediately excused a
-real one — OpenModelica *is* installed on the main development machine, and a test in that suite
-was failing against omc 1.26 (backlog B116, since fixed: the test was wrong about what omc does, and
-nobody looked while the category was excused). Excusing by
-category hides the thing you wanted to find; `-CoreOnly` is a decision, reading past a red line is
-not.
-
-### "Would the installer work?" — `build/publish-tools.sh`
-
-One installer per platform carries the GUI, the `mlqt` CLI and the MCP server, so all three are
-published into a **single tree** — they share every assembly below `MLQT.Shared`, and each carries its
-own `.deps.json`, so together they cost one copy rather than three.
-
-```bash
-build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
-build/publish-tools.sh --runtime linux-x64 --self-contained --version 1.2.3 --output publish/linux-x64
-```
-
-**The smoke tests are the point of it.** Building an installer around a tree nobody has run is how this
-phase produced a host that resolved no web assets (B133) and one that shipped no svn client (B144) —
-both of which built, published and installed perfectly. So each tool is asked something only a working
-build can answer: the CLI prints its version, the MCP server completes an `initialize` handshake over
-stdio, and the GUI runs the **16 `/selftest` probes against the published tree**. That last is the
-strongest check available anywhere in this repository — it resolves the RCL assets, runs interop,
-renders MudBlazor and exercises settings, logging and the svn locator, in the layout that ships.
-
-`--allow-missing-svn` is needed locally because the payload is fetched by `build/fetch-svn-tools.ps1`
-and is not committed. It defaults to **failing**, so a release cannot ship without the client by nobody
-remembering a flag — which is exactly how B144 happened.
-
-**Shell, not PowerShell**, and it is `build/package-deb.sh`'s reason applied to its own input: pwsh is
-not installed on a plain Ubuntu desktop, so a PowerShell publish step made the Linux half of the build
-unrunnable on an ordinary Linux box even though the packaging script beside it was shell. On Windows it
-runs under Git Bash. One consequence worth knowing: `mkfifo` under Git Bash makes an MSYS-emulated fifo
-that a native `.exe` cannot read from, so the MCP handshake here holds stdin open with an ordinary
-pipeline rather than the fifo `package-deb.sh` uses.
-
-The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree. It refuses to
-compile if any of the three tools is missing.
-
-The Linux installer is `build/package-deb.sh`, which takes the same tree and writes a `.deb`.
-**Shell rather than PowerShell**: `dpkg-deb` exists only on a Debian machine, and pwsh is not on a
-plain Ubuntu desktop, so a `.ps1` would be a packaging script you cannot run on the machine that makes
-the package. It applies the same "prove it before shipping
-it" rule one layer further out — `publish-tools.sh` proves the three tools run, this proves the
-package puts them somewhere they still run from, by extracting it and asking each of them again,
-self-test probes included. Run it under `xvfb-run -a` on a machine with no display, or that last and
-strongest check is skipped.
-
-Its inputs are in `build/packaging/linux/`. **The desktop entry there is not cosmetic**: on a Wayland
-session it is the only thing that gives MLQT an icon anywhere — dock, Alt-Tab and window list — and
-it works by being named after the window's `app_id`, which is the GUI executable's file name. Rename
-either without the other and the icon silently disappears. `MLQT.Shared.Tests/DebianPackageTests`
-holds that chain together, as `WindowsInstallerTests` does for the Inno script.
-
-### "Would the coverage gate pass?" — `build/check-coverage.ps1`
-
-**CI enforces the per-class bar** — this script runs the measured suites, merges their reports,
-and fails the build per class. `DymolaInterface` and `OpenModelicaInterface` are measured from their
-suites' tool-free classes, with the same `Requires!=` filters CI's test jobs use; code only a live tool
-reaches is ledger debt saying so (B438). Run it locally the same way:
-
-```powershell
-dotnet build MLQT.slnx -c Release
-./build/check-coverage.ps1                 # gate
-./build/check-coverage.ps1 -SkipTests      # re-judge coverage already collected
-./build/check-coverage.ps1 -UpdateBaseline # re-record accepted debt; review the diff
-```
-
-It is a **ratchet, not a flat threshold**, for the same reason MLQT offers its users one: some debt
-predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need an svn client
-no runner has. `build/coverage-baseline.json` records the classes currently below their
-bar, and the build fails when one goes further backwards, when a class that met the bar stops meeting
-it, or when a new class arrives below it.
-
-That file is a debt ledger, so **every entry carries a `reason` and the build fails on one that does
-not** — `-UpdateBaseline` writes a `TODO` placeholder for anything new, which the gate then refuses.
-"Needs a working SVN server" and "nobody has written the tests yet" are both acceptable reasons and
-are *different facts*: the ledger existed for a while with six ordinary in-process classes sitting
-beside the untestable ones, indistinguishable from them and never asked about again.
-
-Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
-lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that
-assert nothing), as is source-generated code. `MLQT.Shared` joined the ratchet in phase 7a-5 at 80%,
-measuring `.razor.cs` and **not** filtering `.razor` — measured, a component's `BuildRenderTree` is not
-counted at all, and the filter the plan called for would have removed five ordinary classes from the
-report instead. See `skill-gui-testing.md`.
-
-### "Does the viewer still show the user's own file?" — a real library, by hand
-
-**The strongest test in this repository runs nowhere automatically** (backlog B234).
-`ModelicaTokenClassifierTests.RoundTripsOverAWholeLibrary` is the whole fidelity claim — strip the
-highlight tags and what comes back is the source, character for character — and it is asserted over
-**8,367 files and 1.1M lines** of real Modelica. A library that size cannot live in the repository,
-so it is opt-in, which means **neither CI nor `run-mutation.ps1` ever executes it**, and the
-surviving mutants in the classifier's emit loop are exactly the ones it would kill.
-
-**Run it by hand after any change to `ModelicaTokenClassifier`, and before a release that carries
-one:**
-
-```powershell
-$env:MLQT_FIDELITY_CORPUS = "C:\Projects\Modelica\ModelicaStandardLibrary;C:\Projects\Modelica\Modelica-Buildings-Original"
-dotnet test ModelicaParser.Tests --filter "FullyQualifiedName~RoundTripsOverAWholeLibrary"
-```
-
-Several libraries are separated by `;`. With the variable unset the test returns immediately, so an
-ordinary run is unaffected — which is the trap, not a convenience: a green suite says nothing about
-fidelity unless this has been run.
-
-### "Does every type still resolve?" — two real libraries, by hand
-
-`ModelicaGraph.Tests/ResolutionCorpusTests` holds the two facts `Design/unit-consistency.md` is built
-on: every component type of the loaded libraries resolves, and a package redeclared on an instance
-gives each member the unit the constraining type does — so a unit check may resolve against the
-constraining type. Opt-in like the fidelity corpus, and for the same reason. **Run it after any change
-to `TypeResolver`, `ClassElementResolver` or `UnitResolver`:**
-
-```powershell
-$msl = "C:\Projects\Modelica\ModelicaStandardLibrary"
-$env:MLQT_RESOLUTION_CORPUS = "$msl\Modelica;$msl\ModelicaServices;$msl\Complex.mo;C:\Projects\Modelica\Modelica-Buildings\Buildings"
-dotnet test ModelicaGraph.Tests --filter "FullyQualifiedName~ResolutionCorpusTests"
-```
-
-Everything named is loaded into **one graph**, because a library resolves only beside its
-dependencies — so name each library's directory, not MSL's repository root, which also holds a test
-library written against 3.2.3. On 2026-10-03: 124,977 types, none unresolved; 6,239 redeclarations,
-no unit changed; about a minute. Taking away the lookup among inherited classes fails both tests.
-
-### "How long does a supplied library take to load?" — one real library, by hand
-
-`MLQT.Services.Tests/ExternalDocs/SuppliedLoadSpeedTests` reads a library's files into memory and
-times `AddLibraryFromSourceAsync` alone — what a host holding a library in memory pays when a session
-starts. Opt-in, and it reports rather than asserts a time:
-
-```powershell
-$env:MLQT_SUPPLIED_CORPUS = "C:\Projects\Modelica\ModelicaStandardLibrary\Modelica"
-dotnet test MLQT.Services.Tests --filter "FullyQualifiedName~SuppliedLoadSpeedTests" --output Detailed
-```
-
-On 2026-10-09: 2,939 files, 6,487 classes in 4.3 s, about 1,500 classes a second.
-
-### "Where is the time actually going?" — `dotnet-trace`
-
-`mlqt check --timings` says which *phase* a run spent its time in, and the application log keeps the
-same breakdown for every check the GUI runs. That is the first question and usually enough. When it
-is not — when a phase is 91% of the run and nothing in it looks expensive — the answer is a sampling
-profiler, not a third guess.
-
-```bash
-dotnet tool install --global dotnet-trace          # once
-
-dotnet-trace collect --format nettrace --output run.nettrace \
-  --providers Microsoft-DotNETCore-SampleProfiler \
-  -- MLQT.Cli/bin/Release/net10.0/mlqt.exe check <library> --config <settings>
-
-dotnet-trace report run.nettrace topN -n 25        # the flat answer
-dotnet-trace convert run.nettrace --format Speedscope   # ...for anything else
-```
-
-**`topN` is rarely the answer on its own**, because the top of it is thread-pool idle
-(`PollGCWorker`, `LowLevelLifoSemaphore`, `GetQueuedCompletionStatus`) and the rest is whatever
-library the work happens to be inside — for MLQT that is always ANTLR, which says nothing about
-*which* of MLQT's callers asked for a parse. The useful question is a stack question: convert to
-Speedscope, whose profiles are an evented open/close stream per thread, walk it keeping a stack, and
-attribute each sample to the frame you care about. Three that earned their keep on B174:
-
-- **self time per leaf**, excluding idle frames and the converter's `CPU_TIME` /
-  `UNMANAGED_CODE_TIME` pseudo-leaves — skip those and take the frame below or everything reads 50%
-- **which of our frames entered the parser**, i.e. the nearest MLQT frame above the first ANTLR one
-- **the path between two frames** — the one that found B174, by printing every frame between
-  `MissingUnits` and the parse underneath it
-
-**A 19-second run traces to about 9 MB**, so there is no need to shrink the input first.
-
-**Rebuild before you believe a negative result.** B174 cost an hour to a cached experiment that
-reported no improvement because the binary under test had not been rebuilt; the same change measured
-properly was a 56% cut. If an experiment says a change did nothing, check that the change is in the
-assembly before concluding anything about the change.
-
-### "Do the tests actually check anything?" — `build/run-mutation.ps1`
-
-Coverage says a line ran. **Mutation testing says it was checked**: Stryker changes the code in small
-ways — an operator flipped, a condition inverted, a string emptied — and reports the changes no test
-objected to. A surviving mutant is a statement the suite executes and does not depend on.
-
-```powershell
-dotnet tool install --global dotnet-stryker      # once
-
-# One file, a few minutes - the everyday use, after a fix or before trusting a guard
-./build/run-mutation.ps1 -Mutate '**/ProjectNameRules.cs'
-./build/run-mutation.ps1 -Project ModelicaParser -Mutate '**/Helpers/*.cs'
-
-# Every measured assembly, about an hour, resumable - the audit
-./build/run-mutation.ps1 -All
-./build/run-mutation.ps1 -Summarise          # rebuild the report from runs already done
-```
-
-**For a single run, always pass `-Mutate`**: one file takes about three minutes, most of it the build
-and the baseline test run, and a whole assembly takes many times as long.
-
-**`-All`** mutates the seven assemblies the coverage gate measures other than the two tool interfaces,
-smallest first so the early
-ones calibrate the machine before anything committing starts. **It takes about an hour**, not the
-many hours it took before B267: each assembly is now judged by its own suite rather than by every
-suite that references it, so a run of 24,901 mutants took 52 minutes on 2026-09-22 where 23,634
-took 5h 40m in September's audit. That also means **scores from before and after B267 are not
-comparable** for any assembly something else depends on. It writes to `MutationReport/`
-(git-ignored) and **is resumable** — a project whose report is already there is skipped, so Ctrl-C and
-run it again to continue. Each project's result is printed as it finishes, and the run ends with
-`MutationReport/mutation-survivors.md`: one list of every surviving mutant, grouped by project and
-file, with the line each one changed. `-Summarise` rebuilds that file from whatever is on disk
-without mutating anything.
-
-**Read a large survivor list by group, never end to end** — `build/survivor-map.py` takes a
-Stryker report and prints one line per method, so the question becomes *which decisions are
-unguarded?* rather than *what are these 272 mutants?*:
-
-```bash
-python build/survivor-map.py $TEMP/mlqt-run/reports/mutation-report.json --file ModelicaRenderer
-python build/survivor-map.py <report> --file ModelicaRenderer --method VisitComposition   # then read one
-python build/survivor-map.py <report> --file Foo --status NoCoverage                      # the other list
-```
-
-It exists because B227 was 272 survivors in one 3,500-line file, and reading that many in order is
-how such a pass produces tests that assert the code's **current output** instead of its contract.
-Grouped, the answer came out as: two groups had something written down to test against, the largest
-group had only thresholds nobody had chosen, and the reason one group was unguarded at all was that
-the test harness deleted the line before asserting. **Judge a group as a whole, and leave the ones
-with no specification alone** — or write the specification down first.
-
-**It reports, it does not gate** — some survivors are equivalent mutants no test can kill, and some
-are in code nobody should test (an entry in a literal list of C header names). Read the survivors, not
-the score.
-
-**Two survivor shapes are equivalent mutants, not missing tests**, and each is easily reported as a
-gap before it is understood: a short-circuit in front of a slower answer that agrees with it (forcing
-the slow path changes nothing), and the first of two filters for the same thing (removing it changes
-no observable result while the second, downstream, still runs). **Nor is a ratio a finding** — the
-two worst files of the 2026-09-22 run were theme hex-colour literals and a colour table. Read what
-survived before opening an item on a score.
-
-**The last whole-solution run, for comparison** (2026-09-22, post-B267, 52m 53s, 24,901 mutants).
-*Unreached* is code no test runs, which is the coverage ratchet's business. *Kill on reached* is what
-a suite does with the code it does execute, and it is the number to compare:
-
-| Project | Mutants | Unreached | Survived | Kill on reached |
-|---------|--------:|----------:|---------:|----------------:|
-| ModelicaParser | 7,034 | 250 | 1,229 | 81.9% |
-| ModelicaGraph | 2,512 | 196 | 620 | 73.2% |
-| RevisionControl | 1,606 | 340 | 383 | 69.7% |
-| MLQT.Cli | 1,360 | 0 | 438 | 67.8% |
-| MLQT.Services | 3,756 | 535 | 1,039 | 67.7% |
-| MLQT.McpServer | 2,630 | 356 | 847 | 62.8% |
-| MLQT.Shared | 6,003 | 4,375 | 735 | 54.9% |
-
-**`DymolaInterface` and `OpenModelicaInterface` stay out of `-All`, by decision (B453).** The
-coverage gate measures them from their suites filtered with B399's `Requires!=Dymola` /
-`Requires!=OpenModelica`, but that filter cannot reach Stryker's MTP runner: Stryker 5.0.0's
-`test-case-filter` (config file only) is read by its VSTest runner alone. Measured with the filter set
-in a `stryker-config.json`: coverage was captured for 266 tests where the filtered suite has 240, and
-Dymola started two minutes in. VSTest is not a way round it — xUnit v3 is MTP. A single `-Project
-DymolaInterface` run still works, and warns that it starts the tool. Revisit when a Stryker release
-passes the filter to MTP; `LiveToolTestFilterTests` holds the list until then.
-
-Three things about it are not discoverable and cost an afternoon between them:
-
-- **Where it is run from decides which suites it runs.** Stryker walks up looking for a solution,
-  and from the repository root it finds `MLQT.slnx` and switches to solution mode — where it works
-  out the test projects itself, every one that transitively references the mutated assembly, and
-  **`--test-project` is ignored**. For `ModelicaParser` that is all of them, `MLQT.Journeys`
-  included: 5,790 tests, the journeys erroring while sharing one host with six other suites, and
-  Stryker aborting with "Initial testrun has more than 50% failing tests" before mutating anything.
-  The script now runs from the test project's own directory, where no solution is found and the
-  suite it was started from is the one used — 2,078 tests for the same run (B267). **A solution
-  cannot be taken away by argument, only by not standing where it can be found.**
-
-- **`--test-runner mtp` is required.** Every test project here is xUnit v3, which *is*
-  Microsoft.Testing.Platform, and Stryker defaults to VSTest. Without it Stryker fails with "not yet
-  supported by Stryker, see issue 3094" naming every test project, which reads as *this repository
-  cannot be mutation tested*. It can; the option is in `--help` and not in that message.
-- **A filter that matches nothing reports every mutant as `Ignored` and a clean score.** The script
-  fails loudly on that instead, because a run that mutated nothing looks exactly like a suite that
-  caught everything. `-Mutate` is relative to `-Project`, so naming a file from another assembly is
-  the easy way to get a hollow pass.
-
-It exists because phase 1 produced six tests that asserted something they could not see, each found
-by accident. Pointed at its first file it immediately found two real gaps: a public method with no
-test at all, and a user-facing message that could be emptied unnoticed (B212).
+**Load the `test-tooling` skill** before running anything beyond one suite: which suites CI runs and
+why, the live-tool and svn filters, the installer smoke tests, the coverage ledger, the opt-in
+real-library corpora (run by hand after changing `ModelicaTokenClassifier` or a resolver),
+`dotnet-trace`, and mutation testing. The rules every test must keep:
+
+- **Classify a test by what it needs, never by what it is called.** A class needing a live tool
+  carries `[Trait("Requires", "Dymola")]` or `[Trait("Requires", "OpenModelica")]`; every SVN test
+  builds its own repository with `TestSupport/SvnTestRepository.cs`, never a fixed path on the machine
+- **A raw string literal's line endings are the checkout's** — normalise a fixture where it is
+  declared and search for `\n`, never `\r\n`; and **never write a path as `@"C:\repo\..."`** — build it
+  with `Path.Combine` from `Path.GetTempPath()`. Both have shipped green on Windows and failed on Linux
+- **A failure is a failure, whichever suite it is in.** `-CoreOnly` is a decision; reading past a red
+  line is not
+- **Test fixtures:** `TestFixtures/SarifSmoke/` (SARIF validation, see `MLQT.Cli/CLAUDE.md`) and
+  `TestFixtures/McpEval/` (the MCP evaluation harness, which costs money to run — see
+  `MLQT.McpServer/CLAUDE.md`)

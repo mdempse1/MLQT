@@ -10,7 +10,7 @@ namespace ModelicaGraph.Tests;
 /// <para><b>Library names are not unique across loaded libraries.</b> A commercial library is
 /// routinely present twice: the encrypted build a tool ships, and the source the team has checked
 /// out. Both register under the same name — the encrypted one drops its version suffix, so
-/// "Claytex 2026.1" registers as "Claytex" — and both carry a <c>Resources/</c> directory. Resolution
+/// "VendorLib 2026.1" registers as "VendorLib" — and both carry a <c>Resources/</c> directory. Resolution
 /// took the first match by name, so it picked whichever loaded first and a model's own resources were
 /// attached to the other copy's directory.</para>
 ///

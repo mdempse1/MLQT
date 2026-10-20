@@ -1172,7 +1172,7 @@ ones that would have saved the most time.
 
 ### Measure before changing performance
 
-The profiling recipe is in CLAUDE.md (§"Where is the time actually going?"); these are the ways the
+The profiling recipe is in the `test-tooling` skill (§"Where is the time actually going?"); these are the ways the
 measurement itself went wrong.
 
 - **No performance change without a before-and-after number**, from the log or from
@@ -1231,7 +1231,7 @@ Before committing code, verify:
 |------|---------|--------|---------|
 | 2026-02-12 | 1.0 | - | Initial draft |
 | 2026-03-11 | 1.1 | - | Added null-proof return-value capture pattern; InvokeAsync method-group form; zero-warning checklist items |
-| 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the workspace `Claytex.Net` guidelines for phase 7a |
+| 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the guidelines of another .NET workspace for phase 7a |
 | 2026-09-17 | 1.3 | - | Added to Testing: verify by mutation rather than by going green, positive controls beside guards, guard tests for stated-but-unenforced rules, and cross-platform path assertions. Distilled from the phase 7a/7b design notes before those notes were retired |
 | 2026-09-25 | 1.4 | - | Added "Three ways a test is written that cannot fail" to Testing, and a Working a Defect section (establishing the mechanism, measuring performance, judging renderer-output changes over a library). Distilled from the phase 1 plan before it was retired |
 | 2026-09-28 | 1.5 | - | Added to Testing: a fourth way a test cannot fail (a method that falls back to a safe answer), `FileShare.None` across platforms, and "A test that writes proves where it is writing". Distilled from the backlog before it was retired |

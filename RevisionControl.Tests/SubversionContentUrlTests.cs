@@ -15,7 +15,7 @@ namespace RevisionControl.Tests;
 ///
 /// <para>Asking the server both ways removes the guess. These tests cover the half that needs no
 /// server — the URLs — because that is where the mistakes are: a missing slash, a double slash, or a
-/// library called "VeSyMA - Suspensions" that has to survive being put in a URL.</para>
+/// library called "VehicleLib - SuspensionLib" that has to survive being put in a URL.</para>
 ///
 /// <para><b>The class is called Subversion and not Svn on purpose.</b> <c>run-all-tests.ps1</c> and
 /// CI run this suite with <c>FullyQualifiedName!~Svn</c>, because the SVN integration tests need an
@@ -33,9 +33,9 @@ public class SubversionContentUrlTests
     {
         // The reported case: the path as `svn log` gives it, which already carries "trunk/".
         var urls = SvnRevisionControlSystem.ContentUrls(
-            Root, WorkingCopy, "trunk/Modelica/Claytex/Electrical/CurrentControl.mo");
+            Root, WorkingCopy, "trunk/Modelica/VendorLib/Electrical/CurrentControl.mo");
 
-        Assert.Equal(Root + "/trunk/Modelica/Claytex/Electrical/CurrentControl.mo", urls[0]);
+        Assert.Equal(Root + "/trunk/Modelica/VendorLib/Electrical/CurrentControl.mo", urls[0]);
     }
 
     [Fact]
@@ -44,21 +44,21 @@ public class SubversionContentUrlTests
         // The same method serves callers holding a working-copy-relative path, which against the
         // repository root would be missing its branch. That is the second candidate's whole job.
         var urls = SvnRevisionControlSystem.ContentUrls(
-            Root, WorkingCopy, "Modelica/Claytex/Electrical/CurrentControl.mo");
+            Root, WorkingCopy, "Modelica/VendorLib/Electrical/CurrentControl.mo");
 
         Assert.Equal(2, urls.Count);
-        Assert.Contains(WorkingCopy + "/Modelica/Claytex/Electrical/CurrentControl.mo", urls);
+        Assert.Contains(WorkingCopy + "/Modelica/VendorLib/Electrical/CurrentControl.mo", urls);
     }
 
     [Fact]
     public void ASpaceInALibraryNameSurvives()
     {
-        // "VeSyMA - Suspensions" is a real directory in the repository this was reported against,
+        // "VehicleLib - SuspensionLib" stands for a real directory in the repository this was reported against,
         // and an unescaped space makes svn read the URL as two arguments.
         var urls = SvnRevisionControlSystem.ContentUrls(
-            Root, WorkingCopy, "trunk/Modelica/VeSyMA - Suspensions/package.mo");
+            Root, WorkingCopy, "trunk/Modelica/VehicleLib - SuspensionLib/package.mo");
 
-        Assert.Equal(Root + "/trunk/Modelica/VeSyMA%20-%20Suspensions/package.mo", urls[0]);
+        Assert.Equal(Root + "/trunk/Modelica/VehicleLib%20-%20SuspensionLib/package.mo", urls[0]);
         Assert.DoesNotContain(" ", urls[0]);
     }
 

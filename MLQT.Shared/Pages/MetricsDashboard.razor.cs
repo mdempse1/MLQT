@@ -314,8 +314,8 @@ public partial class MetricsDashboard : IDisposable
             packages = packages.Where(id => id.Contains(value, System.StringComparison.OrdinalIgnoreCase));
 
         // Rank before capping. Sorting the matches alphabetically and taking the first fifty is what
-        // hid the library itself: in a library with fifty packages named after "Suspensions", the one
-        // actually called Suspensions sorts after every Chassis.*, Kinematics.* and Vehicle.* that
+        // hid the library itself: in a library with fifty packages named after "SuspensionLib", the one
+        // actually called SuspensionLib sorts after every Chassis.*, Kinematics.* and Vehicle.* that
         // mentions it, and falls off the end of the list. What the user typed goes first, then the
         // packages named that, then the shallowest.
         var term = (value ?? string.Empty).Trim();

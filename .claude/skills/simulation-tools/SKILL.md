@@ -1,3 +1,8 @@
+---
+name: simulation-tools
+description: "DymolaInterface and OpenModelicaInterface - Dymola's HTTP JSON-RPC and omc's ZeroMQ interfaces. Use when working on either interface or on the model-checking services built on them."
+---
+
 # Simulation Tools Skill
 
 This skill covers the DymolaInterface and OpenModelicaInterface projects for interacting with Modelica simulation tools.

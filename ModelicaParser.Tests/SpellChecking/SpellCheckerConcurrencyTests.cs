@@ -24,12 +24,12 @@ public class SpellCheckerConcurrencyTests
     [Fact]
     public void ReadingFromEveryCoreGivesOneAnswerPerWord()
     {
-        var checker = SpellChecker.Create(customWords: ["Claytex"]);
+        var checker = SpellChecker.Create(customWords: ["VendorLib"]);
 
         var answers = new System.Collections.Concurrent.ConcurrentBag<(string Word, bool Correct)>();
         Parallel.For(0, 200, _ =>
         {
-            foreach (var word in new[] { "temperature", "Claytex", "xyzzyplugh", "pressure" })
+            foreach (var word in new[] { "temperature", "VendorLib", "xyzzyplugh", "pressure" })
                 answers.Add((word, checker.IsCorrect(word)));
         });
 
@@ -38,7 +38,7 @@ public class SpellCheckerConcurrencyTests
                 $"'{group.Key}' was answered both ways across threads");
 
         Assert.All(answers.Where(a => a.Word == "xyzzyplugh"), a => Assert.False(a.Correct));
-        Assert.All(answers.Where(a => a.Word == "Claytex"), a => Assert.True(a.Correct));
+        Assert.All(answers.Where(a => a.Word == "VendorLib"), a => Assert.True(a.Correct));
     }
 
     [Fact]

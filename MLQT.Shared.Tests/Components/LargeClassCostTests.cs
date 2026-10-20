@@ -8,7 +8,7 @@ namespace MLQT.Shared.Tests.Components;
 
 /// <summary>
 /// Where the time goes when the Code Review page opens a very large class (B185). An imported FMU —
-/// <c>Engines Examples I2 fmu</c> — was reported as still not rendered after five minutes.
+/// <c>EngineLib Examples LargeEngine fmu</c> — was reported as still not rendered after five minutes.
 ///
 /// <para>The backlog named two candidate costs, "the syntax highlighting over a very large token
 /// stream, and the reformat the page performs in order to colour it", and said to measure which half

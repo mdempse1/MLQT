@@ -48,8 +48,8 @@ a runner does not have:
 
 | Suite | Needs |
 |-------|-------|
-| `DymolaInterface.Tests` | A live Dymola. **No CI job runs it** |
-| `OpenModelicaInterface.Tests` | A live `omc`. **No CI job runs it** |
+| `DymolaInterface.Tests` | A live Dymola. CI runs it **without the classes marked `[Trait("Requires", "Dymola")]`**, so only this script runs those |
+| `OpenModelicaInterface.Tests` | A live `omc`. CI runs it **without the classes marked `[Trait("Requires", "OpenModelica")]`**, so only this script runs those |
 | `MLQT.Journeys` | Playwright: `pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium`, once |
 
 Use `-CoreOnly` on a machine without Dymola or OpenModelica. A failure is a failure whichever suite
@@ -135,7 +135,7 @@ runs interop, renders MudBlazor and exercises settings, logging and the svn loca
 ships. Run `package-deb.sh` under `xvfb-run -a` on a machine with no display, or that last and
 strongest check is silently skipped.
 
-`-AllowMissingSvn` is needed locally because the SVN payload is fetched rather than committed. It
+`--allow-missing-svn` is needed locally because the SVN payload is fetched rather than committed. It
 defaults to **failing**, so a release cannot ship without the client by nobody remembering a flag.
 
 The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree; it refuses

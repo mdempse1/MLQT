@@ -4,7 +4,7 @@ using Xunit;
 namespace MLQT.Cli.Tests;
 
 /// <summary>
-/// That the tables in the planning documents and CLAUDE.md are still tables.
+/// That the tables in the planning documents, every CLAUDE.md and every skill are still tables.
 /// </summary>
 /// <remarks>
 /// <para>The backlog that lived in <c>Design/backlog.md</c> until 2026-09-28 was appended to by
@@ -46,7 +46,17 @@ public class MarkdownTableTests
         foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "Design"), "*.md"))
             data.Add(Path.GetRelativePath(root, file));
 
+        // The root file and one per project folder - found, not listed, so a project that gains
+        // one is covered. One level only: .claude/worktrees holds whole checkouts of the repository.
         data.Add("CLAUDE.md");
+        foreach (var dir in Directory.EnumerateDirectories(root).Order(StringComparer.Ordinal))
+            if (File.Exists(Path.Combine(dir, "CLAUDE.md")))
+                data.Add(Path.GetRelativePath(root, Path.Combine(dir, "CLAUDE.md")));
+
+        foreach (var dir in Directory.EnumerateDirectories(Path.Combine(root, ".claude", "skills")).Order(StringComparer.Ordinal))
+            if (File.Exists(Path.Combine(dir, "SKILL.md")))
+                data.Add(Path.GetRelativePath(root, Path.Combine(dir, "SKILL.md")));
+
         return data;
     }
 

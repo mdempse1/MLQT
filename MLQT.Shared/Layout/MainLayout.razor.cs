@@ -1530,7 +1530,7 @@ public partial class MainLayout : IDisposable
     ///
     /// <para><b>This used to go through <c>InvokeAsync</c>, and that was the freeze.</b> The store
     /// is already thread-safe — it locks around its list — so marshalling only bought one queued
-    /// work item per class with findings, on the one thread that has to stay free. For Claytex,
+    /// work item per class with findings, on the one thread that has to stay free. For a large user library,
     /// 21,673 classes checked: the log shows the workers finishing at 17:20:28 and the run being
     /// declared complete at 17:21:40, **72 seconds later**, which is the dispatcher draining that
     /// queue while the window ignored clicks (B190).</para>

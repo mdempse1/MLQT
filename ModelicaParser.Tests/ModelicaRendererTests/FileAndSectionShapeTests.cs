@@ -46,7 +46,7 @@ public class FileAndSectionShapeTests
     // ── the file's shape ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A within clause belongs to the file rather than to the class, and CLAUDE.md is explicit about
+    /// A within clause belongs to the file rather than to the class, and ModelicaParser/CLAUDE.md is explicit about
     /// what losing it costs: the file re-parses with no package context and its classes come back
     /// with detached ids. The only existing assertion about it is <c>Contains("within")</c>, which
     /// the name and the semicolon can both go missing under.
@@ -55,13 +55,13 @@ public class FileAndSectionShapeTests
     public void AWithinClauseKeepsItsNameAndItsSemicolon()
     {
         var rendered = RenderFile("""
-            within Claytex.Blocks.Discrete;
+            within VendorLib.Blocks.Discrete;
             model M
               Real x;
             end M;
             """);
 
-        Assert.Equal("within Claytex.Blocks.Discrete;", rendered[0]);
+        Assert.Equal("within VendorLib.Blocks.Discrete;", rendered[0]);
     }
 
     /// <summary>A top-level file says `within;` — the clause is there, the package name is not.</summary>
@@ -70,8 +70,8 @@ public class FileAndSectionShapeTests
     {
         var rendered = RenderFile("""
             within;
-            package Claytex
-            end Claytex;
+            package VendorLib
+            end VendorLib;
             """);
 
         Assert.Equal("within;", rendered[0]);

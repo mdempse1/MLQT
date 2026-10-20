@@ -1,3 +1,8 @@
+---
+name: spell-checking
+description: "Spell checking - SpellChecker, Hunspell dictionaries, custom words, the style rule visitors and UI integration. Use when working on spelling rules, dictionaries or the Code Review spelling workflow."
+---
+
 # Spell Checking Skill
 
 This skill covers the spell checking system used for Modelica description strings and documentation annotations. It spans the ModelicaParser, ModelicaGraph, MLQT.Services, and MLQT.Shared projects.

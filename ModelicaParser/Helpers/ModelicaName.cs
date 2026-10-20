@@ -156,7 +156,7 @@ public static class ModelicaName
     /// <c>id == root || id.StartsWith(root + ".", StringComparison.Ordinal)</c> — and four of those
     /// copies decide what an MCP tool <b>moves or deletes from a user's repository</b>. Mutation
     /// testing emptied the <c>"."</c> in each of them with no test objecting, which makes
-    /// <c>Suspensions</c> a prefix of <c>SuspensionsExtra</c> and sweeps an unrelated library into
+    /// <c>SuspensionLib</c> a prefix of <c>SuspensionLibExtra</c> and sweeps an unrelated library into
     /// the operation. A Modelica name is dot-separated: <c>A.B</c> is inside <c>A</c> and <c>AB</c>
     /// is not, and the only thing between those two readings is a one-character string that reads
     /// like punctuation.</para>

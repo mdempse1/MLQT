@@ -126,8 +126,8 @@ public sealed class StyleCheckContext
 
         // One unit lookup for the rule and the coverage measurer, so each (class, type) question is
         // resolved once between them. Built separately they each did the resolving, and the
-        // measurer's copy had neither of the caches B174 gave the rule: coverage was 68% of a Claytex
-        // check, eight times the rule asking the same questions (B261).
+        // measurer's copy had neither of the caches B174 gave the rule: coverage was 68% of a check of
+        // a large user library, eight times the rule asking the same questions (B261).
         var unitLookup = settings.CheckMissingUnits || collectCoverage
             ? StyleChecking.CreateUnitLookup(graph)
             : null;

@@ -13,7 +13,7 @@ namespace ModelicaParser.StyleRules;
 ///
 /// <para><b>A class-level <c>suppress</c> or <c>spelling</c> reaches every class nested inside the one
 /// that carries it</b>, so one annotation on a package waives a rule for the whole sub-package — the
-/// Dymola-generated <c>_fmu</c> import models were ~65% of a Claytex check's findings, and the
+/// Dymola-generated <c>_fmu</c> import models were ~65% of a large user library's findings, and the
 /// alternative was an annotation on every class. A set holds the directives of the classes in one
 /// parse tree, so it answers for what is nested <em>in that tree</em>; a class in a file of its own
 /// reaches its enclosing packages' sets through <c>ClassSuppressions.Enclosing</c>, and a finding is

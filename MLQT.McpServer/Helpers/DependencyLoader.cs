@@ -7,7 +7,7 @@ namespace MLQT.McpServer.Helpers;
 
 /// <summary>
 /// Loads the libraries a caller names and, if asked, what they depend on (B503,
-/// <c>.claude/skills/skill-mcp-library-loading.md</c>, *Finding dependencies* and *When the simulator's
+/// <c>.claude/skills/mcp-library-loading/SKILL.md</c>, *Finding dependencies* and *When the simulator's
 /// session decides*).
 /// </summary>
 /// <remarks>
