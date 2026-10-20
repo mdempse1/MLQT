@@ -2,7 +2,7 @@
 
 Dymola cannot say which libraries it has loaded. For a user who opens their libraries with a startup
 script, that script is the record. So `mlqt_load` **reads a startup script without running it**, and
-loads what it opens (B503; how it reads one is in `.claude/skills/skill-mcp-library-loading.md`). These
+loads what it opens (B503; how it reads one is in `.claude/skills/mcp-library-loading/SKILL.md`). These
 fixtures are what that reader is tested against.
 
 `startup1`–`startup3` are real users' scripts. `startup4.mos` is synthetic: it was written for the

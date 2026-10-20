@@ -1,3 +1,8 @@
+---
+name: naming-conventions
+description: "Naming convention checking - NamingValidator, NamingStyle, presets, the FollowNamingConvention visitor and exception names. Use when working on naming rules or their settings."
+---
+
 # Naming Convention Checking Skill
 
 This skill covers the naming convention checking system used to validate Modelica class names, variable names, parameter names, and constant names against configurable conventions. It spans the ModelicaParser, ModelicaGraph, and MLQT.Shared projects.

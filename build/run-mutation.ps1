@@ -239,7 +239,7 @@ function Write-ConsolidatedReport([string] $root) {
 # ModelicaParser that is all of them, MLQT.Journeys included, so the initial test run was 5,790
 # tests, the journeys errored sharing one host with six other suites, and Stryker aborted with
 # "Initial testrun has more than 50% failing tests" before mutating anything. Every per-file run
-# over ModelicaParser, MLQT.Services or MLQT.Shared was unavailable, which is the tool CLAUDE.md
+# over ModelicaParser, MLQT.Services or MLQT.Shared was unavailable, which is the tool the test-tooling skill
 # names as the answer to "do the tests actually check anything?".
 #
 # Started inside ModelicaParser.Tests it finds no solution, takes the single-project path, and uses

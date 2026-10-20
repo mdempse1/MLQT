@@ -46,7 +46,7 @@ public class FileAndSectionShapeTests
     // ── the file's shape ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A within clause belongs to the file rather than to the class, and CLAUDE.md is explicit about
+    /// A within clause belongs to the file rather than to the class, and ModelicaParser/CLAUDE.md is explicit about
     /// what losing it costs: the file re-parses with no package context and its classes come back
     /// with detached ids. The only existing assertion about it is <c>Contains("within")</c>, which
     /// the name and the semicolon can both go missing under.

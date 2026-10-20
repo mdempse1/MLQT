@@ -146,7 +146,7 @@ public class FinalNewlineTests : IDisposable
     [Fact]
     public void TheEncodingFunnel_EndsWhatItWritesWithExactlyOneNewline()
     {
-        // The rule lives in the one place CLAUDE.md already designates for every .mo and
+        // The rule lives in the one place ModelicaParser/CLAUDE.md already designates for every .mo and
         // package.order write, so a new writer cannot get it wrong by not knowing about it.
         var path = Path.Combine(_root, "funnel.mo");
 

@@ -639,7 +639,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     // The space belongs to the name, not to the keyword. A top-level file has no
                     // name, and writing it anyway produced `within ;` - valid Modelica, but a
                     // different spelling from the `within;` WithinClause.Ensure writes, which is
-                    // the one place CLAUDE.md says adds this clause. Every save re-renders the
+                    // the one place ModelicaParser/CLAUDE.md says adds this clause. Every save re-renders the
                     // whole file, so the difference reached every top-level package.mo MLQT
                     // touched (B227).
                     if (i + 1 < children.Count && children[i + 1] is modelicaParser.NameContext nameCtx)

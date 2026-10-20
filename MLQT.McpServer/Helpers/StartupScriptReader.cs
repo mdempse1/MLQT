@@ -23,7 +23,7 @@ internal sealed record ScriptReading(
 
 /// <summary>
 /// Reads a Dymola startup script without running it, and says which libraries it opens
-/// (<c>.claude/skills/skill-mcp-library-loading.md</c>, *When the simulator's session decides*). Dymola cannot report
+/// (<c>.claude/skills/mcp-library-loading/SKILL.md</c>, *When the simulator's session decides*). Dymola cannot report
 /// which libraries it has loaded, so for a user who opens theirs with a script, the script is the record.
 /// </summary>
 /// <remarks>

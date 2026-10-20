@@ -1172,7 +1172,7 @@ ones that would have saved the most time.
 
 ### Measure before changing performance
 
-The profiling recipe is in CLAUDE.md (§"Where is the time actually going?"); these are the ways the
+The profiling recipe is in the `test-tooling` skill (§"Where is the time actually going?"); these are the ways the
 measurement itself went wrong.
 
 - **No performance change without a before-and-after number**, from the log or from

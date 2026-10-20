@@ -1,3 +1,8 @@
+---
+name: desktop-host
+description: "The Photino desktop host (MLQT.Photino, MLQT.McpTester) - HostAssetManifest and its silent failure modes, window placement and icons, the three platform services, WebView2-vs-WebKitGTK differences, and the /selftest probes. Use when working on a host, or on anything that behaves differently on Windows and Linux."
+---
+
 # Desktop Host Skill (Photino)
 
 Load this skill when working on `MLQT.Photino`, `MLQT.McpTester`, `HostAssetManifest`, the host page,

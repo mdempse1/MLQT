@@ -1,3 +1,8 @@
+---
+name: external-resources
+description: "External resource tracking - extraction from loadResource, modelica:// URIs and external annotations, resolution, the ResourceFileNode/ResourceDirectoryNode graph nodes and ResourceEdge, and the External Resources page. Use when working on resource analysis or that page."
+---
+
 # External Resources Skill
 
 This skill covers the external resource tracking system, including extraction, resolution, graph nodes, and the External Resources UI page.

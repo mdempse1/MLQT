@@ -1,3 +1,8 @@
+---
+name: encrypted-libraries
+description: "Encrypted (package.moe) and read-only libraries - reading a vendor's generated help HTML (DymolaHelpParser), stub synthesis, IsExternalStub write guards, asymmetric resolution and accuracy; read-only class sources, supplied libraries and their precedence. Use when working on ModelicaParser/ExternalDocs, EncryptedLibraryDetector, ExternalStubBuilder, ReadOnlySources or reference libraries."
+---
+
 # Encrypted Libraries Skill
 
 Load this skill when working on `ModelicaParser/ExternalDocs/` (`DymolaHelpParser`,
@@ -5,7 +10,7 @@ Load this skill when working on `ModelicaParser/ExternalDocs/` (`DymolaHelpParse
 `ExternalStubBuilder`, `ModelNode.IsExternalStub`, reference libraries, or anything that asks
 "can MLQT see inside this library?".
 
-User-facing documentation is [encrypted-libraries.md](../../Documentation/encrypted-libraries.md).
+User-facing documentation is [encrypted-libraries.md](../../../Documentation/encrypted-libraries.md).
 
 ## The problem and the answer
 
@@ -248,7 +253,7 @@ them, or the stub emits `model X extends Real;`, which is not valid Modelica.
 
 **No DOM library.** The input is machine-generated with a fixed shape and the volume is 6k+ classes
 over 1k+ files per library; a targeted scanner costs nothing and adds no dependency. AngleSharp is
-the fallback if the shape ever varies, which would mean updating `skill-nuget-packages.md`.
+the fallback if the shape ever varies, which would mean updating `.claude/skills/nuget-packages/SKILL.md`.
 
 ### "Has icon" — the package case
 

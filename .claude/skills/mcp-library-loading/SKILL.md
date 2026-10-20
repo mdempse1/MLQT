@@ -1,3 +1,8 @@
+---
+name: mcp-library-loading
+description: "How the MCP server's mlqt_load finds dependencies and which version it takes, reading a Dymola startup script, and what the B503 measurements taught about getting agents to use the MCP tools (instruction wording, descriptions, fresh servers for runs). Use when changing DependencyLoader, LibraryChoice, ToolLibraryFolders, StartupScriptReader, the server instructions, a tool description or the guidance topics."
+---
+
 # MCP server: loading libraries, and getting agents to use the tools
 
 Load this when changing how `mlqt_load` finds libraries (`DependencyLoader`, `LibraryChoice`,

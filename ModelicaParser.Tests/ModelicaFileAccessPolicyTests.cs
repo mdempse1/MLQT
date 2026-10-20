@@ -7,7 +7,7 @@ namespace ModelicaParser.Tests;
 /// <see cref="ModelicaParser.Helpers.ModelicaFileEncoding"/>, held to the source that is supposed to
 /// follow it (B239).
 ///
-/// <para><b>Why this exists.</b> CLAUDE.md has stated that rule for a long time and nothing enforced
+/// <para><b>Why this exists.</b> ModelicaParser/CLAUDE.md has stated that rule for a long time and nothing enforced
 /// it. It held because people remembered, which is the defect shape this repository keeps producing:
 /// a promise written down, no test behind it, and the code free to drift. B236 is what it looks like
 /// when it goes wrong — two write paths disagreed about how a file ends for the whole life of the
@@ -72,7 +72,7 @@ public class ModelicaFileAccessPolicyTests
         // Not Modelica source, though both are Modelica-adjacent.
         ["MLQT.Services/EncryptedLibraryDetector.cs"] = (1, "reads libraryinfo.mos, a Modelica *script*, for a name and version"),
         ["ModelicaParser/ExternalDocs/DymolaHelpDocument.cs"] = (2, "reads a vendor's generated help HTML — see "
-            + "skill-encrypted-libraries.md — and hashes the same file's bytes to detect a changed help set"),
+            + ".claude/skills/encrypted-libraries/SKILL.md — and hashes the same file's bytes to detect a changed help set"),
 
         // Bytes, not text: there is no encoding to get wrong.
         ["MLQT.Services/LibraryDataService.cs"] = (1, "reads an image file's bytes for a data: URI"),
