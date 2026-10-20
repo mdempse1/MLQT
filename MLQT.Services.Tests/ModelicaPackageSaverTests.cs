@@ -668,6 +668,29 @@ public class ModelicaPackageSaverTests : IDisposable
     }
 
     [Fact]
+    public void SaveLibraryToDirectoryWithResult_StoredOrderWithDuplicates_WritesEachEntryOnceWhereFirstListed()
+    {
+        // A name listed twice - once with a trailing space and a CR, as an untrimmed load path stores
+        // it - is written once, where it was first listed (MLQT.Structure.PackageOrder "duplicate").
+        var packageCode = "within;\npackage TestPackage\nend TestPackage;";
+        var children = new List<(string, string, string)>
+        {
+            ("Model1", "within TestPackage;\nmodel Model1\nend Model1;", "model"),
+            ("Model2", "within TestPackage;\nmodel Model2\nend Model2;", "model")
+        };
+        var graph = CreateGraphWithPackage("TestPackage", packageCode, children);
+        graph.ModelNodes.First(m => m.Id == "TestPackage").PackageOrder =
+            new[] { "Model2", "Model1 \r", "Model2", "Model1" };
+
+        var outputDir = CreateTempDirectory();
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var orderContent = File.ReadAllLines(Path.Combine(outputDir, "TestPackage", "package.order"));
+        Assert.Equal(new[] { "Model2", "Model1" }, orderContent);
+    }
+
+    [Fact]
     public void SaveLibraryToDirectoryWithResult_NonStandaloneChild_EmbeddedInParent()
     {
         var packageCode = "within;\npackage TestPackage\nend TestPackage;";

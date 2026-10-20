@@ -9,8 +9,14 @@ namespace ModelicaGraph.Analysis;
 /// Checks each package's <c>package.order</c> against what the package actually contains:
 /// <list type="bullet">
 /// <item><b>stale</b> — an entry that names no class or member of the package;</item>
-/// <item><b>missing</b> — a direct child class that is not listed.</item>
+/// <item><b>missing</b> — a direct child class that is not listed;</item>
+/// <item><b>duplicate</b> — an entry listed more than once, one finding per name.</item>
 /// </list>
+/// Entries are compared after trimming, so <c>A</c> and <c>A </c> (or a stray CR) are one entry.
+/// Duplicates are reported whether or not <c>PackageOrderMatchesDymola</c> is set: nothing written
+/// down records what Dymola does with one, and whatever it does, two tools reading the same file may
+/// disagree about where the class goes - an agent appending a class MLQT had already listed is how
+/// one arrived (B503). The package saver writes each entry once, so the next save removes it.
 /// Needs no dependency analysis (purely structural). Valid entries are the package's child classes
 /// unioned with its package-level members (constants/variables), so a legitimately-listed constant is
 /// never flagged as stale; imports/extends are not package.order entries and are ignored. If a
@@ -72,6 +78,22 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
                             LineNumber = 1
                         });
             }
+
+            // Duplicate: a name listed more than once. Reported once per name, in first-seen order.
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var entry in declared)
+                counts[entry] = counts.TryGetValue(entry, out var n) ? n + 1 : 1;
+            foreach (var (entry, count) in counts)
+                if (count > 1)
+                    findings.Add(new Finding
+                    {
+                        RuleId = ModelicaParser.StyleRules.RuleIds.PackageOrder,
+                        ModelId = package.Id,
+                        ElementPath = entry,
+                        Discriminator = "duplicate",
+                        Message = $"package.order of {package.Definition.Name} lists '{entry}' {count} times; formatting the package keeps the first",
+                        LineNumber = 1
+                    });
 
             // Missing: a direct child class not listed in package.order.
             var declaredSet = new HashSet<string>(declared, StringComparer.Ordinal);

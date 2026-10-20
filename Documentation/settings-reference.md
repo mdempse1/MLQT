@@ -296,7 +296,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Duplicate.Import` | Warning | The same name imported more than once in a class. | GUI, CLI, MCP |
 | `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. A link in that chain may be a short alias or a `type` written in the long form around one `extends` (`type ReferenceAngle extends SI.Angle; ... end ReferenceAngle;`, the form a type with an `equalityConstraint` needs), so MSL's `Modelica.Icons.TypeReal` - `type TypeReal extends Real` - is followed like any other. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
 | `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
-| `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
+| `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), child classes not listed (missing), and entries listed more than once (duplicate). | GUI, CLI, MCP |
 | `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`) and one that would be written to the same file or directory name as a sibling, ignoring case, are left alone. The comparison is between what would be written, not between class names: a model `JFET` becomes `JFET.mo` and a package `Jfet` becomes the directory `Jfet`, so the two do not collide. For the same reason a *package* called `Package` may be split out, while a model of that name may not. Such classes are left alone because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
 | `MLQT.Structure.WithinClause` | Error | A file stored in a package's directory whose `within` clause does not name that package — the rule of [MLS 13.4.3](https://specification.modelica.org/maint/3.6/packages.html#the-within-clause): "For a sub-entity of an enclosing structured entity, the within-clause shall designate the class of the enclosing entity". A `package.mo` is its directory's package, so it names the package of the directory above. A missing `within` below the top level is reported too. Only files inside a loaded package directory are judged: a library's root `package.mo`, or a `.mo` file in a directory with no `package.mo`, is a top-level entity whose `within` cannot be judged from where it is stored. The expected name is built from the root package's loaded name and the class names in each nested `package.mo`, so one wrong `package.mo` is one finding rather than one on every correct file below it. | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
@@ -342,13 +342,18 @@ MLQT's `MLQT.Structure.PackageOrder` answers a **larger** question than that, in
   MLQT reads every `.mo` file in a package directory and takes each class's own name, so it loads
   that class and can see that `package.order` does not list it.
 
+A *duplicate* — a name listed more than once, compared after trimming whitespace — is reported in
+both modes. Nothing records what Dymola does with one, and a file two tools may read differently is
+worth a warning whichever of them is right. Saving the package writes each entry once, where it was
+first listed, so formatting the package removes the duplicate.
+
 Neither tool descends into a directory with no `package.mo`, so a `.mo` file in an ordinary folder is
 invisible to both.
 
 | Setting | Effect |
 |---------|--------|
-| `"PackageOrderMatchesDymola": false` | Default. MLQT's full answer: stale entries, and every unlisted child wherever it is stored. |
-| `"PackageOrderMatchesDymola": true` | Only what Dymola would warn about: an unlisted child stored where Dymola looks for it. |
+| `"PackageOrderMatchesDymola": false` | Default. MLQT's full answer: stale entries, duplicates, and every unlisted child wherever it is stored. |
+| `"PackageOrderMatchesDymola": true` | Only what Dymola would warn about: an unlisted child stored where Dymola looks for it — plus duplicates. |
 
 Switch it on for a repository whose agreed standard is "no warnings on load in Dymola" — MLQT's gate
 is then the same gate rather than a stricter one that fails a build over something the tool of record
