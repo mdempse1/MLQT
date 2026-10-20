@@ -14,11 +14,10 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// Dependency, usage and impact analysis over the loaded model graph. Dependency edges are NOT
-/// built at load time — call mlqt_analyze_dependencies once (it can be slow on a large library) to
-/// populate them, then mlqt_get_dependencies / mlqt_find_usages / mlqt_analyze_impact return meaningful results.
+/// built at load time: the analysis runs once, on the first call that needs it (it can be slow on a
+/// large library). <c>mlqt_dependencies</c> runs it itself before calling these.
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class DependencyTools
 {
     private const int MaxImpactLimit = 2000;
@@ -40,13 +39,7 @@ public sealed class DependencyTools
         _session = session;
     }
 
-    [McpServerTool(Name = "mlqt_analyze_dependencies")]
-    [Description("Run the dependency and external-resource analysis over all loaded Modelica libraries. This is " +
-                "an opt-in, potentially slow step (it parses every model and resolves references) and is " +
-                "required before mlqt_get_dependencies, mlqt_find_usages, mlqt_analyze_impact, mlqt_get_class_resources and " +
-                "mlqt_get_resource_warnings return meaningful results. Returns counts of dependency edges and " +
-                "resources found. Safe to re-run after loading more libraries.")]
-    public async Task<object> AnalyzeDependencies()
+    internal async Task<object> AnalyzeDependencies()
     {
         if (_libraries.Libraries.Count == 0)
             return new ToolError(ToolDiagnostics.NothingLoaded("analysing dependencies"));
@@ -73,12 +66,7 @@ public sealed class DependencyTools
             ElapsedMs: sw.ElapsedMilliseconds);
     }
 
-    [McpServerTool(Name = "mlqt_get_dependencies")]
-    [Description("List the Modelica classes that a class directly uses/depends on (one hop). Requires " +
-                "mlqt_analyze_dependencies to have been run. The result's dependenciesAnalyzed flag tells you " +
-                "whether an empty list means 'no dependencies' (true) or 'not analyzed yet' (false).")]
-    public object GetDependencies(
-        [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
+    internal object GetDependencies(
         string classId)
     {
         if (_libraries.GetModelById(classId) is null)
@@ -94,12 +82,8 @@ public sealed class DependencyTools
         return new DependencyResult(classId, _session.DependenciesAnalyzed, items.Count, items);
     }
 
-    [McpServerTool(Name = "mlqt_find_usages")]
-    [Description("List the Modelica classes that directly use/depend on a class (one hop, i.e. the direct " +
-                "dependents that would be affected if this class changed). Requires mlqt_analyze_dependencies. " +
-                "For the full transitive blast radius, use mlqt_analyze_impact.")]
-    public object FindUsages(
-        [Description("Fully-qualified class id whose direct dependents you want.")] string classId)
+    internal object FindUsages(
+        string classId)
     {
         if (_libraries.GetModelById(classId) is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
@@ -114,17 +98,10 @@ public sealed class DependencyTools
         return new DependencyResult(classId, _session.DependenciesAnalyzed, items.Count, items);
     }
 
-    [McpServerTool(Name = "mlqt_analyze_impact")]
-    [Description("Compute the full transitive impact of changing one or more Modelica classes: every class that " +
-                "transitively depends on them (the complete blast radius), with the immediate source(s) " +
-                "that pulled each into the impact set. Requires mlqt_analyze_dependencies. Returns the total " +
-                "impacted count plus a page of details (use limit/offset; the count can be very large for " +
-                "core classes).")]
-    public object AnalyzeImpact(
-        [Description("One or more fully-qualified class ids to assess as if they were changed.")]
+    internal object AnalyzeImpact(
         string[] classIds,
-        [Description("Max detail rows to return (default 100, max 2000).")] int limit = 100,
-        [Description("Detail rows to skip for pagination (default 0).")] int offset = 0)
+        int limit = 100,
+        int offset = 0)
     {
         if (classIds is null || classIds.Length == 0)
             return new ToolError("Provide at least one class id in classIds.");

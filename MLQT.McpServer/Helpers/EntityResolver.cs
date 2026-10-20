@@ -28,13 +28,13 @@ internal static class EntityResolver
             return (byName[0], null);
         if (byName.Count > 1)
             return (null, new ToolError(
-                $"Multiple loaded libraries are named '{idOrName}'. Use the specific id from mlqt_list_libraries: " +
+                $"Multiple loaded libraries are named '{idOrName}'. Use the specific id from mlqt_session: " +
                 string.Join(", ", byName.Select(l => l.Id)) + "."));
 
         return (null, new ToolError(
             $"No loaded library matches '{idOrName}' by id or name. Loaded libraries: " +
             string.Join(", ", loaded.Select(l => $"'{l.Name}' (id {l.Id})")) +
-            ". Pass the name or the id exactly as shown by mlqt_list_libraries."));
+            ". Pass the name or the id exactly as shown by mlqt_session."));
     }
 
     public static (Repository? repository, ToolError? error) ResolveRepository(
@@ -42,7 +42,7 @@ internal static class EntityResolver
     {
         var all = repositories.Repositories;
         if (all.Count == 0)
-            return (null, new ToolError("No repositories have been added. Use mlqt_load_repository first."));
+            return (null, new ToolError("No repositories have been added. Load a working copy with mlqt_load first."));
 
         var byId = repositories.GetRepository(idOrName);
         if (byId is not null)
@@ -53,12 +53,12 @@ internal static class EntityResolver
             return (byName[0], null);
         if (byName.Count > 1)
             return (null, new ToolError(
-                $"Multiple repositories are named '{idOrName}'. Use the specific id from mlqt_list_repositories: " +
+                $"Multiple repositories are named '{idOrName}'. Use the specific id from mlqt_session: " +
                 string.Join(", ", byName.Select(r => r.Id)) + "."));
 
         return (null, new ToolError(
             $"No repository matches '{idOrName}' by id or name. Repositories: " +
             string.Join(", ", all.Select(r => $"'{r.Name}' (id {r.Id})")) +
-            ". Pass the name or the id exactly as shown by mlqt_list_repositories."));
+            ". Pass the name or the id exactly as shown by mlqt_session."));
     }
 }

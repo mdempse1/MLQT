@@ -40,6 +40,8 @@ public class ModelicaNameSplitPolicyTests
         ["ModelicaParser/Helpers/ModelicaUriScanner.cs"] = (1, "a file extension in a modelica:// URI's path"),
         ["ModelicaParser/Icons/IconText.cs"] = (1, "a label value, taken as a name only when it is plain "
             + "identifier characters and dots - a quoted one is refused before the split"),
+        ["MLQT.McpServer/Helpers/ModelicaVersion.cs"] = (1, "a library version, \"4.1.0+maint.om\" - numbers "
+            + "and a build suffix, not a name"),
         ["MLQT.Services/Checking/UsesVersionChecker.cs"] = (1, "a version string from a uses annotation, "
             + "\"4.2.0 dev\" - numbers, not a name"),
         ["ModelicaParser/SpellChecking/TextExtractor.cs"] = (1, "a word of prose being spell checked, "

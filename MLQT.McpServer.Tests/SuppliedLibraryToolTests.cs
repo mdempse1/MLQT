@@ -140,19 +140,26 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
 
     /// <summary>Parameter names that name a class the tool reads or acts on.</summary>
     private static bool NamesAClass(ParameterInfo p) =>
-        p.ParameterType == typeof(string)
-        && p.Name is { } name
-        && (name.Equals("classId", StringComparison.Ordinal)
-            || name.EndsWith("ClassId", StringComparison.Ordinal)
-            || name.Equals("modelId", StringComparison.Ordinal)
-            || name.Equals("packageId", StringComparison.Ordinal)
-            || name.Equals("parentId", StringComparison.Ordinal));
+        p.Name is { } name
+        && ((p.ParameterType == typeof(IReadOnlyList<string>) && name.Equals("classIds", StringComparison.Ordinal))
+            || (p.ParameterType == typeof(string)
+                && (name.Equals("classId", StringComparison.Ordinal)
+                    || name.EndsWith("ClassId", StringComparison.Ordinal)
+                    || name.Equals("modelId", StringComparison.Ordinal)
+                    || name.Equals("packageId", StringComparison.Ordinal)
+                    || name.Equals("parentId", StringComparison.Ordinal))));
 
+    /// <summary>
+    /// Every way into a class: the tools, and the methods they call, which were tools of their own until
+    /// the 16-tool set (B503) and are still where each of them decides whether it may touch the class.
+    /// </summary>
     private static IEnumerable<MethodInfo> ToolsNamingAClass() =>
         typeof(ClassQueryTools).Assembly.GetTypes()
-            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
-            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
+            .Where(t => t.Namespace == typeof(ClassQueryTools).Namespace && t.IsClass && !t.IsAbstract && t.IsPublic)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            .Where(m => !m.IsSpecialName &&
+                        (m.GetCustomAttribute<McpServerToolAttribute>() is not null || m.IsAssembly) &&
+                        (m.ReturnType == typeof(object) || m.ReturnType == typeof(Task<object>)))
             .Where(m => m.GetParameters().Any(NamesAClass));
 
     /// <summary>
@@ -163,7 +170,7 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
     private static object? ArgumentFor(ParameterInfo p, string classId)
     {
         if (NamesAClass(p))
-            return classId;
+            return p.ParameterType == typeof(string) ? classId : new List<string> { classId };
         if (p.HasDefaultValue)
             return p.DefaultValue;
         if (p.ParameterType == typeof(CancellationToken))
@@ -218,7 +225,7 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
 
         foreach (var method in tools)
         {
-            var name = method.GetCustomAttribute<McpServerToolAttribute>()?.Name ?? method.Name;
+            var name = method.GetCustomAttribute<McpServerToolAttribute>()?.Name ?? $"{method.DeclaringType?.Name}.{method.Name}";
             try
             {
                 var tool = ActivatorUtilities.CreateInstance(_services, method.DeclaringType
@@ -269,13 +276,16 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Tools whose name says they only read. Accepting the refusal from every tool let
-    /// <c>mlqt_list_connections</c>, which opened its class through the edit path, pass the sweep while
-    /// answering nothing on a supplied class.
+    /// Tools, and methods, whose name says they only read. Accepting the refusal from every tool let the
+    /// connections read, which opened its class through the edit path, pass the sweep while answering
+    /// nothing on a supplied class.
     /// </summary>
-    private static bool OnlyReads(string toolName) =>
-        new[] { "mlqt_get_", "mlqt_list_", "mlqt_search_", "mlqt_find_" }
-            .Any(prefix => toolName.StartsWith(prefix, StringComparison.Ordinal));
+    private static bool OnlyReads(string name)
+    {
+        var method = name[(name.LastIndexOf('.') + 1)..];
+        return name.StartsWith("mlqt_get_", StringComparison.Ordinal) || name == "mlqt_find" || name == "mlqt_browse" ||
+               new[] { "Get", "List", "Search", "Find" }.Any(verb => method.StartsWith(verb, StringComparison.Ordinal));
+    }
 
     private List<string> SuppliedSources() =>
         [.. _host.Libraries.CombinedGraph.ModelNodes

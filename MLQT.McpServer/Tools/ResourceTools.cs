@@ -11,11 +11,10 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// External-resource queries: files and directories referenced by models via loadResource,
-/// modelica:// URIs, Bitmap, and external-function annotations. Requires mlqt_analyze_dependencies to
+/// modelica:// URIs, Bitmap, and external-function annotations. Requires mlqt_dependencies to
 /// have been run (it populates the resource graph and validation warnings).
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class ResourceTools
 {
     private const int MaxWarningLimit = 1000;
@@ -34,12 +33,8 @@ public sealed class ResourceTools
         _session = session;
     }
 
-    [McpServerTool(Name = "mlqt_get_class_resources")]
-    [Description("List the external resources (data files, C sources/libraries, images, directories) " +
-                "referenced by a Modelica class, each with its raw path, resolved absolute path, reference type, " +
-                "and whether the file exists. Requires mlqt_analyze_dependencies.")]
-    public object GetClassResources(
-        [Description("Fully-qualified class id.")] string classId)
+    internal object GetClassResources(
+        string classId)
     {
         if (_libraries.GetModelById(classId) is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
@@ -50,12 +45,8 @@ public sealed class ResourceTools
         return new ClassResourcesResult(classId, _session.ResourcesAnalyzed, resources.Count, resources);
     }
 
-    [McpServerTool(Name = "mlqt_find_resource_usages")]
-    [Description("Reverse lookup: given a resolved absolute file path, list the Modelica class ids that reference " +
-                "that resource. Requires mlqt_analyze_dependencies. Get resolved paths from mlqt_get_class_resources " +
-                "or mlqt_get_resource_warnings.")]
-    public object FindResourceUsages(
-        [Description("Resolved absolute file system path of the resource.")] string resolvedFilePath)
+    internal object FindResourceUsages(
+        string resolvedFilePath)
     {
         if (string.IsNullOrWhiteSpace(resolvedFilePath))
             return new ToolError("resolvedFilePath must be a non-empty path.");
@@ -66,13 +57,9 @@ public sealed class ResourceTools
         return new ResourceUsagesResult(resolvedFilePath, _session.ResourcesAnalyzed, models.Count, models);
     }
 
-    [McpServerTool(Name = "mlqt_get_resource_warnings")]
-    [Description("List external-resource validation warnings across all loaded Modelica models: referenced files " +
-                "that don't exist, and non-portable absolute-path references. Requires mlqt_analyze_dependencies. " +
-                "Paginated with limit/offset.")]
-    public object GetResourceWarnings(
-        [Description("Max warnings to return (default 200, max 1000).")] int limit = 200,
-        [Description("Warnings to skip for pagination (default 0).")] int offset = 0)
+    internal object GetResourceWarnings(
+        int limit = 25,
+        int offset = 0)
     {
         if (!_session.ResourcesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries, "listing external-resource warnings");

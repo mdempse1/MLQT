@@ -1,0 +1,149 @@
+{
+  "script": "startup3.mos",
+  "environment": {
+    "USERNAME": "testuser"
+  },
+  "loads": [
+    {
+      "library": "Modelica",
+      "version": "4.1.0",
+      "path": "Tool/Modelica/Library/Modelica 4.1.0/package.mo",
+      "line": 12,
+      "via": "openModel"
+    },
+    {
+      "library": "VehicleInterfaces",
+      "version": "2.0.2",
+      "path": "Tool/Modelica/Library/VehicleInterfaces 2.0.2/package.mo",
+      "line": 13,
+      "via": "openModel"
+    },
+    {
+      "library": "CoreLib",
+      "version": "2025.1",
+      "path": "Vendor/Modelica/CoreLib 2025.1/package.moe",
+      "line": 17,
+      "via": "openModel",
+      "encrypted": true
+    },
+    {
+      "library": "CarCore",
+      "version": "2025.1",
+      "path": "Vendor/Modelica/CarCore 2025.1/package.moe",
+      "line": 18,
+      "via": "openModel",
+      "encrypted": true
+    },
+    {
+      "library": "SuspensionLib",
+      "version": "2025.1",
+      "path": "Vendor/Modelica/SuspensionLib 2025.1/package.moe",
+      "line": 19,
+      "via": "openModel",
+      "encrypted": true
+    },
+    {
+      "library": "VehicleDyn",
+      "version": "2025.1",
+      "path": "Vendor/Modelica/VehicleDyn 2025.1/package.moe",
+      "line": 20,
+      "via": "openModel",
+      "encrypted": true
+    },
+    {
+      "library": "ExternData",
+      "version": "3.0.3",
+      "path": "Dev/Modelica/ExternData-3.0.3/ExternData/package.mo",
+      "line": 27,
+      "via": "openModel"
+    },
+    {
+      "library": "OpenDynLib",
+      "version": "3.2.0",
+      "path": "Dev/Modelica/OpenDynLib/package.mo",
+      "line": 28,
+      "via": "openModel"
+    },
+    {
+      "library": "TyreTests",
+      "version": "1.0.0",
+      "path": "Dev/Modelica/TyreTests/package.mo",
+      "line": 29,
+      "via": "openModel"
+    },
+    {
+      "library": "DynLib",
+      "version": null,
+      "path": "Dev/Modelica/DynLib.moe",
+      "line": 30,
+      "via": "openModel",
+      "encrypted": true
+    },
+    {
+      "library": "EngineLib",
+      "version": null,
+      "path": "Dev/Modelica/EngineLib.moe",
+      "line": 31,
+      "via": "openModel",
+      "encrypted": true
+    },
+    {
+      "library": "RaceCarA",
+      "version": "6.0.0",
+      "path": "Dev/Modelica/RaceCarA/package.mo",
+      "line": 32,
+      "via": "openModel"
+    },
+    {
+      "library": "RaceCarATests",
+      "version": "6.0.0",
+      "path": "Dev/Modelica/RaceCarATests/package.mo",
+      "line": 33,
+      "via": "openModel"
+    },
+    {
+      "library": "RaceCarB",
+      "version": "7.0.0",
+      "path": "Dev/Modelica/RaceCarB/package.mo",
+      "line": 34,
+      "via": "openModel"
+    },
+    {
+      "library": "CarModel",
+      "version": "1.0.0",
+      "path": "Dev/Modelica/CarModel/package.mo",
+      "line": 36,
+      "via": "openModel"
+    }
+  ],
+  "notLoaded": [
+    {
+      "path": "Dev/Modelica/RaceCarBTests/package.mo",
+      "reason": "the openModel line is commented out"
+    }
+  ],
+  "ignored": [
+    {
+      "line": 8,
+      "reason": "a Dymola setting; it loads nothing"
+    },
+    {
+      "line": 46,
+      "reason": "a Dymola setting; it loads nothing"
+    },
+    {
+      "line": 52,
+      "reason": "an expression whose value is not kept; it loads nothing"
+    }
+  ],
+  "unresolved": [],
+  "variablesFromEnvironment": [
+    {
+      "line": 5,
+      "variable": "User",
+      "from": "USERNAME"
+    }
+  ],
+  "currentDirectory": "Users/testuser/Documents/Dymola",
+  "modelicaPathSet": "Users/testuser/Documents/Dymola"
+}

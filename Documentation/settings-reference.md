@@ -268,6 +268,8 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT automati
 |---------|---------|---------|-------------|
 | **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
+It does **not** check that the types a class uses (component types, `extends` base classes) resolve; no style rule does. The MCP server's `mlqt_check`'s references check does that, for a class or a whole library — see [MCP server](mcp-server.md#checking-that-types-resolve).
+
 The reference validator handles several edge cases found in real Modelica libraries:
 
 - **Quoted identifiers** — URIs like `modelica://ModelicaReference.Operators.'semiLinear()'` are matched exactly, preserving the single-quoted identifier including any special characters such as parentheses
@@ -391,8 +393,8 @@ Honoured identically by the desktop app, the CLI and the MCP server. In the app 
 **Excluded libraries** in the repository settings dialog.
 
 † **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
-enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
-`mlqt_analyze_dependencies` before `mlqt_check_library`. In the GUI these rules produce findings once dependency
+enabled (you'll see `note: running dependency analysis…`), and so does the MCP server's `mlqt_check`
+on a library. In the GUI these rules produce findings once dependency
 analysis has run in the load/analysis pipeline. Graph findings appear in Code Review alongside the
 per-class ones and are re-run for the affected repository after an incremental re-check (e.g. following
 a VCS operation or a file edit), so they stay in step with the per-class findings.

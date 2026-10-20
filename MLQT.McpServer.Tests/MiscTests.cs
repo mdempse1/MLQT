@@ -59,7 +59,7 @@ public class GuidanceToolsTests
     public void TheGuidanceQuotesThePagingLimitsThatAreActuallyEnforced()
     {
         // The guidance tells an agent how to read a finding list it is only ever shown part of, and it
-        // does that by quoting numbers: how many mlqt_check_library returns inline, and how large a
+        // does that by quoting numbers: how many mlqt_check returns inline, and how large a
         // mlqt_list_findings page may be. Written out in prose, they go stale the moment either constant
         // moves — and a wrong number here is worse than none, because an agent that trusts it stops
         // paging early and reports a total it never read.
@@ -157,7 +157,7 @@ public class ToolDiagnosticsTests
         using var host = new TestHost();
         var q = new ClassQueryTools(host.Libraries);
         var err = ToolAssert.Error(q.GetClassInfo("Modelica.Blocks.Continuous.Integrator"));
-        Assert.Contains("load_", err.Error);
+        Assert.Contains("mlqt_load", err.Error);
         Assert.Contains("Nothing is loaded into MLQT", err.Error);
     }
 
@@ -188,7 +188,7 @@ public class ToolDiagnosticsTests
         {
             Assert.Contains("simulator", err.Error);
             Assert.Contains("is not loaded here", err.Error);
-            Assert.Contains("mlqt_load_library", err.Error);
+            Assert.Contains("mlqt_load", err.Error);
             Assert.Contains("getLoadedLibraries()", err.Error);
         });
     }
@@ -201,7 +201,7 @@ public class ToolDiagnosticsTests
             host.WriteMoFile("X.mo", "model X\n Real a;\nequation\n a=1;\nend X;")).GetAwaiter().GetResult();
         var q = new ClassQueryTools(host.Libraries);
         var err = ToolAssert.Error(q.GetClassInfo("Nope"));
-        Assert.Contains("mlqt_search_classes", err.Error);
+        Assert.Contains("mlqt_find", err.Error);
     }
 
     [Fact]
@@ -210,7 +210,7 @@ public class ToolDiagnosticsTests
         using var host = new TestHost();
         var q = new ClassQueryTools(host.Libraries);
         var err = ToolAssert.Error(q.ListClasses());
-        Assert.Contains("load_", err.Error);
+        Assert.Contains("mlqt_load", err.Error);
     }
 }
 
@@ -226,19 +226,4 @@ public class SessionStateAndServerInfoTests
         Assert.True(s.DependenciesAnalyzed);
     }
 
-    [Fact]
-    public void ServerInfo_ReflectsLoadedLibraries()
-    {
-        using var host = new TestHost();
-        var info = new ServerInfoTools(host.Libraries);
-
-        var before = info.GetServerInfo();
-        Assert.Equal(0, Assert.IsType<ServerInfoResult>(before).LibrariesLoaded);
-
-        host.Libraries.AddLibraryFromFileAsync(
-            host.WriteMoFile("X.mo", "model X\n Real a;\nequation\n a=1;\nend X;")).GetAwaiter().GetResult();
-
-        var after = info.GetServerInfo();
-        Assert.Equal(1, Assert.IsType<ServerInfoResult>(after).LibrariesLoaded);
-    }
 }

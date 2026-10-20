@@ -1,0 +1,46 @@
+{
+  "script": "startup1.mos",
+  "environment": {},
+  "loads": [
+    {
+      "library": "CoreLib",
+      "version": "2026.1",
+      "path": "Libraries/CoreLib/package.mo",
+      "line": 3,
+      "via": "openModel"
+    },
+    {
+      "library": "CarCore",
+      "version": "2026.1",
+      "path": "Libraries/CarCore/package.mo",
+      "line": 4,
+      "via": "openModel"
+    },
+    {
+      "library": "VehicleDyn",
+      "version": "2026.1",
+      "path": "Libraries/VehicleDyn/package.mo",
+      "line": 5,
+      "via": "openModel"
+    },
+    {
+      "library": "SportsCars",
+      "version": "1.4.0",
+      "path": "Libraries/SportsCars/package.mo",
+      "line": 6,
+      "via": "openModel"
+    },
+    {
+      "library": "OpenWheel",
+      "version": "0.9.0",
+      "path": "Libraries/OpenWheel/package.mo",
+      "line": 7,
+      "via": "openModel"
+    }
+  ],
+  "notLoaded": [],
+  "ignored": [],
+  "unresolved": [],
+  "currentDirectory": "Libraries/OpenWheel",
+  "modelicaPathSet": null
+}

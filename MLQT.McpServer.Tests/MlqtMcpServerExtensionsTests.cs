@@ -31,6 +31,7 @@ public sealed class MlqtMcpServerExtensionsTests
             .Select(t => t.Name).Order(StringComparer.Ordinal);
 
         Assert.Equal(ToolCountTests.DeclaredTools().Order(StringComparer.Ordinal), listed);
+        Assert.Equal(16, listed.Count());
     }
 
     [Fact]
@@ -134,14 +135,14 @@ public sealed class MlqtMcpServerProcessStateTests
         try
         {
             await using (var server = await InProcessServer.StartAsync())
-                await server.CallAsync("mlqt_server_info", []);
+                await server.CallAsync("mlqt_session", []);
             Assert.False(File.Exists(log), "a ToolUsageLogger was constructed with null options");
 
             // The control: the same variable with a logger passed does record, so the absence above
             // is the null options and not a variable the logger ignores.
             await using (var server = await InProcessServer.StartAsync(new MlqtMcpServerOptions { ToolUsageLogger = new ToolUsageLogger() }))
-                await server.CallAsync("mlqt_server_info", []);
-            Assert.Contains("mlqt_server_info", File.ReadAllText(log));
+                await server.CallAsync("mlqt_session", []);
+            Assert.Contains("mlqt_session", File.ReadAllText(log));
         }
         finally
         {
@@ -154,7 +155,7 @@ public sealed class MlqtMcpServerProcessStateTests
     public async Task TheNLogFileLogIsNotStarted()
     {
         await using (var server = await InProcessServer.StartAsync())
-            await server.CallAsync("mlqt_server_info", []);
+            await server.CallAsync("mlqt_session", []);
 
         Assert.Empty(NLog.LogManager.Configuration?.AllTargets ?? []);
     }

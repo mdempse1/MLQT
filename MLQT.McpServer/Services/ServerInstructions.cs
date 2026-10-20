@@ -31,30 +31,31 @@ internal static class ServerInstructions
 
     private const string Raw =
         """
-        MLQT reads, writes, refactors, checks and formats Modelica (.mo) source on disk. Whenever you
-        read, create or edit Modelica code, use these mlqt_ tools rather than file read/edit/write or
-        shell tools: every write is parse-checked (nothing is written if it would not parse), a rename
-        or move rewrites every reference, the file keeps its encoding and line endings, read-only
-        libraries are refused, and the dependency graph stays current.
+        MLQT reads, searches, writes, refactors, checks and formats Modelica (.mo) source. Whenever you
+        read, search, create or edit Modelica code - a question about a library included - use these
+        mlqt_ tools rather than file tools, grep or the shell: every write is parse-checked (nothing is
+        written if it would not parse), a rename or move rewrites every reference, files keep their
+        encoding and line endings, and read-only libraries are refused. If mlqt_ tools are deferred,
+        load them with a tool search before you first read or change a .mo file: mlqt_load,
+        mlqt_find, mlqt_get_class, mlqt_edit_class.
 
-        MLQT starts EMPTY and keeps its own session: every mlqt_ tool, the searches included, sees
-        only libraries loaded into MLQT. Before using them, load each one with mlqt_load_library (its
-        directory, package.mo or one .mo file) or mlqt_load_repository (a Git/SVN working copy), and
-        its dependencies - the load summary lists them, usually the MSL. A simulator's load_library
-        does NOT load anything here. For the path of a library a simulator has loaded, ask it
-        (OpenModelica: getLoadedLibraries()).
+        MLQT starts EMPTY and keeps its own session: every mlqt_ tool sees only libraries loaded
+        into MLQT. Load with mlqt_load: the paths of every library the user's simulator has loaded
+        (OpenModelica: getLoadedLibraries(); Dymola: pass the user's startup script as script), and
+        tool 'dymola' or 'openmodelica'; it loads their dependencies too, the MSL included. A
+        simulator's load_library does NOT load anything here. mlqt_session lists what is.
 
         Beside a simulator's server (OpenModelica, Dymola): MLQT owns the source files; the simulator
         compiles, checks equations and simulates. Write code with MLQT, then load or reload that FILE
         in the simulator before checking or simulating it - never author code through the
-        simulator's load_string. mlqt_check_class is a style/spelling check, not a compile check.
-        After a file changes outside MLQT, call mlqt_reload.
+        simulator's load_string. mlqt_check is a style/spelling check, not a compile check.
+        After a file changes outside MLQT, call mlqt_session's reload.
 
-        Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator); find one with
-        mlqt_search_classes or mlqt_search_text. Read with mlqt_get_class_interface (how to use a
-        class) or mlqt_get_class_source; edit with mlqt_update_class_source, mlqt_create_class or the
-        surgical tools (mlqt_add_component, mlqt_add_connection, mlqt_batch_edit ...). New project:
-        mlqt_create_library.
+        Class ids are full dotted names (Modelica.Blocks.Continuous.Integrator). Find a class, or a
+        line of code, with mlqt_find. Read with mlqt_get_class (views: interface, source ...);
+        change part of it with mlqt_edit_class (replace, add_component,
+        add_connection), a whole one with mlqt_write_class; rename, move or delete with
+        mlqt_refactor_class. New project: mlqt_create_library.
 
         Call mlqt_get_guidance for recipes. Topics: overview, workflows, simulators, views, editing,
         diagrams, dependencies, style, spelling, formatting, vcs, resources.

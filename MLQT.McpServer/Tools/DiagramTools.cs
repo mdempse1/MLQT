@@ -35,18 +35,8 @@ public sealed class DiagramTools
         _session = session;
     }
 
-    [McpServerTool(Name = "mlqt_get_diagram_layout")]
-    [Description("Get a Modelica class's diagram layout: each component's name, type and Placement extent " +
-                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections - " +
-                "those inside a for/if/when equation too, each with 'within' naming its branches. " +
-                "INHERITED components are included, marked with the base class they come from - most " +
-                "blocks declare no connector of their own and get their ports from a base class - and " +
-                "so are PROTECTED ones, which are hidden from the class's users but not from its diagram. An " +
-                "extent is absolute: a Placement written with an origin has it added in already. Use " +
-                "this to see how a model is arranged before adjusting it, and mlqt_get_diagram_image to " +
-                "look at it. Read-only.")]
-    public object GetDiagramLayout(
-        [Description("Fully-qualified class id.")] string classId)
+    internal object GetDiagramLayout(
+        string classId)
     {
         var node = _libraries.GetModelById(classId);
         if (node is null)
@@ -79,16 +69,16 @@ public sealed class DiagramTools
         return new DiagramLayoutResult(classId, components, connections);
     }
 
-    [McpServerTool(Name = "mlqt_get_diagram_image")]
+    [McpServerTool(Name = "mlqt_get_diagram_image", ReadOnly = true, OpenWorld = false)]
     [Description("Render a Modelica class's diagram as a PNG image and return it, so you can LOOK at a layout " +
                 "rather than read its coordinates back. Each component is drawn with its own type's " +
                 "icon at its Placement, with the connection lines between them; a component whose type " +
                 "is not loaded is drawn as a dashed box with its name, so an unresolved type and an " +
                 "absent component do not look alike. Anything placed outside the class's coordinate " +
                 "system is still shown, with the declared canvas outlined - being able to see that is " +
-                "most of the point. Use it after mlqt_set_component_placement / mlqt_add_connection to check what " +
+                "most of the point. Use it after mlqt_edit_class's set_component_placement / mlqt_edit_class's add_connection to check what " +
                 "you built: overlapping components, a signal flowing right to left and a connector left " +
-                "on the wrong edge are obvious here and invisible in mlqt_get_diagram_layout. Needs only a " +
+                "on the wrong edge are obvious here and invisible in mlqt_get_class's layout view. Needs only a " +
                 "loaded library.")]
     public object GetDiagramImage(
         [Description("Fully-qualified class id.")] string classId,
@@ -117,7 +107,7 @@ public sealed class DiagramTools
         if (svg is null)
             return new ToolError(
                 $"'{classId}' has nothing to draw: no component carries a Placement and the class has no "
-                + "diagram graphics of its own. Use mlqt_set_component_placement to position its components.");
+                + "diagram graphics of its own. Use mlqt_edit_class's set_component_placement to position its components.");
 
         try
         {
@@ -134,26 +124,15 @@ public sealed class DiagramTools
         }
     }
 
-    [McpServerTool(Name = "mlqt_set_component_placement")]
-    [Description("Set (or replace) a component's diagram Placement in a Modelica class so it appears at a given position. " +
-                "Provide the component name and its bounding extent x1,y1,x2,y2 (diagram units, e.g. " +
-                "-10,-10,10,10) and an optional rotation. Adds a Placement annotation if the component has " +
-                "none; otherwise replaces only its transformation (the diagram position), keeping its " +
-                "iconTransformation (where it sits on the class's icon) and visible. Any connection to this component whose other end is " +
-                "also placed automatically gets (or has refreshed) an orthogonal diagram Line routed between " +
-                "the connector positions, so positioned components appear wired up — no separate call " +
-                "needed. A connect inside a for/if/when equation is left as written. Fails if the " +
-                "component doesn't exist or the result would not parse. Set " +
-                "preview=true to see the file text.")]
-    public async Task<object> SetComponentPlacement(
-        [Description("Fully-qualified class id containing the component.")] string classId,
-        [Description("The component's name.")] string componentName,
-        [Description("Extent x1 (left).")] int x1,
-        [Description("Extent y1 (bottom).")] int y1,
-        [Description("Extent x2 (right).")] int x2,
-        [Description("Extent y2 (top).")] int y2,
-        [Description("Rotation in degrees (default 0).")] int rotation = 0,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+    internal async Task<object> SetComponentPlacement(
+        string classId,
+        string componentName,
+        int x1,
+        int y1,
+        int x2,
+        int y2,
+        int rotation = 0,
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "place a component") is { } readOnlyClass)
             return readOnlyClass;

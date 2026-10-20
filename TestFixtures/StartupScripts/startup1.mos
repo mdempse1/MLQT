@@ -1,0 +1,7 @@
+parentDir = "{root}\Libraries";
+
+openModel(parentDir + "\CoreLib\package.mo");
+openModel(parentDir + "\CarCore\package.mo");
+openModel(parentDir + "\VehicleDyn\package.mo");
+openModel(parentDir + "\SportsCars\package.mo");
+openModel(parentDir + "\OpenWheel\package.mo");

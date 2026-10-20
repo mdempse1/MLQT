@@ -1,0 +1,55 @@
+// Only edit the next line for the version of Dymola .........
+Dymola_Path="{root}/Tool/Modelica/";
+
+// Grab username from windows system
+User = Modelica.Utilities.System.getEnvironmentVariable("USERNAME", convertToSlash=true);
+
+// temporarily disable demand loading until we've loaded all our libs
+Advanced.UI.DemandLoadClassesGUI = false;
+
+// Base Dymola packages
+//closeModel(Dymola_Path+"/Library/Modelica 4.0.0/package.mo", changeDirectory=false, mustRead=false);
+openModel(Dymola_Path+"/Library/Modelica 4.1.0/package.mo", changeDirectory=false, mustRead=false);
+openModel(Dymola_Path+"/Library/VehicleInterfaces 2.0.2/package.mo", changeDirectory=false, mustRead=false);
+
+
+// Vendor libraries
+openModel("{root}/Vendor/Modelica/CoreLib 2025.1/package.moe", changeDirectory=false, mustRead=false);
+openModel("{root}/Vendor/Modelica/CarCore 2025.1/package.moe", changeDirectory=false, mustRead=false);
+openModel("{root}/Vendor/Modelica/SuspensionLib 2025.1/package.moe", changeDirectory=false, mustRead=false);
+openModel("{root}/Vendor/Modelica/VehicleDyn 2025.1/package.moe", changeDirectory=false, mustRead=false);
+
+
+// Local Git Repository Location
+GIT_Open="{root}/Dev";
+
+// Open libs in sensible order
+openModel(GIT_Open+"/Modelica/ExternData-3.0.3/ExternData/package.mo", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/OpenDynLib/package.mo", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/TyreTests/package.mo", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/DynLib.moe", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/EngineLib.moe", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/RaceCarA/package.mo", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/RaceCarATests/package.mo", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/RaceCarB/package.mo", changeDirectory=false, mustRead=false);
+//openModel(GIT_Open+"/Modelica/RaceCarBTests/package.mo", changeDirectory=false, mustRead=false);
+openModel(GIT_Open+"/Modelica/CarModel/package.mo", changeDirectory=false, mustRead=false);
+
+
+// Working Directory
+cd("{root}/Users/"+User+"/Documents/Dymola");
+
+// Set the default directory in path
+Utilities.setenv("MODELICAPATH", "{root}/Users/"+User+"/Documents/Dymola");
+
+// restore overload warnings
+Advanced.UI.DemandLoadClassesGUI = true;
+
+
+//************************* Your SERVER_ADDRESS Environment Variable is...*************************
+//
+//
+Modelica.Utilities.System.getEnvironmentVariable("SERVER_ADDRESS", convertToSlash=true);
+//
+//
+//*************************************************************************************************

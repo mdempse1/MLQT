@@ -203,29 +203,6 @@ public class StructureEditToolsTests
     }
 
     [Fact]
-    public async Task AddStatement_ToPackage_Rejected()
-    {
-        using var host = new TestHost();
-        var err = ToolAssert.Error(await LoadKinds(host).AddStatement("K.Sub", "g := 9.81"));
-        Assert.Contains("cannot contain an algorithm", err.Error);
-    }
-
-    [Fact]
-    public async Task AddStatement_ToFunction_Allowed()
-    {
-        using var host = new TestHost();
-        ToolAssert.Ok<StructureEditResult>(await LoadKinds(host).AddStatement("K.f", "y := 2*u"));
-    }
-
-    [Fact]
-    public async Task AddStatement_ToRecord_Rejected()
-    {
-        using var host = new TestHost();
-        var err = ToolAssert.Error(await LoadKinds(host).AddStatement("K.Data", "value := 0"));
-        Assert.Contains("cannot contain an algorithm", err.Error);
-    }
-
-    [Fact]
     public async Task AddConnection_ToPackage_Rejected()
     {
         using var host = new TestHost();
@@ -315,19 +292,6 @@ public class StructureEditToolsTests
     }
 
     [Fact]
-    public async Task AddComponent_ToPackage_Batch_Rejected()
-    {
-        using var host = new TestHost();
-        var tools = LoadKinds(host);
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "add_component", ClassId = "K.Sub", Type = "Real", Name = "bad", Modifier = "= 1" },
-        };
-        var err = ToolAssert.Error(await tools.BatchEdit(ops));
-        Assert.Contains("must be a constant", err.Error);
-    }
-
-    [Fact]
     public async Task AddComponent_DuplicateName_Rejected()
     {
         using var host = new TestHost();
@@ -396,14 +360,6 @@ public class StructureEditToolsTests
     }
 
     [Fact]
-    public async Task AddExtends_ModifierList_WrappedInParens()
-    {
-        using var host = new TestHost();
-        ToolAssert.Ok<StructureEditResult>(await Load(host).AddExtends("P.A", "P.M", modifier: "k=4, r=5"));
-        Assert.Contains("extends P.M(k=4, r=5);", Source(host, "P.A"));
-    }
-
-    [Fact]
     public async Task RemoveComponent_SoleOnLine()
     {
         using var host = new TestHost();
@@ -458,25 +414,6 @@ public class StructureEditToolsTests
     }
 
     [Fact]
-    public async Task AddExtends_InsertsAtTop()
-    {
-        using var host = new TestHost();
-        ToolAssert.Ok<StructureEditResult>(await Load(host).AddExtends("P.A", "P.M", modifier: "(k = 4)"));
-        var src = Source(host, "P.A");
-        Assert.Contains("extends P.M(k = 4);", src);
-        // extends precedes the existing component.
-        Assert.True(src.IndexOf("extends P.M") < src.IndexOf("Real x"));
-    }
-
-    [Fact]
-    public async Task AddImport_Inserts()
-    {
-        using var host = new TestHost();
-        ToolAssert.Ok<StructureEditResult>(await Load(host).AddImport("P.A", "SI = Modelica.Units.SI"));
-        Assert.Contains("import SI = Modelica.Units.SI;", Source(host, "P.A"));
-    }
-
-    [Fact]
     public async Task AddEquation_CreatesSectionThenAppends()
     {
         using var host = new TestHost();
@@ -494,21 +431,6 @@ public class StructureEditToolsTests
         Assert.Contains("x = 1;", src);
         Assert.Contains("x = 2*time;", src);
         Assert.Single(Regex.Matches(src, @"\bequation\b")); // still one section
-    }
-
-    [Fact]
-    public async Task AddStatement_CreatesAlgorithmSection()
-    {
-        using var host = new TestHost();
-        // A function with inputs/outputs (in a fresh single-file library).
-        var path = host.WriteMoFile("F.mo", "within;\nfunction F\n  input Real a;\n  output Real b;\nend F;");
-        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
-        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
-
-        ToolAssert.Ok<StructureEditResult>(await tools.AddStatement("F", "b := 2*a"));
-        var src = host.Libraries.GetModelById("F")!.Definition.ModelicaCode!;
-        Assert.Contains("algorithm", src);
-        Assert.Contains("b := 2*a;", src);
     }
 
     [Fact]
@@ -859,121 +781,6 @@ public class StructureEditToolsTests
         Assert.NotNull(res.Note);
         Assert.Contains("load its library", res.Note);
         Assert.Contains("Modelica.Blocks.Continuous.Integrator", res.Note);
-    }
-
-    [Fact]
-    public async Task Batch_BuildsModel_Atomically()
-    {
-        using var host = new TestHost();
-        var tools = LoadConn(host); // has Source (RealOutput y), Sink (RealInput u), empty-ish Sys
-
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Source", Name = "src2" },
-            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Sink", Name = "snk2" },
-            // Connect components added earlier in the SAME batch.
-            new() { Op = "add_connection", ClassId = "C.Sys", PortA = "src2.y", PortB = "snk2.u" },
-        };
-
-        var res = ToolAssert.Ok<BatchEditResult>(await tools.BatchEdit(ops));
-        Assert.Equal(3, res.OperationsApplied);
-        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.Contains("C.Source src2", src);
-        Assert.Contains("connect(src2.y, snk2.u)", src);
-    }
-
-    [Fact]
-    public async Task Batch_AcceptsAnOpWrittenAsItsToolName()
-    {
-        // The ops are named after the tools that do the same edit, and the tools all carry the mlqt_
-        // prefix, so an agent that has just called mlqt_add_component writes that here too. Refusing it
-        // would fail the whole batch over a spelling the description invites.
-        using var host = new TestHost();
-        var tools = LoadConn(host);
-
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "mlqt_add_component", ClassId = "C.Sys", Type = "C.Source", Name = "src3" },
-            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Sink", Name = "snk3" },
-            new() { Op = "mlqt_add_connection", ClassId = "C.Sys", PortA = "src3.y", PortB = "snk3.u" },
-        };
-
-        var res = ToolAssert.Ok<BatchEditResult>(await tools.BatchEdit(ops));
-        Assert.Equal(3, res.OperationsApplied);
-        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.Contains("C.Source src3", src);
-        Assert.Contains("connect(src3.y, snk3.u)", src);
-    }
-
-    [Fact]
-    public async Task Batch_RejectsAnOpThatIsNoToolOfThatName()
-    {
-        // The prefix is stripped, not matched loosely: an unknown name with it is still unknown.
-        using var host = new TestHost();
-        var tools = LoadConn(host);
-
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "mlqt_add_widget", ClassId = "C.Sys", Name = "w" },
-        };
-
-        var err = Assert.IsType<ToolError>(await tools.BatchEdit(ops));
-        Assert.Contains("mlqt_add_widget", err.Error);
-    }
-
-    [Fact]
-    public async Task Batch_RollsBackOnFailure()
-    {
-        using var host = new TestHost();
-        var tools = LoadConn(host);
-        var before = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Source", Name = "ok1" },
-            // This fails: incompatible connectors -> whole batch must roll back.
-            new() { Op = "add_connection", ClassId = "C.Sys", PortA = "ok1.y", PortB = "g1.p" },
-        };
-
-        var err = ToolAssert.Error(await tools.BatchEdit(ops));
-        Assert.Contains("rolled back", err.Error);
-        // Nothing survived — not even the first (valid) operation.
-        var after = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.DoesNotContain("ok1", after);
-        Assert.Equal(before, after);
-    }
-
-    [Fact]
-    public async Task Batch_UnknownOp_RejectedBeforeWriting()
-    {
-        using var host = new TestHost();
-        var tools = LoadConn(host);
-        var before = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Source", Name = "z1" },
-            new() { Op = "frobnicate", ClassId = "C.Sys" },
-        };
-        var err = ToolAssert.Error(await tools.BatchEdit(ops));
-        Assert.Contains("unknown op", err.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(before, host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!); // nothing written
-    }
-
-    [Fact]
-    public async Task Batch_Preview_DoesNotKeepChanges()
-    {
-        using var host = new TestHost();
-        var tools = LoadConn(host);
-
-        var ops = new List<BatchOperation>
-        {
-            new() { Op = "add_component", ClassId = "C.Sys", Type = "C.Source", Name = "p1" },
-        };
-        var res = ToolAssert.Ok<BatchEditResult>(await tools.BatchEdit(ops, preview: true));
-        Assert.True(res.PreviewOnly);
-        Assert.Contains(res.Files, f => f.NewContent != null && f.NewContent.Contains("C.Source p1"));
-        Assert.DoesNotContain("p1", host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!); // rolled back
     }
 
     [Fact]

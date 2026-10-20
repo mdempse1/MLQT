@@ -47,7 +47,7 @@ end Pictured;
 """
 
 # Tools the session calls outside the lists in session(), by name.
-CALLED = {"mlqt_get_changed_classes", "mlqt_analyze_change_impact", "mlqt_unload_library"}
+CALLED = {"mlqt_dependencies", "mlqt_session"}
 
 MISSPELLED = """model P "A model"
   Real q "The postion of q";
@@ -173,102 +173,86 @@ def session(exe, fixture, out):
                                for t in tools}
 
         calls = [
-            ("server_info", "mlqt_server_info", {}),
+            ("session_empty", "mlqt_session", {}),
             ("guidance", "mlqt_get_guidance", {"topic": "views"}),
             # A quoted boolean and a quoted number: the coercion filter reads the tools' schemas.
             ("create_library_preview", "mlqt_create_library",
              {"name": "Fresh", "directory": os.path.join(root, "new"), "preview": "true"}),
-            ("load_repository", "mlqt_load_repository", {"path": root}),
-            ("load_library", "mlqt_load_library", {"path": os.path.join(root, "Libraries", "Smoke")}),
-            ("list_repositories", "mlqt_list_repositories", {}),
-            ("list_libraries", "mlqt_list_libraries", {}),
-            ("list_classes", "mlqt_list_classes", {"limit": "50"}),
-            ("class_info", "mlqt_get_class_info", {"classId": "Smoke.Described"}),
-            ("class_interface", "mlqt_get_class_interface", {"classId": "Smoke.Fraction"}),
-            ("class_behavior", "mlqt_get_class_behavior", {"classId": "Smoke.Described"}),
-            ("validate_references", "mlqt_validate_class_references", {"classId": "Smoke.UsesTheAlias"}),
-            ("style_settings", "mlqt_get_style_settings", {}),
+            ("discover_only", "mlqt_load", {"paths": [root], "discoverOnly": True, "withDependencies": False}),
+            ("load_repository", "mlqt_load", {"paths": [root], "withDependencies": False}),
+            ("load_library_again", "mlqt_load", {"paths": [os.path.join(root, "Libraries", "Smoke")], "withDependencies": False}),
+            ("session", "mlqt_session", {"detailed": True}),
+            ("find_names", "mlqt_find", {"limit": "50"}),
+            ("class_views", "mlqt_get_class", {"classIds": ["Smoke.Described"], "views": ["info", "behavior", "documentation", "resources"]}),
+            ("class_interface", "mlqt_get_class", {"classIds": ["Smoke.Fraction"], "views": ["interface"]}),
+            ("check_references", "mlqt_check", {"classId": "Smoke.UsesTheAlias", "checks": ["references"]}),
+            ("style_settings", "mlqt_style_settings", {}),
             # A complex argument, read through its compiled contract, and a committed file written.
-            ("set_style_settings", "mlqt_set_style_settings",
+            ("set_style_settings", "mlqt_style_settings",
              {"settings": {"classHasDescription": True, "spellCheckDescription": True}}),
-            ("check_library", "mlqt_check_library", {}),
+            ("check_library", "mlqt_check", {"checks": ["style", "resources"]}),
             ("findings", "mlqt_list_findings", {"limit": 200}),
-            # The bundled Hunspell dictionaries are embedded resources, looked up by name.
-            ("spell_check", "mlqt_spell_check", {"source": MISSPELLED}),
-            ("spelling_suggestions", "mlqt_spelling_suggestions", {"word": "postion"}),
-            ("analyze_dependencies", "mlqt_analyze_dependencies", {}),
-            ("find_usages", "mlqt_find_usages", {"classId": "Smoke.Fraction"}),
+            # The bundled Hunspell dictionaries are embedded resources, looked up by name; each spelling
+            # finding carries its suggestions.
+            ("spell_check", "mlqt_check", {"source": MISSPELLED, "checks": ["spelling"]}),
+            ("dependencies", "mlqt_dependencies", {"classIds": ["Smoke.UsesTheAlias"]}),
+            ("used_by", "mlqt_dependencies", {"classIds": ["Smoke.Fraction"], "direction": "used_by", "transitive": True}),
             # SkiaSharp's native rasteriser.
-            ("load_pictured", "mlqt_load_library", {"path": pictured}),
+            ("load_pictured", "mlqt_load", {"paths": [pictured], "withDependencies": False}),
             ("diagram_image", "mlqt_get_diagram_image", {"classId": "Pictured.Wired", "width": 400}),
         ]
-        # Every other tool once, so each one's own code has run under protection: the edits as
-        # previews, which run the edit in full and write nothing, then a few real writes and a reload.
+        # Every other tool, view and operation once, so each one's own code has run under protection:
+        # the edits as previews, which run the edit in full and write nothing, then a few real writes
+        # and a reload.
         calls += [
-            ("class_source", "mlqt_get_class_source", {"classId": "Smoke.Described", "includeAnnotations": True}),
-            ("search_classes", "mlqt_search_classes", {"query": "Described"}),
-            ("package_tree", "mlqt_get_package_tree", {"rootClassId": "Smoke", "maxDepth": 2}),
-            ("dependencies", "mlqt_get_dependencies", {"classId": "Smoke.UsesTheAlias"}),
-            ("impact", "mlqt_analyze_impact", {"classIds": ["Smoke.Fraction"]}),
-            ("diagram_layout", "mlqt_get_diagram_layout", {"classId": "Pictured.Wired"}),
-            ("list_connections", "mlqt_list_connections", {"classId": "Pictured.Wired"}),
-            ("class_elements", "mlqt_list_class_elements", {"classId": "Smoke.Undescribed", "includeProtected": True}),
-            ("class_documentation", "mlqt_get_class_documentation", {"classId": "Smoke.Described"}),
-            ("search_text", "mlqt_search_text", {"query": "imperfect"}),
-            ("search_by_interface", "mlqt_search_by_interface", {"classType": "model", "minParameters": 1}),
-            ("class_resources", "mlqt_get_class_resources", {"classId": "Smoke.Described"}),
-            ("resource_usages", "mlqt_find_resource_usages", {"resolvedFilePath": os.path.join(root, "none.txt")}),
-            ("resource_warnings", "mlqt_get_resource_warnings", {}),
-            ("discover_libraries", "mlqt_discover_libraries", {"repositoryId": "<from load_repository>"}),
-            ("format_code", "mlqt_format_code", {"source": 'model M "d"\n  Real   y=2   "yy";\nequation\n y=1;\nend M;'}),
-            ("format_class", "mlqt_format_class", {"classId": "Smoke.Undescribed", "declarationOrder": True, "preview": True}),
-            ("check_style", "mlqt_check_style",
-             {"source": MISSPELLED, "settings": {"spellCheckDescription": True, "classHasDescription": True}}),
-            ("check_class", "mlqt_check_class", {"classId": "Smoke.Undescribed", "settings": {"parameterHasDescription": True}}),
-            ("set_placement", "mlqt_set_component_placement",
-             {"classId": "Pictured.Wired", "componentName": "c", "x1": -10, "y1": -80, "x2": 10, "y2": -60, "preview": True}),
-            ("set_class_description", "mlqt_set_class_description",
-             {"classId": "Smoke.Undescribed", "description": "Now described", "preview": True}),
-            ("set_component_description", "mlqt_set_component_description",
-             {"classId": "Smoke.Undescribed", "componentName": "gain", "description": "The gain", "preview": True}),
-            ("set_class_documentation", "mlqt_set_class_documentation",
-             {"classId": "Smoke.Described", "info": "<html><p>Info</p></html>", "preview": True}),
-            ("update_class_source", "mlqt_update_class_source",
-             {"classId": "Smoke.Undescribed", "preview": True,
-              "newSource": 'model Undescribed "x"\n  parameter Real gain = 2;\n  Real state;\nend Undescribed;'}),
-            ("create_class", "mlqt_create_class", {"parentId": "Smoke", "source": 'model Added "A new one"\nend Added;', "preview": True}),
-            ("delete_class", "mlqt_delete_class", {"classId": "Smoke.UsesTheAlias", "preview": True}),
-            ("move_class", "mlqt_move_class", {"classId": "Smoke.Fraction", "newParentId": "Pictured", "preview": True}),
-            ("rename_class", "mlqt_rename_class", {"classId": "Smoke.Fraction", "newName": "Ratio", "preview": True}),
-            ("correct_spelling", "mlqt_correct_spelling",
-             {"classId": "Smoke.Described", "oldWord": "thing", "newWord": "item", "preview": True}),
-            ("add_component", "mlqt_add_component", {"classId": "Smoke.Undescribed", "type": "Real", "name": "extra", "preview": True}),
-            ("remove_component", "mlqt_remove_component", {"classId": "Smoke.Undescribed", "name": "state", "preview": True}),
-            ("set_modifier", "mlqt_set_component_modifier", {"classId": "Smoke.Undescribed", "name": "gain", "modifier": "= 3", "preview": True}),
-            ("add_extends", "mlqt_add_extends", {"classId": "Smoke.UsesTheAlias", "baseType": "Smoke.Undescribed", "preview": True}),
-            ("add_import", "mlqt_add_import", {"classId": "Smoke.Described", "import": "Modelica.Units.SI", "preview": True}),
-            ("add_equation", "mlqt_add_equation", {"classId": "Smoke.Undescribed", "equation": "state = gain", "preview": True}),
-            ("add_statement", "mlqt_add_statement", {"classId": "Smoke.Undescribed", "statement": "state := gain;", "preview": True}),
-            ("add_connection", "mlqt_add_connection", {"classId": "Pictured.Wired", "portA": "c.p", "portB": "a.p", "preview": True}),
-            ("remove_connection", "mlqt_remove_connection", {"classId": "Pictured.Wired", "portA": "a.n", "portB": "b.p", "preview": True}),
-            ("batch_edit", "mlqt_batch_edit", {"preview": True, "operations": [
-                {"op": "add_component", "classId": "Smoke.Undescribed", "type": "Real", "name": "y"},
-                {"op": "add_equation", "classId": "Smoke.Undescribed", "equation": "y = state"}]}),
-            ("suppress_rule", "mlqt_suppress_rule",
-             {"classId": "Smoke.Undescribed", "ruleId": "MLQT.Doc.ClassDescription", "reason": "check", "preview": True}),
-            ("accept_spelling", "mlqt_accept_spelling_in_class", {"classId": "Smoke.Described", "word": "Thingy", "preview": True}),
+            ("class_source", "mlqt_get_class", {"classIds": ["Smoke.Described"], "views": ["source"], "includeAnnotations": True}),
+            ("package_tree", "mlqt_browse", {"root": "Smoke", "depth": 2}),
+            ("diagram_views", "mlqt_get_class", {"classIds": ["Pictured.Wired"], "views": ["layout", "connections"]}),
+            ("class_elements", "mlqt_get_class", {"classIds": ["Smoke.Undescribed"], "views": ["elements"], "includeProtected": True}),
+            ("find_text", "mlqt_find", {"query": "imperfect", "match": "text"}),
+            ("find_interface", "mlqt_find", {"query": "Smoke", "match": "interface", "classType": "model", "minParameters": 1}),
+            ("find_code", "mlqt_find", {"query": "parameter Real", "match": "code", "limit": 5}),
+            ("resource_usages", "mlqt_dependencies", {"resourcePath": os.path.join(root, "none.txt")}),
+            ("format_code", "mlqt_format", {"source": 'model M "d"\n  Real   y=2   "yy";\nequation\n y=1;\nend M;'}),
+            ("format_class", "mlqt_format", {"classId": "Smoke.Undescribed", "declarationOrder": True, "preview": True}),
+            ("format_library", "mlqt_format", {"library": "Smoke", "preview": True}),
+            ("check_style", "mlqt_check",
+             {"source": MISSPELLED, "checks": ["style", "spelling"], "settings": {"spellCheckDescription": True, "classHasDescription": True}}),
+            ("check_class", "mlqt_check", {"classId": "Smoke.Undescribed", "settings": {"parameterHasDescription": True}}),
+            ("write_class", "mlqt_write_class", {"preview": True, "classes": [
+                {"parentId": "Smoke", "source": "model Written \"written\"\n  Real x;\nend Written;"}]}),
+            ("replace_class", "mlqt_write_class", {"preview": True, "replace": True, "classes": [
+                {"parentId": "Smoke", "source": 'model Undescribed "x"\n  parameter Real gain = 2;\n  Real state;\nend Undescribed;'}]}),
+            ("delete_class", "mlqt_refactor_class", {"classId": "Smoke.UsesTheAlias", "action": "delete", "preview": True}),
+            ("move_class", "mlqt_refactor_class", {"classId": "Smoke.Fraction", "action": "move", "newParentId": "Pictured", "preview": True}),
+            ("rename_class", "mlqt_refactor_class", {"classId": "Smoke.Fraction", "action": "rename", "newName": "Ratio", "preview": True}),
+            ("edit_elements", "mlqt_edit_class", {"classId": "Smoke.Undescribed", "preview": True, "operations": [
+                {"op": "replace", "old": "parameter Real gain = 1;", "new": "parameter Real gain = 2;"},
+                {"op": "add_component", "type": "Real", "name": "y"},
+                {"op": "add_equation", "equation": "y = state"},
+                {"op": "set_component_modifier", "name": "gain", "modifier": "= 3"},
+                {"op": "set_class_description", "description": "Now described"},
+                {"op": "set_component_description", "name": "gain", "description": "The gain"},
+                {"op": "suppress_rule", "ruleId": "MLQT.Doc.ClassDescription", "reason": "check"},
+                {"op": "remove_component", "name": "state"}]}),
+            ("edit_documentation", "mlqt_edit_class", {"classId": "Smoke.Described", "preview": True, "operations": [
+                {"op": "set_class_documentation", "info": "<html><p>Info</p></html>"},
+                {"op": "correct_spelling", "word": "thing", "newWord": "item"},
+                {"op": "accept_spelling", "word": "Thingy"}]}),
+            ("edit_diagram", "mlqt_edit_class", {"classId": "Pictured.Wired", "preview": True, "operations": [
+                {"op": "set_component_placement", "name": "c", "x1": -10, "y1": -80, "x2": 10, "y2": -60},
+                {"op": "add_connection", "portA": "c.p", "portB": "a.p"},
+                {"op": "remove_connection", "portA": "a.n", "portB": "b.p"}]}),
+            ("load_with_dependencies", "mlqt_load",
+             {"paths": [os.path.join(root, "Libraries", "Smoke")], "withDependencies": True}),
             # Real writes, through the file persistence and encoding code, then a reload from disk.
-            ("write_description", "mlqt_set_class_description", {"classId": "Smoke.Undescribed", "description": "Now described"}),
-            ("write_suppression", "mlqt_suppress_rule",
-             {"classId": "Smoke.Undescribed", "ruleId": "MLQT.Doc.ParameterDescription", "reason": "check"}),
-            ("reload", "mlqt_reload", {}),
-            ("class_source_after_writes", "mlqt_get_class_source", {"classId": "Smoke.Undescribed"}),
+            ("write_edits", "mlqt_edit_class", {"classId": "Smoke.Undescribed", "operations": [
+                {"op": "set_class_description", "description": "Now described"},
+                {"op": "suppress_rule", "ruleId": "MLQT.Doc.ParameterDescription", "reason": "check"}]}),
+            ("reload", "mlqt_session", {"action": "reload"}),
+            ("class_source_after_writes", "mlqt_get_class", {"classIds": ["Smoke.Undescribed"], "views": ["source"]}),
         ]
         for label, tool, arguments in calls:
-            if "<from load_repository>" in arguments.values():
-                loaded = (transcript["load_repository"].get("content") or [{}])[0]
-                found = loaded.get("repositoryId") if isinstance(loaded, dict) else None
-                arguments = {k: (found or "") if v == "<from load_repository>" else v for k, v in arguments.items()}
             started = time.monotonic()
             answer = server.request("tools/call", {"name": tool, "arguments": arguments})
             timings[label] = round((time.monotonic() - started) * 1000)
@@ -281,19 +265,14 @@ def session(exe, fixture, out):
         with open(package, "w", encoding="utf-8", newline="") as f:
             f.write(source.replace('"Has everything the rules ask for"', '"Has everything the rules ask for, and more"'))
         # Read leniently: a build that renamed the field should show up as a difference, not a crash.
-        loaded = (transcript["load_repository"].get("content") or [{}])[0]
-        repository_id = loaded.get("repositoryId") if isinstance(loaded, dict) else None
-        transcript["changed_classes"] = content_of(server.request(
-            "tools/call", {"name": "mlqt_get_changed_classes", "arguments": {"repositoryId": repository_id}})) \
-            if repository_id else {"skipped": "load_repository returned no repositoryId"}
-        # The reload above reset the opt-in analysis, which the impact question needs.
-        transcript["reanalyze"] = content_of(server.request(
-            "tools/call", {"name": "mlqt_analyze_dependencies", "arguments": {}}))
+        repository_id = repository_of(transcript["load_repository"])
         transcript["change_impact"] = content_of(server.request(
-            "tools/call", {"name": "mlqt_analyze_change_impact", "arguments": {"repositoryId": repository_id}})) \
+            "tools/call", {"name": "mlqt_dependencies", "arguments": {"repositoryId": repository_id, "transitive": True}})) \
             if repository_id else {"skipped": "load_repository returned no repositoryId"}
         transcript["unload"] = content_of(server.request(
-            "tools/call", {"name": "mlqt_unload_library", "arguments": {"library": "Smoke"}}))
+            "tools/call", {"name": "mlqt_session", "arguments": {"action": "unload", "library": "Smoke"}}))
+        transcript["reset"] = content_of(server.request(
+            "tools/call", {"name": "mlqt_session", "arguments": {"action": "reset"}}))
         # Every tool was called, or the session no longer proves what it claims to.
         transcript["toolsNotCalled"] = sorted(set(transcript["tools"]) - CALLED - {t for _, t, _ in calls})
 
@@ -307,14 +286,24 @@ def session(exe, fixture, out):
     write(os.path.splitext(out)[0] + ".timings.json", timings)
 
 
+def repository_of(load):
+    """The repository id mlqt_load reports, or None when the answer has no such field."""
+    for block in load.get("content") or []:
+        if isinstance(block, dict):
+            for repository in block.get("repositories") or []:
+                if isinstance(repository, dict) and repository.get("repositoryId"):
+                    return repository["repositoryId"]
+    return None
+
+
 def time_check(exe, library, out):
     server = Server(exe)
     try:
         initialize(server)
         started = time.monotonic()
-        load = content_of(server.request("tools/call", {"name": "mlqt_load_library", "arguments": {"path": library}}))
+        load = content_of(server.request("tools/call", {"name": "mlqt_load", "arguments": {"paths": [library], "withDependencies": False}}))
         loaded = time.monotonic()
-        check = content_of(server.request("tools/call", {"name": "mlqt_check_library", "arguments": {}}, timeout=3600))
+        check = content_of(server.request("tools/call", {"name": "mlqt_check", "arguments": {}}, timeout=3600))
         checked = time.monotonic()
     finally:
         server.close()

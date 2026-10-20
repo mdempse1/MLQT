@@ -58,7 +58,7 @@ internal static class DiagramGeometry
     /// icon down its extends chain, its connectors, its parameter values - and collecting the class's
     /// placements and members first. Done per connection, a component with six wires was built
     /// twelve times over, and <c>ConnectionLineAnnotator</c> routes every connection in the class on
-    /// each <c>mlqt_add_connection</c> and <c>mlqt_set_component_placement</c>. Nothing here changes while a
+    /// each <c>mlqt_edit_class's add_connection</c> and <c>mlqt_edit_class's set_component_placement</c>. Nothing here changes while a
     /// class is being routed, so one router serves every connection in it and then is dropped.</para>
     /// </summary>
     public sealed class Router
@@ -129,7 +129,7 @@ internal static class DiagramGeometry
     /// icon-layer placement (<c>iconTransformation</c> first), in the type's icon coordinate system,
     /// turned about the placement's <c>origin</c>. This used to be worked out here a second way - the
     /// diagram-layer placement, the first <c>coordinateSystem</c> in the type's text and the extent's
-    /// centre - so a line ended where no connector was drawn, and <c>mlqt_add_connection</c> wrote those
+    /// centre - so a line ended where no connector was drawn, and <c>mlqt_edit_class's add_connection</c> wrote those
     /// points into the user's file.</para>
     /// </summary>
     private static (Pt Point, Facing Facing)? Locate(
@@ -275,7 +275,7 @@ internal static class DiagramGeometry
 
     /// <summary>
     /// Every component declared in <paramref name="classCode"/> that has a Placement, by name. The
-    /// one reader of a placement from source: mlqt_get_diagram_layout reports these, the router positions
+    /// one reader of a placement from source: mlqt_get_class's layout view reports these, the router positions
     /// connections with them and mlqt_get_diagram_image draws them, and a second regex for the same
     /// annotation is how three answers to one question start (B196).
     ///

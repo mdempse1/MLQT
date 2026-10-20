@@ -31,7 +31,7 @@ internal static class FileWritability
     public static bool IsWritable(string path)
     {
         // Not a permissions question, but it is the honest answer to "can this be written", and it is
-        // the one `mlqt_get_class_info` reports: a stub whose library sits somewhere writable used to be
+        // the one `mlqt_get_class's info view` reports: a stub whose library sits somewhere writable used to be
         // advertised as editable, which is an invitation to try. A class held only in memory has no
         // file at all, and its path must never be created as one.
         if (ReadOnlySources.IsReadOnlyPath(path))

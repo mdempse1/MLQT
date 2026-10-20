@@ -63,7 +63,7 @@ public sealed record FunctionSignatureView(
     IReadOnlyList<ParameterView> Inputs,
     IReadOnlyList<ParameterView> Outputs);
 
-/// <summary>One raw element from mlqt_list_class_elements. InheritedFrom is the base class id it comes from,
+/// <summary>One raw element from mlqt_get_class's elements view. InheritedFrom is the base class id it comes from,
 /// or null if declared in the class itself. Condition is the expression a conditional component is
 /// declared with, and such a component exists only where that expression is true. ModifiedIn is the
 /// class whose modification set Default, or null when it is the declaration's own binding.
@@ -113,18 +113,23 @@ public sealed record ClassDocumentationResult(
     string? Info,
     string? Revisions);
 
-/// <summary>A reference that these (best-effort) resolution rules could not resolve to a loaded class.</summary>
+/// <summary>A reference that these (best-effort) resolution rules could not resolve to a loaded class.
+/// <c>Line</c> is the line in the class's own source; <c>FilePath</c>/<c>FileLine</c> are where that is on
+/// disk, null for a class with no file.</summary>
 public sealed record UnresolvedReference(
     string Name,
     string Kind,
-    int Line);
+    int Line,
+    string? ClassId = null,
+    string? FilePath = null,
+    int? FileLine = null);
 
-/// <summary>A class matched by mlqt_search_text, with where it matched and a short snippet.</summary>
+/// <summary>A class matched by mlqt_find, with where it matched and a short snippet.</summary>
 public sealed record TextSearchItem(string Id, string Name, string ClassType, string MatchedIn, string Snippet);
 
 public sealed record TextSearchResult(int Total, int Count, IReadOnlyList<TextSearchItem> Items);
 
-/// <summary>A class matched by mlqt_search_by_interface, with its parameter/connector counts.</summary>
+/// <summary>A class matched by mlqt_find with match 'interface', with its parameter/connector counts.</summary>
 public sealed record InterfaceSearchItem(
     string Id, string Name, string ClassType, int ParameterCount, int ConnectorCount, bool HasExperiment);
 
@@ -174,10 +179,17 @@ public sealed record ClassBehaviorResult(
     IReadOnlyList<BehaviorLineView> Statements,
     IReadOnlyList<string> BasesWithBehavior);
 
-/// <summary>Result of mlqt_validate_class_references.</summary>
+/// <summary>Result of mlqt_check's references check: <c>Id</c> is the class or library checked,
+/// <c>Checked</c> the references looked at across <c>ClassesChecked</c> classes, and <c>Unresolved</c> one page
+/// (<c>Offset</c>, <c>Count</c>) of the <c>UnresolvedCount</c> that did not resolve. <c>Unreadable</c> names the
+/// classes in scope whose source would not parse, so could not be looked at.</summary>
 public sealed record ReferenceValidationResult(
     string Id,
     int Checked,
     int UnresolvedCount,
     IReadOnlyList<UnresolvedReference> Unresolved,
-    string Note);
+    string Note,
+    int ClassesChecked = 1,
+    int Offset = 0,
+    int Count = 0,
+    IReadOnlyList<string>? Unreadable = null);

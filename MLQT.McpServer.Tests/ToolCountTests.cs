@@ -49,7 +49,7 @@ public class ToolCountTests
 
         // Not zero, or every assertion below is trivially satisfied by a reflection query that
         // stopped matching — which is the failure this file exists to prevent.
-        Assert.True(tools.Count > 30, $"only {tools.Count} tools found; the reflection query is wrong");
+        Assert.True(tools.Count > 10, $"only {tools.Count} tools found; the reflection query is wrong");
         Assert.Equal(tools.Count, tools.Distinct(StringComparer.Ordinal).Count());
 
         var doc = File.ReadAllText(Path.Combine(RepositoryRoot(), "Documentation", "mcp-server.md"));
@@ -63,7 +63,7 @@ public class ToolCountTests
     public void EveryToolIsNamedInLowerSnakeCase()
     {
         // The naming every existing tool follows, and the only thing a client sees. Worth stating
-        // once here rather than being noticed by an agent as an inconsistency in a list of 66.
+        // once here rather than being noticed by an agent as an inconsistency in the list.
         Assert.All(DeclaredTools(), name =>
             Assert.Matches("^[a-z][a-z0-9]*(_[a-z0-9]+)*$", name));
     }

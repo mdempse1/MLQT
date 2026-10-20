@@ -1,5 +1,7 @@
 using System.Reflection;
 using ModelicaGraph.Analysis;
+using ModelicaParser.Helpers;
+using MLQT.Services.Checking;
 using ModelicaGraph.DataTypes;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
@@ -15,38 +17,19 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// "Views" over a class — token-efficient projections so an agent can learn how to USE a class, or
-/// what it CONTAINS, without reading its full source. mlqt_get_class_interface (public API), mlqt_list_class_elements
-/// (every declaration), mlqt_get_class_documentation (prose), and mlqt_validate_class_references (undefined names).
-/// All are read-only and need only a loaded library (not mlqt_analyze_dependencies).
+/// what it CONTAINS, without reading its full source. mlqt_get_class's interface view (public API), mlqt_get_class's elements view
+/// (every declaration), mlqt_get_class's documentation view (prose), and mlqt_check's references check (undefined names).
+/// All are read-only and need only a loaded library (not mlqt_dependencies).
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class ViewTools
 {
     private readonly ILibraryDataService _libraries;
 
     public ViewTools(ILibraryDataService libraries) => _libraries = libraries;
 
-    [McpServerTool(Name = "mlqt_get_class_interface")]
-    [Description("Get the public interface of a Modelica class — how to USE it without reading its source: its " +
-                "settable parameters (name/type/default/description), its connectors (with causality " +
-                "input/output and flow/stream), its extends (base classes), and, for a function, its " +
-                "input/output signature. Members INHERITED via extends are included by default (each marked " +
-                "with the base class it came from in inheritedFrom), so you get the complete picture without " +
-                "chasing base classes — set include_inherited=false for only what the class declares itself. " +
-                "Far smaller than mlqt_get_class_source. A component is a connector when it has a causality or its " +
-                "type resolves to a loaded connector class. A connector carrying a 'condition' is " +
-                "CONDITIONAL - it exists only where that expression is true, so an instance that leaves it " +
-                "false has no such port and connecting to it is an error. A parameter's default is the value it takes; a " +
-                "typeModification (e.g. \"(min = 0)\") constrains its type and is reported apart from the " +
-                "default, since a declaration can carry both. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, " +
-                "recoveredFromDocumentation is true and the members come from the vendor's generated " +
-                "help: names, descriptions and units, with no types, defaults or inheritance - that is " +
-                "everything the vendor published. Needs only a loaded library.")]
-    public object GetClassInterface(
-        [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
+    internal object GetClassInterface(
         string classId,
-        [Description("Include members inherited from base classes (default true).")]
         bool includeInherited = true)
     {
         if (Load(classId, out var node, out var iface, out var error))
@@ -109,30 +92,9 @@ public sealed class ViewTools
             extends, parameters, connectors, members, signature);
     }
 
-    [McpServerTool(Name = "mlqt_list_class_elements")]
-    [Description("List the elements of a Modelica class: components (with type, variability parameter/constant/" +
-                "discrete, causality input/output, flow/stream, default value, description), extends " +
-                "clauses, imports, and nested classes. Members INHERITED via extends are included by " +
-                "default (each marked with its base class in inheritedFrom); set include_inherited=false " +
-                "for only the class's own declarations. By default only public elements are returned; set " +
-                "include_protected=true to also include protected ones. Each element also carries any " +
-                "leadingComments (the // or /* */ comments written just above it). This is the granular " +
-                "data behind mlqt_get_class_interface. A component's default is the value it is bound to; its " +
-                "typeModification is any modification written on its type, as written (e.g. \"(min = 0)\" or \"(k = 2)\"), " +
-                "which is not a value. arraySubscripts are its dimensions as written, the declaration's before the type's " +
-                "(Real[2] x[3] gives \"[3, 2]\"). redeclarations lists each redeclare (or replaceable) its modification makes, " +
-                "keyed by the path to the element replaced (\"Medium\", or \"b.Medium\" for b(redeclare package Medium = W)), " +
-                "with the replacing type - so Medium.T in that instance means the redeclared medium's T. A nested short class " +
-                "(type Torque = Real(unit = \"N.m\")) carries the base it names in type and what it applies in typeModification. A default set by a modification rather than by the declaration - an extends clause in a derived class, or a short class - names the class that wrote it in modifiedIn: the value is an expression in that class, so its names resolve there and not in inheritedFrom. For a class from an encrypted library, recoveredFromDocumentation " +
-                "is true and its members come from the vendor's generated help - name, description, " +
-                "unit and which table they were in (parameter / connector / input / output), with no " +
-                "type, no default and line 0; one it inherits from a readable base is listed once, marked " +
-                "with that base in inheritedFrom. Needs only a loaded library.")]
-    public object ListClassElements(
-        [Description("Fully-qualified class id.")] string classId,
-        [Description("Include elements declared in protected sections. Default false.")]
+    internal object ListClassElements(
+        string classId,
         bool includeProtected = false,
-        [Description("Include elements inherited from base classes. Default true.")]
         bool includeInherited = true)
     {
         if (Load(classId, out var node, out _, out var error))
@@ -213,14 +175,9 @@ public sealed class ViewTools
             r => r.Key,
             r => new RedeclarationView(r.Value.ClassType, r.Value.Type, r.Value.TypeModification, r.Value.ArraySubscripts)));
 
-    [McpServerTool(Name = "mlqt_get_class_documentation")]
-    [Description("Get a Modelica class's documentation without its code: its description string plus the " +
-                "Documentation(info=...) and Documentation(revisions=...) annotation text. format='text' " +
-                "(default) strips HTML to plain text; format='html' returns the raw HTML. Use this to " +
-                "understand what a class does. Needs only a loaded library.")]
-    public object GetClassDocumentation(
-        [Description("Fully-qualified class id.")] string classId,
-        [Description("'text' (default, HTML stripped) or 'html' (raw).")] string format = "text")
+    internal object GetClassDocumentation(
+        string classId,
+        string format = "text")
     {
         if (Load(classId, out var node, out var iface, out var error))
             return error!;
@@ -236,16 +193,8 @@ public sealed class ViewTools
         return new ClassDocumentationResult(node.Id, asText ? "text" : "html", iface!.Description, info, revisions);
     }
 
-    [McpServerTool(Name = "mlqt_get_class_behavior")]
-    [Description("Get the behavior a Modelica class declares itself: its top-level equations, connect() statements " +
-                "and algorithm statements (each equation/statement carries any leadingComments written " +
-                "above it). connections includes those inside a for/if/when equation, each with 'within' " +
-                "naming the branches it is in (e.g. ['for i in 1:n']) - such an equation is also listed, " +
-                "verbatim, in equations. Unlike the interface views, inherited behavior is NOT merged in (equations " +
-                "reference their own class's scope) — instead basesWithBehavior lists the base classes that " +
-                "declare behavior, which you can query directly for the full picture. Read-only.")]
-    public object GetClassBehavior(
-        [Description("Fully-qualified class id.")] string classId)
+    internal object GetClassBehavior(
+        string classId)
     {
         if (Load(classId, out var node, out _, out var error))
             return error!;
@@ -291,54 +240,104 @@ public sealed class ViewTools
         return result;
     }
 
-    [McpServerTool(Name = "mlqt_validate_class_references")]
-    [Description("Check that the types a Modelica class references (its component types and extends base classes) " +
-                "resolve to loaded classes, and report those that do not — useful after writing or editing " +
-                "a class to catch typos and missing dependencies. Resolution uses exact, import and " +
-                "package-relative lookup AND names inherited via extends (an inherited type is not flagged). " +
-                "Still best-effort for uncommon import forms, so load the referenced libraries so their " +
-                "classes can resolve before treating a name as genuinely undefined.")]
-    public object ValidateClassReferences(
-        [Description("Fully-qualified class id to validate.")] string classId)
+    /// <summary>The largest page mlqt_check's references check returns; a bigger limit is clamped, not refused.</summary>
+    internal const int MaxReferenceLimit = 1000;
+
+    internal object ValidateClassReferences(
+        string? classId = null,
+        string? libraryId = null,
+        int limit = 100,
+        int offset = 0)
     {
-        if (Load(classId, out var node, out var iface, out var error))
-            return error!;
+        if (classId is not null && libraryId is not null)
+            return new ToolError("Give class_id or library_id, not both: class_id checks a class and everything " +
+                                 "inside it, library_id a whole library.");
+        if (classId is null && libraryId is null)
+            return new ToolError("Give class_id (a class, or a package to check everything inside it) or " +
+                                 "library_id (a whole library).");
 
-        var imports = ImportNames(iface!);
-        var checkedCount = 0;
-        var unresolved = new List<UnresolvedReference>();
+        limit = Math.Clamp(limit, 1, MaxReferenceLimit);
+        offset = Math.Max(offset, 0);
 
-        foreach (var e in iface!.Elements)
+        string scopeId;
+        IEnumerable<ModelNode> scope;
+        if (classId is not null)
         {
-            string? type;
-            string kind;
-            if (e.Kind == ClassElementKind.Component)
-            {
-                type = e.Type;
-                kind = "component-type";
-            }
-            else if (e.Kind == ClassElementKind.Extends)
-            {
-                type = e.Type;
-                kind = "extends";
-            }
-            else
-            {
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(type) || TypeResolver.IsPredefined(type))
-                continue;
-
-            checkedCount++;
-            if (TypeResolver.ResolveWithInheritance(_libraries.CombinedGraph, node!.Id, type, imports) is null)
-                unresolved.Add(new UnresolvedReference(type!.TrimStart('.').Trim(), kind, e.Line));
+            // The named class keeps the errors the one-class form always gave: not found, or unreadable.
+            if (Load(classId, out var root, out _, out var error))
+                return error!;
+            scopeId = root!.Id;
+            scope = _libraries.GetAllModels().Where(m => ModelicaName.IsInSubtree(m.Id, root.Id));
+        }
+        else
+        {
+            if (ToolDiagnostics.RequireLibrary(_libraries, "validating references") is { } noLib)
+                return noLib;
+            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId!);
+            if (error is not null)
+                return error;
+            scopeId = library!.Name;
+            scope = library.ModelIds.Select(_libraries.GetModelById).OfType<ModelNode>();
         }
 
-        const string note = "Resolution covers the class's own scope plus names inherited via extends. It " +
+        var graph = _libraries.CombinedGraph;
+        var classesChecked = 0;
+        var checkedCount = 0;
+        var unreadable = new List<string>();
+        var unresolved = new List<UnresolvedReference>();
+
+        foreach (var node in scope.OrderBy(m => m.Id, StringComparer.Ordinal))
+        {
+            // Borrowed, not kept: a library's worth of parse trees held at once is what Borrow exists to
+            // prevent, and the interface is all that is needed from each.
+            var iface = node.IsParseFailurePlaceholder
+                ? null
+                : node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract, ifUnparseable: null);
+            if (iface is null)
+            {
+                unreadable.Add(node.Id);
+                continue;
+            }
+
+            classesChecked++;
+            var imports = ImportNames(iface);
+            ClassLocation? location = null;
+            foreach (var (type, kind, line) in ReferencedTypes(iface))
+            {
+                checkedCount++;
+                if (TypeResolver.ResolveWithInheritance(graph, node.Id, type, imports) is not null)
+                    continue;
+                location ??= ClassFileLocation.Of(graph, node);
+                unresolved.Add(new UnresolvedReference(
+                    type.TrimStart('.').Trim(), kind, line, node.Id, location?.FilePath, location?.FileLine(line)));
+            }
+        }
+
+        const string note = "Resolution covers each class's own scope plus names inherited via extends. It " +
                             "is still best-effort for uncommon import forms, so ensure the referenced " +
                             "libraries are loaded before treating a name as genuinely undefined.";
-        return new ReferenceValidationResult(node!.Id, checkedCount, unresolved.Count, unresolved, note);
+        var page = unresolved.Skip(offset).Take(limit).ToList();
+        return new ReferenceValidationResult(
+            scopeId, checkedCount, unresolved.Count, page, note,
+            classesChecked, offset, page.Count, unreadable.Count == 0 ? null : unreadable);
+    }
+
+    /// <summary>The types a class names that must resolve: each component's type and each extends
+    /// clause's base, less the predefined types.</summary>
+    private static IEnumerable<(string Type, string Kind, int Line)> ReferencedTypes(ClassInterface iface)
+    {
+        foreach (var e in iface.Elements)
+        {
+            var kind = e.Kind switch
+            {
+                ClassElementKind.Component => "component-type",
+                ClassElementKind.Extends => "extends",
+                _ => null,
+            };
+            if (kind is null || string.IsNullOrWhiteSpace(e.Type) || TypeResolver.IsPredefined(e.Type))
+                continue;
+            yield return (e.Type, kind, e.Line);
+        }
     }
 
     // Resolves the class, guards parse health, and extracts its interface. Returns true (with a populated

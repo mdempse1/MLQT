@@ -53,7 +53,7 @@ writes reads it** — only the surfaces that *report* a class do (B179).
 
 The rule above is unchanged and the reason is the same one that produced it: the stub route is taken
 wherever a truthful declaration can be written, and here there is none to write. They were parsed
-and dropped for a year, so `mlqt_get_class_interface` answered "no parameters" for a vendor class with a
+and dropped for a year, so `mlqt_get_class`'s interface view answered "no parameters" for a vendor class with a
 dozen. It now returns them with `recoveredFromDocumentation: true` and **`type: null`**, which says
 *not published* rather than *not worked out*.
 
@@ -73,7 +73,7 @@ The highest-severity failure mode is MLQT rewriting a vendor library it cannot r
 
 Backlog B85 was this guard reached from a direction nobody had checked: the MCP edit tools would
 overwrite a vendor's `package.moe` with Modelica text whenever the library happened to sit somewhere
-writable. `IsWritable` answers false for a stub too, so `mlqt_get_class_info` stops advertising one as
+writable. `IsWritable` answers false for a stub too, so `mlqt_get_class`'s info view stops advertising one as
 editable and inviting the attempt.
 
 **A readable reference library is a different fact.** `ModelNode.IsExternalStub` covers encrypted
@@ -185,7 +185,7 @@ root.
 reflection, on a supplied class, and accepts exactly two outcomes: an answer, or `ReadOnlyClassGuard`'s
 refusal. Any other error fails it, naming the tool, as does any change to the class or the user's
 files. It has no list of editing tools to keep up to date: a new one that skips the guard either
-fails some other way or changes something. Taking the guard out of `mlqt_rename_class` is caught —
+fails some other way or changes something. Taking the guard out of `mlqt_refactor_class`'s rename is caught —
 it rewrote the user's reference to the class — and so is taking it out of `ClassBodyEditor.Open`.
 
 ## What the HTML gives, and what it does not

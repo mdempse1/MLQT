@@ -7,6 +7,8 @@ using MLQT.McpServer.Tools;
 using MLQT.Services;
 using MLQT.Services.Checking;
 using MLQT.Services.Interfaces;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 
 namespace MLQT.McpServer;
 
@@ -81,6 +83,19 @@ public static class MlqtMcpServerExtensions
         var toolUsageLogger = options?.ToolUsageLogger;
         var configureServer = options?.ConfigureServer;
 
+        // An answer can load libraries as well as a load, so each call is noted after it as well as before.
+        CallToolResult Noted(CallToolResult result, IServiceProvider? provider)
+        {
+            Note(provider);
+            return result;
+        }
+
+        static void Note(IServiceProvider? provider)
+        {
+            if (provider?.GetService<SessionState>() is { } session && provider.GetService<ILibraryDataService>() is { } libraries)
+                session.NoteLibraries(libraries.Libraries.Select(l => l.Id));
+        }
+
         // The instructions are returned in the initialize response; see ServerInstructions for what they
         // must fit in and why. mlqt_get_guidance gives fuller, on-demand recipes.
         return services
@@ -104,13 +119,16 @@ public static class MlqtMcpServerExtensions
                     ToolArgumentCoercion.For(tool) is { IsEmpty: false } scalars)
                     context.Params.Arguments = ToolArgumentCoercion.Coerce(args, scalars);
 
+                // When each library came in, timed by the call that loaded it, whatever loaded it (B505).
+                Note(context.Services);
+
                 if (toolUsageLogger is null)
-                    return await next(context, cancellationToken);
+                    return Noted(await next(context, cancellationToken), context.Services);
 
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    var result = await next(context, cancellationToken);
+                    var result = Noted(await next(context, cancellationToken), context.Services);
                     toolUsageLogger.Record(toolName, context.Params?.Arguments, stopwatch.ElapsedMilliseconds, result.IsError ?? false);
                     return result;
                 }

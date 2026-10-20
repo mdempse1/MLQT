@@ -9,7 +9,7 @@ namespace MLQT.McpServer.Tests;
 /// <c>Root.Src.Pkg.State</c>.
 /// </summary>
 /// <remarks>
-/// <c>mlqt_rename_class</c> looked only for references to the class itself, so renaming a package left
+/// <c>mlqt_refactor_class's rename</c> looked only for references to the class itself, so renaming a package left
 /// every reference to a class inside it naming a class that no longer existed, and said so in its
 /// result note as "deep member accesses are not rewritten".
 /// </remarks>

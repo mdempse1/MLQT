@@ -17,11 +17,11 @@ namespace MLQT.McpServer.Tools;
 /// <summary>
 /// Spell checking of Modelica description/Documentation prose, spelling suggestions, and applying a
 /// correction. The spell-check dictionary languages come from the repository's .mlqt/settings.json
-/// (set via mlqt_set_style_settings). mlqt_correct_spelling writes the updated file to disk and refreshes the
-/// graph unless preview is set. Typical workflow: mlqt_spell_check → mlqt_spelling_suggestions → mlqt_correct_spelling.
+/// (set via mlqt_style_settings). mlqt_edit_class's correct_spelling writes the updated file to disk and refreshes the
+/// graph unless preview is set. Typical workflow: mlqt_check with the spelling check (each finding carries its
+/// suggestions) → mlqt_edit_class's correct_spelling.
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class SpellingTools
 {
     private readonly ILibraryDataService _libraries;
@@ -47,14 +47,8 @@ public sealed class SpellingTools
         _session = session;
     }
 
-    [McpServerTool(Name = "mlqt_spell_check")]
-    [Description("Spell-check the description and Documentation prose of a loaded Modelica class (or an arbitrary " +
-                "source snippet) and return the misspellings as findings (word + line). The dictionary " +
-                "language(s) come from the relevant repository's settings (default en_US/en_GB). Provide " +
-                "exactly one of class_id or source. Then use mlqt_spelling_suggestions and mlqt_correct_spelling. The result carries a note when this machine has no dictionary for a configured language.")]
-    public object SpellCheck(
-        [Description("Fully-qualified class id to spell-check.")] string? classId = null,
-        [Description("Arbitrary Modelica source to spell-check instead of a loaded class.")]
+    internal object SpellCheck(
+        string? classId = null,
         string? source = null)
     {
         if (!string.IsNullOrWhiteSpace(classId))
@@ -92,14 +86,8 @@ public sealed class SpellingTools
         return new ToolError("Provide either class_id or source.");
     }
 
-    [McpServerTool(Name = "mlqt_spelling_suggestions")]
-    [Description("Get spelling suggestions for a single word in Modelica descriptions or documentation, and whether it is already considered " +
-                "correct. Uses the dictionary language(s) configured for the repository (default " +
-                "en_US/en_GB) plus the user's custom dictionary.")]
-    public object SpellingSuggestions(
-        [Description("The (possibly misspelled) word to get suggestions for.")] string word,
-        [Description("Optional repository id (GUID) or name to pick the dictionary language. Omit when a " +
-                     "single repository is loaded.")]
+    internal object SpellingSuggestions(
+        string word,
         string? repositoryId = null)
     {
         if (string.IsNullOrWhiteSpace(word))
@@ -126,20 +114,10 @@ public sealed class SpellingTools
             word, isCorrect, suggestions, MissingDictionaryNote(LanguagesOf(repository)));
     }
 
-    [McpServerTool(Name = "mlqt_correct_spelling")]
-    [Description("Replace a misspelled word with a correction throughout the description and " +
-                "Documentation prose of the file containing the given Modelica class (whole-word, case-sensitive; " +
-                "HTML tags, hyperlink hrefs and code/pre blocks are left untouched). The word is the only " +
-                "change made to the file: its layout and line endings are left alone, so the edit is a " +
-                "one-word diff (except that, as with every MLQT write, a file with no final newline gets " +
-                "one). By default the corrected file is written to disk and the graph refreshed; " +
-                "set preview=true to return the corrected file text without writing. Returns the number of " +
-                "replacements made (0 means the word was not found). Use mlqt_format_class to reformat a file.")]
-    public async Task<object> CorrectSpelling(
-        [Description("Fully-qualified class id whose file should be corrected.")] string classId,
-        [Description("The misspelled word to replace (whole-word, case-sensitive).")] string oldWord,
-        [Description("The replacement word.")] string newWord,
-        [Description("Return the corrected text without writing to disk or updating the graph; default false.")]
+    internal async Task<object> CorrectSpelling(
+        string classId,
+        string oldWord,
+        string newWord,
         bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "correct spelling in this class") is { } readOnlyClass)
@@ -184,7 +162,7 @@ public sealed class SpellingTools
 
         // The word is the only change: the file keeps its own line endings and trailing whitespace, so
         // the edit reads as a one-word diff rather than a reformat of the whole file. Reformatting is
-        // what mlqt_format_class is for, and doing it here meant an agent's spelling fix and a user's
+        // what mlqt_format is for, and doing it here meant an agent's spelling fix and a user's
         // produced different diffs for the same correction. The one exception is the rule every write
         // in MLQT keeps (ModelicaFileEncoding.ForFile, B236): a file that did not end with a newline
         // gets one. ForFile is applied here, not left to the write, so the preview is the text that

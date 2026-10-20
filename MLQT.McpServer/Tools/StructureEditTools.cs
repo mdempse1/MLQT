@@ -19,7 +19,6 @@ namespace MLQT.McpServer.Tools;
 /// parse-checked with rollback, refuses read-only files, and refreshes dependencies. All support preview.
 /// </summary>
 [Obfuscation]
-[McpServerToolType]
 public sealed class StructureEditTools
 {
     private static readonly Regex IdentifierRegex = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
@@ -51,47 +50,18 @@ public sealed class StructureEditTools
     private static readonly HashSet<string> EquationClassKinds = new(StringComparer.Ordinal) { "model", "block", "class" };
     private static readonly HashSet<string> AlgorithmClassKinds = new(StringComparer.Ordinal) { "model", "block", "class", "function" };
 
-    [McpServerTool(Name = "mlqt_add_component")]
-    [Description("Add a component (a variable, parameter or connector instance) to a Modelica class, e.g. a " +
-                "'Modelica.Blocks.Continuous.Integrator integrator1(k = 2)'. Provide the component's type " +
-                "(a class id), a name, and optionally a modifier and a description. The modifier is a " +
-                "comma-separated list like 'k = 2, T = 10' (wrapped automatically as name(k = 2, T = 10)); " +
-                "use '= 5' for a plain binding value. Use visibility='protected' for a protected component " +
-                "(a protected section is created if the class has none). Use prefix for Modelica keywords " +
-                "such as 'parameter', 'constant', 'replaceable', 'final', 'inner'/'outer', 'flow'/'stream' " +
-                "(space-separated, in Modelica order, e.g. 'replaceable parameter'). constrainedBy adds a " +
-                "'constrainedby' clause (only with a replaceable prefix); condition makes the component " +
-                "conditional ('if <expr>'). Restricted-class rules are enforced: a package accepts only " +
-                "constants; a type has no components; a function's public components must be input/output " +
-                "(locals go in protected); a record takes only public data (no protected/flow/stream/input/" +
-                "output); a block's connectors must be causal. Fails if the name already exists or the result " +
-                "would not parse. Preview available.")]
-    public async Task<object> AddComponent(
-        [Description("Fully-qualified id of the class to add the component to.")] string classId,
-        [Description("The component's type — a class id (e.g. 'Modelica.Blocks.Continuous.Integrator') or a " +
-                     "built-in like 'Real'.")]
+    internal async Task<object> AddComponent(
+        string classId,
         string type,
-        [Description("The component's name (a valid Modelica identifier).")] string name,
-        [Description("Optional modifier(s): a comma-separated list like 'k = 2, T = 10' (becomes " +
-                     "name(k = 2, T = 10)); or a binding like '= 5'; or an already-parenthesised group " +
-                     "'(k = 2)'. A lone value like '5' is treated as '= 5'.")]
+        string name,
         string? modifier = null,
-        [Description("Optional description string.")] string? description = null,
-        [Description("Optional // comment line to place above the component.")] string? comment = null,
-        [Description("'public' (default) or 'protected' — which section to place the component in.")]
+        string? description = null,
+        string? comment = null,
         string visibility = "public",
-        [Description("Optional declaration prefix keyword(s), space-separated in Modelica order, emitted " +
-                     "verbatim before the type. E.g. 'parameter', 'constant', 'replaceable', 'final', " +
-                     "'inner', 'outer', 'flow', 'stream', 'replaceable parameter'. Do NOT put the type here.")]
         string? prefix = null,
-        [Description("Optional constraining clause for a replaceable component, e.g. " +
-                     "'Modelica.Media.Interfaces.PartialMedium' — emitted as 'constrainedby <value>'. Only " +
-                     "valid when prefix contains 'replaceable'.")]
         string? constrainedBy = null,
-        [Description("Optional condition making the component conditional, e.g. 'useHeatPort' — emitted as " +
-                     "'if <value>'.")]
         string? condition = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add a component") is { } readOnlyClass)
             return readOnlyClass;
@@ -128,7 +98,7 @@ public sealed class StructureEditTools
             return error;
 
         if (ctx!.Layout.Components.Any(c => string.Equals(c.Name, name, StringComparison.Ordinal)))
-            return new ToolError($"'{classId}' already has a component named '{name}'. Use mlqt_set_component_modifier or mlqt_remove_component first.");
+            return new ToolError($"'{classId}' already has a component named '{name}'. Use mlqt_edit_class's set_component_modifier or mlqt_edit_class's remove_component first.");
 
         // Restricted-class rules for components: a type has no body; a package may hold only constants.
         if (ctx.Node.ClassType == "type")
@@ -175,16 +145,10 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add component to '{classId}'"));
     }
 
-    [McpServerTool(Name = "mlqt_remove_component")]
-    [Description("Remove a component from a Modelica class by name. Handles both a component on its own line and one " +
-                "of several declared together (e.g. 'Real a, b, c;'). The connect() equations naming it are " +
-                "removed with it (those inside a for/if too) and listed in the result's note; other " +
-                "equations that use it are left for you to change. Fails if no such component exists or " +
-                "the result would not parse. Set preview=true to see the file text.")]
-    public async Task<object> RemoveComponent(
-        [Description("Fully-qualified id of the class.")] string classId,
-        [Description("The name of the component to remove.")] string name,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+    internal async Task<object> RemoveComponent(
+        string classId,
+        string name,
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "remove a component") is { } readOnlyClass)
             return readOnlyClass;
@@ -258,19 +222,11 @@ public sealed class StructureEditTools
         return first.IndexOf('[') is var bracket and >= 0 ? first[..bracket] : first;
     }
 
-    [McpServerTool(Name = "mlqt_set_component_modifier")]
-    [Description("Set (or clear) a component's modifier/binding in a Modelica class, e.g. change 'integrator1' to " +
-                "'integrator1(k = 2)' or set a parameter's value with '= 5'. The modifier is a " +
-                "comma-separated list like 'k = 2, T = 10' (wrapped as name(k = 2, T = 10)), a binding like " +
-                "'= 5', or a parenthesised group '(k = 2)'. Pass an empty modifier to remove an existing " +
-                "one. Fails if no such component exists or the result would not parse. Preview available.")]
-    public async Task<object> SetComponentModifier(
-        [Description("Fully-qualified id of the class.")] string classId,
-        [Description("The name of the component to modify.")] string name,
-        [Description("The new modifier: a list like 'k = 2, T = 10', a binding '= 5', or '(k = 2)'. " +
-                     "Empty string clears the modifier.")]
+    internal async Task<object> SetComponentModifier(
+        string classId,
+        string name,
         string modifier,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "modify a component") is { } readOnlyClass)
             return readOnlyClass;
@@ -305,77 +261,11 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"modify component in '{classId}'"));
     }
 
-    [McpServerTool(Name = "mlqt_add_extends")]
-    [Description("Add an 'extends' (inheritance) clause to a Modelica class, e.g. 'extends " +
-                "Modelica.Blocks.Interfaces.SISO'. Optionally set inherited defaults with a modifier — a " +
-                "comma-separated list like 'k = 2, T = 10' (wrapped as (k = 2, T = 10)) or an already- " +
-                "parenthesised group. Inserted at the top of the class. Fails if the result would not parse.")]
-    public async Task<object> AddExtends(
-        [Description("Fully-qualified id of the class.")] string classId,
-        [Description("The base class to extend (a class id).")] string baseType,
-        [Description("Optional modifier(s), e.g. 'k = 2, T = 10' or '(k = 2)'.")] string? modifier = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
-    {
-        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add an extends clause") is { } readOnlyClass)
-            return readOnlyClass;
-
-        if (string.IsNullOrWhiteSpace(baseType))
-            return new ToolError("baseType is required.");
-        var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
-        if (error is not null)
-            return error;
-
-        var trimmedMod = modifier?.Trim();
-        var mod = string.IsNullOrEmpty(trimmedMod)
-            ? string.Empty
-            : (trimmedMod.StartsWith("(", StringComparison.Ordinal) ? trimmedMod : "(" + trimmedMod + ")");
-        var line = $"extends {baseType.Trim()}{mod};";
-        var newClassCode = InsertElement(ctx!.ClassCode, ctx.Layout, line, atTop: true);
-
-        string? note = TypeResolver.Resolve(_libraries.CombinedGraph, classId, baseType, null) is null
-            ? $"Note: base class '{baseType}' does not resolve to a loaded class — check the name or load its library."
-            : null;
-
-        return ToResult(classId, note, await ClassBodyEditor.ApplyAsync(
-            _libraries, _resources, _session, ctx, newClassCode, preview, $"add extends to '{classId}'"));
-    }
-
-    [McpServerTool(Name = "mlqt_add_import")]
-    [Description("Add an 'import' statement to a Modelica class, e.g. 'Modelica.Units.SI', 'SI = Modelica.Units.SI' " +
-                "or 'Modelica.Constants.*'. Provide just the import target (no 'import' keyword). Inserted " +
-                "at the top of the class. Fails if the result would not parse.")]
-    public async Task<object> AddImport(
-        [Description("Fully-qualified id of the class.")] string classId,
-        [Description("The import target, e.g. 'Modelica.Units.SI', 'SI = Modelica.Units.SI', 'Modelica.Constants.*'.")]
-        string import,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
-    {
-        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add an import") is { } readOnlyClass)
-            return readOnlyClass;
-
-        if (string.IsNullOrWhiteSpace(import))
-            return new ToolError("import is required.");
-        var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
-        if (error is not null)
-            return error;
-
-        var line = $"import {import.Trim()};";
-        var newClassCode = InsertElement(ctx!.ClassCode, ctx.Layout, line, atTop: true);
-        return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
-            _libraries, _resources, _session, ctx, newClassCode, preview, $"add import to '{classId}'"));
-    }
-
-    [McpServerTool(Name = "mlqt_add_equation")]
-    [Description("Add an equation to a Modelica class's equation section (creating the section if needed), e.g. " +
-                "'y = k*x' or 'der(x) = u'. Do not include the trailing ';'. Only valid in a model, block or " +
-                "class (a package, record, connector, function or type cannot contain equations). Fails if " +
-                "the result would not parse. For connections use mlqt_add_connection; for algorithm statements " +
-                "use mlqt_add_statement.")]
-    public async Task<object> AddEquation(
-        [Description("Fully-qualified id of the class.")] string classId,
-        [Description("The equation, e.g. 'y = k*x' (no trailing ';').")] string equation,
-        [Description("Optional // comment line to place above the equation.")] string? comment = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+    internal async Task<object> AddEquation(
+        string classId,
+        string equation,
+        string? comment = null,
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add an equation") is { } readOnlyClass)
             return readOnlyClass;
@@ -396,52 +286,12 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add equation to '{classId}'"));
     }
 
-    [McpServerTool(Name = "mlqt_add_statement")]
-    [Description("Add a statement to a Modelica class/function's algorithm section (creating the section if " +
-                "needed), e.g. 'y := k*x'. Do not include the trailing ';'. Only valid in a model, block, " +
-                "class or function (a package, record, connector or type cannot contain an algorithm). " +
-                "Fails if the result would not parse.")]
-    public async Task<object> AddStatement(
-        [Description("Fully-qualified id of the class/function.")] string classId,
-        [Description("The statement, e.g. 'y := k*x' (no trailing ';').")] string statement,
-        [Description("Optional // comment line to place above the statement.")] string? comment = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
-    {
-        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add a statement") is { } readOnlyClass)
-            return readOnlyClass;
-
-        if (string.IsNullOrWhiteSpace(statement))
-            return new ToolError("statement is required.");
-        var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
-        if (error is not null)
-            return error;
-
-        if (!AlgorithmClassKinds.Contains(ctx!.Node.ClassType))
-            return new ToolError($"A {ctx.Node.ClassType} cannot contain an algorithm section — statements are " +
-                                 "only valid in a model, block, class or function.");
-
-        var line = WithComment(EnsureSemicolon(statement), comment, ctx.Layout.Indent);
-        var newClassCode = InsertIntoSection(ctx.ClassCode, ctx.Layout.AlgorithmAppendOffset, "algorithm", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
-        return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
-            _libraries, _resources, _session, ctx, newClassCode, preview, $"add statement to '{classId}'"));
-    }
-
-    [McpServerTool(Name = "mlqt_add_connection")]
-    [Description("Add a connect(portA, portB) equation to a Modelica class, e.g. connect(sine1.y, integrator1.u). " +
-                "Ports are component references (a connector on the class, or component.connector). Both " +
-                "ports must exist and resolve to connectors, and their connector types must be compatible " +
-                "(RealOutput to RealInput is fine; a signal port to a physical Pin is refused). If a type " +
-                "cannot be resolved the compatibility check is skipped with a note. Only valid in a model, " +
-                "block or class. If both connected components already have a Placement, a diagram Line is " +
-                "added automatically — routed orthogonally between the two connector positions, leaving each " +
-                "on its edge, and coloured by connector type. Fails if a port is missing/not a connector, " +
-                "the connectors are incompatible, or would not parse.")]
-    public async Task<object> AddConnection(
-        [Description("Fully-qualified id of the class to add the connection to.")] string classId,
-        [Description("One port, e.g. 'sine1.y' or a connector on the class like 'u'.")] string portA,
-        [Description("The other port, e.g. 'integrator1.u'.")] string portB,
-        [Description("Optional // comment line to place above the connection.")] string? comment = null,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+    internal async Task<object> AddConnection(
+        string classId,
+        string portA,
+        string portB,
+        string? comment = null,
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "add a connection") is { } readOnlyClass)
             return readOnlyClass;
@@ -506,16 +356,11 @@ public sealed class StructureEditTools
         return null;
     }
 
-    [McpServerTool(Name = "mlqt_remove_connection")]
-    [Description("Remove a connect(a, b) equation from a Modelica class by its two ports (order-insensitive). A " +
-                "connect inside a for/if/when equation is found too - give its ports as mlqt_list_connections " +
-                "shows them, e.g. 'a[i]'; the loop or branch is left in place. Fails if no matching " +
-                "connection exists. Set preview=true to see the file text.")]
-    public async Task<object> RemoveConnection(
-        [Description("Fully-qualified id of the class.")] string classId,
-        [Description("One port of the connection, e.g. 'sine1.y'.")] string portA,
-        [Description("The other port, e.g. 'integrator1.u'.")] string portB,
-        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+    internal async Task<object> RemoveConnection(
+        string classId,
+        string portA,
+        string portB,
+        bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "remove a connection") is { } readOnlyClass)
             return readOnlyClass;
@@ -538,14 +383,8 @@ public sealed class StructureEditTools
             _libraries, _resources, _session, ctx, newClassCode, preview, $"remove connection from '{classId}'"));
     }
 
-    [McpServerTool(Name = "mlqt_list_connections")]
-    [Description("List the connect(a, b) equations declared in a Modelica class, including those inside a " +
-                "for/if/when equation - each of those carries 'within', the branches it is in, outermost " +
-                "first (a loop's connect names its ports with the loop's index, e.g. 'a[i]'). Also lists base classes that " +
-                "themselves contain connections (their connections are NOT merged in — query those base " +
-                "classes directly if you need the full wiring picture). Read-only.")]
-    public object ListConnections(
-        [Description("Fully-qualified id of the class.")] string classId)
+    internal object ListConnections(
+        string classId)
     {
         // Read, not Open: listing writes nothing, so a read-only class answers like any other.
         var (layout, error) = ClassBodyEditor.Read(_libraries, classId);
@@ -602,7 +441,7 @@ public sealed class StructureEditTools
     // (one with neither an input nor an output prefix), returns that variable's name; otherwise null. Only
     // composite connectors carry named variables — an alias connector (e.g. RealInput = input Real) has
     // none, so it passes. When the type does not resolve (e.g. its library is not loaded) the rule cannot
-    // be applied and null is returned (mlqt_add_component already notes the unresolved type separately).
+    // be applied and null is returned (mlqt_edit_class's add_component already notes the unresolved type separately).
     private string? AcausalConnectorVariable(string classId, string type)
     {
         var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, classId, type, null);
@@ -731,102 +570,6 @@ public sealed class StructureEditTools
             return line;
         var oneLine = comment.Replace("\r", " ").Replace("\n", " ").Trim();
         return $"// {oneLine}\n{indent}{line}";
-    }
-
-    [McpServerTool(Name = "mlqt_batch_edit")]
-    [Description("Apply a sequence of surgical edits to a Modelica class ATOMICALLY — all succeed or none do. Ideal for " +
-                "building a whole model in one shot: e.g. add several components then connect them. Each " +
-                "operation's 'op' is one of add_component, remove_component, set_component_modifier, " +
-                "add_extends, add_import, add_equation, add_statement, add_connection, remove_connection, " +
-                "with the same arguments as the mlqt_ tool of that name (class_id plus the relevant fields; " +
-                "the op may be written with or without the mlqt_ prefix). Operations run " +
-                "in order and see earlier ones (so you can add a component and connect it in the same " +
-                "batch). If any operation fails, every change is rolled back and the failing operation is " +
-                "reported. Set preview=true to get the resulting files without keeping the changes.")]
-    public async Task<object> BatchEdit(
-        [Description("The operations to apply in order. Each: {op, classId, ...fields for that op}.")]
-        IReadOnlyList<BatchOperation> operations,
-        [Description("Apply then roll back, returning the resulting file contents without keeping them. Default false.")]
-        bool preview = false)
-    {
-        if (operations is null || operations.Count == 0)
-            return new ToolError("operations must be a non-empty array.");
-
-        // Pre-resolve every target file and snapshot its content, and reject unknown op names up front.
-        var snapshots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < operations.Count; i++)
-        {
-            var op = operations[i];
-            if (!KnownOps.Contains(OpName(op.Op)))
-                return new ToolError($"Operation {i} has unknown op '{op.Op}'. Valid ops: {string.Join(", ", KnownOps)}.");
-            var (ctx, error) = ClassBodyEditor.Open(_libraries, op.ClassId);
-            if (error is not null)
-                return new ToolError($"Operation {i} ({op.Op} on '{op.ClassId}'): {((ToolError)error).Error}");
-            snapshots.TryAdd(ctx!.FilePath, await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath));
-        }
-
-        // Apply in order; each op writes and reloads, so later ops see earlier ones.
-        for (var i = 0; i < operations.Count; i++)
-        {
-            var result = await Dispatch(operations[i]);
-            if (result is ToolError te)
-            {
-                await RollbackAsync(snapshots);
-                return new ToolError(
-                    $"Batch failed at operation {i} ({operations[i].Op} on '{operations[i].ClassId}'): {te.Error} " +
-                    "All changes were rolled back.");
-            }
-        }
-
-        if (preview)
-        {
-            var contents = snapshots.Keys.Select(p => new BatchFileChange(p, ModelicaFileEncoding.ReadAllTextOnly(p))).ToList();
-            await RollbackAsync(snapshots);
-            return new BatchEditResult(PreviewOnly: true, operations.Count, contents);
-        }
-
-        var files = snapshots.Keys.Select(p => new BatchFileChange(p, null)).ToList();
-        return new BatchEditResult(PreviewOnly: false, operations.Count, files);
-    }
-
-    private static readonly HashSet<string> KnownOps = new(StringComparer.Ordinal)
-    {
-        "add_component", "remove_component", "set_component_modifier", "add_extends", "add_import",
-        "add_equation", "add_statement", "add_connection", "remove_connection"
-    };
-
-    // An op is named after the tool that does the same edit, and an agent that has just called
-    // mlqt_add_component writes that name here too. Accept it rather than refuse the whole batch.
-    private static string OpName(string? op) =>
-        op is not null && op.StartsWith("mlqt_", StringComparison.Ordinal) ? op["mlqt_".Length..] : op ?? string.Empty;
-
-    private Task<object> Dispatch(BatchOperation op) => OpName(op.Op) switch
-    {
-        "add_component" => AddComponent(op.ClassId, op.Type ?? string.Empty, op.Name ?? string.Empty, op.Modifier, op.Description, op.Comment, op.Visibility ?? "public", op.Prefix, op.ConstrainedBy, op.Condition),
-        "remove_component" => RemoveComponent(op.ClassId, op.Name ?? string.Empty),
-        "set_component_modifier" => SetComponentModifier(op.ClassId, op.Name ?? string.Empty, op.Modifier ?? string.Empty),
-        "add_extends" => AddExtends(op.ClassId, op.BaseType ?? string.Empty, op.Modifier),
-        "add_import" => AddImport(op.ClassId, op.Import ?? string.Empty),
-        "add_equation" => AddEquation(op.ClassId, op.Equation ?? string.Empty, op.Comment),
-        "add_statement" => AddStatement(op.ClassId, op.Statement ?? string.Empty, op.Comment),
-        "add_connection" => AddConnection(op.ClassId, op.PortA ?? string.Empty, op.PortB ?? string.Empty, op.Comment),
-        "remove_connection" => RemoveConnection(op.ClassId, op.PortA ?? string.Empty, op.PortB ?? string.Empty),
-        _ => Task.FromResult<object>(new ToolError($"Unknown operation '{op.Op}'."))
-    };
-
-    // Restore every file that was actually modified back to its snapshot, then reload/refresh.
-    private async Task RollbackAsync(Dictionary<string, string> snapshots)
-    {
-        var affected = new List<string>();
-        foreach (var (path, original) in snapshots)
-        {
-            if (!File.Exists(path) || ModelicaFileEncoding.ReadAllTextOnly(path) == original)
-                continue; // untouched (e.g. an op failed before writing this file)
-            await ModelicaFileEncoding.WriteAllTextAsync(path, original);
-            affected.AddRange(await _libraries.ReloadFileAsync(path));
-        }
-        if (affected.Count > 0)
-            await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
     }
 
     // Normalise the modifier field into the text that follows a component name:

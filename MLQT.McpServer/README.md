@@ -97,9 +97,12 @@ builder.Services
   most of its time suspended waiting for collections. `HostGarbageCollectionTests` holds MLQT's hosts
   to it, and cannot see a host outside this repository.
 - **The instructions are MLQT's** unless `ConfigureServer` replaces them, which it runs after setting
-  them. A host whose tools differ should replace rather than append: MLQT's use 1,892 characters of
+  them. A host whose tools differ should replace rather than append: MLQT's use 1,998 characters of
   a 2,000-character budget, and Claude Code keeps only about the first 2,048, so appended text is
   what gets dropped.
+- **The tools are the 16 since B503**, and a host built on an earlier release moves with that one: the
+  old names are not kept. `Documentation/mcp-server.md` §Moving from the 66 tools maps each to its
+  replacement.
 
 **What a host may rely on** is `AddMlqtMcpServer`, `MlqtMcpServerOptions` and the `ToolUsageLogger`
 they name - held by `MlqtMcpServerSurfaceTests` rather than the public-API analyzer, which cannot track
@@ -109,58 +112,60 @@ host that depends on one pins it in its own tests.
 
 ## Key concepts
 
-- **Load first.** Almost every tool operates on an in-memory graph. Use `mlqt_load_repository` (a Git/SVN
-  working copy or directory of libraries) or `mlqt_load_library` (one library directory, `.mo` file, or an
-  encrypted `package.moe` library, whose classes come from the vendor's shipped documentation).
+- **Load first.** Almost every tool operates on an in-memory graph. `mlqt_load` takes library
+  directories, `.mo` files, encrypted `package.moe` libraries (whose classes come from the vendor's
+  shipped documentation), Git/SVN working copies, or a Dymola startup script, and loads their
+  dependencies too.
 - **Class ids are fully-qualified dotted names** (e.g. `Modelica.Blocks.Continuous.Integrator`). Use
-  `mlqt_search_classes` to find one.
-- **Analysis is opt-in.** Loading only parses structure. Dependency edges, impact and external
-  resources require `mlqt_analyze_dependencies` first (potentially slow). Style checking is opt-in via
-  `mlqt_check_class` / `mlqt_check_library`. Query results carry a `dependenciesAnalyzed` flag so an empty
-  result is unambiguous.
-- **Writes.** Most tools are read-only. `mlqt_format_class` and `mlqt_correct_spelling` update the graph and
-  write the `.mo` file to disk (unless `preview: true`). `mlqt_correct_spelling` changes the word and
-  nothing else — the file keeps its layout and line endings, so the edit is a one-word diff; use
-  `mlqt_format_class` when reformatting is what you want. `mlqt_format_code` / `mlqt_check_style` are stateless.
-  `mlqt_format_class` refuses a file holding a class excluded from formatting (`__MLQT(format=false)`,
-  `preserveOrder=true`, or the repository's excluded list), as the desktop app's formatter does, and
-  its `declarationOrder` option resolves types the way `mlqt_check_class` does, so it clears exactly the
-  `MLQT.Style.DeclarationOrder` findings that tool reports.
-- **VCS.** Only two, Modelica-aware, read-only tools are provided. Generic git/svn (commit, log,
-  push, branch) is left to the CLI.
+  `mlqt_find` to find one.
+- **Analysis runs when needed.** Loading only parses structure. Dependency edges, impact and external
+  resources need the dependency analysis (potentially slow), which `mlqt_dependencies`,
+  `mlqt_refactor_class` and a library-wide `mlqt_check` run themselves the first time. Query results
+  carry a `dependenciesAnalyzed` flag so an empty result is unambiguous.
+- **Writes.** `mlqt_write_class`, `mlqt_edit_class`, `mlqt_refactor_class` and `mlqt_format` write
+  `.mo` files and update the graph (unless `preview: true`). `mlqt_edit_class`'s `correct_spelling`
+  changes the word and nothing else — the file keeps its layout and line endings, so the edit is a
+  one-word diff; use `mlqt_format` when reformatting is what you want. `mlqt_format` with `source`
+  and `mlqt_check` with `source` are stateless. `mlqt_format` refuses a file holding a class excluded
+  from formatting (`__MLQT(format=false)`, `preserveOrder=true`, or the repository's excluded list),
+  as the desktop app's formatter does, and its `declarationOrder` option resolves types the way
+  `mlqt_check` does, so it clears exactly the `MLQT.Style.DeclarationOrder` findings that tool reports.
+- **VCS.** `mlqt_dependencies` maps a working copy's changes, or a revision's, to the classes they
+  touched and what depends on them. Generic git/svn (commit, log, push, branch) is left to the CLI.
 - Call **`mlqt_get_guidance`** (optionally with a topic) for workflow recipes.
 
 ## Tools
 
-| Group | Tools |
-|-------|-------|
-| Meta | `mlqt_get_guidance`, `mlqt_server_info` |
-| Session / library | `mlqt_create_library`, `mlqt_load_repository`, `mlqt_load_library`, `mlqt_list_libraries`, `mlqt_list_repositories`, `mlqt_discover_libraries`, `mlqt_reload`, `mlqt_unload_library` |
-| Class query | `mlqt_get_class_info`, `mlqt_get_class_source`, `mlqt_list_classes`, `mlqt_search_classes`, `mlqt_get_package_tree` |
-| Class views | `mlqt_get_class_interface`, `mlqt_list_class_elements`, `mlqt_get_class_documentation`, `mlqt_get_class_behavior`, `mlqt_validate_class_references` |
-| Search | `mlqt_search_text`, `mlqt_search_by_interface` |
-| Documentation | `mlqt_set_class_description`, `mlqt_set_component_description`, `mlqt_set_class_documentation` (read with `mlqt_get_class_documentation`) |
-| Diagram | `mlqt_get_diagram_layout`, `mlqt_get_diagram_image` (renders the diagram as a PNG), `mlqt_set_component_placement` |
-| Dependencies & impact | `mlqt_analyze_dependencies`, `mlqt_get_dependencies`, `mlqt_find_usages`, `mlqt_analyze_impact` |
-| Code quality | `mlqt_get_style_settings`, `mlqt_set_style_settings`, `mlqt_check_style`, `mlqt_check_class`, `mlqt_check_library`, `mlqt_list_findings`, `mlqt_suppress_rule`, `mlqt_accept_spelling_in_class` |
-| Spelling | `mlqt_spell_check`, `mlqt_spelling_suggestions`, `mlqt_correct_spelling` |
-| Editing (class) | `mlqt_create_class`, `mlqt_update_class_source`, `mlqt_rename_class`, `mlqt_move_class`, `mlqt_delete_class` |
-| Editing (elements) | `mlqt_add_component`, `mlqt_remove_component`, `mlqt_set_component_modifier`, `mlqt_add_extends`, `mlqt_add_import`, `mlqt_add_equation`, `mlqt_add_statement`, `mlqt_add_connection`, `mlqt_remove_connection`, `mlqt_list_connections`, `mlqt_batch_edit` |
-| Formatting | `mlqt_format_code`, `mlqt_format_class` |
-| External resources | `mlqt_get_class_resources`, `mlqt_find_resource_usages`, `mlqt_get_resource_warnings` |
-| Modelica-aware VCS | `mlqt_get_changed_classes`, `mlqt_analyze_change_impact` |
+| Tool | What it does |
+|------|--------------|
+| `mlqt_load` | Loads `paths` (libraries, `.mo` files, working copies) or a startup `script`, then their dependencies (`withDependencies`, default on; `tool`, `toolInstall` for whose library folders to search); `replace`, `discoverOnly` |
+| `mlqt_session` | `action`: `status` (what is loaded, when, and what is still missing), `unload`, `reload` from disk, `reset` |
+| `mlqt_create_library` | Writes and loads an empty top-level library |
+| `mlqt_find` | `match`: `name`, `text` (documentation prose), `interface` (shape) or `code` (a line of source) |
+| `mlqt_browse` | The package tree from `root`, to a `depth` |
+| `mlqt_get_class` | Up to 20 `classIds`, in the `views` asked for: `info`, `source`, `interface`, `elements`, `behavior`, `connections`, `documentation`, `layout`, `resources` |
+| `mlqt_get_diagram_image` | Renders a class's diagram as a PNG |
+| `mlqt_write_class` | Writes whole classes, each created in its parent or, with `replace: true`, replaced |
+| `mlqt_edit_class` | Operations on one class, all or none: `replace`, `add_component`, `remove_component`, `set_component_modifier`, `add_equation`, `add_connection`, `remove_connection`, `set_component_placement`, `set_class_description`, `set_component_description`, `set_class_documentation`, `suppress_rule`, `accept_spelling`, `correct_spelling` |
+| `mlqt_refactor_class` | `action`: `rename`, `move` or `delete`, every reference rewritten |
+| `mlqt_format` | Formats a class's file, a whole library, or text |
+| `mlqt_check` | `checks`: `style`, `spelling` (with suggestions), `references`, `resources`, on a class, a library or text |
+| `mlqt_list_findings` | Pages through the findings a check stored |
+| `mlqt_style_settings` | Reads a repository's rules, or changes them when `settings` is given |
+| `mlqt_dependencies` | What `classIds` use or are used by (`direction`, `transitive`), a working copy's or revision's changes (`repositoryId`, `revision`), or a resource's users (`resourcePath`) |
+| `mlqt_get_guidance` | Recipes by topic |
 
-`mlqt_check_class` / `mlqt_check_library` always report parse errors (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, regardless of which style rules are enabled — the same diagnostics the desktop app and `mlqt check` report, with identical wording and line numbers.
+`mlqt_check` always reports parse errors (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, regardless of which style rules are enabled — the same diagnostics the desktop app and `mlqt check` report, with identical wording and line numbers.
 
 A style finding carries the severity the repository configured for its rule, as `Style error`, `Style warning` or `Style info`, so `mlqt_list_findings severity:"error"` selects rules the team set to Error without also matching the parse diagnostics' bare `Error`. Checking a library uses that repository's accepted spellings (`.mlqt/dictionary.txt`) as well as its rules, so the finding count matches the desktop app and `mlqt check` on the same source.
 
-`mlqt_set_style_settings` **merges**: every rule toggle is optional, and one you leave out keeps the value it had. It writes the repository's committed `.mlqt/settings.json`, so this matters — sending a whole object to change one rule would otherwise rewrite the other twenty-eight. `mlqt_get_style_settings` reports whether each rule is *switched on*, not whether it would currently run, so reading, changing one key and writing back is faithful even for a rule sitting behind a prerequisite that is off.
+`mlqt_style_settings` **merges**: every rule toggle is optional, and one you leave out keeps the value it had. It writes the repository's committed `.mlqt/settings.json`, so this matters — sending a whole object to change one rule would otherwise rewrite the other twenty-eight. `mlqt_style_settings` reports whether each rule is *switched on*, not whether it would currently run, so reading, changing one key and writing back is faithful even for a rule sitting behind a prerequisite that is off.
 
 ## Project layout
 
 - `Program.cs` — the stdio host: transport, stderr logging, the tool-usage logger.
 - `MlqtMcpServerExtensions.cs` / `MlqtMcpServerOptions.cs` — `AddMlqtMcpServer`: DI wiring (the desktop host's list, minus what needs a window), tools, instructions, the coercion filter.
-- `Tools/` — one `[McpServerToolType]` class per group.
+- `Tools/` — the 16 tools, in the 11 `[McpServerToolType]` classes, and the classes they call, which hold each behaviour. Those were tools of their own until B503 cut 66 to 16, which is why each still reads as one: its methods are `internal` now, and the tests call them directly.
 - `Dtos/` — trimmed, serialization-friendly result types (no UI/layout fields).
 - `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, and the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`, `DiagramImage`).
 - `DiagramImage` composes a class's diagram — each component's own icon at its placement, plus the connection lines — through `ModelicaParser`'s `DiagramSvgRenderer`, and rasterises it with Svg.Skia. **SkiaSharp's drawing is a native library published per runtime identifier**, so `build/publish-tools.sh` checks it is in the tree: it is not loaded until a diagram is asked for, and a tree missing it answers every other tool perfectly.
@@ -172,7 +177,7 @@ A style finding carries the severity the repository configured for its rule, as 
 - `Services/ToolArgumentCoercion.cs` — turns a quoted boolean or number into the scalar a tool's input schema asks for.
 - `Services/ServerInstructions.cs`, `ToolUsageLogger.cs`, `McpHostSettings.cs` — the connect-time instructions, the opt-in usage log, and the generic host's settings.
 - `Helpers/WireNames.cs` — the text each enum in a result is sent as, spelled rather than taken from `ToString()`.
-- `dev/` — stdio test drivers (`smoke.sh`, `mcp_test.py`, `dep_test.py`, `vcs_test.py`).
+- `dev/smoke.sh` — an `initialize` handshake over stdio. Calling tools by hand is what McpTester is for, and `InProcessServer` in the tests.
 
 ## Tests
 

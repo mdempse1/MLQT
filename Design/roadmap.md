@@ -30,7 +30,7 @@ by shared root cause; all sixteen are complete. What it delivered:
 | **Rules and formatting** | `ComponentsBeforeClasses`, `DeclarationOrder`, `SingleFilePackage` and a match-Dymola package-order option; excision instead of re-rendering in the trimmer; every write keeps its file's final newline and line endings; formatting exclusion written as `__MLQT(format=false)` |
 | **Performance** | A Claytex check went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
 | **External tools and revision control** | A result dialog, dead-session recovery, a time limit per tool and Cancel reaching a running check, for both Dymola and OpenModelica; tags and detached HEAD, history diffs against the predecessor, and revision content decoded by MLQT's encoding funnel |
-| **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class_source` elides rather than re-renders, so its lines match the findings |
+| **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class`'s source view elides rather than re-renders, so its lines match the findings |
 | **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
 
 **Then the end-of-branch review of 2026-09-25 opened B302–B369**, with eight reviewers each reading
@@ -154,6 +154,20 @@ as the plain one does. The rules and their guard tests are in `CODING_GUIDELINES
 Must Survive Obfuscation; the verification is `Design/release-checklist.md` §7. The design note was
 retired with it.
 
+### Alongside: MCP tool consolidation (B503) — done, ships in the next release
+
+The MCP server went from 66 tools to 16 (cut over 2026-10-20). The gaps that sent agents round MLQT
+were closed first: a text-patch edit, a search over code, many classes in one call, a whole-library
+format, dependencies found and loaded, a Dymola startup script read, and bounded answers. Measured
+before: in four real model-building sessions, at least 117 writes to `.mo` files and about 240 reads
+went through the agent's own shell and file tools, while 44–59 of the 66 tools went uncalled. After:
+the harness on the 16 is better on aggregate, and both real-world scenarios are level on shell reads
+and writes with the 66 at their best. `Documentation/mcp-server.md` §Moving from the 66 tools maps
+each old tool for hosts and clients; `.claude/skills/skill-mcp-library-loading.md` keeps how loading
+works and what the measurements taught. The plan, `Design/mcp-tool-consolidation.md`, was retired
+when it landed, and its history has every measurement. Before the release, re-run the protected-build
+comparison of `Design/release-checklist.md` §7 against the 16.
+
 ### Deferred, with no place in the sequence
 
 **macOS.** Photino supports it and the intent predates the migration, but nothing depends on it and
@@ -218,12 +232,15 @@ B492 and B496 are intermittent journey failures, each seen once and not reproduc
 recurs, find the cause from its evidence. Never add a retry.**
 
 B501 is a limitation found while fixing how omc and Dymola are started, not a failure anyone has seen.
+B505 is a limitation of the MCP server found measuring B503; what can be said and refused without a
+change of design is in place, and the rest is a design item.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
 | B496 | On Windows CI, `CodeReviewToolbarJourney`'s navigation failed with `ERR_CONNECTION_FAILED` while the host was up (run 36398522354). It failed within 10 ms, between two successful requests, and the `GET /` never reached Kestrel | A traced Chromium run writes `chromium-netlog.json`, and the host logs Kestrel connection events (`skill-gui-testing.md`). Find the failed `TCP_CONNECT_ATTEMPT` for the port and read its `os_error` |
 | B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and a host that puts omc in a Job Object ends it when that host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
+| B505 | Tasks that share one MLQT MCP server share one session. A client keeps its servers across `/clear` and new sessions, subagents use their parent's, and sessions of one app running at once may share them; MCP gives a server no conversation id, and MLQT holds one copy of each library under ids that do not say whose. So a conversation can inherit what an earlier one loaded, and two tasks editing their own copies of one library would edit one copy. In place: every library says when it was loaded, a second copy is refused with why and what replacing it does (whatever its folder is called), a reset goes back to empty, and `analyse` flags a run whose server was not new. Until the design below, the documentation says to give each such task a server of its own | Design sessions scoped to a workspace inside one server: each task's libraries kept apart, keyed by the folder they were loaded from, with every call naming its workspace - an id `mlqt_load` returns, or the client's MCP roots where it sends them. Every tool takes part, so it needs a design note of its own |
 
 ---
 
@@ -236,7 +253,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B503**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B506**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row

@@ -1,0 +1,337 @@
+# Scenario: an overtake mode for a Formula 1 car's energy recovery, with Dymola
+
+**Status: draft for review.**
+
+## Where it comes from
+
+A session on 2026-10-17 built a 2026 Formula 1 car in Dymola, as a library `Formula1` beside the three
+commercial vehicle libraries it builds on. It made 416 tool calls in 86 minutes:
+107 to MLQT, 61 of them `create_class`, and 74 that bypassed MLQT through the shell, mostly grep, sed
+and Python edits. That `Formula1` library is about 60 classes:
+- an ERS controller and energy manager, the MGU-K and its power limit, and the energy store;
+- engine, gearbox, brakes, active aero, tyres, a driver with a scripted steering wheel;
+- the car, a demo circuit, a flying-lap experiment and component tests.
+
+**This scenario starts from that library rather than from nothing.** An energy recovery system written
+from nothing would lack the car, the driver and the lap that give it meaning. A change to the one that
+exists keeps that context. It also aims at the largest gap the plan found, **editing existing classes**:
+most of the session's bypassing was patching classes it had already written. One of those patches added
+an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
+
+## Needs
+
+- **The machine where Dymola is licensed.** It is not licensed on the machine the harness runs on, so
+  this scenario runs there. Run `analyse` there too, or copy the session's transcript (under
+  `~/.claude/projects/`) and the MLQT log back.
+- **The Dymola release and the versions of the commercial libraries the original session used.** Every run of this
+  scenario must use the same ones, or its results cannot be compared. They are recorded in the run
+  notes on the test machine, not in this repository.
+- **A snapshot of the `Formula1` library** as the 2026-10-17 session left it. It **must never be
+  committed to this repository**, because it contains classes copied from a commercial Modelica
+  library and modified. It stays on the test machine, and so do the commercial libraries. Each run copies
+  the snapshot into the run folder, beside the three commercial libraries, as the original
+  session had them. Where the snapshot is kept is in the run notes too.
+- **A startup script** that opens the four libraries, with the Dymola MCP server configured to run it.
+  The original session had none. It is added because loading what a startup script opens is a step
+  the plan adds for Dymola, and this is the scenario that can test it. The script, anonymised, can also
+  be one of the script-reader fixtures.
+- The MLQT MCP server, and the Dymola MCP server. No other server that touches Modelica.
+
+## Prompt
+
+> Dymola is started with the startup script at `<startup script>`, which opens the libraries this
+> project uses, including the library Formula1 in this folder. Formula1 models a 2026 Formula 1 car.
+> Add a driver-selectable overtake mode to its energy recovery system. When the driver selects it, the
+> MGU-K may deploy an extra 0.5 MJ per lap. Every other limit stays as it is, including the power limit
+> and how the power tapers with speed. The extra energy lets the car keep accelerating harder for
+> longer. Expose the mode as a parameter of the driver profile, wire it through to the ERS controller,
+> and add a test of the controller that shows the difference. Then simulate the flying-lap experiment
+> with and without overtake mode, and tell me the lap time, the energy deployed and the final state of
+> charge for each.
+
+**If the agent asks:**
+- Should any other limit change? "No. Only the energy that may be deployed per lap, by 0.5 MJ."
+- May it change other classes? "Yes, wherever the mode has to reach."
+
+## Done when
+
+1. The driver profile has an overtake-mode parameter, and it reaches `ERSController` through the
+   classes in between. No class is duplicated to do it.
+2. A new test of the controller shows its deployment allowance with the mode on and off, differing
+   by 0.5 MJ per lap. The power limit and its taper are the same in both.
+3. MLQT has the four libraries the startup script opens loaded, from the run folder.
+4. Dymola checks the flying-lap experiment without errors, and simulates it both ways.
+5. The answer gives lap time, energy deployed and final state of charge for both runs. With overtake
+   mode, the energy deployed is higher by no more than 0.5 MJ, and the lap is no slower.
+
+## Results
+
+| Date | MLQT commit | Toolset | Done when (of 5) | Minutes | MLQT calls | MLQT errors | Bypass writes | Bypass reads | `reload` | Tokens in | Tokens out |
+|---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| 2026-10-18 | fa80416 | current | 4 of 5 | 25 | 2 | 0 | 10 | 7 | 0 | 10,714,006 | 45,340 |
+| 2026-10-19 | e6e94ba | current + step 1 | 5 of 5 | 17 | 13 | 0 | 0 | 7 | 0 | 8,068,590 | 42,972 |
+| 2026-10-19 | 56d1eb4 | step 1 + search-first instructions | 4 of 5, item 3 unverified | 22 | 2 | 0 | 19 | 5 | 0 | 11,695,180 | 43,170 |
+| 2026-10-19 | 56d1eb4 | step 1 + search-first instructions, rerun | 3 of 5 | 18 | 0 | 0 | 13 | 8 | 0 | 8,319,313 | 31,030 |
+| 2026-10-19 | bb7d8c2 | step 1 + work-naming instructions | 5 of 5 | 19 | 31 | 0 | 0 | 0 | 0 | 10,008,860 | 42,827 |
+| 2026-10-19 | e10d10a | + B504 fixes | 5 of 5 | 14 | 27 | 0 | 1 | 1 | 1 | 7,755,059 | 32,274 |
+| 2026-10-19 | ea7f85e | consolidated (16 tools) | 4 of 5, item 2 at 0.45 MJ | 34 | 16 | 0 | 0 | 5 | 0 | 9,121,105 | 39,108 |
+| 2026-10-19 | ea7f85e | consolidated (16 tools), rerun | 5 of 5 | 37 | 18 | 1 | 7 | 5 | 0 | 19,337,751 | 69,510 |
+| 2026-10-20 | ea7f85e | consolidated (16 tools), clean rerun | 5 of 5 | 14 | 15 | 0 | 1 | 5 | 0 | 7,772,790 | 41,921 |
+| 2026-10-20 | 0854b15 | consolidated + read-first `get_class` | 4 of 5, item 5 no gain | 14 | 16 | 0 | 0 | 1 | 0 | 6,476,508 | 26,626 |
+| 2026-10-20 | 0854b15 | consolidated + read-first `get_class`, rerun | 5 of 5, steered once | 14 | 21 | 0 | 0 | 0 | 0 | 7,605,326 | 33,066 |
+
+**2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
+The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
+so this run was steered once. Its MLQT log was not kept, so there are no server times.
+
+- **Result.** Items 1, 2, 4 and 5 held.
+  - With overtake mode the lap took 96.58 s against 96.79 s.
+  - It deployed 5.48 MJ against 5.17 MJ, 0.31 MJ more.
+  - The state of charge at the line was 11.8 % against 19.3 %.
+  - The agent found that the library already had an `overtakeMode` that switched the speed taper. It
+    renamed that `overtakeTaper` and gave the name to the new mode.
+- **Item 3 failed.** MLQT loaded only `Formula1`. Dymola ran the startup script, but the agent never
+  loaded the three libraries it opens into MLQT. It read them through the shell instead: `grep` and
+  `sed` over two of the commercial libraries.
+- **Almost everything went round MLQT.** Of 105 tool calls, 2 were MLQT: one `load_library` and one
+  `create_class`, the new test.
+  - **Writes:** 10, all through the shell. That is 8 Python find-and-replace scripts on `.mo` files,
+    one `sed -i` and one `printf` into a `package.order`.
+  - **Reads:** 7 shell reads of `.mo` files: `cat`, `grep`, `sed -n` and `find`.
+  - **`reload`:** none in MLQT, because MLQT was never kept in step. The simulator reloaded instead:
+    7 `open_model` and 3 `erase_classes`. `get_job_status` was polled 29 times while simulations ran.
+- **The plan's step 1 targets these gaps:** a `replace` edit in place of the Python scripts, code
+  search in place of `grep`, and loading what a startup script opens.
+
+**2026-10-19, after step 1.** Run interactively on the test machine, with no steering. Tool Search
+was on, and the build predates the instructions that point searches at `mlqt_find`. Its MLQT log
+was not kept, so there are no server times.
+
+- **Result.** All five items held.
+  - With overtake mode the lap took 96.52 s against 96.80 s.
+  - It deployed 5.57 MJ against 5.17 MJ, 0.40 MJ more. The new test shows the allowance at 0.500 MJ;
+    the rest went on recovering 0.03 MJ less and on deployment after the line.
+  - The state of charge at the line was 10.2 % against 19.3 %.
+  - The agent removed the library's existing `overtakeMode`, which switched the speed taper, rather
+    than renaming it as the baseline run did.
+- **Item 3 held, but not through the startup script.** The agent read the script, saw that it
+  pointed at an earlier copy of the run folder, and passed the four libraries to `mlqt_load` by path
+  from this one. Given the script as `script`, MLQT would have loaded the other copy. That is the
+  script's fault, not the reader's: Dymola would have loaded it too, as the agent said.
+- **Every change to a `.mo` file went through MLQT.** Of 74 tool calls, 13 were MLQT: 2 `load`,
+  10 `edit_class` and 1 `create_class`, the new test.
+  - **Writes:** none to a `.mo` file, against 10. Two went to `runTests.mos`, the library's test
+    script, which MLQT does not edit: adding the new test, and giving each test its own stop time.
+    The rest were the agent's scratch files: a corrected copy of the startup script, a script to run
+    both laps, and a Python script that summarised the results.
+  - **Reads:** 7 shell reads of `.mo` files, unchanged: `cat` of the classes the change runs through,
+    `grep` and `sed -n` over a commercial library, and `diff -rq` between the two copies of the run
+    folder. `mlqt_find` and `mlqt_get_class_source` were not called; the next run, with the revised
+    instructions, measures whether they replace these.
+  - **`reload`:** none. `get_job_status` was polled 17 times while simulations ran, against 29.
+- **Step 1's criterion is met**: bypass writes to the library 10 → 0, with `reload` still 0. The run
+  took 17 minutes against 25, and 8.1 M input tokens against 10.7 M.
+
+**2026-10-19, with the search-first instructions (0c23e76).** Run interactively on the test machine,
+Tool Search on, with the MLQT log kept. The agent asked one question, how the extra energy should be
+allowed when the per-lap limit is switched off, so the run was steered once.
+
+- **Result.** Items 1, 2, 4 and 5 held: the lap took 96.66 s against 96.79 s, deployed 5.60 MJ against
+  5.17 MJ (0.43 MJ more, 0.50 MJ of it from the allowance), and ended at 9.5 % against 19.3 %. Item 3
+  is unverified: the agent passed the startup script to `mlqt_load`, and the analysis does not keep
+  what the load answered.
+- **The library was changed almost entirely around MLQT.** Of 95 tool calls, 2 were MLQT, both after
+  the edits had begun: one `load` (9.1 s) and one `get_class_source` of a commercial library's class
+  (8 ms). The agent's first tool search loaded only the simulator's tools.
+  - **Writes:** 19 to the library: 3 `Edit`, 8 Python find-and-replace scripts and 4 `sed -i` on
+    `.mo` files, 2 `Write` of new classes, and 2 writes to a `package.order`.
+  - **Reads:** 5 shell reads of `.mo` files.
+- **What changed in the instructions.** The opening sentence had said to use MLQT whenever you
+  "read, create or edit Modelica code". The revision replaced that with "for any Modelica work",
+  led with searching, and named only `mlqt_load` and `mlqt_find` for an agent to load. In the harness
+  that moved searching to MLQT; here, with no search to do, nothing named the edit tools. One run
+  each is not enough to be sure that is the cause.
+
+**2026-10-19, the same build again.** Run to see whether the run before was variance. Tool Search
+on, no steering. The transcript shows MLQT connected and its instructions delivered as written.
+
+- **Result.** Items 1, 2 and 4 held. **Item 3 failed**: MLQT was never called, so it loaded nothing.
+  **Item 5 failed**: the agent raised the per-lap deployment limit by 0.5 MJ, and since that limit is
+  switched off in this model (1e9 J), both laps were identical to the digit, 96.796 s and 5.168 MJ.
+  It reported that overtake mode makes no difference on this lap. It did not see that the energy has
+  to come from below the state-of-charge floor, which the battery reaches 45 s in. The run before
+  asked the user that question; this one did not ask.
+- **No MLQT calls at all.** The agent's three tool searches loaded only the simulator's tools.
+  - **Writes:** 13 to the library: 6 `Edit`, 3 Python find-and-replace scripts and 2 `sed -i` on
+    `.mo` files, a `Write` of the new test, and a heredoc writing the new experiment.
+  - **Reads:** 8 shell reads of `.mo` files, three of them `grep` over two commercial libraries.
+- **Two runs on this wording, 2 and 0 MLQT calls; one on the step 1 wording, 13.** That is no longer
+  one run against one. The step 1 opening sentence named the work - "read, create or edit Modelica
+  code" - and the agent used MLQT for every edit; the search-first sentence names questions and
+  searching, and in both runs the agent edited with its own tools without searching for MLQT's.
+
+**2026-10-19, with the work-naming instructions (bb7d8c2).** Tool Search on, no steering, MLQT log
+kept: 31 calls, 25 s of server time, 23 s of it the load.
+
+- **Result.** All five items held, the first run to do so without being steered.
+  - With overtake mode the lap took 96.57 s against 96.79 s, deployed 5.48 MJ against 5.17 MJ
+    (0.31 MJ more: of the 0.50 MJ allowance, 0.13 MJ went mid-lap and was refilled under braking),
+    and ended at 11.7 % against 19.3 %.
+  - The agent saw that the energy had to come from below the state-of-charge floor, without asking.
+    It renamed the existing taper switch `overtakeTaper`, as the baseline run did.
+- **Item 3 held through the startup script.** `mlqt_load` with `script` loaded the four libraries and
+  `Formula1` from the run folder, then the MSL and the other libraries they use from Dymola's
+  library folder.
+- **The work was done through MLQT.** The agent's first tool search loaded MLQT's tools, before
+  any read. Of 91 tool calls, 31 were MLQT: 1 `load`, 1 `get_package_tree`, 9 `get_class_source`,
+  3 `find` (`match: code`), 15 `edit_class` and 2 `create_class`.
+  - **Writes and reads:** none outside MLQT. The one shell call listed the folder and printed the
+    startup script.
+  - **`reload`:** none. `get_job_status` was polled 21 times.
+- **The dependency search used an older Dymola than the one running (B504).** The Dymola server
+  started a beta release; MLQT's detection does not look for a beta's folder, so it searched the
+  newest release it does look for. Four libraries the commercial libraries name were then not found
+  at their versions; the nearest copies were a patch release older. It did not affect this run,
+  which only read and changed `Formula1`.
+- **Against the baseline:** bypass writes 10 → 0, bypass reads 7 → 0, MLQT calls 2 → 31. Against
+  the two search-first runs, the same task went from 2 and 0 MLQT calls to 31. That is the
+  difference between an opening sentence naming questions and one naming read, search, create and
+  edit, with a tool to load for each.
+
+**2026-10-19, with the B504 fixes (e10d10a).** Tool Search on, no steering, MLQT log kept: 27 calls,
+10.7 s of server time, 8.9 s of it the load.
+
+- **Result.** All five items held. With overtake mode the lap took 96.57 s against 96.89 s,
+  deployed 5.48 MJ against 5.17 MJ (0.31 MJ more), and ended at 11.8 % against 19.3 %. The agent
+  again took the energy from below the state-of-charge floor without asking. There was no separate
+  `check_model` call; both laps translated and simulated.
+- **The dependency search used the Dymola that was running.** Detection found the beta's folder
+  and `mlqt_load` searched its library folder, saying so (`toolInstallChosen`: the newest found).
+  The two libraries missing at their versions in the last run were found. Of the four, one is an
+  encrypted library with no usable documentation, which the answer said, and one is installed
+  nowhere on the machine.
+- **MLQT did almost all of it.** The first tool search loaded MLQT's tools. Of 79 tool calls, 27
+  were MLQT: 1 `load`, 10 `get_class_source`, 5 `find`, 8 `edit_class`, 2 `create_class`, 1 `reload`.
+  - **Writes:** one to a `.mo` file outside MLQT: `sed -i` renaming every `normal.controlBus.` in
+    the new test, followed by `mlqt_reload`. `mlqt_edit_class`'s `replace` refuses text that occurs
+    more than once, which is the likely reason. One more `sed -i` added the new test to
+    `runTests.mos`, which MLQT does not edit.
+  - **Reads:** one, the head of a `.mo` file, beside two `package.order` reads.
+  - The other shell calls read the result files with Python in the agent's scratch folder.
+
+**2026-10-19, on the consolidated set (ea7f85e, B503 step 3).** Tool Search on, MLQT log kept: 16
+calls, 13.5 s of server time, 11.7 s of it the load. **Steered once, early**: before loading anything
+into MLQT the agent asked how the extra energy should be made available, and the answer was that the
+motor may deploy and recover it during the lap. The span (34 minutes) includes the wait for that answer.
+
+- **Result.** Items 1, 3, 4 and 5 held: the lap took 96.68 s against 96.80 s, deployed 5.44 MJ against
+  5.17 MJ (0.27 MJ more; the normal lap already dips 0.14 MJ below the floor), and ended at 12.5 %
+  against 19.3 %. The agent also raised the per-lap recovery limit by 0.5 MJ, as answered, and added a
+  hard floor so that an allowance not recovered cannot be spent again on the next lap.
+- **Item 2 is borderline.** The new test keeps the power limit and taper equal, and the allowance is
+  0.5 MJ, but the deployment it reports differs by 0.45 MJ (1.085 against 0.632 MJ), which the agent
+  put down to the ramp-down after the floor. Strictly, not 0.5 MJ.
+- **Item 3 held through the startup script.** The load searched the Dymola that was running, and found
+  every library but one that is installed nowhere on the machine.
+- **Every change to a `.mo` file went through MLQT**: 10 `edit_class` and 3 `write_class`. The one shell
+  write was `runTests.mos`, which MLQT does not edit.
+- **The shell reads came back: 5**, against none in the last two runs. The first tool search loaded
+  MLQT's tools, and the consolidated instructions were delivered. But the agent read the classes the
+  change runs through with `cat` and `grep` before calling `mlqt_load` - while Dymola started and
+  before it asked its question - and twice more afterwards, once over a commercial library. After the
+  load it used `mlqt_find` and `mlqt_get_class` once each.
+- **Against the two runs on the current set with the same fixes in**: MLQT calls 31 and 27 → 16, input
+  tokens 10.0 M and 7.8 M → 9.1 M, bypass writes 0 and 1 → 0, bypass reads 0 and 1 → 5. One steered run;
+  the reads are the thing to watch in the next.
+
+**2026-10-19, the consolidated set again.** No question asked, no steering. **Not a clean run**: the
+MLQT server was the one the previous run had used, with that run's libraries still loaded from its
+own folder, so the first `mlqt_load` refused every library as another copy of one already loaded. The
+agent loaded again with `replace: true`, and every edit afterwards went to this run's copy. Restart
+the client between runs, as the README says, so that each has a server of its own.
+
+- **Result.** All five items held, the new test checking exactly 0.5 MJ more per lap with the power and
+  taper unchanged. The lap took 96.49 s against 96.80 s and deployed 5.61 MJ against 5.17 MJ (0.444 MJ
+  more: the full allowance less what the faster lap recovered), ending at 9.1 % against 19.3 %.
+- **MLQT made the edits to the existing classes** - 10 `edit_class`, one of which failed because the
+  agent's own JSON would not parse - and `write_class` created the new test.
+- **The new test and the documentation were then patched around MLQT: 7 writes.** A `sed -i` renaming
+  every `socNormal.controlBus.` in the test (what `replace` with `all: true` is for), four Python
+  find-and-replace scripts on the test, one on `FlyingLap`'s documentation after the failed
+  `edit_class`, and a `printf` rewriting `Tests/package.order`. Two more went to `runTests.mos`.
+- **Reads: 5 again**, `cat`, `grep` and `sed -n` over the classes the change runs through.
+- **The costliest run of the scenario**: 37 minutes, 19.3 M input tokens. The agent spent most of it
+  on the test, re-running the whole suite and reading results with Python scripts.
+
+**2026-10-20, the consolidated set, clean.** Claude was quit and started again first. The server log
+holds the session's 15 calls and nothing earlier, and `analyse` gives no warning. No question was
+asked and there was no steering.
+
+- **Result.** All five items held. The new test runs two controllers side by side and checks exactly
+  0.5 MJ more per lap, with the power and taper unchanged. The lap took 96.52 s against 96.80 s and
+  deployed 5.57 MJ against 5.17 MJ (0.40 MJ more, because the normal lap already overshoots its floor).
+  It ended at 10.1 % against 19.3 %. The fastest of the scenario's runs: 14 minutes, 7.8 M input tokens.
+- **Every change to a `.mo` file went through MLQT**: 10 `edit_class` and one `write_class`. The
+  `write_class` added the new test to `Tests/package.order` too, but its answer did not say so. So the
+  agent added it again with `sed -i`, which left the test listed twice (seen in the run folder afterwards). That is the
+  one bypass write. Two more `sed -i` went to `runTests.mos`, which MLQT does not edit.
+- **Reads: 5 again**, and this time all of them after `mlqt_load`. With the library listed, the agent
+  said "Small library - I'll read the relevant files directly". It then ran `cat` over nine files,
+  `Read` on the overflow of that output, `grep -rn` over the `.mo` files, and `cat` and `sed -n` over
+  four more. It used `mlqt_get_class` twice (a commercial library's interface, and the class it was
+  about to edit, with annotations) and `mlqt_find` once.
+
+**2026-10-20, with `mlqt_get_class` pointed at reading files (0854b15).** Two changes since the last
+run: `mlqt_get_class`'s description now says to use it rather than `cat`, `grep` or reading the `.mo`
+files however small the library, and to ask for every class a change runs through in one call. And
+`mlqt_write_class`'s answer names the `package.order` it listed a new class in. Claude was restarted
+first. The server log holds the session's 16 calls and nothing earlier. No steering.
+
+- **Result: 4 of 5. Item 5 failed, as in the second run on 56d1eb4.** The agent raised the per-lap
+  deployment limit by 0.5 MJ. That limit is switched off in this model (1e9 J), so both laps were
+  identical: 96.80 s, 5.168 MJ, 19.3 %. It said so, explained that the battery floor is what stops
+  deployment, and gave the user the two ways to get a gain, both of which change a limit the prompt
+  says to keep. Items 1-4 held. The new test sets a 1 MJ per-lap cap of its own and shows the
+  overtake controller carrying on to 1.5 MJ at the same power and taper. The whole test suite passed.
+  That is a modelling decision, not a tool one: the tool use is the best on either set.
+- **Reads: 1, against 5 in each of the three runs before.** The agent read the classes with
+  `mlqt_get_class`, four calls: the first for seven classes' source, the next two for three each, and the last
+  for one diagram layout. The
+  one shell read was `head -5 Tests/package.mo`, beside `cat` of `Tests/package.order` and
+  `runTests.mos`.
+- **Writes: none to a `.mo` file or `package.order` outside MLQT**: 8 `edit_class` and one
+  `write_class`. After `write_class` the agent printed `package.order`, saw the new test listed and
+  left it alone. The test is listed once. The one shell write was `runTests.mos`, which MLQT does not
+  edit.
+- **The cheapest run of the scenario**: 14 minutes, 6.5 M input tokens and 26.6 k output tokens.
+
+**2026-10-20, the same build again.** Claude was restarted first. The server log holds the session's
+21 calls and nothing earlier. **Steered once, early**: after loading and reading, the agent asked two
+questions. It asked where the extra energy should come from, since deployment is uncapped and only
+the 20 % floor stops it, and the answer was an allowance past the floor (its recommendation). It also
+asked what to do with the controller's existing `overtakeMode` taper switch, and the answer was to
+keep the two separate.
+
+- **Result: all five items held.** The lap took 96.61 s against 96.80 s and deployed 5.43 MJ against
+  5.17 MJ (0.26 MJ more: some of the allowance went where the normal car touches the floor mid-lap,
+  and the normal car's ramp-down overshoot hides part of the rest). It ended at 12.6 % against 19.3 %.
+  The new test shows the normal manager stopping at 0.6 MJ and the overtake one at about 1.1 MJ, at
+  the same power and taper. A hard floor 0.5 MJ below 20 % stops the allowance being spent twice. All
+  10 tests pass.
+- **Reads: none. Writes: none outside MLQT** - 16 `edit_class` and one `write_class`. The agent read
+  the classes with two `get_class` calls, for eight and three classes. The shell calls listed the run
+  folder, read and edited `runTests.mos`, and searched the test log.
+- **The diff is larger, but not with source.** Dymola's working directory was the library folder, so
+  its translation and results landed there: `dsmodel*.c` and `.obj`, `dymosim.exe` and the `.mat`
+  files. The `.mo` changes are about 170 lines, as in the run before.
+
+**The prompt does not settle the modelling question, and the runs split on it.** It asks for 0.5 MJ
+more per lap and says every other limit stays as it is. But in this model deployment is uncapped, and
+the energy can only come from below the 20 % floor, which is itself a limit. Four runs were
+steered by a question: the baseline, the first with the search-first instructions, the first on the consolidated set, and
+this one. Two raised the
+switched-off cap and got no gain (the search-first rerun and the run before this one). The others decided
+for themselves to go past the floor. Which path a run takes decides whether it
+asks, how long it spends on the test, and whether item 5 holds. None of that is about the tools. The
+counts that are about the tools - shell reads and writes of Modelica files - do not depend on the
+path, and they are what the toolset comparison reads.
