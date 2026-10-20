@@ -501,6 +501,7 @@ scenario files.
 | Dymola, consolidated, server reused | 5 of 5 | 18 | 7 | 5 | 19.3 M |
 | Dymola, consolidated, clean (2026-10-20) | 5 of 5 | 15 | 1 | 5 | 7.8 M |
 | Dymola, consolidated + read-first `get_class` (0854b15) | 4 of 5 | 16 | 0 | 1 | 6.5 M |
+| Dymola, the same build again, steered once | 5 of 5 | 21 | 0 | 0 | 7.6 M |
 
 **The scenarios do not bear the harness out.** OpenModelica is even. In Dymola all three consolidated
 runs read the classes the change runs through with the shell, 5 reads each against 0 and 1. Most of
@@ -530,8 +531,16 @@ on either set: 14 minutes, 6.5 M input tokens. That is one run, but it is what t
 On this run the consolidated set is level with the current set's best runs, 0 and 1 reads against 1.
 Item 5 failed for a modelling reason that has nothing to do with the tools: the agent raised a limit
 the model has switched off, so the lap was unchanged, and it said so. A run on the 56d1eb4 build did
-the same. A second run on this build would show whether the reads stay down. The step 3 criterion,
-bypasses no higher, is now met on both scenarios.
+the same. **A second run on this build kept the reads down: 0 reads and 0 bypass writes**, with 8
+classes in its first `get_class` call. It was steered by a question about where the energy comes
+from. The step 3 criterion, bypasses no higher, is met on both scenarios.
+
+**This scenario's outcome is not repeatable, and its tool counts are.** The prompt asks for 0.5 MJ more
+and says every other limit stays. But deployment is uncapped in the model, so the energy can only come
+from below the state-of-charge floor, which is a limit too. Whether a run asks, raises the switched-off
+cap, or goes past the floor decides its time, its tokens and item 5. None of that is the toolset. Shell
+reads and writes of Modelica files are the same whichever path the run takes, so they are the figures
+to compare between toolsets. Lap time, minutes and tokens are not.
 
 ### 4. Cut over
 

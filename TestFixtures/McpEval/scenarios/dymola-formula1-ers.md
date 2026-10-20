@@ -78,6 +78,7 @@ an `overtakeMode` parameter to `ERSController` with a Python find-and-replace.
 | 2026-10-19 | ea7f85e | consolidated (16 tools), rerun | 5 of 5 | 37 | 18 | 1 | 7 | 5 | 0 | 19,337,751 | 69,510 |
 | 2026-10-20 | ea7f85e | consolidated (16 tools), clean rerun | 5 of 5 | 14 | 15 | 0 | 1 | 5 | 0 | 7,772,790 | 41,921 |
 | 2026-10-20 | 0854b15 | consolidated + read-first `get_class` | 4 of 5, item 5 no gain | 14 | 16 | 0 | 0 | 1 | 0 | 6,476,508 | 26,626 |
+| 2026-10-20 | 0854b15 | consolidated + read-first `get_class`, rerun | 5 of 5, steered once | 14 | 21 | 0 | 0 | 0 | 0 | 7,605,326 | 33,066 |
 
 **2026-10-18, current toolset: the baseline for steps 1 and 3.** Run interactively on the test machine.
 The user answered one question during the run, asking for a hard SOC floor on overtake deployment,
@@ -303,3 +304,34 @@ first. The server log holds the session's 16 calls and nothing earlier. No steer
   left it alone. The test is listed once. The one shell write was `runTests.mos`, which MLQT does not
   edit.
 - **The cheapest run of the scenario**: 14 minutes, 6.5 M input tokens and 26.6 k output tokens.
+
+**2026-10-20, the same build again.** Claude was restarted first. The server log holds the session's
+21 calls and nothing earlier. **Steered once, early**: after loading and reading, the agent asked two
+questions. It asked where the extra energy should come from, since deployment is uncapped and only
+the 20 % floor stops it, and the answer was an allowance past the floor (its recommendation). It also
+asked what to do with the controller's existing `overtakeMode` taper switch, and the answer was to
+keep the two separate.
+
+- **Result: all five items held.** The lap took 96.61 s against 96.80 s and deployed 5.43 MJ against
+  5.17 MJ (0.26 MJ more: some of the allowance went where the normal car touches the floor mid-lap,
+  and the normal car's ramp-down overshoot hides part of the rest). It ended at 12.6 % against 19.3 %.
+  The new test shows the normal manager stopping at 0.6 MJ and the overtake one at about 1.1 MJ, at
+  the same power and taper. A hard floor 0.5 MJ below 20 % stops the allowance being spent twice. All
+  10 tests pass.
+- **Reads: none. Writes: none outside MLQT** - 16 `edit_class` and one `write_class`. The agent read
+  the classes with two `get_class` calls, for eight and three classes. The shell calls listed the run
+  folder, read and edited `runTests.mos`, and searched the test log.
+- **The diff is larger, but not with source.** Dymola's working directory was the library folder, so
+  its translation and results landed there: `dsmodel*.c` and `.obj`, `dymosim.exe` and the `.mat`
+  files. The `.mo` changes are about 170 lines, as in the run before.
+
+**The prompt does not settle the modelling question, and the runs split on it.** It asks for 0.5 MJ
+more per lap and says every other limit stays as it is. But in this model deployment is uncapped, and
+the energy can only come from below the 20 % floor, which is itself a limit. Four runs were
+steered by a question: the baseline, the first with the search-first instructions, the first on the consolidated set, and
+this one. Two raised the
+switched-off cap and got no gain (the search-first rerun and the run before this one). The others decided
+for themselves to go past the floor. Which path a run takes decides whether it
+asks, how long it spends on the test, and whether item 5 holds. None of that is about the tools. The
+counts that are about the tools - shell reads and writes of Modelica files - do not depend on the
+path, and they are what the toolset comparison reads.
