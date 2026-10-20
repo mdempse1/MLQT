@@ -519,7 +519,8 @@ the work. The current set names a tool for reading source, and its description s
 `mlqt_get_class` is one tool for every read, its default answer is info and source together, and its
 description says neither. The one bypass write in the clean run was also the server's doing:
 `write_class` registered the new class in `package.order` without saying so, and the agent added it a
-second time.
+second time, leaving it listed twice. The answer now names the `package.order` (0854b15), and the
+`mlqt_get_class` description now says to use it rather than reading the files.
 
 ### 4. Cut over
 

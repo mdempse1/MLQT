@@ -271,7 +271,7 @@ asked and there was no steering.
   It ended at 10.1 % against 19.3 %. The fastest of the scenario's runs: 14 minutes, 7.8 M input tokens.
 - **Every change to a `.mo` file went through MLQT**: 10 `edit_class` and one `write_class`. The
   `write_class` added the new test to `Tests/package.order` too, but its answer did not say so. So the
-  agent added it again with `sed -i`, which almost certainly left the test listed twice. That is the
+  agent added it again with `sed -i`, which left the test listed twice (seen in the run folder afterwards). That is the
   one bypass write. Two more `sed -i` went to `runTests.mos`, which MLQT does not edit.
 - **Reads: 5 again**, and this time all of them after `mlqt_load`. With the library listed, the agent
   said "Small library - I'll read the relevant files directly". It then ran `cat` over nine files,
