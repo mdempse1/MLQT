@@ -66,7 +66,7 @@ public class MauiPreferencesFileTests : IDisposable
     [Fact]
     public void ADifferentPublisherIsStillFound()
     {
-        var expected = Given("CN=Claytex Services Limited");
+        var expected = Given("CN=Example Services Limited");
 
         Assert.Equal(expected, MauiPreferencesFile.Locate(_root));
     }

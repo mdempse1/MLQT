@@ -106,10 +106,10 @@ public class ReferenceLibraryRulesTests
         // The preference this rule has always had, and the reason it cannot simply be "skip on a name
         // match". Real source beats classes reconstructed from vendor documentation, in whichever
         // order the two arrive; AddNode replaces the stubs when it lands.
-        Assert.Null(Skip(At("checkout", "Claytex"),
-                         [Loaded("Claytex", At("Dymola", "Library", "Claytex 2026.1"),
+        Assert.Null(Skip(At("checkout", "VendorLib"),
+                         [Loaded("VendorLib", At("Dymola", "Library", "VendorLib 2026.1"),
                                  LibrarySourceType.EncryptedDirectory)],
-                         isEncrypted: false, name: "Claytex"));
+                         isEncrypted: false, name: "VendorLib"));
     }
 
     [Fact]
@@ -117,9 +117,9 @@ public class ReferenceLibraryRulesTests
     {
         // The half that was already implemented, kept: a tool ships the encrypted build of a library
         // the user has checked out, and loading it would add thousands of stubs to be discarded.
-        var reason = Skip(At("Dymola", "Library", "Claytex 2026.1"),
-                          [Loaded("Claytex", At("checkout", "Claytex"))],
-                          isEncrypted: true, name: "Claytex");
+        var reason = Skip(At("Dymola", "Library", "VendorLib 2026.1"),
+                          [Loaded("VendorLib", At("checkout", "VendorLib"))],
+                          isEncrypted: true, name: "VendorLib");
 
         Assert.Contains("already loaded from", reason);
     }
@@ -129,10 +129,10 @@ public class ReferenceLibraryRulesTests
     {
         // Two tool installations both shipping the same encrypted library. Neither is better, so the
         // first one wins - what matters is that the second is not loaded on top of it.
-        var reason = Skip(At("Dymola 2026x", "Library", "VeSyMA 2026.1"),
-                          [Loaded("VeSyMA", At("Dymola 2025x", "Library", "VeSyMA 2025.2"),
+        var reason = Skip(At("Dymola 2026x", "Library", "VehicleLib 2026.1"),
+                          [Loaded("VehicleLib", At("Dymola 2025x", "Library", "VehicleLib 2025.2"),
                                   LibrarySourceType.EncryptedDirectory)],
-                          isEncrypted: true, name: "VeSyMA");
+                          isEncrypted: true, name: "VehicleLib");
 
         Assert.NotNull(reason);
     }
@@ -159,8 +159,8 @@ public class ReferenceLibraryRulesTests
     [Fact]
     public void EncryptedLibrariesAreSkippedWhenTheUserTurnsThemOff()
     {
-        var reason = Skip(At("Dymola", "Library", "VeSyMA 2026.1"), [],
-                          isEncrypted: true, name: "VeSyMA", useEncrypted: false);
+        var reason = Skip(At("Dymola", "Library", "VehicleLib 2026.1"), [],
+                          isEncrypted: true, name: "VehicleLib", useEncrypted: false);
 
         Assert.Contains("turned off", reason);
     }

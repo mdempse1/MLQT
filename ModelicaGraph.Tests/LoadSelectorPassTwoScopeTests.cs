@@ -12,7 +12,7 @@ namespace ModelicaGraph.Tests;
 /// <para>The pass finds <c>T comp(file = "...")</c>, where <c>T</c> declares <c>file</c> as a
 /// loadSelector or loadResource parameter. A class can only do that by declaring a component of such a
 /// <c>T</c>, which is a use of <c>T</c> — so the pass is asked of the classes that use one, not of the
-/// whole graph. It parsed every class a second time before: 68,746 on Claytex with the Dymola library
+/// whole graph. It parsed every class a second time before: 68,746 on a large user library with the Dymola library
 /// folder, to find two resources that 1,211 users would have been enough to find.</para>
 ///
 /// <para>The same rule fixed the incremental path, which decided whether to run the pass from the

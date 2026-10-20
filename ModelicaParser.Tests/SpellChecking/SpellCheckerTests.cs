@@ -29,17 +29,17 @@ public class SpellCheckerTests
     [Fact]
     public void IsCorrect_CustomWord_ReturnsTrue()
     {
-        var checker = SpellChecker.Create(customWords: ["Claytex", "MVEM"]);
-        Assert.True(checker.IsCorrect("Claytex"));
+        var checker = SpellChecker.Create(customWords: ["VendorLib", "MVEM"]);
+        Assert.True(checker.IsCorrect("VendorLib"));
         Assert.True(checker.IsCorrect("MVEM"));
     }
 
     [Fact]
     public void IsCorrect_CaseInsensitive_CustomWords()
     {
-        var checker = SpellChecker.Create(customWords: ["Claytex"]);
-        Assert.True(checker.IsCorrect("claytex"));
-        Assert.True(checker.IsCorrect("CLAYTEX"));
+        var checker = SpellChecker.Create(customWords: ["VendorLib"]);
+        Assert.True(checker.IsCorrect("vendorlib"));
+        Assert.True(checker.IsCorrect("VENDORLIB"));
     }
 
     [Fact]
@@ -462,9 +462,9 @@ public class SpellCheckerTests
     [Fact]
     public void Suggest_OffersAnAcceptedWordInItsAcceptedCasing()
     {
-        var checker = SpellChecker.Create(["en_US"], customWords: ["VeSyMA"]);
+        var checker = SpellChecker.Create(["en_US"], customWords: ["VehicleLib"]);
 
-        Assert.Contains("VeSyMA", checker.Suggest("VeSyMa1"));
+        Assert.Contains("VehicleLib", checker.Suggest("Vehiclelib1"));
     }
 
     [Fact]

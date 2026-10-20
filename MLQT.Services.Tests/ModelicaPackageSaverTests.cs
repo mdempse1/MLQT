@@ -982,14 +982,14 @@ public class ModelicaPackageSaverTests : IDisposable
         // correction would strip the within clause and the reloaded model would get a detached,
         // un-prefixed ID, breaking GetModelById(NavState.ModelID).
         var code = "model Null \"Empty summary\"\nend Null;";
-        var node = new ModelNode("VeSyMA.EnergyStorage.Summary.Null", new ModelDefinition("Null", code))
+        var node = new ModelNode("VehicleLib.EnergyStorage.Summary.Null", new ModelDefinition("Null", code))
         {
-            ParentModelName = "VeSyMA.EnergyStorage.Summary"
+            ParentModelName = "VehicleLib.EnergyStorage.Summary"
         };
 
         var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
-        Assert.Contains("within VeSyMA.EnergyStorage.Summary", rendered);
+        Assert.Contains("within VehicleLib.EnergyStorage.Summary", rendered);
         Assert.Contains("model Null", rendered);
         // The stored body must remain within-less so the in-memory convention is preserved.
         Assert.DoesNotContain("within", node.Definition.ModelicaCode);
@@ -1013,10 +1013,10 @@ public class ModelicaPackageSaverTests : IDisposable
     [Fact]
     public void RenderFileOwnerModel_DoesNotDoublePrependWithinClause()
     {
-        var code = "within VeSyMA.EnergyStorage.Summary;\nmodel Null \"Empty\"\nend Null;";
-        var node = new ModelNode("VeSyMA.EnergyStorage.Summary.Null", new ModelDefinition("Null", code))
+        var code = "within VehicleLib.EnergyStorage.Summary;\nmodel Null \"Empty\"\nend Null;";
+        var node = new ModelNode("VehicleLib.EnergyStorage.Summary.Null", new ModelDefinition("Null", code))
         {
-            ParentModelName = "VeSyMA.EnergyStorage.Summary"
+            ParentModelName = "VehicleLib.EnergyStorage.Summary"
         };
 
         var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
@@ -1074,9 +1074,9 @@ public class ModelicaPackageSaverTests : IDisposable
         var source = "model Null \"Empty summary\"\nend Null;";
 
         var rendered = ModelicaPackageSaver.RenderFileSource(
-            source, "VeSyMA.EnergyStorage.Summary", FormattingOptions.None);
+            source, "VehicleLib.EnergyStorage.Summary", FormattingOptions.None);
 
-        Assert.Contains("within VeSyMA.EnergyStorage.Summary;", rendered);
+        Assert.Contains("within VehicleLib.EnergyStorage.Summary;", rendered);
         Assert.Equal(1, CountWithinClauses(rendered));
     }
 

@@ -132,7 +132,7 @@ public class UnitRuleAndCoverageTests
     public void AGivenLookup_IsTheOneTheMeasurerAnswersThrough()
     {
         // B261: the measurer resolved units for itself, with none of the caches B174 gave the rule,
-        // and cost eight times the rule on Claytex for the same questions. It now takes the rule's
+        // and cost eight times the rule on a large user library for the same questions. It now takes the rule's
         // lookup. A lookup that calls everything Real-derived makes the proof: every component counts,
         // Integer and connector included, which the real resolver would never say.
         var graph = Library();

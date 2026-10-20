@@ -11,7 +11,7 @@ namespace ModelicaParser.Helpers;
 /// keywords, and each of them asked every child for its text: <c>child.GetText() == "public"</c>. For
 /// a keyword that is one token. For the other children — whole element lists, equation sections — it
 /// rebuilds the child's entire source by concatenating every token under it, and an outer class's
-/// body contains its nested classes, each of which is then walked again. Measured on Claytex with
+/// body contains its nested classes, each of which is then walked again. Measured on a large user library with
 /// <c>dotnet-trace</c>: <c>RuleContext.GetText</c> was <b>30% of all non-idle time in a check</b>, and
 /// these loops were most of it — <c>OneOfEachSection</c> 13.6%, and
 /// <c>PublicParametersAndConstantsHaveDescription</c> and <c>FollowNamingConvention</c> 4% each.</para>

@@ -46,7 +46,7 @@ public class SourceBeatsEncryptedTests : IDisposable
     // the collision rule used to handle only the first.
     private const string SourcePackage = """
         within;
-        package Claytex "Claytex"
+        package VendorLib "VendorLib"
           package Media "Media"
             redeclare model BaseProperties
               Real d;
@@ -54,12 +54,12 @@ public class SourceBeatsEncryptedTests : IDisposable
               d = 1;
             end BaseProperties;
           end Media;
-        end Claytex;
+        end VendorLib;
         """;
 
     private string WriteSource()
     {
-        var lib = Path.Combine(_root, "src", "Claytex");
+        var lib = Path.Combine(_root, "src", "VendorLib");
         Directory.CreateDirectory(lib);
         File.WriteAllText(Path.Combine(lib, "package.mo"), SourcePackage);
         File.WriteAllText(Path.Combine(lib, "package.order"), "Media\n");
@@ -68,38 +68,38 @@ public class SourceBeatsEncryptedTests : IDisposable
 
     private string WriteEncrypted()
     {
-        var lib = Path.Combine(_root, "tool", "Claytex 2026.1");
+        var lib = Path.Combine(_root, "tool", "VendorLib 2026.1");
         var help = Path.Combine(lib, "help");
         Directory.CreateDirectory(help);
         File.WriteAllText(Path.Combine(lib, "package.moe"), "not readable");
 
         const string head =
             "<html><head><meta name=\"HTML-Generator\" content=\"Dymola\"></head><body>";
-        File.WriteAllText(Path.Combine(help, "Claytex.html"), head +
-            "<h2><a name=\"Claytex\"></a>Claytex</h2>" +
+        File.WriteAllText(Path.Combine(help, "VendorLib.html"), head +
+            "<h2><a name=\"VendorLib\"></a>VendorLib</h2>" +
             "<h3>Package Content</h3>" +
             "<table summary=\"Package Content\" class=\"ModelicaTablePackageContent\">\n" +
             "<tr><th>Name</th><th>Description</th></tr>\n" +
-            "<tr><td><img src=\"Claytex.MediaS.png\" alt=\"Claytex.Media\">&nbsp;" +
-            "<a href=\"Claytex_Media.html#Claytex.Media\">Media</a></td><td>Media</td></tr>\n" +
+            "<tr><td><img src=\"VendorLib.MediaS.png\" alt=\"VendorLib.Media\">&nbsp;" +
+            "<a href=\"VendorLib_Media.html#VendorLib.Media\">Media</a></td><td>Media</td></tr>\n" +
             "</table></body></html>");
-        File.WriteAllText(Path.Combine(help, "Claytex_Media.html"), head +
-            "<h2><a name=\"Claytex.Media\"></a>Media</h2>" +
+        File.WriteAllText(Path.Combine(help, "VendorLib_Media.html"), head +
+            "<h2><a name=\"VendorLib.Media\"></a>Media</h2>" +
             "<h3>Package Content</h3>" +
             "<table summary=\"Package Content\" class=\"ModelicaTablePackageContent\">\n" +
             "<tr><th>Name</th><th>Description</th></tr>\n" +
-            "<tr><td><img src=\"Claytex.Media.BasePropertiesS.png\" alt=\"Claytex.Media.BaseProperties\">&nbsp;" +
-            "<a href=\"Claytex_Media.html#Claytex.Media.BaseProperties\">BaseProperties</a></td>" +
+            "<tr><td><img src=\"VendorLib.Media.BasePropertiesS.png\" alt=\"VendorLib.Media.BaseProperties\">&nbsp;" +
+            "<a href=\"VendorLib_Media.html#VendorLib.Media.BaseProperties\">BaseProperties</a></td>" +
             "<td>Base properties</td></tr>\n" +
             "</table>" +
-            "<h2><img src=\"Claytex.Media.BasePropertiesI.png\" alt=\"Claytex.Media.BaseProperties\">" +
-            "<a name=\"Claytex.Media.BaseProperties\"></a>BaseProperties</h2>" +
+            "<h2><img src=\"VendorLib.Media.BasePropertiesI.png\" alt=\"VendorLib.Media.BaseProperties\">" +
+            "<a name=\"VendorLib.Media.BaseProperties\"></a>BaseProperties</h2>" +
             "<p><span class=\"ModelicaDescription\">Base properties</span></p>" +
             "</body></html>");
         return lib;
     }
 
-    private const string NestedClass = "Claytex.Media.BaseProperties";
+    private const string NestedClass = "VendorLib.Media.BaseProperties";
 
     [Theory]
     [InlineData(true)]   // encrypted arrives first — the order the app used to load in

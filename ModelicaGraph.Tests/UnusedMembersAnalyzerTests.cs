@@ -101,7 +101,7 @@ public class UnusedMembersAnalyzerTests
     {
         // What the narrowing trusts, stated as a test: a graph that says its dependencies are analysed
         // is believed, so an extender with no edge is not found and Base's member reads as unused.
-        // Dependency analysis records every extends clause as an edge - measured over Claytex with the
+        // Dependency analysis records every extends clause as an edge - measured over a large user library with the
         // Dymola library folder, 16,226 of 16,226 - so this is a graph that could not come from a load.
         // It is here because it is the one observable difference between asking the users and asking
         // everyone: an implementation that quietly went back to scanning the whole graph fails it.

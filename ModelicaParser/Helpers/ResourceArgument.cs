@@ -8,7 +8,7 @@ namespace ModelicaParser.Helpers;
 /// <code>loadResource("modelica://" + packageName + "/package.mo")</code>
 /// <para>which has a path only once the model is translated. The visitors captured every string
 /// literal they met inside the call, so that one line produced two resources — <c>modelica://</c> and
-/// <c>/package.mo</c> — and the second was then reported as a missing file. Claytex has several.</para>
+/// <c>/package.mo</c> — and the second was then reported as a missing file. A large user library has several.</para>
 ///
 /// <para>One implementation, because both <c>ExternalResourceExtractor</c> and <c>ModelAnalyzer</c>
 /// walk these calls; they already held two copies of the URI scan, and fixing one of those and not

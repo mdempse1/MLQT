@@ -28,7 +28,7 @@ public sealed class ShadowingAnalyzer : IGraphAnalyzer
         // between threads, which is what lets the classes be analysed in parallel.
         var interfaces = new ClassElementResolver.InterfaceCache();
 
-        // In parallel (B281): this ran on one thread for 23 seconds on Claytex, after a per-class phase
+        // In parallel (B281): this ran on one thread for 23 seconds on a large user library, after a per-class phase
         // that used all 24 cores reading the same classes the same way. Each class's findings are kept
         // in its own slot and put back in the order given, so the report does not depend on timing.
         var models = context.Models;

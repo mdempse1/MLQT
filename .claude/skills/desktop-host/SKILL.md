@@ -88,7 +88,7 @@ first and only its result is applied through `InvokeAsync`.
 
 **Never marshal each unit of background work onto the UI thread.** On Windows the window's message
 pump is the thread Blazor renders on, so a queue of `InvokeAsync` work items shows up as a window
-that will not drag or take focus long after the work itself has finished — a Claytex check of 21,673
+that will not drag or take focus long after the work itself has finished — a check of a large user library's 21,673
 classes, queued one work item per class with findings, left the window ignoring clicks for 72 seconds
 after the workers had completed (B190). A store that is thread-safe (`CodeReviewService` locks its
 list) is called directly from the worker, and it raises a **coalesced** change notification — the
@@ -258,7 +258,7 @@ file dialog opening, and that settings survive an upgrade.
 ## Platform facts worth not rediscovering
 
 - **The host runs server GC**, as the CLI and MCP server do (B281). A style check allocates parse trees from
-  every core, and under the default workstation collector a Claytex check spent most of its time with every
+  every core, and under the default workstation collector a check of a large user library spent most of its time with every
   thread suspended for collections. `HostGarbageCollectionTests` holds the setting. It was measured in the CLI;
   if the desktop app ever shows memory or responsiveness trouble over a long session, this is the first
   setting to question, and `System.GC.ConserveMemory` / `GCHeapCount` the first knobs before turning it off.

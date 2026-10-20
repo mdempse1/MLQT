@@ -55,14 +55,14 @@ public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
     /// <remarks>
     /// <para><b>Asked of the classes that use a candidate, not of the whole graph (B281).</b> The
     /// question used to be answered by parsing every class in the graph for its extends clauses — 39,596
-    /// on Claytex with a tool's library folder loaded, to report on 21,673 — and that pass was ~95% of
+    /// on a large user library with a tool's library folder loaded, to report on 21,673 — and that pass was ~95% of
     /// this analyzer's 41 seconds, on one thread. A class that extends another uses it, so once
     /// dependency analysis has run the only classes that can extend a candidate are in its
     /// <c>UsedByModelIds</c>. They are still asked the same question with the same resolver: the edge
     /// decides who is asked, never the answer.</para>
     ///
     /// <para>That rests on dependency analysis recording every extends clause as an edge, and it was
-    /// measured before being relied on: over the Claytex repository with the Dymola 2026x library folder,
+    /// measured before being relied on: over a large user library's repository with the Dymola 2026x library folder,
     /// all 16,226 extends clauses into the checked set carried an edge, and the extended set came out
     /// the same 2,264 classes either way. Without the edges the whole graph is scanned, as it was.</para>
     ///

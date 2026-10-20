@@ -132,7 +132,7 @@ end TestModel;";
         // "data.txt" - which is what the extractor did by capturing every literal it met inside the
         // call. Its own name said "NotSupported" while it pinned the behaviour in place. Those
         // fragments were then resolved as relative paths and reported as missing files: B210, seen in
-        // Claytex as loadResource("modelica://" + packageName + "/package.mo").
+        // a user library as loadResource("modelica://" + packageName + "/package.mo").
         var code = @"
 model TestModel
   parameter String fileName = Modelica.Utilities.Files.loadResource(""modelica://MyLib/Resources/"" + ""data.txt"");

@@ -55,13 +55,13 @@ public class FileAndSectionShapeTests
     public void AWithinClauseKeepsItsNameAndItsSemicolon()
     {
         var rendered = RenderFile("""
-            within Claytex.Blocks.Discrete;
+            within VendorLib.Blocks.Discrete;
             model M
               Real x;
             end M;
             """);
 
-        Assert.Equal("within Claytex.Blocks.Discrete;", rendered[0]);
+        Assert.Equal("within VendorLib.Blocks.Discrete;", rendered[0]);
     }
 
     /// <summary>A top-level file says `within;` — the clause is there, the package name is not.</summary>
@@ -70,8 +70,8 @@ public class FileAndSectionShapeTests
     {
         var rendered = RenderFile("""
             within;
-            package Claytex
-            end Claytex;
+            package VendorLib
+            end VendorLib;
             """);
 
         Assert.Equal("within;", rendered[0]);

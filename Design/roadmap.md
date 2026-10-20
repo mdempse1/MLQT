@@ -28,7 +28,7 @@ by shared root cause; all sixteen are complete. What it delivered:
 | **The kind of change** | `ModelicaParser/Comparison/` tells a simulation-affecting edit from a graphical or documentation one; the library browser marks **M** / **G** and filters by it |
 | **Correctness under the graph** | An unparseable file keeps a placeholder and its diagnostic; one watcher per watched path; `modelica://` resolves against the referencing library's copy, then the readable one; an encrypted library is never loaded beside source for the same library; `ModelicaLanguage` keeps the built-ins out of the graph |
 | **Rules and formatting** | `ComponentsBeforeClasses`, `DeclarationOrder`, `SingleFilePackage` and a match-Dymola package-order option; excision instead of re-rendering in the trimmer; every write keeps its file's final newline and line endings; formatting exclusion written as `__MLQT(format=false)` |
-| **Performance** | A Claytex check went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
+| **Performance** | A check of a large user library went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
 | **External tools and revision control** | A result dialog, dead-session recovery, a time limit per tool and Cancel reaching a running check, for both Dymola and OpenModelica; tags and detached HEAD, history diffs against the predecessor, and revision content decoded by MLQT's encoding funnel |
 | **MCP** | `mlqt_get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `mlqt_get_class`'s source view elides rather than re-renders, so its lines match the findings |
 | **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
@@ -132,9 +132,9 @@ What it leaves as candidates rather than work:
 - **Units and truncation in diagram labels.** `mlqt_get_diagram_image` substitutes `%parameter` values but
   writes no unit and does not cut text to the icon's width. The unit needs unit resolution and a
   decision about how to show it (B278).
-- **Server GC in the desktop app over a long session.** It was measured in the CLI, where a Claytex
-  check fell from 242 s to 70.5 s. The desktop host is set the same way, but nobody has measured its
-  memory and responsiveness over a long session. Confirm it on the next long Claytex session (B281).
+- **Server GC in the desktop app over a long session.** It was measured in the CLI, where a check of a
+  large user library fell from 242 s to 70.5 s. The desktop host is set the same way, but nobody has measured its
+  memory and responsiveness over a long session. Confirm it on the next long session over a large library (B281).
 
 **How a phase is kept whole**, which this one learned twice: every open item names a work package or
 is a roadmap candidate. An item filed as "separable at any point" is never scheduled once the package
@@ -397,7 +397,7 @@ directly: warnings report but do not fail, errors fail.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | **✅ shipped** — `RuleSeverities`, with per-repository Off/Info/Warning/Error selectors in the settings UI |
-| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`; a class-level `suppress`/`spelling` reaches every class nested in it, so one annotation waives a sub-package (Dymola's `_fmu` import models were ~65% of a Claytex check). Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
+| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments: comments are position-bound and get orphaned when the formatter reorders declarations, whereas annotations ride on the element. Class- and component-level, carrying a `reason`; a class-level `suppress`/`spelling` reaches every class nested in it, so one annotation waives a sub-package (Dymola's `_fmu` import models were ~65% of a large user library's findings). Also the rename-safe replacement for the name-based `FormattingExcludedModels` list. The Code Review exclusion toggle writes `__MLQT(format=false)` (B175) |
 | **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | **✅ shipped** — see §5 |
 | **Custom-rule authoring — declarative tier** (config-driven shape checks) | ⭐⭐ | L | **Phase 3.** The 80%: annotation-present, identifier-regex, banned-`extends`. No compilation; CI-safe. Registers a rule id + severity |
 | **Custom-rule authoring — compiled-plugin tier** (`VisitorWithModelNameTracking`) | ⭐⭐ | XL | **Phase 3.** Full parse-tree power escape hatch. ⚠ Loading compiled code in CI is a supply-chain consideration |

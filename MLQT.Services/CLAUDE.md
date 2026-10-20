@@ -61,6 +61,6 @@ the **same findings with the same line numbers**. Change the primitive, never on
 
 **Every host runs server GC** (`<ServerGarbageCollection>` in the CLI, MCP server and Photino projects). A check
 parses tens of thousands of classes from every core, and under the default workstation GC the threads spent most
-of their time suspended waiting for collections: Claytex took 242s under workstation GC and 70.5s under server GC,
+of their time suspended waiting for collections: a large user library took 242s under workstation GC and 70.5s under server GC,
 with the same findings and about the same peak memory (B281). `HostGarbageCollectionTests` holds the setting —
 the parallel graph analyzers are *slower* than serial ones without it.

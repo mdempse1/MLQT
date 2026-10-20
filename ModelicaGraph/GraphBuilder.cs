@@ -664,7 +664,7 @@ public static class GraphBuilder
         // Phase 3: LoadSelector Pass 2 — find modifications of discovered parameters
         // Now that all loadSelector and loadResource parameters are known across the graph,
         // re-scan the models that could modify one. Every model, once: a second parse of the whole
-        // graph, 40s of a Claytex check to find two resources (B282). See MayModifyATrackedParameter.
+        // graph, 40s of a check of a large user library to find two resources (B282). See MayModifyATrackedParameter.
         var phase3Models = allModels.Where(m => MayModifyATrackedParameter(graph, m)).ToList();
         progressLog?.Invoke($"Phase 3: LoadSelector pass 2 over {phase3Models.Count} of {allModels.Count} models");
 
@@ -743,8 +743,8 @@ public static class GraphBuilder
             if (model == null) continue;
 
             // Every directory, not just the last one seen (B211). IncludeDirectory and
-            // LibraryDirectory are commonly arrays - VeSyMA.Roads.Functions.Internal.readNormal
-            // declares IncludeDirectory={"modelica://VeSyMA/...","modelica://Claytex/..."} - and
+            // LibraryDirectory are commonly arrays - VehicleLib.Roads.Functions.Internal.readNormal
+            // declares IncludeDirectory={"modelica://VehicleLib/...","modelica://VendorLib/..."} - and
             // assigning to a single variable kept whichever came last, so every #include in the
             // class was looked for in that one directory and reported missing from it.
             var includeDirectories = new List<string>();
@@ -784,8 +784,8 @@ public static class GraphBuilder
     /// <para>The pass matches <c>T comp(name = ...)</c> where <c>T</c> itself declares <c>name</c>, so a
     /// class can only produce a result by declaring a component of such a <c>T</c> — which is a use of
     /// <c>T</c>, and the first pass has just recorded it as an edge. Measured before being relied on
-    /// (B282): over Claytex with the Dymola library folder, MSL, and Buildings with MSL, every class the
-    /// full pass found a resource in was among these, and on Claytex they are 1,211 classes of 68,746.</para>
+    /// (B282): over a large user library with the Dymola library folder, MSL, and Buildings with MSL, every class the
+    /// full pass found a resource in was among these, and on that library they are 1,211 classes of 68,746.</para>
     ///
     /// <para>Asked per class, so it serves the full analysis and the incremental one alike. The
     /// incremental one used to decide from whether a re-analysed class <i>declared</i> a tracked
@@ -966,8 +966,8 @@ public static class GraphBuilder
             if (model == null) continue;
 
             // Every directory, not just the last one seen (B211). IncludeDirectory and
-            // LibraryDirectory are commonly arrays - VeSyMA.Roads.Functions.Internal.readNormal
-            // declares IncludeDirectory={"modelica://VeSyMA/...","modelica://Claytex/..."} - and
+            // LibraryDirectory are commonly arrays - VehicleLib.Roads.Functions.Internal.readNormal
+            // declares IncludeDirectory={"modelica://VehicleLib/...","modelica://VendorLib/..."} - and
             // assigning to a single variable kept whichever came last, so every #include in the
             // class was looked for in that one directory and reported missing from it.
             var includeDirectories = new List<string>();
@@ -1054,8 +1054,8 @@ public static class GraphBuilder
                 {
                     // Every declared IncludeDirectory is searched, in the order written, and the
                     // first that holds the file wins (B211). A class listing two of them is
-                    // ordinary - VeSyMA.Roads.Functions.Internal.readNormal names VeSyMA's and
-                    // Claytex's - and looking in only one of them reported a header that is present
+                    // ordinary - VehicleLib.Roads.Functions.Internal.readNormal names VehicleLib's and
+                    // VendorLib's - and looking in only one of them reported a header that is present
                     // in the other as missing from the one it was never in.
                     var searched = includeDirectories.Count > 0
                         ? includeDirectories
@@ -1329,13 +1329,13 @@ public static class GraphBuilder
     /// <para><b>Library names are not unique across loaded libraries (B169).</b> A commercial library
     /// is routinely present twice: the encrypted build a tool ships, and the source the team has
     /// checked out. Both register under the same name — the encrypted one drops its version suffix,
-    /// so "Claytex 2026.1" is "Claytex" — and both have a <c>Resources/</c> directory. Picking the
+    /// so "VendorLib 2026.1" is "VendorLib" — and both have a <c>Resources/</c> directory. Picking the
     /// first by name therefore picked whichever happened to load first, and a model's own resources
     /// were attached to the other copy's directory. Nine libraries collide this way in the setup it
     /// was reported from.</para>
     ///
     /// <para>Two things settle it, in order. The referencing file, when it lies inside one of the
-    /// candidates: a model resolves <c>modelica://Claytex/Resources/x</c> against the copy of Claytex
+    /// candidates: a model resolves <c>modelica://VendorLib/Resources/x</c> against the copy of VendorLib
     /// it is itself part of, longest matching root first. Then, for everything else — and that is
     /// most references, because a library naming another library's resources sits inside neither of
     /// its copies — the readable one, because <b>an encrypted library can never be the right answer
@@ -1386,8 +1386,8 @@ public static class GraphBuilder
         }
 
         // Otherwise the readable copy, and this is the case that matters most: a reference from one
-        // library into another. A model in Engines naming modelica://Claytex/Resources/x sits under
-        // neither Claytex root, so the test above cannot separate them - and most references are of
+        // library into another. A model in Engines naming modelica://VendorLib/Resources/x sits under
+        // neither VendorLib root, so the test above cannot separate them - and most references are of
         // this kind, which is why fixing only the same-library case left most resources still
         // attached to the encrypted build.
         //

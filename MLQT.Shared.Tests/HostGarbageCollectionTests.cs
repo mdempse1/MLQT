@@ -9,7 +9,7 @@ namespace MLQT.Shared.Tests;
 /// <remarks>
 /// <para><b>Why a test for a build setting.</b> A check parses tens of thousands of classes from every
 /// core, and parsing allocates heavily. Under the default workstation GC every thread stops for every
-/// collection on one shared heap: profiled on Claytex, the thread running the whole-graph analyses spent
+/// collection on one shared heap: profiled on a large user library, the thread running the whole-graph analyses spent
 /// 53 of its 72 seconds suspended waiting for it. Server GC took the same check from 242s to 104s with
 /// peak memory 8.2 GB against 8.5 GB and findings identical.</para>
 ///

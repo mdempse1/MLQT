@@ -272,7 +272,7 @@ No image decoder is needed.
 
 `UsesVersionChecker` needs `ModelNode.Version` on the library root:
 
-1. **The directory-name suffix** — `VeSyMA 2026.1` → `2026.1`. This is the Modelica §13.4 versioned
+1. **The directory-name suffix** — `VehicleLib 2026.1` → `2026.1`. This is the Modelica §13.4 versioned
    directory convention and it is what the *tool* resolves against, so it is the authoritative
    statement of what is on the machine. It is also the only source for libraries shipping no
    `libraryinfo.mos`.

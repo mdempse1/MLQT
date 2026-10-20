@@ -160,7 +160,7 @@ public partial class CodeReview : IAsyncDisposable
     /// 6.9 s — worse than linear — and at 20,000 the page was blocked for so long that its Blazor
     /// connection dropped. 5,000 is the most that still opens in about two seconds. A package hides
     /// its nested classes before this counts, so a large package of small classes rarely meets it;
-    /// the Claytex files that did at the time were 17k–242k lines, all generated.</para>
+    /// the files in a large user library that did at the time were 17k–242k lines, all generated.</para>
     /// </summary>
     internal const int MaxShownLines = 5_000;
 
