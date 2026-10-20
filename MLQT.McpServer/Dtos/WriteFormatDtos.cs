@@ -8,8 +8,12 @@ public sealed class ClassToWrite
     public bool? Standalone { get; set; }
 }
 
-/// <summary>A class <c>mlqt_write_class</c> wrote: created or replaced, and where.</summary>
-public sealed record WrittenClassItem(string ClassId, string Action, string FilePath, string? NewContent);
+/// <summary>
+/// A class <c>mlqt_write_class</c> wrote: created or replaced, and where - and the <c>package.order</c> that
+/// now lists it, so the agent does not add it there again.
+/// </summary>
+public sealed record WrittenClassItem(string ClassId, string Action, string FilePath, string? NewContent,
+    string? ListedInPackageOrder = null);
 
 /// <summary>The classes <c>mlqt_write_class</c> wrote, in order.</summary>
 public sealed record WriteClassResult(bool PreviewOnly, IReadOnlyList<WrittenClassItem> Written);

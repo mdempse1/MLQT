@@ -261,7 +261,8 @@ public sealed record CreateClassResult(
     string Storage,
     bool PreviewOnly,
     bool Created,
-    string? NewFileContent);
+    string? NewFileContent,
+    string? ListedInPackageOrder = null);
 
 public sealed record DeleteClassResult(
     string DeletedClassId,

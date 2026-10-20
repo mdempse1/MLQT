@@ -33,7 +33,8 @@ public sealed class WriteFormatTools
 
     [McpServerTool(Name = "mlqt_write_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Write one or more whole Modelica classes, each {parentId, source, standalone?}: a class not yet " +
-                 "in its parent is created there, placed on disk as mlqt_create_class does. One already there is " +
+                 "in its parent is created there, placed on disk as mlqt_create_class does and listed in its package.order, which " +
+                 "the answer names. One already there is " +
                  "replaced only with replace=true, so a mistaken name cannot overwrite a class. Classes are written " +
                  "in order, so a later one can go in a package an earlier one created; if one fails, the ones " +
                  "before it stay written and none after it is tried. To change part of a class, use " +
@@ -77,7 +78,8 @@ public sealed class WriteFormatTools
                 case ToolError error:
                     return Failed(i, error.Error);
                 case CreateClassResult created:
-                    written.Add(new WrittenClassItem(created.NewClassId, action, created.FilePath, created.NewFileContent));
+                    written.Add(new WrittenClassItem(created.NewClassId, action, created.FilePath, created.NewFileContent,
+                        created.ListedInPackageOrder));
                     break;
                 case UpdateClassSourceResult updated:
                     written.Add(new WrittenClassItem(updated.ClassId, action, updated.FilePath ?? string.Empty, updated.NewFileContent));

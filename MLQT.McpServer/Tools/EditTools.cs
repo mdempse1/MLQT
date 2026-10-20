@@ -239,10 +239,10 @@ public sealed class EditTools
             return readOnly;
 
         await ModelicaFileEncoding.WriteAllTextAsync(newFilePath, content);
-        AppendToPackageOrder(dir, className);
+        var listedIn = AppendToPackageOrder(dir, className);
         var affected = await _libraries.ReloadFileAsync(newFilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
-        return new CreateClassResult(newId, newFilePath, "standalone", PreviewOnly: false, Created: true, null);
+        return new CreateClassResult(newId, newFilePath, "standalone", PreviewOnly: false, Created: true, null, listedIn);
     }
 
     // Create a sub-package as a directory package: <parentDir>/<Name>/package.mo (+ its own package.order),
@@ -268,10 +268,10 @@ public sealed class EditTools
         await ModelicaFileEncoding.WriteAllTextAsync(newPackageMo, content);
         await ModelicaFileEncoding.WriteAllTextAsync(Path.Combine(packageDir, "package.order"),
             packageMembers.Count > 0 ? string.Join("\n", packageMembers) + "\n" : string.Empty);
-        AppendToPackageOrder(parentDir, className); // register the package in its parent's package.order
+        var listedIn = AppendToPackageOrder(parentDir, className); // register the package in its parent's package.order
         var affected = await _libraries.ReloadFileAsync(newPackageMo);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
-        return new CreateClassResult(newId, newPackageMo, "directory-package", PreviewOnly: false, Created: true, null);
+        return new CreateClassResult(newId, newPackageMo, "directory-package", PreviewOnly: false, Created: true, null, listedIn);
     }
 
     private async Task<object> CreateNestedAsync(
@@ -309,11 +309,10 @@ public sealed class EditTools
             return readOnly;
 
         await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, fileContent);
-        if (parentIsDirectoryPackage)
-            AppendToPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, className);
+        var listedIn = parentIsDirectoryPackage ? AppendToPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, className) : null;
         var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
-        return new CreateClassResult(newId, ctx.FilePath, "nested", PreviewOnly: false, Created: true, null);
+        return new CreateClassResult(newId, ctx.FilePath, "nested", PreviewOnly: false, Created: true, null, listedIn);
     }
 
     [McpServerTool(Name = "mlqt_delete_class")]
@@ -1466,19 +1465,21 @@ public sealed class EditTools
         => string.Join("\n", code.Replace("\r\n", "\n").Split('\n').Select(l => l.Length == 0 ? l : indent + l));
 
     // Keep a directory package's package.order in sync when a child is added. No-op if there is no
-    // package.order (the loader includes every .mo file anyway).
-    private static void AppendToPackageOrder(string directory, string className)
+    // package.order (the loader includes every .mo file anyway). Returns the package.order that lists the
+    // class, so a caller can say so: an agent told nothing added the class to it a second time.
+    private static string? AppendToPackageOrder(string directory, string className)
     {
         var path = Path.Combine(directory, "package.order");
         if (!File.Exists(path))
-            return;
+            return null;
         var lines = ModelicaFileEncoding.ReadAllLinesOnly(path).ToList();
         if (lines.Any(l => string.Equals(l.Trim(), className, StringComparison.Ordinal)))
-            return;
+            return path;
         while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
             lines.RemoveAt(lines.Count - 1);
         lines.Add(className);
         ModelicaFileEncoding.WriteAllLines(path, lines);
+        return path;
     }
 
     private static int CountOccurrences(string haystack, string needle)

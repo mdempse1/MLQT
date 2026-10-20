@@ -42,6 +42,34 @@ public class WriteFormatToolsTests
         Assert.NotNull(host.Libraries.GetModelById("P.Sources.Ramp"));
     }
 
+    // Told nothing, an agent added the class it had just written to package.order a second time, with sed.
+    [Fact]
+    public async Task WriteClass_NamesThePackageOrderItListedTheClassIn()
+    {
+        using var host = new TestHost();
+        var tools = Load(host, new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Q \"q\"\nend Q;\n",
+            ["package.order"] = "One\n",
+            ["One.mo"] = "within Q;\nmodel One \"one\"\nend One;\n",
+        });
+
+        var res = ToolAssert.Ok<WriteClassResult>(await tools.WriteClass([Class("Q", "model Two \"two\"\nend Two;")]));
+
+        var order = Assert.Single(res.Written).ListedInPackageOrder;
+        Assert.NotNull(order);
+        Assert.Equal("package.order", Path.GetFileName(order));
+        Assert.Equal(["One", "Two"], File.ReadAllLines(order));
+    }
+
+    [Fact]
+    public async Task WriteClass_NamesNoPackageOrder_WhereThereIsNone()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<WriteClassResult>(await Load(host).WriteClass([Class("P", "model B \"b\"\nend B;")]));
+        Assert.Null(Assert.Single(res.Written).ListedInPackageOrder);
+    }
+
     [Fact]
     public async Task WriteClass_ReplacesOnlyWhenAsked()
     {

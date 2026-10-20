@@ -49,8 +49,10 @@ public sealed class ClassFacadeTools
     }
 
     [McpServerTool(Name = "mlqt_get_class", ReadOnly = true, OpenWorld = false)]
-    [Description("Read one or more Modelica classes by full id, in the views asked for (default info and " +
-                 "source). Views: 'info' (kind, file, description, parent and children), 'source' (the code; " +
+    [Description("Read one or more Modelica classes by full id - use this rather than cat, grep or reading the " +
+                 ".mo files, however small the library: a file may hold many classes and their annotations, and " +
+                 "this answers with the class alone. Ask for every class a change runs through in one call. " +
+                 "Answers the views asked for (default info and source). Views:'info' (kind, file, description, parent and children), 'source' (the code; " +
                  "annotations hidden unless includeAnnotations=true - copy edit text with them shown), " +
                  "'interface' (how to use it: parameters, connectors, extends, inherited members included), " +
                  "'elements' (every declaration, with defaults, modifications and comments), 'behavior' " +
