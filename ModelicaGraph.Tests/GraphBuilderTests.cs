@@ -1118,20 +1118,20 @@ end Test;";
         // Even though we cannot parse the body, the top-of-file `within` clause is intact,
         // so the placeholder id should be the *full* Modelica path, not just the filename.
         var graph = new DirectedGraph();
-        var content = @"within Mustang.Vehicle.Chassis.Suspension.HalfCar.Templates;
-model MustangS
+        var content = @"within Roadster.Vehicle.Chassis.Suspension.HalfCar.Templates;
+model RoadsterS
 parameter SetupRecord setup constrainedby BaseSetup;
-end MustangS;";
-        var filePath = Path.Combine(_testFilesPath, "MustangS.mo");
+end RoadsterS;";
+        var filePath = Path.Combine(_testFilesPath, "RoadsterS.mo");
 
         var modelIds = GraphBuilder.LoadModelicaFile(graph, filePath, content);
 
         var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
         if (placeholder != null)
         {
-            Assert.Equal("Mustang.Vehicle.Chassis.Suspension.HalfCar.Templates.MustangS", placeholder.Id);
-            Assert.Equal("MustangS", placeholder.Definition.Name);
-            Assert.Equal("Mustang.Vehicle.Chassis.Suspension.HalfCar.Templates", placeholder.ParentModelName);
+            Assert.Equal("Roadster.Vehicle.Chassis.Suspension.HalfCar.Templates.RoadsterS", placeholder.Id);
+            Assert.Equal("RoadsterS", placeholder.Definition.Name);
+            Assert.Equal("Roadster.Vehicle.Chassis.Suspension.HalfCar.Templates", placeholder.ParentModelName);
             Assert.Contains(placeholder.Id, modelIds);
         }
     }

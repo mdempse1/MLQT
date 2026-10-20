@@ -15,7 +15,7 @@ namespace RevisionControl.Tests;
 ///
 /// <para>Asking the server both ways removes the guess. These tests cover the half that needs no
 /// server — the URLs — because that is where the mistakes are: a missing slash, a double slash, or a
-/// library called "VehicleLib - Suspensions" that has to survive being put in a URL.</para>
+/// library called "VehicleLib - SuspensionLib" that has to survive being put in a URL.</para>
 ///
 /// <para><b>The class is called Subversion and not Svn on purpose.</b> <c>run-all-tests.ps1</c> and
 /// CI run this suite with <c>FullyQualifiedName!~Svn</c>, because the SVN integration tests need an
@@ -53,12 +53,12 @@ public class SubversionContentUrlTests
     [Fact]
     public void ASpaceInALibraryNameSurvives()
     {
-        // "VehicleLib - Suspensions" stands for a real directory in the repository this was reported against,
+        // "VehicleLib - SuspensionLib" stands for a real directory in the repository this was reported against,
         // and an unescaped space makes svn read the URL as two arguments.
         var urls = SvnRevisionControlSystem.ContentUrls(
-            Root, WorkingCopy, "trunk/Modelica/VehicleLib - Suspensions/package.mo");
+            Root, WorkingCopy, "trunk/Modelica/VehicleLib - SuspensionLib/package.mo");
 
-        Assert.Equal(Root + "/trunk/Modelica/VehicleLib%20-%20Suspensions/package.mo", urls[0]);
+        Assert.Equal(Root + "/trunk/Modelica/VehicleLib%20-%20SuspensionLib/package.mo", urls[0]);
         Assert.DoesNotContain(" ", urls[0]);
     }
 

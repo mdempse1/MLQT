@@ -10,7 +10,7 @@ namespace MLQT.Services.Tests.Helpers;
 /// </summary>
 /// <remarks>
 /// <para><b>What went wrong.</b> Reported against
-/// <c>Suspensions.HalfCar.Steering.Experiments.RackAndPinionKinematics</c>: the library browser
+/// <c>SuspensionLib.HalfCar.Steering.Experiments.RackAndPinionKinematics</c>: the library browser
 /// marked it as a cosmetic change, and the Code Review page opened it with all three diff views
 /// disabled. The browser goes from the changed <i>file</i> to the models in it; Code Review went
 /// from the model to <c>Libraries.FirstOrDefault(l =&gt; l.ModelIds.Contains(id))</c>. Both the
@@ -25,7 +25,7 @@ namespace MLQT.Services.Tests.Helpers;
 /// </remarks>
 public class LibraryOwnershipTests
 {
-    private const string Shared = "Suspensions.HalfCar.Steering.Experiments.RackAndPinionKinematics";
+    private const string Shared = "SuspensionLib.HalfCar.Steering.Experiments.RackAndPinionKinematics";
 
     private readonly List<LoadedLibrary> _libraries = [];
     private ModelNode? _node;
@@ -65,8 +65,8 @@ public class LibraryOwnershipTests
     public void SourceOwnsAClassTheEncryptedCopyAlsoClaims()
     {
         ArrangeGraph(sourceWon: true);
-        Add("Suspensions", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
-        var source = Add("Suspensions", "working-copy", LibrarySourceType.Directory, Shared);
+        Add("SuspensionLib", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
+        var source = Add("SuspensionLib", "working-copy", LibrarySourceType.Directory, Shared);
 
         Assert.Same(source, Owner(Shared));
     }
@@ -76,8 +76,8 @@ public class LibraryOwnershipTests
     public void TheAnswerDoesNotDependOnWhichLoadFinishedFirst()
     {
         ArrangeGraph(sourceWon: true);
-        var source = Add("Suspensions", "working-copy", LibrarySourceType.Directory, Shared);
-        Add("Suspensions", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
+        var source = Add("SuspensionLib", "working-copy", LibrarySourceType.Directory, Shared);
+        Add("SuspensionLib", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
 
         Assert.Same(source, Owner(Shared));
     }
@@ -90,8 +90,8 @@ public class LibraryOwnershipTests
     public void TheEncryptedLibraryOwnsAClassThatIsOnlyAStub()
     {
         ArrangeGraph(sourceWon: false);
-        var encrypted = Add("Suspensions", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
-        Add("Suspensions", "working-copy", LibrarySourceType.Directory, Shared);
+        var encrypted = Add("SuspensionLib", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
+        Add("SuspensionLib", "working-copy", LibrarySourceType.Directory, Shared);
 
         Assert.Same(encrypted, Owner(Shared));
     }
@@ -99,7 +99,7 @@ public class LibraryOwnershipTests
     [Fact]
     public void OneClaimantIsTheAnswerWithoutConsultingTheGraph()
     {
-        var only = Add("Suspensions", "working-copy", LibrarySourceType.Directory, Shared);
+        var only = Add("SuspensionLib", "working-copy", LibrarySourceType.Directory, Shared);
 
         Assert.Same(only, Owner(Shared));
     }
@@ -107,7 +107,7 @@ public class LibraryOwnershipTests
     [Fact]
     public void AClassNoLibraryClaimsIsOwnedByNone()
     {
-        Add("Suspensions", "working-copy", LibrarySourceType.Directory, Shared);
+        Add("SuspensionLib", "working-copy", LibrarySourceType.Directory, Shared);
 
         Assert.Null(Owner("Somewhere.Else"));
     }
@@ -119,8 +119,8 @@ public class LibraryOwnershipTests
     [Fact]
     public void AClaimedClassWithNoNodeStillResolves()
     {
-        Add("Suspensions", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
-        var source = Add("Suspensions", "working-copy", LibrarySourceType.Directory, Shared);
+        Add("SuspensionLib", "dymola-repo", LibrarySourceType.EncryptedDirectory, Shared);
+        var source = Add("SuspensionLib", "working-copy", LibrarySourceType.Directory, Shared);
 
         // No node, so "not a stub" is the reading, and the source library is the one that supplies
         // those. Either answer beats none.

@@ -138,7 +138,7 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // ModelIds.Count over the libraries therefore gave a different answer depending on which
         // parallel load happened to finish first.
         var sourceFirst = await LoadBothAsync("VendorLib", encryptedFirst: false);
-        var encryptedFirst = await LoadBothAsync("Suspensions", encryptedFirst: true);
+        var encryptedFirst = await LoadBothAsync("SuspensionLib", encryptedFirst: true);
 
         Assert.Equal(2, sourceFirst.TotalModelCount);
         Assert.Equal(sourceFirst.TotalModelCount, encryptedFirst.TotalModelCount);
@@ -175,7 +175,7 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
 
         Assert.Equal(2, service.TotalModelCount);
 
-        await service.AddLibraryFromPathAsync(WriteSource("Suspensions"));
+        await service.AddLibraryFromPathAsync(WriteSource("SuspensionLib"));
 
         Assert.Equal(4, service.TotalModelCount);
     }
@@ -201,9 +201,9 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
         // The fix must not make encrypted libraries disappear when there is no source copy to
         // prefer — that is the ordinary case for every other vendor library in the folder.
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteEncrypted("Suspensions"));
+        await service.AddLibraryFromPathAsync(WriteEncrypted("SuspensionLib"));
 
-        var top = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "Suspensions");
+        var top = (await service.GetTopLevelModelsAsync()).Single(m => m.Id == "SuspensionLib");
         var owner = service.Libraries.Single(l => l.Id == top.LibraryId);
 
         Assert.Equal(LibrarySourceType.EncryptedDirectory, owner.SourceType);

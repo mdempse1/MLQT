@@ -1190,7 +1190,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         string repositoryRoot, string workingCopyUrl, string filePath)
     {
         // Forward slashes and escaped spaces: these are URLs, and library directories here are
-        // called things like "VehicleLib - Suspensions".
+        // called things like "VehicleLib - SuspensionLib".
         var relative = string.Join('/',
             filePath.Replace('\\', '/')
                 .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

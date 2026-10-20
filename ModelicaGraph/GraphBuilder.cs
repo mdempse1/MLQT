@@ -1386,7 +1386,7 @@ public static class GraphBuilder
         }
 
         // Otherwise the readable copy, and this is the case that matters most: a reference from one
-        // library into another. A model in Engines naming modelica://VendorLib/Resources/x sits under
+        // library into another. A model in EngineLib naming modelica://VendorLib/Resources/x sits under
         // neither VendorLib root, so the test above cannot separate them - and most references are of
         // this kind, which is why fixing only the same-library case left most resources still
         // attached to the encrypted build.

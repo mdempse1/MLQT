@@ -109,7 +109,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
     public void ReadableSourceArriving_RetiresTheEncryptedCopy()
     {
         var encrypted = Library("VendorLib", encrypted: true);
-        var other = Library("Suspensions", encrypted: true);
+        var other = Library("SuspensionLib", encrypted: true);
 
         var retired = LibraryPrecedence.Retires(Library("VendorLib", encrypted: false), [encrypted, other]);
 
@@ -132,9 +132,9 @@ public class SourceSupersedesEncryptedTests : IDisposable
         // Every other vendor library in the folder: the ordinary case, and the one that must not
         // lose anything to this rule.
         Assert.Empty(LibraryPrecedence.Retires(
-            Library("VendorLib", encrypted: true), [Library("Suspensions", encrypted: false)]));
+            Library("VendorLib", encrypted: true), [Library("SuspensionLib", encrypted: false)]));
         Assert.Empty(LibraryPrecedence.Retires(
-            Library("VendorLib", encrypted: false), [Library("Suspensions", encrypted: true)]));
+            Library("VendorLib", encrypted: false), [Library("SuspensionLib", encrypted: true)]));
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
     [Fact]
     public void ReadableSourceFor_NamesWhereTheSourceIs()
     {
-        var readable = new[] { ("Suspensions", "/a"), ("VendorLib", "/b") };
+        var readable = new[] { ("SuspensionLib", "/a"), ("VendorLib", "/b") };
 
         Assert.Equal("/b", LibraryPrecedence.ReadableSourceFor("VendorLib", readable));
         Assert.Null(LibraryPrecedence.ReadableSourceFor("VehicleLib", readable));
@@ -267,7 +267,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
     public async Task AnEncryptedLibraryWithNoSourceCopy_IsUntouched()
     {
         var service = new LibraryDataService();
-        await service.AddLibraryFromPathAsync(WriteSource("Suspensions"));
+        await service.AddLibraryFromPathAsync(WriteSource("SuspensionLib"));
 
         var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted("VendorLib"));
 
@@ -311,7 +311,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
         var tool = Path.Combine(_root, "tool");
         var checkout = Path.Combine(_root, "checkout");
         WriteEncrypted("VendorLib", parent: "tool");
-        WriteEncrypted("Suspensions", parent: "tool");
+        WriteEncrypted("SuspensionLib", parent: "tool");
         WriteSource("VendorLib", parent: "checkout");
 
         var toolRepo = (await repositories.AddRepositoryAsync(tool, checkoutPath: null, startMonitoring: false)).Repository!;
@@ -321,7 +321,7 @@ public class SourceSupersedesEncryptedTests : IDisposable
             repositories.LoadLibrariesAsync(checkoutRepo.Id));
 
         Assert.Equal(
-            [("Suspensions", true), ("VendorLib", false)],
+            [("SuspensionLib", true), ("VendorLib", false)],
             libraries.Libraries
                 .Select(l => (l.Name, l.SourceType == LibrarySourceType.EncryptedDirectory))
                 .OrderBy(l => l.Name, StringComparer.Ordinal));

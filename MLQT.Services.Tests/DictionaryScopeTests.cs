@@ -130,11 +130,11 @@ public class DictionaryScopeTests
         // vendor's install folder for reference. Whichever happens to be loaded first must not decide
         // whether the user can accept a word for it.
         var repository = new Repository { Name = "R", LocalPath = @"C:\repos\R" };
-        var reference = Library("Engines", repositoryId: null, modelIds: "Engines.Model");
-        var owned = Library("Engines", repository.Id, modelIds: "Engines.Model");
+        var reference = Library("EngineLib", repositoryId: null, modelIds: "EngineLib.Model");
+        var owned = Library("EngineLib", repository.Id, modelIds: "EngineLib.Model");
         var (libraries, repositories) = Fake([reference, owned], repository);
 
-        Assert.Equal(repository.LocalPath, DictionaryScope.RootForModel(libraries, repositories, "Engines.Model"));
+        Assert.Equal(repository.LocalPath, DictionaryScope.RootForModel(libraries, repositories, "EngineLib.Model"));
     }
 
     [Fact]

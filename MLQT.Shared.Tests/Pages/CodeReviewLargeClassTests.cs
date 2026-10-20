@@ -225,12 +225,12 @@ public class CodeReviewLargeClassTests
     [Fact]
     public void TheNotice_SaysHowLongTheClassIsAndWhereTheRestIs()
     {
-        var notice = CodeReview.OmittedLinesNotice(5_000, 101_354, "Engines/Examples/Big_fmu.mo");
+        var notice = CodeReview.OmittedLinesNotice(5_000, 101_354, "EngineLib/Examples/Big_fmu.mo");
 
         Assert.NotNull(notice);
         Assert.Contains($"{106_354:N0} lines", notice);   // in the reader's own number format
         Assert.Contains($"first {5_000:N0}", notice);
-        Assert.Contains("Engines/Examples/Big_fmu.mo", notice);
+        Assert.Contains("EngineLib/Examples/Big_fmu.mo", notice);
     }
 
     [Fact]
