@@ -115,7 +115,8 @@ public sealed class SessionTools
                 "classes with mlqt_write_class. Provide the library name (a Modelica identifier) and the " +
                 "directory to create it in (the library folder is created inside it, and missing parent " +
                 "folders are created). Optionally a description and a version. Fails if the target folder " +
-                "already exists. Set preview=true to see the package.mo without writing anything.")]
+                "already exists, or if a library of that name is already loaded (unload it first with " +
+                "mlqt_session if the name really is needed). Set preview=true to see the package.mo without writing anything.")]
     public async Task<object> CreateLibrary(
         [Description("The library (top-level package) name — a valid Modelica identifier, e.g. 'MyLibrary'.")]
         string name,
@@ -134,6 +135,14 @@ public sealed class SessionTools
             return new ToolError($"name '{name}' is not a valid Modelica identifier (letters/digits/_, not starting with a digit).");
         if (string.IsNullOrWhiteSpace(directory))
             return new ToolError("directory is required (an absolute path to create the library folder in).");
+
+        // A second top-level package of a loaded name would replace the loaded one in the graph, and a
+        // simulator refuses to load it beside the first, so the name has to be freed explicitly.
+        if (_libraries.Libraries.FirstOrDefault(l => l.Name == name || l.TopLevelModelIds.Contains(name)) is { } loaded)
+            return new ToolError(
+                $"A library named '{name}' is already loaded (library '{loaded.Name}', from '{loaded.SourcePath}'). " +
+                "Choose a different name, or, if this name really is needed, first unload the loaded one with " +
+                $"mlqt_session(action='unload', library='{loaded.Name}').");
 
         var libraryDir = Path.Combine(directory, name);
         if (Directory.Exists(libraryDir))

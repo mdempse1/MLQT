@@ -68,6 +68,40 @@ public class CreateLibraryTests
     }
 
     [Fact]
+    public async Task Create_NameAlreadyLoaded_Rejected_UntilUnloaded()
+    {
+        using var host = new TestHost();
+        var first = host.NewTempDir();
+        ToolAssert.Ok<CreateLibraryResult>(await Session(host).CreateLibrary("Dup", first));
+
+        // Elsewhere on disk, but the name is the loaded library's: refused, nothing written, the
+        // loaded one untouched, and the error names the way out.
+        var second = host.NewTempDir();
+        var error = Assert.IsType<ToolError>(await Session(host).CreateLibrary("Dup", second));
+        Assert.Contains("mlqt_session(action='unload', library='Dup')", error.Error);
+        Assert.False(Directory.Exists(Path.Combine(second, "Dup")));
+        Assert.Equal(Path.Combine(first, "Dup"), Assert.Single(host.Libraries.Libraries).SourcePath);
+
+        // Previewing is refused the same way, because the write would be.
+        Assert.IsType<ToolError>(await Session(host).CreateLibrary("Dup", second, preview: true));
+
+        // Once unloaded, the name is free.
+        ToolAssert.Ok<UnloadLibraryResult>(Session(host).UnloadLibrary("Dup"));
+        var res = ToolAssert.Ok<CreateLibraryResult>(await Session(host).CreateLibrary("Dup", second));
+        Assert.Equal(Path.Combine(second, "Dup"), res.Path);
+        Assert.Equal(Path.Combine(second, "Dup"), Assert.Single(host.Libraries.Libraries).SourcePath);
+    }
+
+    [Fact]
+    public async Task Create_NameDiffersOnlyInCase_Allowed()
+    {
+        // Modelica names are case-sensitive, so 'dup' is not the loaded 'Dup'.
+        using var host = new TestHost();
+        ToolAssert.Ok<CreateLibraryResult>(await Session(host).CreateLibrary("Dup", host.NewTempDir()));
+        ToolAssert.Ok<CreateLibraryResult>(await Session(host).CreateLibrary("dup", host.NewTempDir()));
+    }
+
+    [Fact]
     public async Task Create_InvalidName_Rejected()
     {
         using var host = new TestHost();

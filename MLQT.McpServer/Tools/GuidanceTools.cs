@@ -197,7 +197,8 @@ public sealed class GuidanceTools
 
             Start a new library/project:
               mlqt_create_library(name, directory) writes an empty top-level library on disk (package.mo +
-              package.order) and loads it -> add classes, and packages of classes, with mlqt_write_class:
+              package.order) and loads it. A name already loaded is refused, as a simulator would refuse it:
+              pick another, or unload the loaded library first -> add classes, and packages of classes, with mlqt_write_class:
               several in one call, in order, so a later one can go in a package an earlier one created.
               Storage defaults to one class per file: a class becomes its own .mo file and a sub-package its
               own directory package (folder + package.mo). Classes that cannot be standalone (a
