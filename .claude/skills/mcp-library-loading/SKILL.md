@@ -94,7 +94,12 @@ So a library can come into MLQT in two ways, and **MLQT records which way each o
   classes that used it. If an explicit copy is already loaded from another path, the call is refused
   unless `replace: true`. Two explicit copies disagreeing means the caller has to choose. A library
   the host **supplied from memory** counts as explicit, and is the one copy that cannot be loaded
-  again, so it stays loaded until its replacement has loaded.
+  again, so it stays loaded until its replacement has loaded. **An encrypted build of the release it
+  supplies never replaces it, even with `replace: true`.** The supplied copy is the vendor's own
+  description of that release, and what MLQT rebuilds from the build's help pages only approximates
+  it. So the build is reported in a warning, not refused, because a refusal would offer `replace`.
+  Where either version is unknown, the supplied copy is kept, as `LibraryPrecedence` keeps it. A build
+  of another release is what is installed, and `replace` may put it in the supplied copy's place.
 - **By search:** found for a `uses`, by the order above. It never replaces anything.
 
 Three rules keep this honest, each one learnt from a route that broke it:

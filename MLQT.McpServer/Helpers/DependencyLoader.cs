@@ -223,6 +223,12 @@ internal sealed class DependencyLoader
                 _warnings.Add(Superseded(name, path, existing.SourcePath));
                 return;
             }
+            // Nor is an encrypted build of the release the host supplied, replace or not.
+            if (SuppliedDescribesThisBuild(existing, root) is { } release)
+            {
+                _warnings.Add(SuppliedForThisBuild(name, path, existing, release));
+                return;
+            }
             if (OriginOf(existing) == Explicit && !replace)
             {
                 _errors.Add(AnotherCopy(name, existing, path));
@@ -266,10 +272,9 @@ internal sealed class DependencyLoader
     /// <remarks>
     /// A copy on disk is unloaded first - two readable copies of one library cannot be loaded side by
     /// side, their classes having the same ids - and loaded again by the caller if this one fails. A
-    /// supplied library cannot be loaded again, so it stays until this one has loaded: readable source
-    /// retires it as it registers, and where it outranks the new copy - the installed build of the same
-    /// release - the library service turns that away without reading it, and only then is it unloaded
-    /// and the load tried again.
+    /// supplied library cannot be loaded again, so it stays until this one has loaded: readable source,
+    /// and an encrypted build of another release, retire it as they register. An encrypted build of the
+    /// same release never gets here (<see cref="SuppliedDescribesThisBuild"/>).
     /// </remarks>
     private async Task<LoadedLibrary?> LoadInPlaceOfAsync(string root, LoadedLibrary? existing)
     {
@@ -287,15 +292,31 @@ internal sealed class DependencyLoader
             return Usable(await LoadRawAsync(root), root);
         }
 
-        var library = await LoadRawAsync(root);
-        if (existing is not null && library?.SupersededBy is { } keeper &&
-            string.Equals(keeper, existing.SourcePath, StringComparison.Ordinal) && IsLoaded(existing))
-        {
-            Unload(existing);
-            library = await LoadRawAsync(root);
-        }
-        return Usable(library, root);
+        return Usable(await LoadRawAsync(root), root);
     }
+
+    /// <summary>
+    /// The release, when <paramref name="existing"/> is a library the host supplied and
+    /// <paramref name="root"/> an encrypted build of the same release; otherwise null. The supplied copy
+    /// is the vendor's own description of that release, and wins over what MLQT can rebuild from the
+    /// build's help pages - <c>replace</c> or not. Where either version is unknown nothing tells the two
+    /// apart, and the supplied copy is kept, as the library service keeps it. A build of another release
+    /// is what is installed, and may take the supplied copy's place (<c>LibraryPrecedence</c>).
+    /// </summary>
+    private static string? SuppliedDescribesThisBuild(LoadedLibrary existing, string root)
+    {
+        if (existing.ReadOnlySource != ReadOnlySourceKind.Supplied || EncryptedLibraryDetector.Detect(root) is not { } build)
+            return null;
+        if (existing.Version is { Length: > 0 } supplied && build.Version is { Length: > 0 } installed &&
+            !string.Equals(supplied, installed, StringComparison.Ordinal))
+            return null;
+        return existing.Version is { Length: > 0 } version ? version : build.Version ?? "its version is not known";
+    }
+
+    private static string SuppliedForThisBuild(string name, string path, LoadedLibrary supplied, string release) =>
+        $"'{name}' at '{path}' is an encrypted build of the release the host supplied ({release}), so the supplied " +
+        $"copy from '{supplied.SourcePath}' is kept and used instead: it is the vendor's own description of that " +
+        "release, which MLQT can only approximate from the build's help pages. replace does not change this.";
 
     /// <summary>
     /// Puts <paramref name="existing"/> back when it was unloaded for a copy that then failed to load. A
@@ -370,6 +391,13 @@ internal sealed class DependencyLoader
             // As for a path: an encrypted build beside readable source is left to the source, not chosen between.
             if (!existing.IsReadOnly && EncryptedLibraryDetector.IsEncryptedLibraryRoot(discovered.FullPath))
                 continue;
+            // And a build of the release the host supplied is left to the supplied copy, which the library
+            // service keeps in its place as the repository loads.
+            if (SuppliedDescribesThisBuild(existing, discovered.FullPath) is { } release)
+            {
+                _warnings.Add(SuppliedForThisBuild(existing.Name, discovered.FullPath, existing, release));
+                continue;
+            }
             conflicts.Add((discovered, existing));
         }
         var refused = conflicts.Where(c => OriginOf(c.Existing) == Explicit && !replace).ToList();

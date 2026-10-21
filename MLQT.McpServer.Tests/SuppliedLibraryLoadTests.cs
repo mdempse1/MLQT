@@ -70,13 +70,33 @@ public class SuppliedLibraryLoadTests
     private static LoadedLibrary VendorLib(TestHost host) =>
         Assert.Single(host.Libraries.Libraries, l => l.Name == "VendorLib");
 
+    /// <summary>The supplied copy of a release is the vendor's own description of it, and wins over what
+    /// MLQT rebuilds from the encrypted build's help pages - replace or not, and said, not refused: a
+    /// refusal would offer replace, which cannot change it.</summary>
     [Theory]
-    [InlineData("2026.1")] // the same release
-    [InlineData("2025.1")] // another release, which on its own would let the installed build win
-    public async Task AnEncryptedBuild_NeverDisplacesTheSuppliedLibrary_WithoutReplace(string suppliedVersion)
+    [InlineData("VendorLib 2026.1", false)] // the same release
+    [InlineData("VendorLib 2026.1", true)]
+    [InlineData("VendorLib", false)]        // a build whose release is not known: nothing tells them apart
+    [InlineData("VendorLib", true)]
+    public async Task AnEncryptedBuild_OfTheSuppliedRelease_NeverDisplacesIt(string folder, bool replace)
     {
         using var host = new TestHost();
-        await host.Libraries.AddLibraryFromSourceAsync(new Source(suppliedVersion));
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        var encrypted = WriteEncrypted(host.NewTempDir(), folder);
+
+        var res = ToolAssert.Ok<LoadResult>(await Tools(host).Load([encrypted], withDependencies: false, replace: replace));
+
+        Assert.Equal(ReadOnlySourceKind.Supplied, VendorLib(host).ReadOnlySource);
+        Assert.Contains(res.Warnings, w => w.Contains("the release the host supplied", StringComparison.Ordinal));
+        Assert.Empty(res.Errors);
+        Assert.Empty(res.Replaced);
+    }
+
+    [Fact]
+    public async Task AnEncryptedBuild_OfAnotherRelease_IsRefused_WithoutReplace()
+    {
+        using var host = new TestHost();
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2025.1"));
         var encrypted = WriteEncrypted(host.NewTempDir(), "VendorLib 2026.1");
 
         var res = ToolAssert.Ok<LoadResult>(await Tools(host).Load([encrypted], withDependencies: false));
@@ -89,13 +109,11 @@ public class SuppliedLibraryLoadTests
     /// <summary>The route the library service decides alone: a folder of libraries, whose libraries were
     /// loaded without being asked about first. The installed build of another release retired the
     /// supplied copy there, unasked and unsaid.</summary>
-    [Theory]
-    [InlineData("2026.1")]
-    [InlineData("2025.1")]
-    public async Task AnEncryptedBuild_InAFolderOfLibraries_NeverDisplacesTheSuppliedLibrary(string suppliedVersion)
+    [Fact]
+    public async Task AnEncryptedBuild_OfAnotherRelease_InAFolderOfLibraries_IsRefused_WithoutReplace()
     {
         using var host = new TestHost();
-        await host.Libraries.AddLibraryFromSourceAsync(new Source(suppliedVersion));
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2025.1"));
         var folder = host.NewTempDir();
         WriteEncrypted(folder, "VendorLib 2026.1");
 
@@ -103,6 +121,24 @@ public class SuppliedLibraryLoadTests
 
         Assert.Equal(ReadOnlySourceKind.Supplied, VendorLib(host).ReadOnlySource);
         Assert.Contains(res.Errors, e => e.Contains("'VendorLib' is already loaded", StringComparison.Ordinal));
+        Assert.Empty(res.Replaced);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnEncryptedBuild_OfTheSuppliedRelease_InAFolderOfLibraries_NeverDisplacesIt(bool replace)
+    {
+        using var host = new TestHost();
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        var folder = host.NewTempDir();
+        WriteEncrypted(folder, "VendorLib 2026.1");
+
+        var res = ToolAssert.Ok<LoadResult>(await Tools(host).Load([folder], withDependencies: false, replace: replace));
+
+        Assert.Equal(ReadOnlySourceKind.Supplied, VendorLib(host).ReadOnlySource);
+        Assert.Contains(res.Warnings, w => w.Contains("the release the host supplied", StringComparison.Ordinal));
+        Assert.Empty(res.Errors);
         Assert.Empty(res.Replaced);
     }
 
@@ -122,11 +158,11 @@ public class SuppliedLibraryLoadTests
 
     [Theory]
     [InlineData(false)] // readable source
-    [InlineData(true)]  // the installed encrypted build
+    [InlineData(true)]  // the installed encrypted build, of another release than the one supplied
     public async Task ReplacingTheSuppliedLibrary_FromAFolderOfLibraries_IsListedUnderReplaced(bool encrypted)
     {
         using var host = new TestHost();
-        await host.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        await host.Libraries.AddLibraryFromSourceAsync(new Source(encrypted ? "2025.1" : "2026.1"));
         var folder = host.NewTempDir();
         if (encrypted)
             WriteEncrypted(folder, "VendorLib 2026.1");
@@ -165,15 +201,13 @@ public class SuppliedLibraryLoadTests
         Assert.Equal(first, Assert.Single(res.Replaced).OldPath);
     }
 
-    /// <summary>The same release, which the supplied copy outranks: the library service turns the build
-    /// away while the supplied copy is loaded, so replace has to take it out first.</summary>
-    [Theory]
-    [InlineData("2026.1")]
-    [InlineData("2025.1")]
-    public async Task ReplacingTheSuppliedLibrary_WithAnEncryptedBuild_IsListedUnderReplaced(string suppliedVersion)
+    /// <summary>A build of another release than the one supplied is what is installed, so replace may put
+    /// it in the supplied copy's place.</summary>
+    [Fact]
+    public async Task ReplacingTheSuppliedLibrary_WithABuildOfAnotherRelease_IsListedUnderReplaced()
     {
         using var host = new TestHost();
-        await host.Libraries.AddLibraryFromSourceAsync(new Source(suppliedVersion));
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2025.1"));
         var encrypted = WriteEncrypted(host.NewTempDir(), "VendorLib 2026.1");
 
         var res = ToolAssert.Ok<LoadResult>(await Tools(host).Load([encrypted], withDependencies: false, replace: true));
@@ -191,7 +225,7 @@ public class SuppliedLibraryLoadTests
     public async Task AFailedReplacement_KeepsTheSuppliedLibrary()
     {
         using var host = new TestHost();
-        await host.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2025.1"));
         var encrypted = WriteEncrypted(host.NewTempDir(), "VendorLib 2026.1");
         Directory.Delete(Path.Combine(encrypted, "help"), recursive: true);
 
