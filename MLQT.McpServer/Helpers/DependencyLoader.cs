@@ -1,7 +1,9 @@
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Services;
+using MLQT.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
+using ModelicaGraph;
 
 namespace MLQT.McpServer.Helpers;
 
@@ -13,7 +15,9 @@ namespace MLQT.McpServer.Helpers;
 /// <remarks>
 /// <para><b>Explicit first.</b> Every path the caller passes is loaded before anything is searched for, so a
 /// search cannot get in first with another version. An explicit library replaces a copy an earlier search
-/// found; two explicit copies of one library need <c>replace</c>, because then the caller has to choose.</para>
+/// found; two explicit copies of one library need <c>replace</c>, because then the caller has to choose.
+/// A library is known by the name its files declare, a library the host supplied counts as explicit, and a
+/// folder of libraries is held to the same rules before anything in it is loaded.</para>
 /// <para><b>Then the search</b>, for each <c>uses</c> not yet satisfied, transitively: the folder beside the
 /// library that needs it, its repository's root, the simulation tool's library folders, then
 /// MODELICAPATH. The first exact version found wins, the largest build of it; failing that, the newest
@@ -65,15 +69,21 @@ internal sealed class DependencyLoader
 
     public async Task<LoadResult> LoadAsync(IReadOnlyList<string> paths, bool withDependencies, bool replace, ToolFolders tool)
     {
+        var before = _libraries.Libraries.ToList();
+        var reportedAlready = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var path in paths)
             await LoadExplicitAsync(path, replace);
 
         if (withDependencies)
         {
             var unloaded = SearchAgainIfTheInstallChanged(tool.Install);
+            reportedAlready.UnionWith(unloaded.Select(u => u.Id));
             await LoadDependenciesAsync(tool);
             ReportWhatTheNewSearchFound(unloaded);
         }
+
+        ReportReplaced(before, reportedAlready);
 
         // A tool was named but nothing of it was found: say so, since the search was narrower than asked.
         if (withDependencies && tool.Note is { } note && tool.Folders.Count == 0)
@@ -90,9 +100,9 @@ internal sealed class DependencyLoader
     /// running only filled the gaps, and kept the old install's copies of the rest (B504). The libraries
     /// the caller named stay. Returns what was unloaded.
     /// </summary>
-    private List<(string Name, string? Version, string Path)> SearchAgainIfTheInstallChanged(string? install)
+    private List<(string Id, string Name, string? Version, string Path)> SearchAgainIfTheInstallChanged(string? install)
     {
-        var unloaded = new List<(string Name, string? Version, string Path)>();
+        var unloaded = new List<(string Id, string Name, string? Version, string Path)>();
         if (install is null)
             return unloaded;
         var previous = _session.SearchInstall;
@@ -102,7 +112,7 @@ internal sealed class DependencyLoader
 
         foreach (var library in _libraries.Libraries.Where(l => OriginOf(l) == Search).ToList())
         {
-            unloaded.Add((library.Name, library.Version, library.SourcePath));
+            unloaded.Add((library.Id, library.Name, library.Version, library.SourcePath));
             _libraries.RemoveLibrary(library.Id);
             _session.LibraryOrigins.Remove(library.Id);
         }
@@ -119,15 +129,33 @@ internal sealed class DependencyLoader
 
     // Each library unloaded for a new install: replaced when the search found it somewhere else, said
     // when it found nothing; one found again at the same path is as it was.
-    private void ReportWhatTheNewSearchFound(List<(string Name, string? Version, string Path)> unloaded)
+    private void ReportWhatTheNewSearchFound(List<(string Id, string Name, string? Version, string Path)> unloaded)
     {
-        foreach (var (name, version, path) in unloaded)
+        foreach (var (_, name, version, path) in unloaded)
         {
             var now = _libraries.Libraries.FirstOrDefault(l => l.Name == name);
             if (now is null)
                 _warnings.Add($"{name} {version} from '{path}' was unloaded for the new install, and no copy of it was found there.");
             else if (!SamePath(now.SourcePath, path))
                 _replaced.Add(new ReplacedLibraryItem(name, version, path, now.Version, now.SourcePath));
+        }
+    }
+
+    /// <summary>
+    /// Every library loaded before this call that another copy has taken the place of, whichever way it
+    /// went: unloaded here for an explicit path, or retired by the library service's precedence rule as
+    /// the new copy registered - readable source over a supplied library, or an installed build of
+    /// another release over a supplied one, which this code never sees happen. Asked of the session
+    /// itself, before and after, so that no route in can replace a library without saying so; a
+    /// supplied library above all, which only the host can supply again.
+    /// </summary>
+    private void ReportReplaced(List<LoadedLibrary> before, HashSet<string> reportedAlready)
+    {
+        var after = _libraries.Libraries.ToList();
+        foreach (var old in before.Where(b => !reportedAlready.Contains(b.Id) && after.All(a => a.Id != b.Id)))
+        {
+            if (after.FirstOrDefault(a => a.Name == old.Name) is { } now && !SamePath(now.SourcePath, old.SourcePath))
+                _replaced.Add(new ReplacedLibraryItem(old.Name, old.Version, old.SourcePath, now.Version, now.SourcePath));
         }
     }
 
@@ -149,6 +177,11 @@ internal sealed class DependencyLoader
     private static string Superseded(string name, string path, string source) =>
         $"'{name}' at '{path}' is encrypted, and a readable copy is already loaded from '{source}', which is used instead.";
 
+    // The copy that kept its place is itself read-only: supplied by the host, or another encrypted build.
+    private static string OutrankedByReadOnly(string name, string path, LoadedLibrary keeper) =>
+        $"'{name}' at '{path}' was not loaded: the {(keeper.ReadOnlySource == ReadOnlySourceKind.Supplied ? "copy the host supplied" : "copy")} " +
+        $"loaded from '{keeper.SourcePath}' takes precedence over it and is used instead.";
+
     private string OriginOf(LoadedLibrary library) =>
         _session.LibraryOrigins.TryGetValue(library.Id, out var origin) ? origin : Explicit;
 
@@ -165,11 +198,14 @@ internal sealed class DependencyLoader
         if (LoadRepository is { } loadRepository && Directory.Exists(root) &&
             !File.Exists(Path.Combine(root, "package.mo")) && !File.Exists(Path.Combine(root, "package.moe")))
         {
-            await LoadRepositoryAsync(loadRepository, root);
+            await LoadRepositoryAsync(loadRepository, root, replace);
             return;
         }
 
-        var name = NameFromPath(root);
+        // The name the library declares, not its folder's: a folder called after a loaded library may hold
+        // another one, which was refused as a copy of it - or, with replace, unloaded it - and a copy in a
+        // folder not called after it passed, and a supplied library was retired by it unasked.
+        var name = LibraryDiscovery.ReadLibraryName(root) ?? NameFromPath(root);
         var existing = _libraries.Libraries.FirstOrDefault(l => l.Name == name);
         if (existing is not null)
         {
@@ -182,7 +218,7 @@ internal sealed class DependencyLoader
             // An encrypted build beside readable source is not another copy to choose between: the source
             // wins whole (B268), so it is said, not refused - a refusal offers replace, which would swap
             // the source for a build with none.
-            if (!existing.IsReadOnly && File.Exists(Path.Combine(root, "package.moe")))
+            if (!existing.IsReadOnly && EncryptedLibraryDetector.IsEncryptedLibraryRoot(root))
             {
                 _warnings.Add(Superseded(name, path, existing.SourcePath));
                 return;
@@ -192,17 +228,19 @@ internal sealed class DependencyLoader
                 _errors.Add(AnotherCopy(name, existing, path));
                 return;
             }
-            _libraries.RemoveLibrary(existing.Id);
-            _session.LibraryOrigins.Remove(existing.Id);
         }
 
-        var library = await TryLoadAsync(root);
+        // The copy loaded stays until this one has: a load that fails leaves the session as it was.
+        var library = await LoadInPlaceOfAsync(root, existing);
         if (library is null)
+        {
+            await RestoreIfGoneAsync(existing, path);
             return;
+        }
 
-        // A copy in a folder not named after its library - a clone called Formula1-copy - is known for what
-        // it is only once loaded. Without this it was loaded beside the first copy, silently, and every
-        // class id still answered with the first: a second task's edits went to the first task's files (B505).
+        // A name that could not be read before the load - a package.mo that does not parse - is known
+        // only now. Without this the copy was loaded beside the first, silently, and every class id still
+        // answered with the first: a second task's edits went to the first task's files (B505).
         if (existing is null &&
             _libraries.Libraries.FirstOrDefault(l => l.Id != library.Id && l.Name == library.Name) is { } twin)
         {
@@ -212,27 +250,169 @@ internal sealed class DependencyLoader
                 _errors.Add(AnotherCopy(library.Name, twin, path));
                 return;
             }
-            _libraries.RemoveLibrary(twin.Id);
-            _session.LibraryOrigins.Remove(twin.Id);
             existing = twin;
         }
 
+        if (existing is not null && IsLoaded(existing))
+            Unload(existing);
         _session.LibraryOrigins[library.Id] = Explicit;
-        if (existing is not null)
-            _replaced.Add(new ReplacedLibraryItem(library.Name, existing.Version, existing.SourcePath, library.Version, library.SourcePath));
         _loaded.Add(Item(library, Explicit, "given", null, null));
     }
 
-    // Each library the repository holds is one the caller named, as if its path had been given.
-    private async Task LoadRepositoryAsync(Func<string, bool, Task<LoadRepositoryResult>> loadRepository, string root)
+    /// <summary>
+    /// Loads <paramref name="root"/> to take the place of <paramref name="existing"/>; the caller has
+    /// already decided it is wanted.
+    /// </summary>
+    /// <remarks>
+    /// A copy on disk is unloaded first - two readable copies of one library cannot be loaded side by
+    /// side, their classes having the same ids - and loaded again by the caller if this one fails. A
+    /// supplied library cannot be loaded again, so it stays until this one has loaded: readable source
+    /// retires it as it registers, and where it outranks the new copy - the installed build of the same
+    /// release - the library service turns that away without reading it, and only then is it unloaded
+    /// and the load tried again.
+    /// </remarks>
+    private async Task<LoadedLibrary?> LoadInPlaceOfAsync(string root, LoadedLibrary? existing)
     {
-        var result = await loadRepository(root, !DiscoverOnly);
+        if (existing is not null && EncryptedLibraryDetector.Detect(root) is { HasDocumentation: false })
+        {
+            // Nothing could be recovered from it, so taking the existing copy out for it would leave neither.
+            _warnings.Add($"'{existing.Name}' at '{root}' is an encrypted library that ships no usable documentation, " +
+                          $"so it was not loaded and the copy from '{existing.SourcePath}' was kept.");
+            return null;
+        }
+
+        if (existing is not null && existing.ReadOnlySource != ReadOnlySourceKind.Supplied)
+        {
+            Unload(existing);
+            return Usable(await LoadRawAsync(root), root);
+        }
+
+        var library = await LoadRawAsync(root);
+        if (existing is not null && library?.SupersededBy is { } keeper &&
+            string.Equals(keeper, existing.SourcePath, StringComparison.Ordinal) && IsLoaded(existing))
+        {
+            Unload(existing);
+            library = await LoadRawAsync(root);
+        }
+        return Usable(library, root);
+    }
+
+    /// <summary>
+    /// Puts <paramref name="existing"/> back when it was unloaded for a copy that then failed to load. A
+    /// supplied library cannot be put back - only the host has its text - so its loss is an error.
+    /// </summary>
+    private async Task RestoreIfGoneAsync(LoadedLibrary? existing, string path)
+    {
+        if (existing is null || IsLoaded(existing))
+            return;
+
+        if (existing.ReadOnlySource == ReadOnlySourceKind.Supplied)
+        {
+            _errors.Add($"'{existing.Name}' was supplied from memory by the host, and was unloaded to make way for " +
+                        $"'{path}', which then could not be loaded. Only the host that supplied it can supply it again.");
+            return;
+        }
+
+        try
+        {
+            if (existing.RepositoryId is { } repositoryId && _repositories.GetRepository(repositoryId) is not null)
+            {
+                await _repositories.RefreshRepositoryAsync(repositoryId);
+                return;
+            }
+            var back = await _libraries.AddLibraryFromPathAsync(existing.SourcePath);
+            _session.LibraryOrigins[back.Id] = Explicit;
+        }
+        catch (ArgumentException)
+        {
+            _errors.Add($"'{existing.Name}' was unloaded to make way for '{path}', which then could not be loaded, " +
+                        $"and '{existing.SourcePath}' could not be loaded again. Load it with mlqt_load.");
+        }
+    }
+
+    private bool IsLoaded(LoadedLibrary library) => _libraries.Libraries.Any(l => l.Id == library.Id);
+
+    private void Unload(LoadedLibrary library)
+    {
+        _libraries.RemoveLibrary(library.Id);
+        _session.LibraryOrigins.Remove(library.Id);
+    }
+
+    // Each library the repository holds is one the caller named, as if its path had been given.
+    private async Task LoadRepositoryAsync(Func<string, bool, Task<LoadRepositoryResult>> loadRepository, string root, bool replace)
+    {
+        if (DiscoverOnly)
+        {
+            var discovered = await loadRepository(root, false);
+            _repositoriesLoaded.Add(discovered);
+            if (!discovered.Success)
+                _errors.Add(discovered.ErrorMessage ?? $"'{root}' could not be loaded as a repository.");
+            return;
+        }
+
+        // Discovered first, by the names the libraries declare, so that a copy of a library loaded
+        // elsewhere is refused as it would be by path - before the library service's precedence rule has
+        // retired a supplied library for it, or the repository's copy has been loaded beside the first.
+        var look = await loadRepository(root, false);
+        if (!look.Success)
+        {
+            _repositoriesLoaded.Add(look);
+            _errors.Add(look.ErrorMessage ?? $"'{root}' could not be loaded as a repository.");
+            return;
+        }
+        var conflicts = new List<(DiscoveredLibrarySummary Discovered, LoadedLibrary Existing)>();
+        foreach (var discovered in look.DiscoveredLibraries)
+        {
+            if (_libraries.Libraries.FirstOrDefault(l => l.Name == discovered.LibraryName &&
+                                                         l.RepositoryId != look.RepositoryId &&
+                                                         !SamePath(l.SourcePath, discovered.FullPath)) is not { } existing)
+                continue;
+            // As for a path: an encrypted build beside readable source is left to the source, not chosen between.
+            if (!existing.IsReadOnly && EncryptedLibraryDetector.IsEncryptedLibraryRoot(discovered.FullPath))
+                continue;
+            conflicts.Add((discovered, existing));
+        }
+        var refused = conflicts.Where(c => OriginOf(c.Existing) == Explicit && !replace).ToList();
+        if (refused.Count > 0)
+        {
+            _repositoriesLoaded.Add(look);
+            foreach (var (discovered, existing) in refused)
+                _errors.Add(AnotherCopy(existing.Name, existing, discovered.FullPath));
+            _errors.Add($"Nothing in '{root}' was loaded, because of the libraries above.");
+            return;
+        }
+
+        // As in LoadInPlaceOfAsync: a copy on disk goes first, a supplied one only once the repository's has
+        // loaded - or, where it outranks the installed build of its own release, once that was turned away.
+        foreach (var (_, existing) in conflicts.Where(c => c.Existing.ReadOnlySource != ReadOnlySourceKind.Supplied))
+            Unload(existing);
+
+        var result = await loadRepository(root, true);
         _repositoriesLoaded.Add(result);
         if (!result.Success)
         {
             _errors.Add(result.ErrorMessage ?? $"'{root}' could not be loaded as a repository.");
+            foreach (var (discovered, existing) in conflicts)
+                await RestoreIfGoneAsync(existing, discovered.FullPath);
             return;
         }
+
+        foreach (var (discovered, existing) in conflicts)
+        {
+            var mine = _libraries.Libraries.FirstOrDefault(l => l.RepositoryId == result.RepositoryId && l.Name == existing.Name);
+            if (mine is null && IsLoaded(existing))
+            {
+                Unload(existing);
+                await _repositories.LoadLibrariesAsync(result.RepositoryId!,
+                    look.DiscoveredLibraries.Where(d => d == discovered).Select(d => d.RelativePath));
+                mine = _libraries.Libraries.FirstOrDefault(l => l.RepositoryId == result.RepositoryId && l.Name == existing.Name);
+            }
+            if (mine is null)
+                await RestoreIfGoneAsync(existing, discovered.FullPath);
+            else if (IsLoaded(existing))
+                Unload(existing);
+        }
+
         var count = _loaded.Count;
         foreach (var library in _libraries.Libraries.Where(l => l.RepositoryId == result.RepositoryId))
         {
@@ -323,7 +503,10 @@ internal sealed class DependencyLoader
         }
     }
 
-    private async Task<LoadedLibrary?> TryLoadAsync(string path)
+    private async Task<LoadedLibrary?> TryLoadAsync(string path) => Usable(await LoadRawAsync(path), path);
+
+    // The library service's load, or null with the reason said; a library it turned away is returned.
+    private async Task<LoadedLibrary?> LoadRawAsync(string path)
     {
         if (path.EndsWith(".moe", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
         {
@@ -332,19 +515,27 @@ internal sealed class DependencyLoader
                           "was not loaded; references into it will not resolve.");
             return null;
         }
-        LoadedLibrary library;
         try
         {
-            library = await _libraries.AddLibraryFromPathAsync(path);
+            return await _libraries.AddLibraryFromPathAsync(path);
         }
         catch (ArgumentException)
         {
             _errors.Add($"'{path}' could not be loaded: not a library folder, a package.mo or a .mo file.");
             return null;
         }
+    }
+
+    // The library loaded, or null with the reason said when it was turned away or holds no classes.
+    private LoadedLibrary? Usable(LoadedLibrary? library, string path)
+    {
+        if (library is null)
+            return null;
         if (library.SupersededBy is { } source)
         {
-            _warnings.Add(Superseded(library.Name, path, source));
+            _warnings.Add(_libraries.Libraries.FirstOrDefault(l => l.SourcePath == source) is { IsReadOnly: true } keeper
+                ? OutrankedByReadOnly(library.Name, path, keeper)
+                : Superseded(library.Name, path, source));
             return null;
         }
         if (library.ModelIds.Count == 0)

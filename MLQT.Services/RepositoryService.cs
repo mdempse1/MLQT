@@ -403,13 +403,11 @@ public class RepositoryService : IRepositoryService
             foreach (var fullPath in LibraryDiscovery.DiscoverLibraryPaths(basePath))
             {
                 var isFile = File.Exists(fullPath) && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase);
-                var packageMoPath = isFile ? fullPath : Path.Combine(fullPath, "package.mo");
 
-                // An encrypted library has no package.mo to read a name out of. Its name comes from
-                // the versioned directory name or its libraryinfo.mos — without this the fallback
-                // below would show it as "Battery 2.9.0", version suffix and all.
-                var libraryName = EncryptedLibraryDetector.Detect(fullPath)?.Name
-                                  ?? ExtractLibraryName(packageMoPath);
+                // An encrypted library's name comes from its versioned directory name or its
+                // libraryinfo.mos — without that the fallback below would show it as "Battery 2.9.0",
+                // version suffix and all.
+                var libraryName = LibraryDiscovery.ReadLibraryName(fullPath);
 
                 string relativePath;
                 string fallbackName;
@@ -441,33 +439,6 @@ public class RepositoryService : IRepositoryService
         });
 
         return libraries;
-    }
-
-    /// <summary>
-    /// The library's own declared name, read out of its <c>package.mo</c>.
-    ///
-    /// <para>The outermost class is the one with no parent, and "no parent" is the <b>empty
-    /// string</b>, not null (B204). Asking for <c>== null</c> matched nothing, ever — for a file with
-    /// a <c>within</c> clause and for one without alike — so this silently returned null on every
-    /// call and every caller fell back to the directory name. That is usually the same word, which is
-    /// why it went unnoticed: a library called <c>Modelica</c> lives in a folder called
-    /// <c>Modelica</c>. It is wrong precisely when the folder is not named after the library, which
-    /// is the ordinary case for a repository checked out under its own name.</para>
-    /// </summary>
-    private string? ExtractLibraryName(string packageMoPath)
-    {
-        try
-        {
-            var content = ModelicaFileEncoding.ReadAllTextOnly(packageMoPath);
-            var models = ModelicaParserHelper.ExtractModels(content);
-            var topLevel = models.FirstOrDefault(m => string.IsNullOrEmpty(m.ParentModelName));
-            return topLevel?.Name;
-        }
-        catch (Exception ex)
-        {
-            Warn("RepositoryService", $"Failed to extract library name from {packageMoPath}: {ex.Message}");
-            return null;
-        }
     }
 
     public async Task LoadLibrariesAsync(

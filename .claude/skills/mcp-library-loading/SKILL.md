@@ -92,8 +92,26 @@ So a library can come into MLQT in two ways, and **MLQT records which way each o
   loaded as a searched dependency, at another version or from another path, that copy is unloaded and
   the explicit one loaded in its place. The answer names both. Dependency analysis is re-run for the
   classes that used it. If an explicit copy is already loaded from another path, the call is refused
-  unless `replace: true`. Two explicit copies disagreeing means the caller has to choose.
+  unless `replace: true`. Two explicit copies disagreeing means the caller has to choose. A library
+  the host **supplied from memory** counts as explicit, and is the one copy that cannot be loaded
+  again, so it stays loaded until its replacement has loaded.
 - **By search:** found for a `uses`, by the order above. It never replaces anything.
+
+Three rules keep this honest, each one learnt from a route that broke it:
+
+- **A library is named by what its files declare** (`LibraryDiscovery.ReadLibraryName`): the
+  outermost class of its `package.mo`, or an encrypted build's versioned folder name or
+  `libraryinfo.mos`. Never by the folder name alone. Read from the folder, a folder named after a
+  loaded library but holding another one was refused, or with `replace` it unloaded the loaded library.
+  A copy in a folder with another name got past the check, and readable source then retired a supplied
+  library without anyone asking.
+- **A folder of libraries, or a working copy, is checked before it is loaded.** It is discovered
+  first, and each library in it is held to the same rules as a path. Otherwise the library service's
+  precedence rule decides alone. The installed build of another release retired a supplied library
+  that way, and nothing said so.
+- **`replaced` is the session compared before and after the call**, not a list each branch remembers
+  to add to. A library can be retired by `LibraryPrecedence` inside the library service, which the
+  loader never sees happen.
 
 An explicit library whose version differs from what another library's `uses` asks for is kept, with a
 warning in the answer: the simulator is using that version, so MLQT must use it too.

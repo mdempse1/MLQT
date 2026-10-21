@@ -1,3 +1,6 @@
+using ModelicaParser.Helpers;
+using static MLQT.Services.LoggingService;
+
 namespace MLQT.Services;
 
 /// <summary>
@@ -67,6 +70,41 @@ public static class LibraryDiscovery
             results.Add(file);
 
         return results;
+    }
+
+    /// <summary>
+    /// The name a library declares, read from its files: an encrypted library's from its versioned
+    /// directory name or <c>libraryinfo.mos</c> (<see cref="EncryptedLibraryDetector"/>), since its
+    /// package cannot be read; otherwise the outermost class in its <c>package.mo</c>, or in the
+    /// <c>.mo</c> file that is the library. Null when there is nothing to read one from.
+    ///
+    /// <para>Never the folder name. That is usually the same word, which is why reading it instead went
+    /// unnoticed twice: it is wrong exactly when the folder is not named after the library - a
+    /// repository checked out under its own name (B204), a second copy beside the first.</para>
+    /// </summary>
+    /// <param name="libraryPath">A library root as <see cref="DiscoverLibraryPaths"/> returns one: a
+    /// directory holding a <c>package.mo</c> or <c>package.moe</c>, or a single <c>.mo</c> file.</param>
+    public static string? ReadLibraryName(string libraryPath)
+    {
+        if (EncryptedLibraryDetector.Detect(libraryPath)?.Name is { } encryptedName)
+            return encryptedName;
+
+        var packageMoPath = File.Exists(libraryPath) ? libraryPath : Path.Combine(libraryPath, "package.mo");
+        if (!File.Exists(packageMoPath))
+            return null;
+
+        try
+        {
+            var content = ModelicaFileEncoding.ReadAllTextOnly(packageMoPath);
+            // The outermost class has no parent, and "no parent" is the empty string, not null (B204).
+            return ModelicaParserHelper.ExtractModels(content)
+                .FirstOrDefault(m => string.IsNullOrEmpty(m.ParentModelName))?.Name;
+        }
+        catch (Exception ex)
+        {
+            Warn("LibraryDiscovery", $"Failed to extract library name from {packageMoPath}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>

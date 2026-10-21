@@ -145,7 +145,7 @@ A library resolves only beside the libraries it uses. Without them, types stay u
 
 A path holding no `package.mo` of its own - a Git or SVN working copy, or a folder of libraries - is loaded as a repository, so its `.mlqt/settings.json` and its changes are known; every library in it counts as one you named. A folder with no library in it at all is reported, not loaded. `discoverOnly: true` lists a repository's libraries and loads nothing.
 
-A library you name replaces a copy an earlier search loaded. Two copies you named yourself need `replace: true`, because then you have to choose. An encrypted build of a library whose readable source is loaded is not another copy: the source is used, and the answer says so.
+A library you name replaces a copy an earlier search loaded. Two copies you named yourself need `replace: true`, because then you have to choose. A library the host supplied counts as one you named. This holds for each library in a folder of libraries or a working copy too, and a library is known by the name its files declare, not by its folder's name. An encrypted build of a library whose readable source is loaded is not another copy: the source is used, and the answer says so. Every library that another copy takes the place of is listed under `replaced`, and a copy that fails to load leaves the one it was replacing loaded.
 
 **Then what they use.** With `withDependencies` on (the default), each library their `uses` annotations name that nothing has loaded is looked for, in this order:
 1. the folder holding the library that needs it, then its repository's root;
