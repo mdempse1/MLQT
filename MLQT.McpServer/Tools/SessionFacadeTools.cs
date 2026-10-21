@@ -38,7 +38,8 @@ public sealed class SessionFacadeTools
                  "name, e.g. 'Modelica', or id). 'reset': unload everything and forget the findings, to start " +
                  "new work from empty. " +
                  "'reload': re-read from disk what changed outside MLQT - target is a .mo file, or a library " +
-                 "or repository by name or id, or nothing for everything.")]
+                 "or repository by name or id, or nothing for everything; any library another copy took the " +
+                 "place of is listed under replaced.")]
     public async Task<object> Session(
         [Description("'status' (default), 'unload', 'reload' or 'reset'.")] string action = "status",
         [Description("For 'unload': the library's name or id.")] string? library = null,

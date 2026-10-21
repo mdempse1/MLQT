@@ -67,6 +67,51 @@ public class SuppliedLibraryLoadTests
         return lib;
     }
 
+    private static SessionTools Session(TestHost host) => new(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+    /// <summary>A reload replaces a supplied library as a load can: a working copy that gained readable
+    /// source for it retires the supplied copy, which is intended, and the answer says so.</summary>
+    [Theory]
+    [InlineData(false)] // everything
+    [InlineData(true)]  // the repository, by id
+    public async Task AReload_ThatReplacesTheSuppliedLibrary_ListsItUnderReplaced(bool byRepository)
+    {
+        using var host = new TestHost();
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        var folder = host.NewTempDir();
+        WriteReadable(folder, "Other", "Other");
+        var load = ToolAssert.Ok<LoadResult>(await Tools(host).Load([folder], withDependencies: false));
+        var repository = Assert.Single(load.Repositories!);
+        var source = WriteReadable(folder, "VendorLib", "VendorLib");
+
+        var res = ToolAssert.Ok<ReloadResult>(await Session(host).Reload(byRepository ? repository.RepositoryId : null));
+
+        Assert.Null(VendorLib(host).ReadOnlySource);
+        var replaced = Assert.Single(res.Replaced!);
+        Assert.Equal("VendorLib", replaced.Name);
+        Assert.Equal(ModelicaGraph.ReadOnlySources.InMemoryRoot("VendorLib"), replaced.OldPath);
+        Assert.Equal(source, replaced.NewPath);
+    }
+
+    [Fact]
+    public async Task AReload_ThatReplacesNothing_ListsNothing()
+    {
+        using var host = new TestHost();
+        await host.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        var folder = host.NewTempDir();
+        WriteReadable(folder, "Other", "Other");
+        await Tools(host).Load([folder], withDependencies: false);
+        var mine = WriteReadable(host.NewTempDir(), "Mine", "Mine");
+        await Tools(host).Load([mine], withDependencies: false);
+
+        var all = ToolAssert.Ok<ReloadResult>(await Session(host).Reload());
+        var one = ToolAssert.Ok<ReloadResult>(await Session(host).Reload("Mine"));
+
+        Assert.Null(all.Replaced);
+        Assert.Null(one.Replaced);
+        Assert.Equal(ReadOnlySourceKind.Supplied, VendorLib(host).ReadOnlySource);
+    }
+
     private static LoadedLibrary VendorLib(TestHost host) =>
         Assert.Single(host.Libraries.Libraries, l => l.Name == "VendorLib");
 

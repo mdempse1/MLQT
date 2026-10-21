@@ -59,12 +59,16 @@ public sealed record LoadRepositoryResult(
 /// <summary>What <c>mlqt_session</c>'s reload returns: what scope was re-read from disk.</summary>
 /// <param name="NotReloaded">Loaded libraries the reload left as they were: those a host supplied
 /// from memory, which have nothing on disk to re-read.</param>
+/// <param name="Replaced">Loaded libraries another copy took the place of in the reload - a supplied
+/// library retired by readable source the reload found, say - as <c>mlqt_load</c> lists them. Null when
+/// none was.</param>
 public sealed record ReloadResult(
     string Scope,
     IReadOnlyList<string> ReloadedLibraries,
     int AffectedModelCount,
     string? Note,
-    IReadOnlyList<string>? NotReloaded = null);
+    IReadOnlyList<string>? NotReloaded = null,
+    IReadOnlyList<ReplacedLibraryItem>? Replaced = null);
 
 /// <summary>Result of mlqt_create_library: the new top-level library's name, on-disk path and whether it was
 /// loaded into the session (with its id).</summary>

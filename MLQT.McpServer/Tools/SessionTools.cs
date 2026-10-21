@@ -219,8 +219,24 @@ public sealed class SessionTools
         return new SessionResetResult(unloaded, kept, repositories);
     }
 
+    /// <summary>
+    /// Re-reads <paramref name="target"/>, or everything, from disk, and says which loaded libraries
+    /// another copy took the place of. A reload can replace one as a load can - a working copy that gained
+    /// readable source for a supplied library retires the supplied copy as it registers - and the session
+    /// compared before and after is what says so, whichever branch did it.
+    /// </summary>
     internal async Task<object> Reload(
         string? target = null)
+    {
+        var before = _libraries.Libraries.ToList();
+        var answer = await ReloadInScope(target);
+        if (answer is not ReloadResult result)
+            return answer;
+        var replaced = DependencyLoader.ReplacedBetween(before, _libraries.Libraries.ToList());
+        return replaced.Count == 0 ? result : result with { Replaced = replaced };
+    }
+
+    private async Task<object> ReloadInScope(string? target)
     {
         // Single file.
         if (!string.IsNullOrWhiteSpace(target) &&

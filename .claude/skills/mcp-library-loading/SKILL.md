@@ -116,7 +116,10 @@ Three rules keep this honest, each one learnt from a route that broke it:
   that way, and nothing said so.
 - **`replaced` is the session compared before and after the call**, not a list each branch remembers
   to add to. A library can be retired by `LibraryPrecedence` inside the library service, which the
-  loader never sees happen.
+  loader never sees happen. `mlqt_session`'s reload reports the same way, through the same
+  `DependencyLoader.ReplacedBetween`. A working copy that gains readable source for a supplied
+  library retires the supplied copy when it is reloaded. That is intended, since readable source
+  outranks a supplied library, but the answer has to say it happened.
 
 An explicit library whose version differs from what another library's `uses` asks for is kept, with a
 warning in the answer: the simulator is using that version, so MLQT must use it too.

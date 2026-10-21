@@ -149,15 +149,23 @@ internal sealed class DependencyLoader
     /// itself, before and after, so that no route in can replace a library without saying so; a
     /// supplied library above all, which only the host can supply again.
     /// </summary>
-    private void ReportReplaced(List<LoadedLibrary> before, HashSet<string> reportedAlready)
-    {
-        var after = _libraries.Libraries.ToList();
-        foreach (var old in before.Where(b => !reportedAlready.Contains(b.Id) && after.All(a => a.Id != b.Id)))
-        {
-            if (after.FirstOrDefault(a => a.Name == old.Name) is { } now && !SamePath(now.SourcePath, old.SourcePath))
-                _replaced.Add(new ReplacedLibraryItem(old.Name, old.Version, old.SourcePath, now.Version, now.SourcePath));
-        }
-    }
+    private void ReportReplaced(List<LoadedLibrary> before, HashSet<string> reportedAlready) =>
+        _replaced.AddRange(ReplacedBetween(before, _libraries.Libraries.ToList(), reportedAlready));
+
+    /// <summary>
+    /// The libraries of <paramref name="before"/> that another copy has taken the place of in
+    /// <paramref name="after"/>: gone, with a library of the same name now loaded from another path. One
+    /// loaded again from where it was - a reload gives it a new id - is not replaced. The one definition of
+    /// "replaced", for <c>mlqt_load</c> and <c>mlqt_session</c>'s reload alike.
+    /// </summary>
+    internal static IReadOnlyList<ReplacedLibraryItem> ReplacedBetween(
+        IReadOnlyList<LoadedLibrary> before, IReadOnlyList<LoadedLibrary> after, ISet<string>? reportedAlready = null) =>
+        before
+            .Where(b => reportedAlready?.Contains(b.Id) != true && after.All(a => a.Id != b.Id))
+            .Select(old => (Old: old, Now: after.FirstOrDefault(a => a.Name == old.Name)))
+            .Where(p => p.Now is not null && !SamePath(p.Now.SourcePath, p.Old.SourcePath))
+            .Select(p => new ReplacedLibraryItem(p.Old.Name, p.Old.Version, p.Old.SourcePath, p.Now!.Version, p.Now.SourcePath))
+            .ToList();
 
     /// <summary>
     /// The refusal for a second copy of a library the caller already named. MLQT holds one copy of each
