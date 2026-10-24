@@ -70,6 +70,28 @@ public class WriteFormatToolsTests
         Assert.Null(Assert.Single(res.Written).ListedInPackageOrder);
     }
 
+    // Seen on WSL, where the tests' temp root was <export>/.tmp: the class file was written and the
+    // write reported, but the reload took the whole library for a hidden folder and skipped it, so the
+    // next call found no class. Only folders below the library may make a file hidden.
+    [Fact]
+    public async Task WriteClass_ReachesTheGraph_ForALibraryUnderADotFolder()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            [Path.Combine(".tmp", "UserLib", "package.mo")] = "within;\npackage UserLib \"u\"\nend UserLib;\n",
+            [Path.Combine(".tmp", "UserLib", "package.order")] = "One\n",
+            [Path.Combine(".tmp", "UserLib", "One.mo")] = "within UserLib;\nmodel One \"one\"\nend One;\n",
+        });
+        await host.Libraries.AddLibraryFromDirectoryAsync(Path.Combine(dir, ".tmp", "UserLib"));
+        var tools = new WriteFormatTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+        ToolAssert.Ok<WriteClassResult>(await tools.WriteClass([Class("UserLib", "model Mine \"mine\"\nend Mine;")]));
+
+        Assert.NotNull(host.Libraries.GetModelById("UserLib.Mine"));
+        Assert.NotNull(host.Libraries.GetOwningLibrary("UserLib.Mine"));
+    }
+
     [Fact]
     public async Task WriteClass_ReplacesOnlyWhenAsked()
     {

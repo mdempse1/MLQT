@@ -15,4 +15,5 @@ static MLQT.Services.LibraryPrecedence.ReadableSourceFor(string? encryptedName, 
 static MLQT.Services.LibraryPrecedence.Retires(MLQT.Services.DataTypes.LoadedLibrary! arriving, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.LoadedLibrary!>! loaded) -> System.Collections.Generic.IReadOnlyList<MLQT.Services.DataTypes.LoadedLibrary!>!
 static MLQT.Services.LibraryPrecedence.SameLibrary(string? a, string? b) -> bool
 MLQT.Services.MlqtServicesJson
+static MLQT.Services.Helpers.FileMonitoringServiceHelpers.IsInHiddenDirectory(string! path, string? root) -> bool
 static MLQT.Services.MlqtServicesJson.SettingValues.get -> System.Text.Json.JsonSerializerOptions!

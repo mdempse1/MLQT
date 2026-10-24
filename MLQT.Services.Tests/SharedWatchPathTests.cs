@@ -303,6 +303,41 @@ public class SharedWatchPathTests : IDisposable
         Assert.Single(_service.GetPendingChangesForRepository("repo-b"));
     }
 
+    // ---- A repository under a dot folder ----------------------------------------------------------
+    //
+    // Only folders below the watched one are asked whether they are hidden. Asking of the whole path
+    // made every change in a repository under ~/.local/share or a .tmp folder invisible.
+
+    [Fact]
+    public void ARepositoryUnderADotFolder_HasItsChangesRecorded()
+    {
+        var watched = Library(Path.Combine(".tmp", "Repo"));
+        _service.StartMonitoring("repo-a", watched);
+        var activity = new List<string>();
+        _service.OnRepositoryFileActivity += activity.Add;
+
+        _service.OnFileSystemEvent(watched, Path.Combine(watched, "Pump.mo"), FileChangeType.Modified);
+
+        Assert.Single(_service.GetPendingChangesForRepository("repo-a"));
+        Assert.Equal(["repo-a"], activity);
+    }
+
+    [Fact]
+    public void ARepositoryUnderADotFolder_StillIgnoresItsOwnVcsFolder()
+    {
+        var watched = Library(Path.Combine(".tmp", "Repo"));
+        _service.StartMonitoring("repo-a", watched);
+        var activity = new List<string>();
+        _service.OnRepositoryFileActivity += activity.Add;
+
+        _service.OnFileSystemEvent(watched, Path.Combine(watched, ".svn", "pristine", "Pump.mo"), FileChangeType.Added);
+        _service.OnFileSystemRenamedEvent(watched,
+            Path.Combine(watched, ".git", "a.mo"), Path.Combine(watched, ".git", "b.mo"));
+
+        Assert.Empty(_service.GetPendingChangesForRepository("repo-a"));
+        Assert.Empty(activity);
+    }
+
     [Fact]
     public void AScopeOutlivesAPause()
     {

@@ -119,6 +119,21 @@ public sealed class EmptyDirectoryCleanerTests : IDisposable
     }
 
     [Fact]
+    public void ALibraryUnderADotFolder_IsStillCleaned()
+    {
+        // Only folders below the root are asked whether they are hidden. Asking of the whole path made
+        // every library under ~/.local/share or a .tmp folder one nothing was ever removed from.
+        var library = Dir(".tmp", "Lib");
+        var empty = Dir(".tmp", "Lib", "Empty");
+        var git = Dir(".tmp", "Lib", ".git", "refs");
+
+        EmptyDirectoryCleaner.RemoveEmptyDirectories(library);
+
+        Assert.False(Directory.Exists(empty));
+        Assert.True(Directory.Exists(git));
+    }
+
+    [Fact]
     public void TheRootItself_IsNeverRemoved()
     {
         // However empty it becomes: it is the library the user opened.

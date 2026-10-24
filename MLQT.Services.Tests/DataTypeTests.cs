@@ -557,8 +557,63 @@ public class DataTypeTests
     }
 
     [Fact]
-    public void IsInHiddenDirectory_ReturnsTrueForHiddenDirectoryAnywhere()
+    public void IsInHiddenDirectory_WithoutARoot_RecognisesTheMetadataFoldersAnywhere()
     {
-        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory("C:/Repos/MyLib/.hidden/file.mo"));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory("C:/Repos/MyLib/.git/objects/x.mo"));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory("/home/u/.tmp/Lib/.svn/pristine/x.mo"));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory("/home/u/Lib/.mlqt/baseline.json"));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory("/home/u/Lib/.hg/store"));
+    }
+
+    [Fact]
+    public void IsInHiddenDirectory_WithoutARoot_ADotFolderAboveALibraryIsNotHidden()
+    {
+        // A library under the WSL tests' <export>/.tmp read as hidden whole, so mlqt_write_class's reload
+        // skipped the file it had just written and the class never reached the graph.
+        Assert.False(FileMonitoringServiceHelpers.IsInHiddenDirectory("/mnt/export/.tmp/UserLib/Mine.mo"));
+        Assert.False(FileMonitoringServiceHelpers.IsInHiddenDirectory("/home/u/.local/share/Lib/package.mo"));
+    }
+
+    [Fact]
+    public void IsInHiddenDirectory_WithoutARoot_AHiddenFileIsHidden()
+    {
+        // An editor's lock file such as Emacs's .#Pump.mo ends in .mo and must not be taken for a class.
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory("/home/u/Lib/.#Pump.mo"));
+    }
+
+    [Fact]
+    public void IsInHiddenDirectory_WithoutARoot_RelativeSegmentsAreNotHidden()
+    {
+        Assert.False(FileMonitoringServiceHelpers.IsInHiddenDirectory("../Lib/./Pump.mo"));
+    }
+
+    [Fact]
+    public void IsInHiddenDirectory_BelowARoot_AnyDotFolderIsHidden()
+    {
+        var root = Path.Combine(Path.GetTempPath(), ".tmp", "MyLib");
+
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(root, ".hidden", "file.mo"), root));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(root, ".git", "config"), root));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(root, "Sub", ".#Pump.mo"), root));
+    }
+
+    [Fact]
+    public void IsInHiddenDirectory_BelowARoot_TheFoldersAboveTheRootAreNotLookedAt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), ".tmp", "MyLib");
+
+        Assert.False(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(root, "Sub", "Pump.mo"), root));
+        Assert.False(FileMonitoringServiceHelpers.IsInHiddenDirectory(root, root));
+    }
+
+    [Fact]
+    public void IsInHiddenDirectory_OutsideTheRoot_IsAnsweredAsWithoutOne()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "MyLib");
+        var elsewhere = Path.Combine(Path.GetTempPath(), ".tmp", "Other");
+
+        Assert.False(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(elsewhere, "Pump.mo"), root));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(elsewhere, ".git", "config"), root));
+        Assert.True(FileMonitoringServiceHelpers.IsInHiddenDirectory(Path.Combine(elsewhere, ".git", "config"), null));
     }
 }

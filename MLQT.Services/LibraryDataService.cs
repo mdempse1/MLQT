@@ -883,7 +883,7 @@ public class LibraryDataService : ILibraryDataService
         var removedModelIds = new List<string>();
 
         // Safety check: never process files in hidden directories (.git, .svn, etc.)
-        if (FileMonitoringServiceHelpers.IsInHiddenDirectory(filePath))
+        if (IsHiddenInItsLibrary(filePath))
         {
             Warn("LibraryDataService", $"Skipping file in hidden directory: {filePath}");
             return removedModelIds;
@@ -963,7 +963,7 @@ public class LibraryDataService : ILibraryDataService
         var affectedModelIds = new List<string>();
 
         // Safety check: never process files in hidden directories (.git, .svn, etc.)
-        if (FileMonitoringServiceHelpers.IsInHiddenDirectory(filePath))
+        if (IsHiddenInItsLibrary(filePath))
         {
             Warn("LibraryDataService", $"Skipping file in hidden directory: {filePath}");
             return affectedModelIds;
@@ -1069,6 +1069,19 @@ public class LibraryDataService : ILibraryDataService
     /// (B323 follow-up). The nearest root wins, so a library nested inside another gets its own
     /// files. Callers hold <c>_lock</c>.
     /// </summary>
+    /// <summary>
+    /// Whether a file is in a hidden folder of the library holding it - only below the library's
+    /// root, so a library under <c>~/.local/share</c> or a <c>.tmp</c> folder is not hidden whole.
+    /// </summary>
+    private bool IsHiddenInItsLibrary(string filePath)
+    {
+        string? root;
+        lock (_lock)
+            root = LibraryContainingPath(filePath)?.SourcePath;
+
+        return FileMonitoringServiceHelpers.IsInHiddenDirectory(filePath, root);
+    }
+
     private LoadedLibrary? LibraryContainingPath(string filePath)
     {
         LoadedLibrary? nearest = null;

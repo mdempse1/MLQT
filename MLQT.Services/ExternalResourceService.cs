@@ -520,8 +520,8 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
     /// </summary>
     internal void OnResourceFileSystemEvent(string directory, string fullPath, WatcherChangeTypes changeType)
     {
-        // Skip hidden directories
-        if (FileMonitoringServiceHelpers.IsInHiddenDirectory(fullPath))
+        // Skip hidden directories below the watched one
+        if (FileMonitoringServiceHelpers.IsInHiddenDirectory(fullPath, directory))
             return;
 
         // Only track files that are in our reverse index (referenced by models)

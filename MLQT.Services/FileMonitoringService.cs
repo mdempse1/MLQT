@@ -376,14 +376,14 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
 
         // Always signal broad file activity (used to refresh VCS status indicators for
         // non-Modelica files), but skip hidden VCS directories to avoid noise from git/svn internals.
-        if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(fullPath))
+        if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(fullPath, watchedPath))
         {
             foreach (var repositoryId in repositories)
                 OnRepositoryFileActivity?.Invoke(repositoryId);
         }
 
         // Filter: only track .mo files, package.order files, and directory changes
-        if (!ShouldTrackPath(fullPath, changeType))
+        if (!ShouldTrackPath(watchedPath, fullPath, changeType))
             return;
 
         // Debounce: ignore if we just saw the SAME change type for this file recently
@@ -420,7 +420,7 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
 
     internal void OnFileSystemRenamedEvent(string watchedPath, string oldPath, string newPath)
     {
-        if (!ShouldTrackPath(newPath, FileChangeType.Renamed) && !ShouldTrackPath(oldPath, FileChangeType.Renamed))
+        if (!ShouldTrackPath(watchedPath, newPath, FileChangeType.Renamed) && !ShouldTrackPath(watchedPath, oldPath, FileChangeType.Renamed))
             return;
 
         // Owned by the repository at either end: a class moved out of a library is a change to it.
@@ -455,10 +455,11 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
         }
     }
 
-    private bool ShouldTrackPath(string path, FileChangeType changeType)
+    private bool ShouldTrackPath(string watchedPath, string path, FileChangeType changeType)
     {
-        // Skip hidden directories and files (e.g., .git, .svn)
-        if (FileMonitoringServiceHelpers.IsInHiddenDirectory(path))
+        // Skip hidden directories and files (e.g., .git, .svn) below the watched folder - never the
+        // folders above it, or a repository under ~/.local/share is ignored whole
+        if (FileMonitoringServiceHelpers.IsInHiddenDirectory(path, watchedPath))
             return false;
 
         var fileName = Path.GetFileName(path);

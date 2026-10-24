@@ -179,7 +179,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
                 foreach (var orderFile in Directory.GetFiles(library.SourcePath, "package.order", SearchOption.AllDirectories))
                 {
                     // Skip files inside hidden directories (e.g., .svn, .git)
-                    if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile))
+                    if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile, library.SourcePath))
                     {
                         originalOrderFiles.Add(orderFile);
                     }
@@ -266,7 +266,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         {
                             foreach (var orderFile in Directory.GetFiles(library.SourcePath, "package.order", SearchOption.AllDirectories))
                             {
-                                if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile))
+                                if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile, library.SourcePath))
                                 {
                                     allWrittenFiles.Add(orderFile);
                                 }

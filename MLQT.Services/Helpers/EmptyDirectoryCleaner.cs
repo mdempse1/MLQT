@@ -38,7 +38,7 @@ public static class EmptyDirectoryCleaner
         try
         {
             var directories = Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
-                .Where(d => !FileMonitoringServiceHelpers.IsInHiddenDirectory(d))
+                .Where(d => !FileMonitoringServiceHelpers.IsInHiddenDirectory(d, rootPath))
                 .OrderByDescending(d => d.Count(c => c == Path.DirectorySeparatorChar
                                                   || c == Path.AltDirectorySeparatorChar))
                 .ToList();
