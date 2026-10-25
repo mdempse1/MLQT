@@ -478,15 +478,15 @@
                 @if (rule.Id == RuleIds.UndeclaredName && SelectedSettings.CheckUndeclaredNames)
                 {
                     @* Which tools' own functions and flags this rule counts as declared. *@
-                    <MudText Typo="Typo.body1" Class="mt-2 mb-0">Accept the built-in functions and flags of:</MudText>
-                    <MudStack Row="true" Spacing="0">
+                    <MudText Typo="Typo.body1" Class="mt-2 mb-0" Style="margin-left: 6px;">Accept the built-in functions and flags of:</MudText>
+                    <MudStack Row="true" Spacing="0" Class="ml-2">
                         @foreach (var tool in ToolBuiltIns.Tools)
                         {
                             <MudCheckBox T="bool" Value="@IsToolAccepted(tool)" ValueChanged="@(v => SetToolAccepted(tool, v))"
                                 Label="@tool" Dense="true" Size="Size.Small" Color="Color.Primary" />
                         }
                     </MudStack>
-                    <MudText Typo="Typo.caption" Class="mb-1">
+                    <MudText Typo="Typo.caption" Class="mb-2 ml-2">
                         A name only a tool provides works in that tool and in no other: Dymola's
                         <code>classDirectory()</code>, its <code>Advanced.</code> and <code>Hidden.</code> flags
                         and <code>Dymola_AST_</code> functions, or OpenModelica's <code>OpenModelica</code> package.
@@ -498,7 +498,7 @@
                 {
                     <MudSwitch @bind-Value="SelectedSettings.PackageOrderMatchesDymola" Color="Color.Primary" Size="Size.Small"
                         Label="Report only the package.order problems Dymola would warn about" />
-                    <MudText Typo="Typo.caption" Class="mb-1">
+                    <MudText Typo="Typo.caption" Class="mb-2 ml-2">
                         Dymola warns that a package.order is incomplete only for a class stored where it looks
                         — <code>Package/Name.mo</code> or <code>Package/Name/package.mo</code> — and says nothing
                         about an entry naming a class that is not there. Switch this on for a repository whose
