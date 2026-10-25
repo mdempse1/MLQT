@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace ModelicaParser.Helpers;
 
 /// <summary>
@@ -23,8 +25,29 @@ public static class ToolBuiltIns
     /// <summary>The tools there is a list for, in the order a settings dialog offers them.</summary>
     public static IReadOnlyList<string> Tools { get; } = [Dymola, OpenModelica];
 
-    // Dymola's own functions, by the name a class calls them with. Dotted ones are matched whole.
-    private static readonly HashSet<string> DymolaNames = new(StringComparer.Ordinal)
+    /// <summary>
+    /// Dymola's own functions, by the name a class calls them with, compared ordinally. A dotted one
+    /// (<c>Utilities.getenv</c>) is the whole name. Read-only: a frozen set, so no caller can change
+    /// what every other caller is told.
+    /// </summary>
+    /// <remarks>
+    /// Not the whole of what <see cref="ToolOf"/> counts as Dymola's: that also takes a name inside
+    /// <see cref="DymolaFlagPackages"/>, one starting with <see cref="DymolaFunctionPrefix"/>, and a
+    /// listed name as the first segment of a longer one (<c>LinePattern.Solid</c>). Ask
+    /// <see cref="ToolOf"/> to classify a name; read this for the list itself.
+    /// </remarks>
+    public static IReadOnlySet<string> DymolaFunctions => DymolaNames;
+
+    /// <summary>The packages Dymola's flags are members of: <c>Advanced.Translation.X</c>, <c>Hidden.Y</c>.</summary>
+    public static IReadOnlySet<string> DymolaFlagPackages => FlagPackages;
+
+    /// <summary>
+    /// The prefix of a family of Dymola functions nobody has the whole list of: every name starting
+    /// with it is Dymola's.
+    /// </summary>
+    public const string DymolaFunctionPrefix = "Dymola_AST_";
+
+    private static readonly FrozenSet<string> DymolaNames = new[]
     {
         "AddModelicaPath", "animationColor", "animationFollow", "animationFrames", "animationGrid",
         "animationLightning", "animationOnline", "animationPerspective", "animationPosition",
@@ -71,13 +94,10 @@ public static class ToolBuiltIns
         "updateModelicaURIreference", "Utilities.getenv", "Utilities.ModelicaMessage", "Utilities.setenv",
         "variables", "verifyCompiler", "visualize3dModel", "WaitSpecifiedTime", "writeCSVFileInternal",
         "writeMatrix", "writeToFile", "writeTrajectory",
-    };
+    }.ToFrozenSet(StringComparer.Ordinal);
 
-    // Dymola's flags are members of these two packages: `Advanced.Translation.X`, `Hidden.Y`.
-    private static readonly HashSet<string> DymolaFlagPackages = new(StringComparer.Ordinal) { "Advanced", "Hidden" };
-
-    // A family of Dymola functions nobody has the whole list of; the prefix is what they share.
-    private const string DymolaAstPrefix = "Dymola_AST_";
+    private static readonly FrozenSet<string> FlagPackages =
+        new[] { "Advanced", "Hidden" }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
     /// The tool that provides <paramref name="reference"/>, or null when no tool here does. A function
@@ -99,8 +119,8 @@ public static class ToolBuiltIns
         // are literals of Dymola's own plot enumerations.
         if (DymolaNames.Contains(name)
             || DymolaNames.Contains(first)
-            || first.StartsWith(DymolaAstPrefix, StringComparison.Ordinal)
-            || (segments.Count > 1 && DymolaFlagPackages.Contains(first)))
+            || first.StartsWith(DymolaFunctionPrefix, StringComparison.Ordinal)
+            || (segments.Count > 1 && FlagPackages.Contains(first)))
             return Dymola;
         if (first == OpenModelica)
             return OpenModelica;

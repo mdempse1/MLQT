@@ -51,3 +51,6 @@ const ModelicaParser.Helpers.ToolBuiltIns.OpenModelica = "OpenModelica" -> strin
 static ModelicaParser.Helpers.ToolBuiltIns.IsAccepted(string? reference, System.Collections.Generic.IEnumerable<string!>? acceptedTools) -> bool
 static ModelicaParser.Helpers.ToolBuiltIns.ToolOf(string? reference) -> string?
 static ModelicaParser.Helpers.ToolBuiltIns.Tools.get -> System.Collections.Generic.IReadOnlyList<string!>!
+const ModelicaParser.Helpers.ToolBuiltIns.DymolaFunctionPrefix = "Dymola_AST_" -> string!
+static ModelicaParser.Helpers.ToolBuiltIns.DymolaFlagPackages.get -> System.Collections.Generic.IReadOnlySet<string!>!
+static ModelicaParser.Helpers.ToolBuiltIns.DymolaFunctions.get -> System.Collections.Generic.IReadOnlySet<string!>!
