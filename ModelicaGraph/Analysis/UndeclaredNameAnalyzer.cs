@@ -71,7 +71,8 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
         };
     }
 
-    private readonly record struct Verdict(Outcome Outcome, string? Message = null)
+    // NamesTool: the message already says which tool the name belongs to.
+    private readonly record struct Verdict(Outcome Outcome, string? Message = null, bool NamesTool = false)
     {
         public static readonly Verdict Declared = new(Outcome.Declared);
         public static readonly Verdict Unknown = new(Outcome.Unknown);
@@ -313,7 +314,17 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
             if (call && references.QualifyingClass(text.TrimStart('.'), global) is not null)
                 return Verdict.Declared;
 
-            return Walk(segments, global, plainValue: !call && segments.Count == 1, text);
+            var verdict = Walk(segments, global, plainValue: !call && segments.Count == 1, text);
+
+            // A tool's name that lookup bound part of, and then lost - or never bound at all: `Advanced.Translation.X` where
+            // `import Modelica.Utilities.Strings.*` brings in MSL's own Strings.Advanced, which has
+            // no Translation. The tool reads its flags whatever an import brings in, so the name is
+            // the tool's - accepted where the tool is, and said to be its where it is not.
+            if (verdict is { Outcome: Outcome.Undeclared, NamesTool: false } && ToolBuiltIns.ToolOf(text) is { } tool)
+                return run.AcceptsBuiltInsOf(tool)
+                    ? Verdict.Declared
+                    : Verdict.Undeclared($"{verdict.Message}. '{text.TrimStart('.')}' is a built-in of {tool}, which this repository does not accept");
+            return verdict;
         }
 
         private Verdict TypeName(string text, bool isBase)
@@ -492,7 +503,8 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
             if (!FirstSegmentIsKnowable(first, global, plainValue || tool is not null))
                 return Verdict.Unknown;
             if (tool is not null)
-                return Verdict.Undeclared($"'{text.TrimStart('.')}' is not declared: it is a built-in of {tool}, which this repository does not accept, so other tools will not find it");
+                return Verdict.Undeclared($"'{text.TrimStart('.')}' is not declared: it is a built-in of {tool}, which this repository does not accept, so other tools will not find it")
+                    with { NamesTool = true };
             return Verdict.Undeclared(segments.Count == 1
                 ? $"'{first}' is not declared: nothing of that name is declared in this class, inherited, imported or reachable from it"
                 : $"'{first}' in '{text}' is not declared: nothing of that name is declared in this class, inherited, imported or reachable from it");

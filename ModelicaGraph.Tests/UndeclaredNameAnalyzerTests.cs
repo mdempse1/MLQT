@@ -623,6 +623,36 @@ public class UndeclaredNameAnalyzerTests
             """, uses: "Modelica(version=\"4.1.0\")")));
     }
 
+    // MSL has a Modelica.Utilities.Strings.Advanced package, so a wildcard import of Strings binds
+    // `Advanced` to it - and Translation is not in it. Dymola reads its flags all the same.
+    private static readonly string FlagsUnderAWildcardImport = Library("""
+          package Strings
+            package Advanced
+              function scan
+              end scan;
+            end Advanced;
+          end Strings;
+          function f
+            import P.Strings.*;
+            output Boolean ok = Advanced.Translation.EnableCodeExport;
+          end f;
+        """, uses: "Modelica(version=\"4.1.0\")");
+
+    [Fact]
+    public void AFlagWhosePackageAnImportShadows_IsDymolasWhenDymolaIsAccepted()
+    {
+        Assert.Empty(Run(_ => { }, [ToolBuiltIns.Dymola], FlagsUnderAWildcardImport));
+    }
+
+    [Fact]
+    public void AFlagWhosePackageAnImportShadows_SaysItIsDymolasWhenDymolaIsNot()
+    {
+        var finding = Assert.Single(Run(_ => { }, [], FlagsUnderAWildcardImport));
+
+        Assert.Contains("P.Strings.Advanced has no element of that name", finding.Message);
+        Assert.EndsWith("'Advanced.Translation.EnableCodeExport' is a built-in of Dymola, which this repository does not accept", finding.Message);
+    }
+
     [Fact]
     public void AToolsFlag_NeedsNoUsesAnnotationToBeReported()
     {

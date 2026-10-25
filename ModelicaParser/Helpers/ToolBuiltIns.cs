@@ -81,8 +81,9 @@ public static class ToolBuiltIns
 
     /// <summary>
     /// The tool that provides <paramref name="reference"/>, or null when no tool here does. A function
-    /// is matched by its name as written (<c>classDirectory</c>, <c>Utilities.getenv</c>); a flag or a
-    /// command by the package it is in (<c>Advanced.X</c>, <c>OpenModelica.Scripting.f</c>).
+    /// is matched by its name as written (<c>classDirectory</c>, <c>Utilities.getenv</c>), or as the
+    /// first segment (<c>LinePattern.Solid</c>, a literal of one of Dymola's enumerations); a flag or
+    /// a command by the package it is in (<c>Advanced.X</c>, <c>OpenModelica.Scripting.f</c>).
     /// </summary>
     public static string? ToolOf(string? reference)
     {
@@ -94,7 +95,10 @@ public static class ToolBuiltIns
             return null;
         var first = segments[0];
 
+        // A listed name is matched as the first segment too: `LinePattern.Solid`, `MarkerStyle.None`
+        // are literals of Dymola's own plot enumerations.
         if (DymolaNames.Contains(name)
+            || DymolaNames.Contains(first)
             || first.StartsWith(DymolaAstPrefix, StringComparison.Ordinal)
             || (segments.Count > 1 && DymolaFlagPackages.Contains(first)))
             return Dymola;

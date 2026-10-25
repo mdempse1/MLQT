@@ -9,6 +9,8 @@ public class ToolBuiltInsTests
     [InlineData("classDirectory", ToolBuiltIns.Dymola)]
     [InlineData(".classDirectory", ToolBuiltIns.Dymola)]
     [InlineData("Utilities.getenv", ToolBuiltIns.Dymola)]
+    [InlineData("LinePattern.Solid", ToolBuiltIns.Dymola)]
+    [InlineData("MarkerStyle.None", ToolBuiltIns.Dymola)]
     [InlineData("Advanced.Translation.SparseActivate", ToolBuiltIns.Dymola)]
     [InlineData("Hidden.PrintFailureToDifferentiate", ToolBuiltIns.Dymola)]
     [InlineData("Dymola_AST_ComponentAnnotation", ToolBuiltIns.Dymola)]

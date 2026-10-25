@@ -352,8 +352,12 @@ checkbox for each tool, stored as `AcceptedToolBuiltIns` in `settings.json`:
 | `["OpenModelica"]` | Everything in the `OpenModelica` package (`OpenModelica.Scripting` and the rest) |
 | `["Dymola", "OpenModelica"]` | Both |
 
-A tool's name counts only where nothing in the loaded libraries declares it: a library's own class
-called `plot` is what `plot` means there, whichever tools are ticked.
+A tool's name counts only where the loaded libraries do not declare the whole of it: a library's own
+class called `plot` is what `plot` means there, whichever tools are ticked. A name that the libraries
+declare only part of is still the tool's. `import Modelica.Utilities.Strings.*;` brings MSL's
+`Strings.Advanced` package into scope, which has no `Translation`, and Dymola still reads
+`Advanced.Translation.EnableCodeExport` as its own flag. Where Dymola is not accepted, that finding
+says the name is Dymola's.
 
 #### Strict Modelica 3.7 syntax
 
