@@ -134,8 +134,14 @@ every report):
 | `ValidateModelReferences` | `MLQT.Reference.ModelReferences` | `modelica://` model references resolve |
 
 Severities in `RuleSeverities` are `Off`, `Info`, `Warning`, or `Error`; the map wins over the
-booleans. Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`,
+booleans. Most rules default to `Warning` (`MLQT.Duplicate.Declaration`,
+`MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are `Error`,
 `MLQT.Unused.PublicClass` is `Info`).
+
+The table is the documentation and layout rules a first trial usually starts with, not the whole
+set: the correctness, structure, unused-code and units rules are listed with their settings in
+[settings-reference.md](settings-reference.md). A rule id in `RuleSeverities` that MLQT does not
+recognise is reported as a `warning:` on every run, so a typo cannot silently switch a rule off.
 
 **Leave out the libraries you don't want judged.** A repository usually holds test-case and example
 libraries next to the ones under development. List them and they are loaded but never reported on —
@@ -179,7 +185,7 @@ mlqt check /path/to/MyLibrary
 Snapshot everything currently found as *accepted debt*, then **commit the baseline**:
 
 ```bash
-mlqt baseline create /path/to/MyLibrary          # writes <root>/.mlqt/baseline.json
+mlqt baseline create /path/to/MyLibrary          # writes /path/to/MyLibrary/.mlqt/baseline.json
 git add .mlqt/baseline.json && git commit -m "Add MLQT baseline"
 ```
 
@@ -218,8 +224,9 @@ is reported as `new`.
 
 Exit codes: **0** = passed, **1** = findings at/above `--fail-on`, **2** = usage/load error.
 
-`--fail-on` controls the threshold: `warning` (fail on any new finding), `error` (fail only on new
-findings from rules you set to `Error`), or `off` (never fail — report only). Start with `warning` for
+`--fail-on` controls the threshold: `warning` (fail on any new finding except `Info` ones), `error`
+(fail only on new findings at `Error` — the rules you set to it, the few that default to it, and the
+diagnostics), or `off` (never fail — report only). Start with `warning` for
 the ratchet.
 
 ---
@@ -306,8 +313,9 @@ mlqt check ./MyLibrary --baseline .mlqt/baseline.json --fail-on warning --format
 ```
 
 You get:
-- `buildStatisticValue` lines for new / accepted / touched counts — add them as **custom charts** and
-  TeamCity graphs your debt trend across builds automatically;
+- `buildStatisticValue` lines for the new, accepted, touched and fixed counts (`mlqt.findings.new`,
+  `mlqt.findings.acceptedDebt`, `mlqt.findings.touchedDebt`, `mlqt.findings.fixed`) — add them as
+  **custom charts** and TeamCity graphs your debt trend across builds automatically;
 - a message per actionable finding;
 - a `buildProblem` (and non-zero exit) that fails the build when the gate fails.
 
@@ -382,7 +390,8 @@ by the person who wrote the line, while they are still looking at it. `--format 
 body of a GitHub pull-request review — a summary plus inline comments — and `gh` posts it:
 
 ```bash
-mlqt check ./MyLibrary --changed-from origin/main       --baseline .mlqt/baseline.json --fail-on warning       --format review --out review.json
+mlqt check ./MyLibrary --changed-from origin/main --baseline .mlqt/baseline.json \
+      --fail-on warning --format review --out review.json
 
 gh api --method POST /repos/OWNER/REPO/pulls/$PR/reviews --input review.json
 ```
@@ -504,14 +513,19 @@ mlqt hook install|uninstall|status [<library-path>] [--fail-on off|warning|error
                                    [--dependency <path>] [--force]
         # installs the check as a git pre-commit hook; the library defaults to the current directory
         # --force: replace or delete a pre-commit hook mlqt did not write
+
+mlqt compare <library-a> <library-b> [--format console|json] [--out <file>] [--no-added]
+        # lists the classes A has that B does not, matched on full Modelica name
+        # exit 1 when any are missing or a file on either side could not be parsed
 ```
 
 `--config` defaults to the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the
 working-copy root (built-in defaults if there is none); `--baseline` for the `baseline` commands
 defaults to `<library-path>/.mlqt/baseline.json`. A **relative** `--config`/`--baseline` value is
-resolved against the library/repository path (not the current directory), so
-`--baseline .mlqt/baseline.json` finds `<repo>/.mlqt/baseline.json` from any working directory;
-absolute paths are used as-is — the same applies to `--metrics-out`.
+resolved against the library path (not the current directory), so
+`--baseline .mlqt/baseline.json` finds `<library-path>/.mlqt/baseline.json` from any working
+directory; absolute paths are used as-is — the same applies to `--sarif-base` and `--metrics-out`.
+`--out`, `--report` and `--dependency` are taken relative to the current directory.
 
 The `baseline` file records the time, revision and branch it was generated at, and the rule set,
 exclusions and dependencies it was taken with (`version: 3`); older files still load.
@@ -598,8 +612,8 @@ tolerated a parse error would be reporting a clean bill of health on code it nev
 
 The fix is always the same: correct the syntax. A common cause is a missing closing quote in a
 `Documentation(info="…")` annotation, which makes the string run to the end of the file — MLQT
-reports that as *"Unterminated string literal — no closing `"` before the end of the file"*, with the
-line where the string starts.
+reports that as *"Unterminated string literal — no closing `'"'` before the end of the file"*,
+followed by the first few words of the string, with the line where the string starts.
 
 The same diagnostics appear in the desktop app's Findings panel and from the MCP server, with identical
 wording and line numbers.
@@ -705,11 +719,11 @@ error: coverage gate: Class description 75% is below the required 80%
 | `error: could not resolve revision '<ref>'` | Git: the ref doesn't exist locally (wrong branch name, or only `origin/<ref>`) — try `origin/main`, `master`, `HEAD~1`. SVN: `--changed-from` must be a revision number or keyword (`BASE`/`HEAD`/`PREV`), **not a branch name**. |
 | Only new findings show, no touched debt | The note says `0 model(s) changed` — the ref found no changes (it may already contain your change). Diff against a ref *behind* it. |
 | Touched debt swamps the report | A single-file library marks every model changed on any edit. Use `--touched-debt ignore`. |
-| `--metrics` wrote nothing | Expected when the numbers haven't moved, or the revision already has a point. The note on stderr says which. Use `--metrics-force` to override (never in a job that commits the file). |
+| `--metrics` wrote nothing | Expected when the numbers haven't moved, or the revision already has a point; stderr says `note: N metrics scope(s) unchanged since the last point — not re-recorded`. Use `--metrics-force` to override (never in a job that commits the file). |
 | The metrics chart is empty in the app | The dashboard reads `.mlqt/metrics-history.json`; make sure CI's commits of it are being pulled, or press **Save snapshot** once locally. |
 | Gate fails on `MLQT.Parse.SyntaxError` and the baseline doesn't help | It is not meant to. Fix the syntax error — see [Parse errors always fail](#parse-errors-always-fail). |
 | `baseline create` recorded fewer than the check found | Expected. It writes one entry per finding *identity*, and a rule can fire several times on the same element of one class. Both numbers are on the `create` line, and the note explains the gap. See [cli.md → Entries vs findings](cli.md#entries-vs-findings). |
 | A baselined check accepts *more* findings than the baseline holds | Also expected, and the same cause: classification is per finding, so several findings can match one entry. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | `error: dependency version mismatch` | The `--dependency` checkout is not the version the library's `uses(...)` declares. Point it at the right version, update the annotation, or pass `--allow-version-mismatch` if the difference is deliberate. |
-| Gate passes but you expected a failure | Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`, `MLQT.Unused.PublicClass` is `Info`), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |
+| Gate passes but you expected a failure | Most rules default to `Warning` (`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are `Error`, `MLQT.Unused.PublicClass` is `Info`), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

@@ -24,7 +24,8 @@ executable, e.g. in a client config:
 ```
 
 Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
-`%LocalAppData%/MLQT/mcp-settings.json`.
+`%LocalAppData%/MLQT/mcp-settings.json` (`~/.local/share/MLQT/mcp-settings.json` on Linux), separate
+from the desktop app's `settings.json`, which the server only reads, for a simulation tool's install path.
 
 **Tool-usage log.** Optionally records every tool call (name, arguments, duration, error) as one JSON
 object per line in `%LocalAppData%/MLQT/mcp-tool-usage.jsonl` — handy for reviewing how an agent uses the
@@ -136,30 +137,30 @@ host that depends on one pins it in its own tests.
 
 ## Tools
 
-| Tool | What it does |
+| Tool | What it does, and its arguments |
 |------|--------------|
-| `mlqt_load` | Loads `paths` (libraries, `.mo` files, working copies) or a startup `script`, then their dependencies (`withDependencies`, default on; `tool`, `toolInstall` for whose library folders to search); `replace`, `discoverOnly` |
-| `mlqt_session` | `action`: `status` (what is loaded, when, and what is still missing), `unload`, `reload` from disk, `reset` |
-| `mlqt_create_library` | Writes and loads an empty top-level library |
-| `mlqt_find` | `match`: `name`, `text` (documentation prose), `interface` (shape) or `code` (a line of source) |
-| `mlqt_browse` | The package tree from `root`, to a `depth` |
-| `mlqt_get_class` | Up to 20 `classIds`, in the `views` asked for: `info`, `source`, `interface`, `elements`, `behavior`, `connections`, `documentation`, `layout`, `resources` |
-| `mlqt_get_diagram_image` | Renders a class's diagram as a PNG |
-| `mlqt_write_class` | Writes whole classes, each created in its parent or, with `replace: true`, replaced |
-| `mlqt_edit_class` | Operations on one class, all or none: `replace`, `add_component`, `remove_component`, `set_component_modifier`, `add_equation`, `add_connection`, `remove_connection`, `set_component_placement`, `set_class_description`, `set_component_description`, `set_class_documentation`, `suppress_rule`, `accept_spelling`, `correct_spelling` |
-| `mlqt_refactor_class` | `action`: `rename`, `move` or `delete`, every reference rewritten |
-| `mlqt_format` | Formats a class's file, a whole library, or text |
-| `mlqt_check` | `checks`: `style`, `spelling` (with suggestions), `references`, `resources`, on a class, a library or text |
-| `mlqt_list_findings` | Pages through the findings a check stored |
-| `mlqt_style_settings` | Reads a repository's rules, or changes them when `settings` is given |
-| `mlqt_dependencies` | What `classIds` use or are used by (`direction`, `transitive`), a working copy's or revision's changes (`repositoryId`, `revision`), or a resource's users (`resourcePath`) |
-| `mlqt_get_guidance` | Recipes by topic |
+| `mlqt_load` | Loads `paths` (library folders, `package.mo` or single `.mo` files, Git/SVN working copies, folders of libraries) and/or the libraries a Dymola startup `script` opens (read, not run; `startDirectory` is the folder Dymola starts in, default the script's own), then their dependencies: `withDependencies` (default true), `tool` (`dymola`, `openmodelica` or `none`, the default) and `toolInstall` say whose library folders to search. `replace` (default false) loads a path over a copy of the same library loaded explicitly; `discoverOnly` (default false) lists a repository's libraries without loading |
+| `mlqt_session` | `action`: `status` (the default: each library, its version, class count, `loadedAt` and the declared dependencies not loaded - all of them with `detailed: true` - and each repository with its branch and revision), `unload` (`library`, by name or id), `reload` from disk (`target`: a `.mo` file, a library or repository by name or id, or nothing for everything), `reset` |
+| `mlqt_create_library` | Writes an empty top-level library - `name` (a Modelica identifier) in a new folder under `directory`, holding `package.mo` and an empty `package.order` - with an optional `description` and `version`, and loads it unless `loadIntoSession: false`. Refuses a folder that exists or a name already loaded; `preview` returns the `package.mo` without writing |
+| `mlqt_find` | `match`: `name` (the default; with no `query`, a page of every class, filtered by `library` and `classType`), `text` (description and documentation prose), `interface` (shape: `classType`, `hasExperiment`, `minParameters`, `minConnectors`, and `query` as part of the id) or `code` (each line of source containing `query`, with `regex`, `ignoreCase` and `library`). `limit` (default 50) and `offset` page the results |
+| `mlqt_browse` | The package tree from `root` (a class id; omit for every library's top), `depth` levels down (default 1, at most 8), cut at `maxNodes` (default 200) |
+| `mlqt_get_class` | Up to 20 `classIds`, in the `views` asked for: `info`, `source`, `interface`, `elements`, `behavior`, `connections`, `documentation`, `layout`, `resources` (default `info` and `source`). `includeAnnotations` (source, default false), `includeInherited` (interface and elements, default true), `includeProtected` (elements, default false), `documentationFormat` (`text`, the default, or `html`) |
+| `mlqt_get_diagram_image` | Renders `classId`'s diagram as a PNG, `width` pixels wide (default 800, 200-2000) |
+| `mlqt_write_class` | Writes `classes`, each `{parentId, source, standalone?}`, in order: created in its parent (and listed in its `package.order`) or, with `replace: true`, replacing the class of that name. `preview` returns each file without writing |
+| `mlqt_edit_class` | `operations` on one `classId`, in order and all or none: `replace{old, new, all?}`, `add_component{type, name, modifier?, description?, visibility?, prefix?, condition?, constrainedBy?, comment?}`, `remove_component{name}`, `set_component_modifier{name, modifier}`, `add_equation{equation, comment?}`, `add_connection{portA, portB, comment?}`, `remove_connection{portA, portB}`, `set_component_placement{name, x1, y1, x2, y2, rotation?}`, `set_class_description{description}`, `set_component_description{name, description}`, `set_class_documentation{info?, revisions?}`, `suppress_rule{ruleId, component?, reason?}`, `accept_spelling{word, reason?}`, `correct_spelling{word, newWord}`. `preview` returns the file without keeping it |
+| `mlqt_refactor_class` | `action` on `classId`: `rename` (`newName`, a short name), `move` (`newParentId`) or `delete`; a rename or move rewrites every reference. `preview` returns what would change |
+| `mlqt_format` | Formats one of `classId` (its file), `library` (every file of it) or `source` (text, returned). `oneOfEachSection`, `importStatementsFirst`, `componentsBeforeClasses` and `declarationOrder` (each default false) choose the rules; `preview` formats without writing |
+| `mlqt_check` | `checks` (default `style`): `style`, `spelling` (with suggestions), `references`, `resources`, on one of `classId`, `libraryId` (or nothing, for the library loaded) or `source`. `settings` overrides the style rules for this call only - a rule it leaves out is off; `limit` (default 100) and `offset` page references and resources |
+| `mlqt_list_findings` | Pages through the findings known: parse errors (unless `includeParseErrors: false`) and what checks stored, filtered by `severity` (a substring), `source` (`Parser` or `StyleChecking`) and `classId`; `limit` (default 100, at most 1000), `offset` |
+| `mlqt_style_settings` | Reads a repository's rules (`repositoryId`, optional with one repository loaded), or merges `settings` in and writes them |
+| `mlqt_dependencies` | One target: `classIds` with `direction` (`uses`, the default, or `used_by`; `transitive` with `used_by` is the full impact), `repositoryId` for a working copy's changes (against `revision` if given; `transitive` for their impact), or `resourcePath` for the classes that use a file. `limit` (default 100) and `offset` page transitive answers |
+| `mlqt_get_guidance` | Recipes by `topic`: `overview` (the default), `workflows`, `simulators`, `views`, `editing`, `diagrams`, `dependencies`, `style`, `spelling`, `formatting`, `vcs`, `resources` |
 
 `mlqt_check` always reports parse errors (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, regardless of which style rules are enabled — the same diagnostics the desktop app and `mlqt check` report, with identical wording and line numbers.
 
 A style finding carries the severity the repository configured for its rule, as `Style error`, `Style warning` or `Style info`, so `mlqt_list_findings severity:"error"` selects rules the team set to Error without also matching the parse diagnostics' bare `Error`. Checking a library uses that repository's accepted spellings (`.mlqt/dictionary.txt`) as well as its rules, so the finding count matches the desktop app and `mlqt check` on the same source.
 
-`mlqt_style_settings` **merges**: every rule toggle is optional, and one you leave out keeps the value it had. It writes the repository's committed `.mlqt/settings.json`, so this matters — sending a whole object to change one rule would otherwise rewrite the other twenty-eight. `mlqt_style_settings` reports whether each rule is *switched on*, not whether it would currently run, so reading, changing one key and writing back is faithful even for a rule sitting behind a prerequisite that is off.
+`mlqt_style_settings` **merges**: every rule toggle is optional, and one you leave out keeps the value it had. It writes the repository's committed `.mlqt/settings.json`, so this matters — sending a whole object to change one rule would otherwise rewrite every other rule. Besides the rule toggles it carries `spellCheckLanguages` and `acceptedToolBuiltIns` (`Dymola`, `OpenModelica`, both or neither), each kept when left out. `mlqt_style_settings` reports whether each rule is *switched on*, not whether it would currently run, so reading, changing one key and writing back is faithful even for a rule sitting behind a prerequisite that is off.
 
 ## Project layout
 
@@ -167,7 +168,7 @@ A style finding carries the severity the repository configured for its rule, as 
 - `MlqtMcpServerExtensions.cs` / `MlqtMcpServerOptions.cs` — `AddMlqtMcpServer`: DI wiring (the desktop host's list, minus what needs a window), tools, instructions, the coercion filter.
 - `Tools/` — the 16 tools, in the 11 `[McpServerToolType]` classes, and the classes they call, which hold each behaviour. Those were tools of their own until B503 cut 66 to 16, which is why each still reads as one: its methods are `internal` now, and the tests call them directly.
 - `Dtos/` — trimmed, serialization-friendly result types (no UI/layout fields).
-- `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, and the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`, `DiagramImage`).
+- `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, `EditRollback`, `ReadOnlyClassGuard`, `CodeSearch` (`mlqt_find`'s `code`), the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`, `DiagramImage`), and `mlqt_load`'s (`DependencyLoader`, `LibraryCandidates`, `LibraryChoice`, `ModelicaVersion`, `ToolLibraryFolders`, `StartupScriptReader`; the `mcp-library-loading` skill describes them).
 - `DiagramImage` composes a class's diagram — each component's own icon at its placement, plus the connection lines — through `ModelicaParser`'s `DiagramSvgRenderer`, and rasterises it with Svg.Skia. **SkiaSharp's drawing is a native library published per runtime identifier**, so `build/publish-tools.sh` checks it is in the tree: it is not loaded until a diagram is asked for, and a tree missing it answers every other tool perfectly.
   The check pipeline itself is **not** here: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` live in `MLQT.Services/Checking/`, shared with the CLI and the desktop app so all three report the same findings.
 - `Services/HeadlessSettingsService.cs` — JSON settings store, separate from the desktop application's.

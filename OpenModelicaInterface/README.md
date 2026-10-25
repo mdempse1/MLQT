@@ -222,7 +222,7 @@ The interface uses a `SemaphoreSlim` to ensure commands are sent sequentially. M
 
 ## Error Handling
 
-When OMC encounters errors, methods return appropriate failure values (e.g., `false`, empty strings) rather than throwing exceptions. Use `GetErrorStringAsync()` to retrieve detailed error messages:
+When OMC reports an error, methods return appropriate failure values (e.g., `false`, empty strings) rather than throwing exceptions. What does throw is losing omc: `TimeoutException` or `OperationCanceledException` for a command that ran out of time or was cancelled (see *Time limits*), and `OpenModelicaExitedException` (an `InvalidOperationException`) when omc exited while a command was waiting for its reply - a ZeroMQ REQ socket gives no sign that its peer has gone, so the wait watches the process too. Use `GetErrorStringAsync()` to retrieve detailed error messages:
 
 ```csharp
 var success = await omc.CheckModelAsync("Invalid.Model.Name");
@@ -325,6 +325,8 @@ await omc2.LoadModelAsync("ModelicaServices");
 
 - **.NET 10.0** - Target framework
 - **NetMQ 4.0.4.2** - ZeroMQ implementation for .NET
+- **System.Security.Cryptography.Xml 10.0.13** - Not used directly: pins a patched version of a package NetMQ pulls in transitively, for every project downstream
+- **Microsoft.Extensions.DependencyInjection 10.0.9** - Registering the factory
 - **System.Text.Json** - For JSON parsing (built-in)
 - **System.Diagnostics.Process** - For OMC process management (built-in)
 
@@ -335,7 +337,7 @@ The NetMQ package is automatically installed when you reference this project.
 - **DymolaInterface** - Similar interface for Dymola
 - **ModelicaParser** - ANTLR-based Modelica parser
 - **ModelicaGraph** - Dependency graph for Modelica models
-- **ModelicaComparer** - Library comparison tool
+- **OpenModelicaInterface.Tests** - This library's tests (most need a live omc; see its README)
 
 ## License
 
@@ -347,7 +349,8 @@ When adding new functionality:
 1. Add the method to `OpenModelicaInterface.cs`
 2. Add an example to `Examples.cs`
 3. Update this README with API documentation
-4. Consider adding tests (future: OpenModelicaInterface.Tests project)
+4. Add tests to `OpenModelicaInterface.Tests`, marking a class that needs omc `[Trait("Requires", "OpenModelica")]`
+5. List the new public member in `PublicAPI.Unshipped.txt` - this assembly's public surface is tracked, and the build fails until it is
 
 ## Resources
 

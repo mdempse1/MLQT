@@ -9,7 +9,7 @@ RevisionControl abstracts version control operations behind the `IRevisionContro
 - **Git** via LibGit2Sharp
 - **SVN** via the `svn` command-line client
 
-This enables higher-level tools (such as ModelicaComparer's `RevisionComparer`) to work with either VCS without knowing the implementation details.
+This enables higher-level tools (`MLQT.Services` and the app built on it, and projects outside this repository that build it from source) to work with either VCS without knowing the implementation details. The assembly's public surface is tracked in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`.
 
 ## Key Concepts
 
@@ -21,11 +21,19 @@ All VCS operations go through `IRevisionControlSystem`, which covers:
 - Checkout and workspace management
 - Branch operations (list, switch, create)
 - Commit history and file change tracking
-- Commit, revert, update, and merge operations
-- Rebase workflow (rebase, continue, abort) and force push
-- Conflict resolution (get both sides of conflicted files)
+- Commit, revert, update, push and merge operations
+- Rebase workflow (rebase, continue, abort, `GetRebaseInProgress`) and force push
+- Conflict resolution (get both sides of conflicted files, `ResolveConflict` with a `ConflictResolutionChoice`)
+- Detached HEAD (`GetDetachedHeadLabel`, `CountCommitsOnNoBranch`)
 - Push status and pull request URL construction
-- File content retrieval at specific revisions
+- File content retrieval at specific revisions, and the files changed since a revision (`GetChangedFilePathsSince`)
+
+### Line-level diff (Git only)
+
+`ILineLevelDiff.GetChangedLinesSince` says which **lines** each file gained or had rewritten since a
+revision, which a pull-request review comment needs. Only `GitRevisionControlSystem` implements it;
+SVN has nothing to attach such a comment to, so "a review needs Git" falls out of the type. A `null`
+result means the diff could not be taken, never "nothing changed".
 
 ### Workspace Reuse
 
@@ -223,12 +231,12 @@ var (ours, theirs) = git.GetConflictVersions(
 ### File Content at Revision
 
 ```csharp
-// Get file content at a specific revision
-string? content = git.GetFileContentAtRevision(
+// Get file content at a specific revision, as bytes: the caller decides the encoding
+byte[]? content = git.GetFileBytesAtRevision(
     @"C:\Projects\MyRepo", "Models/MyModel.mo", "v1.0.0");
 
 // Get last committed version (HEAD)
-string? headContent = git.GetFileContentAtRevision(
+byte[]? headContent = git.GetFileBytesAtRevision(
     @"C:\Projects\MyRepo", "Models/MyModel.mo");
 ```
 
@@ -236,14 +244,16 @@ string? headContent = git.GetFileContentAtRevision(
 
 | Type | Purpose |
 |------|---------|
-| `VcsLogEntry` | Commit history entry (Revision, Author, Date, Message, Branch) |
-| `VcsLogOptions` | Options for filtering log queries (MaxEntries, Since, Until, Branch) |
+| `VcsLogEntry` | Commit history entry (Revision, ShortRevision, Author, AuthorEmail, Date, Message, MessageShort, Branch, ParentRevisions) |
+| `VcsLogOptions` | Options for filtering log queries (MaxEntries, Since, Until, Branch, Revision; `DefaultPastWeek`) |
 | `VcsChangedFile` | File changed in a commit (Path, ChangeType, OldPath) |
-| `VcsWorkingCopyFile` | Uncommitted file change (Path, Status, IsStaged) |
-| `VcsBranchInfo` | Branch metadata (Name, IsCurrent, IsRemote) |
-| `VcsCommitResult` | Commit result (Success, NewRevision, ErrorMessage) |
+| `VcsWorkingCopyFile` | Uncommitted file change (Path, Status, OldPath, IsStaged) |
+| `VcsBranchInfo` | Branch metadata (Name, IsCurrent, IsRemote, IsTag, LastCommit) |
+| `VcsCommitResult` | Commit result (Success, NewRevision, ErrorMessage, IsOutOfDate, SkippedFiles) |
+| `VcsRebaseInProgress` | A rebase stopped part-way (Branch, ConflictedFiles), from `GetRebaseInProgress` |
+| `ConflictResolutionChoice` | Enum for `ResolveConflict`: AcceptIncoming, KeepMine, MarkResolved |
 | `VcsUpdateResult` | Update result (Success, HasChanges, OldRevision, NewRevision) |
-| `VcsMergeResult` | Merge result (Success, HasConflicts, ConflictedFiles, TreeConflictedFiles, ModifiedFiles). Every path is full and in the platform's form (`VcsRelativePath.ToFullPath`), from Git and SVN alike |
+| `VcsMergeResult` | Merge result (Success, HasConflicts, ConflictedFiles, TreeConflictedFiles, ModifiedFiles, HasChanges, SourceBranch, StartRevision, EndRevision). Every path is full and in the platform's form (`VcsRelativePath.ToFullPath`), from Git and SVN alike |
 | `VcsOperationResult` | Generic operation result (Success, ErrorMessage) |
 | `VcsChangeType` | Enum: Added, Deleted, Modified, Renamed, Copied |
 | `RevisionId` | Displaying a revision: `Shorten` abbreviates a Git commit hash to 7 characters and leaves an SVN revision number alone; `IsCommitHash` says which it is |
@@ -321,8 +331,9 @@ whose cost is dominated by per-file managed-side bookkeeping in its C++/CLI laye
 1. The `MLQT_SVN_PATH` environment variable, if it points at an existing file.
 2. A **bundled** client at `{AppContext.BaseDirectory}/svn/svn.exe`. The MLQT app ships a
    private copy of the [SlikSVN](https://sliksvn.com/) command-line build here so users do
-   not have to install an SVN client. The binaries are staged into `MLQT/MLQT/svn-tools/win-x64`
-   by `build/fetch-svn-tools.ps1` and copied into the app output by `MLQT.csproj`.
+   not have to install an SVN client. The binaries are staged into `svn-tools/win-x64`
+   by `build/fetch-svn-tools.ps1` and copied into the app output by `MLQT.Photino.csproj`
+   (Windows only; the Linux `.deb` recommends the distribution's `subversion` instead).
 3. Bare `svn` on the system `PATH`.
 
 When no `svn` executable can be found, `SvnCli` raises an error explaining how to provide one
@@ -332,7 +343,7 @@ managed fallback. Use a client **>= 1.14** to match the working-copy format MLQT
 ## Dependencies
 
 - **LibGit2Sharp** (v0.31.0) - .NET wrapper for libgit2 (Git operations)
-- **NLog** (v6.1.0) - Logging framework
+- **NLog** (v6.1.3) - Logging framework
 
 SVN operations require an external `svn` command-line client (see above), not a NuGet
 package. SharpSvn remains only as a **test-only** dependency of `RevisionControl.Tests`,

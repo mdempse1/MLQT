@@ -27,6 +27,8 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 | **ModelicaGraph** | Directed graph for file/model relationships, resolution, whole-graph analyses | `ModelicaGraph/CLAUDE.md` |
 | **RevisionControl** | Git/SVN integration | `revision-control` skill |
 | **DymolaInterface** / **OpenModelicaInterface** | Dymola HTTP JSON-RPC / OpenModelica ZeroMQ interfaces | `simulation-tools` skill |
+| **MLQT.TestHost** / **MLQT.Journeys** | Blazor Server host of the shared UI, and the Playwright journeys driven against it (also the documentation screenshots) | `gui-testing` skill |
+| **TestSupport/** | Source files linked into the test projects (`SvnTestRepository`, `TestPaths`, `InMemorySettingsService`, the settings and JSON contracts) | `test-tooling` skill |
 
 **Six of these are built on outside this repository.** Other projects build `ModelicaParser`,
 `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and `MLQT.Services`
@@ -60,11 +62,12 @@ in `RELEASING.md`.
 
 ### Editing files and running commands without a prompt
 
-`.claude/settings.json` pre-approves the routine work here: `dotnet build/test/run/publish`, git's
-read commands plus `add`, `commit`, `mv` and `restore --staged`, the repository's own `build/` scripts,
-`python build/mcp-eval.py analyse|compare|check-tasks`, and the read-only shell tools (`cat`, `grep`,
-`sed -n`, `head`, `tail`, `cut`, `sort`, `uniq`, `diff`, `od`, `find`, `wc`). **`git push` and
-`python build/mcp-eval.py run` always ask** - one publishes, the other calls the model and costs money.
+`.claude/settings.json` pre-approves the routine work here: `dotnet build/test/run/publish/restore`,
+git's read commands plus `add`, `commit`, `mv` and `restore --staged`, the repository's own `build/`
+scripts, `python build/mcp-eval.py analyse|compare|check-tasks`, and the read-only shell tools (`cat`,
+`grep`, `sed -n`, `head`, `tail`, `cut`, `sort`, `uniq`, `diff`, `od`, `find`, `wc`). **`git push`,
+`gh pr create|merge`, `gh api`, `gh release` and `python build/mcp-eval.py run` always ask** - they
+publish, or call the model and cost money.
 
 A command can still ask when every word of it is approved, because what decides is its shape. In one
 long session, 378 shell commands out of 719 asked, and **351 of the 378 were compound commands**.
@@ -237,6 +240,7 @@ real-library corpora (run by hand after changing `ModelicaTokenClassifier` or a 
   with `Path.Combine` from `Path.GetTempPath()`. Both have shipped green on Windows and failed on Linux
 - **A failure is a failure, whichever suite it is in.** `-CoreOnly` is a decision; reading past a red
   line is not
-- **Test fixtures:** `TestFixtures/SarifSmoke/` (SARIF validation, see `MLQT.Cli/CLAUDE.md`) and
+- **Test fixtures:** `TestFixtures/SarifSmoke/` (SARIF validation, see `MLQT.Cli/CLAUDE.md`),
   `TestFixtures/McpEval/` (the MCP evaluation harness, which costs money to run — see
-  `MLQT.McpServer/CLAUDE.md`)
+  `MLQT.McpServer/CLAUDE.md`) and `TestFixtures/StartupScripts/` (Dymola startup scripts, the
+  `mcp-library-loading` skill)

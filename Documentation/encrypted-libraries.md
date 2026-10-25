@@ -5,7 +5,7 @@ Commercial Modelica libraries are usually distributed **encrypted**: the whole l
 depends on one of these is checked against an incomplete picture — and that produces findings that
 are simply wrong:
 
-- every `modelica://Battery.Cells.…` link is reported as a **broken model reference**;
+- every `modelica://PowerCells.Cells.…` link is reported as a **broken model reference**;
 - a class that inherits its icon from an encrypted base class is reported as **missing an Icon
   annotation**;
 - checks that resolve types across the boundary have nothing to resolve against.
@@ -23,14 +23,14 @@ three questions the checks actually ask: **does this class exist**, **what does 
 ## What an encrypted library looks like
 
 ```
-Battery 2.9.0/
+PowerCells 2.9.0/
   package.moe          the encrypted library — unreadable
   libraryinfo.mos      registration script (sometimes present)
   Resources/           NOT encrypted: images, data files, scripts
   help/
-    Battery.html                              one HTML file per package
-    Battery_BMS_Interfaces.html
-    Battery.BMS.Interfaces.CurrentRestrictorI.png
+    PowerCells.html                              one HTML file per package
+    PowerCells_BMS_Interfaces.html
+    PowerCells.BMS.Interfaces.CurrentRestrictorI.png
 ```
 
 MLQT treats any directory containing a `package.moe` as an encrypted library.
@@ -101,7 +101,7 @@ there is no vendor source to show. The class says so itself:
 // Reconstructed by MLQT from this library's documentation — this is NOT the vendor's source.
 // The library ships encrypted, so only what its documentation states is known here: the name,
 // the description, the base classes and whether there is an icon. Read-only.
-within Battery.BMS.Interfaces;
+within PowerCells.BMS.Interfaces;
 model CurrentRestrictor "Interface model for current restrictor"
   extends DymolaModels.Icons.Templates.Box_Bottom;
   annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
@@ -117,11 +117,11 @@ with the code if you copy it somewhere else.
 Pass the library with `--dependency`, exactly as you would an unencrypted one:
 
 ```bash
-mlqt check ./MyLibrary --dependency "C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library\Battery 2.9.0"
+mlqt check ./MyLibrary --dependency "C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library\PowerCells 2.9.0"
 ```
 
 ```
-note: loaded Battery for reference resolution (not reported on)
+note: loaded PowerCells for reference resolution (not reported on)
 No findings in 2 model(s).
 ```
 
@@ -140,7 +140,7 @@ elements views return them with the description and the unit the vendor publishe
 
 ```json
 {
-  "id": "Battery.BMS.CurrentRestrictor",
+  "id": "PowerCells.BMS.CurrentRestrictor",
   "recoveredFromDocumentation": true,
   "parameters": [
     { "name": "iMax", "type": null, "description": "Maximum current", "unit": "A" }
@@ -163,7 +163,7 @@ elements views, and a class carrying it is never writable.
 A few libraries ship no `help/` folder at all. MLQT says so and carries on:
 
 ```
-warning: encrypted library 'CATIAMultiBody' ships no usable documentation, so its classes cannot be
+warning: encrypted library 'VendorMultiBody' ships no usable documentation, so its classes cannot be
          recovered; references into it stay unresolved
 ```
 

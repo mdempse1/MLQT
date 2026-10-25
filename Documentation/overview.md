@@ -166,7 +166,7 @@ bypasses it — deliberately, because a hook nobody can get past is a hook that 
 Select one or more models and MLQT shows every model that depends on them, as an interactive
 graph and as a searchable list.
 
-![The Dependency Network view, reporting that 137 models will be affected by changes to the selected models](Images/dependency-analysis-3.png)
+![The Dependency Network view: the count of models that will be affected by changes to the selected model above the graph, one node picked out with its neighbours lit, and the list of impacted models below](Images/dependency-analysis-3.png)
 
 This answers three questions that are otherwise matters of opinion: what to re-test after a
 change, what else a reviewer should be looking at, and whether the thing you are about to
@@ -217,9 +217,11 @@ The difference it makes is in what the agent has to read. To learn the public in
 under 600. That is the difference between working with a real library and working with a toy
 one.
 
-More than eighty tools cover session and library management, class queries, compact class views,
+Sixteen tools cover session and library management, class queries, compact class views,
 search by prose or by interface shape, editing, documentation, diagrams, dependencies, style
-checking, spelling, formatting, external resources and Modelica-aware VCS operations. Edits
+checking, spelling, formatting, external resources and Modelica-aware VCS operations — each a
+small set of operations rather than one tool per action, so an agent has a short list to choose
+from. Edits
 are element-level rather than wholesale — add a component, set a modifier, add a connection —
 and every edit is parse-checked with rollback, refuses read-only files, and can be previewed
 first.

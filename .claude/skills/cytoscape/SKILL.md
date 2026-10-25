@@ -28,8 +28,8 @@ public class DiagramNode
     public string Id { get; set; } = "";
     public string Label { get; set; } = "";       // short text shown inside the node circle
     public string FullName { get; set; } = "";    // stored as data, available on click
-    public string Color { get; set; } = "#1976d2";
-    public string BorderColor { get; set; } = "#0d47a1";
+    public string Color { get; set; } = MudBlazor.Color.Primary.ToString();
+    public string BorderColor { get; set; } = MudBlazor.Color.Primary.ToString();
 }
 
 public class DiagramEdge
@@ -39,11 +39,17 @@ public class DiagramEdge
 }
 ```
 
+`Color` and `BorderColor` may be a CSS colour or a `var(--...)` reference: Cytoscape draws on a
+canvas and cannot read CSS variables, so `cytoscapeGraph.js` resolves each `var(...)` against the
+document (`_resolveCssVar`) before handing the elements over. That is what lets the Dependencies page
+colour nodes from the MudBlazor palette and follow the theme.
+
 ---
 
 ## CytoscapeGraph.razor Component
 
-**File:** `MLQT.Shared/Components/CytoscapeGraph.razor`
+**Files:** `MLQT.Shared/Components/CytoscapeGraph.razor` (one `<div>`) and its code-behind
+`CytoscapeGraph.razor.cs`, which holds everything below
 
 ### Parameters
 
@@ -52,7 +58,7 @@ public class DiagramEdge
 | `Nodes` | `IEnumerable<DiagramNode>` | `[]` | Nodes to render |
 | `Edges` | `IEnumerable<DiagramEdge>` | `[]` | Edges to render |
 | `Height` | `string` | `"400px"` | CSS height of the graph container |
-| `Layout` | `string` | `"dagre-tb"` | Layout algorithm name (see below) |
+| `Layout` | `string` | `"cose"` | Layout algorithm name (see below) |
 | `OnNodeClicked` | `EventCallback<string>` | — | Fires with node Id when a node is tapped |
 | `OnBackgroundClicked` | `EventCallback` | — | Fires when the graph background is tapped |
 
@@ -140,7 +146,7 @@ cytoscapeGraph.destroy(containerId)
 
 ### Element Format
 
-Elements passed to `init`/`update` are built by `BuildElements()` in `CytoscapeGraph.razor`:
+Elements passed to `init`/`update` are built by `BuildElements()` in `CytoscapeGraph.razor.cs`:
 
 ```javascript
 // Node element
@@ -164,25 +170,31 @@ Elements passed to `init`/`update` are built by `BuildElements()` in `CytoscapeG
 
 ## Layout Options
 
-The `Layout` parameter / `cytoscapeGraph.relayout` accepts these strings:
+The `Layout` parameter / `cytoscapeGraph.relayout` accepts these strings (`_getLayoutConfig` in
+`cytoscapeGraph.js`; an unknown or missing name falls back to `dagre-tb`). The component's default
+is `cose`, and so is the Dependencies page's initial choice:
 
 | Value | Algorithm | Notes |
 |-------|-----------|-------|
-| `dagre-tb` | Dagre (top→bottom) | Default; best for dependency trees |
+| `dagre-tb` | Dagre (top→bottom) | The JS fallback; best for dependency trees |
 | `dagre-lr` | Dagre (left→right) | Wide graphs |
 | `breadthfirst` | BFS tree | Good for shallow trees |
 | `klay` | KLay | Hierarchical, good alternative to dagre |
 | `concentric` | Concentric rings | Degree-based concentric layout |
 | `fcose` | fCoSE force-directed | Best for dense graphs |
 | `spread` | Spread | Maximises use of canvas area |
-| `cose` | CoSE (built-in) | Basic force-directed, no extra deps |
+| `cose` | CoSE (built-in) | Component default; basic force-directed, no extra deps |
 | `circle` | Circle | All nodes on a circle |
+| `grid` | Grid (built-in) | Supported by the JS, not offered in the Dependencies page's selector |
 
 ---
 
 ## Script Loading Order
 
-**File:** `MLQT/wwwroot/index.html`
+**Source of truth:** `MLQT.Shared/HostAssetManifest.cs` (`Scripts`). The test host's page
+(`MLQT.TestHost/Components/App.razor`) renders its script tags from it;
+`MLQT.Photino/wwwroot/index.html` is static and `MLQT.Shared.Tests/HostAssetManifestTests` fails when
+it loads a different set or order. Add or reorder a script in the manifest, then in that page.
 
 Scripts must be loaded in this exact order (each extension auto-registers when `window.cytoscape` is defined):
 
@@ -212,16 +224,16 @@ Extensions auto-register via `if (typeof cytoscape !== 'undefined') { register(c
 
 ## Dependencies Page Integration
 
-**File:** `MLQT.Shared/Pages/Dependencies.razor`
+**Files:** `MLQT.Shared/Pages/Dependencies.razor` and its code-behind `Dependencies.razor.cs`
 
 The page maps impact analysis results to `DiagramNode`/`DiagramEdge`:
 
 ```csharp
-// Node color convention
-// Selected model:  #1976d2 (blue)   border #0d47a1
-// Impacted model:  #ed6c02 (orange) border #e65100
-// Both selected and impacted: #9c27b0 (purple) border #6a1b9a
-// (colors assigned by IImpactAnalysisService.AnalyzeImpact)
+// Node color convention (MudBlazor palette variables, resolved in JS)
+// Selected model:             var(--mud-palette-success), border var(--mud-palette-success-darken)
+// Impacted model:             var(--mud-palette-warning), border var(--mud-palette-warning-darken)
+// Both selected and impacted: var(--mud-palette-error),   border var(--mud-palette-error-darken)
+// (colors assigned by ImpactAnalysisService.AnalyzeImpact)
 
 _graphNodes = _networkNodes.Select(n => new DiagramNode {
     Id = n.Id, Label = n.ShortName, FullName = n.FullName,
@@ -249,14 +261,16 @@ private async Task OnLayoutChanged(string layoutName)
 
 | File | Purpose |
 |------|---------|
-| `MLQT.Shared/Components/CytoscapeGraph.razor` | Reusable Blazor graph component |
+| `MLQT.Shared/Components/CytoscapeGraph.razor` (+ `.razor.cs`) | Reusable Blazor graph component |
 | `MLQT.Shared/Models/DiagramNode.cs` | Generic graph node data model |
 | `MLQT.Shared/Models/DiagramEdge.cs` | Generic graph edge data model |
 | `MLQT.Shared/wwwroot/cytoscapeGraph.js` | JS wrapper — all Cytoscape interop |
 | `MLQT.Shared/wwwroot/lib/` | Offline JS library bundles |
-| `MLQT/wwwroot/index.html` | Script loading order |
-| `MLQT.Shared/Pages/Dependencies.razor` | Consumer of `CytoscapeGraph` |
-| `MLQT.Services/Interfaces/IImpactAnalysisService.cs` | Service providing nodes/edges |
+| `MLQT.Shared/HostAssetManifest.cs` | Script loading order, which every host page follows |
+| `MLQT.Photino/wwwroot/index.html` | The desktop host's page |
+| `MLQT.Shared/Pages/Dependencies.razor` (+ `.razor.cs`) | Consumer of `CytoscapeGraph` |
+| `MLQT.Services/Interfaces/IImpactAnalysisService.cs` | Service providing nodes/edges (`ImpactAnalysisService.cs`) |
+| `MLQT.Journeys/CytoscapeJourney.cs` | Playwright journey over the graph |
 
 ---
 
@@ -270,4 +284,4 @@ To use `CytoscapeGraph` in a new page:
 4. Handle `OnNodeClicked(string nodeId)` — typically calls `HighlightNodeAsync`
 5. Handle `OnBackgroundClicked` — typically calls `ClearHighlightAsync`
 
-No changes to `index.html` or `cytoscapeGraph.js` are needed for new consumers.
+No changes to `HostAssetManifest`, the host pages or `cytoscapeGraph.js` are needed for new consumers.

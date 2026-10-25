@@ -13,6 +13,10 @@ The Code Review tab is divided into two areas:
 1. **Code viewer** (upper area) — Displays the syntax-highlighted source code of the currently selected model
 2. **Findings table** (lower area) — Lists all detected findings from parsing, style checking, and external tool checks
 
+The divider between them can be dragged to give either more room; the findings table scrolls rather than paging, so every finding is reachable at any size.
+
+When the selected class has parser errors, a warning bar between the toolbar and the code says so — red when the file could not be parsed at all and its raw contents are shown instead.
+
 ## Selecting a Model
 
 Click on any model in the library tree (left panel) to view its code. The current model name is shown in the text field above the tab bar. For packages, the code viewer shows the package definition excluding nested class definitions (since those are separate nodes in the tree).
@@ -30,7 +34,7 @@ hidden, waits for the parse, so what should be hidden never appears.
 
 ## Code Viewer Toolbar
 
-The toolbar above the code viewer provides two groups of buttons:
+The toolbar above the code viewer has four groups of buttons — the view modes; the annotation, formatting-exclusion and suppression toggles; style checking and the external tools; and navigation between classes — with the **Find in code** box at its right-hand end.
 
 ### View Mode Buttons
 
@@ -38,12 +42,12 @@ These control how the code is displayed:
 
 | Button | Icon | Description |
 |--------|------|-------------|
-| **View this version** | Article | Shows the current working copy code with syntax highlighting. This is the default view. |
-| **Side-by-side diff** | Compare | Shows a side-by-side comparison between the HEAD (last committed) version and the current working copy. Only available when the file has uncommitted changes. |
-| **Unified diff** | Difference | Shows a unified diff view where added and removed lines are interleaved. Only available when the file has uncommitted changes. |
+| **View just this version** | Article | Shows the current working copy code with syntax highlighting. This is the default view. |
+| **Side-by-side diff with HEAD version** | Compare | Shows a side-by-side comparison between the HEAD (last committed) version and the current working copy. Only available when the file has uncommitted changes. |
+| **Unified diff with HEAD version** | Difference | Shows a unified diff view where added and removed lines are interleaved. Only available when the file has uncommitted changes. |
 | **View both versions** | Vertical split | Shows both the HEAD and working copy versions in full, side by side without collapsing unchanged sections. Only available when the file has uncommitted changes. |
 
-![Screenshot: The Code Review toolbar showing all four view mode buttons. The first button (View this version) is in the filled/active state and we see the current working copy of the file. The model has uncommitted changes so all buttons are enabled.](Images/code-review-2.png)
+![Screenshot: The Code Review toolbar showing all four view mode buttons. The first button (View just this version) is in the filled/active state and we see the current working copy of the file. The model has uncommitted changes so all buttons are enabled.](Images/code-review-2.png)
 
 ### How the Diff View Works
 
@@ -67,12 +71,12 @@ and removed and suggests an external diff tool, instead of rendering every row.
 
 | Button | Icon | Description |
 |--------|------|-------------|
-| **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the findings table with the results. Always available. |
-| **Exclude from auto-formatting** / **Include in auto-formatting** | FormatClear | Toggles formatting exclusion (the tooltip names what a click will do) for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes that are only formatting, the file is reverted first to undo it; a new file, or one with any other uncommitted edit, is left as it is. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes `__MLQT(format=false)` into the class itself, so the exclusion travels with it when it is renamed or moved and is committed alongside the code it applies to; toggling off removes the directive again. Write the annotation by hand if you want to record a `reason` for it. |
-| **Suppress rules in this class** | PlaylistRemove | Opens a dialog that sets which rules the selected class suppresses, for itself **and every class nested in it** — see [Suppressing Rules for a Whole Class](#suppressing-rules-for-a-whole-class). When the class already suppresses something (yellow/orange, filled), the tooltip says how many rules. Disabled when no class is selected. |
 | **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, `Placement`, `Line`) can be verbose — hiding them lets you focus on the functional code. **Every annotation goes, including the ones written on the same line as code** — so a `connect(...)` in an equation section comes back as just the connection. Nothing is left in their place: the button is filled while annotations are shown and outlined while they are hidden, and that is the only marker. Line numbers are unaffected, so a finding still points at the right line. The diff views always show the full source, annotations included, whatever this is set to. |
-| **Check this class using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools, and disabled when no class is selected. |
-| **Check this class using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools, and disabled when no class is selected. |
+| **Exclude from auto-formatting** / **Include in auto-formatting** | FormatClear | Toggles formatting exclusion (the tooltip names what a click will do) for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes that are only formatting, the file is reverted first to undo it; a new file, or one with any other uncommitted edit, is left as it is. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes `__MLQT(format=false)` into the class itself, so the exclusion travels with it when it is renamed or moved and is committed alongside the code it applies to; toggling off removes the directive again. Write the annotation by hand if you want to record a `reason` for it. |
+| **Suppress rules in this class** | PlaylistRemove | Opens a dialog that sets which rules the selected class suppresses, for itself **and every class nested in it** — see [Suppressing Rules for a Whole Class](#suppressing-rules-for-a-whole-class). When the class already suppresses something (yellow/orange, filled), the tooltip says how many rules. Disabled when no class is selected, and for a class from an [encrypted library](encrypted-libraries.md), which has no source to write into. |
+| **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the findings table with the results. Always available. |
+| **Check this class using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools, and disabled when no class is selected or a check is already running. |
+| **Check this class using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools, and disabled when no class is selected or a check is already running. |
 
 ### Moving between classes
 
@@ -80,9 +84,9 @@ Three controls sit together on the toolbar, because they are one job:
 
 | Button | Icon | Description |
 |--------|------|-------------|
-| **Go to a class this one uses** | CallMade (↗) | Lists the classes the current one depends on; pick one to open it. Needs dependency analysis to have run — until it has, the button says so. |
 | **Back** | ArrowBack (←) | Returns to the class you came from. The tooltip names it, so you know before you press it. |
 | **Forward** | ArrowForward (→) | Undoes a **Back**. |
+| **Go to a class this one uses** | CallMade (↗) | Lists the classes the current one depends on; pick one to open it. Needs dependency analysis to have run — until it has, the button is disabled and its tooltip says so. It is also disabled for a class that uses nothing else. |
 
 **The history is shared across every tab** — selecting a class anywhere records it — but the arrows
 themselves are on the Code Review toolbar, so that is where you go back from.

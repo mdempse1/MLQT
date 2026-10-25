@@ -20,6 +20,9 @@ have added a class or moved code between them.
 ./build/run-all-tests.ps1 -Configuration Debug   # Release by default, to match CI
 ```
 
+It also takes `-ResultsDirectory` and `-ReportDirectory` for where the raw results and the coverage
+summary go.
+
 `-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
 only visible here: what the classes needing a live Dymola or omc add to `DymolaInterface` and
 `OpenModelicaInterface` (the gate measures those two from their tool-free classes only, B438), and the
@@ -34,7 +37,14 @@ It runs **every** suite, which is more than CI does and more than the coverage g
 |---|---|
 | `run-all-tests.ps1` | all 10 — the 7 below, plus `DymolaInterface.Tests`, `OpenModelicaInterface.Tests` and `MLQT.Journeys` |
 | CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform, plus the Dymola and OpenModelica suites **without their tool classes** (B399); `ui-journeys` runs the journeys on both |
-| `check-coverage.ps1` | the same as CI's test jobs — the 7, plus the Dymola and OpenModelica suites without their tool classes (B438); the journeys contribute no gated coverage |
+| `check-coverage.ps1` | the same as CI's test jobs — the 7, plus the Dymola and OpenModelica suites without their tool classes (B438); the journeys contribute no gated coverage. CI's `code-coverage` job runs it |
+
+The rest of `build-and-test.yml`: `build-libraries` also runs `build/validate-sarif.ps1`;
+`linux-tests` also publishes the self-contained `linux-x64` CLI and smoke-tests it; and
+`desktop-selftest` publishes `MLQT.Photino` on both platforms, captures the `/selftest` report and
+compares it with the recorded baseline (`MLQT.Journeys/DesktopHostConformanceTests`).
+`nightly-webkit.yml` runs the journeys against WebKit nightly, and `release.yml` builds the installers
+and the `.deb` on a tag (see `RELEASING.md`).
 
 **The suite list is read from `MLQT.slnx`**, not written out in the script, so a test project added to
 the solution is picked up without anyone remembering a list. This repository has been bitten by the
@@ -56,8 +66,9 @@ to be marked by hand. `LiveToolTestFilterTests` holds the filter strings to the 
 **A fourth is partly in that position.** `RevisionControl.Tests` has three classes that need an svn
 client — `SvnIntegrationTests`, `SvnIntegrationAdvancedTests` and `SvnMergeCommitTests` — and
 `MLQT.Services.Tests` has one, `RepositoryServiceSvnIntegrationTests` (B471), so CI runs both suites
-with a filter that excludes exactly those four, and this script applies it **only when the machine
-has no svn**. The filter is the same string in four files and a test holds them together
+with a filter that excludes exactly those four
+(`FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit`), and this script applies
+it **only when the machine has no svn**. The filter is the same string in four files and a test holds them together
 (`MLQT.Shared.Tests/SvnTestFilterTests.cs`), because it was once the substring `Svn`: that also
 excluded six classes needing no svn at all, hid 281 of the suite's 673 tests from every automated
 run, and hid a failing one among them (B266). **Classify a test by what it needs, never by what it is
@@ -113,6 +124,10 @@ stdio, and the GUI runs the **16 `/selftest` probes against the published tree**
 strongest check available anywhere in this repository — it resolves the RCL assets, runs interop,
 renders MudBlazor and exercises settings, logging and the svn locator, in the layout that ships.
 
+Its other options: `--configuration` (Release by default), `--self-test-timeout` and
+`--skip-smoke-tests`. `build/package-deb.sh` takes `--version`, `--stage` (the published tree),
+`--output`, `--arch` and `--skip-smoke-tests`.
+
 `--allow-missing-svn` is needed locally because the payload is fetched by `build/fetch-svn-tools.ps1`
 and is not committed. It defaults to **failing**, so a release cannot ship without the client by nobody
 remembering a flag — which is exactly how B144 happened.
@@ -156,6 +171,10 @@ dotnet build MLQT.slnx -c Release
 ./build/check-coverage.ps1 -UpdateBaseline # re-record accepted debt; review the diff
 ```
 
+Also `-Configuration`, `-BaselinePath`, `-MinimumLines` (25, below which a class is not gated),
+`-ResultsDirectory` and `-ReportDirectory`. The suites it runs are the `$suites` list in the script,
+which CI's `code-coverage` job builds by hand and must match.
+
 It is a **ratchet, not a flat threshold**, for the same reason MLQT offers its users one: some debt
 predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need an svn client
 no runner has. `build/coverage-baseline.json` records the classes currently below their
@@ -195,6 +214,16 @@ dotnet test ModelicaParser.Tests --filter "FullyQualifiedName~RoundTripsOverAWho
 Several libraries are separated by `;`. With the variable unset the test returns immediately, so an
 ordinary run is unaffected — which is the trap, not a convenience: a green suite says nothing about
 fidelity unless this has been run.
+
+The same variable drives `ModelicaParser.Tests/Visitors/AnnotationElisionCoverageTests`, a
+measurement rather than an assertion: how much of an equation section hiding annotations hides.
+
+## Other opt-in measurements
+
+`MLQT.Shared.Tests/Components/LargeClassCostTests` (`MLQT_LARGE_CLASS_COST` set to anything) times
+opening a very large class on the Code Review page by shape and prints a table (B185, B235). The
+journeys read `MLQT_JOURNEY_BROWSER` and `MLQT_JOURNEY_TRACE`, and `MLQT_DOC_SCREENSHOTS` turns on
+the documentation screenshots (see the `gui-testing` and `user-documentation` skills).
 
 ## "Does every type still resolve?" — two real libraries, by hand
 
@@ -284,6 +313,11 @@ dotnet tool install --global dotnet-stryker      # once
 ./build/run-mutation.ps1 -Summarise          # rebuild the report from runs already done
 ```
 
+`-Project` defaults to `MLQT.Services`, which is why the first line needs no `-Project`. Other
+parameters: `-TestProject` (the suite to judge with, by default the project's own `.Tests`),
+`-Configuration`, `-Concurrency`, `-Output` and `-Force` (re-run a project whose report is already
+there).
+
 **For a single run, always pass `-Mutate`**: one file takes about three minutes, most of it the build
 and the baseline test run, and a whole assembly takes many times as long.
 
@@ -308,6 +342,7 @@ unguarded?* rather than *what are these 272 mutants?*:
 python build/survivor-map.py $TEMP/mlqt-run/reports/mutation-report.json --file ModelicaRenderer
 python build/survivor-map.py <report> --file ModelicaRenderer --method VisitComposition   # then read one
 python build/survivor-map.py <report> --file Foo --status NoCoverage                      # the other list
+python build/survivor-map.py <report> --all                                               # every group, not the top 30
 ```
 
 It exists because B227 was 272 survivors in one 3,500-line file, and reading that many in order is

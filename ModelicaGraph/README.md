@@ -161,8 +161,8 @@ List<LogMessage> findings = StyleChecking.RunStyleChecking(
 
 // Run style checks on a model excluded from formatting
 // When isExcludedFromFormatting is true, formatting-related rules are skipped:
-// ImportStatementsFirst, InitialEQAlgoFirst/Last, OneOfEachSection,
-// DontMixEquationAndAlgorithm, DontMixConnections
+// ImportStatementsFirst, ComponentsBeforeClasses, DeclarationOrder,
+// InitialEQAlgoFirst/Last, OneOfEachSection, DontMixEquationAndAlgorithm, DontMixConnections
 findings = StyleChecking.RunStyleChecking(
     modelDefinition, settings, fullModelId: "MyLibrary.MyModel",
     isExcludedFromFormatting: true);
@@ -283,6 +283,9 @@ question no single class can answer — and run per repository alongside the per
 | `ShadowingAnalyzer` | A declaration that silently shadows an inherited member |
 | `UsesHygieneAnalyzer` | A library referenced but not declared in `uses(...)`, or declared and never used |
 | `PackageOrderAnalyzer` | `package.order` entries that do not match the package's contents |
+| `SingleFilePackageAnalyzer` | A package held entirely in one `.mo` file when its classes could each have a file of their own |
+| `WithinClauseAnalyzer` | A file whose `within` clause does not name the package whose directory holds it |
+| `UndeclaredNameAnalyzer` | A name used where nothing of that name is declared (variable, function, type, base class, import, modification target) |
 
 They need dependency edges, so the runner arranges for `DirectedGraph.DependenciesAnalyzed` to be
 true first; without the edges the edge-dependent ones are skipped rather than guessing.
@@ -326,11 +329,11 @@ documentation. Each node's `Definition.ModelicaCode` is a **synthesized declarat
 what the documentation stated — name, description, `extends`, and whether there is an icon:
 
 ```modelica
-within Battery.BMS.Interfaces;
-model CurrentRestrictor "Interface model for current restrictor"
-  extends DymolaModels.Icons.Templates.Box_Bottom;
+within VendorLib.Interfaces;
+model Limiter "Interface model for a limiter"
+  extends VendorIcons.Templates.Box;
   annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
-end CurrentRestrictor;
+end Limiter;
 ```
 
 Synthesizing source rather than carrying parallel metadata is what makes this cheap: every consumer
@@ -371,3 +374,6 @@ MIT License — see [LICENSE](../LICENSE) for details.
 ## Dependencies
 
 - **ModelicaParser** - ANTLR-based parser used by GraphBuilder for parsing and analysis
+- **RevisionControl** - Project reference in `ModelicaGraph.csproj` (no type from it is used in this assembly's source today)
+
+The assembly's public surface is tracked in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`.

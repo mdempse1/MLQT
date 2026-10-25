@@ -51,14 +51,14 @@ The Refresh button provides several visual cues:
 | **Red badge with number** | The count of pending file changes waiting to be processed |
 | **Orange button color** | Changes are pending — a refresh is recommended |
 | **Default button color** | No pending changes — everything is up to date |
-| **Disabled button** | A refresh is currently in progress |
+| **Disabled button** | A refresh is currently in progress, or a VCS operation (or the analysis it started) is still running |
 
 ![Screenshot: Close-up of the Refresh button showing the red badge with "3" and the orange button color, indicating 3 pending changes.](Images/file-monitoring-1.png)
 
 ### Tooltip Details
 
 Hover over the Refresh button to see a detailed breakdown of pending changes:
-- "Refresh libraries (2 added, 3 modified, 1 deleted)" — Shows counts by change type
+- "Refresh libraries (2 added, 3 modified, 1 deleted, 1 renamed)" — Shows counts by change type
 - "Refresh libraries" — No pending changes
 - "Refreshing..." — A refresh is in progress
 
@@ -70,13 +70,13 @@ When you click Refresh, MLQT processes all pending changes in this order:
 2. **Renames** — Removes the old path and reloads the file from the new path
 3. **Modifications** — Reloads modified files, re-parsing the Modelica code
 4. **Additions** — Loads new files and parses them into the library graph
-5. **Formatting** — If [Apply formatting rules](settings-reference.md#understanding-apply-formatting-rules) is enabled, applies formatting to changed files
-6. **Dependency analysis** — Re-analyzes dependencies for affected models only (not the entire library)
+5. **Formatting** — If [Apply formatting rules](settings-reference.md#understanding-apply-formatting-rules) is enabled, applies formatting to changed files (never in a repository marked [Reference only](settings-reference.md#reference-only-repositories))
+6. **Dependency analysis** — Re-analyzes dependencies for affected models only (not the entire library), if dependency analysis has run
 7. **Style checking** — Re-runs style checks on affected models
-8. **External resource analysis** — Re-analyzes external resource references for affected models
+8. **External resource analysis** — Re-analyzes external resource references for affected models, if external resource analysis has run
 9. **Cleanup** — Clears the pending changes list and resets the badge
 
-A success message appears when the refresh completes.
+A message saying how many file changes are being processed appears when it starts, and "Successfully processed N file changes" when it completes. Clicking Refresh with nothing pending says "No pending changes to process".
 
 ### Incremental Processing
 

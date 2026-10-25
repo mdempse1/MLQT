@@ -23,7 +23,16 @@ AddMlqtCore()                      // everything that is not this host's busines
 + ISettingsService
 + IPowerManagementService
 + a renderer, a window, its icon and placement
++ ExternalToolShutdown.EndWith / Run  // ends the omc MLQT started on every way out (B260, B493)
 ```
+
+The host's own files, all in `MLQT.Photino/Services/`: `PhotinoFilePickerService`,
+`PowerManagementService`, `PhotinoWindowAccessor` (holds the window, which only exists after
+`Build()`, for the picker), `StaticWebAssetsFileProvider` (serves a *built*, unpublished tree from the
+static-web-assets manifest, so F5 and `dotnet run` work), `WindowIcon` and `WindowPlacement` (over
+`MLQT.Services/WindowGeometry.cs`). Two environment variables are escape hatches for debugging the host
+itself: `MLQT_PHOTINO_LOG` raises Photino's log verbosity and `MLQT_DEVTOOLS` turns the developer
+tools back on.
 
 `AddMlqtCore()` in `MLQT.Shared/MlqtServiceCollectionExtensions.cs` is the shared composition root —
 it registers the services, MudBlazor, the invariant culture **and logging**. A host is the renderer
@@ -43,7 +52,7 @@ these was found by running into it.
 
 | Trap | What happens | The rule |
 |---|---|---|
-| `autostart="false"` in the host page | Blazor never starts | That attribute is a **MAUI contract** — `BlazorWebView` calls `Blazor.start()` and Photino does not. Generate the page from `HostAssetManifest` and the question does not arise |
+| `autostart="false"` in the host page | Blazor never starts | That attribute is a **MAUI contract** — `BlazorWebView` calls `Blazor.start()` and Photino does not. Write the page from `HostAssetManifest` and the question does not arise |
 | `PhotinoBlazorAppBuilder.CreateDefault()` with no file provider | No static assets at all | The provider must be rooted at `wwwroot` **explicitly**; `HostPage` is `"index.html"` with no directory part |
 | `dotnet build` rather than `dotnet publish` | Window opens, loads nothing | Photino serves `wwwroot` through a bare `PhysicalFileProvider` with no static-web-assets support. `StaticWebAssetsFileProvider` is what makes F5 work; **what ships is the published layout**, so that is what the smoke tests measure (B133, and B167 when the same defect survived in `MLQT.McpTester`) |
 | The static-web-assets manifest is named after the **application** | RCL assets 404 | Bit `MLQT.TestHost` first, because the in-process entry assembly was the test project |
@@ -103,16 +112,20 @@ were on in both release builds. Reading them *during* `RegisterWindowCreatedHand
 process. The DOM `contextmenu` event still fires on both platforms, which is what MLQT's own menus
 (the spell-check correction menu) are built on — re-check that by hand if these lines are revisited.
 
-## `HostAssetManifest` — the host page is generated, not copied
+## `HostAssetManifest` — the host page follows the manifest, never another page
 
-`MLQT.Shared/HostAssetManifest.cs` is the single list of scripts, styles and the bootstrap script, and
-every host's page is generated from it. `HostAssetManifestTests.HostPages()` enumerates the hosts and
-holds every page to the same assets **in the same order**, and
-`EveryAssetTheHostPageAsksFor_Loads` asserts each one actually resolves — which is how B120 (the test
-host asking for an `app.css` it did not have) was found and fixed in both directions.
+`MLQT.Shared/HostAssetManifest.cs` is the single list of scripts, styles and the bootstrap script.
+The test host's page (`MLQT.TestHost/Components/App.razor`) renders its tags from it at runtime;
+`MLQT.Photino/wwwroot/index.html` is a static file written from it, and
+`HostAssetManifestTests.HostPages()` lists the static pages and holds each to the same assets **in
+the same order**. A separate test in that class finds every `wwwroot/index.html` in the repository
+(so `MLQT.McpTester`'s too) and fails on any `http` asset. The journey test
+`EveryAssetTheHostPageAsksFor_Loads` (`MLQT.Journeys/OpenAndBrowseJourney.cs`) asserts each asset
+actually resolves — which is how B120 (the test host asking for an `app.css` it did not have) was
+found and fixed in both directions.
 
-Adding a host is one line in that theory. Copying a page from another host by hand is how
-`autostart="false"` gets carried across.
+Adding a host that shares `MLQT.Shared`'s UI is one entry in `HostPages()`. Copying a page from
+another host by hand is how `autostart="false"` gets carried across.
 
 ## Window behaviour — the part no probe can see
 
@@ -163,8 +176,8 @@ window instead**:
 `BackingStore` reports the real path, because a write-read round-trip cannot tell persistence from the
 appearance of it.
 
-**Probe 10 cannot tell a real inhibit from a no-op** — it asserts only that the calls return. The log
-line matters more than the probe there. The same is true of probe 11: a picker resolving is not a GTK
+**`power.sleep` cannot tell a real inhibit from a no-op** — it asserts only that the calls return. The log
+line matters more than the probe there. The same is true of `filepicker.wired`: a picker resolving is not a GTK
 dialog opening and returning a path, which stays a manual check once per platform.
 
 ### The MAUI settings migration
@@ -241,15 +254,20 @@ probe asks Cytoscape which layouts it *registered*); Cytoscape initialises and r
 `diffViewer.initSyncScroll` and `spellCheck.init` (they take **elements, not ids**); MudBlazor
 dialogs, select popovers, snackbars and overlays are in the DOM; Roboto renders at the expected
 metrics; settings round-trip; settings report their backing path; power management returns; the file
-picker resolves; NLog wrote *this run's* line; `SvnToolLocator` resolves a client or reports the
-fallback; the culture's decimal separator is `.`.
+picker resolves; the culture's decimal separator is `.`; NLog wrote *this run's* line; `SvnToolLocator`
+resolves a client or reports the fallback; `MlqtTheme` builds its palette and typography. Each has an
+id (`interop.dimensions` … `theme.builds`, in `SelfTest.razor.cs`), and the committed baseline is
+`MLQT.Shared.Tests/TestFiles/selftest-baseline-maui.json`. `SelfTestHost.razor` is the root a host
+uses in self-test mode.
 
 **The MAUI baseline is frozen.** The host that produced it no longer exists, so it cannot be re-taken
 and **no probe can ever be added** — the drift guard refuses a probe with no MAUI answer.
 `HostConformance.Compare` reports a probe present on only one side as a difference, because the
 failure worth guarding against is two probe sets drifting apart while their intersection still
-matches. The `desktop-selftest` CI job publishes the real host per platform, overwrites that
-platform's committed capture and diffs it against the baseline on every push.
+matches. `HostConformance` lives in `MLQT.Journeys`. The `desktop-selftest` CI job
+(`build-and-test.yml`) publishes the real host per platform, overwrites that platform's committed
+capture (`selftest-photino-windows.json` / `selftest-photino-linux.json`) and diffs it against the
+baseline on every push through `DesktopHostConformanceTests`.
 
 **What conformance does not prove:** visual fidelity (a human looks, once, per platform — screenshot
 diffing across two engines produces false positives on every glyph), native window behaviour, a real

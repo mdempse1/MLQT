@@ -74,8 +74,8 @@ Before the dialog opens, MLQT formats the repository's changed files ("Applying 
 
 | Field | Description |
 |-------|-------------|
-| **Commit message** | Required. A description of what you changed and why. |
-| **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). The issue or ticket number associated with this change. |
+| **Issue ID** | Shown only when "Require an issue number" is enabled in repository settings, above the message, and then required. The issue or ticket number associated with this change. |
+| **Commit Message** | Required. A description of what you changed and why. |
 
 ### Issue Number Handling
 
@@ -86,7 +86,7 @@ If the repository setting **Require an issue number as part of the commit messag
 
 ### File Selection
 
-The dialog shows all files with uncommitted changes. Each file has a checkbox — you can select which files to include in this commit. The commit button shows the count of selected files (e.g., "Commit (5 files)").
+The dialog shows all files with uncommitted changes as a tree under **Changed Files**. Each file has a checkbox — you can select which files to include in this commit, and the **Select All** and **Deselect All** buttons above the tree tick or clear every one. Selecting a file shows its diff in the panel beside the tree. The commit button shows the count of selected files (e.g., "Commit (5 files)").
 
 ### Commits Are Local
 
@@ -115,7 +115,7 @@ Reverting is **irreversible**. The dialog shows a prominent warning:
 
 > "Selected files will be reverted to their last committed state. This cannot be undone."
 
-You select which files to revert — you don't have to revert everything. Unselected files keep their modifications.
+You select which files to revert, in the same file tree (with **Select All** and **Deselect All**) and diff panel as the commit dialog — you don't have to revert everything. Unselected files keep their modifications.
 
 ### After Reverting
 
@@ -219,15 +219,17 @@ MLQT checks for uncommitted changes. If your working copy is dirty, you must eit
 - **Commit** the changes first (opens the Commit dialog)
 - **Revert all** changes to clean the working copy
 
-![Screenshot: The Git Merge dialog in the dirty working copy phase, showing the list of uncommitted files with status icons and the "Commit Changes" and "Revert All" buttons.](Images/git-operations-5.png)
+![Screenshot: The Merge Branch dialog in the dirty working copy phase: the branch selector at the top, the warning that the working copy has uncommitted changes, the list of uncommitted files with status icons, and the "Commit Changes" and "Revert All" buttons.](Images/git-operations-5.png)
+
+The branch selector is already shown while the working copy is dirty, so you can choose the branch first; the **Merge** button appears once the working copy is clean. **Commit Changes** opens the ordinary commit dialog, and when it closes the merge dialog checks the working copy again and moves on.
 
 **Phase 2: Branch selection**
-Select which branch to merge into your current branch using the branch selector.
+Select which branch to merge into your current branch using the branch selector. The **Merge** button is disabled until a branch is selected.
 
 ![Screenshot: The Git Merge dialog in the ready-to-merge phase, showing the branch selector with available branches and the "Merge" button.](Images/git-operations-6.png)
 
 **Phase 3: Merge execution**
-MLQT performs the merge. If there are no conflicts, a merge commit is automatically created and the dialog proceeds to the push prompt.
+MLQT performs the merge. If there are no conflicts, a merge commit is automatically created and the dialog proceeds to the push prompt. If there is nothing to merge, the dialog closes saying "No changes to merge — already up to date."
 
 **Phase 4: Conflict resolution** (if needed)
 If the merge produces conflicts, the dialog shows a list of conflicted files with resolution options:
@@ -342,12 +344,12 @@ If the branch hasn't been pushed yet, the dialog warns:
 Click **Push and Create Pull Request** to push first, then open the PR.
 
 **Phase 3: Open PR**
-If the branch is already pushed (or after pushing), click **Create Pull Request**. MLQT:
+If the branch is already pushed, the dialog says "Branch is up to date on remote." and the button is **Create Pull Request**. Either button stays disabled until a base branch is selected. MLQT:
 1. Constructs the pull request URL for your Git hosting platform
 2. Opens the URL in your default web browser
 3. You complete the PR details (title, description, reviewers) in the browser
 
-![Screenshot: The Create Pull Request dialog showing the base branch selector and the "Create Pull Request" button. The current branch name should be visible.](Images/git-operations-7.png)
+![Screenshot: The Create Pull Request dialog for a branch that has not been pushed: "Merge <current branch> into:" above the base branch selector, the warning that the branch will be pushed first, and the "Push and Create Pull Request" button.](Images/git-operations-7.png)
 
 ### Base Branch Selection
 
@@ -426,7 +428,7 @@ Click **Checkout** to go ahead, or **Cancel**.
 
 After checkout:
 - MLQT reloads all libraries from the checked-out revision
-- The repository header shows "Detached HEAD" instead of a branch name, and the actions that need a branch are off until you create one (see above)
+- The repository header shows "Detached HEAD at **abc1234**" (the short commit id, or the tag's name when a tag points there) instead of a branch name, and the actions that need a branch are off until you create one (see above)
 - Any files that VCS reports as changed are formatted (if "Apply formatting rules" is enabled), then dependency analysis and style checking run on affected files. If nothing is reported as changed, the whole repository is re-analysed without formatting
 
 ### Viewing File Diffs
@@ -436,5 +438,7 @@ Clicking on any changed file opens the **Revision Diff** dialog, which shows wha
 - **Right side**: The file content at the selected revision
 - For **added** files: the left side is empty, because the file did not exist before that revision
 - For **deleted** files: the right side is empty, because the revision removed the file
+
+It opens in the **Unified** view; the **Side by Side** and **Full Files** buttons above the diff switch views. A file the revision listed as changed but whose text it did not change says so ("Revision … changed no lines in this file") rather than showing an empty diff.
 
 ![Screenshot: The Revision Diff dialog, titled "Diff: <file> @ <revision>" with the short id of the revision being examined, which is compared against the revision before it. Unified, side-by-side and full-file views are offered, the line count of the change is shown, and added and removed lines are marked.](Images/git-operations-10.png)

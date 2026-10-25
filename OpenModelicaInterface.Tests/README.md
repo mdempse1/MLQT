@@ -12,16 +12,22 @@ This test project contains unit and integration tests for the OpenModelicaInterf
 - **ModelExplorationTests** - Model exploration and introspection tests
 - **InterfaceFactoryTests** - `OpenModelicaInterfaceFactory` lifecycle (create / reset / settings)
 - **CultureInvarianceTests** - Numeric formatting is culture-invariant
+- **OpenModelicaSettingsTests** - Installation detection and the timeout settings
+- **OmcPortAnnouncementTests** - Finding the port file path in omc's unterminated stdout
+- **PortDiscoveryTests** - Starting omc on a port it chooses, and on a fixed one
+- **TimeLimitTests** - A command that runs out of time, or is cancelled, ends the session
+- **SessionEndTests** - omc exiting while a command waits (`OpenModelicaExitedException`)
+- **StandardInputTests** / **HostReadingStdinTests** - omc gets its own stdin, never the host's
+- **ToolTraitTests** - Every class that needs omc carries the `Requires` trait
 
-**IMPORTANT**: All tests run **sequentially** (not in parallel) and share a single OMC instance. This is achieved using xUnit's collection fixture feature.
+**IMPORTANT**: The tests that use the shared OMC instance (`[Collection("OpenModelica Collection")]`) run **sequentially**, not in parallel. This is achieved using xUnit's collection fixture feature. Some classes (`TimeLimitTests`, `PortDiscoveryTests`, `SessionEndTests`, `StandardInputTests`) start an omc of their own instead.
 
 ## Prerequisites
 
 ### Required Software
 
 1. **OpenModelica 1.24.0 or later**
-   - Must be installed at: `C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe`
-   - If installed elsewhere, update the `OMC_PATH` constant in `OpenModelicaFixture.cs`
+   - Found by `OpenModelicaSettings.FindInstalledOmc()`, which the fixture calls, so no path is hard-coded in the tests
    - Download from: https://openmodelica.org/download/
 
 2. **.NET 10.0 SDK** or later
@@ -202,9 +208,8 @@ The sequential execution ensures tests don't interfere with each other and preve
 **Problem**: Tests cannot find OpenModelica installation
 
 **Solutions**:
-1. Verify OpenModelica is installed at the expected path
-2. Check the `OMC_PATH` constant in `OpenModelicaFixture.cs`
-3. Ensure the path points to `omc.exe` (not the directory)
+1. Verify OpenModelica is installed where `OpenModelicaSettings.FindInstalledOmc()` looks
+2. Check that `omc` runs from the command line
 
 ### Tests Timeout
 
@@ -212,7 +217,7 @@ The sequential execution ensures tests don't interfere with each other and preve
 
 **Solutions**:
 1. OpenModelica may be slow to start on first run
-2. Increase the delay in `EnsureOmcStartedAsync()` (currently 1 second)
+2. Increase the delay in `EnsureOmcStartedAsync()` (currently 3 seconds)
 3. Check if antivirus is scanning OMC executable
 
 ### "Model Not Found" Errors
@@ -318,18 +323,18 @@ OpenModelicaInterface talks to OMC over ZeroMQ, on a port omc chooses unless one
 
 | Feature | DymolaInterface.Tests | OpenModelicaInterface.Tests |
 |---------|----------------------|----------------------------|
-| **Process Management** | External (manual start) | Automatic (fixture starts) |
+| **Process Management** | Automatic (fixture starts, or attaches to a running Dymola) | Automatic (fixture starts) |
 | **Port Configuration** | Required (8082) | Optional (default: omc chooses) |
-| **Startup Time** | ~15 seconds | ~1 second |
+| **Fixture startup wait** | 15 seconds | 3 seconds |
 | **Communication** | HTTP JSON-RPC | ZeroMQ (NetMQ REQ/REP) |
 | **Response Parsing** | Consistent JSON | Mixed formats |
-| **Number of Tests** | ~190 tests | ~45 tests |
+| **Number of tests** (`[Fact]`/`[Theory]` methods, approximate) | ~255 | ~95 |
 
 ## Contributing
 
 When adding new tests:
 1. Follow the existing naming convention: `MethodName_Scenario_ExpectedResult`
-2. Always use `[Collection("OpenModelica Collection")]` attribute on test classes
+2. Put `[Collection("OpenModelica Collection")]` and `[Trait("Requires", "OpenModelica")]` on a class that uses the shared omc; a class that starts its own omc still needs the trait
 3. Inject `OpenModelicaFixture` and call `await _fixture.EnsureOmcStartedAsync()`
 4. Use `_fixture.Omc` to access the shared OMC instance
 5. Don't call `Dispose()` or `ExitAsync()` on the shared instance (fixture handles cleanup)

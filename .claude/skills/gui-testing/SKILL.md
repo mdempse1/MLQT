@@ -120,15 +120,15 @@ Existing guards worth copying the shape of:
 
 | Guard | Holds |
 |---|---|
-| `CodeBehindPolicyTests` | Six checks over the code-behind policy, including `NoCodeBehindIsOrphaned` for the failure the compiler cannot see — a renamed `.razor` leaving its `.razor.cs` behind, which builds cleanly and never runs |
+| `CodeBehindPolicyTests` (MLQT.Shared.Tests) | Six checks over the code-behind policy, including `NoCodeBehindIsOrphaned` for the failure the compiler cannot see — a renamed `.razor` leaving its `.razor.cs` behind, which builds cleanly and never runs |
 | `SharedUiConventionTests` | Every `+=` in a component has a matching `-=`; no component subscribes without declaring `IDisposable` |
-| `RuleSettingsLayoutTests` | Every configurable rule has a home in the settings dialog, nothing placed twice or placed unsettable |
-| `RuleDocumentationTests` | The catalogue and `settings-reference.md` agree, including the exact labels |
-| `DocumentedCommandTests` | Every flag combination the documentation prints is run by some test |
-| `HostAssetManifestTests` | Each host page carries the same assets in the same order, and each one loads |
-| `MarkdownTableTests` | The tables in `Design/`, every `CLAUDE.md` and every skill are still tables |
-| `WorkflowPlatformParityTests` | The two CI legs hold each other in both directions |
-| `TestRunnerScriptTests`, `DebianPackageTests`, `WindowsInstallerTests`, `ReleaseVersionTests` | The build and packaging scripts, read as text, because the file system cannot answer on Windows |
+| `RuleSettingsLayoutTests` (ModelicaGraph.Tests) | Every configurable rule has a home in the settings dialog, nothing placed twice or placed unsettable |
+| `RuleDocumentationTests` (MLQT.Cli.Tests) | The catalogue and `settings-reference.md` agree, including the exact labels |
+| `DocumentedCommandTests` (MLQT.Cli.Tests) | Every flag combination the documentation prints is run by some test |
+| `HostAssetManifestTests` (MLQT.Shared.Tests) | Each static host page carries the manifest's assets in the same order, and none is fetched over `http` |
+| `MarkdownTableTests` (MLQT.Cli.Tests) | The tables in `Design/`, every `CLAUDE.md` and every skill are still tables |
+| `WorkflowPlatformParityTests` (MLQT.Shared.Tests) | The two CI legs hold each other in both directions |
+| `TestRunnerScriptTests`, `DebianPackageTests`, `WindowsInstallerTests`, `ReleaseVersionTests` (MLQT.Shared.Tests) | The build and packaging scripts, read as text, because the file system cannot answer on Windows |
 
 **Both directions, always.** A suite measured but not built fails the run; a suite built but not
 measured is wasted time and a misleading job name. Hold the two lists together rather than one against
@@ -162,8 +162,10 @@ building it **before** a migration rather than during one:
 - `WebApplicationFactory`'s `TestServer` has no real socket, so Playwright cannot reach it. Start
   Kestrel on `http://127.0.0.1:0` in an `IAsyncLifetime` fixture and read the assigned address.
 - The pipeline is asynchronous and partly background-threaded, so "analysis has finished" needs an
-  explicit signal — `PipelineQuiescence` and a `data-mlqt-state="idle|busy"` attribute, **test-host
-  only**, neither leaking into the shipped hosts.
+  explicit signal — `MLQT.TestHost/PipelineQuiescence.cs` behind a `/testapi/idle` endpoint, which
+  `TestHostFixture.WaitForIdleAsync()` calls; it returns once dependency analysis has finished, the
+  style-check queue is empty and the file monitor has nothing pending. **Test-host only**, never
+  leaking into the shipped hosts.
 - **"While it runs" needs a door, not a race.** A hand check about what the window shows *during*
   a step - buttons during Format All (B385), a reload during startup (B407) - has nothing to look at
   on the fixture library, where every step is over in milliseconds. The test host wraps the real

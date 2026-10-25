@@ -30,11 +30,16 @@ All services follow the pattern:
 | `CustomDictionaryService` | `ICustomDictionaryService` | Each repository's accepted spellings, at `<repo>/.mlqt/dictionary.txt` |
 | `BaselineStatusService` | `IBaselineStatusService` | Classifies findings against each repository's committed baseline (new / touched / accepted) |
 | `ModelChangeClassifier` | `IModelChangeClassifier` | What kind of change each model in a working copy carries — one that can affect simulation, or one that cannot |
-
-`LibraryDataService.GetOwningLibrary` is the **only** way to ask which library a class belongs to. A class can be claimed by two loaded libraries — a checkout and a tool's encrypted build of the same library — and `Helpers/LibraryOwnership.cs` decides between them the way the graph did (B268).
+| `FormattingPipeline` (`Helpers/`) | `IFormattingPipeline` | Applies a repository's formatting rules to the files on disk: the VCS-modified files at startup, Format All Files, and the changed files after a VCS operation |
 | `DictionaryManagerService` | `IDictionaryManagerService` | Hunspell dictionary management (bundled + imported) |
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |
+
+`BaselineStatusService` lives in `Checking/` and `FormattingPipeline` in `Helpers/`; the rest are in
+the project root. `LibraryDataService.GetOwningLibrary` is the **only** way to ask which library a
+class belongs to. A class can be claimed by two loaded libraries — a checkout and a tool's encrypted
+build of the same library — and `Helpers/LibraryOwnership.cs` decides between them the way the graph
+did (B268).
 
 ### The shared check pipeline (`Checking/`)
 
@@ -56,13 +61,18 @@ count. A change belongs in the primitive, not in one tool's path.
 | `ReferenceOnlyScope` | The classes loaded only so references resolve, which are never reported on |
 | `ParserErrorReporter` | Parse failures as findings. The parser reads whole files, so its lines are the file's; these are converted to class-relative ones like every other finding, and mapped back through `ClassLocation` by whatever reports them |
 | `UsesVersionChecker` / `VcsStamp` | Dependency version mismatches, and the revision a report was produced at |
+| `CombinedStyleCheckPass` | The style check that rides along with dependency analysis |
+| `ModelScope` | Which repository a loaded class belongs to, and so which settings apply to it |
+| `VcsChangeScope` | What a VCS operation left behind: classes to re-analyse, files that may be reformatted |
+| `ReportLocation` / `FindingExport` | Where a report points a reader (file and line), and the app's export in the shape `mlqt check --format json` writes |
+| `SuppressionScope` / `ClassSuppressionChoices` / `SpellingAcceptance` | What a "suppress this rule" or "accept this spelling" action covers, and which findings it clears |
 
 ### Static Helpers
 
 | Helper | Purpose |
 |--------|---------|
 | `LibraryDiscovery` | Finds the library roots under a path — a directory holding a `package.mo` *or* a `package.moe` |
-| `EncryptedLibraryDetector` | Recognises an encrypted library and reads its name, version and help directory. Version comes from the versioned directory name first (`Battery 2.9.0`) and `libraryinfo.mos` only as a fallback: the directory name is what a tool resolves against, so it states which copy is actually installed |
+| `EncryptedLibraryDetector` | Recognises an encrypted library and reads its name, version and help directory. Version comes from the versioned directory name first (`VendorLib 1.0.0`) and `libraryinfo.mos` only as a fallback: the directory name is what a tool resolves against, so it states which copy is actually installed |
 
 Encrypted libraries are loaded through `ILibraryDataService.AddEncryptedLibraryFromDirectoryAsync`,
 which reconstructs their classes from the vendor's documentation via `ModelicaParser.ExternalDocs`
@@ -290,8 +300,7 @@ dictionaryManagerService.OnDictionariesChanged += () => { /* refresh UI */ };
 
 ```csharp
 // Analyze impact of changes to selected models
-var result = impactAnalysisService.AnalyzeImpact(
-    graph, selectedModelIds, svgWidth: 700, svgHeight: 450);
+var result = impactAnalysisService.AnalyzeImpact(graph, selectedModelIds);
 
 Console.WriteLine($"Impacted models: {result.ImpactedModelsCount}");
 
@@ -299,8 +308,8 @@ Console.WriteLine($"Impacted models: {result.ImpactedModelsCount}");
 foreach (var node in result.Nodes)
     Console.WriteLine($"{node.FullName} ({(node.IsImpacted ? "impacted" : "selected")})");
 
-// Find impacted models without visualization
-HashSet<string> impacted = impactAnalysisService.FindImpactedModels(graph, selectedModelIds);
+// The nodes connected to one node through the result's edges
+HashSet<string> connected = impactAnalysisService.GetConnectedNodes(result.Edges, nodeId);
 ```
 
 ### External Resource Service (IExternalResourceService)
@@ -369,8 +378,8 @@ foreach (var file in result.WrittenFiles)
 
 **Formatting Exclusion**: Models can be excluded from formatting at multiple levels:
 - `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts the repository's `StyleCheckingSettings` and asks `FormattingExclusion.Excludes` of each model — excluded models (and every model, when `ApplyFormattingRules` is off) use their original `ModelicaCode` instead of being rendered through the formatter. Format All Files and Split into files both pass it (B305).
-- `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting findings.
-- `SaveChangedFilesWithFormattingAsync` in `MainLayout` skips excluded models during incremental formatting after VCS operations.
+- `Checking/StyleCheckRunner` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting findings.
+- `IFormattingPipeline.FormatChangedFilesAsync` (through `Helpers/IncrementalFormatter`, which asks `FormattingExclusion.Excludes`) skips excluded models during incremental formatting after VCS operations; `MainLayout.SaveChangedFilesWithFormattingAsync` is a thin call to it.
 
 ## Data Types
 
@@ -378,43 +387,43 @@ foreach (var file in result.WrittenFiles)
 
 | Type | Description |
 |------|-------------|
-| `LoadedLibrary` | Library metadata (Id, Name, SourcePath, SourceType, ModelIds, TopLevelModelIds) |
-| `Repository` | Repository metadata (Id, Name, LocalPath, VcsType, CurrentBranch, LibraryIds) |
-| `AddRepositoryResult` | Result of adding a repository (Success, Repository, DiscoveredLibraries) |
+| `LoadedLibrary` | Library metadata (Id, Name, SourcePath, SourceType, Version, ModelIds, TopLevelModelIds, RepositoryId, IsReferenceOnly, SupersededBy, ...). Ask `IsReadOnly` for "may this be touched?" |
+| `Repository` | Repository metadata (Id, Name, LocalPath, VcsType, CurrentBranch, LibraryIds, DiscoveredLibraries, StyleSettings, ...) |
+| `AddRepositoryResult` | Result of adding a repository (Success, Repository, ErrorMessage, DiscoveredLibraries, Warnings) |
 | `DiscoveredLibraryInfo` | Library found during discovery (LibraryName, RelativePath, FullPath) |
 | `RepositoryVcsType` | Enum: Local, Git, SVN |
-| `LibrarySourceType` | Enum: File, Directory, Zip, Git, SVN |
+| `LibrarySourceType` | Enum: File, Directory, Zip, Git, SVN, EncryptedDirectory, Supplied |
 
 ### File Monitoring
 
 | Type | Description |
 |------|-------------|
-| `FileChangeInfo` | File change event (FilePath, ChangeType, RepositoryId, DetectedAt) |
+| `FileChangeInfo` | File change event (FilePath, OldFilePath, ChangeType, RepositoryId, LibraryId, DetectedAt, IsDirectory) |
 | `FileChangeType` | Enum: Added, Modified, Deleted, Renamed |
-| `PendingChangesSummary` | Summary of pending changes (Added, Modified, Deleted counts) |
+| `PendingChangesSummary` | Summary of pending changes (added, modified, deleted and renamed files; added and deleted directories) |
 
 ### Analysis & Visualization
 
 | Type | Description |
 |------|-------------|
-| `ImpactAnalysisResult` | Network graph data (Nodes, Edges, ImpactDetails) |
+| `ImpactAnalysisResult` | Network graph data (Nodes, Edges, ImpactDetails, ImpactedModelsCount) |
 | `ImpactDetail` | Impact detail (ModelId, ClassType, ImpactedBy) |
-| `NetworkNode` | Graph node for visualization (Id, FullName, X, Y, IsImpacted) |
-| `NetworkEdge` | Graph edge for visualization (FromId, ToId, X1, Y1, X2, Y2) |
+| `NetworkNode` | Graph node for visualization (Id, ShortName, FullName, Color, BorderColor, IsSelected, IsImpacted); the layout is Cytoscape's, so there are no coordinates |
+| `NetworkEdge` | Graph edge for visualization (FromId, ToId) |
 
 ### Model Checking
 
 | Type | Description |
 |------|-------------|
-| `ModelCheckResult` | Check result (Success, ModelId, ErrorMessage) |
-| `ModelCheckProgress` | Progress tracking (TotalModels, ModelsChecked, CurrentModel) |
+| `ModelCheckResult` | Check result (Success, ModelId, ErrorMessage, Summary, Log, TimedOut, ToolUnavailable) |
+| `ModelCheckProgress` | Progress tracking (TotalModels, ModelsChecked, CurrentModel, Status, IsComplete, WasCancelled) |
 
 ### UI Support
 
 | Type | Description |
 |------|-------------|
 | `ResourceTreeNode` | External Resources tree node (Name, FullPath, IsDirectory, AnnotationType, ReferencingModelIds, warning flags) |
-| `ExternalResourceReference` | Resource reference (ModelId, RawPath, ResolvedPath, ReferenceType) |
+| `ExternalResourceReference` | Resource reference (ModelId, RawPath, ResolvedPath, ReferenceType, ParameterName, IsAbsolutePath, FileExists, ...) |
 | `ResourceWarning` | Resource warning (missing files, absolute paths) |
 
 ## License
@@ -424,7 +433,7 @@ MIT License — see [LICENSE](../LICENSE) for details.
 ## Dependencies
 
 **NuGet Packages:**
-- NLog 6.1.0
+- NLog 6.1.3
 
 This project is UI-agnostic (no Blazor/MudBlazor dependency). The library tree data is returned as
 `ModelNode` lists (`GetTopLevelModelsAsync` / `GetChildModelsAsync` / `ModelHasChildren`); the UI layer

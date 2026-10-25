@@ -47,8 +47,9 @@ OpenModelica 1.27 User's Guide):
    matching keeps a stale sibling from winning: a sibling is taken only if its version satisfies
    `uses`.
 3. **The simulation tool's library folders**, for the `tool` named. For Dymola that is
-   `<install>/Modelica/Library`. For OpenModelica it is the user library path above. Which install is
-   searched is decided in this order:
+   `<install>/Modelica/Library`. For OpenModelica it is the user library path above, plus
+   `<install>/lib/omlibrary` when that exists (an install before 1.19 shipped its libraries there).
+   Which install is searched is decided in this order:
    1. `toolInstall` passed to `mlqt_load`: the install folder or executable. A machine often has
       many Dymola releases, and the one the user runs is not necessarily the newest.
    2. The tool paths in the desktop app's External Tools settings (`settings.json`), read and nothing
@@ -58,7 +59,9 @@ OpenModelica 1.27 User's Guide):
       `OpenModelicaSettings.FindInstalledOmc`, which already exist.
 
    The answer always names the install it searched.
-4. **`MODELICAPATH`**, in its order.
+4. **A startup script's ModelicaPath**, when `script` was given: the folders its `AddModelicaPath`
+   lines added, or the path its `setenv("MODELICAPATH", ...)` set.
+5. **`MODELICAPATH`**, in its order.
 
 **Which version is taken.** In each place, all four storage forms are looked for. A version is read
 from the folder or file name, then from the package's `version` annotation, and a build suffix is
@@ -68,7 +71,10 @@ ignored when comparing.
 - Otherwise the newest version whose `conversion(noneFromVersion=...)` covers the required one is
   taken, as OpenModelica does, and the answer says so.
 - Otherwise nothing is loaded. The answer lists every candidate seen and where.
-- An unversioned copy is taken only when `uses` names no version.
+- An unversioned copy is taken only when `uses` names no version. Then the first folder holding any
+  copy wins, and in it a copy whose name carries no version, else the newest (`LibraryChoice`).
+- The order of folders decides before the order of rules: an exact version in an earlier folder wins,
+  and a `noneFromVersion` copy is taken only when no folder holds the exact version.
 - An encrypted library (`package.moe`, common in Dymola's library folder) loads read-only. One named
   beside the readable source of the same library is not another copy: the source is used, and the
   answer says so (B268).
@@ -149,7 +155,8 @@ command written without parentheses, as `cd C:/Work`, is read too.
 | `cd(dir)` | Changes the current directory |
 | `RunScript(script, silent, scriptDir)` | Reads that script too, in place, once only, so a script that runs itself does not loop |
 | `import Name` | Loads the top-level library `Name` if it is not already loaded, as Dymola does in a script, and does nothing if it is. It is found along the script's ModelicaPath as it stands at that line, taking the first copy found, as Dymola's search does. `import A.B` loads `A`. It does not create an alias |
-| `Utilities.setenv("MODELICAPATH", path)` | Sets the script's ModelicaPath to `path`, for any later line that opens a library by name |
+| `Utilities.setenv("MODELICAPATH", path)` or `setEnvironmentVariable` | Sets the script's ModelicaPath to `path`, for any later line that opens a library by name. Setting any other variable is ignored |
+| `closeModel()` | Ignored: reading it loads nothing |
 | `Lib.F(args)`, a function of a library the script has opened | Follows the call; see below |
 
 **Reading values.** A path argument is read when it is:

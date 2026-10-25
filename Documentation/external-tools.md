@@ -8,10 +8,10 @@ MLQT can integrate with **Dymola** and **OpenModelica** to check your Modelica m
 
 1. Click the **Settings** tab (gear icon) in the right panel
 2. Select the **External Tools** sub-tab
-3. Configure the tool paths and port numbers
-4. Click **Save Settings**
+3. Configure the tool paths, port numbers and check time limits
+4. Click **Save Settings** (**Reset to Defaults** beside it restores this tab's defaults)
 
-![Screenshot: The External Tools settings tab showing the Dymola section with path and port fields, and the OpenModelica section with path and port fields.](Images/external-tools-1.png)
+![Screenshot: The External Tools settings tab showing the Dymola section with its path field and Auto-detect button, port and check time limit fields, and the OpenModelica section with the same four controls, above the Save Settings and Reset to Defaults buttons.](Images/external-tools-1.png)
 
 ### Auto-Detection
 
@@ -44,11 +44,11 @@ or clears the field if it finds none.
 | **Port Number** | The port Dymola uses for its HTTP JSON-RPC interface. Default: `8082`. Change this if the default conflicts with another service. |
 | **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `300` (five minutes). `0` means no limit. |
 
-If the specified executable is not found, a warning message appears below the path field.
+If the specified executable is not found, a warning ("Could not find Dymola at …") appears below the path field. The same applies to OpenModelica's.
 
 ### Dymola on Linux
 
-Dassault's installation guide puts Dymola in `/opt/dymola-<version>-x86_64` (for example
+Dymola's installation guide puts it in `/opt/dymola-<version>-x86_64` (for example
 `/opt/dymola-2025x-x86_64`), with the program at `bin64/dymola` inside it, and installs a launcher
 script, `/usr/local/bin/dymola-<version>-x86_64`, that sets the environment Dymola needs to find its
 libraries. Setup guides often add `/usr/local/bin/dymola` as a shorter name for it. MLQT looks for, in
@@ -74,7 +74,7 @@ terminal with `-serverport` and the port in these settings; MLQT uses a Dymola a
 that port rather than starting another.
 
 **This search has not yet been tried against a real Linux installation of Dymola** — the locations
-come from Dassault's installation guide and published setup guides rather than from a machine MLQT
+come from Dymola's installation guide and published setup guides rather than from a machine MLQT
 has run on. If it finds nothing, or finds something that will not start, type or browse to the
 launcher your installation uses.
 

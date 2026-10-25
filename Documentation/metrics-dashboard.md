@@ -11,7 +11,11 @@ The same work is a visible step on a burndown.
 
 To open this view, click the **Metrics** tab (the bar-chart icon) in the right panel.
 
-![Screenshot: MLQT Metrics tab, showing the report from the Modelica Standard Library"](Images/metrics-1.png)
+The figures are not worked out until you ask: click **Compute** at the top right, and the same button
+reads **Refresh** afterwards, to recalculate once the library has changed. Beside it are **Compare
+sub-libraries** and, once there are figures, **Save snapshot** — both described below.
+
+![Screenshot: MLQT Metrics tab, showing the report from the Modelica Standard Library](Images/metrics-1.png)
 
 ## Coverage
 
@@ -113,7 +117,8 @@ A `—` means that package tracks no such dimension.
 
 ## The trend
 
-Two or more snapshots for the current scope produce a chart and a table beneath it.
+Two or more snapshots for the current scope produce a chart and a table beneath it. With fewer, the
+page says to save snapshots over time to build the trend.
 
 The chart plots one line per dimension over time. Its y-axis **fits the data rather than starting at
 zero** — on a library sitting between 80% and 90%, a zero-based axis draws every line as flat. Click
@@ -125,7 +130,9 @@ per dimension (eligible − compliant), plus a total line. Use it for the same r
 count above: on a big library the counts move well before the percentages do. Snapshots taken before
 counts were recorded show as `—` in this view.
 
-The table below lists exact values for the 15 most recent snapshots, newest first, with the revision each snapshot was taken at.
+The table below lists exact values for the 15 most recent snapshots, newest first: the time, the
+revision each snapshot was taken at (a Git hash shortened, with the full one on hover), the class
+count, a column per dimension, and the finding count.
 
 ### Saving snapshots
 
@@ -134,7 +141,12 @@ The table below lists exact values for the 15 most recent snapshots, newest firs
 
 That file is **meant to be committed**. It lives in the repository so that everyone reviewing the
 library sees the same burndown, and so the trend survives a fresh checkout. The "all libraries" view
-aggregates the per-repository files rather than keeping a file of its own.
+aggregates the per-repository files rather than keeping a file of its own: saving with the scope empty
+writes one snapshot into each repository's file. A library that is not in a repository has its
+snapshots kept in a per-user file instead.
+
+If style checking has not finished when you save, the snapshot is saved without its finding count,
+and MLQT says so — save again once it completes.
 
 ### Letting CI keep the history instead
 
@@ -163,7 +175,7 @@ slightly different questions and are meant to:
 - **A waived finding still counts against coverage.** `__MLQT(suppress=...)` says "do not tell me
   about this again", not "this class now has a description".
 - **Except where no finding could ever be raised.** The exception, and the only one: a class taken
-  out of formatting — by the **Exclude from Formatting** toggle or by
+  out of formatting — by the Code Review **Exclude from auto-formatting** toggle or by
   [`__MLQT(format=false)`](code-formatting.md#in-the-source-instead-__mlqtformatfalse) — has its
   layout rules skipped by the checker, so it is left off the layout dimensions too. Counting it would
   show a gap nothing will ever name, which is worse than not counting it. The same goes for a whole

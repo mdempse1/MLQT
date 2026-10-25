@@ -76,7 +76,7 @@ is about is what an agent looking for a way to edit a model will find.
 
 After changing the configuration, fully restart the client so it launches the new server process. (Reinstalling or rebuilding alone does not affect an already-running server — the client keeps it alive.)
 
-Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write anything else to stdout. Session settings persist to `%LocalAppData%/MLQT/mcp-settings.json`.
+Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write anything else to stdout. Session settings persist to `%LocalAppData%/MLQT/mcp-settings.json` (`~/.local/share/MLQT/mcp-settings.json` on Linux), apart from the desktop app's settings.
 
 ## How an agent uses it
 
@@ -113,7 +113,7 @@ meaning different things. (`mlqt_check` returns the class-relative number only,
 under `line`, because it answers a question about a class rather than about a file.)
 
    `modelLine` indexes `mlqt_get_class`'s source view **whether or not the annotations were asked for**. With
-   `include_annotations: false` the annotations are cut out of the text rather than the class being
+   `includeAnnotations: false` (the default) the annotations are cut out of the text rather than the class being
    re-rendered without them: each line comes back as the file wrote it, minus any annotation on it,
    and an annotation written on its own lines leaves them blank rather than closing the gap. So the
    two tools describe the same text, which is what re-rendering could not do.
@@ -151,15 +151,17 @@ A library you name replaces a copy an earlier search loaded. Two copies you name
 1. the folder holding the library that needs it, then its repository's root;
 2. the simulation tool's library folders, for `tool: "dymola"` or `"openmodelica"`:
    - Dymola: `<install>/Modelica/Library`;
-   - OpenModelica: the user's library folder (`%AppData%\.openmodelica\libraries`, `~/.openmodelica/libraries`), or `OPENMODELICALIBRARY`.
+   - OpenModelica: the user's library folder (`%AppData%\.openmodelica\libraries`, `~/.openmodelica/libraries`), or `OPENMODELICALIBRARY`; and an older install's `<install>/lib/omlibrary`, where it exists.
 
    The install is `toolInstall` if given, else the one in the desktop app's External Tools settings, else the newest found. The answer says which (`toolInstallChosen`), because the newest Dymola on a machine need not be the one the simulator is running: when it is not, pass `toolInstall`. A load naming another install than the session's last search used unloads the libraries that search found - not those you named - and searches again from the new one; the answer lists each that moved under `replaced`, and says which it no longer finds. The settings file is only read, never written;
-3. MODELICAPATH.
+3. the folders a startup script added to its ModelicaPath, when one was given;
+4. MODELICAPATH.
 
 **Which copy is taken:**
 - The exact version asked for wins. Of two copies of one release, the larger build wins, so `Modelica 4.1.0+maint.om` is taken over `Modelica 4.1.0`.
 - Failing that, the newest copy whose `conversion(noneFromVersion=...)` names the version asked for.
 - Failing that, nothing is loaded, and the answer lists every copy it saw.
+- When `uses` names no version, the first folder holding a copy wins, and in it a copy whose name carries no version, else the newest.
 - A search never replaces a library already loaded. If a loaded version differs from the one asked for, the answer warns. A library you named is kept, because it is what the simulator uses.
 
 The answer names each library, its version, its path, whether you named it or the search found it, where, and by which rule.
@@ -168,7 +170,7 @@ The answer names each library, its version, its path, whether you named it or th
 
 An MCP server runs as long as its client keeps it. Claude Code keeps its servers across `/clear` and a new session in the same process, and the desktop app across its sessions, so an MLQT server can hold what an **earlier conversation** loaded. Subagents of one session use its servers, and so may sessions of one app running at once, so a server can also be **shared by tasks working at the same time**. MCP gives a server no conversation id, so MLQT cannot tell these apart. What it does instead:
 - **Every library says when it was loaded** (`loadedAt` in `mlqt_session`'s answer), so an agent can see that what is loaded predates it.
-- **A second copy of a library is refused, and the refusal says why.** MLQT holds one copy of each library, and a class id does not say whose. The refusal says when the loaded copy came in, that it may be another task's or an earlier conversation's, and that replacing it moves every later edit to that library's classes - the other work's included - onto the new copy. Pass `replace: true` only when the conversation loaded the other copy itself, or the user says so. This holds whatever the copy's folder is called: a clone in `Formula1-copy` is recognised as `Formula1` once loaded.
+- **A second copy of a library is refused, and the refusal says why.** MLQT holds one copy of each library, and a class id does not say whose. The refusal says when the loaded copy came in, that it may be another task's or an earlier conversation's, and that replacing it moves every later edit to that library's classes - the other work's included - onto the new copy. Pass `replace: true` only when the conversation loaded the other copy itself, or the user says so. This holds whatever the copy's folder is called: a clone in `MyLib-copy` is recognised as `MyLib` once loaded.
 - **A reset goes back to empty**: `mlqt_session` with action `reset`. Every library and repository is unloaded and the findings and analysis are forgotten. A library a host supplied from memory is kept, since only the host can supply it again.
 
 **Tasks that edit their own copies of one library at the same time each need a server of their own** - a separate `claude` process for each. Sharing one server, they share one copy (B505).
@@ -333,10 +335,10 @@ signal flow, and which edge a connector sits on.
 [MLQT.McpTester](../MLQT.McpTester/README.md) is a small desktop app, on Windows and Linux, for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client, and it **displays image content rather than describing it** — so `mlqt_get_diagram_image` shows you the diagram, which is the only way to judge whether a layout is right.
 
 ```bash
-dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
+dotnet run --project MLQT.McpTester/MLQT.McpTester.csproj
 ```
 
-The **Use MLQT server** button pre-fills a path to a locally built `MLQT.McpServer.exe`; edit it to wherever your server actually is — the installed paths are under [Install](#install) above. Note that optional booleans render as a three-way selector — `(default)` / `true` / `false` — so an unset tri-state parameter (such as `mlqt_edit_class`'s `preview`) is omitted rather than sent as `false`.
+The **Use MLQT server** button fills in the MLQT server it finds beside the tester or in the server project's build output for the same configuration, and is disabled when it finds none; otherwise type the path to wherever your server actually is — the installed paths are under [Install](#install) above. A field whose schema declares a default starts filled with it. Optional booleans render as a three-way selector — `(default)` / `true` / `false` — so an unset tri-state parameter (such as `mlqt_find`'s `hasExperiment`) is omitted rather than sent as `false`.
 
 ## Reviewing how an agent worked (tool-usage log)
 
@@ -371,7 +373,7 @@ The report gives, per task and over all of them:
 
 and, per tool, its calls, errors, mean result size and mean server time, plus the **tools no run called**.
 
-Each run calls the model and is charged: a task costs roughly $0.20–0.40 at the default model, so all eighteen tasks three times is around $15. `--tool-search false` loads every tool definition up front instead of on demand, which is the setting to compare a large toolset against a small one under. `--server-env KEY=VALUE` (repeatable) sets an environment variable for the MLQT server, so one build can be run in two configurations. `--setting-sources` defaults to `project`, which leaves your own Claude Code settings and hooks out of the run.
+Each run calls the model and is charged: a task costs roughly $0.20–0.40 at the default model, so all eighteen tasks three times is around $15. `--tool-search false` loads every tool definition up front instead of on demand, which is the setting to compare a large toolset against a small one under. `--server-env KEY=VALUE` (repeatable) sets an environment variable for the MLQT server, so one build can be run in two configurations. `--setting-sources` defaults to `project`, which leaves your own Claude Code settings and hooks out of the run. `--tasks` runs only the task ids named (comma-separated), `--model` picks the model, `--timeout` (default 600 seconds) kills a run that takes longer, `--keep-work` keeps each run's work directory, and `python build/mcp-eval.py report McpEvalRuns/<run>` rebuilds a run's `report.md` from its `results.json`.
 
 **A new task needs checks that fail before it is done** — `check-tasks` runs every task's checks against the untouched fixture with an empty answer and fails if any task passes there, since a check that holds before the agent starts measures nothing.
 

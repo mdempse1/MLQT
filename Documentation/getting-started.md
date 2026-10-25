@@ -56,7 +56,7 @@ When you first launch MLQT, you will see the main application window divided int
 - **Left panel** — The library/repository browser showing your loaded Modelica libraries
 - **Right panel** — A tabbed area with views for Code Review, Dependencies, External Resources, Metrics and Settings
 
-The **app bar** at the top shows the application name and the currently active project name (Default in this case).
+The **app bar** at the top shows the application name and the currently active project name (Default in this case). The help icon at its right opens **About MLQT**, which gives the version and buttons to open the GitHub project and this user documentation in your browser.
 
 ![Screenshot: MLQT main window on first launch, showing the two-panel layout with the app bar at top displaying "MLQT - Modelica Library Quality Toolkit"](Images/getting-started-1.png)
 
@@ -78,7 +78,7 @@ MLQT organizes your work into **projects**. A project is a named collection of r
 
 When MLQT starts for the first time, it creates a default project automatically called "Default". You can rename this or create additional projects later in the settings.
 
-To manage projects, navigate to **Settings > Manage Repositories** (the last tab in the Settings panel on the right side). To load a project, click on the "play" icon button.  You can also edit the project name or delete the project.
+To manage projects, navigate to **Settings > Manage Repositories** (the last tab in the Settings panel on the right side). Each project is listed as **Project: name**, with its repositories beneath it. To load a project, click on the "play" icon button.  You can also edit the project name or delete the project. Repository settings can be edited only for the active project. This tab has no **Save Settings** button: changes here are saved as you make them, or by the **Apply** button of the dialog that makes them.
 
 ![Screenshot: The Settings panel showing its tabs — "UI Settings", "External Tools", "Reference Libraries" and "Manage Repositories". The "Manage Repositories" tab is selected.](Images/getting-started-3.png)
 
@@ -99,8 +99,14 @@ The new project is created and automatically becomes the active project. You can
 
 Each project is shown as an expansion panel. The active project has a green **Active** chip beside its name. To switch to a different project:
 
-1. Click the **play** button beside the project name you want to activate
+1. Click the **play** button (tooltip "Load project") beside the project name you want to activate
 2. MLQT will save the current project state and load all repositories from the selected project
+
+The active project shows a play button of its own only after a repository has been removed from it, to load it again.
+
+### Ordering Repositories
+
+In the active project's table, the **Order** column has up and down arrows that move a repository within the project. The order is the one the library browser shows the repositories in.
 
 ![Screenshot: The Manage Repositories panel, showing each project with its repositories and the "Active" chip on the one that is loaded.](Images/getting-started-3.png)
 
@@ -121,18 +127,18 @@ Use this when you already have a repository checked out on your machine.
 
 1. Select the **Select Local Directory** tab
 2. Enter the path to your repository, or click the **folder icon** to browse
-3. MLQT automatically detects whether the directory is a Git repository, SVN working copy, or a plain local directory
+3. MLQT automatically detects whether the directory is a Git repository, SVN working copy, or a plain local directory, and says which ("Git repository detected"). If the path is a subdirectory of a working copy, it also warns that branch, merge, commit and the other VCS operations will apply to the whole working copy
 4. Click **Add Repository**
 
-![Screenshot: The Add Repository dialog with the "Select Local Directory" tab active, a path typed into the field, and the "Reference only" toggle beneath it.](Images/getting-started-5.png)
+![Screenshot: The Add Repository dialog with the "Select Local Directory" tab active, a path typed into the Repository Path field, the "Git repository detected" note beneath it, and the "Reference only — I do not maintain this code" checkbox below the tabs.](Images/getting-started-5.png)
 
 ### Option B: Download a Remote Repository
 
 Use this to clone a Git repository or check out an SVN repository from a remote server.
 
 1. Select the **Download Remote Repository** tab
-2. Enter the remote URL (supports Git and SVN URLs)
-3. Select or enter a local directory where the repository should be checked out
+2. Enter the remote URL in **Remote Repository Address** (supports Git and SVN URLs)
+3. Enter a local directory in **Checkout Directory**, or click its folder icon to browse
 4. MLQT detects the VCS type from the URL
 5. Click **Add Repository**
 
@@ -149,11 +155,11 @@ MLQT then loads the repository so that references into it resolve, and leaves it
 - it is not formatted;
 - nothing is written into it — no `.mlqt` directory, and so no settings, baseline or accepted spellings kept beside it.
 
-The version control actions go too. In the library browser the repository carries a **Reference only** chip with a padlock where the branch, update and commit buttons would be, so there is no way to change it by accident.
+The version control actions go too. In the library browser the repository carries a **Reference only** chip with a padlock beside its name, and the branch, update, commit and revert buttons are not shown, so there is no way to change it by accident.
 
 If you choose a folder MLQT cannot write into, the toggle is ticked for you — such a folder could never hold those files anyway. It is only ever a suggestion, and you can untick it. Ticking it for a repository you *can* write to is the point of the setting: another team's Git repository that you have read access to is exactly the case.
 
-The choice is not permanent. Untick **Reference only** in **Settings > Manage Repositories** when you need to start working in the repository.
+The choice is not permanent. Turn off **Reference only** in the repository's details dialog (**Settings > Manage Repositories**, then click the repository) when you need to start working in the repository.
 
 ### What Happens When You Add a Repository
 
@@ -166,7 +172,9 @@ When you add a repository, MLQT:
 5. Parses all Modelica files and builds the dependency graph
 6. Reads any existing repository settings from the `.mlqt/settings.json` file (see [Where Settings Are Stored](settings-reference.md#where-settings-are-stored))
 7. If "Apply formatting rules" is enabled, formats any files that VCS reports as modified or untracked (MLQT assumes committed files are already correctly formatted)
-8. Depending on the repository size it might start the dependency analysis and style checking.  For large repositories the user is asked whether they want to do this now as it can take several minutes.
+8. Runs dependency analysis, style checking and external resource analysis over the new repository's classes, behind a progress dialog that lists each step
+
+When a project is **loaded** — at startup or on switching project — and it holds more classes than the *Defer analysis threshold* (see [UI Customization](ui-customization.md#startup-analysis)), those three steps are deferred instead, as they can take several minutes: the progress dialog shows each of them with a play button — click the row to run that step now, **Run All** to run all of them, or **Close** to carry on without them and run them later from their tabs.
 
 After loading, the left panel switches to **Repository view** and shows the newly added repository with its libraries expanded as a tree.
 
@@ -179,8 +187,8 @@ A reference-only repository covers code you depend on in *this* project. The **R
 Without them, a reference into a library you have not loaded is reported as broken, and an icon inherited from one is reported as missing, so the findings list fills up with problems that are not in your code.
 
 1. Navigate to **Settings > Reference Libraries**
-2. Add the folders to scan. Each may hold a single library or many; MLQT finds every library beneath
-3. Click **Save Settings**
+2. Click **Add folder** and choose a folder to scan. Each may hold a single library or many; MLQT finds every library beneath. The delete icon at the end of a row removes that folder
+3. The folder list is saved as you change it; click **Save Settings** after changing the switch above it
 
 ![Screenshot: The Reference Libraries tab, showing the "Recover encrypted libraries from their documentation" switch above a "Library folders" table with one folder configured and the number of libraries it contributes beside it.](Images/getting-started-10.png)
 
@@ -215,7 +223,7 @@ Each repository has its own set of settings that control commit requirements, st
 2. Click on a repository row in the active project's table
 3. The **Edit Repository Details** dialog opens
 
-![Screenshot: The Edit Repository Details dialog showing all the settings sections — repository name and path at the top, followed by the Commit requirements and Formatting rules switches and the first of the rule sections, whose rules each take a severity.](Images/getting-started-8.png)
+![Screenshot: The Edit Repository Details dialog showing all the settings sections — repository name, VCS type and path at the top, the Reference only switch, followed by the Commit requirements and Formatting rules switches and the first of the rule sections, whose rules each take a severity.](Images/getting-started-8.png)
 
 The dialog has the following fields and sections:
 
@@ -226,6 +234,10 @@ The dialog has the following fields and sections:
 | **Name** | A display name for the repository (editable) |
 | **VCS Type** | The detected version control type — Git, SVN, or Local (read-only) |
 | **Library Path** | The local directory path where the library is located (editable) |
+| **VCS Repository Root** | Shown only when the library is a subdirectory of the working copy: the working copy's root, where every VCS operation applies (read-only) |
+| **Reference only — code this team does not maintain** | The switch described in [Reference Only](#reference-only). While it is on, the settings sections below it are hidden, since none of them applies |
+
+If MLQT cannot write the repository's `.mlqt/settings.json`, the dialog says so at the top: changes then apply to the current session only.
 
 ### Settings Sections
 

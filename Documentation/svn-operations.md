@@ -52,7 +52,7 @@ SVN uses tags (which are really just branches by convention) to mark release poi
 
 **In MLQT:**
 1. Use **Browse history** to verify the revision you want to tag
-2. **Create a branch** with a name like `tags/v1.0` (SVN tags are branches by convention)
+2. **Create a branch** with a name like `tags/v1.0` (SVN tags are branches by convention); clear **Switch to new branch after creation** to stay on trunk
 3. Continue development on trunk
 
 ---
@@ -84,14 +84,14 @@ Updates your working copy to the latest revision from the SVN server. This is eq
 
 Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **directly to the server** — there is no separate push step.
 
-![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional Issue ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
+![Screenshot: The SVN Commit Changes dialog for a repository that requires an issue number: the changed files as a tree with checkboxes beside the diff panel, then the Issue ID and Commit Message fields, both filled in, and the enabled "Commit (n files)" button.](Images/svn-operations-1.png)
 
 ### Dialog Fields
 
 | Field | Description |
 |-------|-------------|
-| **Commit message** | Required. Describes what you changed. |
-| **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). |
+| **Issue ID** | Shown only when "Require an issue number" is enabled in repository settings, above the message, and then required. |
+| **Commit Message** | Required. Describes what you changed. |
 
 ### Issue Number Handling
 
@@ -139,11 +139,11 @@ Opens the **Switch Branch** dialog to switch your working copy to a different br
 
 In SVN, branches are directories on the server (typically under `/branches/`), and switching redirects your working copy to point at a different branch directory.
 
-![Screenshot: The SVN Switch Branch dialog showing the branch selector with branches listed (e.g., "trunk", "branches/feature-x", "tags/v1.0"). The "Switch" button should be visible.](Images/svn-operations-3.png)
+![Screenshot: The SVN Switch Branch dialog showing the branch selector with the branches and tags other than the current one (e.g., "branches/pump-curves" and "tags/v1.0", the tag marked with a Tag chip), the uncommitted-changes warning above it, and the "Switch" button.](Images/svn-operations-3.png)
 
 ### Branch Selector
 
-The dialog shows available branches from the SVN repository. Unlike Git, SVN branches include:
+The dialog shows available branches and tags from the SVN repository, except the one the working copy is on. Unlike Git, SVN branches include:
 - **trunk** — The main development line
 - **branches/** — Feature and development branches
 - **tags/** — Release tags (which are technically branches in SVN)
@@ -179,7 +179,7 @@ Unlike Git's lightweight local branches, SVN branches are:
 
 | Field | Description |
 |-------|-------------|
-| **Branch name** | The name for the new branch. This becomes a directory under `/branches/` on the server. |
+| **Branch name** | The name for the new branch. A plain name becomes a directory under `branches/` on the server (the second of the repository's [branch directories](#custom-branch-directory-names)); a name that starts with one of those directories, such as `tags/v1.0`, is created there instead. The branch is copied from the URL the working copy is on, with the commit message `Create branch: <name>`. |
 | **Switch to new branch after creation** | Checkbox (default: on). If checked, your working copy switches to the new branch immediately. |
 
 ---
@@ -209,7 +209,7 @@ Configuring custom branch directory names affects how MLQT:
 
 ### Configuration
 
-The setting is available in **Settings > Manage Repositories** and is only visible when the repository's VCS type is set to SVN.
+The setting is the **SVN branch directories** section of the repository's details dialog (**Settings > Manage Repositories**, then click the repository), and is only shown for an SVN repository. Click **Apply** to keep a change.
 
 The UI provides:
 - A **text field** to enter a new directory name
@@ -244,13 +244,13 @@ MLQT checks for uncommitted changes. A clean working copy is required for mergin
 - **Commit Changes** — Opens the commit dialog to save your work first
 - **Revert All** — Discards all uncommitted changes
 
-![Screenshot: The SVN Merge dialog in the dirty working copy phase, showing uncommitted files with status icons and the "Commit Changes" and "Revert All" buttons.](Images/svn-operations-5.png)
+![Screenshot: The SVN Merge Branch dialog in the dirty working copy phase: the branch selector at the top, the uncommitted-changes warning, the uncommitted files with status icons, and the "Commit Changes" and "Revert All" buttons.](Images/svn-operations-5.png)
 
 **Phase 2: Branch selection**
-Select which branch to merge from. MLQT shows available branches excluding the current one.
+Select which branch to merge from. MLQT shows available branches excluding the current one. The selector is already shown while the working copy is dirty; the **Merge** button appears once it is clean.
 
 **Phase 3: Merge execution**
-MLQT performs the merge into your working copy. The result is **not automatically committed** — you get to review the merged changes first.
+MLQT performs the merge into your working copy. The result is **not committed by itself**: when the merge has no conflicts, the **Commit Merged Changes** dialog opens straight away with a pre-filled merge commit message, so you review the merged files there and commit them — or cancel and commit later from the repository header. If there was nothing to merge, the dialog closes saying "No changes to merge — already up to date."
 
 **Phase 4: Conflict resolution** (if needed)
 If the merge produces conflicts, the dialog shows each conflicted file with resolution options:

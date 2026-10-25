@@ -16,14 +16,18 @@ skill.
 | `MLQT.Shared/Components/SettingsRepositories.razor` | Repository settings with formatting/style rules |
 | `MLQT.Shared/Pages/CodeReview.razor` | Code viewer, diff, findings, external tool checks |
 | `MLQT.Shared/Pages/Dependencies.razor` | Impact analysis with Cytoscape network graph |
+| `MLQT.Shared/Helpers/MonitorPause.cs` / `VcsPipelineQueue.cs` | Holding the file monitor off through a VCS operation; queuing the analysis pipelines VCS work starts |
+| `MLQT.Shared/HostAssetManifest.cs` | The scripts and stylesheets every host page must load, in order (`desktop-host` skill) |
+| `MLQT.Shared/Pages/SelfTest.razor` / `SelfTestHost.razor` | The `/selftest` probes a host is compared on (`desktop-host` skill) |
 
 ## Application State (AppState)
 
 Centralized state container in `MLQT.Shared/Models/AppState.cs`:
-- **Model Selection**: `ModelID`, `SelectedModelIDs`, `SelectionMode`
+- **Model Selection**: `ModelID`, `SelectedModelIDs`, `SelectionMode`; a visit history behind `GoBack()`/`GoForward()` (`CanGoBack`, `CanGoForward`, `Back`), cleared by `ResetNavigation()`
+- **Startup**: `StartupStep`, set through `StartupProgress()`, raising `OnStartupProgressChanged`
 - **Deferred Analysis**: `IsDeferredMode`, `HasDependencyAnalysisRun`, `HasStyleCheckingRun`, `HasExternalResourcesAnalyzed`
 - **Events**:
-  - Model/UI: `OnChangeModel`, `OnSelectedModelsChanged`, `OnEnableMultiSelect`, `OnModelContentChanged`, `OnThemeChanged`
+  - Model/UI: `OnChangeModel`, `OnSelectedModelsChanged`, `OnEnableMultiSelect`, `OnModelContentChanged`, `OnThemeChanged`, `OnStartupProgressChanged`
   - Settings: `OnSaveSettings`, `OnClearLogMessages`, `OnRepositorySettingsApplied`
   - VCS: `OnVcsFilesChanged`, `OnVcsModelsChanged`, `OnVcsWorkChanged` — `IsVcsWorkInProgress` is true while a VCS operation or the analysis pipeline one started is running, and no VCS operation may start then (B326); take `BeginVcsWork()`, and queue pipelines through `VcsPipelineQueue` (`MLQT.Shared/Helpers`), which counts them from the moment they are queued. Format All Files is VCS work too, and goes through its `TryEnqueue`, which refuses while any VCS work runs (B385)
   - Projects: `OnProjectSwitchStarting`, `OnProjectChanged`, `OnProjectSwitchAbandoned` (a switch that ended without `OnProjectChanged`; B435). A switch from the settings panel goes through `SettingsRepositories.SwitchToProjectAsync`, which raises the first and, when the project did not change, the last
@@ -56,7 +60,7 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 | `body2` | Modelica code, file paths, and values shown beside a label |
 | `caption` | Explanatory text under a control, and secondary detail in a tree |
 
-**Component logic goes in a code-behind file** (`Foo.razor` + `Foo.razor.cs` with `public partial class Foo`), not in an `@code { }` block — an `@code` block is for a component with no logic worth testing. Services in such a component are injected with `[Inject]` properties, not `@inject` directives, because a directive-injected service cannot be set by a test. The full rule, including which components are exempt, is in `CODING_GUIDELINES.md` §Blazor Patterns. The sweep is done — all 31 logic-bearing components are converted and `MLQT.Shared.Tests/CodeBehindPolicyTests.cs` holds the line.
+**Component logic goes in a code-behind file** (`Foo.razor` + `Foo.razor.cs` with `public partial class Foo`), not in an `@code { }` block — an `@code` block is for a component with no logic worth testing. Services in such a component are injected with `[Inject]` properties, not `@inject` directives, because a directive-injected service cannot be set by a test. The full rule, including which components are exempt, is in `CODING_GUIDELINES.md` §Blazor Patterns. The sweep is done — every logic-bearing component is converted (the exempt ones are listed in `build/code-behind-exemptions.json`) and `MLQT.Shared.Tests/CodeBehindPolicyTests.cs` holds the line.
 
 **Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
 

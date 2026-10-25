@@ -12,7 +12,7 @@ In repository view, libraries are grouped under their parent repository. Each re
 
 This is the default view and is the one you'll use most often, as it provides access to all version control operations.
 
-![Screenshot: The left panel in repository view. The repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, then the row of change-filter chips, and the Modelica package tree below that.](Images/code-review-1.png)
+![Screenshot: The application in repository view. In the left panel, the repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, then the row of change-filter chips, and the Modelica package tree below that.](Images/code-review-1.png)
 
 ### Library View
 
@@ -40,6 +40,9 @@ The tree mirrors the Modelica package structure:
 Opening a class from somewhere else — a finding, the used-classes menu, Back or Forward — expands
 the tree down to it and selects it, so you can see where it sits. A class you clicked in the tree
 yourself is left as it is.
+
+In repository view, hovering over a library's root package shows its `version` and the libraries it
+`uses`, with the version of each, as its `annotation` declares them.
 
 ### Multi-Selection Mode
 
@@ -125,10 +128,12 @@ In repository view, each repository has a header section that shows key informat
 - **Browse history** — Opens the [VCS History](git-operations.md#browsing-history) dialog
 
 For Git and SVN repositories, when expanded:
-- **Current branch name** (or "Detached HEAD" if not on a branch)
+- **Current branch name** — or, when not on a branch, "Detached HEAD at **v1.2**" naming the tag or commit checked out, or "Rebase of **feature** in progress" when a Git rebase stopped part-way
 - **Switch branch** button — Opens the branch switching dialog
 - **Create new branch** button — Opens the branch creation dialog
 - **Merge** button (SVN) or **More actions** menu (Git)
+
+**On a detached HEAD** (Git), Commit, Rebase, Merge, Push and Create Pull Request are disabled, because each of them needs a branch, and the **Create new branch** button is drawn filled to point at the way out; the tooltips say why. **While a rebase is in progress**, the More actions button and the Rebase button inside it are drawn filled instead: that is where the rebase is continued or aborted (see [Git Operations](git-operations.md)). Every VCS button is disabled while another VCS operation, or the analysis it started, is still running.
 
 ![Screenshot: Close-up of a Git repository header (expanded) showing the branch name "master", and the row of buttons: Switch branch, Create branch, and More actions (...) menu.](Images/library-browser-3.png)
 
@@ -164,7 +169,7 @@ The toolbar at the top of the left panel has three buttons:
 |--------|------|-------------|
 | **Add Repository** | Folder+ | Opens the [Add Repository](getting-started.md#step-2-add-a-repository) dialog to add a new repository to the current project |
 | **Toggle View** | Library/Archive | Switches between repository view and library view |
-| **Refresh** | Refresh | Processes pending file changes detected by the [file monitor](file-monitoring.md). A red badge shows the count of pending changes. The button turns orange when changes are waiting. |
+| **Refresh** | Refresh | Processes pending file changes detected by the [file monitor](file-monitoring.md). A red badge shows the count of pending changes. The button turns orange when changes are waiting, and is disabled while a VCS operation is running. |
 
 ![Screenshot: The toolbar showing all three buttons. The Refresh button should have a red badge showing "3" and be colored orange to indicate pending changes.](Images/file-monitoring-1.png)
 

@@ -52,11 +52,13 @@ The External Resources view is split into two panels:
 - **Left panel** — A directory tree showing all referenced resources organized by their file system location
 - **Right panel** — Details about the selected resource, including which models reference it
 
+Drag the divider between them to give the tree more width; a path too long for the panel can be scrolled sideways. With no resources found at all, the view says "No external resources detected".
+
 If the loaded libraries hold more models than the **Defer analysis threshold** (see [ui-customization.md](ui-customization.md#startup-analysis)), MLQT defers this analysis at startup, and the view instead says that external resource analysis has not been run yet and offers **Run External Resource Analysis Now**.
 
 ## File Type Filters
 
-At the top of the view, a row of filter chips lets you control which types of files are shown in the tree. Click a chip to toggle its filter on or off.
+At the top of the view, a row of filter chips headed **Filter by type:** lets you control which types of files are shown in the tree. Click a chip to toggle its filter on or off.
 
 | Filter | File Extensions | Default |
 |--------|----------------|---------|
@@ -73,7 +75,7 @@ Only files matching at least one active filter are shown. Directories that conta
 
 ## Warning Filters
 
-Next to the file type filters, a separate set of **Warning** filter chips lets you quickly find resources with problems. Each chip shows how many resources it will show — a resource is counted once however many models reference it.
+Next to the file type filters, a separate set of chips headed **Warnings:** lets you quickly find resources with problems. Each chip shows how many resources it will show, e.g. "Missing (2)" — a resource is counted once however many models reference it.
 
 | Filter | What It Shows |
 |--------|---------------|
@@ -110,7 +112,7 @@ Regular (non-annotated) directories do not show a count.
 
 ### Unresolved References
 
-If MLQT cannot resolve a `modelica://` URI to a file on disk, the resource appears under a special **"Unresolved References"** node at the top of the tree. These are shown with warning icons and indicate potential problems — the referenced file may have been moved, deleted, or the URI may be incorrect.
+If MLQT cannot resolve a `modelica://` URI to a file on disk, the resource appears under a special **`<Unresolved References>`** node in the tree. These are shown with warning icons and indicate potential problems — the referenced file may have been moved, deleted, or the URI may be incorrect.
 
 ## Detail Panel
 
@@ -129,7 +131,7 @@ When you click on a file or annotated directory in the tree, the right panel sho
 
 ### Referencing Models Table
 
-Below the resource header, a table lists every model that references the selected resource:
+Below the resource header, headed "Referenced by N model(s):", a table lists every model that references the selected resource (or "No models reference this resource." when there are none):
 
 | Column | Description |
 |--------|-------------|
@@ -140,7 +142,7 @@ Click on a row in this table to navigate to that model — the Code Review tab w
 
 ### Clicking Regular Directories
 
-Clicking on a regular (non-annotated) directory in the tree does nothing in the detail panel — it simply shows the "Select a resource to see which models reference it" placeholder. Only files and annotated directories have detail information.
+Clicking on a regular (non-annotated) directory in the tree does nothing in the detail panel — it simply shows the "Select a resource to see which models reference it." placeholder. Only files and annotated directories have detail information.
 
 ## Interpreting Warnings
 

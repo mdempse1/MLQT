@@ -13,12 +13,12 @@ Application settings are found in the **Settings** tab on the right panel. They 
 
 | Tab | Purpose |
 |-----|---------|
-| **UI Settings** | Theme and syntax highlighting colors |
-| **External Tools** | Paths to Dymola and OpenModelica |
+| **UI Settings** | Theme, the startup *Defer analysis threshold*, and syntax highlighting colors — see [UI Customization](ui-customization.md) |
+| **External Tools** | Paths, ports and time limits for Dymola and OpenModelica — see [External Tools](external-tools.md) |
 | **Reference Libraries** | Read-only libraries loaded so references out of your code resolve |
 | **Manage Repositories** | Project and repository management |
 
-Changes to UI Settings, External Tools and Reference Libraries are saved by clicking the **Save Settings** button at the bottom of the settings panel.
+Changes to UI Settings, External Tools and Reference Libraries are saved by clicking the **Save Settings** button at the bottom of the settings panel; **Reset to Defaults** restores the current tab's settings. The Manage Repositories tab shows neither button, because every change made there saves itself.
 
 ![Screenshot: The Settings panel showing the sub-tabs with the "Save Settings" and "Reset to Defaults" buttons visible at the bottom.](Images/settings-reference-1.png)
 
@@ -107,6 +107,8 @@ Repository settings are edited through **Settings > Manage Repositories** by cli
 
 The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules, and is disabled while **Apply formatting rules** is off (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
 
+Below the repository's **Name**, **VCS Type** and **Library Path** (and, when the library is a subdirectory of a working copy, the read-only **VCS Repository Root**) and the **Reference only** switch, the dialog's sections are, in order: **Commit requirements**, **Formatting rules**, **Spell checking**, **Naming**, **Style guidelines**, **Reference validation**, **Static analysis**, **Excluded libraries** and, for an SVN repository, **SVN branch directories**. A reference-only repository shows none of them. The sections below are grouped by topic rather than in that order.
+
 ### Commit Requirements
 
 These settings control what is required when committing changes to the repository.
@@ -114,7 +116,7 @@ These settings control what is required when committing changes to the repositor
 | Setting | Description |
 |---------|-------------|
 | **Require an issue number as part of the commit message** | When enabled, MLQT will require you to enter an issue/ticket number with every commit. This is useful for teams that track all changes against issue trackers. |
-| **Issue number position** | Controls whether the issue number is added before or after the commit message text. When disabled (default), the issue number is prepended. When enabled, it is appended. Only available when "Require an issue number" is turned on. |
+| **The issue number will be added before the commit message when disabled, after the commit message when enabled** | The issue number's position. When disabled (default), the issue number is prepended to the commit message. When enabled, it is appended. Only available when "Require an issue number" is turned on. |
 
 ![Screenshot: The Commit requirements section of the Edit Repository Details dialog, showing the two toggle switches. The "Require an issue number" switch is on, and the position switch is disabled below it.](Images/settings-reference-3.png)
 
@@ -126,11 +128,11 @@ This setting is only visible when the repository's VCS type is SVN.
 |---------|---------|-------------|
 | **SVN Branch Directories** | `trunk`, `branches`, `tags` | Configures the SVN branch directory names used for branch extraction, listing, and creation. The first entry is treated as the trunk and is matched as a leaf directory name. All subsequent entries are treated as branch containers — MLQT looks for subdirectories within them to discover individual branches. |
 
-The UI presents a text field with an **Add** button to append new directory names, and a chip set displaying the current entries. Click the delete icon on a chip to remove that directory name.
+The UI presents a chip set displaying the current entries, and below it a text field with a **+** button to append new directory names. Click the close icon on a chip to remove that directory name.
 
 For example, a repository that uses `main` instead of `trunk` and keeps release branches under `releases` could be configured as `main`, `branches`, `releases`, `tags`.
 
-![Screenshot: The SVN Branch Directories section of the Edit Repository Details dialog showing the text field, Add button, and chip set with "trunk", "branches", and "tags" chips.](Images/settings-reference-4.png)
+![Screenshot: The SVN Branch Directories section of the Edit Repository Details dialog showing the text field, the + button, and chip set with "trunk", "branches", and "tags" chips.](Images/settings-reference-4.png)
 
 ### Style Guidelines
 
@@ -167,7 +169,7 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 
 | Setting | Rule id | Default | Description |
 |---------|---------|---------|-------------|
-| **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
+| **Apply formatting rules. If off then just used as part of style guidelines** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
 | **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
 | **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. "Components before classes" refines this ordering and has no effect unless this switch is on. A `record` or `operator record` keeps its `extends` clauses where they stand among its fields, and they are not reported: the inherited fields take the clause's place in the record constructor's inputs. |
 | **Composition must have components before classes** | `MLQT.Style.ComponentsBeforeClasses` | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. It **refines** "Composition must be imports first" rather than competing with it: the formatter only consults this switch when that one is on, so on its own it changes nothing. Each `public`/`protected` section is ordered separately — a class definition in one section followed by a component in the next is correctly ordered. |
@@ -175,11 +177,11 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 | **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
 | **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
 
-The **Setting** column gives each checkbox's label exactly as the dialog shows it, so you can find
-it. The rest of this documentation uses the short names — **One of each section**, **Imports
-first**, **Extends at top**, **Components before classes**, **Declarations in order**, **Initial
-equation/algorithm first**/**last** — and those are the same six switches below **Apply formatting
-rules** (Imports first and Extends at top share one switch).
+The **Setting** column gives each switch's label exactly as the dialog shows it, so you can find
+it. The rest of this documentation uses the short names — **Apply formatting rules**, **One of each
+section**, **Imports first**, **Extends at top**, **Components before classes**, **Declarations in
+order**, **Initial equation/algorithm first**/**last** — and the last of those are the same six
+switches below **Apply formatting rules** (Imports first and Extends at top share one switch).
 
 #### One of each section is required by the rest
 
@@ -192,7 +194,9 @@ mode; with that setting off it writes the composition in source order and moves 
 their own the other rules would report an arrangement that pressing **Format All Files** could never
 produce — findings nobody can clear, against a setting that looks enabled.
 
-- **In the app**, the five switches are greyed out until you turn **One of each section** on. They
+- **In the app**, the five switches are greyed out until you turn **One of each section** on, and
+  the chain inside them is enforced the same way: **Components before classes** stays greyed out
+  until **Imports first** is on, and **Declarations in order** until both are. They
   keep showing what they are set to rather than jumping to off, because nothing has been switched
   off — the settings are still there, and are simply not in effect. Turning the prerequisite back on
   makes them active again exactly as they were.
@@ -256,9 +260,9 @@ A helper method `IsModelExcludedFromFormatting(string modelId)` is available for
 
 **Adding an exclusion from the Code Review page:**
 
-The Code Review page toolbar includes a toggle button (FormatClear icon) that excludes the currently selected model from formatting. When a model is excluded, the button is highlighted in Warning color to indicate the active exclusion. Clicking the button again removes the exclusion.
+The Code Review page toolbar includes a toggle button (FormatClear icon) that excludes the currently selected model from formatting by writing `__MLQT(format=false)` into the class — not by adding it to this list. When a model is excluded, the button is highlighted in Warning color to indicate the active exclusion. Clicking the button again removes the exclusion, from the source and from this list.
 
-When you exclude a model that belongs to a VCS-managed repository, MLQT automatically reverts the file to undo any formatting that was previously applied. This ensures the file returns to its pre-formatted state.
+When you exclude a model that belongs to a VCS-managed repository, MLQT first reverts the file to undo formatting that was previously applied — but only when formatting is all the revert would take back. A file that is new, or that holds any other uncommitted edit, is left as it is and a message says why. See [code-formatting.md](code-formatting.md#how-it-works).
 
 ![Screenshot: The Code Review page toolbar showing the FormatClear toggle button highlighted in Warning color, indicating the current model is excluded from formatting.](Images/settings-reference-5.png)
 
@@ -268,7 +272,7 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT automati
 |---------|---------|---------|-------------|
 | **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
-It does **not** check that the types a class uses (component types, `extends` base classes) resolve; no style rule does. The MCP server's `mlqt_check`'s references check does that, for a class or a whole library — see [MCP server](mcp-server.md#checking-that-types-resolve).
+It does **not** check that the types a class uses (component types, `extends` base classes) resolve. [`MLQT.Reference.Undeclared`](#static-analysis-rules) does that, along with every other name a class uses; the MCP server's `mlqt_check` also has a references check of its own, for a class or a whole library — see [MCP server](mcp-server.md#checking-that-types-resolve).
 
 The reference validator handles several edge cases found in real Modelica libraries:
 
@@ -280,9 +284,11 @@ The reference validator handles several edge cases found in real Modelica librar
 
 ### Static Analysis Rules
 
-These rules find structural problems beyond the style/documentation checks above. They are **off by
-default**. Enable them in the **Static analysis** section of the Edit Repository Details dialog — each
-rule has a per-rule **Off / Info / Warning / Error** selector (grouped by category), where **Error**
+These rules find structural problems beyond the style/documentation checks above. All but one are
+**off by default** — `MLQT.Structure.SingleFilePackage` is on. Enable them in the **Static analysis**
+section of the Edit Repository Details dialog — each rule has a per-rule **Off / Info / Warning /
+Error** selector, labelled with the rule's description and grouped under its category (Correctness,
+Units, Unused, Structure, Conformance), where **Error**
 fails the CI quality gate and Warning/Info are reported only — or edit `settings.json` directly (see
 below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
 
@@ -344,8 +350,10 @@ that is not loaded. Each distinct name is reported once per class, at its first 
 #### Accepting a tool's built-ins
 
 Dymola and OpenModelica each provide names that no library declares, and code using them works in
-that tool and no other. While `MLQT.Reference.Undeclared` is on, the Static analysis section shows a
-checkbox for each tool, stored as `AcceptedToolBuiltIns` in `settings.json`:
+that tool and no other. While `MLQT.Reference.Undeclared` is not **Off**, the Static analysis section
+shows **Accept the built-in functions and flags of:** directly under the rule, with a **Dymola** and an
+**OpenModelica** checkbox. The choice is stored as `AcceptedToolBuiltIns` in `settings.json`, and it
+narrows that one rule's findings rather than switching anything on or off:
 
 | `"AcceptedToolBuiltIns"` | What is accepted as declared |
 |--------------------------|------------------------------|
@@ -353,6 +361,8 @@ checkbox for each tool, stored as `AcceptedToolBuiltIns` in `settings.json`:
 | `["Dymola"]` | Dymola's built-in functions (`classDirectory()`, `DymolaVersion()` and the rest), its flags in the `Advanced` and `Hidden` packages, and every function whose name starts with `Dymola_AST_` |
 | `["OpenModelica"]` | Everything in the `OpenModelica` package (`OpenModelica.Scripting` and the rest) |
 | `["Dymola", "OpenModelica"]` | Both |
+
+![Screenshot: The undeclared-names row of the Static analysis section set to Warning, with "Accept the built-in functions and flags of:" and the Dymola and OpenModelica checkboxes directly under it, both unticked.](Images/settings-reference-8.png)
 
 A tool's name counts only where the loaded libraries do not declare the whole of it: a library's own
 class called `plot` is what `plot` means there, whichever tools are ticked. A name that the libraries
@@ -409,6 +419,10 @@ first listed, so formatting the package removes the duplicate.
 
 Neither tool descends into a directory with no `package.mo`, so a `.mo` file in an ordinary folder is
 invisible to both.
+
+In the app this is the switch **Report only the package.order problems Dymola would warn about**,
+shown in the Static analysis section directly under `MLQT.Structure.PackageOrder` while that rule is
+not **Off**. In `settings.json` it is `PackageOrderMatchesDymola`:
 
 | Setting | Effect |
 |---------|--------|
@@ -475,7 +489,10 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckUnusedClass": true,
     "CheckUnusedPublicClass": true,
     "CheckShadowing": true,
-    "CheckUnusedMembers": true
+    "CheckUnusedMembers": true,
+    "CheckUndeclaredNames": true,
+    "AcceptedToolBuiltIns": [],
+    "CheckGrammarConformance": true
 }
 ```
 
@@ -542,7 +559,7 @@ This is the safe default. You can see what your code looks like relative to the 
 MLQT will **automatically restructure your Modelica source code** to comply with the enabled formatting rules. This happens:
 
 - **At startup** — Only files that VCS reports as modified, added, or untracked are formatted. MLQT assumes the rest of the repository is already correctly formatted (see [Formatting Philosophy](#formatting-philosophy) below).
-- **When you save repository settings with formatting changes** — The reformatting is applied immediately to all files in the repository.
+- **When you apply repository settings with formatting changes** — Changing a formatting switch, or turning **Apply formatting rules** on, reformats every file in the repository immediately. (A formatting switch changed while **Apply formatting rules** stays off reformats nothing.)
 - **After VCS operations that change files** (update, checkout, switch branch, merge, revert) — Only the files that VCS reports as changed after the operation are formatted.
 - **Before opening the commit dialog** — MLQT formats any modified files that haven't been formatted yet, ensuring committed code always follows the rules.
 - **When you click "Format All Files"** in the Edit Repository Details dialog — Forces a full reformat of every file in the repository.
@@ -576,7 +593,7 @@ MLQT assumes that once a repository has been formatted, it stays formatted. This
 
 5. **Initial formatting may produce large diffs.** When you first enable formatting rules on an existing library, use "Format All Files" to reformat the entire repository. Consider doing this on a new branch, reviewing the changes, and then merging.
 
-![Screenshot: The Code Review tab showing a model with style checking findings for formatting rule findings (e.g., "Multiple public sections found" or "Import statements should appear before other declarations").](Images/settings-reference-7.png)
+![Screenshot: The Code Review tab showing a model with style checking findings for formatting rule findings (e.g., "This class contains more than 1 public section" or "This class does not have its import statements before the rest of the class definition").](Images/settings-reference-7.png)
 
 ---
 
@@ -687,7 +704,7 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 ### When Settings Are Loaded and Saved
 
 - **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used and a new file is written with them, rules that are on by default included. **An existing file is never rewritten by loading**, switching project or reordering repositories — so opening MLQT never leaves a modified settings file in a commit dialog.
-- **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application preferences. This is also when rules that are on by default are written into the file explicitly, so the file is the whole answer for the repository. The file keeps its own line endings, and if nothing in it would change it is not touched.
+- **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application settings. This is also when rules that are on by default are written into the file explicitly, so the file is the whole answer for the repository. The file keeps its own line endings, and if nothing in it would change it is not touched.
 - **After a settings change:** Style checking is re-run for that repository alone. Findings for the project's other repositories are left as they are — their rules have not changed, so there is nothing to re-check.
 - **The `.mlqt` directory is created automatically** if it does not exist when settings are first saved.
 

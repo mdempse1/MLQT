@@ -1,110 +1,47 @@
 # ModelicaParser.Tests
 
-This project contains comprehensive unit tests for the ModelicaParser library, with a focus on testing the `ModelicaRenderer` class.
+The tests for the ModelicaParser library: the parser and renderer (formatter), the style rules, the
+extractors, icon and diagram rendering, spell checking, encrypted-library documentation and the
+change classifier. About 120 test files and well over 2,000 `[Fact]`/`[Theory]` methods. The
+assembly is held to **>95% coverage per class** (root `CLAUDE.md`), measured by
+`build/check-coverage.ps1`.
 
 ## Test Structure
 
-### ModelicaRendererTests
-
-The main test class contains tests organized into the following categories:
-
-#### Variable Declaration Tests
-- `SimpleRealVariable_FormatsCorrectly` - Tests basic Real variable declaration
-- `RealVariableWithInitialValue_FormatsCorrectly` - Tests variable with initial value
-- `RealVariableWithModification_FormatsCorrectly` - Tests variable with modification (e.g., `start=1.0`)
-- `ParameterVariable_FormatsCorrectly` - Tests parameter variables
-- `MultipleVariables_FormatsCorrectly` - Tests comma-separated variable lists
-
-#### Equation Tests
-- `SimpleEquation_FormatsCorrectly` - Tests basic equations
-- `DerEquation_FormatsCorrectly` - Tests derivative equations using `der()`
-- `ArithmeticEquation_FormatsCorrectly` - Tests equations with arithmetic operations
-- `ConnectClause_FormatsCorrectly` - Tests connector connections
-
-#### Expression Tests
-- `AdditionExpression_FormatsCorrectly` - Tests addition operations
-- `MultiplicationExpression_FormatsCorrectly` - Tests multiplication operations
-- `PowerExpression_FormatsCorrectly` - Tests exponentiation (^)
-- `UnaryMinusExpression_FormatsCorrectly` - Tests unary minus operator
-
-#### Markup Mode Tests
-- `SimpleModel_WithMarkup_FormatsCorrectly` - Tests markup tags for simple models
-- `EquationWithOperators_WithMarkup_FormatsCorrectly` - Tests markup for equations with operators
-- `VariableWithModification_WithMarkup_FormatsCorrectly` - Tests markup for variable modifications
-
-#### Class Type Tests
-- `FunctionDeclaration_FormatsCorrectly` - Tests function declarations
-- `BlockDeclaration_FormatsCorrectly` - Tests block declarations
-
-#### Import and Extends Tests
-- `ImportStatement_FormatsCorrectly` - Tests import statements
-- `ExtendsClause_FormatsCorrectly` - Tests inheritance/extends clauses
-
-#### Algorithm Tests
-- `SimpleAlgorithm_FormatsCorrectly` - Tests algorithm sections
-- `IfStatement_FormatsCorrectly` - Tests if statements in algorithms
-
-## Running Tests
-
-Run all tests:
-```bash
-dotnet test
-```
-
-Run specific test category:
-```bash
-dotnet test --filter "FullyQualifiedName~ModelicaRendererTests"
-```
-
-Run with detailed output:
-```bash
-dotnet test --output detailed
-```
+| Folder / files | Covers |
+|----------------|--------|
+| `ModelicaRendererTests/` | `ModelicaRenderer`: formatting of every construct, line wrapping, comments, section and declaration order, markup mode. (The `Debug*` files are kept regression cases.) |
+| `StyleRuleChecks/` | The style-rule visitors and `CheckFailure`/finding plumbing |
+| `Visitors/` | Syntax colouring visitors and annotation elision |
+| `Icons/` | Coordinate systems, icon/diagram SVG rendering, icon text |
+| `SpellChecking/` | `SpellChecker`, corrections, text extraction, concurrency |
+| `ExternalDocs/` | Reading an encrypted library's generated help HTML |
+| `Comparison/` | `ClassChangeClassifier` and cosmetic-change signatures |
+| `Helpers/` | The `ModelicaParser.Helpers` language tables (names, sections, built-ins) |
+| top-level `*Tests.cs` | Extractors, the token classifier, file encoding and line-ending preservation, error listener, grammar coverage, and the policy tests (`*PolicyTests.cs`) that hold a rule over the whole assembly |
+| `Resources/` | Larger `.mo` fixtures, copied to the output |
 
 ## Test Helper Methods
 
-### AssertFormattedLine
+`TestHelpers.AssertClass(testModel, ...)` parses a whole class, renders it with `ModelicaRenderer`
+and asserts the result equals `expectedOutput` (or the input itself when none is given - the input
+is written already formatted). Its optional arguments switch on the formatting options: line length,
+one-of-each-section, imports first, components before classes, declaration order, and markup mode
+(`renderForCodeEditor`). `TestHelpers.FormatCode` returns the formatted text without asserting, for
+idempotency tests that feed the output back in.
 
-The main helper method that:
-1. Parses the input Modelica code (wrapped in a model/function/block for valid syntax)
-2. Visits the parse tree with ModelicaRenderer
-3. Removes trailing empty lines from the output
-4. Checks a specific line index against the expected formatted output
+## Running Tests
 
-This approach allows tests to focus on individual Modelica statements while maintaining valid syntax for the parser. The tests wrap statements in minimal model structures (e.g., `model Test <statement> end Test;`) but only verify the formatted output of the specific line being tested.
+The project runs on xUnit v3 / Microsoft.Testing.Platform (see the root `CLAUDE.md`).
 
-## Current Test Results
+```bash
+dotnet test ModelicaParser.Tests
+dotnet test ModelicaParser.Tests --filter "FullyQualifiedName~ModelicaRendererTests"
+```
 
-As of the latest run:
-- **Total Tests**: 25
-- **Passed**: 25 (100%)
-- **Failed**: 0 (0%)
+### Opt-in real-library corpus
 
-## Test Design
-
-Tests are simplified to focus on single lines of Modelica code:
-- Input includes minimal wrapping (e.g., `model Test Real x; end Test;`)
-- Only the specific line being tested is verified (e.g., `  Real x;`)
-- Uses line index parameter to check the correct output line
-- Variable declarations check line index 1
-- Equations and algorithms check line index 2 (after `equation` or `algorithm` keyword)
-
-## Future Improvements
-
-1. Add more complex test cases:
-   - Nested models
-   - For loops and while loops
-   - When equations
-   - Array expressions
-   - Function calls with multiple arguments
-   - Annotations
-
-2. Add tests for edge cases:
-   - Empty models
-   - Comments
-   - String literals
-   - Qualified names (e.g., `Modelica.Blocks.Sources`)
-
-3. Add performance tests for large Modelica files
-
-4. Add tests for error handling and malformed input
+`ModelicaTokenClassifierTests` and `Visitors/AnnotationElisionCoverageTests` include a fidelity check
+over real libraries that runs only when `MLQT_FIDELITY_CORPUS` names one or more library roots, so an
+ordinary run says nothing about it. Run it after changing `ModelicaTokenClassifier`; the
+`test-tooling` skill has how.

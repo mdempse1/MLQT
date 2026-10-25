@@ -44,8 +44,11 @@ end UserModel;
 ```
 
 This modification is detected as a `LoadResourceParameter` reference. The system uses a two-pass approach:
-1. **Pass 1**: Identifies parameters with `loadResource()` defaults, stores in `ModelNode.Properties["LoadResourceParameters"]`
-2. **Pass 2**: Detects modifications of these parameters across all models in the graph
+1. **Pass 1** (`ModelAnalyzer`): identifies parameters with `loadSelector` annotations or `loadResource()`
+   defaults and stores their names in `ModelNode.LoadSelectorParameters` / `ModelNode.LoadResourceParameters`
+2. **Pass 2** (`LoadSelectorModificationAnalyzer`, phase 3 of `GraphBuilder.AnalyzeDependenciesAsync`):
+   detects modifications of these parameters — only over the models `MayModifyATrackedParameter`
+   selects, never the whole graph again (B282)
 
 ## Graph Node Types
 
@@ -59,7 +62,7 @@ public class ResourceFileNode : GraphNode
     public string ResolvedPath { get; }      // Absolute file system path
     public bool FileExists { get; set; }      // Whether file exists on disk
     public bool IsImageFile { get; set; }     // True for image files
-    public List<string> ReferencedByModelIds { get; }  // Models referencing this file
+    public HashSet<string> ReferencedByModelIds { get; }  // Models referencing this file
 }
 ```
 
@@ -72,8 +75,8 @@ public class ResourceDirectoryNode : GraphNode
 {
     public string ResolvedPath { get; }       // Absolute directory path
     public bool DirectoryExists { get; set; } // Whether directory exists
-    public List<string> ContainedFileIds { get; } // Files scanned in directory
-    public List<string> ReferencedByModelIds { get; }
+    public HashSet<string> ContainedFileIds { get; } // Files scanned in directory
+    public HashSet<string> ReferencedByModelIds { get; }
 }
 ```
 
@@ -95,9 +98,12 @@ public class ResourceEdge
 
 ## Extraction Pipeline
 
-### 1. ExternalResourceExtractor (ModelicaParser)
+### 1. Extraction: ModelAnalyzer (ModelicaGraph) and ExternalResourceExtractor (ModelicaParser)
 
-Visits the parse tree to extract raw resource references.
+The graph build extracts raw references in `ModelicaGraph/ParserVisitors/ModelAnalyzer.cs` (its
+*External Resource Extraction* region), during the same visit that finds dependencies.
+`ModelicaParser/Visitors/ExternalResourceExtractor.cs` is the standalone visitor with the same
+rules, for a parse tree outside the graph:
 
 ```csharp
 var extractor = new ExternalResourceExtractor();
@@ -105,26 +111,34 @@ extractor.Visit(parseTree);
 List<ExternalResourceInfo> resources = extractor.Resources;
 ```
 
+**The two hold the same rules, so change both** — or better, move the rule into a shared helper as
+`ModelicaUriScanner.FindFileUris` was: B209 was fixed in the extractor alone, and nothing a user could
+see changed because the graph build uses `ModelAnalyzer`.
+
 **Extracted Sources:**
 - `loadResource()` function calls
 - `modelica://` URIs in strings
 - External function annotations (Include, Library, directories)
 - Bitmap fileName attributes
 
-### 2. LoadSelectorAnalyzer (ModelicaGraph)
+### 2. LoadSelectorModificationAnalyzer (ModelicaGraph)
 
-Detects parameters with `loadSelector` annotations and tracks modifications.
+Pass 2: finds component modifications of the `loadSelector`/`loadResource` parameters pass 1 found.
 
 ```csharp
-var analyzer = new LoadSelectorAnalyzer(modelId, graph);
+var index = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);   // once per pass
+var analyzer = new LoadSelectorModificationAnalyzer(modelId, graph, index);
 analyzer.Visit(parseTree);
-// Registers loadSelector parameters on ModelNode.Properties["LoadSelectorParameters"]
-// Detects when components modify loadSelector parameters with file paths
+List<ExternalResourceInfo> found = analyzer.Resources;
 ```
 
-### 3. GraphBuilder.ExtractExternalResources
+Build the `ParameterIndex` once: it describes the graph, not the model, and building it per model
+made the pass cost models × graph size.
 
-Resolves raw paths and creates graph nodes.
+### 3. GraphBuilder resolution (`CreateResourceNodeAndEdge`, `ResolveResourcePath`)
+
+Resolves raw paths and creates graph nodes, inside `AnalyzeDependenciesAsync` /
+`AnalyzeDependenciesForModelsAsync`.
 
 **Resolution Steps:**
 1. Parse `modelica://` URIs using library root paths
@@ -140,6 +154,7 @@ Reads from graph, generates warnings, monitors files.
 
 ```csharp
 await ExternalResourceService.AnalyzeResourcesAsync(graph);
+await ExternalResourceService.AnalyzeResourcesForModelsAsync(modelIds, graph);   // incremental
 
 // Get all resources
 List<ExternalResourceReference> allResources = ExternalResourceService.GetAllResources();
@@ -189,24 +204,28 @@ Resources/Library/
 └── MyLib.lib (fallback)
 ```
 
-Search order:
-1. `{LibraryDir}/{platform}/{compiler}/{lib}`
+`GraphBuilder.ResolveAllLibraryFiles` collects **every** platform variant that exists, not the first
+hit. For each platform directory (`win32`, `win64`, `linux32`, `linux64`, `darwin32`, `darwin64`) it
+searches:
+1. `{LibraryDir}/{platform}/{compiler}/{lib}` — compilers `vs2010`…`vs2022`, `gcc`, `gcc47`–`gcc49`, `clang`
 2. `{LibraryDir}/{platform}/{lib}`
-3. `{LibraryDir}/{lib}`
+
+and then `{LibraryDir}/{lib}`.
 
 Platform extensions:
-- Windows: `.lib`, `.dll`
-- Unix: `.a`, `.so`
+- Windows (`win32`/`win64`): `.lib`, `.dll`, `.a`
+- Linux: `.a`, `.so`
+- macOS (`darwin*`): `.a`, `.dylib`
 
 ## External Resources Page
 
-**Location**: `MLQT.Shared/Pages/ExternalResources.razor`
+**Location**: `MLQT.Shared/Pages/ExternalResources.razor` (+ `.razor.cs`)
 
 ### Features
 
 1. **Tree View**: Resources organized by directory structure
-2. **File Type Filtering**: Data, C/C++, Libs, Images, Documentation
-3. **Warning Indicators**: Missing files, absolute paths
+2. **File Type Filtering**: Data Files, C/C++, Libs, Images, Documentation, All
+3. **Warning Filtering and Indicators**: Missing files, absolute paths
 4. **Reference Details**: Click to see which models reference a resource
 
 ### Directory Annotation Icons
@@ -237,6 +256,8 @@ public class ResourceTreeNode
     public DirectoryAnnotationType AnnotationType { get; set; }
     public List<string> ReferencingModelIds { get; set; }
     public bool HasWarning { get; set; }
+    public bool IsMissing { get; set; }
+    public bool IsAbsolutePath { get; set; }
     public string? WarningMessage { get; set; }
     public string FileExtension { get; set; }
     public bool IsImageFile { get; set; }
@@ -256,27 +277,32 @@ public enum DirectoryAnnotationType
 
 | File | Purpose |
 |------|---------|
-| `ModelicaParser/ExternalResourceInfo.cs` | Resource info and ResourceReferenceType enum |
-| `ModelicaParser/ExternalResourceExtractor.cs` | Parse tree visitor for extraction |
-| `ModelicaGraph/ResourceFileNode.cs` | File resource graph node |
-| `ModelicaGraph/ResourceDirectoryNode.cs` | Directory resource graph node |
-| `ModelicaGraph/ResourceEdge.cs` | Edge metadata |
+| `ModelicaParser/DataTypes/ExternalResourceInfo.cs` | Resource info and ResourceReferenceType enum |
+| `ModelicaParser/Visitors/ExternalResourceExtractor.cs` | Standalone parse tree visitor for extraction |
+| `ModelicaGraph/ParserVisitors/ModelAnalyzer.cs` | The extraction the graph build actually uses (pass 1) |
+| `ModelicaGraph/ParserVisitors/LoadSelectorModificationAnalyzer.cs` | Pass 2: modifications of loadSelector/loadResource parameters |
+| `ModelicaGraph/DataTypes/ResourceFileNode.cs` | File resource graph node |
+| `ModelicaGraph/DataTypes/ResourceDirectoryNode.cs` | Directory resource graph node |
+| `ModelicaGraph/DataTypes/ResourceEdge.cs` | Edge metadata |
 | `ModelicaGraph/GraphBuilder.cs` | Resolution and node creation |
-| `ModelicaGraph/LoadSelectorAnalyzer.cs` | LoadSelector parameter detection |
 | `MLQT.Services/Interfaces/IExternalResourceService.cs` | Service interface |
-| `MLQT.Services/ExternalResourceService.cs` | Service implementation |
+| `MLQT.Services/ExternalResourceService.cs` | Service implementation, warnings, file watchers |
+| `MLQT.Services/DataTypes/ExternalResourceReference.cs` | What the service returns per reference |
 | `MLQT.Services/DataTypes/ResourceTreeNode.cs` | UI tree node model |
-| `MLQT.Shared/Pages/ExternalResources.razor` | UI page |
+| `MLQT.Shared/Pages/ExternalResources.razor` (+ `.razor.cs`) | UI page |
 
 ## Tests
 
 ```bash
 dotnet test ModelicaParser.Tests --filter ExternalResourceExtractor
-dotnet test ModelicaGraph.Tests --filter LoadSelectorAnalyzer
+dotnet test ModelicaGraph.Tests --filter LoadSelector
 dotnet test ModelicaGraph.Tests --filter "AnalyzeDependencies_WithExternal"
+dotnet test MLQT.Services.Tests --filter ExternalResourceService
 ```
 
 Key test files:
-- `ModelicaParser.Tests/ExternalResourceExtractorTests.cs` - 36 tests
-- `ModelicaGraph.Tests/LoadSelectorAnalyzerTests.cs` - 20 tests
-- `ModelicaGraph.Tests/GraphBuilderTests.cs` - External resource resolution tests
+- `ModelicaParser.Tests/ExternalResourceExtractorTests.cs` (and `ExternalResourceEntityTests.cs`)
+- `ModelicaGraph.Tests/LoadSelectorAnalyzerTests.cs` and `LoadSelectorPassTwoScopeTests.cs`
+- `ModelicaGraph.Tests/GraphBuilderTests.cs` - External resource resolution tests (`AnalyzeDependencies_WithExternal*`)
+- `MLQT.Services.Tests/ExternalResourceServiceTests.cs`
+- `MLQT.Shared.Tests/Pages/ExternalResourceCategoryTests.cs` - the page's file-type categories

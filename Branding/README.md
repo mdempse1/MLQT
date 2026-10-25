@@ -64,11 +64,12 @@ while the other two are right:
 The taskbar being the odd one out is the interesting case: a button is grouped by AUMID, and an
 application that declares none is given whatever the shell derives from the process — `dotnet.exe` for
 anything started with `dotnet run`, or a stale entry for a path it has cached against. The button then
-stops following the window. `Program.ClaimTaskbarIdentity` declares `MLQTProject.MLQT` before the first
-window is created, which is the documented fix and is also what lets a pinned shortcut survive the
-executable moving. `WindowIcon.Apply` then re-attaches the icon once the window exists — a button
-keeps whatever it had when it appeared — at the size the display wants rather than the size at 100%:
-at 125% the taskbar wants 40x40, and Photino attaches 32x32 for it to stretch.
+stops following the window. MLQT declares **no** AUMID: one was tried and removed (see *Ruled out along
+the way* below), and the installer's Start Menu shortcut (`build/installer/mlqt.iss`) is what the shell
+resolves the button to. `WindowIcon.Apply` (`MLQT.Photino/Services/WindowIcon.cs`) re-attaches the icon
+once the window exists, at the size the display wants rather than the size at 100%: at 125% the
+taskbar wants 40x40, and Photino attaches 32x32 for it to stretch. That is for crispness, not what
+fixed the button.
 
 ## Why the icon is set twice
 
@@ -106,8 +107,8 @@ $sh.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\MLQT.lnk"
 ```
 
 Note that Windows **recreates** that shortcut, pointing at whatever it last saw run — so a build run
-once from a temporary folder leaves a shortcut aimed at a folder that will be deleted. 7b-7 should
-create it deliberately, at the installed location.
+once from a temporary folder leaves a shortcut aimed at a folder that will be deleted. Since 7b-7 the
+installer creates it deliberately, at the installed location (`[Icons]` in `build/installer/mlqt.iss`).
 
 ### How to look at a taskbar button
 
@@ -138,8 +139,8 @@ renaming the executable. A WinForms window, a bare `PhotinoWindow` and a `Photin
 showed the icon correctly throughout — none of them had a shortcut pointing at an iconless build.
 
 The explicit `AppUserModelID` added during the hunt has been **removed**: it did nothing here, and an
-id that matches no shortcut is a documented way to confuse the resolver. 7b-7 should set it on the
-application and on the shortcut it creates, together, or not at all.
+id that matches no shortcut is a documented way to confuse the resolver. Set it on the application
+and on the installer's shortcut together, or not at all; 7b-7 chose not at all.
 
 ## The GNOME dock, and why it is the same shape of problem
 
