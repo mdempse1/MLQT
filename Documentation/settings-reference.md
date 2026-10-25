@@ -334,9 +334,11 @@ base, a base or wildcard import from a library that is not loaded, or a library 
 could declare it. A first segment such as `Lib` in `Lib.f(x)` could also be a library that is not
 loaded. It is reported only when the library's `uses(...)` annotation exists and names no library of
 that name. A plain variable (one segment, not called) is always judged, because no library is a value.
-Members reached through anything `replaceable`, through an `expandable` connector, or through MSL's
-`Complex` are never judged, because what is there depends on the redeclaration, the connections or a
-type MLQT does not resolve. Each distinct name is reported once per class, at its first use. Over MSL
+Members reached through anything `replaceable` or through an `expandable` connector are never judged,
+because what is there depends on the redeclaration or on the connections. `Complex` is an ordinary
+operator record from `Complex.mo`, not one of the predefined types of MLS 3.7 §4.9, so `u.re` through
+a `ComplexInput` is judged like any record's member. Without `Complex.mo` loaded, it is a library
+that is not loaded. Each distinct name is reported once per class, at its first use. Over MSL
 4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
 
 #### Accepting a tool's built-ins

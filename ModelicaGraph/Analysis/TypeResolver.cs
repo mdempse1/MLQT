@@ -18,17 +18,20 @@ namespace ModelicaGraph.Analysis;
 public static class TypeResolver
 {
     /// <summary>
-    /// <see cref="ModelicaLanguage.PredefinedTypes"/> plus <c>Complex</c>, which is not a language
-    /// type at all: it is an operator record in MSL, written like a predefined type everywhere and
-    /// resolvable as a class only when MSL is loaded. The addition is the whole difference between
-    /// this list and the language's own, and is stated here rather than by keeping a second copy.
+    /// True for the Modelica built-in/predefined types, which are never library classes: the
+    /// language's own list, <see cref="ModelicaLanguage.PredefinedTypes"/>, and nothing else.
     /// </summary>
-    private static readonly HashSet<string> PredefinedTypes =
-        new(ModelicaLanguage.PredefinedTypes.Append("Complex"), StringComparer.Ordinal);
-
-    /// <summary>True for the Modelica built-in/predefined types, which are never library classes.</summary>
+    /// <remarks>
+    /// <b><c>Complex</c> is not one.</b> MLS 3.7 §4.9 does not list it; it is the
+    /// <c>operator record Complex</c> of <c>Complex.mo</c>, a top-level library beside MSL, and it
+    /// resolves as any class does. It was on this list until 2026-10-25, which made every class
+    /// built on it - <c>ComplexInput = input Complex</c>, <c>SI.ComplexVoltage = Complex(...)</c> -
+    /// a class with no members as far as the resolver knew: <c>u.re</c> resolved to nothing and the
+    /// units on <c>re</c>/<c>im</c> were never seen. With <c>Complex.mo</c> not loaded it is now
+    /// unresolved, as any library that is not loaded is.
+    /// </remarks>
     public static bool IsPredefined(string? typeName)
-        => typeName is not null && PredefinedTypes.Contains(typeName.TrimStart('.').Trim());
+        => typeName is not null && ModelicaLanguage.PredefinedTypes.Contains(typeName.TrimStart('.').Trim());
 
     /// <summary>
     /// Resolve <paramref name="typeText"/> (as written in class <paramref name="ownerId"/>) to a class in

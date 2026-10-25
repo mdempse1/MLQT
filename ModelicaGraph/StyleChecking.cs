@@ -342,7 +342,10 @@ public static class StyleChecking
 
         return (modelId, typeName) => byRequest.GetOrAdd((modelId, typeName), key =>
         {
-            if (TypeResolver.IsPredefined(key.TypeName))
+            // Complex too, though it is a class rather than a predefined type: it has always been
+            // ordered as a variable here, and changing that would have Format All move every
+            // Complex declaration in a library into the components group.
+            if (TypeResolver.IsPredefined(key.TypeName) || key.TypeName.TrimStart('.').Trim() == "Complex")
                 return true;
 
             var imports = importsByModel.GetOrAdd(key.ModelId, id => ImportsOf(graph, id));

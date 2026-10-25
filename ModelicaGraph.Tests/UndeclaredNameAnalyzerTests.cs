@@ -422,19 +422,31 @@ public class UndeclaredNameAnalyzerTests
         """;
 
     [Fact]
-    public void AMemberThroughComplex_IsNotJudged()
+    public void AMemberThroughComplex_IsJudgedLikeAnyRecords()
     {
-        // TypeResolver counts MSL's Complex as predefined and never resolves it, so a class built on
-        // it has no members it can see. That makes the class unknown, not its members undeclared.
-        OnlyTheControl(Run(Control, ComplexRecord, """
-            package P
+        // Complex is an operator record of a library of its own, not a predefined type (MLS 3.7
+        // §4.9), so a class built on it has its re and im.
+        Assert.Equal(["u.typo", "rr"], Names(Run(ComplexRecord, Library("""
               connector ComplexInput = input Complex;
               model M
                 ComplexInput u;
                 Real x = u.re + u.im + u.typo;
+                Complex c(re(start = 1), rr = 2);
               end M;
-            end P;
-            """));
+            """, uses: "Complex(version=\"4.1.0\")"))));
+    }
+
+    [Fact]
+    public void ComplexNotLoaded_IsALibraryNotLoaded()
+    {
+        OnlyTheControl(Run(Control, Library("""
+              connector ComplexInput = input Complex;
+              model M
+                ComplexInput u;
+                Complex c(re = 1);
+                Real x = u.re + c.im;
+              end M;
+            """, uses: "Complex(version=\"4.1.0\")")));
     }
 
     [Fact]

@@ -161,10 +161,7 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
                 var imports = ModelicaGraph.ClassImports.For(node.Definition);
                 foreach (var written in ModelicaGraph.ClassImports.BasesOf(node.Definition))
                 {
-                    // The language's own types, not TypeResolver's list: that one counts MSL's
-                    // Complex as predefined and never resolves it, so a class built on Complex has no
-                    // members as far as the resolver knows - and must not be judged.
-                    if (ModelicaLanguage.PredefinedTypes.Contains(written.TrimStart('.')))
+                    if (TypeResolver.IsPredefined(written))
                         continue;
                     if (ClassElementResolver.ResolveBaseOf(graph, node, written, imports, _ancestors) is not { } baseNode
                         || !IsComplete(baseNode, visiting))
