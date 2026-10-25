@@ -470,44 +470,43 @@
                 <RuleSeverityRow RuleId="@rule.Id" Label="@rule.Description"
                     Value="@SelectedSettings.SeverityFor(rule.Id)"
                     ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
-            }
 
-            @* A modifier on one rule rather than a rule of its own, so it is a switch rather than a
-               severity picker and sits below the rules instead of among them. Shown only while
-               package.order checking is on, because that is the only thing it changes. *@
-            @if (SelectedSettings.CheckPackageOrder)
-            {
-                <MudSwitch @bind-Value="SelectedSettings.PackageOrderMatchesDymola" Color="Color.Primary" Size="Size.Small"
-                    Label="Report only the package.order problems Dymola would warn about" />
-                <MudText Typo="Typo.caption" Class="mb-1">
-                    Dymola warns that a package.order is incomplete only for a class stored where it looks
-                    — <code>Package/Name.mo</code> or <code>Package/Name/package.mo</code> — and says nothing
-                    about an entry naming a class that is not there. Switch this on for a repository whose
-                    standard is "no warnings on load in Dymola"; leave it off for MLQT's fuller answer,
-                    which also reports stale entries and classes stored in a file Dymola could not load
-                    them from.
-                </MudText>
-            }
-
-            @* Also a modifier on one rule: which tools' own functions and flags count as declared.
-               Shown only while the rule is on, for the same reason. *@
-            @if (SelectedSettings.CheckUndeclaredNames)
-            {
-                <MudText Typo="Typo.body1" Class="mt-2 mb-0">Accept the built-in functions and flags of:</MudText>
-                <MudStack Row="true" Spacing="0">
-                    @foreach (var tool in ToolBuiltIns.Tools)
-                    {
-                        <MudCheckBox T="bool" Value="@IsToolAccepted(tool)" ValueChanged="@(v => SetToolAccepted(tool, v))"
-                            Label="@tool" Dense="true" Size="Size.Small" Color="Color.Primary" />
-                    }
-                </MudStack>
-                <MudText Typo="Typo.caption" Class="mb-1">
-                    A name only a tool provides works in that tool and in no other: Dymola's
-                    <code>classDirectory()</code>, its <code>Advanced.</code> and <code>Hidden.</code> flags
-                    and <code>Dymola_AST_</code> functions, or OpenModelica's <code>OpenModelica</code> package.
-                    Tick the tools this library is written for. Leave all unticked to report every use, for a
-                    library that has to load in any tool.
-                </MudText>
+                @* A rule's modifiers sit directly under it, so it is plain which rule they change, and
+                   appear only while it is on, because that is all they change. Each is a setting that
+                   narrows the findings of one rule rather than a rule of its own, so it is a switch or
+                   a checkbox, not a severity picker. *@
+                @if (rule.Id == RuleIds.UndeclaredName && SelectedSettings.CheckUndeclaredNames)
+                {
+                    @* Which tools' own functions and flags this rule counts as declared. *@
+                    <MudText Typo="Typo.body1" Class="mt-2 mb-0">Accept the built-in functions and flags of:</MudText>
+                    <MudStack Row="true" Spacing="0">
+                        @foreach (var tool in ToolBuiltIns.Tools)
+                        {
+                            <MudCheckBox T="bool" Value="@IsToolAccepted(tool)" ValueChanged="@(v => SetToolAccepted(tool, v))"
+                                Label="@tool" Dense="true" Size="Size.Small" Color="Color.Primary" />
+                        }
+                    </MudStack>
+                    <MudText Typo="Typo.caption" Class="mb-1">
+                        A name only a tool provides works in that tool and in no other: Dymola's
+                        <code>classDirectory()</code>, its <code>Advanced.</code> and <code>Hidden.</code> flags
+                        and <code>Dymola_AST_</code> functions, or OpenModelica's <code>OpenModelica</code> package.
+                        Tick the tools this library is written for. Leave all unticked to report every use, for a
+                        library that has to load in any tool.
+                    </MudText>
+                }
+                else if (rule.Id == RuleIds.PackageOrder && SelectedSettings.CheckPackageOrder)
+                {
+                    <MudSwitch @bind-Value="SelectedSettings.PackageOrderMatchesDymola" Color="Color.Primary" Size="Size.Small"
+                        Label="Report only the package.order problems Dymola would warn about" />
+                    <MudText Typo="Typo.caption" Class="mb-1">
+                        Dymola warns that a package.order is incomplete only for a class stored where it looks
+                        — <code>Package/Name.mo</code> or <code>Package/Name/package.mo</code> — and says nothing
+                        about an entry naming a class that is not there. Switch this on for a repository whose
+                        standard is "no warnings on load in Dymola"; leave it off for MLQT's fuller answer,
+                        which also reports stale entries and classes stored in a file Dymola could not load
+                        them from.
+                    </MudText>
+                }
             }
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Excluded libraries</MudText>

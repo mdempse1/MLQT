@@ -607,6 +607,23 @@ public class UndeclaredNameAnalyzerTests
     }
 
     [Fact]
+    public void FlagsReadAndSetInAnAlgorithm_AreDeclaredWhenDymolaIsAccepted()
+    {
+        Assert.Empty(Run(_ => { }, [ToolBuiltIns.Dymola], Library("""
+              function f
+                output Boolean ok;
+              protected
+                Boolean EnableCodeExport_old;
+              algorithm
+                EnableCodeExport_old := Advanced.Translation.EnableCodeExport;
+                Advanced.Translation.EnableCodeExport := false;
+                Hidden.Flag := Advanced.Translation.EnableCodeExport and Hidden.Other;
+                ok := true;
+              end f;
+            """, uses: "Modelica(version=\"4.1.0\")")));
+    }
+
+    [Fact]
     public void AToolsFlag_NeedsNoUsesAnnotationToBeReported()
     {
         // `Advanced` cannot be a library that is not loaded, so the missing uses(...) does not excuse it.
