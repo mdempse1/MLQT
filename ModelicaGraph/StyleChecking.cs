@@ -220,9 +220,15 @@ public static class StyleChecking
         {
             RunRule(new MissingUnits(basePackage, unitLookup), parsedCode, findings, timings);
         }
+        if (settings.CheckGrammarConformance)
+        {
+            RunRule(new GrammarConformance(basePackage), parsedCode, findings, timings);
+        }
         // MLQT.Unused.Import is not here: an import is visible to every class lexically nested below
         // it, which in a library means other files entirely, so it is decided by UnusedImportAnalyzer
         // over the graph rather than by looking at the declaring class on its own.
+        // Nor is MLQT.Reference.Undeclared: whether a name is declared depends on the classes the
+        // lookup passes through, so UndeclaredNameAnalyzer decides it over the graph.
 
         var tailStarted = Stopwatch.GetTimestamp();
 

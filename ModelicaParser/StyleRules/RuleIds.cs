@@ -42,6 +42,10 @@ public static class RuleIds
     public const string ShadowingInheritedMember = "MLQT.Shadowing.InheritedMember";
     public const string UnusedMember = "MLQT.Unused.Member";
 
+    // Strictness checks: what Modelica tools other than Dymola may refuse.
+    public const string UndeclaredName = "MLQT.Reference.Undeclared";
+    public const string GrammarConformance = "MLQT.Conformance.Grammar";
+
     // Parse diagnostics. These are NOT style rules: they are always reported regardless of the
     // severity map and cannot be suppressed or baselined, because code that does not parse cannot
     // be meaningfully checked — every other rule silently under-reports on it.

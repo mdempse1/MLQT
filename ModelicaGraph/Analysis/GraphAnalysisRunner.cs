@@ -25,6 +25,7 @@ public static class GraphAnalysisRunner
         new ShadowingAnalyzer(),
         new UnusedMembersAnalyzer(),
         new UnusedImportAnalyzer(),
+        new UndeclaredNameAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)

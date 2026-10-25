@@ -112,7 +112,7 @@ public static class RuleSettingsLayout
     /// of these needs no entry above: the section grows with the catalog on its own.
     /// </summary>
     public static readonly IReadOnlySet<string> CatalogDrivenCategories =
-        new HashSet<string>(StringComparer.Ordinal) { "Correctness", "Units", "Unused", "Structure" };
+        new HashSet<string>(StringComparer.Ordinal) { "Correctness", "Units", "Unused", "Structure", "Conformance" };
 
     /// <summary>
     /// Configurable rules the dialog offers no way to set: not declared above, and not in a

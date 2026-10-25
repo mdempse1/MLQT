@@ -60,6 +60,14 @@ public sealed class StyleSettingsInput
     public bool? CheckShadowing { get; set; }
     public bool? CheckUnusedMembers { get; set; }
 
+    [Description("Reports each name used where nothing of that name is declared: variables, called functions, " +
+                 "types, bases, imports, members after a dot and modification targets. Only reports what cannot be " +
+                 "declared anywhere, so a base or library that is not loaded silences it rather than causing findings.")]
+    public bool? CheckUndeclaredNames { get; set; }
+    [Description("Reports code that parses only because MLQT also accepts what Dymola accepts beyond the Modelica 3.7 " +
+                 "grammar, such as a class annotation before the elements, ':=' in a modification, or an escape MLS does not define.")]
+    public bool? CheckGrammarConformance { get; set; }
+
     /// <summary>Spell-check dictionary language codes, e.g. ["en_US", "en_GB"]. Bundled codes are
     /// en_US and en_GB; other codes must have been imported as Hunspell dictionaries. When null or
     /// empty on save, the existing languages are kept.</summary>
@@ -108,6 +116,8 @@ public sealed class StyleSettingsInput
         new(RuleIds.UnusedPublicClass, i => i.CheckUnusedPublicClass, (i, v) => i.CheckUnusedPublicClass = v),
         new(RuleIds.ShadowingInheritedMember, i => i.CheckShadowing, (i, v) => i.CheckShadowing = v),
         new(RuleIds.UnusedMember, i => i.CheckUnusedMembers, (i, v) => i.CheckUnusedMembers = v),
+        new(RuleIds.UndeclaredName, i => i.CheckUndeclaredNames, (i, v) => i.CheckUndeclaredNames = v),
+        new(RuleIds.GrammarConformance, i => i.CheckGrammarConformance, (i, v) => i.CheckGrammarConformance = v),
     ];
 
     /// <summary>The rules this input can set, for the test that holds it to <see cref="RuleCatalog"/>.</summary>

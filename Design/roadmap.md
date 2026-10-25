@@ -356,7 +356,7 @@ to files instead of classes.
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | Extends existing `ValidateModelReferences`. Only errors on state 3 above |
+| **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | **Names in code shipped 2026-10-25** as `MLQT.Reference.Undeclared` (`UndeclaredNameAnalyzer`): variables, calls, types, bases, imports, members and modification targets, reported only in state 3. Left: `modelica://` references on the same three-state footing (`ValidateModelReferences` reports any miss), and members reached through `Complex`, which `TypeResolver` treats as predefined and the analysis therefore never judges |
 | **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | Promotes the `ConnectorCompatibility` helper; connector *types* may be external → same three-state gate |
 | **Deprecated-API usage** | ⭐⭐ | M | References to `obsolete` classes + MSL-version compatibility. Needs the target library visible |
 | **Cyclic-dependency detection** | ⭐⭐ | S | The directed graph already exists; surface package dependency cycles |

@@ -18,7 +18,11 @@ var parseTree = ModelicaParserHelper.Parse(modelicaSourceCode);
 var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 ```
 
-**Grammar modification**: Edit `modelica.g4`, then `dotnet build` to regenerate parser code.
+**Grammar modification**: Edit `modelica.g4`, then `dotnet build` to regenerate parser code. **A change
+that makes the grammar accept more than MLS 3.7 needs a `GrammarConformance.Kind`** (`StyleRules/`), a
+test, and a row in `Documentation/settings-reference.md` §Strict Modelica 3.7 syntax. That rule
+(`MLQT.Conformance.Grammar`) reports each place a class relies on a widening, and it covers only the
+widenings listed in it. A widening added without a kind is one the rule cannot see.
 
 ## Key files
 

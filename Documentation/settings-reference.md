@@ -305,6 +305,8 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. ‡ † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
+| `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
+| `MLQT.Conformance.Grammar` | Warning | Code that parses only because MLQT's grammar accepts what Dymola accepts beyond the Modelica Language Specification 3.7. Each finding names the widening it relies on. See [Strict Modelica 3.7 syntax](#strict-modelica-37-syntax). | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
 then in each enclosing class in turn, and a package directory's children are lexically nested inside
@@ -323,6 +325,42 @@ them by name). Without the first, a library's example package reads as entirely 
 A library's *public API* is still reported — nothing inside the library uses it because its users are
 downstream — which is why `MLQT.Unused.PublicClass` is Info and off by default, and best suited to an
 application library. For a foundational library, either leave it off or exclude the library (below).
+
+¶ **An undeclared name is reported only when it could not have been declared.** Lookup follows the
+language (MLS §5.3): the class's own and inherited elements, its imports, the constants and classes of
+its enclosing classes up to an `encapsulated` one, then the top-level classes. A name found nowhere is
+reported only when every scope searched is readable source with all of its bases loaded. An encrypted
+base, a base or wildcard import from a library that is not loaded, or a library loaded only in part
+could declare it. A first segment such as `Lib` in `Lib.f(x)` could also be a library that is not
+loaded. It is reported only when the library's `uses(...)` annotation exists and names no library of
+that name. A plain variable (one segment, not called) is always judged, because no library is a value.
+Members reached through anything `replaceable`, through an `expandable` connector, or through MSL's
+`Complex` are never judged, because what is there depends on the redeclaration, the connections or a
+type MLQT does not resolve. Each distinct name is reported once per class, at its first use. Over MSL
+4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
+
+#### Strict Modelica 3.7 syntax
+
+MLQT's grammar is the [Modelica 3.7 concrete syntax](https://specification.modelica.org/maint/3.7/modelica-concrete-syntax.html),
+widened wherever Dymola accepts more, so that MLQT can load what Dymola loads. `MLQT.Conformance.Grammar`
+reports each place a class relies on one of those widenings. Each finding's discriminator starts with
+the code below, so a baseline or a suppression can tell them apart.
+
+| Code | What the grammar accepts | What MLS 3.7 says |
+|------|--------------------------|-------------------|
+| `leading-annotation` | A class annotation before the class's elements, as well as at the end | `composition` has one class annotation, after everything else. An annotation that is all a class body holds is at the end, and is not reported |
+| `base-prefix` | `type T = parameter Real`: any of `flow`, `stream`, `discrete`, `parameter`, `constant` before a short class's base | `base-prefix` is `[ input \| output ]` |
+| `assignment-modification` | `Real x := 1`, `Real y(start := 2)` | `modification` uses `=` only |
+| `der-statement` | A statement starting with `der` that is anything other than `der(x) := expression`: several arguments, an expression, or a call | `der "(" component-reference ")" ":=" expression` |
+| `comprehension` | `f(a, b for i in 1:n)`, `{a, b for i in 1:n}`, and `(e)[i for i in 1:n]` | `for` follows a single expression only, and a parenthesised expression takes `array-subscripts` |
+| `string-escape` | A backslash before any character, in a string or a quoted identifier | `S-ESCAPE` is `\'` `\"` `\?` `\\` `\a` `\b` `\f` `\n` `\r` `\t` `\v`. Write `\\` for a backslash in documentation HTML or a Windows path |
+| `quoted-identifier-whitespace` | A tab or line break inside a quoted identifier | `Q-CHAR` includes the space and no other white space |
+| `reserved-name` | `time` as an ordinary identifier (`Real time;`, `a.time`), and an element or enumeration literal named `Real`, `Integer`, `Boolean` or `String` | `time` is a keyword in 3.7, usable only as the time variable, and §2.3.3 forbids declaring an element with a predefined type's name |
+
+The grammar is also **narrower** than MLS 3.7 in a few places, and code using them does not parse in
+MLQT at all. A unit on a literal (`1 'm'`, new in 3.7), `(expression).name` and `(expression)[:]`, the
+empty quoted identifier `''`, white space inside an import's `.*` or `.{`, and a comment between two
+top-level classes of one file are reported as syntax errors (`MLQT.Parse.SyntaxError`), not by this rule.
 
 ### Matching Dymola on `package.order`
 

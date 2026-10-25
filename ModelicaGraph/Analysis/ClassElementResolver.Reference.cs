@@ -192,8 +192,14 @@ public sealed class ComponentReferences
         return false;
     }
 
+    // The class's own members, inherited and protected ones included, by name - and its imports.
+    // Internal, with the four below, for UndeclaredNameAnalyzer: a reference Resolve cannot place is
+    // walked again, the same way, to say which segment failed and whether it could be known.
+    internal IReadOnlyDictionary<string, ResolvedElement> OwnMembers => _own.Value.Members;
+    internal IReadOnlyList<string> OwnImports => _own.Value.Imports;
+
     // The class a reference's leading segments name, found as a type name is - and how.
-    private NameResolution? QualifyingClass(string prefix, bool global)
+    internal NameResolution? QualifyingClass(string prefix, bool global)
         => TypeResolver.ResolveNamePath(_graph, _class.Id, prefix.TrimStart('.'), _own.Value.Imports, global,
             inherited: true, _ancestors);
 
@@ -242,7 +248,7 @@ public sealed class ComponentReferences
 
     // A component one of these imports brings in by the name `first` - an imported constant - and the
     // class it is declared in. Qualified and alias imports before wildcards, as for classes.
-    private (ModelNode Scope, ResolvedElement Element)? ImportedComponent(IReadOnlyList<string> imports, string first)
+    internal (ModelNode Scope, ResolvedElement Element)? ImportedComponent(IReadOnlyList<string> imports, string first)
     {
         foreach (var import in imports.Where(i => !TypeResolver.IsWildcard(i)).Concat(imports.Where(TypeResolver.IsWildcard)))
         {
@@ -278,7 +284,7 @@ public sealed class ComponentReferences
 
     // The classes enclosing this one, innermost first, as far as the first encapsulated one -
     // none at all when the class itself is encapsulated.
-    private IEnumerable<ModelNode> EnclosingScopes()
+    internal IEnumerable<ModelNode> EnclosingScopes()
     {
         if (IsEncapsulated(_class))
             yield break;
@@ -336,7 +342,7 @@ public sealed class ComponentReferences
         return new ResolvedReference(path, type, scope);
     }
 
-    private Dictionary<string, ResolvedElement> Members(ModelNode node, bool includeProtected) =>
+    internal Dictionary<string, ResolvedElement> Members(ModelNode node, bool includeProtected) =>
         _interfaces is null
             ? ClassElementResolver.MemberTable(
                 ClassElementResolver.Collect(_graph, node, includeProtected, includeInherited: true))
@@ -344,7 +350,7 @@ public sealed class ComponentReferences
 
     // The class an element's declared type resolves to, in the scope of the class that declares it.
     // `Flange[2] fs` has the type text `Flange`: the extractor keeps array dimensions out of it.
-    private ModelNode? TypeOf(ResolvedElement element) =>
+    internal ModelNode? TypeOf(ResolvedElement element) =>
         TypeResolver.ResolveWithInheritance(_graph, element.OwnerId, element.Element.Type, element.OwnerImports, _ancestors);
 
     // A modification written on a component further out sets this element's default: in

@@ -680,6 +680,16 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.UnusedMember);
         set => SetRuleEnabled(RuleIds.UnusedMember, value);
     }
+    public bool CheckUndeclaredNames
+    {
+        get => IsRuleEnabled(RuleIds.UndeclaredName);
+        set => SetRuleEnabled(RuleIds.UndeclaredName, value);
+    }
+    public bool CheckGrammarConformance
+    {
+        get => IsRuleEnabled(RuleIds.GrammarConformance);
+        set => SetRuleEnabled(RuleIds.GrammarConformance, value);
+    }
 
     /// <summary>
     /// SVN branch directory names used when listing branches, extracting the current branch,
