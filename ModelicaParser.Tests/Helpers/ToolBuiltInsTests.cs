@@ -48,6 +48,25 @@ public class ToolBuiltInsTests
     }
 
     [Fact]
+    public void DymolasNames_AreReadOnly_AndAreWhatToolOfMatches()
+    {
+        // A caller cannot change what every other caller is told, not even by casting back.
+        Assert.IsNotType<System.Collections.Generic.HashSet<string>>(ToolBuiltIns.DymolaFunctions, exactMatch: false);
+        Assert.Throws<System.NotSupportedException>(
+            () => ((System.Collections.Generic.ICollection<string>)ToolBuiltIns.DymolaFunctions).Add("injected"));
+        Assert.DoesNotContain("injected", ToolBuiltIns.DymolaFunctions);
+
+        Assert.Contains("classDirectory", ToolBuiltIns.DymolaFunctions);
+        Assert.Contains("Utilities.getenv", ToolBuiltIns.DymolaFunctions);
+        Assert.DoesNotContain("sin", ToolBuiltIns.DymolaFunctions);
+        Assert.All(ToolBuiltIns.DymolaFunctions, name => Assert.Equal(ToolBuiltIns.Dymola, ToolBuiltIns.ToolOf(name)));
+
+        Assert.Equal(["Advanced", "Hidden"], ToolBuiltIns.DymolaFlagPackages.Order(System.StringComparer.Ordinal));
+        Assert.All(ToolBuiltIns.DymolaFlagPackages, p => Assert.Equal(ToolBuiltIns.Dymola, ToolBuiltIns.ToolOf($"{p}.Flag")));
+        Assert.Equal(ToolBuiltIns.Dymola, ToolBuiltIns.ToolOf($"{ToolBuiltIns.DymolaFunctionPrefix}Anything"));
+    }
+
+    [Fact]
     public void TheToolsOffered_AreTheOnesThereAreListsFor()
     {
         Assert.Equal([ToolBuiltIns.Dymola, ToolBuiltIns.OpenModelica], ToolBuiltIns.Tools);
