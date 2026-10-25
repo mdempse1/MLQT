@@ -4,7 +4,9 @@ Comprehensive test suite for the DymolaInterface library.
 
 ## Overview
 
-This test project has two groups of tests (see [TESTS_OVERVIEW.md](TESTS_OVERVIEW.md) for the full class list and counts):
+This test project has two groups of tests. The lists below name every test class; a separate
+overview with per-class counts went out of date and was retired (B516), so count with
+`dotnet test --list-tests` instead:
 
 **Integration tests** — require a running Dymola:
 

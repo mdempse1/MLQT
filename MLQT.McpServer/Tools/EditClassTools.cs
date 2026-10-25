@@ -73,9 +73,11 @@ public sealed class EditClassTools
                  "mlqt_get_class's source view with includeAnnotations=true; with \"all\":true it swaps every " +
                  "occurrence (a name used throughout the class), and says how many. An extends clause, an import or " +
                  "an algorithm statement is a replace. The others: add_component{type,name,modifier?,description?," +
-                 "visibility?}, remove_component{name} (takes its connections with it), set_component_modifier{name," +
-                 "modifier}, add_equation{equation}, add_connection{portA,portB} (refuses incompatible connectors, " +
-                 "and draws the line), remove_connection{portA,portB}, " +
+                 "visibility?,prefix?,condition?,constrainedBy?,comment?} (prefix: parameter, input, flow...; " +
+                 "condition: the if-expression of a conditional component), remove_component{name} (takes its " +
+                 "connections with it), set_component_modifier{name,modifier}, add_equation{equation,comment?}, " +
+                 "add_connection{portA,portB,comment?} (refuses incompatible connectors, and draws the line), " +
+                 "remove_connection{portA,portB}, " +
                  "set_component_placement{name,x1,y1,x2,y2,rotation?}, set_class_description{description}, " +
                  "set_component_description{name,description}, set_class_documentation{info?,revisions?}, " +
                  "suppress_rule{ruleId,component?,reason?}, accept_spelling{word,reason?}, " +

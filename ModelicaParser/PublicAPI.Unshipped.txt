@@ -51,3 +51,4 @@ const ModelicaParser.Helpers.ToolBuiltIns.OpenModelica = "OpenModelica" -> strin
 static ModelicaParser.Helpers.ToolBuiltIns.IsAccepted(string? reference, System.Collections.Generic.IEnumerable<string!>? acceptedTools) -> bool
 static ModelicaParser.Helpers.ToolBuiltIns.ToolOf(string? reference) -> string?
 static ModelicaParser.Helpers.ToolBuiltIns.Tools.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static ModelicaParser.Visitors.ExternalResourceExtractor.IsLoadResourceCall(modelicaParser.PrimaryContext! context) -> bool

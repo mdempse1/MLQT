@@ -13,9 +13,14 @@ namespace ModelicaParser.Visitors;
 ///  2. modelica:// URI references in string literals (annotations, documentation)
 ///  3. External function annotations: Include, Library, IncludeDirectory, LibraryDirectory, SourceDirectory
 ///
-/// The loadSelector annotated parameters type is handled by
-/// LoadSelectorAnalyzer in ModelicaGraph, which has access to the full
-/// graph for cross-model parameter modification tracking.
+/// <para><b>The one rule set (B511).</b> The graph build's <c>ModelAnalyzer</c> (ModelicaGraph)
+/// derives from this class rather than carrying its own copy of these rules. It held one until
+/// B511, and a fix made here (B209) changed nothing a user could see until the scan moved into a
+/// shared helper. A rule added here reaches the graph build with no second edit.</para>
+///
+/// The loadSelector annotated parameters, and their modifications in other models, are found by
+/// <c>ModelAnalyzer</c> and <c>LoadSelectorModificationAnalyzer</c> in ModelicaGraph, which have
+/// access to the full graph.
 /// </summary>
 public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
 {
@@ -176,28 +181,21 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
     {
         // Check for function calls like Modelica.Utilities.Files.loadResource(...)
         // or ModelicaServices.ExternalReferences.loadResource(...)
-        if (context.component_reference() != null && context.function_call_args() != null)
+        if (IsLoadResourceCall(context))
         {
-            var identTokens = context.component_reference().IDENT();
-            if (identTokens != null && identTokens.Length > 0)
-            {
-                var function = string.Join(".", identTokens.Select(t => t.GetText()));
-                if (function == "Modelica.Utilities.Files.loadResource" ||
-                    function == "ModelicaServices.ExternalReferences.loadResource")
-                {
-                    // Only when the argument *is* a path. A composed one -
-                    // loadResource("modelica://" + packageName + "/package.mo") - has a value only
-                    // once the model is translated, and capturing every literal inside the call made
-                    // two resources out of that line, the second of which was then reported missing
-                    // (B210).
-                    _loadResourcePath = ResourceArgument.SoleStringLiteral(context.function_call_args());
-                    _inLoadResourceCall = true;
-                    Visit(context.function_call_args());
-                    _inLoadResourceCall = false;
-                    _loadResourcePath = null;
-                    return null;
-                }
-            }
+            // Only when the argument *is* a path. A composed one -
+            // loadResource("modelica://" + packageName + "/package.mo") - has a value only once the
+            // model is translated, and capturing every literal inside the call made two resources out
+            // of that line, the second of which was then reported missing (B210).
+            //
+            // The arguments are still walked, because a derived visitor (ModelAnalyzer) records the
+            // component and type references they hold; only the capture is gated.
+            _loadResourcePath = ResourceArgument.SoleStringLiteral(context.function_call_args());
+            _inLoadResourceCall = true;
+            Visit(context.function_call_args());
+            _inLoadResourceCall = false;
+            _loadResourcePath = null;
+            return null;
         }
 
         // Check for string literals containing modelica:// URIs
@@ -227,6 +225,21 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
         }
 
         return base.VisitPrimary(context);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="context"/> is a call of <c>Modelica.Utilities.Files.loadResource</c> or
+    /// <c>ModelicaServices.ExternalReferences.loadResource</c>, written in full - the calls whose
+    /// argument this visitor captures as a <see cref="ResourceReferenceType.LoadResource"/> reference.
+    /// </summary>
+    public static bool IsLoadResourceCall(modelicaParser.PrimaryContext context)
+    {
+        if (context.component_reference() is not { } reference || context.function_call_args() == null)
+            return false;
+
+        var function = string.Join(".", reference.IDENT().Select(t => t.GetText()));
+        return function is "Modelica.Utilities.Files.loadResource"
+                        or "ModelicaServices.ExternalReferences.loadResource";
     }
 
     /// <summary>

@@ -28,8 +28,8 @@ public class DiagramNode
     public string Id { get; set; } = "";
     public string Label { get; set; } = "";       // short text shown inside the node circle
     public string FullName { get; set; } = "";    // stored as data, available on click
-    public string Color { get; set; } = MudBlazor.Color.Primary.ToString();
-    public string BorderColor { get; set; } = MudBlazor.Color.Primary.ToString();
+    public string Color { get; set; } = "var(--mud-palette-primary)";
+    public string BorderColor { get; set; } = "var(--mud-palette-primary-darken)";
 }
 
 public class DiagramEdge

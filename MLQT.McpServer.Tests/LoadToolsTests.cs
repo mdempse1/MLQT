@@ -240,6 +240,67 @@ public class LoadToolsTests
         Assert.Equal("2.0.0", Assert.Single(w.Host.Libraries.Libraries, l => l.Name == "Dep").Version);
     }
 
+    // ---- A load that changes the libraries forgets the analysis (B506) --------------------------
+    //
+    // The edges were built over the libraries loaded then. A replaced copy left them pointing at
+    // classes no longer loaded, and a library added later had none, while the session said analysed -
+    // so nothing ran the analysis again.
+
+    [Fact]
+    public async Task ReplacingALibrary_MarksTheAnalysisAsNotRun()
+    {
+        using var w = new World();
+        await w.Load("Project/App");
+        w.Host.Session.DependenciesAnalyzed = true;
+        w.Host.Session.ResourcesAnalyzed = true;
+
+        await w.Load("Project/vendor/Dep 2.0.0");
+
+        Assert.False(w.Host.Session.DependenciesAnalyzed);
+        Assert.False(w.Host.Session.ResourcesAnalyzed);
+    }
+
+    [Fact]
+    public async Task AddingALibrary_MarksTheAnalysisAsNotRun()
+    {
+        using var w = new World();
+        await w.Load("Project/Dep");
+        w.Host.Session.DependenciesAnalyzed = true;
+
+        await w.Load("Elsewhere/Extra 3.0");
+
+        Assert.False(w.Host.Session.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task TheSessionStatus_SaysHowEachLibraryCameIn()
+    {
+        // B513: only mlqt_load's own answer said explicit or search, and an agent asking later what is
+        // loaded could not tell which copies a search would leave alone.
+        using var w = new World();
+        await w.Load("Project/App");
+
+        var status = new SessionTools(w.Host.Libraries, w.Host.Repositories, w.Host.Resources, w.Host.Session)
+            .ListLibraries();
+
+        Assert.Equal("explicit", status.Single(l => l.Name == "App").Origin);
+        Assert.Equal("search", status.Single(l => l.Name == "Dep").Origin);
+    }
+
+    [Fact]
+    public async Task ALoadThatChangesNothing_KeepsTheAnalysis()
+    {
+        using var w = new World();
+        await w.Load("Project/App");
+        w.Host.Session.DependenciesAnalyzed = true;
+        w.Host.Session.ResourcesAnalyzed = true;
+
+        await w.Load("Project/App");
+
+        Assert.True(w.Host.Session.DependenciesAnalyzed);
+        Assert.True(w.Host.Session.ResourcesAnalyzed);
+    }
+
     [Fact]
     public async Task TwoExplicitCopies_NeedReplace()
     {

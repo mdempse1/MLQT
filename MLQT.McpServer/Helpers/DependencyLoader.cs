@@ -84,6 +84,7 @@ internal sealed class DependencyLoader
         }
 
         ReportReplaced(before, reportedAlready);
+        ForgetAnalysisIfTheLibrariesChanged(before);
 
         // A tool was named but nothing of it was found: say so, since the search was narrower than asked.
         if (withDependencies && tool.Note is { } note && tool.Folders.Count == 0)
@@ -91,6 +92,21 @@ internal sealed class DependencyLoader
 
         return new LoadResult(_loaded, _replaced, _notFound, _warnings, _errors, tool.Install, tool.InstallReason, tool.Folders,
             Repositories: _repositoriesLoaded.Count > 0 ? _repositoriesLoaded : null);
+    }
+
+    /// <summary>
+    /// Marks the dependency and resource analysis as not run when this load changed which libraries are
+    /// loaded, so the next tool needing it runs it again. The edges were built over the libraries loaded
+    /// then: a copy replaced by an explicit one left them pointing at classes no longer loaded, and a
+    /// library added after analysis had none at all, while the session still said analysed (B506).
+    /// </summary>
+    private void ForgetAnalysisIfTheLibrariesChanged(List<LoadedLibrary> before)
+    {
+        var now = _libraries.Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
+        if (now.SetEquals(before.Select(l => l.Id)))
+            return;
+        _session.DependenciesAnalyzed = false;
+        _session.ResourcesAnalyzed = false;
     }
 
     /// <summary>
@@ -190,8 +206,7 @@ internal sealed class DependencyLoader
         $"'{name}' at '{path}' was not loaded: the {(keeper.ReadOnlySource == ReadOnlySourceKind.Supplied ? "copy the host supplied" : "copy")} " +
         $"loaded from '{keeper.SourcePath}' takes precedence over it and is used instead.";
 
-    private string OriginOf(LoadedLibrary library) =>
-        _session.LibraryOrigins.TryGetValue(library.Id, out var origin) ? origin : Explicit;
+    private string OriginOf(LoadedLibrary library) => _session.OriginOf(library.Id);
 
     private async Task LoadExplicitAsync(string path, bool replace)
     {

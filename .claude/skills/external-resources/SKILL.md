@@ -98,12 +98,14 @@ public class ResourceEdge
 
 ## Extraction Pipeline
 
-### 1. Extraction: ModelAnalyzer (ModelicaGraph) and ExternalResourceExtractor (ModelicaParser)
+### 1. Extraction: ExternalResourceExtractor (ModelicaParser), inherited by ModelAnalyzer
 
-The graph build extracts raw references in `ModelicaGraph/ParserVisitors/ModelAnalyzer.cs` (its
-*External Resource Extraction* region), during the same visit that finds dependencies.
-`ModelicaParser/Visitors/ExternalResourceExtractor.cs` is the standalone visitor with the same
-rules, for a parse tree outside the graph:
+**There is one rule set**, in `ModelicaParser/Visitors/ExternalResourceExtractor.cs`: the
+loadResource capture (`IsLoadResourceCall`, `ResourceArgument.SoleStringLiteral`), the
+`modelica://` scan (`ModelicaUriScanner`) and the external clause's annotation keys. The graph
+build's `ModelicaGraph/ParserVisitors/ModelAnalyzer.cs` **derives from it**, so the visit that finds
+dependencies finds resources by exactly those rules. On a parse tree outside the graph, use the
+extractor itself:
 
 ```csharp
 var extractor = new ExternalResourceExtractor();
@@ -111,9 +113,20 @@ extractor.Visit(parseTree);
 List<ExternalResourceInfo> resources = extractor.Resources;
 ```
 
-**The two hold the same rules, so change both** — or better, move the rule into a shared helper as
-`ModelicaUriScanner.FindFileUris` was: B209 was fixed in the extractor alone, and nothing a user could
-see changed because the graph build uses `ModelAnalyzer`.
+What `ModelAnalyzer` adds is only what needs the graph: dependencies, and pass 1 of the loadSelector
+tracking — it flags a parameter whose default is a `loadResource` call (the short, imported form
+`loadResource(...)` included, which is never captured as a resource) and adds `LoadSelector` entries
+to the same `Resources` list. An override in it calls `base.VisitPrimary`, so the extractor's rules
+still run.
+
+**A new resource rule goes in the extractor, and nowhere else.** Until B511 `ModelAnalyzer` held a
+copy of every rule, and only tests constructed the extractor: B209 was fixed in the extractor, its
+tests went green, and the graph build went on with the copy until the URI scan moved into
+`ModelicaUriScanner`. `ModelicaGraph.Tests/ResourceRuleParityTests.cs` now reads every snippet in
+`ExternalResourceExtractorTests.cs` and asserts the production visitor finds the same resources, and
+fails if a resource rule reappears in `ModelAnalyzer.cs` — so a case added to the extractor's tests is
+checked against the graph build without a second edit. Keep those tests' snippets in the
+`var code = @"...";` form the parity test reads.
 
 **Extracted Sources:**
 - `loadResource()` function calls
@@ -278,8 +291,8 @@ public enum DirectoryAnnotationType
 | File | Purpose |
 |------|---------|
 | `ModelicaParser/DataTypes/ExternalResourceInfo.cs` | Resource info and ResourceReferenceType enum |
-| `ModelicaParser/Visitors/ExternalResourceExtractor.cs` | Standalone parse tree visitor for extraction |
-| `ModelicaGraph/ParserVisitors/ModelAnalyzer.cs` | The extraction the graph build actually uses (pass 1) |
+| `ModelicaParser/Visitors/ExternalResourceExtractor.cs` | The one rule set for extraction; usable alone on a parse tree |
+| `ModelicaGraph/ParserVisitors/ModelAnalyzer.cs` | The graph build's visitor: derives from the extractor, adds dependencies and loadSelector pass 1 |
 | `ModelicaGraph/ParserVisitors/LoadSelectorModificationAnalyzer.cs` | Pass 2: modifications of loadSelector/loadResource parameters |
 | `ModelicaGraph/DataTypes/ResourceFileNode.cs` | File resource graph node |
 | `ModelicaGraph/DataTypes/ResourceDirectoryNode.cs` | Directory resource graph node |
@@ -296,12 +309,14 @@ public enum DirectoryAnnotationType
 ```bash
 dotnet test ModelicaParser.Tests --filter ExternalResourceExtractor
 dotnet test ModelicaGraph.Tests --filter LoadSelector
+dotnet test ModelicaGraph.Tests --filter ResourceRuleParity
 dotnet test ModelicaGraph.Tests --filter "AnalyzeDependencies_WithExternal"
 dotnet test MLQT.Services.Tests --filter ExternalResourceService
 ```
 
 Key test files:
 - `ModelicaParser.Tests/ExternalResourceExtractorTests.cs` (and `ExternalResourceEntityTests.cs`)
+- `ModelicaGraph.Tests/ResourceRuleParityTests.cs` - the graph build finds what the extractor finds (B511)
 - `ModelicaGraph.Tests/LoadSelectorAnalyzerTests.cs` and `LoadSelectorPassTwoScopeTests.cs`
 - `ModelicaGraph.Tests/GraphBuilderTests.cs` - External resource resolution tests (`AnalyzeDependencies_WithExternal*`)
 - `MLQT.Services.Tests/ExternalResourceServiceTests.cs`

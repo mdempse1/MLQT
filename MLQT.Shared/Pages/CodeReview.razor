@@ -499,13 +499,9 @@
     </DialogContent>
     <DialogActions>
         <MudStack Row="true">
-            @if (IsSpellingFinding(_currentFinding))
-            {
-                <MudTooltip Text="@(CanAddToDictionary ? "Accept this word for this repository" : NoRepositoryDictionaryTooltip)">
-                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(!CanAddToDictionary)"
-                        OnClick="AddToDictionary" Class="px-10">Add to Dictionary</MudButton>
-                </MudTooltip>
-            }
+            @* No Add to Dictionary here: a spelling finding never opens this dialog (RowClickEvent
+               scrolls to the word instead), and the code viewer's right-click menu is where a word
+               is accepted (B510). *@
             @if (CanSplitPackage(_currentFinding))
             {
                 <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@(() => SplitPackageForFinding(_currentFinding))"

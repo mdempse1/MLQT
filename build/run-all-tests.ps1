@@ -57,7 +57,7 @@
 
 .EXAMPLE
     ./build/run-all-tests.ps1 -CoreOnly -SkipBuild
-    The seven suites CI runs, against the current build. Use -CoreOnly on a machine without Dymola
+    The nine suites CI runs, with CI's filters, against the current build. Use -CoreOnly on a machine without Dymola
     or OpenModelica, rather than reading past their failures.
 #>
 

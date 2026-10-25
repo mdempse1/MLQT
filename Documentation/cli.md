@@ -70,7 +70,7 @@ copy of a library has that another does not, and `mlqt hook`
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
 | `--timings` | Print where the run's time went to stderr when it finishes: parsing, each style rule by name, each whole-graph analysis | off |
-| `-h`, `--help` | Show help. Used on its own (`mlqt --help`, or `mlqt help`), not after a command | |
+| `-h`, `--help` | Show help and exit `0`: on its own (`mlqt --help`, `mlqt help`) or after any command (`mlqt check --help`) | |
 | `--version` | Print the tool's version and exit. Used on its own, not with `check` | |
 
 **Relative paths.** `--config`, `--baseline`, `--sarif-base` and `--metrics-out` are resolved against
@@ -905,9 +905,9 @@ enclose that directory. On success it prints both the hook's path and the reposi
 | `--dependency <path>` | Load another library so references resolve. Repeatable | none |
 | `--force` | Replace (or delete) a `pre-commit` hook mlqt did not write | off |
 
-The options are baked into the generated script; re-run `mlqt hook install` to change them. A
-relative `--baseline` or `--dependency` is resolved against the library path, as `check` resolves
-`--baseline`; one inside the working tree is written relative to its top, so it follows the hook into
+The options are baked into the generated script; re-run `mlqt hook install` to change them. Relative
+paths resolve as they do for `check`: `--baseline` against the library path, `--dependency` against
+the current directory you run `install` from. Either one inside the working tree is written relative to its top, so it follows the hook into
 every worktree. The hook always adds `--no-color`.
 
 `install`, `uninstall` and `status` exit `0` when they did what was asked (including "No pre-commit

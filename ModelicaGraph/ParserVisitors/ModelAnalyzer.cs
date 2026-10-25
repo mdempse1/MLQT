@@ -2,6 +2,7 @@ using Antlr4.Runtime.Misc;
 using ModelicaParser;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
+using ModelicaParser.Visitors;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -10,13 +11,20 @@ namespace ModelicaGraph;
 /// Combined visitor that performs dependency analysis, external resource extraction,
 /// and loadSelector parameter discovery in a single pass over the parse tree.
 ///
-/// Replaces separate DependencyAnalyzer, ExternalResourceExtractor, and LoadSelectorAnalyzer
-/// (Pass 1) visitors to avoid walking the same parse tree multiple times.
+/// Replaces separate DependencyAnalyzer and LoadSelectorAnalyzer (Pass 1) visitors to avoid walking
+/// the same parse tree multiple times.
+///
+/// <para><b>The resource rules are inherited, not copied (B511).</b> loadResource calls,
+/// <c>modelica://</c> URIs and the external clause's annotations are found by
+/// <see cref="ExternalResourceExtractor"/>, which this class derives from. It used to hold its own
+/// copy of those rules, and B209 was fixed in the extractor - which only tests constructed - while
+/// the graph build went on using the copy. What is here is what the extractor cannot know: the
+/// dependencies, and the loadSelector parameters that need the graph.</para>
 ///
 /// Cross-model loadSelector modification tracking (Pass 2) remains in
 /// LoadSelectorModificationAnalyzer as it requires knowledge of all discovered parameters.
 /// </summary>
-public class ModelAnalyzer : modelicaBaseVisitor<object?>
+public class ModelAnalyzer : ExternalResourceExtractor
 {
     private readonly string _modelId;
     private readonly DirectedGraph _graph;
@@ -36,21 +44,6 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     private int _annotationDepth;
     private int _annotationCodeDepth;
 
-    // --- External resource state (from ExternalResourceExtractor) ---
-    private static readonly Dictionary<string, ResourceReferenceType> ExternalAnnotationKeys = new(StringComparer.Ordinal)
-    {
-        { "Include", ResourceReferenceType.ExternalInclude },
-        { "Library", ResourceReferenceType.ExternalLibrary },
-        { "IncludeDirectory", ResourceReferenceType.ExternalIncludeDirectory },
-        { "LibraryDirectory", ResourceReferenceType.ExternalLibraryDirectory },
-        { "SourceDirectory", ResourceReferenceType.ExternalSourceDirectory }
-    };
-
-    private readonly List<ExternalResourceInfo> _resources = new();
-    private bool _inLoadResourceCall;
-    /// <summary>The path a loadResource call names, when its argument is a lone string literal (B210).</summary>
-    private string? _loadResourcePath;
-
     // --- LoadSelector Pass 1 state (from LoadSelectorAnalyzer) ---
     private bool _isParameterDeclaration;
     private string? _currentTypeName;
@@ -63,11 +56,6 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// Gets the discovered model dependencies.
     /// </summary>
     public HashSet<string> ReferencedModels => _referencedModels;
-
-    /// <summary>
-    /// Gets the extracted external resource references.
-    /// </summary>
-    public List<ExternalResourceInfo> Resources => _resources;
 
     /// <param name="ancestors">Each class's bases, kept for the run: name lookup asks every scope
     /// what it inherits. Share one across the analyzers of one pass.</param>
@@ -181,96 +169,27 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     #endregion
 
-    #region External Resource Extraction (from ExternalResourceExtractor)
+    #region LoadSelector Pass 1 - loadResource defaults
 
     /// <summary>
-    /// Visit composition to extract external clause annotation resources
-    /// (Include, Library, IncludeDirectory, LibraryDirectory, SourceDirectory).
-    /// </summary>
-    public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
-    {
-        // By position, not index: annotation()[0] is the leading class annotation when there is one
-        // (B446).
-        if (CompositionAnnotations.External(context) is { } externalAnnotation)
-            ExtractExternalAnnotationResources(externalAnnotation);
-
-        return base.VisitComposition(context);
-    }
-
-    /// <summary>
-    /// Visit primary to handle both external resource extraction and loadSelector parameter detection.
-    /// Merges VisitPrimary from ExternalResourceExtractor and LoadSelectorAnalyzer.
+    /// Flags a parameter whose default comes from <c>loadResource</c>, then leaves the resource itself
+    /// to <see cref="ExternalResourceExtractor.VisitPrimary"/> - the one place the loadResource,
+    /// <c>modelica://</c> and external-annotation rules are written.
     /// </summary>
     public override object? VisitPrimary([NotNull] modelicaParser.PrimaryContext context)
     {
-        // Check for function calls like loadResource(...)
-        if (context.component_reference() != null && context.function_call_args() != null)
-        {
-            var identTokens = context.component_reference().IDENT();
-            if (identTokens != null && identTokens.Length > 0)
-            {
-                var function = string.Join(".", identTokens.Select(t => t.GetText()));
-
-                if (function == "Modelica.Utilities.Files.loadResource" ||
-                    function == "ModelicaServices.ExternalReferences.loadResource")
-                {
-                    // External resource: capture the argument only when it *is* a path.
-                    //
-                    // A composed argument - loadResource("modelica://" + packageName + "/package.mo")
-                    // - has a value only once the model is translated. Capturing every literal met
-                    // inside the call turned that one line into two resources, "modelica://" and
-                    // "/package.mo", and the second was reported as a missing file (B210).
-                    //
-                    // The arguments are still walked, because they can hold component and type
-                    // references that this visitor exists to record; only the capture is gated.
-                    _loadResourcePath = ResourceArgument.SoleStringLiteral(context.function_call_args());
-                    _inLoadResourceCall = true;
-                    Visit(context.function_call_args());
-                    _inLoadResourceCall = false;
-                    _loadResourcePath = null;
-
-                    // LoadSelector Pass 1: flag loadResource default for parameter tracking
-                    if (_isParameterDeclaration)
-                        _hasLoadResourceDefault = true;
-
-                    return null;
-                }
-
-                // LoadSelector: also check short form "loadResource" for parameter default detection
-                if (_isParameterDeclaration && function == "loadResource")
-                    _hasLoadResourceDefault = true;
-            }
-        }
-
-        // Check for string literals
-        if (context.STRING() != null)
-        {
-            var text = context.STRING().GetText();
-            if (_inLoadResourceCall)
-            {
-                // Only the literal the call consists of, and only once - not every literal inside a
-                // composed expression.
-                var path = StripQuotes(text);
-                if (_loadResourcePath is not null && path == _loadResourcePath)
-                {
-                    _resources.Add(new ExternalResourceInfo
-                    {
-                        RawPath = path,
-                        ReferenceType = ResourceReferenceType.LoadResource
-                    });
-                    _loadResourcePath = null;
-                }
-            }
-            else
-            {
-                // Check for modelica:// URI references in any string literal
-                ExtractModelicaUris(text);
-            }
-            return null;
-        }
+        // The short form - loadResource(...) under an import - marks the parameter too. It is not
+        // captured as a resource: which function it names is not known without the imports.
+        if (_isParameterDeclaration && (IsLoadResourceCall(context) || IsShortFormLoadResourceCall(context)))
+            _hasLoadResourceDefault = true;
 
         return base.VisitPrimary(context);
     }
+
+    private static bool IsShortFormLoadResourceCall(modelicaParser.PrimaryContext context)
+        => context.function_call_args() != null
+           && context.component_reference()?.IDENT() is [{ } only]
+           && only.GetText() == "loadResource";
 
     #endregion
 
@@ -320,7 +239,7 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
                 var path = StripQuotes(_currentDefaultValue);
                 if (!string.IsNullOrWhiteSpace(path) && path != "NoName" && path != "")
                 {
-                    _resources.Add(new ExternalResourceInfo
+                    Resources.Add(new ExternalResourceInfo
                     {
                         RawPath = path,
                         ReferenceType = ResourceReferenceType.LoadSelector,
@@ -476,116 +395,6 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private string GetComponentReferenceName(modelicaParser.Component_referenceContext context)
         => ReferenceResolver.GetComponentReferenceName(context);
-
-    #endregion
-
-    #region External Resource Helpers
-
-    private void ExtractExternalAnnotationResources(modelicaParser.AnnotationContext annotation)
-    {
-        var classMod = annotation.class_modification();
-        if (classMod == null) return;
-
-        var argList = classMod.argument_list();
-        if (argList == null) return;
-
-        foreach (var argument in argList.argument())
-        {
-            var elemMod = argument.element_modification_or_replaceable()?.element_modification();
-            if (elemMod == null) continue;
-
-            var nameCtx = elemMod.name();
-            if (nameCtx == null) continue;
-
-            var name = nameCtx.GetText();
-            if (!ExternalAnnotationKeys.TryGetValue(name, out var referenceType))
-                continue;
-
-            var modification = elemMod.modification();
-            var modExpr = modification?.modification_expression();
-            var expression = modExpr?.expression();
-            if (expression == null) continue;
-
-            ExtractStringValues(expression, referenceType);
-        }
-    }
-
-    private void ExtractStringValues(modelicaParser.ExpressionContext expression, ResourceReferenceType referenceType)
-    {
-        var primaries = new List<modelicaParser.PrimaryContext>();
-        CollectPrimaries(expression, primaries);
-
-        foreach (var primary in primaries)
-        {
-            if (primary.STRING() != null)
-            {
-                var path = StripQuotes(primary.STRING().GetText());
-                if (!string.IsNullOrWhiteSpace(path))
-                {
-                    _resources.Add(new ExternalResourceInfo
-                    {
-                        RawPath = path,
-                        ReferenceType = referenceType
-                    });
-                }
-            }
-            else if (primary.array_arguments() != null)
-            {
-                ExtractStringsFromArrayArguments(primary.array_arguments(), referenceType);
-            }
-        }
-    }
-
-    private void ExtractStringsFromArrayArguments(modelicaParser.Array_argumentsContext arrayArgs, ResourceReferenceType referenceType)
-    {
-        var primaries = new List<modelicaParser.PrimaryContext>();
-        CollectPrimaries(arrayArgs, primaries);
-
-        foreach (var primary in primaries)
-        {
-            if (primary.STRING() != null)
-            {
-                var path = StripQuotes(primary.STRING().GetText());
-                if (!string.IsNullOrWhiteSpace(path))
-                {
-                    _resources.Add(new ExternalResourceInfo
-                    {
-                        RawPath = path,
-                        ReferenceType = referenceType
-                    });
-                }
-            }
-        }
-    }
-
-    private static void CollectPrimaries(Antlr4.Runtime.Tree.IParseTree node, List<modelicaParser.PrimaryContext> primaries)
-    {
-        if (node is modelicaParser.PrimaryContext primary)
-        {
-            primaries.Add(primary);
-            return;
-        }
-
-        for (int i = 0; i < node.ChildCount; i++)
-        {
-            CollectPrimaries(node.GetChild(i), primaries);
-        }
-    }
-
-    private void ExtractModelicaUris(string stringLiteral)
-    {
-        // Scanned by the shared helper, not by a copy of its loop. This method and
-        // ExternalResourceExtractor's held byte-for-byte identical versions, and the graph build uses
-        // this one - so B209 was fixed in the other and nothing a user could see changed.
-        foreach (var uri in ModelicaUriScanner.FindFileUris(StripQuotes(stringLiteral)))
-        {
-            _resources.Add(new ExternalResourceInfo
-            {
-                RawPath = uri,
-                ReferenceType = ResourceReferenceType.UriReference
-            });
-        }
-    }
 
     #endregion
 

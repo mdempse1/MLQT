@@ -96,8 +96,9 @@ So a library can come into MLQT in two ways, and **MLQT records which way each o
 
 - **Explicitly:** a path the caller passed to `mlqt_load`. This wins. If the library is already
   loaded as a searched dependency, at another version or from another path, that copy is unloaded and
-  the explicit one loaded in its place. The answer names both. Dependency analysis is re-run for the
-  classes that used it. If an explicit copy is already loaded from another path, the call is refused
+  the explicit one loaded in its place. The answer names both. Any load that changes which libraries
+  are loaded marks the dependency and resource analysis as not run, so the next tool needing it runs
+  it again over the libraries now loaded (B506). If an explicit copy is already loaded from another path, the call is refused
   unless `replace: true`. Two explicit copies disagreeing means the caller has to choose. A library
   the host **supplied from memory** counts as explicit, and is the one copy that cannot be loaded
   again, so it stays loaded until its replacement has loaded. **An encrypted build of the release it
@@ -133,7 +134,8 @@ warning in the answer: the simulator is using that version, so MLQT must use it 
 To support this, `mlqt_load` takes **a list of paths**. All of them are loaded explicitly first, and
 only then is the search run, for what is still missing. One call reproduces a startup script's set
 without the search getting in first. `mlqt_session status` shows each library's version, path and
-whether it came explicitly or by search.
+`origin` - `explicit` or `search` (B513). A library loaded with its repository, by a reload or supplied
+by a host has no search behind it and counts as explicit.
 
 **Where the set comes from depends on the tool.**
 

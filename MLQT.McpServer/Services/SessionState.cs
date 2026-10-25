@@ -18,6 +18,13 @@ public sealed class SessionState
     internal Dictionary<string, string> LibraryOrigins { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// How the library came in. One with no record was not loaded by <c>mlqt_load</c>'s search - a
+    /// repository, a reload or a host supplied it - and counts as explicit, as the loader treats it.
+    /// </summary>
+    internal string OriginOf(string libraryId) =>
+        LibraryOrigins.TryGetValue(libraryId, out var origin) ? origin : "explicit";
+
+    /// <summary>
     /// The simulation tool install whose library folders the last dependency search used, or null when
     /// none has. A later <c>mlqt_load</c> naming another install searches again from it, in place of what
     /// the earlier search found: the newest install on a machine need not be the one running (B504).

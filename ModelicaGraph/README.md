@@ -373,7 +373,9 @@ MIT License — see [LICENSE](../LICENSE) for details.
 
 ## Dependencies
 
-- **ModelicaParser** - ANTLR-based parser used by GraphBuilder for parsing and analysis
-- **RevisionControl** - Project reference in `ModelicaGraph.csproj` (no type from it is used in this assembly's source today)
+- **ModelicaParser** - ANTLR-based parser used by GraphBuilder for parsing and analysis, and its only
+  project reference. It referenced `RevisionControl` until 2026-10-25 without using it, which pulled
+  RevisionControl and its packages into every build of this assembly (B517); a consumer that relied on
+  getting them that way now references `RevisionControl` itself
 
 The assembly's public surface is tracked in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`.
