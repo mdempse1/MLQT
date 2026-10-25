@@ -78,3 +78,5 @@ ModelicaGraph.StyleCheckingSettings.CheckGrammarConformance.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckGrammarConformance.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.set -> void
+ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.get -> System.Collections.Generic.List<string!>!
+ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.set -> void

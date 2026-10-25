@@ -339,6 +339,22 @@ Members reached through anything `replaceable`, through an `expandable` connecto
 type MLQT does not resolve. Each distinct name is reported once per class, at its first use. Over MSL
 4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
 
+#### Accepting a tool's built-ins
+
+Dymola and OpenModelica each provide names that no library declares, and code using them works in
+that tool and no other. While `MLQT.Reference.Undeclared` is on, the Static analysis section shows a
+checkbox for each tool, stored as `AcceptedToolBuiltIns` in `settings.json`:
+
+| `"AcceptedToolBuiltIns"` | What is accepted as declared |
+|--------------------------|------------------------------|
+| `[]` | Default. Nothing: every use of a tool's built-in is reported, and the finding names the tool. For a library that has to load in any tool |
+| `["Dymola"]` | Dymola's built-in functions (`classDirectory()`, `DymolaVersion()` and the rest), its flags in the `Advanced` and `Hidden` packages, and every function whose name starts with `Dymola_AST_` |
+| `["OpenModelica"]` | Everything in the `OpenModelica` package (`OpenModelica.Scripting` and the rest) |
+| `["Dymola", "OpenModelica"]` | Both |
+
+A tool's name counts only where nothing in the loaded libraries declares it: a library's own class
+called `plot` is what `plot` means there, whichever tools are ticked.
+
 #### Strict Modelica 3.7 syntax
 
 MLQT's grammar is the [Modelica 3.7 concrete syntax](https://specification.modelica.org/maint/3.7/modelica-concrete-syntax.html),

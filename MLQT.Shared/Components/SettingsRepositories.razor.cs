@@ -482,6 +482,19 @@ public partial class SettingsRepositories : IDisposable
         RepositoryService.RemoveRepository(_selectedItem.Id, true);
     }
 
+    // Whether MLQT.Reference.Undeclared accepts this tool's built-ins. Tool names compare ignoring
+    // case, as ToolBuiltIns does, since a settings file may have been written by hand.
+    internal bool IsToolAccepted(string tool) =>
+        SelectedSettings.AcceptedToolBuiltIns.Contains(tool, StringComparer.OrdinalIgnoreCase);
+
+    internal void SetToolAccepted(string tool, bool accepted)
+    {
+        SelectedSettings.AcceptedToolBuiltIns.RemoveAll(t => string.Equals(t, tool, StringComparison.OrdinalIgnoreCase));
+        if (accepted)
+            SelectedSettings.AcceptedToolBuiltIns.Add(tool);
+        StateHasChanged();
+    }
+
     private void OnInitialEqFirst(bool value)
     {
         SelectedSettings.InitialEQAlgoFirst = value;

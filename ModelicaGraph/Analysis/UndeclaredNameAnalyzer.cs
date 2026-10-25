@@ -39,7 +39,7 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
 
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)
     {
-        var run = new Run(context.Graph);
+        var run = new Run(context.Graph, context.Settings.AcceptedToolBuiltIns);
         var models = context.Models;
         var perClass = new List<Finding>?[models.Count];
         Parallel.For(0, models.Count, i => perClass[i] = run.UndeclaredIn(models[i]));
@@ -79,8 +79,11 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
     }
 
     // What one analysis shares between classes: the caches, and the answers about whole classes.
-    private sealed class Run(DirectedGraph graph)
+    private sealed class Run(DirectedGraph graph, IReadOnlyCollection<string> acceptedTools)
     {
+        /// <summary>Whether the repository accepts <paramref name="tool"/>'s own functions and flags.</summary>
+        public bool AcceptsBuiltInsOf(string tool) => acceptedTools.Contains(tool, StringComparer.OrdinalIgnoreCase);
+
         private readonly ClassElementResolver.InterfaceCache _interfaces = new();
         private readonly TypeResolver.AncestorCache _ancestors = new();
         private readonly ConcurrentDictionary<string, bool> _complete = new(StringComparer.Ordinal);
@@ -478,8 +481,18 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
             if (references.QualifyingClass(first, global) is not null)
                 return FromClassNamed(first, segments, global, text);
 
-            if (!FirstSegmentIsKnowable(first, global, plainValue))
+            // A tool's own function or flag, asked only now that nothing in the libraries declares it:
+            // a class a library declares under the same name is what the name means.
+            var tool = ToolBuiltIns.ToolOf(text);
+            if (tool is not null && run.AcceptsBuiltInsOf(tool))
+                return Verdict.Declared;
+
+            // A tool's name is no library's, so it is not one that might be loaded later; a scope
+            // that is not complete could still declare it.
+            if (!FirstSegmentIsKnowable(first, global, plainValue || tool is not null))
                 return Verdict.Unknown;
+            if (tool is not null)
+                return Verdict.Undeclared($"'{text.TrimStart('.')}' is not declared: it is a built-in of {tool}, which this repository does not accept, so other tools will not find it");
             return Verdict.Undeclared(segments.Count == 1
                 ? $"'{first}' is not declared: nothing of that name is declared in this class, inherited, imported or reachable from it"
                 : $"'{first}' in '{text}' is not declared: nothing of that name is declared in this class, inherited, imported or reachable from it");

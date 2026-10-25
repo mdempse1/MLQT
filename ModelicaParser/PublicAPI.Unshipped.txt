@@ -45,3 +45,9 @@ override ModelicaParser.StyleRules.GrammarConformance.VisitShort_class_specifier
 override ModelicaParser.StyleRules.GrammarConformance.VisitStatement(modelicaParser.StatementContext! context) -> object?
 override ModelicaParser.StyleRules.GrammarConformance.VisitTerminal(Antlr4.Runtime.Tree.ITerminalNode! node) -> object?
 static ModelicaParser.StyleRules.GrammarConformance.Code(ModelicaParser.StyleRules.GrammarConformance.Kind kind) -> string!
+ModelicaParser.Helpers.ToolBuiltIns
+const ModelicaParser.Helpers.ToolBuiltIns.Dymola = "Dymola" -> string!
+const ModelicaParser.Helpers.ToolBuiltIns.OpenModelica = "OpenModelica" -> string!
+static ModelicaParser.Helpers.ToolBuiltIns.IsAccepted(string? reference, System.Collections.Generic.IEnumerable<string!>? acceptedTools) -> bool
+static ModelicaParser.Helpers.ToolBuiltIns.ToolOf(string? reference) -> string?
+static ModelicaParser.Helpers.ToolBuiltIns.Tools.get -> System.Collections.Generic.IReadOnlyList<string!>!

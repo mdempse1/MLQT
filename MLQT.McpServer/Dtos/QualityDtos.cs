@@ -68,6 +68,11 @@ public sealed class StyleSettingsInput
                  "grammar, such as a class annotation before the elements, ':=' in a modification, or an escape MLS does not define.")]
     public bool? CheckGrammarConformance { get; set; }
 
+    [Description("The tools whose own built-in functions and flags checkUndeclaredNames accepts as declared: " +
+                 "\"Dymola\" (classDirectory(), Advanced.* and Hidden.* flags, Dymola_AST_*), \"OpenModelica\" " +
+                 "(the OpenModelica package), both, or [] for neither, which is the default. Leave out to keep the current list.")]
+    public IReadOnlyList<string>? AcceptedToolBuiltIns { get; set; }
+
     /// <summary>Spell-check dictionary language codes, e.g. ["en_US", "en_GB"]. Bundled codes are
     /// en_US and en_GB; other codes must have been imported as Hunspell dictionaries. When null or
     /// empty on save, the existing languages are kept.</summary>
@@ -143,6 +148,10 @@ public sealed class StyleSettingsInput
 
         if (SpellCheckLanguages is { Count: > 0 })
             s.SpellCheckLanguages = SpellCheckLanguages.ToList();
+
+        // Empty is a value here - "accept no tool's built-ins" - so only null leaves it alone.
+        if (AcceptedToolBuiltIns is not null)
+            s.AcceptedToolBuiltIns = AcceptedToolBuiltIns.ToList();
     }
 
     /// <summary>A fresh, full settings object from this input (default naming/SVN config). Rules the
@@ -168,7 +177,11 @@ public sealed class StyleSettingsInput
     /// </summary>
     public static StyleSettingsInput From(StyleCheckingSettings s)
     {
-        var input = new StyleSettingsInput { SpellCheckLanguages = s.SpellCheckLanguages?.ToList() };
+        var input = new StyleSettingsInput
+        {
+            SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
+            AcceptedToolBuiltIns = s.AcceptedToolBuiltIns.ToList(),
+        };
 
         foreach (var toggle in _toggles)
             toggle.Write(input, s.IsRuleSwitchedOn(toggle.RuleId));

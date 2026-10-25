@@ -4,6 +4,7 @@ using System.Linq;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.StyleRules;
 using Xunit;
 
@@ -14,13 +15,16 @@ public class UndeclaredNameAnalyzerTests
     // Each source is loaded as a file, as a library is, so nested classes become nodes of their own.
     private static List<Finding> Run(params string[] sources) => Run(_ => { }, sources);
 
-    private static List<Finding> Run(System.Action<DirectedGraph> arrange, params string[] sources)
+    private static List<Finding> Run(System.Action<DirectedGraph> arrange, params string[] sources) =>
+        Run(arrange, [], sources);
+
+    private static List<Finding> Run(System.Action<DirectedGraph> arrange, List<string> acceptedTools, params string[] sources)
     {
         var graph = new DirectedGraph();
         for (var i = 0; i < sources.Length; i++)
             GraphBuilder.LoadModelicaFile(graph, Path.Combine(Path.GetTempPath(), $"undeclared{i}.mo"), sources[i]);
         arrange(graph);
-        var settings = new StyleCheckingSettings { CheckUndeclaredNames = true };
+        var settings = new StyleCheckingSettings { CheckUndeclaredNames = true, AcceptedToolBuiltIns = acceptedTools };
         var context = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
         return GraphAnalysisRunner.Run(context, new IGraphAnalyzer[] { new UndeclaredNameAnalyzer() })
             .Where(f => f.RuleId == RuleIds.UndeclaredName)
@@ -568,5 +572,70 @@ public class UndeclaredNameAnalyzerTests
                 extends P.Missing;
               end M;
             """))));
+    }
+
+    // ---- tools' own built-ins ---------------------------------------------------------------------
+
+    private static readonly string UsesTools = Library("""
+          model M
+            parameter String dir = classDirectory();
+            parameter Boolean sparse = Advanced.Translation.SparseActivate;
+            parameter Boolean hidden = Hidden.Flag;
+            parameter Integer ast = Dymola_AST_Something(1);
+            parameter String version = OpenModelica.Scripting.getVersion();
+          end M;
+        """, uses: "Modelica(version=\"4.1.0\")");
+
+    [Fact]
+    public void AToolsBuiltIns_AreReportedWhenNoToolIsAccepted()
+    {
+        var findings = Run(_ => { }, [], UsesTools);
+
+        Assert.Equal(["classDirectory", "Advanced.Translation.SparseActivate", "Hidden.Flag", "Dymola_AST_Something",
+            "OpenModelica.Scripting.getVersion"], Names(findings));
+        Assert.Contains("it is a built-in of Dymola, which this repository does not accept", findings[0].Message);
+        Assert.Contains("it is a built-in of OpenModelica", findings[^1].Message);
+    }
+
+    [Fact]
+    public void AnAcceptedToolsBuiltIns_AreDeclared()
+    {
+        Assert.Equal(["OpenModelica.Scripting.getVersion"], Names(Run(_ => { }, [ToolBuiltIns.Dymola], UsesTools)));
+        Assert.Equal(["classDirectory", "Advanced.Translation.SparseActivate", "Hidden.Flag", "Dymola_AST_Something"],
+            Names(Run(_ => { }, ["openmodelica"], UsesTools)));
+        Assert.Empty(Run(_ => { }, [ToolBuiltIns.Dymola, ToolBuiltIns.OpenModelica], UsesTools));
+    }
+
+    [Fact]
+    public void AToolsFlag_NeedsNoUsesAnnotationToBeReported()
+    {
+        // `Advanced` cannot be a library that is not loaded, so the missing uses(...) does not excuse it.
+        Assert.Equal(["Advanced.X"], Names(Run("package P\n  model M\n    Boolean b = Advanced.X;\n  end M;\nend P;")));
+    }
+
+    [Fact]
+    public void AClassALibraryDeclares_WinsOverAToolsName()
+    {
+        // The library's own `plot` is what the name means, whether or not Dymola is accepted.
+        Assert.Empty(Run(Library("""
+              function plot
+                input Real x;
+                output Real y = x;
+              end plot;
+              model M
+                Real y = plot(1);
+              end M;
+            """)));
+    }
+
+    [Fact]
+    public void AToolsName_IsNotReportedWhereTheScopeIsNotKnown()
+    {
+        OnlyTheControl(Run(Control, Library("""
+              model M
+                extends Other.Base;
+                parameter String dir = classDirectory();
+              end M;
+            """, uses: "Other(version=\"1.0\")")));
     }
 }

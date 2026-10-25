@@ -489,6 +489,27 @@
                 </MudText>
             }
 
+            @* Also a modifier on one rule: which tools' own functions and flags count as declared.
+               Shown only while the rule is on, for the same reason. *@
+            @if (SelectedSettings.CheckUndeclaredNames)
+            {
+                <MudText Typo="Typo.body1" Class="mt-2 mb-0">Accept the built-in functions and flags of:</MudText>
+                <MudStack Row="true" Spacing="0">
+                    @foreach (var tool in ToolBuiltIns.Tools)
+                    {
+                        <MudCheckBox T="bool" Value="@IsToolAccepted(tool)" ValueChanged="@(v => SetToolAccepted(tool, v))"
+                            Label="@tool" Dense="true" Size="Size.Small" Color="Color.Primary" />
+                    }
+                </MudStack>
+                <MudText Typo="Typo.caption" Class="mb-1">
+                    A name only a tool provides works in that tool and in no other: Dymola's
+                    <code>classDirectory()</code>, its <code>Advanced.</code> and <code>Hidden.</code> flags
+                    and <code>Dymola_AST_</code> functions, or OpenModelica's <code>OpenModelica</code> package.
+                    Tick the tools this library is written for. Leave all unticked to report every use, for a
+                    library that has to load in any tool.
+                </MudText>
+            }
+
             <MudText Typo="Typo.subtitle2" Class="mt-4">Excluded libraries</MudText>
             <MudText Typo="Typo.body1" Class="mt-2 mb-1">
                 Top-level library names that are loaded but never reported on — typically the test-case and
