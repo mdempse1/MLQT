@@ -56,7 +56,7 @@ public static class UnitResolver
         if (name == "Real")
             return UnitAttributes.PlainReal;
         if (TypeResolver.IsPredefined(name))
-            return UnitAttributes.None;   // Integer/Boolean/String/Complex/Clock — not a Real quantity
+            return UnitAttributes.None;   // Integer/Boolean/String/Clock — not a Real quantity
 
         var node = TypeResolver.ResolveWithInheritance(graph, ownerId, typeText, imports, ancestors);
         return node is null

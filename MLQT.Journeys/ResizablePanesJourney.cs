@@ -374,6 +374,55 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
             $"the viewer should have given up the alert's height, not pushed the page down: {grew} -> {after}");
     }
 
+    /// <summary>
+    /// A click on the first pane's scrollbar reaches the scrollbar. MudBlazor widens a divider's
+    /// grab area with a <c>::before</c> reaching 12px past every side of the 4px gap, which lay over
+    /// the tree's vertical scrollbar and the code viewer's horizontal one, so pressing either started
+    /// a drag and only the mouse wheel could scroll. app.css lets the grab area grow into the second
+    /// pane only; this holds both halves of that, in every split of ours on the two pages that have
+    /// them.
+    /// </summary>
+    [Fact]
+    public async Task TheFirstPanesScrollbarIsNotUnderTheDividersGrabArea()
+    {
+        var page = await OpenAsync(0);
+        await Assertions.Expect(page.Locator(".mlqt-findings-pane").First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+        var codeReview = await DividerHitsAsync(page);
+        Assert.Equal(2, codeReview.Length);
+
+        page = await OpenAsync(2, withResources: true);
+        await Assertions.Expect(page.Locator(".mlqt-resource-tree-pane").First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+        var resources = await DividerHitsAsync(page);
+        Assert.Equal(2, resources.Length);
+
+        foreach (var hit in codeReview.Concat(resources))
+        {
+            Assert.True(hit.Contains("first pane:no"), $"the first pane's scrollbar is under the divider: {hit}");
+            Assert.True(hit.EndsWith("second pane:yes"), $"the divider cannot be grabbed beside its gap: {hit}");
+        }
+    }
+
+    /// <summary>
+    /// For each visible divider of ours: whether a point 2px inside the first pane (where its
+    /// scrollbar is) and one 6px inside the second pane land on the divider.
+    /// </summary>
+    private static Task<string[]> DividerHitsAsync(IPage page) =>
+        page.EvaluateAsync<string[]>(@"() => [...document.querySelectorAll('.mlqt-split-divider')]
+            .filter(d => d.getBoundingClientRect().width > 0)
+            .map(d => {
+                const r = d.getBoundingClientRect();
+                const across = d.classList.contains('horizontal');
+                const at = (x, y) => {
+                    const e = document.elementFromPoint(x, y);
+                    return d.contains(e) ? 'yes' : `no (${e?.tagName.toLowerCase()}.${(e?.className || '').toString().split(' ').join('.')})`;
+                };
+                const first = across ? at(r.left + r.width / 2, r.top - 2) : at(r.left - 2, r.top + r.height / 2);
+                const second = across ? at(r.left + r.width / 2, r.bottom + 6) : at(r.right + 6, r.top + r.height / 2);
+                return `${across ? 'horizontal' : 'vertical'} first pane:${first} second pane:${second}`;
+            })");
+
     [Fact]
     public async Task TheResourceTreeColumnCanBeWidened()
     {

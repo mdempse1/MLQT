@@ -69,3 +69,14 @@ ModelicaGraph.ModelicaGraphJson
 static ModelicaGraph.ModelicaGraphJson.Contracts.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver!
 ModelicaGraph.StyleCheckingSettings.ToJson() -> string!
 static ModelicaGraph.StyleCheckingSettings.FromJson(string! json) -> ModelicaGraph.StyleCheckingSettings?
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.UndeclaredNameAnalyzer() -> void
+ModelicaGraph.StyleCheckingSettings.CheckGrammarConformance.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckGrammarConformance.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.set -> void
+ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.get -> System.Collections.Generic.List<string!>!
+ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.set -> void

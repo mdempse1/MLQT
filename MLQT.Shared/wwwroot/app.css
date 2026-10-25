@@ -230,6 +230,28 @@ body * {
     background-color: var(--mud-palette-lines-default);
 }
 
+/* The divider's grab area grows into the second panel only. MudBlazor widens it with a ::before
+   reaching 12px past every side of the gap, which lies on top of the first panel's scrollbar - the
+   tree's vertical one beside the tabs, the code viewer's horizontal one above the findings - so a
+   click meant for the scrollbar started a drag instead, and only the wheel could scroll. In every
+   split of ours the scrollbar against the gap is the first panel's, and the second panel has
+   nothing there.
+
+   The z-index is what lets that half be grabbed at all. A second pane that is positioned - Code
+   Review's findings pane is `position: relative` - paints after the divider and over its ::before,
+   so without it the grab area there was the 4px gap and nothing more. */
+.mud-split-panel .divider.mlqt-split-divider {
+    z-index: 1;
+}
+
+.mud-split-panel .divider.mlqt-split-divider::before {
+    inset: -12px -8px -12px 0;
+}
+
+.mud-split-panel .divider.horizontal.mlqt-split-divider::before {
+    inset: 0 -12px -8px -12px;
+}
+
 /* The tree beside the tabs is a list as long as the libraries, and scrolls in its pane. */
 .mlqt-tree-pane {
     overflow: auto !important;

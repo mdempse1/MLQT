@@ -76,7 +76,7 @@ public static class ModelicaLanguage
 
         // Synchronous language elements (§16).
         "previous", "hold", "subSample", "superSample", "shiftSample", "backSample",
-        "noClock", "interval",
+        "noClock", "interval", "firstTick", "Subtask",
 
         // State machines (§17).
         "transition", "initialState", "activeState", "ticksInState", "timeInState",

@@ -53,6 +53,22 @@ public class SimpleTypeLookupTests
     }
 
     [Fact]
+    public void Complex_IsStillOrderedAsAVariable_LoadedOrNot()
+    {
+        // Complex is an operator record, not a predefined type, and resolves as a class now - but it
+        // has always been ordered among the variables, and the formatter must not start moving every
+        // Complex declaration into the components group.
+        var graph = Library();
+        Assert.True(StyleChecking.CreateSimpleTypeLookup(graph)!("Lib.M", "Complex"));
+
+        graph.AddNode(new ModelNode("Complex", "Complex", "operator record Complex Real re; Real im; end Complex;")
+        { ClassType = "record" });
+        var lookup = StyleChecking.CreateSimpleTypeLookup(graph)!;
+        Assert.True(lookup("Lib.M", "Complex"));
+        Assert.True(lookup("Lib.M", ".Complex"));
+    }
+
+    [Fact]
     public void ATypeThatResolvesToNothing_IsNotSimple()
     {
         // The same answer a caller with no graph gets, so a library that will not load does not have

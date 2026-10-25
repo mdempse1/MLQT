@@ -34,6 +34,25 @@ public class StyleSettingsCoverageTests
         return (style, res.Repository.Id);
     }
 
+    // ---- the accepted tools' built-ins ----------------------------------------------------------
+
+    [Fact]
+    public void AcceptedToolBuiltIns_RoundTrip_AndOnlyNullLeavesThemAlone()
+    {
+        var settings = new StyleCheckingSettings { AcceptedToolBuiltIns = ["Dymola"] };
+
+        Assert.Equal(["Dymola"], StyleSettingsInput.From(settings).AcceptedToolBuiltIns);
+
+        new StyleSettingsInput { CheckUndeclaredNames = true }.ApplyTo(settings);
+        Assert.Equal(["Dymola"], settings.AcceptedToolBuiltIns);  // not mentioned: kept
+
+        new StyleSettingsInput { AcceptedToolBuiltIns = ["Dymola", "OpenModelica"] }.ApplyTo(settings);
+        Assert.Equal(["Dymola", "OpenModelica"], settings.AcceptedToolBuiltIns);
+
+        new StyleSettingsInput { AcceptedToolBuiltIns = [] }.ApplyTo(settings);
+        Assert.Empty(settings.AcceptedToolBuiltIns);  // empty is a value: accept none
+    }
+
     // ---- the catalog guard (B38) --------------------------------------------------------------
 
     [Fact]

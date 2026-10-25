@@ -221,6 +221,9 @@ public class StyleCheckingSettings
         // Changes which package.order findings are reported, so the answer differs even though no
         // rule was switched on or off.
         PackageOrderMatchesDymola != other.PackageOrderMatchesDymola ||
+        // Which tools' built-ins count as declared, the same kind of modifier.
+        !AcceptedToolBuiltIns.Order(StringComparer.OrdinalIgnoreCase)
+            .SequenceEqual(other.AcceptedToolBuiltIns.Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase) ||
         !NamingConvention.Equals(other.NamingConvention) ||
         !SpellCheckLanguages.SequenceEqual(other.SpellCheckLanguages) ||
         !ExcludedLibraries.SequenceEqual(other.ExcludedLibraries, StringComparer.OrdinalIgnoreCase) ||
@@ -679,6 +682,27 @@ public class StyleCheckingSettings
     {
         get => IsRuleEnabled(RuleIds.UnusedMember);
         set => SetRuleEnabled(RuleIds.UnusedMember, value);
+    }
+    public bool CheckUndeclaredNames
+    {
+        get => IsRuleEnabled(RuleIds.UndeclaredName);
+        set => SetRuleEnabled(RuleIds.UndeclaredName, value);
+    }
+
+    /// <summary>
+    /// The tools whose own built-in functions and flags <c>MLQT.Reference.Undeclared</c> accepts as
+    /// declared - any of <see cref="ToolBuiltIns.Tools"/>. Empty, the default, accepts none: a call of
+    /// Dymola's <c>classDirectory()</c> or a read of an <c>Advanced.</c> flag is reported, because the
+    /// code works in Dymola and in no other tool. A library written for one tool lists it here.
+    ///
+    /// <para>A modifier on the rule, as <see cref="PackageOrderMatchesDymola"/> is on its own: it
+    /// decides which of one rule's findings are reported, not whether anything is checked.</para>
+    /// </summary>
+    public List<string> AcceptedToolBuiltIns { get; set; } = new();
+    public bool CheckGrammarConformance
+    {
+        get => IsRuleEnabled(RuleIds.GrammarConformance);
+        set => SetRuleEnabled(RuleIds.GrammarConformance, value);
     }
 
     /// <summary>
