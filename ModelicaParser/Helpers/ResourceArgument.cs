@@ -10,9 +10,9 @@ namespace ModelicaParser.Helpers;
 /// literal they met inside the call, so that one line produced two resources — <c>modelica://</c> and
 /// <c>/package.mo</c> — and the second was then reported as a missing file. A large user library has several.</para>
 ///
-/// <para>One implementation, because both <c>ExternalResourceExtractor</c> and <c>ModelAnalyzer</c>
-/// walk these calls; they already held two copies of the URI scan, and fixing one of those and not
-/// the other cost a round.</para>
+/// <para>Called from <c>ExternalResourceExtractor</c>, which the graph build's <c>ModelAnalyzer</c>
+/// derives from (B511). The two once held separate copies of these rules, and fixing one copy and
+/// not the other cost a round.</para>
 /// </summary>
 public static class ResourceArgument
 {

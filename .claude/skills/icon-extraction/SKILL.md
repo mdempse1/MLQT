@@ -15,27 +15,34 @@ Modelica classes can have Icon annotations that define graphical representations
 
 | Component | Purpose |
 |-----------|---------|
-| `IconExtractor` | Parses Icon annotation from Modelica class definitions |
-| `IconSvgRenderer` | Converts extracted IconData to SVG markup |
-| `IconData` | Data model representing parsed Icon graphics |
+| `IconExtractor` (`ModelicaParser/Visitors`) | Parses Icon annotation from Modelica class definitions |
+| `IconExtractionResult` (`ModelicaParser/Visitors`) | An icon plus its `extends` clauses and their `IconMap`/`DiagramMap` |
+| `IconSvgRenderer` (`ModelicaParser/Icons`) | Converts extracted IconData to SVG markup; also does the inheritance walk |
+| `IconData` (`ModelicaParser/Icons`) | Data model representing parsed Icon graphics |
+| `*Primitive` (`ModelicaParser/Icons`) | One class per graphics primitive, over `GraphicsPrimitive` |
+| `CoordinateMap`, `GraphicsMapping` (`ModelicaParser/Icons`) | Mapping a base's graphics into an extends region |
+| `DiagramSvgRenderer` (`ModelicaParser/Icons`) | The diagram layer's renderer, used by the MCP server's diagram image |
 
 ## Supported Graphics Primitives
 
 | Primitive | Properties |
 |-----------|------------|
-| **Rectangle** | extent, radius (rounded corners), fillColor, lineColor, fillPattern, linePattern |
-| **Ellipse** | extent, startAngle, endAngle (for arcs), fillColor, lineColor |
-| **Line** | points, color, thickness, arrow styles, smooth (bezier curves) |
+| **Rectangle** | extent, radius (rounded corners), borderPattern, fillColor, lineColor, fillPattern, linePattern |
+| **Ellipse** | extent, startAngle, endAngle (for arcs), closure, fillColor, lineColor |
+| **Line** | points, color, thickness, arrow (start/end) and arrowSize, smooth (bezier curves) |
 | **Polygon** | points, fillColor, lineColor, smooth curves |
-| **Text** | extent, textString, fontSize, fontName, textColor, horizontalAlignment |
+| **Text** | extent, textString, fontSize, fontName, textStyle, textColor, horizontalAlignment |
 | **Bitmap** | extent, fileName, imageSource (base64 data) |
+
+Every primitive also carries the common `visible`, `origin` and `rotation`.
 
 ## Basic Usage
 
 ### Extraction and Rendering
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Icons;      // IconData, IconSvgRenderer
+using ModelicaParser.Visitors;   // IconExtractor
 
 string modelicaCode = @"
 model MyModel
@@ -132,20 +139,25 @@ stated or not: 52 Buildings icons (e.g. `DHC.ETS.BaseClasses.CollectorDistributo
 ### API
 
 ```csharp
-// Extract icon with inheritance info
-IconExtractionResult result = IconExtractor.ExtractIconWithInheritance(modelicaCode);
-// result.IconData - The icon graphics
-// result.ExtendsClauses - List of base class names
+// Extract icon with inheritance info (one class, no resolution)
+IconExtractionResult? result = IconExtractor.ExtractIconWithInheritance(modelicaCode);
+// result.Icon - The icon graphics
+// result.ExtendsClasses - List of base class names
+// result.ExtendsMaps / MapFor(name) / MappedExtends - the IconMap of each clause
+// result.WithinPackage - the package unqualified base names are resolved from
 
 // Merge base class graphics
 IconData mergedIcon = derivedIconData.WithBaseLayer(baseIconData);
 
-// Full extraction with recursive resolution
+// Full extraction with recursive resolution (IconData, or straight to SVG)
+IconData? icon = IconSvgRenderer.ExtractIconWithInheritance(modelicaCode, resolver, maxDepth: 10);
 string? svg = IconSvgRenderer.ExtractAndRenderIconWithInheritance(
-    modelicaCode,
+    modelicaCode,                       // or an already-parsed Stored_definitionContext
     baseClassName => ResolveBaseClassCode(baseClassName), // Resolver function
     size: 24,
-    maxDepth: 10  // Prevents infinite loops in circular inheritance
+    maxDepth: 10,                       // Prevents infinite loops in circular inheritance
+    fileNameResolver: f => ResolveBitmap(f),   // optional: modelica:// Bitmap fileName -> path
+    initialPackageContext: "Lib.Pkg"    // optional: the enclosing package, when the code has no within
 );
 ```
 
@@ -167,86 +179,65 @@ Func<string, string?> resolver = baseClassName =>
 
 ## Integration with Tree View
 
-Icons are extracted during tree building in `LibraryDataService.BuildModelTree()`:
+Icons are rendered when a class is prepared for the tree, in `LibraryDataService.PrepareModelForDisplay`:
 
 ```csharp
-// In tree node creation
-var iconSvg = IconSvgRenderer.ExtractAndRenderIconWithInheritance(
-    modelCode,
-    baseClass => ResolveBaseClass(baseClass, graph),
-    size: 18
-);
+var package = ModelicaName.EnclosingPackageOf(model.Id);   // stored code has no within clause
+iconSvg = IconSvgRenderer.ExtractAndRenderIconWithInheritance(
+    definition.ParsedCode ?? ...,                          // the parse tree when one is held
+    baseClassName => ResolveBaseClass(baseClassName, model),
+    size: 20,
+    fileNameResolver: fileName => ResolveImageFileName(fileName, library),
+    initialPackageContext: package.Length > 0 ? package : null);
 
-var treeNode = new ModelTreeNode
-{
-    // ... other properties
-    IconSvg = iconSvg  // Custom SVG icon
-};
+model.IconSvg = iconSvg;   // ModelNode.IconSvg (stored on its ModelDefinition)
 ```
 
-The tree view template conditionally renders:
-- Custom SVG icon if `IconSvg` is not null
-- Default Material Design icon based on class type otherwise
+A render that throws is **not** remembered as "no icon" (B349); the next refresh tries again. Every
+rendered icon is invalidated when libraries change, by bumping `_iconGeneration`, because an icon is
+drawn from base classes that may be in the library that just arrived or left.
+
+`LibraryBrowser` renders `IconSvg` when `ModelNode.HasCustomIcon` is true, and otherwise a Material
+icon chosen from the class type.
 
 ## IconData Structure
+
+Abridged; the files in `ModelicaParser/Icons/` are the reference.
 
 ```csharp
 public class IconData
 {
-    public double[] CoordinateSystem { get; set; }  // {x1, y1, x2, y2}
-    public List<GraphicPrimitive> Graphics { get; set; }
+    public double[] CoordinateExtent { get; set; } = { -100, -100, 100, 100 };  // {x1, y1, x2, y2}
+    public bool PreserveAspectRatio { get; set; } = true;
+    public double InitialScale { get; set; } = 0.1;
+    public bool DeclaresExtent / DeclaresPreserveAspectRatio / DeclaresInitialScale { get; set; }
+    public List<GraphicsPrimitive> Graphics { get; set; }
     public bool HasGraphics => Graphics.Count > 0;
 
-    public IconData WithBaseLayer(IconData baseIcon);
+    public static IconData ResolveCoordinateSystem(IconData? own, IconData? inherited);
+    public IconData WithGraphics(List<GraphicsPrimitive> graphics);
+    public IconData WithBaseLayer(IconData? baseIcon);
 }
 
-public abstract class GraphicPrimitive
+public abstract class GraphicsPrimitive
 {
-    public double[] Extent { get; set; }
+    public abstract string Type { get; }
+    public bool Visible { get; set; } = true;
+    public double[] Origin { get; set; }
+    public double Rotation { get; set; }
     public int[] LineColor { get; set; }
     public int[] FillColor { get; set; }
-    public string FillPattern { get; set; }
-    public string LinePattern { get; set; }
-    public double LineThickness { get; set; }
+    public string FillPattern { get; set; } = "None";
+    public string LinePattern { get; set; } = "Solid";
+    public double LineThickness { get; set; } = 0.25;
 }
 
-public class Rectangle : GraphicPrimitive
-{
-    public double BorderRadius { get; set; }
-}
-
-public class Ellipse : GraphicPrimitive
-{
-    public double StartAngle { get; set; }
-    public double EndAngle { get; set; }
-}
-
-public class Line : GraphicPrimitive
-{
-    public List<double[]> Points { get; set; }
-    public string Smooth { get; set; }  // "None", "Bezier"
-    public string Arrow { get; set; }   // Start/end arrow types
-}
-
-public class Polygon : GraphicPrimitive
-{
-    public List<double[]> Points { get; set; }
-    public string Smooth { get; set; }
-}
-
-public class Text : GraphicPrimitive
-{
-    public string TextString { get; set; }
-    public double FontSize { get; set; }
-    public string FontName { get; set; }
-    public string HorizontalAlignment { get; set; }
-}
-
-public class Bitmap : GraphicPrimitive
-{
-    public string FileName { get; set; }      // modelica:// URI
-    public string ImageSource { get; set; }   // Base64 encoded data
-}
+public class RectanglePrimitive : GraphicsPrimitive { Extent, Radius, BorderPattern }
+public class EllipsePrimitive   : GraphicsPrimitive { Extent, StartAngle, EndAngle, Closure }
+public class LinePrimitive      : GraphicsPrimitive { Points, ArrowStart, ArrowEnd, ArrowSize, Smooth }
+public class PolygonPrimitive   : GraphicsPrimitive { Points, Smooth }
+public class TextPrimitive      : GraphicsPrimitive { Extent, TextString, FontSize, FontName, FontStyles, HorizontalAlignment, TextColor }
+public class BitmapPrimitive    : GraphicsPrimitive { Extent, FileName /* modelica:// URI */, ImageSource /* base64 */ }
 ```
 
 ## SVG Rendering
@@ -270,23 +261,21 @@ Modelica colors are RGB arrays `{r, g, b}` with values 0-255:
 
 ```csharp
 // Modelica: fillColor={255,128,0}
-// SVG: fill="rgb(255,128,0)"
+// SVG: fill="#ff8000"   (ColorToHex)
 ```
 
 ### Fill Patterns
 
 | Modelica Pattern | SVG Rendering |
 |------------------|---------------|
-| `FillPattern.Solid` | Solid fill |
-| `FillPattern.None` | No fill (transparent) |
-| `FillPattern.Horizontal` | Horizontal lines pattern |
-| `FillPattern.Vertical` | Vertical lines pattern |
-| `FillPattern.Cross` | Cross-hatch pattern |
-| etc. | Pattern definitions in SVG defs |
+| `FillPattern.None` | No fill (`fill="none"`) |
+| Any other pattern (`Solid`, `Horizontal`, `Cross`, gradients, …) | Solid fill in `fillColor` — hatching and gradients are not drawn |
+
+`LinePattern.None` gives `stroke="none"`; the other line patterns become a `stroke-dasharray`.
 
 ### Smooth Curves
 
-For `Smooth.Bezier`, the renderer converts point lists to SVG cubic bezier curves:
+For `Smooth.Bezier` with at least four points, the renderer converts point lists to SVG bezier curves:
 
 ```xml
 <path d="M x1,y1 C cx1,cy1 cx2,cy2 x2,y2 ..." />
@@ -296,30 +285,30 @@ For `Smooth.Bezier`, the renderer converts point lists to SVG cubic bezier curve
 
 | File | Purpose |
 |------|---------|
-| `ModelicaParser/IconExtractor.cs` | Parses Icon annotation from parse tree |
-| `ModelicaParser/IconSvgRenderer.cs` | Renders IconData to SVG string |
-| `ModelicaParser/IconData.cs` | Data model for icon graphics |
-| `MLQT.Services/LibraryDataService.cs` | Integration with tree building |
-| `MLQT.Shared/Components/LibraryBrowser.razor` | Tree view with icon display |
+| `ModelicaParser/Visitors/IconExtractor.cs` | Parses Icon annotation from parse tree |
+| `ModelicaParser/Visitors/IconExtractionResult.cs` | Icon plus extends clauses and their maps |
+| `ModelicaParser/Icons/IconSvgRenderer.cs` | Renders IconData to SVG string; the inheritance walk |
+| `ModelicaParser/Icons/IconData.cs` | Data model for icon graphics, `ResolveCoordinateSystem` |
+| `ModelicaParser/Icons/CoordinateMap.cs`, `GraphicsMapping.cs` | Extends-region mapping (B420, B436) |
+| `MLQT.Services/LibraryDataService.cs` | Integration with tree building (`PrepareModelForDisplay`) |
+| `MLQT.Shared/Components/LibraryBrowser.razor` (+ `.razor.cs`) | Tree view with icon display |
+| `MLQT.McpServer/Helpers/DiagramImage.cs` | The MCP server's icon and diagram images |
 
 ## Default Icons
 
-When no Icon annotation exists or extraction fails, default Material Design icons are used based on class type:
+When a class has no custom icon, `LibraryBrowser.IconForClassType` picks a Material icon from its class type:
 
 | Class Type | Default Icon |
 |------------|--------------|
-| model | `Settings` |
-| block | `Dashboard` |
-| connector | `ElectricalServices` |
 | function | `Functions` |
-| record | `TableChart` |
-| type | `DataObject` |
-| package | `Folder` |
-| class | `Code` |
+| block | `ViewModule` |
+| connector | `Power` |
+| record | `DataObject` |
+| package | `FolderOpen` |
+| anything else (model, class, type, …) | `ModelTraining` |
 
 ## Performance Considerations
 
-- Icons are extracted once during tree building, not on every render
-- SVG strings are stored in `ModelTreeNode.IconSvg`
-- Inheritance resolution is cached in the graph
+- Icons are rendered once per class when it is prepared for the tree, not on every render
+- SVG strings are stored on the class (`ModelNode.IconSvg`), with the icon generation they were drawn in
 - Max depth prevents runaway recursion

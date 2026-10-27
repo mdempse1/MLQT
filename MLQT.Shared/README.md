@@ -65,7 +65,17 @@ libraries is owned by the services that manage it, and they publish the changes:
 | `SetSelectedModels(IEnumerable<string>)` | Sets multi-select models, fires `OnSelectedModelsChanged` |
 | `ClearSelectedModels()` | Clears multi-select, fires `OnSelectedModelsChanged` |
 | `ChangeSelectionMode(SelectionMode)` | Changes selection mode, fires `OnEnableMultiSelect` |
+| `GoBack()` / `GoForward()` | Steps through the model navigation history |
+| `ModelContentChanged(IReadOnlyCollection<string>)` | Fires `OnModelContentChanged` |
 | `SaveSettings()` | Fires `OnSaveSettings` |
+| `ThemeChanged(UISettings)` | Fires `OnThemeChanged` |
+| `RepositorySettingsApplied(string, bool, bool)` | Fires `OnRepositorySettingsApplied` (formatting and/or style settings changed) |
+| `VcsFilesChanged(string)` | Fires `OnVcsFilesChanged`: re-format and re-analyse after a VCS operation |
+| `VcsModelsChanged(string, IReadOnlyList<string>)` | Fires `OnVcsModelsChanged` |
+| `BeginVcsWork()` | Marks VCS work in progress until disposed (`IsVcsWorkInProgress`, `OnVcsWorkChanged`) |
+| `StartupProgress(string?)` | Fires `OnStartupProgressChanged` |
+| `ProjectSwitchStarting()` / `ProjectSwitchAbandoned()` / `ProjectChanged(string)` | The project-switch events |
+| `EnableDeferredMode()`, `RunDeferred...Async()`, `...Completed()` | Deferred analysis for large libraries (`IsDeferredMode`) |
 | `ClearLogMessages()` | Fires `OnClearLogMessages` |
 
 ### Application Settings (AppSettings)
@@ -96,9 +106,13 @@ var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode: false);
 
 ### Pages
 
+`Index.razor` (`/`) and `SelfTest.razor` (`/selftest`) are the only routes. The others are tabs
+that `Layout/MainLayout.razor` hosts.
+
 | Page | Description |
 |------|-------------|
 | `Index.razor` | Main page with library browser and code viewer |
+| `SelfTest.razor` | `/selftest`: the host probes run against a desktop host on each platform (see the `desktop-host` skill) |
 | `CodeReview.razor` | Code review, style findings, and file change diffs |
 | `Dependencies.razor` | Impact analysis with network graph visualization |
 | `ExternalResources.razor` | External resource tree with filtering and warnings |
@@ -124,6 +138,18 @@ var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode: false);
 | `SettingsReferenceLibraries.razor` | Libraries loaded so references resolve, never reported on |
 | `SettingsRepositories.razor` | Repositories and their per-repository rules: style, formatting, naming, spell-check languages |
 | `SettingsRepositoryDictionary.razor` | A repository's accepted spellings (`.mlqt/dictionary.txt`) |
+| `RuleSeverityRow.razor` | One rule's row in the repository rule settings |
+| `ProgressDialog.razor` | A dialog the application opens and closes while work runs; use it rather than a bound `MudDialog`, which a fast operation leaves on screen |
+
+### Other folders
+
+| Folder / file | Holds |
+|---------------|-------|
+| `Dialogs/` | The VCS dialogs (commit, merge, rebase, branch, revert, history, pull request) and the rest; a VCS dialog records what it did in a `VcsDialogOutcome` rather than firing `VcsFilesChanged` itself |
+| `Helpers/` | `MonitorPause`, `VcsPipelineQueue`, `VcsStatusHelper`, `ExternalCheckSession`, `ChangeMarker` |
+| `Theming/` | `MlqtTheme` and `ThemePresets` |
+| `MlqtServiceCollectionExtensions.cs` | `AddMlqtCore()`, the service registrations every host calls |
+| `HostAssetManifest.cs` | What a host must serve from `wwwroot` (see the `desktop-host` skill) |
 
 There is no application-wide style-rule page: the rules belong to each repository and are edited in
 `SettingsRepositories.razor`, which is what keeps them committed with the library and identical in

@@ -4,7 +4,9 @@ Comprehensive test suite for the DymolaInterface library.
 
 ## Overview
 
-This test project has two groups of tests (see [TESTS_OVERVIEW.md](TESTS_OVERVIEW.md) for the full class list and counts):
+This test project has two groups of tests. The lists below name every test class; a separate
+overview with per-class counts went out of date and was retired (B516), so count with
+`dotnet test --list-tests` instead:
 
 **Integration tests** — require a running Dymola:
 
@@ -13,7 +15,7 @@ This test project has two groups of tests (see [TESTS_OVERVIEW.md](TESTS_OVERVIE
 - **CommandTests** - Command execution and variable manipulation tests
 - **LibraryTests** - Library and model management tests
 
-**Wire-format / unit tests** — the `WireFormat*` classes plus `HelperTypeTests`, `InterfaceFactoryTests` and `CultureInvarianceTests` run against a fake HTTP handler (`Fakes/`) and need **no** Dymola install. Plotting is exercised here by `WireFormatPlotTests`.
+**Wire-format / unit tests** — the `WireFormat*` classes plus `HelperTypeTests`, `InterfaceFactoryTests`, `CultureInvarianceTests`, `CommandTimeoutTests`, `JsonRpcRequestTests`, `SessionLivenessTests`, `SpawnEnvironmentTests`, `IsolatedStartTests` and `ToolTraitTests` run against a fake HTTP handler or socket stub (`Fakes/`) and need **no** Dymola install. Plotting is exercised here by `WireFormatPlotTests`.
 
 **IMPORTANT**: The integration tests run **sequentially** (not in parallel) and share a single Dymola instance (via the `DymolaFixture` collection fixture) to avoid port conflicts. The wire-format/unit tests do not use the fixture and run without Dymola.
 
@@ -22,8 +24,8 @@ This test project has two groups of tests (see [TESTS_OVERVIEW.md](TESTS_OVERVIE
 ### Required Software
 
 1. **Dymola 2025x Refresh 1** (or compatible version)
-   - Must be installed at: `C:\Program Files\Dymola 2025x Refresh 1\bin64\Dymola.exe`
-   - If installed elsewhere, update the `DYMOLA_PATH` constant in each test class
+   - `DymolaFixture.ResolveDymolaPath()` finds the newest Dymola installed under `%ProgramFiles%`
+     through `DymolaSettings.FindInstalledDymola`, so no path is hard-coded in the tests
 
 2. **.NET 10.0 SDK** or later
 
@@ -101,21 +103,17 @@ dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --output detailed
 Tests basic interface functionality:
 - Constructor behavior with valid/invalid paths
 - Offline mode management
-- Dymola process starting
+- Process ownership (`ProcessId`, `Detach`)
 - Version detection
 
 **Example:**
 ```csharp
 [Fact]
-public async Task StartDymolaProcessAsync_WithValidPath_StartsDymola()
+public async Task IsOfflineMode_WhenConnected_ReturnsFalse()
 {
-    _dymola = new DymolaInterface(DYMOLA_PATH, PORT, HOSTNAME);
-    await _dymola.StartDymolaProcessAsync();
-    await Task.Delay(5000); // Wait for startup
+    await _fixture.EnsureDymolaStartedAsync();
 
-    Assert.False(_dymola.IsOfflineMode());
-
-    await _dymola.ExitAsync();
+    Assert.False(_fixture.Dymola.IsOfflineMode());
 }
 ```
 
@@ -126,7 +124,6 @@ Tests model simulation capabilities:
 - Model checking without simulation
 - Model translation
 - Error retrieval after failures
-- Result file access
 - Workspace clearing
 
 **Example:**
@@ -134,14 +131,14 @@ Tests model simulation capabilities:
 [Fact]
 public async Task SimulateModelAsync_WithValidModel_ReturnsTrue()
 {
-    var dymola = await SetupDymolaAsync();
-    var result = await dymola.SimulateModelAsync(
+    await _fixture.EnsureDymolaStartedAsync();
+    var result = await _fixture.Dymola.SimulateModelAsync(
         problem: "Modelica.Blocks.Examples.PID_Controller",
-        stopTime: 4.0
+        stopTime: 4.0,
+        cancellationToken: TestContext.Current.CancellationToken
     );
 
-    Assert.True(result);
-    await dymola.ExitAsync();
+    Assert.True(result, "Simulation should succeed");
 }
 ```
 
@@ -156,17 +153,13 @@ Tests the wire-format encoding of plotting and visualization requests (no Dymola
 **Example:**
 ```csharp
 [Fact]
-public async Task ExportPlotAsImageAsync_WithValidPath_ReturnsTrue()
+public async Task ExportPlotAsImageAsync_DefaultArgs()
 {
-    var dymola = await SetupDymolaAsync();
-    await dymola.SimulateModelAsync("Modelica.Blocks.Examples.PID_Controller");
-    await dymola.PlotAsync(new[] { "inertia1.w" });
-
-    var tempPath = Path.Combine(Path.GetTempPath(), "plot.png");
-    var result = await dymola.ExportPlotAsImageAsync(tempPath);
-
-    Assert.True(result);
-    Assert.True(File.Exists(tempPath));
+    using var h = new DymolaTestHarness();   // a DymolaInterface over FakeDymolaHttpHandler
+    h.SetResultBool(true);
+    await h.Dymola.ExportPlotAsImageAsync("out.png");
+    Assert.Equal("ExportPlotAsImage", h.Handler.LastRequest.Method);
+    Assert.Equal(4, h.Handler.LastRequest.ParamCount);
 }
 ```
 
@@ -178,17 +171,16 @@ Tests command execution and manipulation:
 - Directory changes
 - Modelica path management
 - Log file creation
-- Script execution
 
 **Example:**
 ```csharp
 [Fact]
 public async Task SaveLogAsync_WithValidPath_CreatesLogFile()
 {
-    var dymola = await SetupDymolaAsync();
+    await _fixture.EnsureDymolaStartedAsync();
     var logPath = Path.Combine(Path.GetTempPath(), "dymola.log");
 
-    var result = await dymola.SaveLogAsync(logPath);
+    var result = await _fixture.Dymola.SaveLogAsync(logPath);
 
     Assert.True(result);
     Assert.True(File.Exists(logPath));
@@ -198,24 +190,20 @@ public async Task SaveLogAsync_WithValidPath_CreatesLogFile()
 ### LibraryTests
 
 Tests library and model management:
-- Opening libraries and packages
-- Installing libraries
-- Converting Modelica versions
-- Querying package contents
-- Class existence checks
+- Opening libraries and packages (valid and invalid paths)
+- Translating and checking a model
 
 **Example:**
 ```csharp
 [Fact]
-public async Task ExistClassAsync_WithValidClass_ReturnsTrue()
+public async Task CheckModelAsync_WithValidModel_ReturnsTrue()
 {
-    var dymola = await SetupDymolaAsync();
-    var exists = await dymola.ExistClassAsync(
-        "Modelica.Blocks.Examples.PID_Controller"
-    );
+    await _fixture.EnsureDymolaStartedAsync();
+    var result = await _fixture.Dymola.CheckModelAsync(
+        "Modelica.Electrical.Analog.Examples.ChuaCircuit", simulate: false,
+        cancellationToken: TestContext.Current.CancellationToken);
 
-    Assert.True(exists);
-    await dymola.ExitAsync();
+    Assert.True(result, "Model check should succeed");
 }
 ```
 
@@ -244,7 +232,7 @@ The sequential execution ensures tests don't interfere with each other and preve
 **Problem**: Tests take too long and timeout
 
 **Solutions**:
-1. Increase the delay after `StartDymolaProcessAsync()` (currently 5 seconds)
+1. Increase the delay after `StartDymolaProcessAsync()` in `DymolaFixture.EnsureDymolaStartedAsync` (currently 15 seconds)
 2. Manually start Dymola before running tests
 3. Run fewer tests in parallel
 
@@ -345,7 +333,7 @@ Sequential execution with a shared instance provides:
 
 When adding new tests:
 1. Follow the existing naming convention: `MethodName_Scenario_ExpectedResult`
-2. Always use `[Collection("Dymola Collection")]` attribute on test classes
+2. Put `[Collection("Dymola Collection")]` and `[Trait("Requires", "Dymola")]` on a class that needs a live Dymola; a class that needs none takes neither
 3. Inject `DymolaFixture` and call `await _fixture.EnsureDymolaStartedAsync()`
 4. Use `_fixture.Dymola` to access the shared Dymola instance
 5. Don't call `Dispose()` or `ExitAsync()` on the shared instance (fixture handles cleanup)

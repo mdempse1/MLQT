@@ -99,13 +99,13 @@ Same as Modelica Standard, but constants (both public and protected) use UPPER_C
 1. Navigate to **Settings > Manage Repositories** and click the repository
 2. Set **Check that the naming convention is followed** to a severity — **Warning** to report,
    **Error** to fail the CI quality gate on a misnamed element
-3. An expansion panel appears below the row showing the current convention settings
+3. A panel appears below the row showing the current convention settings
 4. Choose a preset in the *Naming Convention Rules* dropdown, or choose **Custom** to show the per-class and per-element selectors
-5. Save settings
+5. Click **Apply**
 
 Naming convention findings appear in the **Code Review** findings table alongside other style checking findings. Each finding identifies the offending name, what convention it should follow, and whether it is a class name or element name.
 
-![Screenshot: The naming convention expansion panel showing the Naming Convention Rules dropdown set to "Modelica Standard", the Allow underscore suffixes toggle, and the exception names area with its chip set and "Add additional exceptions" field. The per-class and per-element selectors are not shown, because they appear only when the preset is Custom.](Images/naming-conventions-1.png)
+![Screenshot: The naming convention panel showing the Naming Convention Rules dropdown set to "Modelica Standard", the Allow underscore suffixes toggle, and the exception names area with its chip set and "Add additional exceptions" field. The per-class and per-element selectors are not shown, because they appear only when the preset is Custom.](Images/naming-conventions-1.png)
 
 ### Customizing Rules
 

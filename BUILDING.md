@@ -40,7 +40,7 @@ Test projects run on **xUnit v3 / Microsoft.Testing.Platform**, opted into repos
 ```bash
 dotnet test MLQT.Services.Tests          # one suite
 pwsh ./build/run-all-tests.ps1           # all 10 suites, ~4 minutes
-pwsh ./build/run-all-tests.ps1 -CoreOnly # the 7 that CI runs
+pwsh ./build/run-all-tests.ps1 -CoreOnly # CI's 9 suites with CI's filters; no journeys
 ```
 
 `run-all-tests.ps1` runs **more than CI does**, which is the point of it. Three suites need something
@@ -60,7 +60,7 @@ legitimately unrunnable ones.
 knows is `ubuntu24.04-x64`. `run-all-tests.ps1` sets `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`
 for you, after which Chromium downloads and every journey passes. **WebKit still will not launch**: its
 build links `libicu74` and `libvpx9`, and 26.04 ships `libicu78` and no `libvpx9`. So the WebKit
-rehearsal is a CI job by necessity — `nightly-webkit.yml`, on `ubuntu-latest`.
+rehearsal is a CI job by necessity — `nightly-webkit.yml`, pinned to `ubuntu-24.04` (B256).
 
 Journeys pick their browser from `MLQT_JOURNEY_BROWSER` (chromium by default). An unrecognised value
 throws rather than falling back, because a typo that silently reverts to Chromium produces a green run
@@ -132,8 +132,10 @@ Git install provides.
 answer: the CLI prints its version, the MCP server completes an `initialize` handshake over stdio, and
 the GUI runs its 16 `/selftest` probes against the published tree — which resolves the web assets,
 runs interop, renders MudBlazor and exercises settings, logging and the svn locator in the layout that
-ships. Run `package-deb.sh` under `xvfb-run -a` on a machine with no display, or that last and
-strongest check is silently skipped.
+ships. `package-deb.sh` runs the same checks again from the packaged tree. On a machine with no
+display, run either script under `xvfb-run -a`, or that last and strongest check is silently skipped.
+Both take `--skip-smoke-tests`; `publish-tools.sh` also takes `--configuration` and
+`--self-test-timeout`, and `package-deb.sh` takes `--arch`.
 
 `--allow-missing-svn` is needed locally because the SVN payload is fetched rather than committed. It
 defaults to **failing**, so a release cannot ship without the client by nobody remembering a flag.
@@ -149,8 +151,8 @@ the moment it is being merged.
 
 | Job | What it does |
 |-----|--------------|
-| **Build & Test Libraries** | Builds every project and runs the seven measured suites on Windows |
-| **Build & Test Libraries (Linux)** | The same seven on Ubuntu — what keeps the code portable rather than portable-looking |
+| **Build & Test Libraries** | Builds every project and runs the nine test suites on Windows — the SVN integration classes and the classes marked `[Trait("Requires", ...)]` filtered out — then validates the SARIF output |
+| **Build & Test Libraries (Linux)** | The same nine on Ubuntu 24.04 — what keeps the code portable rather than portable-looking — then publishes the self-contained `linux-x64` CLI and smoke-tests it |
 | **UI Journeys** | The Playwright journeys against the test host, on both platforms |
 | **Desktop Self-Test** | Publishes the real Photino host on each platform, runs its 16 `/selftest` probes and diffs them against the committed baseline. The parity gate |
 | **Code Coverage** | Runs the suites with coverage collection and gates on the per-class ratchet |
@@ -167,12 +169,13 @@ or `publish` that shares a step.
 for WebKitGTK. It cannot be dispatched from a branch: `workflow_dispatch` resolves a workflow on the
 **default branch** only.
 
-No job installs a .NET workload. `build/validate-sarif.ps1` also runs on every push, checking a report
-generated from `TestFixtures/SarifSmoke/` against the SARIF 2.1.0 schema.
+No job installs a .NET workload. `build/validate-sarif.ps1` (in the Windows job) checks a report
+generated from `TestFixtures/SarifSmoke/` against the SARIF 2.1.0 schema. `.github/workflows/release.yml`
+builds the installers on a tag; see [RELEASING.md](RELEASING.md).
 
 ## Project documentation
 
-Each project has a README with API documentation. Architectural conventions for contributors are in
+The libraries and the service, UI and MCP projects each have a README with API documentation. Architectural conventions for contributors are in
 [CLAUDE.md](CLAUDE.md) and [CODING_GUIDELINES.md](CODING_GUIDELINES.md). The forward plan, the
 decisions against, and the open issues are in [Design/roadmap.md](Design/roadmap.md), and what a
 release needs beyond CI is in [Design/release-checklist.md](Design/release-checklist.md).

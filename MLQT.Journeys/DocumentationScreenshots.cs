@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 using MLQT.Services.Interfaces;
 using MLQT.Shared.Models;
+using ModelicaParser.StyleRules;
 using Xunit;
 
 namespace MLQT.Journeys;
@@ -406,21 +407,40 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         // One node picked out of the network: its neighbours stay lit and the rest dim, and the
         // panel names it. Clicked through the graph itself, which is the gesture the page is about.
+        // The table click above scrolls the panel down; the count and the Layout row, where Clear
+        // Selection appears, belong in the picture too.
+        var summary = page.GetByText("will be affected by changes").First;
+        if (await summary.CountAsync() > 0)
+            await summary.ScrollIntoViewIfNeededAsync();
+
         var node = page.Locator("canvas").First;
         if (await node.CountAsync() > 0 && await node.BoundingBoxAsync() is { } canvas)
         {
-            // Cytoscape draws to a canvas, so there is no element to address - only a position. The
-            // layout is deterministic for a graph this small, and the shot is checked by eye when it
-            // is regenerated; a wrong position costs a picture of an unhighlighted graph, not a
-            // wrong one.
-            //
-            // Hovered, not clicked, and photographed without settling first: the highlight and the
-            // panel naming the node are what the pointer being *there* produces, and SettleAsync's
-            // first act is to move the pointer away.
-            await page.Mouse.MoveAsync(canvas.X + canvas.Width * 0.62f, canvas.Y + canvas.Height * 0.55f,
-                                       new MouseMoveOptions { Steps = 10 });
+            // Cytoscape draws to a canvas, so there is no element to address - only a position, and
+            // a fixed fraction of the canvas landed on empty background. Cytoscape is asked where it
+            // drew the node instead.
+            var at = await page.EvaluateAsync<double[]?>("""
+                () => {
+                    const inst = Object.values(window._cytoscapeInstances || {})[0];
+                    const n = inst && inst.cy.nodes().filter(n => n.id().endsWith('.Source'))[0];
+                    if (!n) return null;
+                    const p = n.renderedPosition();
+                    const r = inst.cy.container().getBoundingClientRect();
+                    return [r.left + p.x, r.top + p.y];
+                }
+                """);
+
+            // Clicked, not hovered: the highlight and the panel naming the node follow a tap
+            // (cytoscapeGraph.js), and a hover leaves the graph as it was. Photographed without
+            // settling first, because SettleAsync's first act is to move the pointer away.
+            if (at is { Length: 2 })
+                await page.Mouse.ClickAsync((float)at[0], (float)at[1]);
             await page.WaitForTimeoutAsync(1500);
             await page.ScreenshotAsync(new PageScreenshotOptions { Path = PathFor("dependency-analysis-3") });
+
+            // A tap on the background clears the highlight, so the page is left as it was found.
+            await page.Mouse.ClickAsync(canvas.X + 4, canvas.Y + 4);
+            await page.WaitForTimeoutAsync(500);
         }
 
         await UncheckInTheTreeAsync(page, "Pin");
@@ -699,11 +719,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
                 await page.WaitForTimeoutAsync(1500);
                 await ShotAsync(page, "git-operations-9");
 
-                // The diff is taken from the *first* commit instead. There is no Diff button,
-                // whatever git-operations.md says - the file in the popover is the control - and
-                // what it opens is a comparison against the working copy, so asking it about the
-                // newest revision of a file nobody has touched since produces a dialog that says
-                // "File is identical", correctly and uselessly.
+                // The diff is taken from the *first* commit instead. There is no Diff button:
+                // the file in the popover is the control. What it opens compares that commit with
+                // its parent.
                 await dialog.Locator("tbody tr").Filter(new LocatorFilterOptions
                 {
                     HasTextString = "before the journey edits it",
@@ -932,6 +950,21 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
             // screenshot captures all of it while a clip would stop at the bottom of the dialog.
             await ShotOfAsync(naming.Locator("xpath=ancestor::div[contains(@class,'mud-paper')][1]"),
                               "naming-conventions-1");
+        }
+
+        // The undeclared-names rule with the tool checkboxes it shows while it is on. Switched on
+        // here rather than in the fixture's settings: the fixture calls Modelica.Utilities without
+        // loading the MSL, so the rule would add those findings to every other picture. The dialog
+        // is cancelled below, which throws the change away.
+        var undeclared = RuleCatalog.BuiltIn[RuleIds.UndeclaredName].Description;
+        var undeclaredRow = page.GetByText(undeclared).First
+                                .Locator("xpath=ancestor::div[contains(@class,'mlqt-rule-row')][1]");
+        if (await undeclaredRow.CountAsync() > 0)
+        {
+            await undeclaredRow.ScrollIntoViewIfNeededAsync();
+            await undeclaredRow.GetByText("Warning", new() { Exact = true }).ClickAsync();
+            await page.WaitForTimeoutAsync(600);
+            await SectionShotAsync(page, undeclared, "settings-reference-8", height: 180);
         }
 
         await CloseTheDialogAsync(page);

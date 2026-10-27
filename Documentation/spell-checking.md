@@ -101,7 +101,7 @@ Spell checking is controlled by two independent rules, set per repository. Each 
 2. Under **Spell checking**, enable one or both:
    - **Spell check every description string**
    - **Spell check all documentation**
-3. Save settings
+3. Click **Apply**
 
 Spell checking runs as part of the background style checking process. After enabling, findings appear in the **Code Review** findings table.
 
@@ -173,7 +173,7 @@ the **Accepted spellings** expandable section:
 - **Add a word** — Type a word in the text field and press Enter or click the **+** button. Case is
   ignored when checking, so a word only needs listing once however it is capitalised, and the 
   possessive of a listed word is accepted without listing it separately
-- **Remove a word** — Click the delete icon next to any word in the list
+- **Remove a word** — Click the close icon on the word's chip
 - **Filter** — Use the filter text field to search within the word list
 - **Import** — Merge words from a text file (one word per line). Existing words are kept; duplicates
   are ignored.
@@ -195,7 +195,7 @@ whatever pace suits.
 The fastest way to accept a word is from a spelling finding on the Code Review page — right-click
 the underlined word in the code view and choose **Add to Dictionary**. The word goes into the list of
 custom words that belong to the repository that owns the class you are looking at, not into whichever repository is selected in
-settings. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
+settings. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) above.
 
 If the class belongs to no repository — a library loaded on its own, or one reconstructed from a
 vendor's encrypted documentation — there is nowhere to write the word that a check would read back,

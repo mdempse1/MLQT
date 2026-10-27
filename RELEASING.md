@@ -52,13 +52,15 @@ which is what backlog B145 was.
    git push origin 2026.4.0
    ```
 
-3. Each platform's job publishes the three tools, **runs all three from the published tree**, builds
-   its installer, **installs it and runs all three again from where they landed** — the CLI answers
-   `--version`, the MCP server completes an `initialize` handshake, and the GUI runs its 16
-   `/selftest` probes. Each then **installs the same artefact a second time, over itself**, because
-   that is what every user after the first release does and it is where a `.deb` that will not merge
-   a conffile, a maintainer script that assumed nothing was there, or a file in use shows up. The
-   Windows job finally uninstalls and checks nothing was left behind.
+3. The Windows job first runs the seven core test suites. Each platform's job then publishes the
+   three tools and **runs all three from the tree it will package** — the CLI answers `--version`, the
+   MCP server completes an `initialize` handshake, and the GUI runs its 16 `/selftest` probes (on
+   Linux `package-deb.sh` does this from the packaged tree, under `xvfb-run`). It builds its
+   installer, **installs it and runs the CLI and the GUI's probes again from where they landed**, then
+   **installs the same artefact a second time, over itself**, because that is what every user after
+   the first release does and it is where a `.deb` that will not merge a conffile, a maintainer script
+   that assumed nothing was there, or a file in use shows up. Both jobs finally uninstall and check
+   nothing was left behind.
 4. The Windows job opens a **draft** release with generated notes; the Linux job adds the `.deb` to
    it. Review it and publish.
 
@@ -82,7 +84,8 @@ release will build without committing to one.
 
 - The `SLIKSVN_ZIP_URL` repository variable (Settings → Secrets and variables → Actions → Variables)
   must point at a SlikSVN 1.14+ x64 `.zip`. `publish-tools.sh` fails on a missing or non-running svn
-  client unless `-AllowMissingSvn` is passed, and the release job does not pass it.
+  client unless `--allow-missing-svn` is passed, and the Windows release job does not pass it (the
+  Linux job does: the `.deb` recommends `subversion` rather than bundling a client).
 - If what the release ships changes, [Documentation/installation.md](Documentation/installation.md),
   [cli.md](Documentation/cli.md) and [mcp-server.md](Documentation/mcp-server.md) change with it —
   they tell users how to install and find these tools, and a release that ships something the docs do

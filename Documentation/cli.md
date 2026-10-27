@@ -66,12 +66,21 @@ copy of a library has that another does not, and `mlqt hook`
 | `--no-suppress` | Ignore `__MLQT` suppression annotations, to audit what has been waived — see [Suppressing intentional findings](ci-quality-gate.md#suppressing-intentional-findings) | off |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch (findings may not be real) | off |
-| `--metrics` | Record a coverage snapshot in the repository's `.mlqt/metrics-history.json` (the nearest directory at or above `<library-path>` holding a `.mlqt` directory, else the working-copy root) | off |
+| `--metrics` | Record a coverage snapshot in the repository's `.mlqt/metrics-history.json` (the nearest directory at or above `<library-path>` holding a `.mlqt` directory, else the working-copy root, else the library's own directory) | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
 | `--timings` | Print where the run's time went to stderr when it finishes: parsing, each style rule by name, each whole-graph analysis | off |
-| `-h`, `--help` | Show help | |
+| `-h`, `--help` | Show help and exit `0`: on its own (`mlqt --help`, `mlqt help`) or after any command (`mlqt check --help`) | |
 | `--version` | Print the tool's version and exit. Used on its own, not with `check` | |
+
+**Relative paths.** `--config`, `--baseline`, `--sarif-base` and `--metrics-out` are resolved against
+`<library-path>` (its directory, when it is a file), not the current directory, so
+`--baseline .mlqt/baseline.json` finds the library's baseline from wherever the command is run.
+`--out` and `--report` are resolved against the current directory, and so is `--dependency`.
+
+**What goes where.** The report goes to stdout (or `--out`); every `note:`, `warning:` and `error:`
+line goes to stderr, so a pipeline can parse stdout without filtering. Every run starts by naming the
+settings it used — `note: settings from <path>`, or `note: settings from built-in defaults`.
 
 ### Exit codes
 
@@ -82,9 +91,9 @@ copy of a library has that another does not, and `mlqt hook`
 | `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) — and any unexpected failure inside `mlqt` itself, which is reported as a defect to report rather than left as a crash |
 
 Because most built-in **style** rules report at **warning** severity by default
-(`MLQT.Duplicate.Declaration` is Error, `MLQT.Unused.PublicClass` is Info), `--fail-on error` is
-largely report-only for them (it surfaces their findings but exits `0` — except on a duplicate
-declaration). Use `--fail-on warning` for a
+(`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are
+Error, `MLQT.Unused.PublicClass` is Info), `--fail-on error` is largely report-only for them (it
+surfaces their findings but exits `0` — except on those three). Use `--fail-on warning` for a
 strict gate, or `--fail-on off` to never fail.
 
 Two things do report as errors and so fail even the default gate. **Diagnostics** are one — see
@@ -132,18 +141,18 @@ documentation, which is enough for references into it to resolve and for icons i
 be seen:
 
 ```bash
-mlqt check ./MyLibrary --dependency "C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library\Battery 2.9.0"
+mlqt check ./MyLibrary --dependency "C:\Program Files\SimulationTool\Modelica\Library\VendorLibrary 1.0.0"
 ```
 
 ```
-note: loaded Battery for reference resolution (not reported on)
+note: loaded VendorLibrary for reference resolution (not reported on)
 ```
 
 An encrypted library found *inside* the checked path is loaded the same way and likewise never
 reported on. A library shipping no documentation is called out rather than passed over silently:
 
 ```
-warning: encrypted library 'CATIAMultiBody' ships no usable documentation, so its classes cannot be
+warning: encrypted library 'VendorMultiBody' ships no usable documentation, so its classes cannot be
          recovered; references into it stay unresolved
 ```
 
@@ -182,7 +191,9 @@ read those; the run then says plainly that its findings may not be real.
 
 Comparison is by version segment, and a shorter declaration matches a longer version: `4.0` covers
 `4.0.0`, and a build suffix on the loaded copy (`4.2.0 dev`) is not treated as a disagreement with a
-declared `4.2.0`. A declared dependency that is not loaded at all is not reported here — that shows up
+declared `4.2.0`. A loaded copy that states no version at all counts as a disagreement
+(`… but the loaded copy states no version`). A declared dependency that is not loaded at all is not
+reported here — that shows up
 as unresolved references instead.
 
 **Pass the same set to `baseline` as to `check`.** A baseline generated with MSL loaded and then
@@ -259,8 +270,9 @@ belong to a repository, and a repository usually holds several libraries under o
 `mlqt check MyRepo/MyLibrary` uses `MyRepo/.mlqt/settings.json` — the same rules, and the same
 accepted spellings, your team sees in the app.
 
-**Per-rule severity.** Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`,
-`MLQT.Unused.PublicClass` is `Info`). To make a rule fail the gate at
+**Per-rule severity.** Most rules default to `Warning` (`MLQT.Duplicate.Declaration`,
+`MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are `Error`, `MLQT.Unused.PublicClass`
+is `Info`). To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
 
 ```json
@@ -272,6 +284,11 @@ accepted spellings, your team sees in the app.
 ```
 
 Values are `Off`, `Info`, `Warning`, or `Error`. The map wins over the on/off booleans.
+
+A settings key the run cannot apply — a misspelt rule id in `RuleSeverities`, say — loads without
+error, so `mlqt` prints a `warning:` naming it rather than let a rule silently never run. When
+`ExcludedLibraries` is set, the run says which libraries it is excluding and how many classes that
+skipped (`note: 12 class(es) skipped as excluded libraries`).
 
 ### Accepted spellings
 
@@ -334,7 +351,7 @@ record findings that a check with the right dependencies never raises.
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--baseline <path>` | Where to write (or re-read) the baseline | `<library-path>/.mlqt/baseline.json` |
+| `--baseline <path>` | Where to write (or re-read) the baseline. A relative path is resolved against `<library-path>` | `<library-path>/.mlqt/baseline.json` |
 | `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the working-copy root; built-in defaults if there is none |
 | `--dependency <path>` | Load another library so references resolve; never recorded as debt. Repeatable — see [Resolving references into other libraries](#resolving-references-into-other-libraries) | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch | off |
@@ -414,7 +431,11 @@ dropped 1 entry now fixed
 entries behaves like `prune` and runs without it. **Never run `update --force` from CI** — that turns
 the gate off one commit at a time.
 
-`create` refuses to overwrite an existing baseline unless `--force` is given.
+`create` refuses to overwrite an existing baseline unless `--force` is given. `prune` needs one to
+exist (`error: baseline not found`); `update` with none treats every current entry as new, so it too
+needs `--force` — `create` is the plainer way to say that. Every refusal exits `2`, as does an
+unknown subcommand. Inside a working copy each command notes the revision it stamps
+(`note: stamping baseline with revision 8481e74df0bc on main`).
 
 The file records **when it was generated** and the **revision and branch** it describes, so a reviewer
 can tell how old the accepted debt is and diff from there:
@@ -586,9 +607,10 @@ whatever the gate decides — a failing build is exactly the one whose numbers y
 
 **Which dimensions appear** follows the rules the run has enabled. A rule set to `Off` is a decision
 that its gap is not worth tracking, so it gets no dimension; enabling one later adds its dimension
-from that point on, and earlier points simply have no value for it. The layout dimensions (imports
-first, extends at top, sections, initial sections) are also left out when `applyFormattingRules` is on
-together with `oneOfEachSection`, because the formatter rewrites all four on save — the number would
+from that point on, and earlier points simply have no value for it. The layout dimensions the
+formatter maintains (imports first, extends at top, one of each section, initial sections first and
+last) are also left out when `applyFormattingRules` is on together with `oneOfEachSection`, because
+the formatter rewrites them on save — the number would
 measure the moment before the save rather than the library. Coverage itself is measured from the
 source, never from findings, so a waived or baselined finding still counts as a gap.
 
@@ -622,8 +644,10 @@ CI system's path filters or `[skip ci]` conventions being right:
 - if the numbers are **identical to the previous point**, nothing is written.
 
 So the CI-commit build measures the same library, finds the same numbers, writes nothing, and commits
-nothing. The cycle ends after one extra run. `--metrics-force` overrides this; do not use it in a job
-that commits the file.
+nothing. The cycle ends after one extra run, and says so
+(`note: 2 metrics scope(s) unchanged since the last point — not re-recorded`). `--metrics-force`
+overrides this; do not use it in a job that commits the file. A history file that cannot be written
+is a `warning:`, never a failure — the check's own exit code stands.
 
 ### Choosing how to share the history
 
@@ -641,11 +665,14 @@ safe without them, but with them the extra build never happens at all.
 
 - **console** — human-readable, grouped by model (each model header shows its file), with a
   per-severity summary.
-- **json** — an object with `tool`, `library`, `modelsChecked`, `findingCount`, a `summary` (new /
-  accepted / touched counts), and a `findings` array. Each finding includes its `Fingerprint`, `Status`
-  (`New`/`AcceptedDebt`/`TouchedDebt`), `File` (relative to the library, forward slashes, however the
-  library path was given on the command line), `Line` (the line in that file) and `ModelLine` (the
-  same finding's line within the class's own source, for a tool that navigates by class).
+- **json** — an object with `tool`, `library`, `modelsChecked`, `findingCount`, `hasBaseline`, a
+  `summary` (`new`, `acceptedDebt`, `touchedDebt` and `fixed` counts), a `fixed` array (the baseline
+  entries a `--changed-from` run found fixed), a `coverageGate` array when a coverage gate was asked
+  for, and a `findings` array. Each finding carries `RuleId`, `Severity`, `Status`
+  (`New`/`AcceptedDebt`/`TouchedDebt`), `Model`, `Element`, `Message`, `Fingerprint`, `File` (relative
+  to the library, forward slashes, however the library path was given on the command line), `Line`
+  (the line in that file) and `ModelLine` (the same finding's line within the class's own source, for
+  a tool that navigates by class).
 - **junit** — JUnit XML where each actionable finding is a failing test case. Renders in the native
   test-report UI of most CI systems (TeamCity, Jenkins, GitLab, Azure DevOps) with no extra integration.
 - **sarif** — SARIF 2.1.0 for GitHub code scanning / Azure DevOps. `level` reflects the rule's
@@ -678,7 +705,7 @@ the findings the run is about. When a baseline is in use, SARIF carries the new 
 findings only, and the run says how many it left out:
 
 ```
-note: 5 accepted-debt finding(s) left out of the SARIF - GitHub has no way to show them as
+note: 5 accepted-debt finding(s) left out of the SARIF — GitHub has no way to show them as
       accepted, so they would arrive as open alerts. --sarif-include-accepted keeps them
 ```
 
@@ -695,7 +722,9 @@ difference between uploading a library's whole history and uploading what a chan
 **Rule metadata.** Each rule carries `shortDescription`, `fullDescription` and `help.text` /
 `help.markdown` — the last is what renders in the alert body, so an alert says what the rule wants
 and where to configure it rather than only naming an id. The `helpUri` points at the settings
-reference, and the rule's category is emitted as a tag so alerts can be filtered by it.
+reference — or, for a [diagnostic](#diagnostics), at this page's Diagnostics section, since a
+diagnostic has no setting — and the rule's category is emitted as a tag so alerts can be filtered by
+it.
 
 ### Gating on coverage
 
@@ -735,8 +764,9 @@ Notes:
 - A dimension a repository does not track — its rule is switched off — is **warned about**, not
   silently skipped: a requirement that checks nothing is the failure a quality gate can least
   afford. An unknown dimension name is a usage error (exit `2`).
-- The verdicts appear in the JSON report as a `coverageGate` array (dimension, percent, required,
-  `threshold`/`previous`, passed), and on stderr as one line per failure.
+- The verdicts appear in the JSON report as a `coverageGate` array (`Dimension`, `Percent`,
+  `Required`, `Requirement` — `threshold` or `previous` — and `Passed`), and on stderr as one line per
+  failure, plus `note: coverage gate passed (N requirement(s) met)` when every one passed.
 
 ### Several reports from one run
 
@@ -778,7 +808,8 @@ on each changed line that has a finding on it. MLQT does not post it — it writ
 API wants, and `gh` sends it:
 
 ```bash
-mlqt check ./MyLibrary --changed-from origin/main       --baseline .mlqt/baseline.json --fail-on warning       --format review --out review.json
+mlqt check ./MyLibrary --changed-from origin/main --baseline .mlqt/baseline.json \
+      --fail-on warning --format review --out review.json
 
 gh api --method POST /repos/OWNER/REPO/pulls/$PR/reviews --input review.json
 ```
@@ -787,7 +818,13 @@ That split is deliberate: MLQT holds no token, speaks no HTTP, and has nothing t
 the API changes. It also means the same file can be posted by anything that can make a request.
 
 **`--changed-from` is required**, and names the base branch of the pull request. A review comment has
-to sit on a line the change touched; without a diff there is no such line.
+to sit on a line the change touched; without a diff there is no such line. The same holds when the
+review is an extra report (`--report review:review.json`): the run stops with exit `2` before loading
+anything. It prints what the diff covers, so an empty review can be told from a clean one:
+
+```
+note: review diff covers 42 changed line(s) in 3 file(s) since the merge base with origin/main
+```
 
 ### What goes inline and what does not
 
@@ -868,7 +905,13 @@ enclose that directory. On success it prints both the hook's path and the reposi
 | `--dependency <path>` | Load another library so references resolve. Repeatable | none |
 | `--force` | Replace (or delete) a `pre-commit` hook mlqt did not write | off |
 
-The options are baked into the generated script; re-run `mlqt hook install` to change them.
+The options are baked into the generated script; re-run `mlqt hook install` to change them. Relative
+paths resolve as they do for `check`: `--baseline` against the library path, `--dependency` against
+the current directory you run `install` from. Either one inside the working tree is written relative to its top, so it follows the hook into
+every worktree. The hook always adds `--no-color`.
+
+`install`, `uninstall` and `status` exit `0` when they did what was asked (including "No pre-commit
+hook to remove."), and `2` when they refused or could not run.
 
 **What the hook does.** It exits immediately unless the staged change adds, copies or modifies a `.mo`
 file, so commits it has nothing to say about cost nothing — including one that only deletes `.mo`

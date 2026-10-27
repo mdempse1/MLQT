@@ -133,7 +133,7 @@ end Example;
 
 Click the **Save Settings** button at the bottom of the Settings panel to persist your UI and syntax highlighting changes. Without saving, changes are applied to the current session but will be lost when you restart MLQT.
 
-**Choosing a UI theme is the exception, deliberately.** Clicking **Light**, **Dark** or **Custom** applies the theme at once and saves it, so you can see the whole application in it and decide whether you like it without a further step. It saves the tab's UI settings as they stand, so a custom colour or threshold you had changed on this tab is saved with it. Syntax highlighting changes still wait for **Save Settings**.
+**Choosing a UI theme is the exception, deliberately.** Clicking **Light**, **Dark** or **Custom** applies the theme at once and saves it, so you can see the whole application in it and decide whether you like it without a further step. It saves the tab's settings as they stand — the UI settings and the syntax highlighting, whose preset colours are re-derived for the new light or dark mode — so a custom colour or threshold you had changed on this tab is saved with it. Otherwise, syntax highlighting changes wait for **Save Settings**.
 
 ### Reset to Defaults
 

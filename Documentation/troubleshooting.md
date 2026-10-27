@@ -11,8 +11,8 @@
 | Cause | Solution |
 |-------|----------|
 | Path does not exist | Verify the path is correct and the directory exists on disk |
-| No Modelica files found | The directory must contain at least one `package.mo` file for MLQT to recognize it as a Modelica library |
-| Git not installed | For remote Git repositories, MLQT needs `git.exe` on your PATH for clone, fetch, and push operations. Every SVN operation uses the `svn` command-line client: it is bundled with the Windows installer, but on Linux you need the `subversion` package. |
+| No Modelica files found | MLQT recognises a library as a directory with a `package.mo` (or an encrypted library's `package.moe`), either the directory itself or one level below it, or as loose `.mo` files at its top level. Directories whose names start with `.` are skipped |
+| Git not installed | For remote Git repositories, MLQT needs `git` on your PATH for fetch, push and rebase operations. Every SVN operation uses the `svn` command-line client: it is bundled with the Windows installer, but on Linux you need the `subversion` package. |
 | Network issues | For remote repositories, check your network connection and verify the URL is correct |
 | Permission denied | Ensure you have read access to the repository directory. For remote repositories, verify your credentials. |
 
@@ -52,9 +52,9 @@
 
 **This is normal** for existing libraries that haven't been checked before. Common high-volume rules:
 
-- **"Every class must have a description"** — Many classes lack descriptions
-- **"Every public parameter must have a description"** — Parameters often lack descriptions
-- **"Every class must have documentation info"** — Documentation is frequently missing
+- **"Class has description"** (`MLQT.Doc.ClassDescription`) — Many classes lack descriptions
+- **"Parameter has description"** (`MLQT.Doc.ParameterDescription`) — Parameters often lack descriptions
+- **"Class has Documentation info"** (`MLQT.Doc.ClassDocumentationInfo`) — Documentation is frequently missing
 
 **Recommendations:**
 
@@ -83,7 +83,8 @@ a unit, and now fixes nothing. No library MLQT is tested against writes it.
 
 **What to do:** these are findings the rule should always have made. Give the type a unit (`"1"` for a
 dimensionless quantity), suppress the rule where the finding is not wanted, or accept them as debt
-with `mlqt baseline update --force` after reading them — see `cli.md`.
+with `mlqt baseline update --force` after reading them — see
+[cli.md](cli.md#prune-vs-update).
 
 ### Diff View Shows No Changes
 
@@ -230,7 +231,8 @@ This removes the repository from MLQT's project — it does not delete any files
 Only per repository, under **Settings > Manage Repositories > click a repository**. They are stored
 in that repository's `.mlqt/settings.json` and shared via version control, so everyone on the team —
 and the `mlqt` CLI in CI — checks against the same rules. A new repository starts with every rule
-Off. There is no application-wide copy of these settings.
+Off except the one that is on by default, `MLQT.Structure.SingleFilePackage`. There is no
+application-wide copy of these settings.
 
 ### Can multiple people use MLQT on the same repository simultaneously?
 

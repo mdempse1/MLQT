@@ -4,8 +4,8 @@ A small Photino Blazor desktop app for manually testing **any** stdio MCP server
 It launches a server, lists its tools, generates input fields from each tool's JSON Schema, calls the
 tool, and shows the result.
 
-MudBlazor UI, the official `ModelContextProtocol` client SDK, and a Photino window — consistent with
-where MLQT itself is going.
+MudBlazor UI, the official `ModelContextProtocol` client SDK, and a Photino window — the same host
+MLQT's own desktop app runs in.
 
 **It was a MAUI app until phase 7b-1** (2026-09-08), and was ported first on purpose. It is
 self-contained, has no project references and no users to disappoint, so it is the rehearsal for
@@ -36,17 +36,20 @@ keeps its independence from MLQT's service layer.
 
 ## Use
 
-1. **Command** — path to the MCP server executable. The **Use MLQT server** button fills in the
-   built `MLQT.McpServer.exe` path; build `MLQT.McpServer` first so it exists.
+1. **Command** — path to the MCP server executable. It starts filled with MLQT's server when one is
+   found (`Services/McpServerLocator.cs`): beside the tester, as the installers lay it out, or in
+   `MLQT.McpServer`'s build output for the same configuration and framework. The **Use MLQT server**
+   button puts that path back, and is disabled when neither exists; build `MLQT.McpServer` first.
 2. Optionally set space-separated **Arguments** and a **Working directory**.
 3. **Connect** — launches the server over stdio, shows the server's name/version and any **instructions**
    it returned on connect (the text a client/LLM sees describing what the server does), and lists its tools.
 4. Pick a tool. A form is generated from its input schema:
    - booleans → three-way dropdown ((default) / true / false), enums → dropdown, arrays/objects →
      multiline (enter JSON), everything else → text.
+   - a field whose schema declares a `default` starts filled with it, and is sent as shown.
    - required fields are marked `*`; leave optional fields blank (and booleans on **(default)**) to use
      the server's defaults. Leaving a boolean on (default) omits it entirely, which matters for tri-state
-     `boolean|null` parameters (e.g. `mlqt_create_class`'s `standalone`) where sending `false` is not the same
+     nullable boolean parameters (e.g. `mlqt_find`'s `hasExperiment`) where sending `false` is not the same
      as omitting it.
 5. **Call tool** — the result is shown with an `ok` / `isError` badge: text content, pretty-printed
    if it is JSON, plus any `structuredContent`.
@@ -65,3 +68,6 @@ keeps its independence from MLQT's service layer.
   looked at, turning image content into a `data:` URI the page can put in an `img` tag.
 - `Services/ToolSchema.cs` — parses a tool's JSON Schema into editable fields and converts them back
   to a typed argument dictionary.
+- `Services/McpServerLocator.cs` — where MLQT's own server is, for the default command (B180).
+- `Services/StaticWebAssetsFileProvider.cs` — serves the web assets of a built (not published) tester
+  through the shared `StaticWebAssetManifest`.

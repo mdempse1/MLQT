@@ -54,7 +54,7 @@ The fully qualified name of a class includes the entire package path, separated 
 Modelica code can be stored in files in two ways:
 
 **Single-file packages (`package.mo`):**
-A package and all its contents in a single file. The file must be named `package.mo` and placed in a directory matching the package name.
+A package and all its contents in a single file — either a file named after the package (`MyLib.mo`), or a `package.mo` in a directory matching the package name.
 
 **Directory packages:**
 Each class in a separate `.mo` file within a directory. The directory contains:
@@ -89,7 +89,7 @@ Modelica classes are organized into sections. Several of MLQT's [formatting rule
 - **public** — Declarations visible to users of the class (the default)
 - **protected** — Declarations hidden from users, only accessible within the class
 
-The formatting rule **"One of each section"** merges multiple public sections into one and multiple protected sections into one.
+The formatting rule **"A class may only have 1 public, 1 protected, 1 equation or algorithm section"** merges multiple public sections into one and multiple protected sections into one.
 
 ### Composition Elements
 
@@ -100,7 +100,7 @@ Within public and protected sections, you find:
 - **component declarations** — Variables and parameters (e.g., `parameter Real mass = 1.0`)
 - **nested class definitions** — Classes defined inside another class
 
-The formatting rules **"Imports first"** and **"Components before classes"** control the ordering of these elements.
+The formatting rules **"Composition must be imports first; then extends at the top of the public/protected sections"**, **"Composition must have components before classes"** and **"Declarations in order: inputs and outputs, constants, parameters, variables, components"** control the ordering of these elements.
 
 ### Equation and Algorithm Sections
 
@@ -108,7 +108,7 @@ The formatting rules **"Imports first"** and **"Components before classes"** con
 - **algorithm** — Declares sequential computation steps (like a programming language)
 - **initial equation** / **initial algorithm** — Equations or algorithms that apply only at the start of simulation
 
-The formatting rules **"Initial equation first/last"** control where the initial sections appear relative to the main equation/algorithm section.
+The two formatting rules **"If there is an initial equation/algorithm section it should appear before (after) the equation/algorithm section"** control where the initial sections appear relative to the main equation/algorithm section.
 
 The style rule **"A class may only have either an equation or algorithm section, not both"** flags classes that have both types of sections.
 

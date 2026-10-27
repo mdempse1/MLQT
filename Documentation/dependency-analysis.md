@@ -16,6 +16,10 @@ When you switch to the Dependencies tab, MLQT automatically enables **multi-sele
 
 When you leave the Dependencies tab, multi-selection mode is automatically disabled and the tree returns to single-selection behavior.
 
+With nothing checked, the tab says "Select one or more models to view their dependencies". When the selected models are used by nothing else, it says so and shows no graph or table.
+
+**When dependency analysis was deferred.** For a project larger than the *Defer analysis threshold* (see [UI Customization](ui-customization.md#startup-analysis)), dependency analysis does not run at startup. Until it has, the tab shows "Dependency analysis has not been run yet" and a **Run Dependency Analysis Now** button; the startup progress dialog offers the same step.
+
 ![Screenshot: The left panel library tree with the impact-analysis checkboxes beside every node, and a connector checked - which ticks the package holding it as well. The Dependencies tab is the active tab on the right.](Images/dependency-analysis-2.png)
 
 ## Understanding the Network Graph
@@ -87,11 +91,11 @@ Click on any node in the graph to:
 
 1. **Highlight** the node and dim all others — making it easy to see its connections
 2. **Show a tooltip** in the top-left corner of the graph with the model's full name, whether it is selected or impacted, and how many connections it has
-3. **Filter the impact table** below to show only entries related to that node
+3. **Filter the impact table** below to show only entries related to that node — its name is put in the table's search field
 
 Click the same node again or click the graph background to clear the highlight.
 
-![Screenshot: The dependency graph with one node highlighted (brighter than the others, which are dimmed). The tooltip should be visible in the top-left showing the model's full name, "Impacted model", and connection count.](Images/dependency-analysis-3.png)
+![Screenshot: The dependency graph with one node clicked and highlighted (brighter than the others, which are dimmed), and the Clear Selection button beside the Layout dropdown. The tooltip should be visible in the top-left showing the model's full name, "Impacted model", and connection count.](Images/dependency-analysis-3.png)
 
 ### Panning and Zooming
 
@@ -135,7 +139,7 @@ Below the graph, a table lists every impacted model with detailed information. T
 
 ### Filtering the Table
 
-- Use the **Search field** to filter by model name or impacted-by names
+- Use the **Search field** to filter by model name or impacted-by names. Here a row is kept when **any** of the space-separated words matches — unlike the Code Review findings search, where every word must
 - **Click a row** in the table to highlight the corresponding node in the graph (and vice versa — clicking a node in the graph filters the table to that node)
 - Highlighted rows have a distinct background color so you can see which table row corresponds to the selected graph node
 

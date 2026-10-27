@@ -80,3 +80,5 @@ ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.set -> void
 ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.get -> System.Collections.Generic.List<string!>!
 ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.set -> void
+*REMOVED*ModelicaGraph.ModelAnalyzer.Resources.get -> System.Collections.Generic.List<ModelicaParser.DataTypes.ExternalResourceInfo!>!
+*REMOVED*override ModelicaGraph.ModelAnalyzer.VisitComposition(modelicaParser.CompositionContext! context) -> object?

@@ -33,7 +33,7 @@ MLQT replaces your generic Git or SVN client with a Modelica-aware one. You keep
 
 - **Style Checking** — Configurable rules covering description strings, section ordering, naming conventions, units, `modelica://` reference validation, and spell checking of descriptions and documentation
 - **Static Analysis** — Unused elements, classes and imports; duplicate and shadowing declarations; `uses` annotation hygiene; `package.order` consistency; missing units. All self-contained, so they cannot produce false positives from libraries they cannot see
-- **Quality Gate & CI** — The [`mlqt` CLI](Documentation/cli.md) runs the same rules headless. Baseline your existing findings as accepted debt and only report on new ones, so the library can never get worse whatever state it starts in. Reports in console, JSON, JUnit, SARIF, TeamCity, markdown and GitHub review formats, plus a Git pre-commit hook. See the [CI quality gate guide](Documentation/ci-quality-gate.md)
+- **Quality Gate & CI** — The [`mlqt` CLI](Documentation/cli.md) runs the same rules headless. Baseline your existing findings as accepted debt and only report on new ones, so the library can never get worse whatever state it starts in. Reports in console, JSON, JUnit, SARIF, TeamCity, markdown and GitHub pull-request review formats, plus a Git pre-commit hook. See the [CI quality gate guide](Documentation/ci-quality-gate.md)
 - **Metrics & Coverage** — Coverage per quality dimension with compliant/eligible counts, and a trend that accumulates one point per commit that moves the numbers. See [metrics-dashboard.md](Documentation/metrics-dashboard.md)
 
 **Everything else models depend on**
@@ -45,7 +45,7 @@ MLQT replaces your generic Git or SVN client with a Modelica-aware one. You keep
 
 **AI agent access**
 
-- **MCP Server** — A headless Model Context Protocol server exposes MLQT's Modelica capabilities as more than 80 tools an AI agent (for example, Claude) can call to read, author, check and format Modelica code. Compact class views mean an agent learns a class's interface in a few hundred tokens instead of reading the file it lives in. See the [MCP Server guide](Documentation/mcp-server.md)
+- **MCP Server** — A headless Model Context Protocol server exposes MLQT's Modelica capabilities as 16 tools an AI agent (for example, Claude) can call to load, read, author, refactor, check and format Modelica code. Compact class views mean an agent learns a class's interface in a few hundred tokens instead of reading the file it lives in. See the [MCP Server guide](Documentation/mcp-server.md)
 
 ## Requirements
 
@@ -91,8 +91,11 @@ This repository contains the open-source components of MLQT:
 | [DymolaInterface](DymolaInterface/) | .NET client for Dymola's HTTP JSON-RPC API |
 | [OpenModelicaInterface](OpenModelicaInterface/) | .NET client for OpenModelica Compiler (OMC) via ZeroMQ |
 | [MLQT.McpTester](MLQT.McpTester/) | Desktop app (Windows and Linux) for manually testing any stdio MCP server — connect, list tools, auto-generate parameter forms, call, and view results |
+| [MLQT.TestHost](MLQT.TestHost/) / [MLQT.Journeys](MLQT.Journeys/) | A browser-served host of the same UI, and the Playwright journeys that drive it end to end |
 
-Each project has a README with detailed API documentation.
+The UI, the services, the libraries, the CLI and the MCP server each have a `.Tests` project beside them.
+
+The libraries, `MLQT.Services`, `MLQT.Shared`, `MLQT.McpServer` and `MLQT.McpTester` each have a README with detailed API documentation; the CLI is documented in [Documentation/cli.md](Documentation/cli.md).
 
 MLQT is a **Blazor application hosted in a native webview** by [Photino](https://www.tryphotino.io/) — WebView2 on Windows, WebKitGTK on Linux — giving a desktop application with a web-based UI and direct filesystem, Git and SVN access from the same process. All business logic lives in service classes behind interfaces, registered as singletons in dependency injection, and the UI communicates with them via events. Because the logic is decoupled from the UI, the same service layer backs two further headless hosts — the CLI and the MCP server. All three run on Windows and Linux.
 
@@ -149,7 +152,7 @@ MLQT started from a familiar frustration: every time a Modelica tool saved a fil
 
 Doing that properly meant writing a real parser rather than matching text, and the parser turned out to be the useful part. The same understanding of the language that drives the formatter also drives style checking, the static analyses, dependency impact analysis and external resource tracking, alongside integrations with Dymola and OpenModelica for model checking.
 
-More recently, the improvement in AI agents' ability to work on Modelica made a third host worth building. The MCP server gives an agent focused information instead of raw files: to understand the public interface of `Modelica.Blocks.Continuous.Integrator` an agent would otherwise read the whole of `Continuous.mo`, close to 59,000 tokens; `mlqt_get_class_interface` returns the same thing in under 600.
+More recently, the improvement in AI agents' ability to work on Modelica made a third host worth building. The MCP server gives an agent focused information instead of raw files: to understand the public interface of `Modelica.Blocks.Continuous.Integrator` an agent would otherwise read the whole of `Continuous.mo`, close to 59,000 tokens; `mlqt_get_class` with its `interface` view returns the same thing in under 600.
 
 ## License
 

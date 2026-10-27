@@ -9,7 +9,9 @@ This skill documents all NuGet packages used in the MLQT solution.
 
 ## Package Summary
 
-All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
+All packages use open-source licenses: permissive (MIT, BSD, Apache 2.0) apart from NetMQ, which
+is LGPL-3.0, and WeCantSpell.Hunspell, which carries Hunspell's MPL/GPL/LGPL tri-licence. Both are
+consumed unmodified as NuGet-delivered libraries.
 
 ## Parsing and Language Processing
 
@@ -24,12 +26,20 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 - **Used in**: ModelicaParser
 - **License**: [BSD 3-Clause](https://github.com/kaby76/Antlr4BuildTasks/blob/master/LICENSE)
 - **NuGet**: https://www.nuget.org/packages/Antlr4BuildTasks
+- **Note**: referenced with `PrivateAssets="all"` - a build-time tool, it ships nothing
+
+### WeCantSpell.Hunspell (v7.0.1)
+- **Purpose**: Managed Hunspell implementation behind `SpellChecker` (the spelling style rules and
+  the Code Review spelling workflow; see the `spell-checking` skill)
+- **Used in**: ModelicaParser
+- **License**: MPL 1.1 / GPL 2.0 / LGPL 2.1 tri-licence, inherited from Hunspell (`license.txt` in the package); used under MPL 1.1, unmodified
+- **NuGet**: https://www.nuget.org/packages/WeCantSpell.Hunspell
 
 ## Version Control Integration
 
 ### LibGit2Sharp (v0.31.0)
 - **Purpose**: .NET wrapper for libgit2 - enables Git repository operations
-- **Used in**: RevisionControl
+- **Used in**: RevisionControl, MLQT.Journeys (builds the Git working copies the journeys drive)
 - **License**: [MIT](https://github.com/libgit2/libgit2sharp/blob/master/LICENSE.md)
 - **NuGet**: https://www.nuget.org/packages/LibGit2Sharp
 
@@ -37,7 +47,7 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 - **Purpose**: .NET wrapper for Subversion (SVN). **No longer used by the shipped product** — the SVN implementation talks to the `svn` CLI directly (see `RevisionControl/SvnCli.cs`). Retained only as a test dependency to set up and validate repository state in the integration tests.
 - **Used in**: RevisionControl.Tests (test project only)
 - **License**: [Apache 2.0](https://sharpsvn.open.collab.net/)
-- **NuGet**: https://www.nuget.org/packages/SharpSvn.1.14-x64
+- **NuGet**: https://www.nuget.org/packages/SharpSvn
 
 ### SlikSVN command-line client (bundled, not a NuGet package)
 - **Purpose**: `svn.exe` used for **all** SVN operations (much faster than the previously-used SharpSvn on large libraries). Resolved at runtime by `RevisionControl/SvnToolLocator.cs`.
@@ -81,7 +91,7 @@ these two are what replaced them, and they are the whole of the host's dependenc
 
 ## ASP.NET Core
 
-### Microsoft.AspNetCore.Components.Web (v10.0.3)
+### Microsoft.AspNetCore.Components.Web (v10.0.9)
 - **Purpose**: Blazor components for web applications
 - **Used in**: MLQT.Shared
 - **License**: [MIT](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt)
@@ -89,15 +99,15 @@ these two are what replaced them, and they are the whole of the host's dependenc
 
 ## Dependency Injection
 
-### Microsoft.Extensions.DependencyInjection (v10.0.3)
+### Microsoft.Extensions.DependencyInjection (v10.0.9)
 - **Purpose**: Dependency injection abstractions and container for .NET
-- **Used in**: DymolaInterface
+- **Used in**: DymolaInterface, OpenModelicaInterface, DymolaInterface.Tests
 - **License**: [MIT](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT)
 - **NuGet**: https://www.nuget.org/packages/Microsoft.Extensions.DependencyInjection
 
 ## Logging
 
-### NLog (v6.1.0)
+### NLog (v6.1.3)
 - **Purpose**: Flexible logging framework for .NET
 - **Used in**: RevisionControl, MLQT.Services, MLQT.Shared
 - **License**: [BSD 3-Clause](https://github.com/NLog/NLog/blob/master/LICENSE.txt)
@@ -105,12 +115,37 @@ these two are what replaced them, and they are the whole of the host's dependenc
 
 ## Messaging
 
-### NetMQ (v4.0.2.2)
+### NetMQ (v4.0.4.2)
 - **Purpose**: .NET port of ZeroMQ messaging library
 - **Used in**: OpenModelicaInterface
-- **License**: [LGPL-3.0](https://github.com/zeromq/netmq/blob/master/LICENSE)
+- **License**: [LGPL-3.0](https://github.com/zeromq/netmq/blob/master/COPYING.LESSER)
 - **NuGet**: https://www.nuget.org/packages/NetMQ
 - **Note**: Used for REQ-REP communication with OpenModelica Compiler
+
+### System.Security.Cryptography.Xml (v10.0.13)
+- **Purpose**: Not used directly - a security pin. NetMQ (through `System.ServiceModel.Primitives`)
+  pulls a vulnerable version transitively; 10.0.13 is the first fixing its denial-of-service
+  advisories, and it brings a patched `System.Security.Cryptography.Pkcs` with it
+- **Used in**: OpenModelicaInterface, the single upstream place, so the fix reaches every project
+  built on it here and outside this repository (the csproj comment lists the advisories)
+- **License**: [MIT](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT)
+- **NuGet**: https://www.nuget.org/packages/System.Security.Cryptography.Xml
+
+## MCP
+
+### ModelContextProtocol (v1.4.1)
+- **Purpose**: The official C# MCP SDK - the stdio server and tool attributes in MLQT.McpServer,
+  and the client MLQT.McpTester drives a server with
+- **Used in**: MLQT.McpServer, MLQT.McpTester
+- **License**: [Apache 2.0](https://github.com/modelcontextprotocol/csharp-sdk/blob/main/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/ModelContextProtocol
+
+### Microsoft.Extensions.Hosting (v10.0.7)
+- **Purpose**: The generic host (`Host.CreateApplicationBuilder`) the MCP server runs in. Once came
+  through the `Microsoft.AspNetCore.App` framework reference, dropped when MLQT.Services became UI-free
+- **Used in**: MLQT.McpServer
+- **License**: [MIT](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.Extensions.Hosting
 
 ## Graphics
 
@@ -170,13 +205,20 @@ these two are what replaced them, and they are the whole of the host's dependenc
 - **Purpose**: Code coverage under Microsoft.Testing.Platform (`--coverlet`)
 - **Used in**: All test projects
 - **License**: [MIT](https://github.com/coverlet-coverage/coverlet/blob/master/LICENSE)
-- **NuGet**: https://www.nuget.org/packages/coverlet.collector
+- **NuGet**: https://www.nuget.org/packages/coverlet.MTP
 
 ### Moq (v4.20.72)
 - **Purpose**: Mocking framework for unit tests
-- **Used in**: ModelicaComparer.Tests
+- **Used in**: DymolaInterface.Tests, OpenModelicaInterface.Tests, MLQT.Services.Tests, MLQT.Shared.Tests, MLQT.McpServer.Tests
 - **License**: [BSD 3-Clause](https://github.com/moq/moq4/blob/main/License.txt)
 - **NuGet**: https://www.nuget.org/packages/Moq
+
+### Microsoft.Playwright (v1.56.0)
+- **Purpose**: Drives a real browser against `MLQT.TestHost` for the journey tests and the
+  generated documentation screenshots (see the `gui-testing` and `user-documentation` skills)
+- **Used in**: MLQT.Journeys
+- **License**: [MIT](https://github.com/microsoft/playwright-dotnet/blob/main/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.Playwright
 
 ## Logging and Diagnostics
 
@@ -218,14 +260,15 @@ Test packages are marked as development dependencies and don't ship with the app
 
 | Project | Key Packages |
 |---------|--------------|
-| ModelicaParser | Antlr4.Runtime.Standard, Antlr4BuildTasks, PublicApiAnalyzers |
+| ModelicaParser | Antlr4.Runtime.Standard, Antlr4BuildTasks, WeCantSpell.Hunspell, PublicApiAnalyzers |
 | ModelicaGraph | PublicApiAnalyzers _(project references to ModelicaParser and RevisionControl)_ |
 | RevisionControl | LibGit2Sharp, NLog, PublicApiAnalyzers _(SVN via bundled svn CLI)_ |
 | DymolaInterface | Microsoft.Extensions.DependencyInjection, PublicApiAnalyzers |
-| OpenModelicaInterface | NetMQ, PublicApiAnalyzers |
-| MLQT.Services | MudBlazor, NLog, PublicApiAnalyzers |
-| MLQT.Shared | MudBlazor, NLog |
+| OpenModelicaInterface | NetMQ, Microsoft.Extensions.DependencyInjection, System.Security.Cryptography.Xml, PublicApiAnalyzers |
+| MLQT.Services | NLog, PublicApiAnalyzers _(UI-free: no MudBlazor)_ |
+| MLQT.Shared | MudBlazor, NLog, Microsoft.AspNetCore.Components.Web |
 | MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
+| MLQT.Cli, MLQT.TestHost | none of their own _(project references only)_ |
 | MLQT.McpServer | ModelContextProtocol, Microsoft.Extensions.Hosting, Svg.Skia, SkiaSharp.NativeAssets.Linux |
-| MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol |
-| Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (MLQT.Shared.Tests also: bunit; RevisionControl.Tests also: SharpSvn) |
+| MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol, Microsoft.Extensions.Logging.Debug |
+| Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (Moq in DymolaInterface/OpenModelicaInterface/Services/Shared/McpServer tests; MLQT.Shared.Tests also bunit; RevisionControl.Tests also SharpSvn; DymolaInterface.Tests also DependencyInjection; MLQT.Journeys also Microsoft.Playwright and LibGit2Sharp) |

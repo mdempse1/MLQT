@@ -35,10 +35,11 @@ public class HookOptionsTests
     }
 
     [Fact]
-    public void PathsAreResolvedAgainstTheLibrary()
+    public void PathsResolveAsTheyDoForCheck()
     {
-        // As everywhere else in the CLI: a relative path means relative to the library, not to
-        // whatever directory the hook happens to run from.
+        // As `check` reads them: a relative --baseline against the library, a relative --dependency
+        // against the current directory (B508). Both are made absolute at install, so the hook does
+        // not depend on whatever directory git runs it from.
         using var workspace = new TempWorkspace("mlqt-hookopts");
         var library = workspace.PathTo("Lib");
         Directory.CreateDirectory(library);
@@ -46,9 +47,7 @@ public class HookOptionsTests
         var options = Parse(library, "--baseline", ".mlqt/baseline.json", "--dependency", "../Other");
 
         Assert.Equal(Path.GetFullPath(Path.Combine(library, ".mlqt/baseline.json")), options.BaselinePath);
-        Assert.Equal(
-            Path.GetFullPath(Path.Combine(library, "../Other")),
-            Assert.Single(options.DependencyPaths));
+        Assert.Equal(Path.GetFullPath("../Other"), Assert.Single(options.DependencyPaths));
     }
 
     [Fact]

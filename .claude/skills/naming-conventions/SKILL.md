@@ -29,11 +29,17 @@ ModelicaGraph (orchestration + settings)
   StyleCheckingSettings.cs      - FollowNamingConvention bool + NamingConvention property
   StyleChecking.cs              - Wires FollowNamingConvention visitor into RunStyleChecking()
 
+MLQT.Services
+  Checking/StyleCheckContext.cs - Builds the NamingConventionConfig once per run, not per class
+
 MLQT.Shared (UI)
-  Components/NamingStyleSelect.razor         - Reusable MudSelect<NamingStyle> wrapper
-  Components/SettingsStyleChecking.razor      - Default naming convention settings panel
-  Components/SettingsRepositories.razor       - Per-repo naming convention settings panel
+  Components/NamingStyleSelect.razor(.cs)    - Reusable MudSelect<NamingStyle> wrapper
+  Components/SettingsRepositories.razor(.cs) - The naming convention settings panel (per repository;
+                                               style settings are only set per repository)
 ```
+
+The rule id is `RuleIds.NamingConvention` (`MLQT.Naming.Convention`), in `RuleCatalog` under the
+"Naming" category; it is off unless configured.
 
 ## NamingStyle Enum
 
@@ -99,7 +105,7 @@ public record NamingConventionConfig
 
 The `ClassNamingRules` dictionary is keyed by Modelica class keyword: `"model"`, `"function"`, `"block"`, `"connector"`, `"record"`, `"type"`, `"package"`, `"class"`, `"operator"`.
 
-`ExceptionNames` contains names that bypass all convention checks (case-sensitive). Used for product names like "NASCAR" or established abbreviations like "OMC".
+`ExceptionNames` contains names that bypass all convention checks (case-sensitive). Used for product names or established abbreviations like "HVAC" or "OMC".
 
 `AdditionalPatterns` contains per-slot regex patterns. A name is valid if it matches the base style OR any pattern for its slot. Keys are from the nested `SlotKeys` class: class types use the same keys as `ClassNamingRules`; element categories use `"publicVariable"`, `"publicParameter"`, `"publicConstant"`, `"protectedVariable"`, `"protectedParameter"`, `"protectedConstant"`. Patterns are matched against the full original name (not suffix-stripped).
 
@@ -117,7 +123,7 @@ Extends `VisitorWithModelNameTracking`. Follows the same patterns as `PublicPara
 | `_currentElementCategory` | Set in `VisitComponent_clause()` from `type_prefix` |
 | `_classTypeStack` | Pushed in `VisitClass_definition()`, popped in `OnClassExited()` |
 | `_pendingClassName/Type/Line` | Deferred class name check (see below) |
-| `_compiledPatterns` | Pre-compiled regex patterns per slot, built in constructor from `config.AdditionalPatterns` |
+| `_compiledPatterns` | Regex patterns per slot, built in the constructor from `config.AdditionalPatterns` through the static, process-wide `_patternCache` |
 
 ### Deferred Class Name Checking
 
@@ -162,7 +168,8 @@ Key methods:
 Properties match the `NamingConventionConfig` fields plus:
 - `PresetName` — Display name of the current preset (or "Custom")
 - `ExceptionNames` — `List<string>` of names that bypass all checks
-- `AdditionalPatterns` — `Dictionary<string, List<string>>` of per-slot regex patterns (keys from `NamingConventionConfig.SlotKeys`)
+- `AdditionalPatterns` — `SortedDictionary<string, List<string>>` (ordinal) of per-slot regex patterns (keys from `NamingConventionConfig.SlotKeys`); sorted so a committed `.mlqt/settings.json` does not reorder on save
+- Per-class-type properties (`ModelNaming`, `FunctionNaming`, `BlockNaming`, ... `OperatorNaming`) where the config has the `ClassNamingRules` dictionary
 
 ## NamingConventionPresets
 
@@ -185,10 +192,9 @@ Three predefined presets:
 ```csharp
 if (settings.FollowNamingConvention)
 {
-    var config = settings.NamingConvention.ToConfig();
-    var visitor = new FollowNamingConvention(config, basePackage);
-    visitor.VisitStored_definition(parsedCode);
-    violations.AddRange(visitor.RuleViolations);
+    // Built once per run by StyleCheckContext and passed in; the fallback serves single-class callers
+    var config = namingConfig ?? settings.NamingConvention.ToConfig();
+    RunRule(new FollowNamingConvention(config, basePackage), parsedCode, findings, timings);
 }
 ```
 
@@ -198,10 +204,11 @@ if (settings.FollowNamingConvention)
 
 | Property | Type | Default | Purpose |
 |----------|------|---------|---------|
-| `FollowNamingConvention` | `bool` | `false` | Master enable/disable toggle |
+| `FollowNamingConvention` | `bool` | `false` | Master toggle - a facade over `RuleSeverities[MLQT.Naming.Convention]` |
 | `NamingConvention` | `NamingConventionSettings` | Modelica Standard defaults | Full naming convention configuration |
 
-Both exist in default app settings and per-repository settings (via `Repository.StyleSettings`).
+Both are per-repository settings (`Repository.StyleSettings`). A change to `NamingConvention` counts
+as a change to what is checked: `StyleCheckingSettings.ChecksDifferFrom` compares it.
 
 ## JSON Serialization
 
@@ -217,7 +224,7 @@ When `FollowNamingConvention` is enabled, the `NamingConvention` object is seria
         "PublicVariableNaming": 1,
         "PublicConstantNaming": 1,
         "AllowUnderscoreSuffixes": true,
-        "ExceptionNames": ["NASCAR"],
+        "ExceptionNames": ["HVAC"],
         "AdditionalPatterns": {
             "model": ["^[A-Z][a-zA-Z]+(_\\d+)+$"]
         }
@@ -240,9 +247,10 @@ When `SlotKey` is non-empty, a filter icon button appears next to the dropdown. 
 - Monospace text input + Add button with regex validation (`RegexParseException` catch)
 - `MudChipSet` showing existing patterns as closeable monospace chips
 
-### Settings Panels (SettingsStyleChecking.razor / SettingsRepositories.razor)
+### Settings Panel (SettingsRepositories.razor)
 
-Both contain the same naming convention expansion panel, shown when `FollowNamingConvention` is enabled:
+The naming convention panel, shown when `FollowNamingConvention` is enabled (the toggle itself is
+one of `RuleSettingsLayout.PickersIn(RuleSettingsLayout.Naming)`):
 
 - **Preset selector** — Dropdown with all presets + "Custom"
 - **Class Names section** — 9 `NamingStyleSelect` dropdowns (model, function, block, connector, record, type, package, class, operator)
@@ -255,18 +263,18 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 
 ### Code-behind Methods
 
-| Method (SettingsStyleChecking) | Method (SettingsRepositories) | Purpose |
-|-------------------------------|------------------------------|---------|
-| `OnPresetChanged(name)` | `OnRepoPresetChanged(name)` | Apply preset or set "Custom" |
-| `OnNamingStyleChanged(action)` | `OnRepoNamingStyleChanged(action)` | Apply change + set "Custom" |
-| `AddExceptionName()` | `AddRepoExceptionName()` | Add to exception list |
-| `RemoveExceptionName(name)` | `RemoveRepoExceptionName(name)` | Remove from exception list |
-| `GetPatterns(slotKey)` | `GetRepoPatterns(slotKey)` | Get pattern list for slot (creates empty list if absent) |
-| `OnPatternsChanged(slotKey, patterns)` | `OnRepoPatternsChanged(slotKey, patterns)` | Update patterns + set "Custom" |
+| Method (SettingsRepositories.razor.cs) | Purpose |
+|------------------------------|---------|
+| `OnRepoPresetChanged(name)` | Apply preset or set "Custom" |
+| `OnRepoNamingStyleChanged(action)` | Apply change + set "Custom" |
+| `AddRepoExceptionName()` | Add to exception list |
+| `RemoveRepoExceptionName(name)` | Remove from exception list |
+| `GetRepoPatterns(slotKey)` | Get pattern list for slot (creates empty list if absent) |
+| `OnRepoPatternsChanged(slotKey, patterns)` | Update patterns + set "Custom" |
 
-### Change Detection (SettingsRepositories.razor)
+### Change Detection
 
-`StyleSettingsChanged()` includes `!old.NamingConvention.Equals(@new.NamingConvention)` to detect naming convention changes and trigger style re-checking.
+`StyleCheckingSettings.ChecksDifferFrom(other)` includes `!NamingConvention.Equals(other.NamingConvention)`, so a naming convention change triggers style re-checking.
 
 ## Test Files
 
@@ -275,13 +283,14 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 | `ModelicaParser.Tests/StyleRuleChecks/NamingValidatorTests.cs` | IsCamelCase, IsPascalCase, IsSnakeCase, IsUpperCase, StripSuffix, IsShortAbbreviation, IsValid integration, additional regex patterns |
 | `ModelicaParser.Tests/StyleRuleChecks/FollowNamingConventionTests.cs` | Class names, element names, visibility, suffixes, nested classes, array subscripts, short abbreviations, exception names, quoted identifiers, per-slot additional patterns |
 | `ModelicaGraph.Tests/NamingConventionSettingsTests.cs` | AdditionalPatterns in ToConfig, Equals, Clone; empty list filtering; order-independent comparison |
+| `ModelicaGraph.Tests/NamingConventionPresetsTests.cs` | The three presets and `All` |
 
 ## Key Design Decisions
 
 1. **Two-layer config** — `NamingConventionConfig` (record in ModelicaParser) avoids circular dependency; `NamingConventionSettings` (class in ModelicaGraph) handles serialization
 2. **Deferred class name checking** — Pending fields ensure `CurrentModelName` is correct when violations are reported
 3. **Short abbreviation bypass** — Letter+digits names (T, P3, V12) are always valid — common in Modelica for physical variables
-4. **Exception names are case-sensitive** — "NASCAR" is different from "Nascar"
+4. **Exception names are case-sensitive** — "HVAC" is different from "Hvac"
 5. **Suffix stripping applies to both class and element names** — When `AllowUnderscoreSuffixes` is enabled, both class names (e.g., `HeatExchanger_simple`) and element names (e.g., `pressure_in`) have the trailing suffix stripped before checking
 6. **Array subscript stripping** — `name[3]` → `name` before checking (defensive, as ANTLR grammar typically separates these)
 7. **Quoted identifier handling** — Modelica allows quoted identifiers (Q_IDENT grammar rule) like `'r_0'` where single quotes are part of the token text. Both class names and element names have quotes stripped via `StripQuotes()` before convention checking. This ensures `'r_0'` → `r_0` → suffix strip → `r` → valid single char.
@@ -289,6 +298,6 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 9. **Nested classes skipped** — `VisitorWithModelNameTracking` skips nested class definitions (depth > 1). Each nested class has its own `ModelNode` and is checked independently, preventing duplicate violations when a parent package's code includes nested class source
 10. **Per-slot additional patterns** — Each naming slot can have regex patterns that supplement the base style. A name is valid if it matches the base style OR any pattern. Keys use `NamingConventionConfig.SlotKeys` constants
 11. **Patterns match full original name** — Regex patterns are matched against the original name, not the suffix-stripped version, giving pattern authors full control
-12. **Pre-compiled regex with timeout** — Patterns are compiled once in the visitor constructor with `RegexOptions.Compiled` and a 100ms timeout to prevent catastrophic backtracking. Invalid patterns are silently skipped
+12. **Pre-compiled regex with timeout** — Patterns are compiled with `RegexOptions.Compiled` and a 5-second `PatternTimeout`, once per process: a static `_patternCache` keyed by pattern text is shared by every visitor (one is built per class, and recompiling cost ~8ms per class). 100ms was too short - healthy patterns timed out during a parallel check of a large library. Invalid patterns are cached as null and silently skipped
 13. **Adding patterns sets preset to "Custom"** — Consistent with how changing any naming style value switches away from a preset
 14. **Pattern sanitization** — `NamingValidator.SanitizePattern()` strips accidental outer `[`/`]` brackets from patterns when the inner content contains regex anchors (`^` or `$`). This handles patterns manually entered in settings JSON with unintended bracket wrapping (e.g., `[^[A-Z]...$]` → `^[A-Z]...$`). Applied both in the `FollowNamingConvention` constructor during compilation and in `NamingStyleSelect.AddPattern()` during UI input

@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ModelicaParser\ModelicaParser.csproj" />
-    <ProjectReference Include="..\RevisionControl\RevisionControl.csproj" />
   </ItemGroup>
 
 </Project>

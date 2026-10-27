@@ -26,24 +26,35 @@ returns a file's content as a string.
 
 ## Key Interface
 
+`RevisionControl/Interfaces/IRevisionControlSystem.cs`, grouped here (the file's doc comments carry
+each member's contract):
+
 ```csharp
 public interface IRevisionControlSystem
 {
     // Checkout and workspace management
     bool CheckoutRevision(string repositoryPath, string revision, string outputPath);
     bool UpdateExistingCheckout(string checkoutPath, string repositoryPath, string revision);
+    bool UpdateRevisionInPlace(string checkoutPath, string repositoryPath, string revision);
     bool CleanWorkspace(string checkoutPath);
 
     // Repository queries
     bool IsValidRepository(string repositoryPath);
+    string? FindRepositoryRoot(string path);
     string? GetCurrentRevision(string repositoryPath);
     string? GetCurrentBranch(string repositoryPath);
+    string? GetDetachedHeadLabel(string repositoryPath);
+    int CountCommitsOnNoBranch(string repositoryPath);
     string? GetRevisionDescription(string repositoryPath, string revision);
     string? ResolveRevision(string repositoryPath, string revision);
+    string? GetPreviousRevision(string repositoryPath, string revision);
+    DateTimeOffset? GetBranchPointDate(string repositoryPath);
+    string? GetBranchPointRevision(string repositoryPath, string? startRevision = null);  // Git: null
 
     // Log and history
     List<VcsLogEntry> GetLogEntries(string repositoryPath, VcsLogOptions? options = null);
     List<VcsChangedFile> GetChangedFiles(string repositoryPath, string revision);
+    IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision);
     List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryPath);
 
     // Branch operations
@@ -56,31 +67,35 @@ public interface IRevisionControlSystem
     VcsUpdateResult UpdateToLatest(string repositoryPath);
     VcsOperationResult RevertFiles(string repositoryPath, IEnumerable<string> filesToRevert);
     VcsMergeResult MergeBranch(string repositoryPath, string sourceBranch);
+    VcsOperationResult ResolveConflict(string repositoryPath, string filePath, ConflictResolutionChoice choice);
 
     // Rebase operations (Git only)
-    VcsOperationResult Rebase(string repositoryPath, string targetBranch);
-    VcsOperationResult ContinueRebase(string repositoryPath);
+    VcsMergeResult Rebase(string repositoryPath, string targetBranch);
+    VcsMergeResult ContinueRebase(string repositoryPath);
     VcsOperationResult AbortRebase(string repositoryPath);
     VcsRebaseInProgress? GetRebaseInProgress(string repositoryPath);  // a rebase left stopped (B382)
 
-    // Push operations
-    VcsOperationResult ForcePush(string repositoryPath);
+    // Push operations (SVN: no-op, a commit already reached the server)
+    VcsOperationResult Push(string repositoryPath, string? branchName = null);
+    VcsOperationResult ForcePush(string repositoryPath, string? branchName = null);
 
     // Remote status
     bool IsBranchPushed(string repositoryPath);
-    string? GetPullRequestUrl(string repositoryPath);
+    string? GetPullRequestUrl(string repositoryPath, string? baseBranch = null);
 
-    // Conflict resolution
-    VcsConflictVersions? GetConflictVersions(string repositoryPath, string filePath);
-
-    // File content
-    string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null);
+    // Conflict resolution and file content - bytes, never text (B240, B264)
+    (byte[]? ours, byte[]? theirs) GetConflictVersions(string repositoryPath, string filePath);
+    byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null);
 }
 ```
 
+`RevisionControl/Interfaces/ILineLevelDiff.cs` is a second, narrower interface that only the Git
+implementation has; a pull-request review needs it, which is why that review needs Git.
+
 ## Git Implementation (GitRevisionControlSystem)
 
-Uses LibGit2Sharp library.
+Uses LibGit2Sharp for most operations, and the `git` executable (`RunGitCommand`) where libgit2 falls
+short: fetch, rebase and its continue/abort, push, `update-index --refresh` and remote queries.
 
 ```csharp
 using RevisionControl;
@@ -196,37 +211,12 @@ the one asked for.
 
 ## Workspace Reuse for Large Repositories
 
-For large Modelica libraries, workspace reuse provides significant performance improvements.
+For large Modelica libraries, reusing one checkout across revisions is much faster than checking out
+from scratch each time. `UpdateExistingCheckout` (and `UpdateRevisionInPlace`) are the members for
+it; the revision-comparison tool that drives them lives outside this repository, so nothing in MLQT
+shows the pattern in code.
 
-### Traditional Approach (Slow)
-```csharp
-var git = new GitRevisionControlSystem();
-using var comparer = new RevisionComparer(git);
-
-// Each comparison checks out full repository from scratch
-var result1 = comparer.CompareRevisions(repoPath, "v1.0.0", "v2.0.0", "package.mo");
-var result2 = comparer.CompareRevisions(repoPath, "v2.0.0", "v3.0.0", "package.mo");
-```
-
-### Workspace Reuse Approach (Fast)
-```csharp
-var git = new GitRevisionControlSystem();
-
-var workspaceDir = @"C:\Workspaces\modelica-lib";
-using var comparer = new RevisionComparer(
-    git,
-    cleanupOnDispose: false,  // Keep workspaces for reuse
-    workspaceDirectory: workspaceDir
-);
-
-// First comparison: Creates workspace, fetches objects (slower)
-var result1 = comparer.CompareRevisions(repoPath, "v1.0.0", "v2.0.0", "package.mo");
-
-// Second comparison: Reuses workspace, only fetches new objects (much faster!)
-var result2 = comparer.CompareRevisions(repoPath, "v2.0.0", "v3.0.0", "package.mo");
-```
-
-### How Workspace Reuse Works
+### How Workspace Reuse Works (Git)
 1. `UpdateExistingCheckout` initializes a Git repository in the workspace directory
 2. Sets up remote pointing to source repository
 3. Fetches only the needed commits (incremental)
@@ -240,37 +230,6 @@ var result2 = comparer.CompareRevisions(repoPath, "v2.0.0", "v3.0.0", "package.m
 - Works seamlessly with switching between branches and tags
 - Workspaces can be reused across multiple program runs
 
-## RevisionComparer Integration
-
-```csharp
-using ModelicaComparer;
-using RevisionControl;
-
-var git = new GitRevisionControlSystem();
-using var revisionComparer = new RevisionComparer(git);
-
-// Compare two tagged releases
-var result = revisionComparer.CompareRevisions(
-    repositoryPath: @"C:\Projects\MyModelicaLib",
-    oldRevision: "v1.0.0",
-    newRevision: "v2.0.0",
-    libraryPath: "MyLib/package.mo"
-);
-
-// Compare working directory to a branch
-var result2 = revisionComparer.CompareWorkingDirectoryToRevision(
-    repositoryPath: @"C:\Projects\MyModelicaLib",
-    compareRevision: "main",
-    libraryPath: "MyLib/package.mo"
-);
-
-// Access revision metadata
-var oldRev = result.Properties["OldRevision"];
-var newRev = result.Properties["NewRevision"];
-var oldDesc = result.Properties["OldRevisionDescription"];
-var newDesc = result.Properties["NewRevisionDescription"];
-```
-
 ## Rebase Operations (Git Only)
 
 ```csharp
@@ -279,7 +238,7 @@ var git = new GitRevisionControlSystem();
 // Rebase current branch onto target
 var result = git.Rebase(repoPath, "main");
 
-if (!result.Success && result.Message.Contains("conflict"))
+if (result.HasConflicts)   // a VcsMergeResult: ConflictedFiles lists them
 {
     // Resolve conflicts, then continue
     var continueResult = git.ContinueRebase(repoPath);
@@ -342,11 +301,14 @@ var branches = svn.GetBranches(repoPath);
 var customDirs = new List<string> { "main", "development", "releases" };
 var branch = svn.GetCurrentBranch(repoPath, customDirs);
 var log = svn.GetLogEntries(repoPath, options, customDirs);
-var branches = svn.GetBranches(repoPath, customDirs);
+var branches = svn.GetBranches(repoPath, includeRemote: false, customDirs);
 svn.CreateBranch(repoPath, "new-branch", true, customDirs);
 ```
 
-**Interpretation:** The first entry is the trunk equivalent (matched as a leaf path segment). Subsequent entries are branch containers (branches are found as immediate children). The static `DefaultBranchDirectories` property provides `["trunk", "branches", "tags"]`.
+These overloads are on `SvnRevisionControlSystem` only, not on the interface; the interface members
+use the default layout.
+
+**Interpretation:** The first entry is the trunk equivalent (matched as a leaf path segment). Subsequent entries are branch containers (branches are found as immediate children). A null list means the default, the private `DefaultBranchDirectories`: `["trunk", "branches", "tags"]`.
 
 In the MLQT app, `StyleCheckingSettings.SvnBranchDirectories` stores the per-repository configuration, and `RepositoryService` passes it through to all SVN operations automatically.
 
@@ -356,8 +318,8 @@ To add support for Mercurial or other VCS:
 
 1. Reference the RevisionControl project
 2. Create a new class implementing `IRevisionControlSystem`
-3. Implement all interface methods
-4. Use with `RevisionComparer`
+3. Implement all interface methods (and `ILineLevelDiff` if it can answer line-level diffs)
+4. Teach `MLQT.Services/RepositoryService.cs`, which chooses between the Git and SVN implementations, about it
 
 ```csharp
 public class HgRevisionControlSystem : IRevisionControlSystem
@@ -384,10 +346,14 @@ public class HgRevisionControlSystem : IRevisionControlSystem
 
 ## Key Files
 
-- `RevisionControl/IRevisionControlSystem.cs` - Interface definition
+- `RevisionControl/Interfaces/IRevisionControlSystem.cs` - Interface definition
+- `RevisionControl/Interfaces/ILineLevelDiff.cs` - Line-level diff, Git only
+- `RevisionControl/DataTypes/` - Result and log types (`VcsMergeResult`, `VcsLogEntry`, `RevisionId`, ...)
 - `RevisionControl/GitRevisionControlSystem.cs` - Git implementation
 - `RevisionControl/SvnRevisionControlSystem.cs` - SVN implementation
-- `RevisionControl/SvnToolLocator.cs` - Resolves the bundled/PATH svn.exe for CLI operations
+- `RevisionControl/SvnCli.cs` - Runs svn: idle limits, `RunOnWorkingCopy`, `RunForBytes`, XML parsing
+- `RevisionControl/SvnToolLocator.cs` - Resolves `MLQT_SVN_PATH`, the bundled client or `svn` on PATH
+- `RevisionControl/VcsRelativePath.cs`, `RevisionControlLogger.cs` - Path helper and the assembly's logging hook
 - `build/fetch-svn-tools.ps1` - Stages the SlikSVN client for bundling
 - `svn-tools/README.md` - How the bundled client is populated and shipped
 - `RevisionControl.Tests/` - Comprehensive test coverage

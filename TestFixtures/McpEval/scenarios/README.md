@@ -9,7 +9,7 @@ where the sessions they come from took 1–27 hours.
 | Scenario | Simulator | Cut down from |
 |---|---|---|
 | [openmodelica-mcpherson-corner.md](openmodelica-mcpherson-corner.md) | OpenModelica | A Kia EV4-sized car with McPherson struts at each corner (2026-10-18, 57 minutes, 200 tool calls) |
-| [dymola-formula1-ers.md](dymola-formula1-ers.md) | Dymola | A 2026 Formula 1 car (2026-10-17, 86 minutes, 416 tool calls). It starts from the library that session built, and runs on the machine where Dymola is licensed |
+| [dymola-ers-overtake.md](dymola-ers-overtake.md) | Dymola | A 2026 Formula 1 car (2026-10-17, 86 minutes, 416 tool calls). It starts from the library that session built, and runs on the machine where Dymola is licensed |
 
 ## Running one
 

@@ -347,7 +347,8 @@ public sealed class SessionTools
         l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision,
         detailed ? DeclaredDependencies(l) : DeclaredDependencies(l).Where(d => _libraries.Libraries.All(x => x.Name != d.Name)).ToList(),
         l.Version, l.ReadOnlySource is { } readOnlySource ? WireNames.Of(readOnlySource) : null,
-        _session.LoadedAt(l.Id).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture));
+        _session.LoadedAt(l.Id).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture),
+        _session.OriginOf(l.Id));
 
     // The library's declared dependencies (its top-level package's `uses(...)` annotation), so the caller
     // knows what else to load — most importantly the Modelica Standard Library, at the right version.

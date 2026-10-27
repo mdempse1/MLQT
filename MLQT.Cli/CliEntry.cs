@@ -48,6 +48,13 @@ internal static class CliEntry
                 stdout.WriteLine($"{ToolInfo.Name} {ToolInfo.Version}");
                 return ExitCodes.Ok;
 
+            // After a command too: the help lists -h, --help among the check options, and every
+            // command's parser rejected it as an unknown option with exit 2 (B507). Here rather than
+            // in four parsers, so a new command gets it without asking.
+            case "check" or "baseline" or "compare" or "hook" when args.Skip(1).Any(a => a is "-h" or "--help"):
+                stdout.WriteLine(Usage);
+                return ExitCodes.Ok;
+
             case "check":
                 if (!CheckOptions.TryParse(args[1..], out var opts, out var error))
                 {
@@ -80,12 +87,14 @@ internal static class CliEntry
           mlqt check <library-path> [options]
           mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>]
                                                            [--dependency <path>] [--force]
+                                                           [--allow-version-mismatch]
           mlqt compare <library-a> <library-b> [--format console|json] [--out <file>] [--no-added]
           mlqt hook install|uninstall|status [<library-path>] [options]
           mlqt --version
 
         check options:
-          --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
+          --config <path>               Settings file (default: the nearest .mlqt/settings.json at or
+                                        above <library-path>, up to the working-copy root)
           --baseline <path>             Classify findings against a baseline (new vs accepted debt)
           --touched-debt warn|fail|ignore  Existing debt in a changed model (default: warn)
           --format <fmt>                console|json|junit|sarif|teamcity|markdown|review

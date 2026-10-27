@@ -44,8 +44,9 @@ inherited fields where the `extends` clause stands, so moving it would reorder t
 inputs too. `MLQT.Style.ExtendsAtTop` does not report it.
 
 **One of each section is the master switch for layout.** With it off the formatter writes the class in
-source order and moves nothing at all — so the other switches are **switched off with it**, both as
-formatting transforms and as style rules. Enabling *imports first* on its own would report
+source order and moves nothing at all — so the other switches **have no effect without it**, both as
+formatting transforms and as style rules (they keep the values you set, and take effect again when it
+is turned back on). Enabling *imports first* on its own would report
 an arrangement the formatter could never produce, so MLQT does not let you: the switches are greyed
 out in repository settings, and a hand-edited settings file gets a warning from `mlqt check`. See
 [One of each section is required by the rest](settings-reference.md#one-of-each-section-is-required-by-the-rest).
@@ -125,7 +126,7 @@ When you click the **Commit** button, MLQT formats all modified files before ope
 
 ### When Formatting Settings Change
 
-If you change any formatting-related settings in a repository's configuration (such as enabling **Import statements first** or **Components before classes**), MLQT performs a full reformat of all files in that repository. This ensures the entire library is consistent with the new rules.
+If you change any formatting-related settings in a repository's configuration (such as enabling **Imports first** or **Components before classes**) while **Apply formatting rules** is on, or turn **Apply formatting rules** on, MLQT performs a full reformat of all files in that repository when you click **Apply**. This ensures the entire library is consistent with the new rules. A formatting switch changed while **Apply formatting rules** stays off rewrites nothing; the findings are re-checked against it.
 
 ### Format All Files Button
 
@@ -897,7 +898,7 @@ Individual models can be excluded from auto-formatting using the **FormatClear**
 
 ### How It Works
 
-- Toggle the FormatClear button (the "A" with a strikethrough) while a model is selected to exclude it from formatting
+- Toggle the FormatClear button (a struck-through "T"; its tooltip reads "Exclude from auto-formatting") while a model is selected to exclude it from formatting
 - **The exclusion is written into the class itself**, as `annotation(__MLQT(format=false))` — so it travels with the class when it is renamed or moved, and it is committed alongside the code it applies to. See [In the source instead](#in-the-source-instead-__mlqtformatfalse) below for what the directive means everywhere else
 - Excluded models skip the formatter during **all** formatting operations: startup formatting, VCS change formatting, pre-commit formatting, and Format All Files
 - When you exclude a model that belongs to a VCS-tracked repository, MLQT first reverts the model's file to undo any formatting changes that were already applied — restoring it to its last committed state — and then writes the annotation. The file is therefore modified afterwards, by that one line

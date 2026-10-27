@@ -69,9 +69,9 @@ That costs about 80 MB and removes the step entirely.
 | Path | |
 |------|---|
 | `/opt/mlqt/` | The application itself |
-| `/usr/bin/mlqt` | The CLI |
-| `/usr/bin/mlqt-gui` | The desktop application, from a terminal |
-| `/usr/bin/mlqt-mcp-server` | The MCP server — **this is the path to register with an agent** |
+| `/usr/bin/mlqt` | The CLI (a symlink into `/opt/mlqt/`) |
+| `/usr/bin/mlqt-gui` | The desktop application, from a terminal (a small wrapper script) |
+| `/usr/bin/mlqt-mcp-server` | The MCP server (a symlink) — **this is the path to register with an agent** |
 | `/usr/share/applications/MLQT.Photino.desktop` | The menu entry |
 | `/usr/share/icons/hicolor/*/apps/mlqt.png` | The icon |
 
@@ -133,7 +133,9 @@ those runs rather than being skipped.
 An Inno Setup installer, x86-64.
 
 Run `MLQT-<version>-win-x64-setup.exe`. It installs **just for you** by default, with a per-machine
-option in the same dialog, and puts `mlqt` on your `PATH` if you let it.
+option in the same dialog, into `MLQT` under your programs folder. It adds a Start Menu shortcut, puts
+`mlqt` on your `PATH` if you let it (the **Add the mlqt command-line tool to PATH** task, on by
+default), and adds a desktop icon only if you tick that task.
 
 | | |
 |---|---|
@@ -143,7 +145,7 @@ option in the same dialog, and puts `mlqt` on your `PATH` if you let it.
 | **Subversion** | **Bundled.** Nothing to install |
 | **Git** | Not bundled. Install it from [git-scm.com](https://git-scm.com/) and make sure it is on your `PATH` |
 
-Uninstall from Apps & Features. It removes the files, the Start Menu shortcut and its `PATH` entry.
+Uninstall from Apps & Features. It removes the files, the shortcuts and its `PATH` entry.
 
 ---
 
@@ -155,8 +157,8 @@ Uninstall from Apps & Features. It removes the files, the Start Menu shortcut an
 | Log file | `%LocalAppData%\MLQT\` | `~/.local/share/MLQT/` |
 | Imported dictionaries | `%LocalAppData%\MLQT\Dictionaries\` | `~/.local/share/MLQT/Dictionaries/` |
 
-Per-repository settings — style rules, the accepted-debt baseline and the custom dictionary — live
-with the code in `<repo>/.mlqt/`, so they are committed and shared with everyone working on that
+Per-repository settings — style rules, the accepted-debt baseline, the custom dictionary and the
+metrics history — live with the code in `<repo>/.mlqt/`, so they are committed and shared with everyone working on that
 library.
 
 ---

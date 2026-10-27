@@ -33,8 +33,12 @@ All analysis is implemented as visitors over the parse tree:
 | Visitor | Purpose |
 |---------|---------|
 | `ModelExtractorVisitor` | Extracts model definitions from source |
-| `ModelicaRenderer` | Generates formatted Modelica code |
-| `IconExtractor` | Extracts Icon annotation graphics |
+| `ModelicaRenderer` | Generates formatted Modelica code (a save-path tool: it rebuilds the text) |
+| `ModelicaTokenClassifier` | Syntax highlighting that emits the source verbatim, each token tagged |
+| `ElisionFinder` | Finds what to hide (annotations, nested classes) without rebuilding the rest |
+| `ClassInterfaceExtractor` / `BehaviorExtractor` / `DocumentationExtractor` | A class's interface, its equations and connections, its documentation |
+| `ConnectClauses` | The one reader of a class's `connect` equations, nested ones included |
+| `IconExtractor` | Extracts Icon (and Diagram) annotation graphics |
 | `ExternalResourceExtractor` | Detects external resource references |
 | Style rule visitors | Check code against style guidelines |
 
@@ -94,6 +98,11 @@ The `ModelInfo` class provides:
 | `IsNested` | `bool` | Whether the model is contained within another model |
 | `ParentModelName` | `string?` | Parent model name if nested |
 | `CanBeStoredStandalone` | `bool` | Whether the model can be stored as a separate file |
+| `IsPartial` / `IsPublic` | `bool` | The `partial` prefix; declared in a public (not protected) section |
+| `StartIndex` / `StopIndex` | `int` | Character offsets in the source (-1 when unknown) |
+| `ElementPrefix` | `string` | `replaceable`/`redeclare`/`inner`/`outer` prefixes, if any |
+| `HasExperimentAnnotation` | `bool` | Carries an `experiment` annotation |
+| `Version` | `string?` | The `version` annotation, if any |
 
 ### Code Formatting with ModelicaRenderer
 
@@ -110,15 +119,20 @@ string formattedCode = string.Join("\n", renderer.Code);
 
 // Formatting with options
 var renderer = new ModelicaRenderer(
-    renderForCodeEditor: true,       // Add markup for syntax highlighting
     showAnnotations: true,           // Include annotations in output
     maxLineLength: 100,              // Wrap lines exceeding this length
-    importsFirst: true,              // Sort import statements first
-    componentsBeforeClasses: true,   // Sort components before nested classes
-    oneOfEachSection: true,          // Merge duplicate equation/algorithm sections
+    formatting: new FormattingOptions(
+        OneOfEachSection: true,          // Merge duplicate equation/algorithm sections
+        ImportsFirst: true,              // Sort import statements first
+        ComponentsBeforeClasses: true,   // Sort components before nested classes
+        InitialSectionsLast: false,
+        DeclarationOrder: false),
     tokenStream: tokenStream         // Preserve comments
 );
 renderer.Visit(parseTree);
+
+// renderForCodeEditor: true adds syntax-highlighting markup, but it has no production caller:
+// display uses ModelicaTokenClassifier, which colours the source without rewriting it.
 
 // Exclude specific classes from output
 var classesToExclude = new HashSet<string> { "InternalHelper", "PrivateImpl" };
@@ -243,6 +257,13 @@ Available style rules:
 | `CheckModelReferences` | Referenced classes must exist among the loaded libraries |
 | `DuplicateDeclarations` | No duplicate declarations, and no duplicate imports, in a class |
 | `MissingUnits` | A plain `Real` variable or parameter should declare a unit |
+| `ComponentsBeforeClasses` | Component declarations should come before nested class definitions |
+| `DeclarationOrder` | Declarations in a section follow the conventional order: inputs/outputs, constants, parameters, variables, components |
+| `GrammarConformance` | Reports each place a class relies on a grammar widening beyond MLS 3.7 |
+
+Every rule's id, title, category and default severity live in `RuleIds.cs` / `RuleCatalog.cs`; the
+settings dialog and the Code Review rule filter are both derived from the catalogue, so a new rule is
+registered there and nowhere else.
 
 Both spell-check visitors extend `SpellCheckVisitorBase`, which owns the names that count as words
 inside the class being checked: everything it declares, collected before any of its text is checked,
@@ -404,12 +425,12 @@ things the checks need — whether a class exists, what it extends, and whether 
 using ModelicaParser.ExternalDocs;
 
 // Read a whole library's help directory
-DymolaHelpDocument document = DymolaHelpReader.Read(@"C:\...\Battery 2.9.0\help");
+DymolaHelpDocument document = DymolaHelpReader.Read(@"C:\...\VendorLib 1.0.0\help");
 
 foreach (DocumentedClass documented in document.Classes)
 {
-    Console.WriteLine(documented.FullName);        // Battery.BMS.Interfaces.CurrentRestrictor
-    Console.WriteLine(documented.Description);     // Interface model for current restrictor
+    Console.WriteLine(documented.FullName);        // VendorLib.Interfaces.Limiter
+    Console.WriteLine(documented.Description);     // Interface model for a limiter
     Console.WriteLine(documented.ExtendsClasses);  // null = NOT KNOWN, empty = extends nothing
     Console.WriteLine(documented.HasIcon);         // null = NOT KNOWN
 }

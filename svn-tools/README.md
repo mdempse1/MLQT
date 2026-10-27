@@ -43,7 +43,10 @@ shipped (older clients refuse newer working copies).
 
 ## When the folder is empty
 
-If `svn-tools/win-x64/` is empty, nothing is bundled and `SvnToolLocator` falls back to
-`svn` on the system `PATH` (or the `MLQT_SVN_PATH` override). There is no managed
-fallback — SVN operations require an `svn` executable to be resolvable. CI populates this
-folder before publishing the release zip.
+`SvnToolLocator` resolves, in order: the `MLQT_SVN_PATH` environment variable (if it names an
+existing file), the bundled client, then bare `svn` on the system `PATH`. If `svn-tools/win-x64/`
+is empty, nothing is bundled and the `PATH` is what is left. There is no managed fallback — SVN
+operations require an `svn` executable to be resolvable. The release workflow populates this folder
+(`fetch-svn-tools.ps1 -ZipUrl` from the `SLIKSVN_ZIP_URL` repository variable) before building the
+Windows installer, and `build/publish-tools.sh` refuses a tree without it unless
+`--allow-missing-svn` is passed.

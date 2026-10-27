@@ -228,8 +228,11 @@ And receives a JSON response:
 - Uses `HttpClient` for JSON-RPC communication
 - All methods are async for non-blocking operations
 - Implements `IDisposable` for proper resource cleanup
-- Automatically checks Dymola version compatibility on connection
+- Probes for a running Dymola on construction (see `connectionWindow`); it does not check the Dymola version - call `DymolaVersionAsync()` if you need it
 - Supports both connecting to existing Dymola instances and starting new ones
+- `DymolaInterface` implements `IDymolaSession` (`Interfaces/IDymolaSession.cs`): `IDymolaInterface` plus the session control - offline mode, `CommandTimeout`, start, `Detach`, `ProcessId` - that `DymolaInterfaceFactory` drives. A test can hand the factory its own `Func<DymolaSettings, IDymolaSession>`
+- `GetSessionStateAsync()` answers what a ping cannot: `Answering`, `Busy` (working on a command; wait for it rather than replacing it, since disposing kills a Dymola this interface started), `Starting` or `Gone` (`DymolaSessionState`)
+- `DymolaSettings.FindInstalledDymola()` searches the usual install locations on Windows and Linux (and `PATH`) for a Dymola executable, newest first
 - **Boolean result handling**: Dymola returns different result types for different commands:
   - Some commands return `true` or `false`
   - Others return an empty object `{}` to indicate success (e.g., `AddModelicaPath`, `cd`)
@@ -239,13 +242,23 @@ And receives a JSON response:
 
 The interface provides multiple ways to handle errors:
 
-1. **Return values**: Most methods return `bool` indicating success/failure
-2. **Exception handling**: Connection and communication errors throw exceptions
+1. **Return values**: Most methods return `bool` indicating success/failure. A command never throws
+   for a connection, communication or Dymola-reported error: it returns `false`, `null` or an empty
+   string, writes the reason to standard error, and sets `LastOutcome`
+2. **`LastOutcome`**: tells Dymola's own `false` (`Answered`) apart from no answer at all (`Offline`,
+   `TimedOut`, `Cancelled`, `Failed`)
 3. **Error messages**: Use `GetLastErrorAsync()` and `GetLastErrorLogAsync()` to retrieve detailed error information
+
+Only setup throws: an invalid `connectionWindow` or timeout, `StartDymolaProcessAsync` with no path
+or a Dymola that does not answer within thirty seconds.
 
 ## Thread Safety
 
-The `HttpClient` is thread-safe, but the Dymola instance itself may not support concurrent operations. It's recommended to use the interface from a single thread or implement proper synchronization.
+Dymola's JSON-RPC server answers one command at a time, so the interface serialises them itself:
+every command waits on an internal lock, and so does `StartDymolaProcessAsync`. Calling one interface
+from several threads is safe, but the calls queue behind each other - and behind a command that has
+timed out on the caller's side and is still running in Dymola. Settings such as `CommandTimeout` are
+plain properties; prefer the per-call `timeout` over changing them from more than one caller.
 
 ## Dependencies
 

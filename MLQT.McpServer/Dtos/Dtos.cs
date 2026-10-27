@@ -25,7 +25,11 @@ public sealed record LibrarySummary(
     string? ReadOnlySource,
     // When it was loaded (UTC), so that a library this conversation did not load - one an earlier
     // conversation or another task using this server loaded - can be told apart (B505).
-    string? LoadedAt = null);
+    string? LoadedAt = null,
+    // How it came in: "explicit" when a caller named it (or its repository, or a host supplied it),
+    // "search" when mlqt_load found it for a uses annotation. A search never replaces an explicit
+    // library, and an explicit load replaces a searched one (B513).
+    string? Origin = null);
 
 /// <summary>A dependency a library declares via its <c>uses</c> annotation, e.g. Modelica 4.0.0.</summary>
 public sealed record LibraryDependency(string Name, string? Version);

@@ -14,7 +14,9 @@ This skill covers the DymolaInterface and OpenModelicaInterface projects for int
 | DymolaInterface | Dymola | HTTP JSON-RPC | Commercial (Dymola) |
 | OpenModelicaInterface | OpenModelica | ZeroMQ REQ-REP | Open source |
 
-Both implement `IModelCheckingService` for model validation in the editor.
+Neither project knows about MLQT. `MLQT.Services` builds a checking service on each
+(`DymolaCheckingService`, `OpenModelicaCheckingService`), and those implement `IModelCheckingService`
+for model validation in the app.
 
 ---
 
@@ -35,46 +37,49 @@ Both implement `IModelCheckingService` for model validation in the editor.
 ```csharp
 using DymolaInterface;
 
-// Create settings
-var settings = new DymolaSettings
-{
-    Port = 8082,
-    DymolaPath = @"C:\Program Files\Dymola 2024\bin64\Dymola.exe"
-};
-
-// Create factory and interface
-var factory = new DymolaFactory(settings);
-using var dymola = await factory.CreateAndStartAsync();
+// Connect to - or start - a Dymola directly (the full session; the constructor waits for it)
+using var dymola = new DymolaInterface(
+    dymolaPath: DymolaSettings.FindInstalledDymola(),
+    portNumber: 8082);
 
 // Load a library
 await dymola.OpenModelAsync(@"C:\Libraries\Modelica\package.mo");
 
-// Check a model
-var result = await dymola.CheckModelAsync("Modelica.Blocks.Examples.PID_Controller");
-Console.WriteLine($"Valid: {result.Success}");
+// Check a model - false is the model's verdict only when LastOutcome is Answered
+bool ok = await dymola.CheckModelAsync("Modelica.Blocks.Examples.PID_Controller");
 
 // Simulate a model
-var simResult = await dymola.SimulateModelAsync(
+bool simulated = await dymola.SimulateModelAsync(
     "Modelica.Blocks.Examples.PID_Controller",
     startTime: 0.0,
-    stopTime: 10.0
-);
+    stopTime: 10.0);
+
+// What MLQT does instead: a factory that caches one session and hands back the narrow interface
+var factory = new DymolaInterfaceFactory();
+factory.UpdateSettings(new DymolaSettings { PortNumber = 8082 });
+IDymolaInterface session = await factory.GetOrCreateAsync();
 ```
 
 ### Key Classes
 
 | Class | Purpose |
 |-------|---------|
-| `DymolaInterface` | Main interface class with JSON-RPC communication |
-| `DymolaSettings` | Configuration (port, path, timeout) |
-| `DymolaFactory` | Factory for creating configured instances |
-| `DymolaCheckingService` | `IModelCheckingService` implementation |
-| `IDymolaInterface` | The five session calls the checking service makes — **what the factory returns** |
+| `DymolaInterface` | Main interface class with JSON-RPC communication (implements `IDymolaSession`) |
+| `DymolaSettings` | Configuration (`DymolaPath`, `PortNumber`, `CommandTimeoutMs`) and install discovery (`FindInstalledDymola`) |
+| `DymolaInterfaceFactory` | Caches one session; `GetOrCreateAsync`, `ResetAsync`, `Shutdown` |
+| `IDymolaInterface` | The members the checking service uses (open, check, clear, the log, `LastOutcome`, `GetSessionStateAsync`) — **what the factory returns** |
+| `IDymolaSession` | `IDymolaInterface` plus what only the factory needs (`SetOfflineMode`, `Detach`, disposal) |
+| `IsolatedProcess` | Starts Dymola on Windows with no inherited handles |
+| `CommandOutcome`, `DymolaSessionState` | Why a command gave no answer; Answering/Busy/Starting/Gone |
+| `DymolaCheckingService` (MLQT.Services) | `IModelCheckingService` implementation |
 
 ### Key Files
 - `DymolaInterface/DymolaInterface.cs` - Main implementation
 - `DymolaInterface/DymolaSettings.cs` - Configuration
-- `DymolaInterface/DymolaFactory.cs` - Factory pattern
+- `DymolaInterface/DymolaInterfaceFactory.cs` - The cached-session factory MLQT registers
+- `DymolaInterface/Interfaces/` - `IDymolaInterface`, `IDymolaSession`, `IDymolaInterfaceFactory`
+- `DymolaInterface/IsolatedProcess.cs` - Handle-free process start on Windows
+- `DymolaInterface/Examples.cs`, `DymolaInterface/FACTORY_USAGE.md` - Usage examples
 - `MLQT.Services/DymolaCheckingService.cs` - Editor integration
 
 ## The two checking services
@@ -282,14 +287,8 @@ Console.WriteLine($"Result file: {result.ResultFile}");
 ### Using Settings and Factory
 
 ```csharp
-// Auto-detect OpenModelica installation
-var factory = OpenModelicaFactory.TryCreate();
-if (factory != null)
-{
-    using var omc = await factory.CreateAndStartAsync();
-    var version = await omc.GetVersionAsync();
-    Console.WriteLine($"OpenModelica {version}");
-}
+// Auto-detect an OpenModelica installation (null when none is found)
+var detected = OpenModelicaSettings.TryAutoDetect();
 
 // Custom settings
 var settings = new OpenModelicaSettings
@@ -297,11 +296,15 @@ var settings = new OpenModelicaSettings
     OmcPath = @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe",
     AutoLoadModelicaLibrary = true,
     DefaultTolerance = 1e-6,
-    DefaultNumberOfIntervals = 1000
+    DefaultNumberOfIntervals = 1000,
+    CommandTimeoutMs = 60000
 };
 
-var factory = new OpenModelicaFactory(settings);
-using var omc = await factory.CreateAndStartAsync();
+// What MLQT registers: one cached session, handed back as the narrow interface
+var factory = new OpenModelicaInterfaceFactory();
+factory.UpdateSettings(settings);
+IOpenModelicaInterface omc = await factory.GetOrCreateAsync();
+// ... factory.Shutdown() when the program exits (ends omc and its process tree)
 ```
 
 ### Main API Methods
@@ -332,22 +335,25 @@ using var omc = await factory.CreateAndStartAsync();
 **Utilities:**
 - `GetVersionAsync()` - Get OpenModelica version
 - `GetErrorStringAsync()` - Get last error message
-- `SetWorkingDirectoryAsync(dir)` - Change working directory
+- `SetWorkingDirectoryAsync(dir)` / `GetWorkingDirectoryAsync()` - Working directory
 - `SendCommandAsync(command)` - Send raw OMC command
+- `Port` - the port omc bound, while connected
 
 ### Key Classes
 
 | Class | Purpose |
 |-------|---------|
 | `OpenModelicaInterface` | Main interface with process and ZMQ management |
-| `OpenModelicaSettings` | Configuration (path, port, defaults) |
-| `OpenModelicaFactory` | Factory with auto-detection |
+| `OpenModelicaSettings` | Configuration (path, port, timeouts, defaults) and auto-detection (`FindInstalledOmc`, `TryAutoDetect`) |
+| `OpenModelicaInterfaceFactory` | Caches one session; `GetOrCreateAsync`, `ResetAsync`, `Shutdown` |
+| `OmcPortAnnouncement` | Reads the port omc announces on stdout |
+| `OpenModelicaExitedException` | omc went away during a command |
 | `SimulationResult` | Simulation results (Success, ResultFile, Messages) |
-| `OpenModelicaCheckingService` | `IModelCheckingService` implementation |
-| `IOpenModelicaInterface` | The four session calls the checking service makes — **what the factory returns** |
+| `OpenModelicaCheckingService` (MLQT.Services) | `IModelCheckingService` implementation |
+| `IOpenModelicaInterface` | The four session calls the checking service makes (load file, check, error string, clear) — **what the factory returns** |
 
 ### Installation Requirements
-- .NET 9.0 or later
+- .NET 10
 - OpenModelica 1.24.0 or later
 - Download from: https://openmodelica.org/download/
 - Typical path: `C:\Program Files\OpenModelica1.26.0-64bit\`
@@ -373,7 +379,8 @@ await Examples.RunAllExamples();
 ### Key Files
 - `OpenModelicaInterface/OpenModelicaInterface.cs` - Main implementation
 - `OpenModelicaInterface/OpenModelicaSettings.cs` - Configuration
-- `OpenModelicaInterface/OpenModelicaFactory.cs` - Factory pattern
+- `OpenModelicaInterface/OpenModelicaInterfaceFactory.cs` - The cached-session factory MLQT registers
+- `OpenModelicaInterface/OmcPortAnnouncement.cs` - Port discovery from omc's stdout
 - `OpenModelicaInterface/Examples.cs` - Usage examples
 - `MLQT.Services/OpenModelicaCheckingService.cs` - Editor integration
 
@@ -401,23 +408,30 @@ interpolate numbers must do the same (wrap the interpolated string in
 
 ## IModelCheckingService Interface
 
-Both tools implement a common interface for editor integration:
+Both checking services implement a common interface (`MLQT.Services/Interfaces/IModelCheckingService.cs`)
+for the app:
 
 ```csharp
 public interface IModelCheckingService
 {
     event Action<ModelCheckProgress>? OnProgressChanged;
     event Action<ModelCheckResult>? OnModelChecked;
-    event Action? OnCheckingComplete;
+    event Action<ModelCheckProgress>? OnCheckingComplete;
 
-    Task CheckModelAsync(string modelName, DirectedGraph graph, CancellationToken cancellationToken);
-    Task CheckPackageAsync(string packageName, DirectedGraph graph, CancellationToken cancellationToken);
+    bool IsRunning { get; }
+    ModelCheckProgress CurrentProgress { get; }
+    string ToolName { get; }
+
+    Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default);
+    Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default);  // a class, or every class in a package
+    void StopChecking();
+    Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath);
+    Task ResetAsync();
 }
 ```
 
 ## Resources
 
-- [Dymola Documentation](https://www.3ds.com/products-services/catia/products/dymola/)
 - [OpenModelica Homepage](https://openmodelica.org/)
 - [OpenModelica User's Guide](https://openmodelica.org/doc/OpenModelicaUsersGuide/latest/)
 - [OMC Scripting API](https://openmodelica.org/doc/OpenModelicaUsersGuide/latest/scripting_api.html)

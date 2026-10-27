@@ -45,6 +45,23 @@ public class CliEntryTests
         Assert.Empty(stderr);
     }
 
+    [Theory]
+    [InlineData("check --help")]
+    [InlineData("check ./Lib -h")]
+    [InlineData("baseline create --help")]
+    [InlineData("compare -h")]
+    [InlineData("hook install --help")]
+    public async Task AskingForHelp_AfterACommand_Succeeds(string commandLine)
+    {
+        // B507: the help lists -h, --help among the check options, and every command's parser
+        // rejected it as an unknown option and exited 2.
+        var (code, stdout, stderr) = await RunAsync(commandLine.Split(' '));
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.Contains("mlqt check <library-path>", stdout);
+        Assert.Empty(stderr);
+    }
+
     [Fact]
     public async Task TheVersion_GoesToStdout()
     {

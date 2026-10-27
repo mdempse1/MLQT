@@ -6,9 +6,10 @@ description: "Encrypted (package.moe) and read-only libraries - reading a vendor
 # Encrypted Libraries Skill
 
 Load this skill when working on `ModelicaParser/ExternalDocs/` (`DymolaHelpParser`,
-`DymolaHelpReader`, `HelpHtml`, `DymolaHelpDocument`), `EncryptedLibraryDetector`,
-`ExternalStubBuilder`, `ModelNode.IsExternalStub`, reference libraries, or anything that asks
-"can MLQT see inside this library?".
+`DymolaHelpReader` — declared in `DymolaHelpDocument.cs` — `HelpHtml`, `DymolaHelpDocument`,
+`DocumentedClass`, `DocumentedMember`), `EncryptedLibraryDetector` and `EncryptedDirectoryClassSource`
+(MLQT.Services), `ExternalStubBuilder` (ModelicaGraph), `ModelNode.IsExternalStub`, reference
+libraries, or anything that asks "can MLQT see inside this library?".
 
 User-facing documentation is [encrypted-libraries.md](../../../Documentation/encrypted-libraries.md).
 
@@ -29,9 +30,9 @@ resolves those classes **with no rule changes at all**.
 generated source:
 
 ```modelica
-within Battery.BMS.Interfaces;
+within VendorLib.Control.Interfaces;
 model CurrentRestrictor "Interface model for current restrictor"
-  extends Battery.BMS.Interfaces.BMS;
+  extends VendorLib.Control.Interfaces.Controller;
   annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
 end CurrentRestrictor;
 ```
@@ -196,16 +197,16 @@ it rewrote the user's reference to the class — and so is taking it out of `Cla
 ## What the HTML gives, and what it does not
 
 ```html
-<h2><img src="Battery.BMS.Interfaces.CurrentRestrictorI.png"
-         alt="Battery.BMS.Interfaces.CurrentRestrictor" align="right" width="80" height="80">
-<a name="Battery.BMS.Interfaces.CurrentRestrictor"></a><a href="…#Battery.BMS.Interfaces"
->Battery.BMS.Interfaces</a>.CurrentRestrictor</h2>
+<h2><img src="VendorLib.Control.Interfaces.CurrentRestrictorI.png"
+         alt="VendorLib.Control.Interfaces.CurrentRestrictor" align="right" width="80" height="80">
+<a name="VendorLib.Control.Interfaces.CurrentRestrictor"></a><a href="…#VendorLib.Control.Interfaces"
+>VendorLib.Control.Interfaces</a>.CurrentRestrictor</h2>
 <p><span class="ModelicaDescription">Interface model for current restrictor</span></p>
 <h3>Information</h3>
 <p><span class="ModelicaBaseClass">Extends from
-   <a href="Battery_BMS_Interfaces.html#Battery.BMS.Interfaces.BMS">Battery.BMS.Interfaces.BMS</a>
-   (Interface model for BMS),
-   DymolaModels.Icons.Templates.Box_Bottom (Box with name at bottom).</span></p>
+   <a href="VendorLib_Control_Interfaces.html#VendorLib.Control.Interfaces.Controller">VendorLib.Control.Interfaces.Controller</a>
+   (Interface model for a controller),
+   VendorIcons.Templates.Box_Bottom (Box with name at bottom).</span></p>
 ```
 
 **Recovered:** existence and fully-qualified name, description string, base classes, whether the
@@ -230,7 +231,7 @@ extracted is corrupted — **but a line-oriented scanner collapses whole tables 
 breaks.** This is required to read a shipped Dymola release, not defensive programming.
 
 **Never compute an icon filename from a class name.** Icon PNGs are content-deduplicated behind a
-name-mangling scheme: `Battery.BMS.Assemblies.Pe0255eb2475cb9f28erBMSI.png` serves three unrelated
+name-mangling scheme: `VendorLib.Control.Assemblies.Pe0255eb2475cb9f28erBMSI.png` serves three unrelated
 classes. The dedup is also *not* stable between releases — the same MSL 4.0.0 ships 5,515 icon PNGs
 under Dymola 2024x R1 and 3,924 under 2025x, with no library change. Always read the `alt`/`src`
 pairs out of the HTML.
@@ -284,9 +285,9 @@ An unsuffixed name falls through rather than being taken literally.
 
 ## Documented ≠ complete — resolution must be asymmetric
 
-`FlexibleBodies 2.4.0` ships in both Dymola 2025x and 2026x under the same version string with a
-different `package.moe`: its documentation went from **167 classes to 425**, the additions being the
-entire `FlexibleBodies.Internal.*` subtree. So **the documented class set is a subset of the real
+One vendor library at version 2.4.0 ships in both Dymola 2025x and 2026x under the same version
+string with a different `package.moe`: its documentation went from **167 classes to 425**, the
+additions being its entire `Internal.*` subtree. So **the documented class set is a subset of the real
 class set, and the size of that gap is a vendor decision that varies between releases of the same
 nominal version.**
 
@@ -357,7 +358,7 @@ behaviour.
 ## Free wins worth remembering
 
 - `Resources/` is unencrypted, so registering the stub library as a `LibraryInfo(name, rootPath)`
-  makes `modelica://Battery/Resources/…` resolve with no extra work.
+  makes `modelica://VendorLib/Resources/…` resolve with no extra work.
 - The vendor's real icon PNGs are on disk, so the library browser can render them for stub classes.
 
 ## Known limits

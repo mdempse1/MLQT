@@ -7,7 +7,8 @@ namespace ModelicaParser.Helpers;
 /// <c>ExternalResourceExtractor</c> (ModelicaParser) and <c>ModelAnalyzer</c> (ModelicaGraph) each
 /// carried a byte-for-byte copy of this loop and of the extension test. The graph build uses the
 /// second, so a fix applied to the first changed nothing a user could see — which is exactly what
-/// happened to B209 before this file existed.</para>
+/// happened to B209 before this file existed. Since B511 <c>ModelAnalyzer</c> derives from the
+/// extractor, so this has one caller.</para>
 /// </summary>
 public static class ModelicaUriScanner
 {

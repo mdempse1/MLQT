@@ -83,7 +83,10 @@ internal sealed record HookOptions
             FailOn = failOn,
             BaselinePath = baseline is null ? null : Path.GetFullPath(RepoPath.Resolve(path ?? ".", baseline)),
             ChangedFrom = changedFrom,
-            DependencyPaths = dependencies.Select(d => Path.GetFullPath(RepoPath.Resolve(path ?? ".", d))).ToList(),
+            // Against the current directory, as `check` and `baseline` read a relative --dependency: the
+            // hook resolved it against the library, so one path meant two directories (B508). Made
+            // absolute here because the hook script runs from wherever git runs it.
+            DependencyPaths = dependencies.Select(d => Path.GetFullPath(d)).ToList(),
             Force = force
         };
         return true;

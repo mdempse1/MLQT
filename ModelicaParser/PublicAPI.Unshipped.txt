@@ -54,3 +54,4 @@ static ModelicaParser.Helpers.ToolBuiltIns.Tools.get -> System.Collections.Gener
 const ModelicaParser.Helpers.ToolBuiltIns.DymolaFunctionPrefix = "Dymola_AST_" -> string!
 static ModelicaParser.Helpers.ToolBuiltIns.DymolaFlagPackages.get -> System.Collections.Generic.IReadOnlySet<string!>!
 static ModelicaParser.Helpers.ToolBuiltIns.DymolaFunctions.get -> System.Collections.Generic.IReadOnlySet<string!>!
+static ModelicaParser.Visitors.ExternalResourceExtractor.IsLoadResourceCall(modelicaParser.PrimaryContext! context) -> bool
