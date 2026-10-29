@@ -187,7 +187,7 @@ works and what the measurements taught. The plan, `Design/mcp-tool-consolidation
 when it landed, and its history has every measurement. Before the release, re-run the protected-build
 comparison of `Design/release-checklist.md` §7 against the 16.
 
-### Alongside: a shared UI theme (`MLQT.UI.Theme`) — steps 1 and 2 done
+### Alongside: a shared UI theme (`MLQT.UI.Theme`) — steps 1 to 3 done
 
 Other internal tools are to look like MLQT, so its look is a Razor class library they reference from
 source, as they do the parser and graph. The first consumer is on the same MudBlazor version; the
@@ -201,11 +201,13 @@ one, or where the value is MlqtTheme's own typography, and never where aliasing 
 theme. The theme's two stylesheets and MLQT's `app.css` use them, again with no visible change.
 `PublicCss.txt` lists the public classes and tokens, and `ThemeCssContractTests` holds the stylesheets
 to it, like `PublicAPI.*.txt`. `ThemeTokensJourney` checks the values in a real page, and the
-scrollbar gutter under WebKit. What is left, in order:
+scrollbar gutter under WebKit. **Step 3, done:** McpTester is the second consumer in the repository.
+It references the theme and nothing else of MLQT, and its page is written from `ThemeAssetManifest`
+and held to it. `McpTesterTheme`, B124's system-font workaround, is gone, and so is the tester's
+unused Bootstrap copy. That shows the package is complete without MLQT.Shared, and the tester now
+looks like MLQT. What is left:
 
-1. **A second consumer in the repository.** McpTester takes the theme and `McpTesterTheme` (B124's
-   system-font workaround) goes, which proves the package works without MLQT.Shared.
-2. **When a consumer needs them:** a `SplitView` component over `MudSplitPanel` and the `mlqt-split*`
+- **When a consumer needs them:** a `SplitView` component over `MudSplitPanel` and the `mlqt-split*`
    classes, then panel and header shells. NuGet packaging only if a feed is ever wanted
    (`RELEASING.md` publishes to none).
 

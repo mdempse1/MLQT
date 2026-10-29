@@ -117,7 +117,9 @@ process. The DOM `contextmenu` event still fires on both platforms, which is wha
 `MLQT.Shared/HostAssetManifest.cs` is the single list of scripts, styles and the bootstrap script.
 It takes the theme's assets from `MLQT.UI.Theme/ThemeAssetManifest.cs`, which surrounds MLQT's own:
 `mlqt-base.css` first, then Roboto, MudBlazor's sheet and `mlqt-density.css`, which must follow
-MudBlazor's (`MLQT.UI.Theme/CLAUDE.md`).
+MudBlazor's (`MLQT.UI.Theme/CLAUDE.md`). `MLQT.McpTester` has no `MLQT.Shared` and so no
+`HostAssetManifest`. Its hand-written page is held to `ThemeAssetManifest` directly
+(`TheMcpTestersPage_LoadsTheTheme_InTheOrderTheThemeGives`).
 The test host's page (`MLQT.TestHost/Components/App.razor`) renders its tags from it at runtime;
 `MLQT.Photino/wwwroot/index.html` is a static file written from it, and
 `HostAssetManifestTests.HostPages()` lists the static pages and holds each to the same assets **in

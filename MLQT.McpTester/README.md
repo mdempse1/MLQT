@@ -7,8 +7,16 @@ tool, and shows the result.
 MudBlazor UI, the official `ModelContextProtocol` client SDK, and a Photino window — the same host
 MLQT's own desktop app runs in.
 
+**It looks like MLQT because it uses MLQT's theme**, `MLQT.UI.Theme`: the palette, the small dense
+controls, the bundled Roboto and the scrollbar fix, through its one project reference. That reference
+brings MudBlazor and nothing of Modelica, so the tester is still independent of MLQT's service layer.
+Its `wwwroot/index.html` loads the theme's assets in the order `ThemeAssetManifest` gives, with its own
+`app.css` between them, and `HostAssetManifestTests` holds the page to that order. This made it the
+theme's second consumer in the repository, after MLQT.Shared. Before the theme it asked for the
+platform's UI font, to avoid downloading Roboto (B124), and it now uses the theme's local copy.
+
 **It was a MAUI app until phase 7b-1** (2026-09-08), and was ported first on purpose. It is
-self-contained, has no project references and no users to disappoint, so it is the rehearsal for
+self-contained, had no project references and has no users to disappoint, so it is the rehearsal for
 MLQT's own port: the same host, the same bootstrap, the same MudBlazor under the same engine. It also
 had to move regardless — while it was a MAUI app the MAUI workload had to stay installed in CI for
 its sake alone. Porting it runs on Linux as well now, which is useful for a tool whose whole job is

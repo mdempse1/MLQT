@@ -301,6 +301,26 @@ public class HostAssetManifestTests
     }
 
     [Fact]
+    public void TheMcpTestersPage_LoadsTheTheme_InTheOrderTheThemeGives()
+    {
+        // The tester takes MLQT's look from MLQT.UI.Theme and nothing else of MLQT, so its page is
+        // held to ThemeAssetManifest directly rather than to HostAssetManifest, with its own app.css
+        // where a tool's own stylesheets go. It is the theme's second consumer in this repository,
+        // and the proof that a host page written from ThemeAssetManifest alone is complete.
+        var html = File.ReadAllText(Path.Combine(RepositoryRoot(), "MLQT.McpTester", "wwwroot", "index.html"));
+
+        Assert.Equal(
+            [.. ThemeAssetManifest.LeadingStylesheets, "app.css", .. ThemeAssetManifest.TrailingStylesheets],
+            StylesheetsIn(html));
+
+        Assert.Equal(
+            [.. ThemeAssetManifest.LeadingScripts, .. ThemeAssetManifest.TrailingScripts],
+            ScriptsIn(html).Where(s => s != HostAssetManifest.WebViewBootstrapScript).ToList());
+
+        Assert.Contains("MLQT.McpTester.styles.css", html);
+    }
+
+    [Fact]
     public void TheThemesAssetsSurroundMlqtsOwn_InTheOrderTheThemeGives()
     {
         // ThemeAssetManifest's contract with any host: its leading stylesheets first, its trailing

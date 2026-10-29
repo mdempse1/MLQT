@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
+@using MLQT.UI.Theme
 
-<MudThemeProvider Theme="@McpTesterTheme.Instance" />
+@* MLQT's theme, built once: the tester has no settings to choose a palette from. *@
+<MudThemeProvider Theme="@_theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -16,3 +18,7 @@
         </MudContainer>
     </MudMainContent>
 </MudLayout>
+
+@code {
+    private static readonly MudTheme _theme = MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
+}

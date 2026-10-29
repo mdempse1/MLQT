@@ -4,7 +4,10 @@ Loaded when working in `MLQT.UI.Theme/`. The repository-wide rules are in the ro
 
 MLQT's look as a Razor class library, so that other Blazor tools can look like MLQT by referencing
 it. `MLQT.Shared` builds on it too, so the application and every other tool take their appearance
-from one place. It is **built on outside this repository** and its public surface is tracked in
+from one place. **`MLQT.McpTester` is the consumer to copy.** It references the theme and nothing
+else of MLQT, builds its `MudTheme` with `MlqtTheme.BuildTheme`, and writes its host page from
+`ThemeAssetManifest` with its own `app.css` in the middle. `HostAssetManifestTests` holds that page,
+as it holds MLQT's. It is **built on outside this repository** and its public surface is tracked in
 `PublicAPI.*.txt`, like the six assemblies the root `CLAUDE.md` lists.
 
 ## What belongs here
@@ -55,7 +58,7 @@ Only what has nothing of MLQT in it: a rule or component another tool would want
   resolving inside `::-webkit-scrollbar`. That measurement only means anything under
   `MLQT_JOURNEY_BROWSER=webkit`, since headless Chromium draws no scrollbars, so it skips under
   Chromium. Run it under WebKit after touching that rule.
-- **MudBlazor is referenced here and nowhere else** in MLQT.Shared's chain, so a consumer gets the
+- **MudBlazor is referenced here and nowhere else** in the repository, so a consumer gets the
   version the stylesheets were written against. An upgrade is a change to this project, and the
   `nuget-packages` skill.
 - **RS0041 is off for the project** (`NoWarn` in the `.csproj`): the Razor compiler generates each

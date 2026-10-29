@@ -5,17 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>MLQT.McpTester</title>
     <base href="/" />
+
+    <!--
+        MLQT's theme, in the order MLQT.UI.Theme/ThemeAssetManifest.cs gives, with this tool's own
+        app.css between its leading and trailing stylesheets. HostAssetManifestTests holds this page
+        to that order: mlqt-density.css only wins if it follows MudBlazor's sheet. Roboto is the
+        theme's bundled copy, so nothing is downloaded and the tool looks the same with no network
+        (B124).
+    -->
+    <link rel="stylesheet" href="_content/MLQT.UI.Theme/mlqt-base.css" />
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="_content/MLQT.UI.Theme/fonts/roboto.css" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="_content/MLQT.UI.Theme/mlqt-density.css" />
     <link rel="stylesheet" href="MLQT.McpTester.styles.css" />
-    <link rel="icon" href="data:,">
-    <!-- No webfont. This tool launches local MCP servers and must look the same with no
-         network, so it uses the platform UI font - see McpTesterTheme (B124). -->
-    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link rel="icon" href="data:," />
 </head>
 
 <body>
-
-    <div class="status-bar-safe-area"></div>
 
     <div id="app">Loading...</div>
 
@@ -30,6 +37,7 @@
          component is ever created, with no error anywhere. Found by 7b-0's Windows leg. -->
     <script src="_framework/blazor.webview.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_content/MLQT.UI.Theme/mudBlazorWorkarounds.js"></script>
 
 </body>
 

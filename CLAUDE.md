@@ -18,7 +18,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 | Project (+ `.Tests`) | What it is | Detail |
 |---|---|---|
 | **MLQT.Shared** | Shared Blazor components, pages, layouts, `AppState`; logic in `.razor.cs` code-behind | `MLQT.Shared/CLAUDE.md`, `gui-testing` skill |
-| **MLQT.UI.Theme** | MLQT's look as a Razor class library other tools reference: the MudBlazor theme, the base and density stylesheets, Roboto, `ProgressDialog`. MLQT.Shared builds on it, and it alone pins MudBlazor | `MLQT.UI.Theme/CLAUDE.md` |
+| **MLQT.UI.Theme** | MLQT's look as a Razor class library other tools reference: the MudBlazor theme, the base and density stylesheets, Roboto, `ProgressDialog`. MLQT.Shared and MLQT.McpTester build on it, and it alone pins MudBlazor | `MLQT.UI.Theme/CLAUDE.md` |
 | **MLQT.Photino** | **The desktop host**, Photino.Blazor on Windows and Linux. `Program.cs` is the whole of it: `AddMlqtCore()`, the three platform services, the window, settings migration from MAUI | `desktop-host` skill |
 | **MLQT.Services** | Business logic services and the shared check pipeline (`Checking/`) | `MLQT.Services/CLAUDE.md` |
 | **MLQT.McpServer** | Headless MCP server over stdio; every tool `mlqt_`-prefixed; `AddMlqtMcpServer` lets another server be built on it | `MLQT.McpServer/CLAUDE.md`, `README.md` |

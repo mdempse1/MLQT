@@ -8,8 +8,10 @@ namespace MLQT.UI.Theme;
 /// is why there are leading and trailing lists rather than one. A host page is:</para>
 /// <code>
 /// LeadingStylesheets, the tool's own stylesheets, TrailingStylesheets
-/// LeadingScripts, the Blazor bootstrap and the tool's own scripts, TrailingScripts
+/// the Blazor bootstrap, LeadingScripts, the tool's own scripts, TrailingScripts
 /// </code>
+/// <para><c>MLQT.Photino</c>'s page is written this way through <c>HostAssetManifest</c>, and
+/// <c>MLQT.McpTester</c>'s from this list alone; <c>HostAssetManifestTests</c> holds both.</para>
 /// <para><c>mlqt-base.css</c> comes before MudBlazor's stylesheet, where MLQT's <c>app.css</c> always
 /// was: its rules either carry <c>!important</c> or win on specificity, and moving it after
 /// MudBlazor would let rules that lose today start to apply. <c>mlqt-density.css</c> comes
