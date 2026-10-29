@@ -20,8 +20,8 @@ loaded libraries has three answers: yes, no and "cannot tell". Only "no" is a fi
 by a library that is not loaded says nothing about the code being checked, and a rule that reported
 those would flood every real repository on its first run.
 
-**Every new rule is built off by default** until the release decision (roadmap, *Before the next
-release*, item 3) is taken rule by rule.
+**Every new rule is off by default**, and ships that way (decided 2026-10-29; roadmap, *Before the
+next release*, item 3).
 
 ## 1. External-resource validation — done (2026-10-29)
 

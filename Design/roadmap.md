@@ -153,8 +153,8 @@ and Buildings, and reviewed** - external-resource validation, cyclic-dependency 
 of broken references (`modelica://` class links), connection integrity (incompatible and duplicate)
 and deprecated-API usage (obsolete classes). Each is off by default. What is left is a choice of
 further increments, each recorded with why it was not done in its row below: connection direction,
-unconnected connectors, and MSL-version compatibility. And the decision in *Before the next
-release* item 3, which only the user can make: which of these rules ship on.
+unconnected connectors, and MSL-version compatibility. They all ship off (*Before the next
+release* item 3, decided 2026-10-29).
 
 See §2 below for the three-state resolution model these are built on — it is the thing that keeps a
 reference into an invisible library from flooding a real repository with false errors.
@@ -180,11 +180,11 @@ release works, not about adding to it. `Design/release-checklist.md` still appli
 3. **Whether phase 2's new rules are on by default.** A decision, not a task. A project gating CI
    with `mlqt check` and a baseline gets every new finding as new debt on upgrade, so a rule that
    ships on turns its builds red with nothing in its code changed. Either the new rules ship off,
-   as most of the catalogue does, or the release notes say plainly which are on. **All are written
-   now and built off; the decision is still open**: `MLQT.Resource.Missing`,
-   `MLQT.Resource.AbsolutePath`, `MLQT.Structure.DependencyCycle`, `MLQT.Connection.Incompatible`,
-   `MLQT.Connection.Duplicate` and `MLQT.Reference.Obsolete`. Whatever is decided, the release notes
-   also owe one existing rule a line: `MLQT.Reference.ModelReferences` now reports fewer links (none
+   as most of the catalogue does, or the release notes say plainly which are on. **Decided
+   2026-10-29: all of them ship off** - `MLQT.Resource.Missing`, `MLQT.Resource.AbsolutePath`,
+   `MLQT.Structure.DependencyCycle`, `MLQT.Connection.Incompatible`, `MLQT.Connection.Duplicate`
+   and `MLQT.Reference.Obsolete` - so an upgrade changes no project's findings through them; each is
+   switched on in a repository's settings. The release notes also owe one existing rule a line: `MLQT.Reference.ModelReferences` now reports fewer links (none
    into a library that is not loaded), so a baseline taken before it will show accepted debt gone.
 4. **B281: server GC in the desktop app over a long session.** The setting ships in this release,
    measured in the CLI only. Phase 2's testing over a large library is the long session, so watch
