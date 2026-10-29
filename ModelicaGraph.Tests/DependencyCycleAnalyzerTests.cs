@@ -193,7 +193,7 @@ public class DependencyCycleAnalyzerTests
     }
 
     [Fact]
-    public void LibrariesThatUseEachOther_AreACycle_ReportedOnTheFirst()
+    public void LibrariesThatUseEachOther_AreACycle_ReportedOnEachCheckedOne()
     {
         Package("LibA");
         Package("LibB");
@@ -202,14 +202,34 @@ public class DependencyCycleAnalyzerTests
         Uses("LibA.M", "LibB.M");
         Uses("LibB.M", "LibA.M");
 
-        var finding = Assert.Single(Analyze());
+        var findings = Analyze();
 
-        Assert.Equal("LibA", finding.ModelId);
-        Assert.StartsWith("The libraries LibA and LibB depend on each other", finding.Message);
+        Assert.Equal(["LibA", "LibB"], findings.Select(f => f.ModelId));
+        Assert.All(findings, f => Assert.StartsWith("The libraries LibA and LibB depend on each other", f.Message));
+        Assert.All(findings, f => Assert.Equal("LibA, LibB", f.ElementPath));
     }
 
     [Fact]
-    public void ACycleThroughALibraryNotBeingChecked_IsNotThisLibrarysToReport()
+    public void LibrariesThatUseEachOther_GiveTheSameFindings_WhetherCheckedTogetherOrOneAtATime()
+    {
+        // The MCP server checks one library per call and the desktop app a repository at a time.
+        // Reported on the first library only, the one-at-a-time surface never saw the cycle.
+        Package("LibA");
+        Package("LibB");
+        Model("LibA.M");
+        Model("LibB.M");
+        Uses("LibA.M", "LibB.M");
+        Uses("LibB.M", "LibA.M");
+
+        var together = Analyze().Select(f => (f.ModelId, f.ElementPath, f.Message));
+        var oneAtATime = Analyze("LibA", "LibA.M").Concat(Analyze("LibB", "LibB.M"))
+            .Select(f => (f.ModelId, f.ElementPath, f.Message));
+
+        Assert.Equal(together, oneAtATime);
+    }
+
+    [Fact]
+    public void ALibraryLoadedButNotChecked_IsFollowed_AndNotReportedOn()
     {
         // A reference library, or an excluded one: its classes are in the graph and are not checked.
         Package("LibA");
@@ -219,7 +239,29 @@ public class DependencyCycleAnalyzerTests
         Uses("LibA.M", "LibB.M");
         Uses("LibB.M", "LibA.M");
 
-        Assert.Empty(Analyze("LibA", "LibA.M"));
+        Assert.Equal("LibA", Assert.Single(Analyze("LibA", "LibA.M")).ModelId);
+    }
+
+    [Fact]
+    public void ACheckOfSomeClasses_ReportsTheCyclesTheyArePartOf_NotEveryCycleInTheLibrary()
+    {
+        Package("Lib");
+        Package("Lib.A");
+        Package("Lib.B");
+        Package("Lib.C");
+        Package("Lib.D");
+        Model("Lib.A.M");
+        Model("Lib.B.M");
+        Model("Lib.C.M");
+        Model("Lib.D.M");
+        Uses("Lib.A.M", "Lib.B.M");
+        Uses("Lib.B.M", "Lib.A.M");
+        Uses("Lib.C.M", "Lib.D.M");
+        Uses("Lib.D.M", "Lib.C.M");
+
+        // The cycle is found over the whole library - Lib.B.M is not checked - and only A's reported.
+        Assert.Equal("Lib.A, Lib.B", Assert.Single(Analyze("Lib.A.M")).ElementPath);
+        Assert.Equal(2, Analyze().Count);
     }
 
     [Fact]

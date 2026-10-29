@@ -630,6 +630,13 @@ public class ExternalResourceServiceTests : IDisposable
         Assert.Equal(4, fromRule.Count);   // a.mat and the absolute file missing, the absolute path, the directory
         Assert.Equal(fromRule, fromTab);
         Assert.DoesNotContain(fromTab, w => w.ModelId == "TestLib" || w.ModelId == "TestLib.Inner");
+
+        // Not warned about on the enclosing classes is not the same as being there: every row for
+        // a.mat says it is missing, the package's included. It was read off "no Missing problem on
+        // this edge", which a nested class's reference never has.
+        Assert.All(_service.GetAllResources().Where(r => r.RawPath.EndsWith("a.mat", StringComparison.Ordinal)),
+            r => Assert.False(r.FileExists, $"{r.ModelId}'s row says a.mat exists"));
+        Assert.Contains(_service.GetWarnings(), w => w.Message.StartsWith("Resource directory not found", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1122,6 +1129,52 @@ public class ExternalResourceServiceTests : IDisposable
         Assert.Equal(["TestLib.TestModel"], _service.TakePendingResourceChanges());
         Assert.Equal(0, _service.PendingResourceChangeCount);
         Assert.Empty(_service.TakePendingResourceChanges());
+    }
+
+    [Fact]
+    public async Task AFolderCreatedOrDeletedWhole_QueuesTheReferencedFilesInsideIt()
+    {
+        // A folder restored or deleted with its files in it may raise one event, for the folder.
+        var resourceDir = Path.Combine(_tempDir, "WholeFolder");
+        var dataDir = Path.Combine(resourceDir, "Data");
+        var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
+        {
+            (Path.Combine(dataDir, "a.mat"), ResourceReferenceType.LoadResource, "modelica://TestLib/Data/a.mat", false),
+            (Path.Combine(dataDir, "b.mat"), ResourceReferenceType.LoadResource, "modelica://TestLib/Data/b.mat", false),
+        });
+        await _service.AnalyzeResourcesAsync(graph);
+        var raised = 0;
+        _service.OnPendingResourceChangesUpdated += () => raised++;
+
+        _service.OnResourceFileSystemEvent(resourceDir, dataDir, WatcherChangeTypes.Created);
+
+        Assert.Equal(1, raised);
+        Assert.Equal(2, _service.PendingResourceChangeCount);
+
+        // A folder's own change notification says nothing about its files.
+        _service.TakePendingResourceChanges();
+        _service.OnResourceFileSystemEvent(resourceDir, dataDir, WatcherChangeTypes.Changed);
+        Assert.Equal(0, _service.PendingResourceChangeCount);
+    }
+
+    [Fact]
+    public async Task ClassesGivenBack_AreTakenAgain_AndCounted()
+    {
+        // A refresh that fails after taking the queue gives the classes back rather than losing them.
+        var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
+        {
+            (Path.Combine(_tempDir, "Requeue", "data.mat"), ResourceReferenceType.LoadResource, "modelica://TestLib/data.mat", false)
+        });
+        await _service.AnalyzeResourcesAsync(graph);
+        var raised = 0;
+        _service.OnPendingResourceChangesUpdated += () => raised++;
+
+        _service.RequeueResourceChanges(["TestLib.TestModel"]);
+
+        Assert.Equal(1, raised);
+        Assert.Equal(1, _service.PendingResourceChangeCount);
+        Assert.Equal(["TestLib.TestModel"], _service.TakePendingResourceChanges());
+        Assert.Equal(0, _service.PendingResourceChangeCount);
     }
 
     [Fact]

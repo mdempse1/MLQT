@@ -282,6 +282,10 @@ missing:
   `modelica://ModelicaReference.Operators.'assert()'` exists says nothing about your library until
   ModelicaReference is loaded; MSL has seven such links, and before this they were all reported.
   Load the library it names (a [reference library](#reference-libraries) will do) and it is judged.
+  This holds whatever your library's `uses(...)` says. `MLQT.Reference.Undeclared` reports a name in
+  code that `uses` rules out, because code needs what it names; a link in documentation does not,
+  so `uses` does not list the libraries it points into — MSL's links into ModelicaReference are an
+  example.
 - **A class a package inherits is found.** `modelica://Modelica.Media.Water.StandardWater.ThermodynamicState`
   names a class `StandardWater` gets by extending `PartialMedium`, and is followed as every tool
   follows it.
@@ -324,7 +328,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), child classes not listed (missing), and entries listed more than once (duplicate). | GUI, CLI, MCP |
 | `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`) and one that would be written to the same file or directory name as a sibling, ignoring case, are left alone. The comparison is between what would be written, not between class names: a model `JFET` becomes `JFET.mo` and a package `Jfet` becomes the directory `Jfet`, so the two do not collide. For the same reason a *package* called `Package` may be split out, while a model of that name may not. Such classes are left alone because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
 | `MLQT.Structure.WithinClause` | Error | A file stored in a package's directory whose `within` clause does not name that package — the rule of [MLS 13.4.3](https://specification.modelica.org/maint/3.6/packages.html#the-within-clause): "For a sub-entity of an enclosing structured entity, the within-clause shall designate the class of the enclosing entity". A `package.mo` is its directory's package, so it names the package of the directory above. A missing `within` below the top level is reported too. Only files inside a loaded package directory are judged: a library's root `package.mo`, or a `.mo` file in a directory with no `package.mo`, is a top-level entity whose `within` cannot be judged from where it is stored. The expected name is built from the root package's loaded name and the class names in each nested `package.mo`, so one wrong `package.mo` is one finding rather than one on every correct file below it. | GUI, CLI, MCP |
-| `MLQT.Structure.DependencyCycle` | Warning | Packages under the same parent that depend on each other in a cycle — `Components` using `Interfaces` while `Interfaces` uses `Components` — so that neither can be understood, tested or moved without the other. Each finding is on the parent package, names the packages in the cycle, and gives one route round it with the class that makes each step, which is where to start breaking it. ⊕ | GUI, CLI, MCP |
+| `MLQT.Structure.DependencyCycle` | Warning | Packages under the same parent that depend on each other in a cycle — `Components` using `Interfaces` while `Interfaces` uses `Components` — so that neither can be understood, tested or moved without the other. Each finding is on the parent package, names the packages in the cycle, and gives one route round it with the class that makes each step, which is where to start breaking it. ⊕ † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
@@ -333,11 +337,11 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
 | `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
 | `MLQT.Conformance.Grammar` | Warning | Code that parses only because MLQT's grammar accepts what Dymola accepts beyond the Modelica Language Specification 3.7. Each finding names the widening it relies on. See [Strict Modelica 3.7 syntax](#strict-modelica-37-syntax). | GUI, CLI, MCP |
-| `MLQT.Resource.Missing` | Error | A file or directory the code refers to that is not there: a `loadResource` call, a `modelica://` URI to a file, a `loadSelector` parameter's file, an external function's `Include` header, or an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation. The [External Resources](external-resources.md) tab shows the same references, and the two always agree. ◊ | GUI, CLI, MCP |
-| `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ | GUI, CLI, MCP |
+| `MLQT.Resource.Missing` | Error | A file or directory the code refers to that is not there: a `loadResource` call, a `modelica://` URI to a file, a `loadSelector` parameter's file, an external function's `Include` header, or an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation. The [External Resources](external-resources.md) tab shows the same references, and the two always agree. ◊ † | GUI, CLI, MCP |
+| `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ † | GUI, CLI, MCP |
 | `MLQT.Connection.Incompatible` | Error | A `connect` that joins two connectors which cannot be connected: a `Pin` to a `HeatPort`, a connector whose `i` is `flow` to one whose `i` is not, or a `Real` signal to an `Integer` one. The message names both connector classes and their members. ⊗ | GUI, CLI, MCP |
 | `MLQT.Connection.Duplicate` | Warning | The same two ports connected twice in one class, either way round and however spaced. The finding is on the second, and names the line of the first. ⊗ | GUI, CLI, MCP |
-| `MLQT.Reference.Obsolete` | Warning | A use of a class its library marks `annotation(obsolete="...")`, or of anything inside a package marked that way: a component's type, a base class, a function called, an import or a constant. The message quotes the library's, which usually names the replacement. ⊘ | GUI, CLI, MCP |
+| `MLQT.Reference.Obsolete` | Warning | A use of a class its library marks `annotation(obsolete="...")`, or of anything inside a package marked that way: a component's type, a base class, a function called, an import or a constant. The message quotes the library's, which usually names the replacement. ⊘ † | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
 then in each enclosing class in turn, and a package directory's children are lexically nested inside
@@ -381,9 +385,14 @@ defined there) is not a dependency between packages. A class with an `experiment
 an entry point nothing depends on, so what it uses is not counted. A helper class inside an
 `Examples` package with no experiment of its own *is* counted; waive one with
 `__MLQT(suppress="MLQT.Structure.DependencyCycle")` on the parent package if that is the intent.
-Libraries that depend on each other are reported the same way, on the first of them. Only
-dependencies within the libraries being checked are followed. Over MSL 4.1 it reports 24 cycles and
-over Buildings 20, such as `Rotational.Interfaces` using `Rotational.Components.Fixed`.
+A cycle is found over the whole library and reported when a class being checked is inside one of its
+packages, so a check of a few changed classes reports the cycles they are part of, not every cycle in
+the library. Libraries that depend on each other are reported on each library being checked that is
+in the cycle; a library that is loaded but not checked, such as a reference library, is followed and
+never reported on. The desktop app, the CLI and the MCP server then report the same findings however
+many libraries each checks at once. Over MSL 4.1 it reports 24 cycles between packages, such as
+`Rotational.Interfaces` using `Rotational.Components.Fixed`, and one between libraries: `Modelica`
+and `ModelicaServices` use each other, which is how MSL is built. Over Buildings it reports 20.
 
 ◊ **A resource is reported only when MLQT can tell where it should be.** A `modelica://` URI into a
 library that is not loaded cannot be resolved, so it is never reported: whether the file exists says
@@ -405,14 +414,18 @@ type, so a `RealOutput` may feed a `VoltageInput`; causality and units are other
 (`connector PositivePin = Pin`) is the connector it names. Nothing is reported unless both ends are
 known: a port that does not resolve (that is `MLQT.Reference.Undeclared`'s to report), a connector
 that is encrypted or has a base that is not loaded, an `expandable` connector, whose members are
-whatever is connected to it, and a port declared `replaceable` are all left alone. A pair connected
-in both branches of an `if` is two connections that never exist together, and is not a duplicate;
-`a[1]` and `a[2]` are different ports. Over MSL 4.1 the two rules judge 99% of its 9,627 connections
+whatever is connected to it, and whatever a redeclaration decides — a port declared `replaceable`,
+one reached through a replaceable component, or one whose class is replaceable — are all left alone.
+The same pair either way round is one connection, reported once. A pair connected in both branches
+of an `if` is two connections that never exist together, and is not a duplicate, nor is a pair in
+the `else` branches of two different `if` statements; the same pair under two `if` statements on the
+same condition is. `a[1]` and `a[2]` are different ports. Over MSL 4.1 the two rules judge 99% of its 9,627 connections
 and report nothing; over Buildings they report 19 duplicates and no incompatible connection. Whether
 a connector is left unconnected, and whether two ports' directions agree, are not checked yet.
 
 ⊘ **What counts as obsolete, and who is told.** A class is obsolete when it carries the `obsolete`
-annotation itself or sits inside a class that does; the annotation is not inherited, so extending an
+annotation itself — a short class such as `type OldAngle = Real(...) annotation(obsolete="...")`
+included — or sits inside a class that does; the annotation is not inherited, so extending an
 obsolete class is a use of it, not a way of becoming one. A class that is obsolete itself, or sits
 inside an obsolete one, may use others without a finding, since obsolete classes use each other. Each
 obsolete class is reported once per class using it, at its first use. A class MLQT cannot read, such
@@ -568,7 +581,13 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckUnusedMembers": true,
     "CheckUndeclaredNames": true,
     "AcceptedToolBuiltIns": [],
-    "CheckGrammarConformance": true
+    "CheckGrammarConformance": true,
+    "CheckMissingResources": true,
+    "CheckAbsoluteResourcePaths": true,
+    "CheckDependencyCycles": true,
+    "CheckIncompatibleConnections": true,
+    "CheckDuplicateConnections": true,
+    "CheckObsoleteClasses": true
 }
 ```
 

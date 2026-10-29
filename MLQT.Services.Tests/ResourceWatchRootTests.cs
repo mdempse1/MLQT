@@ -139,6 +139,24 @@ public class ResourceWatchRootTests : IDisposable
     }
 
     [Fact]
+    public async Task AFileInAFolderThatDoesNotExist_IsWatchedFromTheNearestFolderThatDoes()
+    {
+        // The folder a missing file would come back in cannot be watched while it does not exist,
+        // so the watch goes up to what does - and has to be recursive to hear the file arrive.
+        var outside = Path.Combine(_tempDir, "shared");
+        Directory.CreateDirectory(outside);
+        var file = Path.Combine(outside, "Data", "Tables", "curve.mat");
+
+        await _service.AnalyzeResourcesAsync(GraphWith("Other.Model", new[] { file }));
+        _service.StartMonitoringResources();
+
+        var root = Assert.Single(_service.GetWatchedRoots());
+        Assert.Equal(Path.GetFullPath(outside), root,
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        Assert.True(_service.IsWatchedRecursively(root));
+    }
+
+    [Fact]
     public async Task AWatcherIsDroppedWhenItsTreeIsNoLongerReferenced()
     {
         var file = Path.Combine(_tempDir, "MyLib", "Resources", "Data", "curve.mat");

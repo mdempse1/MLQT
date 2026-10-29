@@ -39,7 +39,8 @@ public sealed class StyleSettingsInput
     /// <summary>The name is older than this server and is kept because it is what each repository's
     /// .mlqt/settings.json stores; the description is what stops an agent reading it as a type check.</summary>
     [Description("Checks modelica:// links to classes, written in strings such as Documentation HTML, and reports " +
-                 "each one naming a class that is not loaded. It does NOT check type references: a component " +
+                 "each one naming a class MLQT can tell is not there; a link into a library that is not loaded is " +
+                 "not reported. It does NOT check type references: a component " +
                  "type or extends base that does not resolve (e.g. a misspelt 'Modelica.Blocks.Sources.Sinee') " +
                  "is found by mlqt_check's references check, which checks a whole library in one call.")]
     public bool? ValidateModelReferences { get; set; }

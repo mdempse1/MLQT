@@ -14,7 +14,21 @@ public enum ConnectScopeKind
 /// <c>else</c>, <c>elsewhen x</c> - and <see cref="LoopIndices"/> names what a <c>for</c> binds, which
 /// is what the subscripts in its connect's ports refer to.
 /// </summary>
-public sealed record ConnectScope(ConnectScopeKind Kind, string Header, IReadOnlyList<string> LoopIndices);
+public sealed record ConnectScope(ConnectScopeKind Kind, string Header, IReadOnlyList<string> LoopIndices)
+{
+    /// <summary>
+    /// The conditions of the earlier branches of the same <c>if</c> or <c>when</c>, which are false
+    /// when this branch is the one taken: none for the first, <c>a</c> for <c>elseif b</c> after
+    /// <c>if a</c>, and every one of them for <c>else</c>. With <see cref="Header"/> it says when the
+    /// branch applies, so two <c>else</c> branches of different statements are told apart.
+    /// </summary>
+    public IReadOnlyList<string> PreviousConditions { get; init; } = [];
+
+    /// <summary>When the branch applies, as one comparable string: its header, and what must be false.</summary>
+    public string Applies => PreviousConditions.Count == 0
+        ? Header
+        : $"{Header} (not {string.Join(", not ", PreviousConditions)})";
+}
 
 /// <summary>
 /// A <c>connect(a, b)</c> equation in a class body, read by <see cref="Visitors.ConnectClauses"/>:

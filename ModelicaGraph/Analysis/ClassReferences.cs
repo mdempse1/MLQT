@@ -19,7 +19,12 @@ namespace ModelicaGraph.Analysis;
 /// reported broken though every tool follows it.</para>
 ///
 /// <para>So the name is walked a segment at a time with <see cref="TypeResolver.MemberClass"/>, which
-/// finds inherited classes too. Its first segment not loaded is <see cref="ClassReferenceTarget.CannotTell"/>.
+/// finds inherited classes too. Its first segment not loaded is <see cref="ClassReferenceTarget.CannotTell"/>
+/// - whatever the linking library's <c>uses(...)</c> says. <c>MLQT.Reference.Undeclared</c> reports
+/// a name in code that <c>uses</c> rules out, because code needs what it names; a link in
+/// documentation does not, so <c>uses</c> does not list the libraries it points into. Applying it
+/// here was tried after the branch review and reported MSL's seven links into ModelicaReference, a
+/// documentation library MSL rightly does not declare.
 /// A segment found nowhere is <see cref="ClassReferenceTarget.Missing"/> only when the class it was
 /// looked for in is complete (<see cref="ClassCompleteness"/>, which <c>MLQT.Reference.Undeclared</c>
 /// asks too): every base resolved. Missing from a class with an unresolved base, it could be in what

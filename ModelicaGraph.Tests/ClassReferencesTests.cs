@@ -1,4 +1,5 @@
 using ModelicaGraph.DataTypes;
+using ModelicaParser.ExternalDocs;
 using ModelicaParser.StyleRules;
 using Xunit;
 
@@ -80,6 +81,22 @@ public class ClassReferencesTests
     }
 
     [Fact]
+    public void ALinkIntoALibraryUsesDoesNotList_IsStillNotJudged_BecauseALinkIsNoDependency()
+    {
+        // MLQT.Reference.Undeclared reports a name in code that uses(...) rules out. A link is not
+        // code: MSL links into ModelicaReference, a documentation library its uses(...) rightly
+        // leaves out, and ruling those out reported all seven of them again.
+        Load("Lib.mo", Lib);
+        Load("App.mo", """
+            package App
+              annotation (uses(Modelica(version = "4.1.0")));
+            end App;
+            """);
+
+        Assert.Equal(ClassReferenceTarget.CannotTell, TargetOf("ModelicaReference.Operators.'assert()'"));
+    }
+
+    [Fact]
     public void AClassMissingFromOneWithABaseMLQTCannotSee_CannotBeJudged()
     {
         // Vendor extends a class in a library that is not loaded, which could declare anything.
@@ -100,6 +117,27 @@ public class ClassReferencesTests
 
         Assert.Equal(ClassReferenceTarget.Missing, TargetOf("Lib.Interfaces.NotDocumented"));
         Assert.Equal(ClassReferenceTarget.Found, TargetOf("Lib.Interfaces.PartialMedium"));
+    }
+
+    [Fact]
+    public void AClassAnEncryptedMediumInherits_IsFound_ThroughItsDocumentedBase()
+    {
+        // The review's case: Water inherits ThermodynamicState. Its help page says "Extends from
+        // PartialMedium", the stub writes that extends, and the inherited class is found through it.
+        DocumentedClass Doc(string name, string kind, IReadOnlyList<string>? extends, params string[] children) =>
+            new(name, null, extends, null, null, kind, children, [], [], [], [], []);
+
+        ExternalStubBuilder.AddDocumentedClasses(_graph,
+        [
+            Doc("Vendor", "package", null, "Vendor.Interfaces", "Vendor.Water"),
+            Doc("Vendor.Interfaces", "package", null, "Vendor.Interfaces.PartialMedium"),
+            Doc("Vendor.Interfaces.PartialMedium", "package", null, "Vendor.Interfaces.PartialMedium.ThermodynamicState"),
+            Doc("Vendor.Interfaces.PartialMedium.ThermodynamicState", "record", null),
+            Doc("Vendor.Water", "package", ["Vendor.Interfaces.PartialMedium"]),
+        ], Path.Combine(Path.GetTempPath(), "ClassRefs", "Vendor"));
+
+        Assert.Equal(ClassReferenceTarget.Found, TargetOf("Vendor.Water.ThermodynamicState"));
+        Assert.Equal(ClassReferenceTarget.Missing, TargetOf("Vendor.Water.NotThere"));
     }
 
     [Fact]

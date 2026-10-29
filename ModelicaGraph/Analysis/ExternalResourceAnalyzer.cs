@@ -66,18 +66,13 @@ public sealed class ExternalResourceAnalyzer : IGraphAnalyzer
 
     private static string MessageFor(ResourceProblem problem) => problem.Kind switch
     {
-        ResourceProblemKind.Missing when IsDirectory(problem.ReferenceType) =>
+        ResourceProblemKind.Missing when problem.IsDirectory =>
             $"{DescriptionOf(problem.ReferenceType)} '{problem.RawPath}' does not exist: {problem.ResolvedPath}",
         ResourceProblemKind.Missing =>
             $"{DescriptionOf(problem.ReferenceType)} '{problem.RawPath}' refers to a file that does not exist: {problem.ResolvedPath}",
         _ =>
             $"{DescriptionOf(problem.ReferenceType)} '{problem.RawPath}' is an absolute path, which exists only on the machine it was written on; use a modelica:// URI",
     };
-
-    private static bool IsDirectory(ResourceReferenceType type) =>
-        type is ResourceReferenceType.ExternalIncludeDirectory
-             or ResourceReferenceType.ExternalLibraryDirectory
-             or ResourceReferenceType.ExternalSourceDirectory;
 
     /// <summary>
     /// The reference kind as it goes into the fingerprint. Written out rather than taken from the

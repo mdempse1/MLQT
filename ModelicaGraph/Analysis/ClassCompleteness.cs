@@ -24,6 +24,13 @@ namespace ModelicaGraph.Analysis;
 /// holds). For "which names does it declare?" - <c>MLQT.Reference.Undeclared</c> - it is not.
 /// <paramref name="trustRecoveredClassLists"/> says which question this instance answers.</para>
 ///
+/// <para><b>Inherited classes in a recovered class.</b> A class inheriting nested classes from a
+/// base - a medium's <c>ThermodynamicState</c> from <c>PartialMedium</c> - has an "Extends from"
+/// line on its help page, which its stub writes as an <c>extends</c>, and the inherited class is
+/// found through it. The help leaves that line out only when there is no base, so a stub without
+/// one is trusted to extend nothing. Treating it as unknown instead was tried (2026-10-29) and
+/// made every link into a documented package unjudgeable, which is the decision above undone.</para>
+///
 /// <para>Thread-safe: the per-class rules ask it in parallel. The answer is cached per class for the
 /// life of the instance, which is one check.</para>
 /// </remarks>

@@ -38,6 +38,7 @@ public class ObsoleteClassAnalyzerTests
             end twice;
             annotation (obsolete = "Legacy will be removed in version 2");
           end Legacy;
+          type OldReal = Real(unit = "1") annotation (obsolete = "Use Real");
           model Retired
             Real x;
           equation
@@ -120,6 +121,15 @@ public class ObsoleteClassAnalyzerTests
 
         Assert.Equal("Lib.Old", finding.ElementPath);
         Assert.Equal(2, finding.LineNumber);
+    }
+
+    [Fact]
+    public async Task AnObsoleteShortClass_IsReported()
+    {
+        // Its annotation is in its comment rather than a body, and was never read.
+        var finding = Assert.Single(await Check("model Test\n  Lib.OldReal r;\nend Test;"));
+
+        Assert.Equal("Lib.OldReal is obsolete: Use Real", finding.Message);
     }
 
     [Fact]

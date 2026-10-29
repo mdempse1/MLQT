@@ -70,22 +70,33 @@ public static class ConnectClauses
             }
             else if (equation.if_equation() is { } branch)
             {
+                // Each branch carries the conditions before it, which are false when it is taken.
+                var before = new List<string> { Text(branch.expression()) };
                 inner = Walk(branch.equation_or_comment(),
-                    Inside(scopes, ConnectScopeKind.If, "if " + Text(branch.expression())));
+                    Inside(scopes, ConnectScopeKind.If, "if " + before[0]));
                 foreach (var elseIf in branch.elseif_equation())
+                {
+                    var condition = Text(elseIf.expression());
                     inner = inner.Concat(Walk(elseIf.equation_or_comment(),
-                        Inside(scopes, ConnectScopeKind.If, "elseif " + Text(elseIf.expression()))));
+                        Inside(scopes, ConnectScopeKind.If, "elseif " + condition, previous: [.. before])));
+                    before.Add(condition);
+                }
                 if (branch.else_equation() is { } otherwise)
                     inner = inner.Concat(Walk(otherwise.equation_or_comment(),
-                        Inside(scopes, ConnectScopeKind.If, "else")));
+                        Inside(scopes, ConnectScopeKind.If, "else", previous: [.. before])));
             }
             else if (equation.when_equation() is { } when)
             {
+                var before = new List<string> { Text(when.expression()) };
                 inner = Walk(when.equation_or_comment(),
-                    Inside(scopes, ConnectScopeKind.When, "when " + Text(when.expression())));
+                    Inside(scopes, ConnectScopeKind.When, "when " + before[0]));
                 foreach (var elseWhen in when.elsewhen_equation())
+                {
+                    var condition = Text(elseWhen.expression());
                     inner = inner.Concat(Walk(elseWhen.equation_or_comment(),
-                        Inside(scopes, ConnectScopeKind.When, "elsewhen " + Text(elseWhen.expression()))));
+                        Inside(scopes, ConnectScopeKind.When, "elsewhen " + condition, previous: [.. before])));
+                    before.Add(condition);
+                }
             }
 
             foreach (var found in inner)
@@ -94,8 +105,9 @@ public static class ConnectClauses
     }
 
     private static IReadOnlyList<ConnectScope> Inside(
-        IReadOnlyList<ConnectScope> outer, ConnectScopeKind kind, string header, IReadOnlyList<string>? indices = null)
-        => [.. outer, new ConnectScope(kind, header, indices ?? [])];
+        IReadOnlyList<ConnectScope> outer, ConnectScopeKind kind, string header,
+        IReadOnlyList<string>? indices = null, IReadOnlyList<string>? previous = null)
+        => [.. outer, new ConnectScope(kind, header, indices ?? []) { PreviousConditions = previous ?? [] }];
 
     // The text as written, spaces included - GetText() would join `i in 1:n` into `iin1:n`. A
     // condition written across lines becomes one line: a header is a label, read on one.

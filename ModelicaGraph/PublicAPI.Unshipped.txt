@@ -29,6 +29,7 @@ ModelicaGraph.Analysis.ResourceProblem
 ModelicaGraph.Analysis.ResourceProblem.<Clone>$() -> ModelicaGraph.Analysis.ResourceProblem!
 ModelicaGraph.Analysis.ResourceProblem.Deconstruct(out ModelicaGraph.Analysis.ResourceProblemKind Kind, out string! ModelId, out string! RawPath, out string! ResolvedPath, out ModelicaParser.DataTypes.ResourceReferenceType ReferenceType) -> void
 ModelicaGraph.Analysis.ResourceProblem.Equals(ModelicaGraph.Analysis.ResourceProblem? other) -> bool
+ModelicaGraph.Analysis.ResourceProblem.IsDirectory.get -> bool
 ModelicaGraph.Analysis.ResourceProblem.Kind.get -> ModelicaGraph.Analysis.ResourceProblemKind
 ModelicaGraph.Analysis.ResourceProblem.Kind.init -> void
 ModelicaGraph.Analysis.ResourceProblem.ModelId.get -> string!
@@ -107,6 +108,7 @@ override ModelicaGraph.ReadOnlySourceLoad.ToString() -> string!
 override ModelicaGraph.SuppliedText.Equals(object? obj) -> bool
 override ModelicaGraph.SuppliedText.GetHashCode() -> int
 override ModelicaGraph.SuppliedText.ToString() -> string!
+static ModelicaGraph.Analysis.ConnectorSignature.ConnectorOf(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.Analysis.ResolvedReference? port) -> ModelicaGraph.DataTypes.ModelNode?
 static ModelicaGraph.Analysis.ConnectorSignature.Describe(string! signature) -> string!
 static ModelicaGraph.Analysis.ConnectorSignature.HasMembers(string! signature) -> bool
 static ModelicaGraph.Analysis.ResourceProblem.operator !=(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool

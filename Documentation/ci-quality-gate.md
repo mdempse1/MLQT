@@ -135,8 +135,8 @@ every report):
 
 Severities in `RuleSeverities` are `Off`, `Info`, `Warning`, or `Error`; the map wins over the
 booleans. Most rules default to `Warning` (`MLQT.Duplicate.Declaration`,
-`MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are `Error`,
-`MLQT.Unused.PublicClass` is `Info`).
+`MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`, `MLQT.Resource.Missing` and
+`MLQT.Connection.Incompatible` are `Error`, `MLQT.Unused.PublicClass` is `Info`).
 
 The table is the documentation and layout rules a first trial usually starts with, not the whole
 set: the correctness, structure, unused-code and units rules are listed with their settings in
@@ -159,9 +159,10 @@ Names match the first segment of a class id, case-insensitively, and `*` is a wi
 Add these with care:
 
 - **`ValidateModelReferences`** and **`ClassHasIcon`** — both need the libraries you depend on to be
-  loaded. Pass `--dependency /path/to/ModelicaStandardLibrary` (repeatable) so `modelica://` links and
-  icons inherited from `Modelica.Icons.*` resolve. Without it these report findings your code did not
-  earn. Dependencies are loaded for resolution only and are never reported
+  loaded. Pass `--dependency /path/to/ModelicaStandardLibrary` (repeatable) so icons inherited from
+  `Modelica.Icons.*` resolve; without it `ClassHasIcon` reports findings your code did not earn. A
+  `modelica://` link into a library that is not loaded is not reported, since MLQT cannot tell
+  whether it is broken, so without the dependency those links go unchecked rather than wrong. Dependencies are loaded for resolution only and are never reported
   on. Use the **same** `--dependency` set for `baseline` as for `check`, or the two disagree about what
   resolves; the check warns when they differ. If the copy you point at is **not** the version the
   library's `uses(...)` declares, the run **stops with exit 2** rather than report findings that are
@@ -713,7 +714,7 @@ error: coverage gate: Class description 75% is below the required 80%
 |---|---|
 | `note: only the rules that are on by default are enabled; …` | No settings file, or one that enables nothing beyond the defaults. Enable rules (§3). |
 | `note: no style rules are enabled; no findings will be produced.` | Every rule, including the ones on by default, has been turned off in `.mlqt/settings.json`. Enable rules (§3). |
-| Lots of `MLQT.Reference.ModelReferences` findings | The libraries it uses (MSL, etc.) aren't loaded, so external `modelica://` refs look broken. Pass `--dependency <path to the library it uses, e.g. MSL>`. |
+| Lots of `MLQT.Doc.ClassIcon` findings | The libraries it uses (MSL, etc.) aren't loaded, so an icon inherited from `Modelica.Icons.*` cannot be seen. Pass `--dependency <path to the library it uses, e.g. MSL>`. A `modelica://` link into a library that is not loaded is not reported at all, so loading it is also what lets `MLQT.Reference.ModelReferences` check those links. |
 | Spelling flags valid domain terms | Build a custom dictionary — see [spell-checking.md](spell-checking.md). |
 | `error: '<path>' is not inside a Git or SVN working copy` | `--changed-from` needs to run inside the VCS working copy. |
 | `error: could not resolve revision '<ref>'` | Git: the ref doesn't exist locally (wrong branch name, or only `origin/<ref>`) — try `origin/main`, `master`, `HEAD~1`. SVN: `--changed-from` must be a revision number or keyword (`BASE`/`HEAD`/`PREV`), **not a branch name**. |
@@ -726,4 +727,4 @@ error: coverage gate: Class description 75% is below the required 80%
 | A baselined check accepts *more* findings than the baseline holds | Also expected, and the same cause: classification is per finding, so several findings can match one entry. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | `error: dependency version mismatch` | The `--dependency` checkout is not the version the library's `uses(...)` declares. Point it at the right version, update the annotation, or pass `--allow-version-mismatch` if the difference is deliberate. |
-| Gate passes but you expected a failure | Most rules default to `Warning` (`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are `Error`, `MLQT.Unused.PublicClass` is `Info`), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |
+| Gate passes but you expected a failure | Most rules default to `Warning` (`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`, `MLQT.Resource.Missing` and `MLQT.Connection.Incompatible` are `Error`, `MLQT.Unused.PublicClass` is `Info`), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

@@ -145,7 +145,7 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.ClassDocumentationInfo, "Class has Documentation info", "Documentation", RuleSeverity.Warning, "A class must have a Documentation(info=...) annotation."),
             new RuleDefinition(RuleIds.ClassDocumentationRevisions, "Class has Documentation revisions", "Documentation", RuleSeverity.Warning, "A class must have a Documentation(revisions=...) annotation."),
             new RuleDefinition(RuleIds.ClassIcon, "Class has Icon", "Documentation", RuleSeverity.Warning, "A class must have an Icon annotation (directly or inherited)."),
-            new RuleDefinition(RuleIds.ModelReferences, "Valid model references", "Reference", RuleSeverity.Warning, "modelica:// model references must resolve to a loaded model."),
+            new RuleDefinition(RuleIds.ModelReferences, "Valid model references", "Reference", RuleSeverity.Warning, "modelica:// model references must name a class that exists. Reported only when MLQT can tell: a link into a library that is not loaded, or through a class with a base MLQT cannot read, is not."),
             new RuleDefinition(RuleIds.SpellingDescription, "Spelling in descriptions", "Spelling", RuleSeverity.Warning, "Description strings must be free of spelling mistakes."),
             new RuleDefinition(RuleIds.SpellingDocumentation, "Spelling in documentation", "Spelling", RuleSeverity.Warning, "Documentation strings must be free of spelling mistakes."),
             new RuleDefinition(RuleIds.NamingConvention, "Follows naming convention", "Naming", RuleSeverity.Warning, "Class and element names must follow the configured naming convention."),

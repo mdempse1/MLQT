@@ -16,13 +16,16 @@ namespace ModelicaGraph.Analysis;
 /// class at its end, and compares the two by <see cref="ConnectorSignature"/>. Reported only when
 /// both signatures are known: a port that does not resolve, a connector that is encrypted or has a base
 /// MLQT cannot read, and anything expandable are "cannot tell" - and a name that does not exist is
-/// <c>MLQT.Reference.Undeclared</c>'s to report, not this rule's. A port declared <c>replaceable</c>
-/// is left alone too, since a redeclaration decides what it is.</para>
+/// <c>MLQT.Reference.Undeclared</c>'s to report, not this rule's. Whatever a redeclaration decides is
+/// left alone too: a port declared <c>replaceable</c>, one reached through a replaceable component,
+/// and one whose class, or a class on the way to it, is replaceable.</para>
 ///
 /// <para><b>Duplicate</b> is the same two ports, either way round and spaced any way, connected again
-/// under the same <c>for</c>/<c>if</c>/<c>when</c> branches. The same pair in two branches of an
-/// <c>if</c> is two connections that never both exist, and is not reported. Subscripts are compared as
-/// written, so <c>a[1]</c> and <c>a[2]</c> are different ports. Needs no graph at all.</para>
+/// under branches that apply at the same time: the same <c>for</c>/<c>if</c>/<c>when</c> headers,
+/// with the same earlier conditions false (<see cref="ConnectScope.Applies"/>). The same pair in two
+/// branches of an <c>if</c> is two connections that never both exist, and is not reported, nor are
+/// the <c>else</c> branches of two different statements. Subscripts are compared as written, so
+/// <c>a[1]</c> and <c>a[2]</c> are different ports. Needs no graph at all.</para>
 ///
 /// <para>Both read the connects through <see cref="ConnectClauses"/>, the one reader of a class's
 /// connections, nested ones included.</para>
@@ -34,7 +37,9 @@ public sealed class ConnectionIntegrityAnalyzer : IGraphAnalyzer
 
     public IReadOnlyList<string> RuleIds { get; } = [RuleIdsRef.IncompatibleConnection, RuleIdsRef.DuplicateConnection];
 
-    private sealed record Connect(string PortA, string PortB, int Line, IReadOnlyList<string> Within);
+    /// <param name="Applies">When it applies: each enclosing branch with the conditions that must be
+    /// false for it (<see cref="ConnectScope.Applies"/>), which a duplicate must share.</param>
+    private sealed record Connect(string PortA, string PortB, int Line, IReadOnlyList<string> Within, string Applies);
 
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)
     {
@@ -84,7 +89,9 @@ public sealed class ConnectionIntegrityAnalyzer : IGraphAnalyzer
             tree => tree.class_definition() is [var c, ..]
                     && c.class_specifier()?.long_class_specifier()?.composition() is { } composition
                 ? ConnectClauses.WithEquations(composition)
-                    .Select(found => new Connect(found.Clause.PortA, found.Clause.PortB, found.Equation.Start.Line, found.Clause.Within))
+                    .Select(found => new Connect(
+                        found.Clause.PortA, found.Clause.PortB, found.Equation.Start.Line, found.Clause.Within,
+                        string.Join(" | ", found.Clause.Scopes.Select(s => s.Applies))))
                     .ToList()
                 : [],
             []);
@@ -94,10 +101,8 @@ public sealed class ConnectionIntegrityAnalyzer : IGraphAnalyzer
         var seen = new Dictionary<string, Connect>(StringComparer.Ordinal);
         foreach (var connect in connects)
         {
-            var a = Normalised(connect.PortA);
-            var b = Normalised(connect.PortB);
-            var pair = string.CompareOrdinal(a, b) <= 0 ? $"{a}, {b}" : $"{b}, {a}";
-            var key = pair + " | " + string.Join(" | ", connect.Within);
+            var pair = PairOf(connect);
+            var key = pair + " | " + connect.Applies;
 
             if (seen.TryGetValue(key, out var first))
             {
@@ -125,37 +130,41 @@ public sealed class ConnectionIntegrityAnalyzer : IGraphAnalyzer
 
         foreach (var connect in connects)
         {
-            if (Connector(references.Resolve(connect.PortA)) is not { } a
-                || Connector(references.Resolve(connect.PortB)) is not { } b
+            if (ConnectorSignature.ConnectorOf(graph, references.Resolve(connect.PortA)) is not { } a
+                || ConnectorSignature.ConnectorOf(graph, references.Resolve(connect.PortB)) is not { } b
                 || signatures.Of(a) is not { } signatureA
                 || signatures.Of(b) is not { } signatureB
                 || string.Equals(signatureA, signatureB, StringComparison.Ordinal))
                 continue;
 
-            var pair = $"{Normalised(connect.PortA)}, {Normalised(connect.PortB)}";
-            if (!reported.Add(pair))
+            // Either way round is the same connection, as it is for a duplicate.
+            if (!reported.Add(PairOf(connect)))
                 continue;
 
             yield return new Finding
             {
                 RuleId = RuleIdsRef.IncompatibleConnection,
                 ModelId = model.Id,
-                ElementPath = pair,
-                Message = $"connect({connect.PortA}, {connect.PortB}) joins a {a.Id} and a {b.Id}, which cannot be connected: " +
+                ElementPath = PairOf(connect),
+                Message = $"connect({connect.PortA}, {connect.PortB}) joins {a.Id} to {b.Id}, which cannot be connected: " +
                           $"{What(signatureA)} against {What(signatureB)}",
                 LineNumber = connect.Line,
             };
         }
     }
 
-    /// <summary>The connector class a resolved port is, or null when that is not something to judge.</summary>
-    private static ModelNode? Connector(ResolvedReference? port) =>
-        port is { Type: { } type } && !port.Element.Element.Prefixes.Contains("replaceable") ? type : null;
+    /// <summary>The two ports, normalised and in order, so either way round is the same pair.</summary>
+    private static string PairOf(Connect connect)
+    {
+        var a = Normalised(connect.PortA);
+        var b = Normalised(connect.PortB);
+        return string.CompareOrdinal(a, b) <= 0 ? $"{a}, {b}" : $"{b}, {a}";
+    }
 
     private static string What(string signature) =>
         ConnectorSignature.HasMembers(signature)
             ? "members " + ConnectorSignature.Describe(signature)
-            : "a " + ConnectorSignature.Describe(signature);
+            : ConnectorSignature.Describe(signature);
 
     /// <summary>A port as written with its spacing taken out, quoted identifiers left as they are.</summary>
     internal static string Normalised(string port)

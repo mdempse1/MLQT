@@ -20,12 +20,45 @@ internal sealed record PortResolution(ModelNode? Connector, string? Error, strin
 internal static class ConnectorCompatibility
 {
     /// <summary>
-    /// Resolve a dotted port reference (component[.subcomponent...].connector) to the connector class at
-    /// its end, walking component types through the graph.
+    /// Resolve a dotted port reference (component[.subcomponent...].connector, subscripts allowed) to
+    /// the connector class at its end.
     /// </summary>
+    /// <remarks>
+    /// Resolved as <c>MLQT.Connection.Incompatible</c> resolves it - <c>ClassElementResolver.ReferencesIn</c>,
+    /// then <see cref="ConnectorSignature.ConnectorOf"/> - so the tool refuses exactly the connections
+    /// the rule would report. Its own walk split <c>a[1].p</c> into a segment <c>a[1]</c>, which no
+    /// component is called, and refused a valid array connect; it judged a replaceable port, which the
+    /// rule leaves to the redeclaration. The walk below now only words the error when the reference
+    /// does not resolve.
+    /// </remarks>
     public static PortResolution ResolvePort(ILibraryDataService libraries, string classId, string portRef)
     {
-        var segments = ModelicaName.Segments(portRef).Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+        if (libraries.GetModelById(classId) is not { } owner)
+            return new PortResolution(null, null, $"could not resolve '{portRef}' (class '{classId}' not loaded)");
+
+        var graph = libraries.CombinedGraph;
+        if (ClassElementResolver.ReferencesIn(graph, owner).Resolve(portRef) is { } resolved)
+        {
+            if (resolved.Type is null)
+                return new PortResolution(null, null,
+                    $"the type '{resolved.Element.Element.Type}' of '{resolved.Element.Element.Name}' does not resolve to a loaded class — " +
+                    "check the name or load its library (e.g. the Modelica Standard Library)");
+
+            return ConnectorSignature.ConnectorOf(graph, resolved) is { } connector
+                ? new PortResolution(connector, null, null)
+                : new PortResolution(null, null, $"'{portRef}' is replaceable, so a redeclaration decides what it connects to");
+        }
+
+        return Explain(libraries, classId, portRef);
+    }
+
+    /// <summary>Why a port reference did not resolve, segment by segment.</summary>
+    private static PortResolution Explain(ILibraryDataService libraries, string classId, string portRef)
+    {
+        var segments = ModelicaName.Segments(portRef)
+            .Select(s => StripSubscripts(s).Trim())
+            .Where(s => s.Length > 0)
+            .ToArray();
         if (segments.Length == 0)
             return new PortResolution(null, $"'{portRef}' is not a valid port reference.", null);
 
@@ -50,17 +83,22 @@ internal static class ConnectorCompatibility
                     "check the name or load its library (e.g. the Modelica Standard Library)");
 
             if (i == segments.Length - 1)
-                return new PortResolution(typeNode, null, null);
+                break;
 
             currentId = typeNode.Id; // descend into the component's class
         }
 
-        return new PortResolution(null, $"could not resolve '{portRef}'.", null);
+        // Every segment found here, and still not resolvable as the rule resolves it: say so rather
+        // than guess.
+        return new PortResolution(null, null, $"could not resolve '{portRef}'");
     }
 
+    private static string StripSubscripts(string segment) =>
+        segment.IndexOf('[') is var at and >= 0 && !segment.StartsWith('\'') ? segment[..at] : segment;
+
     /// <summary>
-    /// A structural signature of a connector, ignoring input/output causality, or null when MLQT
-    /// cannot tell what it is. Two connectors are compatible when their signatures are equal.
+    /// Whether two connectors may be joined: false only when both structural signatures are known and
+    /// differ, input/output causality aside. Worked out with one set of caches for the pair.
     /// </summary>
     /// <remarks>
     /// <see cref="ConnectorSignature"/>, the definition <c>MLQT.Connection.Incompatible</c> uses, so
@@ -69,9 +107,11 @@ internal static class ConnectorCompatibility
     /// <c>alias:Frame</c> - never equal to Frame's own signature, so wiring an alias to its base was
     /// refused - and ignored <c>stream</c>.
     /// </remarks>
-    public static string? Signature(ILibraryDataService libraries, ModelNode connector) =>
-        new ConnectorSignature(libraries.CombinedGraph).Of(connector);
-
-    public static bool SignaturesCompatible(string? a, string? b)
-        => a is not null && b is not null && string.Equals(a, b, StringComparison.Ordinal);
+    public static bool MayConnect(ILibraryDataService libraries, ModelNode a, ModelNode b)
+    {
+        var signatures = new ConnectorSignature(libraries.CombinedGraph);
+        return signatures.Of(a) is not { } sigA
+               || signatures.Of(b) is not { } sigB
+               || string.Equals(sigA, sigB, StringComparison.Ordinal);
+    }
 }

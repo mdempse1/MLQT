@@ -26,9 +26,18 @@ namespace ModelicaGraph.Analysis;
 /// cycle through it and the class that makes each step, which is what a reader needs to break it.
 /// Distinct libraries depending on each other are the same question one level up.</para>
 ///
-/// <para><b>Only the libraries being checked.</b> A dependency that leaves them is not followed: a
-/// cycle through a library MLQT is not checking - a reference library, an excluded one - is not this
-/// library's to report, and leaving it out can only under-report. Needs the dependency edges.</para>
+/// <para><b>Found over whole libraries, reported where a checked class is.</b> A cycle inside a
+/// library is found over all of it, whichever of its classes are being checked, and reported only
+/// when a checked class lies inside one of the cycle's packages: a check of a few changed classes
+/// reports the cycles they are part of, not every cycle in the library. A check of the whole library
+/// reports all of them.</para>
+///
+/// <para><b>Libraries depending on each other are reported on each checked one.</b> Their
+/// dependencies are followed across every library loaded, and the cycle is reported once on each
+/// checked library in it. Reported once "on the first", a surface checking one library at a time
+/// (the MCP server) could never see it while one checking a repository (the desktop app) did, so
+/// the same libraries gave different findings by tool. A library that is loaded but not checked
+/// is followed and never reported on. Needs the dependency edges.</para>
 /// </remarks>
 public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
 {
@@ -48,6 +57,12 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
             .Select(m => ModelicaName.RootLibraryOf(m.Id))
             .ToHashSet(StringComparer.Ordinal);
 
+        // Every checked class and every package around one: a cycle is reported when one of its
+        // members is in here.
+        var touched = context.Models
+            .SelectMany(m => ModelicaName.EnclosingNamesOf(m.Id).Append(m.Id))
+            .ToHashSet(StringComparer.Ordinal);
+
         var groups = PackageDependencies(context.Graph, checkedRoots);
 
         var findings = new List<Finding>();
@@ -55,17 +70,30 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
         {
             foreach (var component in group.CyclicComponents())
             {
+                if (!component.Any(touched.Contains))
+                    continue;
+
                 var cycle = group.ShortestCycleThrough(component[0], component);
-                findings.Add(new Finding
+
+                // Inside a library, on the package whose children are in it. Libraries have no
+                // common package, so on each checked library in the cycle.
+                var owners = parent.Length > 0
+                    ? [OwnerOf(context.Graph, parent, component)]
+                    : component.Where(checkedRoots.Contains).ToList();
+
+                foreach (var owner in owners)
                 {
-                    RuleId = RuleIdsRef.DependencyCycle,
-                    ModelId = OwnerOf(context.Graph, parent, component),
-                    // Which packages are in it, which is what the cycle *is*: a different route
-                    // through the same packages is the same cycle, so the route is not part of it.
-                    ElementPath = string.Join(", ", component),
-                    Message = MessageFor(parent, component, cycle, group),
-                    LineNumber = 1,
-                });
+                    findings.Add(new Finding
+                    {
+                        RuleId = RuleIdsRef.DependencyCycle,
+                        ModelId = owner,
+                        // Which packages are in it, which is what the cycle *is*: a different route
+                        // through the same packages is the same cycle, so the route is not part of it.
+                        ElementPath = string.Join(", ", component),
+                        Message = MessageFor(parent, component, cycle, group),
+                        LineNumber = 1,
+                    });
+                }
             }
         }
 
@@ -73,8 +101,9 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
     }
 
     /// <summary>
-    /// Every class-to-class dependency inside the checked libraries, lifted to the packages where the
-    /// two names part, grouped by the package whose children they are ("" for distinct libraries).
+    /// Every class-to-class dependency lifted to the packages where the two names part, grouped by
+    /// the package whose children they are: inside each checked library, and between any two loaded
+    /// libraries ("" for those), so a cycle between libraries is seen whichever of them is checked.
     /// </summary>
     internal static Dictionary<string, SiblingGraph> PackageDependencies(DirectedGraph graph, IReadOnlySet<string> checkedRoots)
     {
@@ -82,9 +111,11 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
 
         foreach (var model in graph.ModelNodes)
         {
-            if (model.IsParseFailurePlaceholder || model.IsExternalStub
-                || !checkedRoots.Contains(ModelicaName.RootLibraryOf(model.Id)))
+            if (model.IsParseFailurePlaceholder || model.IsExternalStub)
                 continue;
+
+            // A library not being checked contributes only what it uses of other libraries.
+            var fromChecked = checkedRoots.Contains(ModelicaName.RootLibraryOf(model.Id));
 
             // An example is an entry point that nothing depends on, so what it uses costs nobody
             // anything; its whole job is to use parts from across the library. Counted, MSL's
@@ -97,7 +128,7 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
             foreach (var usedId in model.UsedModelIds)
             {
                 var used = graph.GetNode<ModelNode>(usedId);
-                if (used is null || used.IsExternalStub || !checkedRoots.Contains(ModelicaName.RootLibraryOf(usedId)))
+                if (used is null || used.IsExternalStub)
                     continue;
 
                 var to = ModelicaName.Segments(usedId);
@@ -105,6 +136,9 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
                 while (shared < from.Count && shared < to.Count
                        && string.Equals(from[shared], to[shared], StringComparison.Ordinal))
                     shared++;
+
+                if (shared > 0 && !fromChecked)
+                    continue;
 
                 // One is inside the other: a class and its own enclosing scope.
                 if (shared == from.Count || shared == to.Count)

@@ -255,8 +255,10 @@ listed in `unreadable` rather than skipped silently. Load the libraries the code
 every reference into them is reported.
 
 The style setting `validateModelReferences` is a different check, despite its name: it reports
-`modelica://` links in strings such as documentation HTML that name a class that is not loaded. No
-style rule checks type references. The setting keeps its name because it is what each repository's
+`modelica://` links in strings such as documentation HTML that name a class MLQT can tell is not
+there. A link into a library that is not loaded is not reported, since MLQT cannot tell whether it
+is broken. Type references in code are `checkUndeclaredNames`'s
+(`MLQT.Reference.Undeclared`). The setting keeps its name because it is what each repository's
 `.mlqt/settings.json` stores; its description in the tool schema says what it does.
 
 ## Automatic diagram connections

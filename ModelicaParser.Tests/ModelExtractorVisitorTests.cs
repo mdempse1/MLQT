@@ -1201,6 +1201,44 @@ end Container;";
   // ── HasExperimentAnnotation ──────────────────────────────────────────
 
   [Fact]
+  public void ExtractModels_AShortClassesAnnotation_IsReadFromItsComment()
+  {
+    // A short class has no body: annotation(obsolete=...) is in its comment, and was never read.
+    var code = @"
+package Lib
+  type OldAngle = Real(unit=""rad"") ""an angle"" annotation(obsolete=""Use SI.Angle"");
+  type OldRate = der(OldAngle, time) annotation(obsolete=""Use SI.AngularVelocity"");
+  type OldMode = enumeration(On, Off) annotation(obsolete=""Use Modes"");
+  type Angle = Real(unit=""rad"");
+end Lib;";
+
+    var models = ExtractModels(code).ToDictionary(m => m.Name);
+
+    Assert.Equal("Use SI.Angle", models["OldAngle"].ObsoleteMessage);
+    Assert.Equal("Use SI.AngularVelocity", models["OldRate"].ObsoleteMessage);
+    Assert.Equal("Use Modes", models["OldMode"].ObsoleteMessage);
+    Assert.Null(models["Angle"].ObsoleteMessage);
+  }
+
+  [Fact]
+  public void ExtractModels_ALeadingAnnotation_IsReadBesideATrailingOne()
+  {
+    // Only the trailing one was read, so a leading annotation(obsolete=...) or experiment(...) in a
+    // class that also had a trailing Documentation annotation was lost.
+    var code = @"
+model Demo
+  annotation(obsolete=""Use Other"", experiment(StopTime=1));
+  Real x;
+  annotation(Documentation(info=""<html></html>""));
+end Demo;";
+
+    var model = Assert.Single(ExtractModels(code));
+
+    Assert.Equal("Use Other", model.ObsoleteMessage);
+    Assert.True(model.HasExperimentAnnotation);
+  }
+
+  [Fact]
   public void ExtractModels_ModelWithExperimentAnnotation_SetsHasExperimentAnnotation()
   {
     var code = @"

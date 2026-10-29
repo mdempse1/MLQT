@@ -170,6 +170,10 @@ and the **Refresh** button above the library tree counts it, with a badge and a 
 "1 resource file changed", the same way it counts a changed `.mo` file. Click it and the classes that
 reference the file are checked again, so this page and the findings list catch up together.
 
+A missing file is watched for too, from the nearest folder above it that exists, so restoring a whole
+folder — `Resources/Data` with its files — is noticed as well as restoring one file. So is an
+`IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` folder coming and going.
+
 ## Reporting these as findings
 
 The same two problems can be reported by the checks, so that `mlqt check` and a CI build see them

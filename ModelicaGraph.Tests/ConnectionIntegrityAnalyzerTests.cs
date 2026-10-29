@@ -55,6 +55,10 @@ public class ConnectionIntegrityAnalyzerTests
           model Choosable
             replaceable Pin p;
           end Choosable;
+          model Box
+            replaceable connector PortType = Pin;
+            PortType p;
+          end Box;
         end Lib;
         """;
 
@@ -88,9 +92,9 @@ public class ConnectionIntegrityAnalyzerTests
         Assert.Equal(RuleIds.IncompatibleConnection, finding.RuleId);
         Assert.Equal("Test", finding.ModelId);
         Assert.Equal(5, finding.LineNumber);
-        Assert.Equal("r.p, h.port", finding.ElementPath);
+        Assert.Equal("h.port, r.p", finding.ElementPath);   // in order, as a duplicate's is
         Assert.Equal(
-            "connect(r.p, h.port) joins a Lib.Pin and a Lib.HeatPort, which cannot be connected: " +
+            "connect(r.p, h.port) joins Lib.Pin to Lib.HeatPort, which cannot be connected: " +
             "members i (flow), v against members Q_flow (flow), T",
             finding.Message);
     }
@@ -126,7 +130,26 @@ public class ConnectionIntegrityAnalyzerTests
         Assert.Empty(Check(Model("  Lib.Source s;\n  Lib.Sink t;", "  connect(s.y, t.u);")));
 
         var finding = Assert.Single(Check(Model("  Lib.Source s;\n  Lib.Sink t;", "  connect(s.y, t.k);")));
-        Assert.Contains("a Real against a Integer", finding.Message);
+        Assert.EndsWith("cannot be connected: Real against Integer", finding.Message);
+    }
+
+    [Fact]
+    public void TheSameIncompatiblePair_EitherWayRound_IsReportedOnce()
+    {
+        // The second is a duplicate of the first, and reported as one; it is not a second
+        // incompatible connection.
+        var findings = Check(Model("  Lib.TwoPin r;\n  Lib.Heater h;", "  connect(r.p, h.port);\n  connect(h.port, r.p);"));
+
+        Assert.Equal([RuleIds.DuplicateConnection, RuleIds.IncompatibleConnection], findings.Select(f => f.RuleId).Order());
+        Assert.Equal("h.port, r.p", findings.Single(f => f.RuleId == RuleIds.IncompatibleConnection).ElementPath);
+    }
+
+    [Fact]
+    public void WhatARedeclarationDecides_IsNotJudged()
+    {
+        // Through a replaceable component, and through a replaceable connector class.
+        Assert.Empty(Check(Model("  replaceable Lib.Heater h;\n  Lib.TwoPin r;", "  connect(r.p, h.port);")));
+        Assert.Empty(Check(Model("  Lib.Box b;\n  Lib.Heater h;", "  connect(b.p, h.port);")));
     }
 
     [Fact]
@@ -200,6 +223,36 @@ public class ConnectionIntegrityAnalyzerTests
         var finding = Assert.Single(findings);
         Assert.Equal("a.p, b.n", finding.ElementPath);
         Assert.Equal("if useB", finding.Discriminator);
+    }
+
+    [Fact]
+    public void TheElseBranchesOfTwoStatements_AreNotTheSameBranch_ButTwoIfsOnOneConditionAre()
+    {
+        // `else` alone said nothing about when it applies: these two never hold together.
+        Assert.Empty(Check(Model(
+            "  parameter Boolean useB = true;\n  Lib.TwoPin a;\n  Lib.TwoPin b;",
+            """
+              if useB then
+              else
+                connect(a.n, b.p);
+              end if;
+              if not useB then
+              else
+                connect(a.n, b.p);
+              end if;
+            """)));
+
+        // Two statements on the same condition both connect when it holds.
+        Assert.Single(Check(Model(
+            "  parameter Boolean useB = true;\n  Lib.TwoPin a;\n  Lib.TwoPin b;",
+            """
+              if useB then
+                connect(a.n, b.p);
+              end if;
+              if useB then
+                connect(a.n, b.p);
+              end if;
+            """)));
     }
 
     [Fact]

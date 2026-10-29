@@ -33,6 +33,14 @@ public partial class MainLayout : IDisposable
     private AppSettings _settings = new();
     private int _pendingChangesCount = 0;
     private bool _isRefreshing = false;
+
+    /// <summary>
+    /// Whether the External Resources analysis has run, so a change must bring it up to date. Only
+    /// the deferred path records its run; outside deferred mode it runs at startup, which
+    /// <c>HasExternalResourcesAnalyzed</c> alone does not say - asked alone, a refresh never updated
+    /// the tab in the default mode.
+    /// </summary>
+    private bool ResourcesAnalysed => !NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed;
     private bool _startupProcessRunning = false;
     // Set when one or more repositories failed to load, so the startup dialog offers a "Continue to
     // app" escape hatch (the user needs to reach Settings to fix/remove the offending repository).
@@ -1855,7 +1863,7 @@ public partial class MainLayout : IDisposable
             }
 
             // Re-analyze external resources for affected models (skip if deferred and not yet run)
-            if (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed)
+            if (ResourcesAnalysed)
             {
                 await ExternalResourceService.AnalyzeResourcesForModelsAsync(
                     affectedModelIds, LibraryDataService.CombinedGraph);
@@ -1925,7 +1933,7 @@ public partial class MainLayout : IDisposable
                 }
 
                 // Re-analyze external resources (skip if deferred and not yet run)
-                if (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed)
+                if (ResourcesAnalysed)
                 {
                     await ExternalResourceService.AnalyzeResourcesForModelsAsync(
                         affectedModelIds, LibraryDataService.CombinedGraph);
@@ -2010,14 +2018,19 @@ public partial class MainLayout : IDisposable
 
         // Counted as VCS work while it runs, so no VCS operation starts under it either.
         using var work = NavState.BeginVcsWork();
+
+        // The classes whose referenced resource files changed on disk (B521), taken off the queue
+        // below; given back if the refresh fails before re-checking them, so they are not lost.
+        IReadOnlyList<string> resourceChangedModels = [];
+        var resourcesRechecked = false;
         try
         {
             var pendingChanges = FileMonitoringService.PendingChanges.ToList();
 
-            // The classes whose referenced resource files changed on disk (B521). Counted on this
-            // button with the library files, and re-checked here, because until now a restored or
-            // deleted resource file changed nothing on screen until the project was reloaded.
-            var resourceChangedModels = ExternalResourceService.TakePendingResourceChanges();
+            // Counted on this button with the library files, and re-checked here, because until now
+            // a restored or deleted resource file changed nothing on screen until the project was
+            // reloaded.
+            resourceChangedModels = ExternalResourceService.TakePendingResourceChanges();
 
             if (pendingChanges.Count == 0)
             {
@@ -2028,6 +2041,7 @@ public partial class MainLayout : IDisposable
                 }
 
                 await RecheckResourceChangesAsync(resourceChangedModels);
+                resourcesRechecked = true;
                 Snackbar.Add($"Re-checked {resourceChangedModels.Count} class(es) whose resource files changed", Severity.Success);
                 return;
             }
@@ -2132,7 +2146,7 @@ public partial class MainLayout : IDisposable
             }
 
             // Re-analyze external resources only if already run
-            if (affectedModelIds.Count > 0 && NavState.HasExternalResourcesAnalyzed)
+            if (affectedModelIds.Count > 0 && ResourcesAnalysed)
             {
                 await ExternalResourceService.AnalyzeResourcesForModelsAsync(
                     affectedModelIds, LibraryDataService.CombinedGraph);
@@ -2152,6 +2166,7 @@ public partial class MainLayout : IDisposable
 
             // Resource changes for classes the library changes did not already re-check.
             await RecheckResourceChangesAsync(resourceChangedModels.Except(affectedModelIds).ToList());
+            resourcesRechecked = true;
 
             LogProcessEnd("MainLayout", $"Processing {pendingChanges.Count} file changes");
             Snackbar.Add($"Successfully processed {pendingChanges.Count} file changes", Severity.Success);
@@ -2160,6 +2175,8 @@ public partial class MainLayout : IDisposable
         {
             Error("MainLayout", "Error processing file changes", ex);
             Snackbar.Add($"Error processing file changes: {ex.Message}", Severity.Error);
+            if (!resourcesRechecked && resourceChangedModels.Count > 0)
+                ExternalResourceService.RequeueResourceChanges(resourceChangedModels);
         }
         finally
         {
@@ -2185,7 +2202,7 @@ public partial class MainLayout : IDisposable
 
         Info("MainLayout", $"Re-checking {present.Count} class(es) whose resource files changed");
 
-        if (NavState.HasExternalResourcesAnalyzed)
+        if (ResourcesAnalysed)
             await ExternalResourceService.AnalyzeResourcesForModelsAsync(present, graph);
 
         CodeReviewService.RemoveLogMessagesForModels(present);

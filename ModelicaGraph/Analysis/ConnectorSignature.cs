@@ -43,6 +43,33 @@ public sealed class ConnectorSignature(DirectedGraph graph)
     /// <summary>The connector's signature, or null when MLQT cannot tell what it is.</summary>
     public string? Of(ModelNode connector) => Of(connector, 0);
 
+    /// <summary>
+    /// The connector class a resolved port is, or null when that is not something to judge: its type
+    /// did not resolve, or a redeclaration decides it - a port declared <c>replaceable</c>, one reached
+    /// through a replaceable component (<c>sub.p</c> where <c>replaceable Sub sub</c>), or one whose
+    /// class, or a class on the way to it, is replaceable. The one answer to "which connector is this
+    /// port?" for <c>MLQT.Connection.Incompatible</c> and the MCP server's <c>add_connection</c>.
+    /// </summary>
+    public static ModelNode? ConnectorOf(DirectedGraph graph, ResolvedReference? port)
+    {
+        if (port is not { Type: { } type })
+            return null;
+
+        if (port.Path.Any(step => step.Element.Prefixes.Contains("replaceable")))
+            return null;
+
+        // Each step after the first is a member of the class the step before it is - a replaceable
+        // class there is one a redeclaration may swap.
+        if (IsReplaceable(type)
+            || port.Path.Skip(1).Any(step => graph.GetNode<ModelNode>(step.OwnerId) is { } owner && IsReplaceable(owner)))
+            return null;
+
+        return type;
+    }
+
+    private static bool IsReplaceable(ModelNode node) =>
+        node.ElementPrefix?.Contains("replaceable", StringComparison.Ordinal) == true;
+
     /// <summary>Whether a signature describes a connector with members, as opposed to a value.</summary>
     public static bool HasMembers(string signature) => signature.StartsWith("members:", StringComparison.Ordinal);
 

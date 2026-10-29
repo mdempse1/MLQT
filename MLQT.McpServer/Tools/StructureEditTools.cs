@@ -311,19 +311,17 @@ public sealed class StructureEditTools
         var b = portB.Trim();
         var notes = new List<string>();
 
-        if (CheckPort(classId, a, notes) is { } errA)
+        var (errA, resA) = CheckPort(classId, a, notes);
+        if (errA is not null)
             return errA;
-        if (CheckPort(classId, b, notes) is { } errB)
+        var (errB, resB) = CheckPort(classId, b, notes);
+        if (errB is not null)
             return errB;
 
         // Compatibility (only when both connector types resolved).
-        var resA = ConnectorCompatibility.ResolvePort(_libraries, classId, a);
-        var resB = ConnectorCompatibility.ResolvePort(_libraries, classId, b);
         if (resA.Connector is { } ca && resB.Connector is { } cb)
         {
-            var sigA = ConnectorCompatibility.Signature(_libraries, ca);
-            var sigB = ConnectorCompatibility.Signature(_libraries, cb);
-            if (sigA is not null && sigB is not null && !ConnectorCompatibility.SignaturesCompatible(sigA, sigB))
+            if (!ConnectorCompatibility.MayConnect(_libraries, ca, cb))
                 return new ToolError(
                     $"Incompatible connectors: '{a}' is a '{ca.Id}' but '{b}' is a '{cb.Id}'. connect() requires " +
                     "matching connector types (differences in input/output are fine, but the connectors must " +
@@ -341,19 +339,19 @@ public sealed class StructureEditTools
 
     // Validate a port exists and is a connector. Returns a ToolError to refuse, or null (collecting a
     // note when the type could not be resolved so the caller proceeds unverified).
-    private ToolError? CheckPort(string classId, string port, List<string> notes)
+    private (ToolError? Error, PortResolution Resolution) CheckPort(string classId, string port, List<string> notes)
     {
         var res = ConnectorCompatibility.ResolvePort(_libraries, classId, port);
         if (res.Error is not null)
-            return new ToolError($"Port '{port}': {res.Error}");
+            return (new ToolError($"Port '{port}': {res.Error}"), res);
         if (res.Note is not null)
         {
             notes.Add($"Note: {res.Note}; connector compatibility for port '{port}' was not verified.");
-            return null;
+            return (null, res);
         }
         if (res.Connector is { } c && c.ClassType != "connector")
-            return new ToolError($"Port '{port}' resolves to '{c.Id}', which is a {c.ClassType}, not a connector.");
-        return null;
+            return (new ToolError($"Port '{port}' resolves to '{c.Id}', which is a {c.ClassType}, not a connector."), res);
+        return (null, res);
     }
 
     internal async Task<object> RemoveConnection(

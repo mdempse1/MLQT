@@ -256,8 +256,53 @@ public sealed class ExternalResourceAnalyzerTests : IDisposable
     }
 
     [Fact]
-    public async Task TheSameReferenceTwice_IsOneFinding()
+    public async Task APackageThatWritesTheSameReferenceAsItsNestedClass_IsReportedForItsOwn()
     {
+        // Matched on the path alone, the package's own loadResource was taken for Reader's and
+        // dropped. Its text writes it twice, and Reader accounts for one.
+        var graph = await BuildAsync(_root, """
+            package TestLib
+              constant String table = Modelica.Utilities.Files.loadResource("modelica://TestLib/Resources/t.mat");
+              model Reader
+                parameter String file = Modelica.Utilities.Files.loadResource("modelica://TestLib/Resources/t.mat");
+              end Reader;
+            end TestLib;
+            """);
+
+        var findings = Analyze(graph, BothRulesOn());
+
+        Assert.Equal([("TestLib", 2), ("TestLib.Reader", 2)],
+            findings.Select(f => (f.ModelId, f.LineNumber)).OrderBy(p => p.ModelId, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task AReferenceInANestedClassStoredInItsOwnFile_IsNotThePackages()
+    {
+        // The package's text cannot hold a class stored in a file of its own, so when both make
+        // the reference each is reporting its own.
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(_root, "package.mo"), """
+            package TestLib
+              constant String table = Modelica.Utilities.Files.loadResource("modelica://TestLib/Resources/t.mat");
+            end TestLib;
+            """);
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(_root, "Reader.mo"), """
+            within TestLib;
+            model Reader
+              parameter String file = Modelica.Utilities.Files.loadResource("modelica://TestLib/Resources/t.mat");
+            end Reader;
+            """);
+        await GraphBuilder.AnalyzeDependenciesAsync(graph, [new LibraryInfo("TestLib", _root)]);
+
+        Assert.Equal(["TestLib", "TestLib.Reader"],
+            Analyze(graph, BothRulesOn()).Select(f => f.ModelId).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheSameReferenceTwice_IsOneFinding_BecauseTheGraphKeepsOneEdge()
+    {
+        // Nothing downstream de-duplicates: the graph build records one edge per class, resource and
+        // kind of reference, which is what makes this one finding.
         var graph = await BuildAsync(_root, """
             package TestLib
               model Reader
@@ -267,7 +312,8 @@ public sealed class ExternalResourceAnalyzerTests : IDisposable
             end TestLib;
             """);
 
-        Assert.Single(Analyze(graph, BothRulesOn()));
+        Assert.Single(graph.GetResourceEdgesForModel("TestLib.Reader"));
+        Assert.Single(Analyze(graph, BothRulesOn()), f => f.ModelId == "TestLib.Reader");
     }
 
     [Fact]

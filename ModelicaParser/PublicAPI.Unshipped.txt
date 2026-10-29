@@ -18,6 +18,9 @@ ModelicaParser.Comparison.CosmeticCategory.Dialog = 2 -> ModelicaParser.Comparis
 ModelicaParser.Comparison.CosmeticCategory.Documentation = 1 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Graphics = 0 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Tooling = 3 -> ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.DataTypes.ConnectScope.Applies.get -> string!
+ModelicaParser.DataTypes.ConnectScope.PreviousConditions.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaParser.DataTypes.ConnectScope.PreviousConditions.init -> void
 ModelicaParser.DataTypes.ModelInfo.ObsoleteMessage.get -> string?
 ModelicaParser.DataTypes.ModelInfo.ObsoleteMessage.set -> void
 ModelicaParser.StyleRules.ClassReferenceTarget

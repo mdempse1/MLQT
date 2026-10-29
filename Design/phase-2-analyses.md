@@ -134,11 +134,22 @@ which keeps it lenient - what it reports is two connectors with different member
 **Three states.** A port resolves through `ClassElementResolver.ReferencesIn`, so through
 inheritance and with subscripts dropped. No signature - a connector not loaded, encrypted, with an
 unreadable base, or `expandable` - is "cannot tell". A port that does not resolve is
-`MLQT.Reference.Undeclared`'s, and a `replaceable` port is whatever a redeclaration makes it.
+`MLQT.Reference.Undeclared`'s, and whatever a redeclaration decides is left to it: a `replaceable`
+port, one reached through a replaceable component, one whose class is replaceable.
 
-**Duplicates** are the unordered pair, spacing removed outside quoted names, under the same
-`for`/`if`/`when` branches - the same pair in both branches of an `if` never exists twice. Reported
-on the second occurrence, naming the first's line.
+**One answer to "which connector is this port?"** `ConnectorSignature.ConnectorOf`, asked of a port
+resolved with `ReferencesIn`, by the rule and by `add_connection` alike. The review found the MCP
+tool still resolved ports its own way: it split `a[1].p` into a segment `a[1]`, which no component
+is called, and refused a valid array connect, and it judged a replaceable port the rule leaves
+alone. Its walk now only words the error when a port does not resolve.
+
+**Duplicates** are the unordered pair, spacing removed outside quoted names, under branches that
+apply at the same time: the same `for`/`if`/`when` headers and, for each, the same earlier conditions
+false (`ConnectScope.PreviousConditions`, `Applies`). The same pair in both branches of an `if`
+never exists twice; the first version also keyed an `else` on the word alone, so the `else`
+branches of two different statements read as one branch. Two `if useB` statements still match: both
+connect when `useB` holds. Reported on the second occurrence, naming the first's line. Incompatible
+uses the same ordered pair, so `connect(a,b)` and `connect(b,a)` are one incompatible connection.
 
 **Measured.** MSL 4.1: 99% of 9,627 connects judged, nothing reported, 0.9 s after running a class at
 a time in parallel (5.7 s serially). Buildings: no incompatible connection and 19 duplicates, sampled
@@ -158,7 +169,10 @@ is an increment of its own if wanted.
 **Read at load.** `ModelExtractorVisitor` reads the class annotation's `obsolete` with the
 `experiment` it already looked for, onto `ModelInfo.ObsoleteMessage` and `ModelNode.ObsoleteMessage`:
 the message, empty for a mark that is not one string literal, null for none. Kept on the class like
-`HasExperimentAnnotation`, so asking costs no parse.
+`HasExperimentAnnotation`, so asking costs no parse. The review found two places it was not read: a
+short class (`type OldAngle = Real(...) annotation(obsolete=...)`), whose annotation is in its
+comment, and a leading class annotation when the class also has a trailing one - only the trailing
+one was read, for `experiment` as well. Both are read now.
 
 **What is obsolete.** The class marked, and everything inside it, with the outermost mark winning so
 the reader is told about the package. The annotation is not inherited (MLS §18.1 does not say it is,
@@ -212,15 +226,24 @@ counts (one of MSL's 24, one of Buildings' 20). Guessing from a package being ca
 considered and not done: it is a convention, not a rule of the language, and `__MLQT` waives a cycle
 that is meant.
 
-**Three states.** Only edges inside the libraries being checked are followed, so a cycle through a
-reference or excluded library is not reported. Dependency edges exist only between loaded classes,
-so a library that is not loaded can hide a cycle but never invent one.
+**Three states.** Dependency edges exist only between loaded classes, so a library that is not
+loaded can hide a cycle but never invent one.
 
-**The finding.** On the parent package (for libraries depending on each other, the first of them),
+**What is followed, and where it is reported** (changed after the branch review, 2026-10-29). A
+cycle inside a library is found over the whole library and reported when a checked class is inside
+one of its packages: the first version reported every cycle in a library for a check of one changed
+class. Between libraries, edges are followed across every loaded library and the cycle is reported on
+each checked library in it. The first version followed only the checked libraries and reported on
+the first of them, so the MCP server, which checks one library per call, never saw a cycle the
+desktop app (a repository at a time) reported - the same libraries, different findings by tool. A
+reference or excluded library is followed and never reported on.
+
+**The finding.** On the parent package (for libraries depending on each other, on each checked one),
 `ElementPath` the sorted members - a different route through the same packages is the same cycle -
 and the message the shortest route round it with the first-by-name class making each step. Measured
 on MSL 4.1 and Buildings: 24 and 20 cycles, all package-level coupling such as `Rotational.Interfaces`
-using `Rotational.Components.Fixed`, at 0.1 s each.
+using `Rotational.Components.Fixed`, at 0.1 s each. Following loaded libraries that are not checked
+added one on MSL: `Modelica` and `ModelicaServices` use each other, which is how MSL is split.
 
 ## 5. The rest of broken references — done (2026-10-29)
 
@@ -234,6 +257,19 @@ it was given the set of loaded ids and reported every name not in it. It now ask
 desktop app, the CLI and MCP all get it). The name is walked a segment at a time with
 `TypeResolver.MemberClass`, which finds inherited classes; a first segment not loaded cannot be told;
 a segment found nowhere is missing only if the class it was looked for in is complete.
+
+**Not `uses(...)`.** `MLQT.Reference.Undeclared` reports a first segment the library's `uses(...)`
+rules out, and the review asked why links do not. Applying it was tried and measured: MSL went from
+none to the same seven findings - its links into ModelicaReference, a documentation library its
+`uses` rightly leaves out. Code needs what it names; a link in documentation does not, so `uses` is
+not evidence about it. `ClassReferencesTests` holds it.
+
+**Inherited classes in an encrypted library.** The review asked whether a recovered class whose help
+page gives no bases could hide an inherited class. Treating "no bases given" as unknown was tried and
+reverted: Dymola's help leaves out the "Extends from" line only when there is no base, and a class
+that does inherit - a medium's `ThermodynamicState` - has the line, so its stub extends its base and
+the class is found (`ClassReferencesTests.AClassAnEncryptedMediumInherits_IsFound_ThroughItsDocumentedBase`).
+As unknown, every link into a documented package became unjudgeable.
 
 **One "complete", with a choice.** The completeness test was private to `UndeclaredNameAnalyzer`; it
 is now `ClassCompleteness`, shared. Building this found a decision the test suite already held: a

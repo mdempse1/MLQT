@@ -21,7 +21,15 @@ public sealed record ResourceProblem(
     string ModelId,
     string RawPath,
     string ResolvedPath,
-    ResourceReferenceType ReferenceType);
+    ResourceReferenceType ReferenceType)
+{
+    /// <summary>Whether the reference names a directory - an <c>IncludeDirectory</c>,
+    /// <c>LibraryDirectory</c> or <c>SourceDirectory</c> annotation - rather than a file.</summary>
+    public bool IsDirectory =>
+        ReferenceType is ResourceReferenceType.ExternalIncludeDirectory
+                      or ResourceReferenceType.ExternalLibraryDirectory
+                      or ResourceReferenceType.ExternalSourceDirectory;
+}
 
 /// <summary>
 /// The one answer to "is this resource reference a problem, and which": read by
@@ -100,23 +108,62 @@ public static class ResourceProblems
     ///
     /// <para>Asked of the edges to the same resource, which are few, rather than of the class's
     /// nested classes, which the graph does not index.</para>
+    ///
+    /// <para><b>Only where the class does not write it as well.</b> The class's own text holds the
+    /// nested classes written inline in it, and not those stored in files of their own. So the
+    /// reference is the class's own when its text writes it more often than the inline nested
+    /// classes making it account for - a package that loads the same file as its nested reader, or
+    /// whose reader lives in a file of its own.</para>
     /// </remarks>
     internal static bool IsMadeByANestedClass(DirectedGraph graph, ResourceEdge edge)
     {
         var prefix = edge.ModelId + ".";
-        return graph.GetModelEdgesToResource(edge.ResourceNodeId).Any(other =>
-            other.ModelId.StartsWith(prefix, StringComparison.Ordinal)
-            && other.ReferenceType == edge.ReferenceType
-            && string.Equals(other.RawPath, edge.RawPath, StringComparison.Ordinal));
+        var nested = graph.GetModelEdgesToResource(edge.ResourceNodeId)
+            .Where(other =>
+                other.ModelId.StartsWith(prefix, StringComparison.Ordinal)
+                && other.ReferenceType == edge.ReferenceType
+                && string.Equals(other.RawPath, edge.RawPath, StringComparison.Ordinal))
+            .Select(other => other.ModelId)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (nested.Count == 0)
+            return false;
+
+        if (graph.GetNode<ModelNode>(edge.ModelId)?.Definition.ModelicaCode is not { } own)
+            return true;
+
+        // The inline ones, outermost only: a class nested two deep is inside its parent's text too.
+        var inline = nested
+            .Select(id => graph.GetNode<ModelNode>(id)?.Definition.ModelicaCode)
+            .OfType<string>()
+            .Where(code => code.Length > 0 && own.Contains(code, StringComparison.Ordinal))
+            .ToList();
+        var outermost = inline
+            .Where(code => !inline.Any(other => other.Length > code.Length && other.Contains(code, StringComparison.Ordinal)))
+            .ToList();
+
+        var writtenByTheClass = Occurrences(own, edge.RawPath) - outermost.Sum(code => Occurrences(code, edge.RawPath));
+        return writtenByTheClass <= 0;
+    }
+
+    private static int Occurrences(string text, string value)
+    {
+        if (value.Length == 0)
+            return 0;
+
+        var count = 0;
+        for (var at = text.IndexOf(value, StringComparison.Ordinal); at >= 0; at = text.IndexOf(value, at + value.Length, StringComparison.Ordinal))
+            count++;
+        return count;
     }
 
     /// <summary>
-    /// Every problem with the references one class makes, each reported once: a class that names
-    /// the same file twice in the same way has one problem with it, not two.
+    /// Every problem with the references one class makes. A class naming the same file twice in the
+    /// same way has one problem with it, not two: the graph keeps one edge per class, resource and
+    /// kind of reference.
     /// </summary>
     public static IReadOnlyList<ResourceProblem> For(DirectedGraph graph, string modelId) =>
         graph.GetResourceEdgesForModel(modelId)
              .SelectMany(edge => Of(graph, edge))
-             .DistinctBy(p => (p.Kind, p.RawPath, p.ReferenceType))
              .ToList();
 }

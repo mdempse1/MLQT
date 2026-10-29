@@ -230,6 +230,8 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
         /// loaded. Not when it is a plain variable - no class is a value - and not when the library's
         /// <c>uses(...)</c> lists every library it expects and this is none of them.
         /// </summary>
+        /// <remarks>Not asked of a <c>modelica://</c> class link (<c>ClassReferences</c>): a link in
+        /// documentation is not a dependency, so <c>uses</c> does not list what it points into.</remarks>
         public bool CouldBeUnloadedLibrary(ModelNode node, string first, bool plainValue)
         {
             if (plainValue)

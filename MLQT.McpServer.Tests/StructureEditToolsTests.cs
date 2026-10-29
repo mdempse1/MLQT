@@ -540,6 +540,14 @@ public class StructureEditToolsTests
             Ground g1;
             Probe probe1;
           end AliasSys;
+          model ArraySys
+            Ground g[2];
+            Probe probe1;
+          end ArraySys;
+          model ChoosableSys
+            replaceable Ground g1;
+            Source source1;
+          end ChoosableSys;
         end C;
         """;
 
@@ -699,6 +707,29 @@ public class StructureEditToolsTests
         var res = ToolAssert.Ok<StructureEditResult>(
             await LoadConn(host).AddConnection("C.AliasSys", "g1.p", "probe1.p"));
         Assert.True(res.Changed);
+    }
+
+    [Fact]
+    public async Task AddConnection_AnArrayElementsPort_IsResolved_AndAccepted()
+    {
+        // The tool's own walk took "g[1]" for a component name and refused this; it now resolves a
+        // port as MLQT.Connection.Incompatible does, subscripts dropped.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.ArraySys", "g[1].p", "probe1.p"));
+        Assert.True(res.Changed);
+        Assert.Null(res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_AReplaceablePort_IsLeftToTheRedeclaration_WithANote()
+    {
+        // What a redeclaration decides is not refused, as the rule does not report it.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.ChoosableSys", "g1.p", "source1.y"));
+        Assert.True(res.Changed);
+        Assert.Contains("replaceable", res.Note);
     }
 
     [Fact]

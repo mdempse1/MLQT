@@ -118,8 +118,10 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         // MLQT.Resource.AbsolutePath decide it, so the tab and the findings cannot disagree. It also
         // reads existence from the disk now, rather than trusting the node's flag from whenever the
         // node was made (B521).
+        // Whether it exists is asked of the resource itself: a reference a nested class makes is
+        // that class's problem and not this one's, which says nothing about the file being there.
         var problems = ResourceProblems.Of(graph, edge).ToList();
-        fileExists = !problems.Any(p => p.Kind == ResourceProblemKind.Missing);
+        fileExists = ResourceProblems.Exists(resourceNode);
 
         if (resourceNode is ResourceFileNode fileNode)
         {
@@ -330,7 +332,8 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
                     ReferenceType = dirReferenceType, // Inherit from parent directory
                     ParameterName = null,
                     IsAbsolutePath = false,
-                    FileExists = fileNode.FileExists,
+                    // Read from disk now, as every other reference is (B521).
+                    FileExists = ResourceProblems.Exists(fileNode),
                     IsImageFile = fileNode.IsImageFile,
                     IsDirectory = false
                 });
@@ -361,7 +364,9 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
                         ModelId = problem.ModelId,
                         ResourcePath = problem.ResolvedPath,
                         WarningType = ResourceWarningType.MissingFile,
-                        Message = $"Resource file not found: {problem.ResolvedPath}"
+                        Message = problem.IsDirectory
+                            ? $"Resource directory not found: {problem.ResolvedPath}"
+                            : $"Resource file not found: {problem.ResolvedPath}"
                     });
             }
         }
@@ -424,30 +429,38 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
     {
         var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
-        HashSet<string> neededDirectories;
+        // Each directory to watch, and whether what it must report is further down than its own
+        // entries.
+        Dictionary<string, bool> neededDirectories;
 
         lock (_lock)
         {
-            // Collect all unique directories containing referenced resource files
-            neededDirectories = new HashSet<string>(comparer);
+            neededDirectories = new Dictionary<string, bool>(comparer);
 
             foreach (var resolvedPath in _reverseIndex.Keys)
             {
-                var dir = Path.GetDirectoryName(resolvedPath);
-                if (dir != null && Directory.Exists(dir))
-                {
-                    neededDirectories.Add(dir);
-                }
+                // The nearest directory that exists. A missing file in a missing Resources/Data is
+                // heard coming back only by watching what is above it, recursively, since the
+                // directory it will appear in does not exist to be watched.
+                var parent = Path.GetDirectoryName(resolvedPath);
+                var dir = parent;
+                while (dir != null && !Directory.Exists(dir))
+                    dir = Path.GetDirectoryName(dir);
+                if (dir == null)
+                    continue;
+
+                var deeper = !comparer.Equals(dir, parent);
+                neededDirectories[dir] = neededDirectories.GetValueOrDefault(dir) || deeper;
             }
         }
 
-        // Collapse those directories to the roots actually watched. Two directories that map to the
-        // same root always agree about recursion, because it is a property of the root.
+        // Collapse those directories to the roots actually watched; a root is recursive when its own
+        // rule says so or when any directory it covers needs it.
         var neededRoots = new Dictionary<string, bool>(comparer);
-        foreach (var dir in neededDirectories)
+        foreach (var (dir, deeper) in neededDirectories)
         {
             var (root, recursive) = WatchRootFor(dir);
-            neededRoots[root] = recursive;
+            neededRoots[root] = neededRoots.GetValueOrDefault(root) || recursive || deeper;
         }
 
         lock (_lock)
@@ -474,14 +487,21 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
             // Add watchers for new roots
             foreach (var (root, recursive) in neededRoots)
             {
-                if (_watchers.ContainsKey(root))
+                if (_watchers.TryGetValue(root, out var existing))
+                {
+                    if (existing.IncludeSubdirectories != recursive)
+                        existing.IncludeSubdirectories = recursive;
                     continue;
+                }
 
                 try
                 {
                     var watcher = new FileSystemWatcher(root)
                     {
+                        // DirectoryName: an IncludeDirectory, LibraryDirectory or SourceDirectory is
+                        // a directory, and a folder of resources can come and go whole.
                         NotifyFilter = NotifyFilters.FileName
+                                     | NotifyFilters.DirectoryName
                                      | NotifyFilters.LastWrite
                                      | NotifyFilters.Size,
                         Filter = "*.*",
@@ -526,30 +546,61 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         if (FileMonitoringServiceHelpers.IsInHiddenDirectory(fullPath, directory))
             return;
 
-        // Only track files that are in our reverse index (referenced by models)
+        // Only track paths that are in our reverse index (referenced by models) - or, for a directory
+        // created or deleted whole, the referenced paths inside it, which may raise no event of their
+        // own when their folder goes or comes back with them in it.
         var normalizedPath = NormalizePath(fullPath);
 
-        bool isTracked;
+        List<string> tracked;
         lock (_lock)
         {
-            isTracked = _reverseIndex.ContainsKey(normalizedPath);
+            if (_reverseIndex.ContainsKey(normalizedPath))
+                tracked = [normalizedPath];
+            else if (changeType is WatcherChangeTypes.Created or WatcherChangeTypes.Deleted)
+            {
+                var inside = normalizedPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                tracked = _reverseIndex.Keys.Where(k => k.StartsWith(inside, StringComparison.Ordinal)).ToList();
+            }
+            else
+                tracked = [];
         }
 
-        if (!isTracked)
+        var queued = 0;
+        foreach (var path in tracked)
+        {
+            if (Queue(path, changeType))
+                queued++;
+        }
+
+        if (queued == 0)
             return;
 
+        Debug("ExternalResourceService", $"Resource {changeType}: {fullPath} ({queued} referenced path(s))");
+
+        // Raised outside the lock: a subscriber marshals onto the UI thread, and under Photino that
+        // waits for it (desktop-host skill), so raising while holding a lock invites a deadlock.
+        // Until B521 this only logged, under a comment saying it fired an event, and nothing ever
+        // read the queue.
+        OnPendingResourceChangesUpdated?.Invoke();
+    }
+
+    /// <summary>
+    /// Queues one referenced path's change, consolidated with any already waiting. False when the
+    /// change was debounced away.
+    /// </summary>
+    private bool Queue(string normalizedPath, WatcherChangeTypes changeType)
+    {
         // Type-aware debouncing: only suppress identical consecutive change types
         // Different change types (e.g., Delete then Add from SVN revert) pass through
         var now = DateTime.UtcNow;
         if (_lastChange.TryGetValue(normalizedPath, out var lastChange))
         {
             if (lastChange.Type == changeType && now - lastChange.Time < _debounceInterval)
-                return;
+                return false;
         }
         _lastChange[normalizedPath] = (now, changeType);
 
         // Consolidate changes (matching FileMonitoringService pattern)
-        var cancelledOut = false;
         lock (_lock)
         {
             var existingIndex = _pendingResourceChanges.FindIndex(c =>
@@ -566,7 +617,6 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
                 {
                     // Added + Deleted = no net change
                     _pendingResourceChanges.RemoveAt(existingIndex);
-                    cancelledOut = true;
                 }
                 else if (existing.ChangeType == WatcherChangeTypes.Created &&
                          changeType == WatcherChangeTypes.Changed)
@@ -610,31 +660,7 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
             }
         }
 
-        // Raised outside the lock: a subscriber marshals onto the UI thread, and under Photino that
-        // waits for it (desktop-host skill), so raising while holding a lock invites a deadlock.
-        if (cancelledOut)
-        {
-            OnPendingResourceChangesUpdated?.Invoke();
-            return;
-        }
-
-        // Look up affected models, and say a change is waiting. Until B521 this only logged, under a
-        // comment saying it fired an event, and nothing ever read the queue above.
-        List<string> affectedModels;
-        lock (_lock)
-        {
-            affectedModels = _reverseIndex.TryGetValue(normalizedPath, out var modelSet)
-                ? modelSet.ToList()
-                : new List<string>();
-        }
-
-        if (affectedModels.Count > 0)
-        {
-            Debug("ExternalResourceService",
-                $"Resource file {changeType}: {fullPath} (affects {affectedModels.Count} model(s))");
-        }
-
-        OnPendingResourceChangesUpdated?.Invoke();
+        return true;
     }
 
     /// <inheritdoc/>
@@ -647,10 +673,13 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         {
             lock (_lock)
             {
-                return _pendingResourceChanges.Count;
+                return _pendingResourceChanges.Count + (_requeuedModels.Count > 0 ? 1 : 0);
             }
         }
     }
+
+    // Classes taken by a refresh that then failed, given back so the next one re-checks them.
+    private readonly HashSet<string> _requeuedModels = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public IReadOnlyList<string> TakePendingResourceChanges()
@@ -661,11 +690,23 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
                 .SelectMany(change => _reverseIndex.TryGetValue(change.ResolvedPath, out var models)
                     ? models
                     : Enumerable.Empty<string>())
+                .Concat(_requeuedModels)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
             _pendingResourceChanges.Clear();
+            _requeuedModels.Clear();
             return affected;
         }
+    }
+
+    /// <inheritdoc/>
+    public void RequeueResourceChanges(IEnumerable<string> modelIds)
+    {
+        lock (_lock)
+        {
+            _requeuedModels.UnionWith(modelIds);
+        }
+        OnPendingResourceChangesUpdated?.Invoke();
     }
 
     /// <summary>
@@ -712,6 +753,15 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         lock (_lock)
         {
             return _watchers.Keys.ToList().AsReadOnly();
+        }
+    }
+
+    /// <summary>Whether the watcher on <paramref name="root"/> reports below it (for testing).</summary>
+    internal bool IsWatchedRecursively(string root)
+    {
+        lock (_lock)
+        {
+            return _watchers.TryGetValue(root, out var watcher) && watcher.IncludeSubdirectories;
         }
     }
 

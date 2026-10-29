@@ -142,22 +142,27 @@ beside it ships, and one named only in a package's prose is counted by no item l
 B268 each escaped one of those two ways. Check it when items are opened, not only when a package
 closes.
 
-### 2. Wave-2 analyses — next, and the next release waits for it
+### 2. Wave-2 analyses — in progress, and the next release waits for it
 
-**The next phase**, started 2026-10-29. The next release ships with it whole (decided 2026-10-29),
-so everything below is in that release, and *Before the next release* lists what else it needs.
-The design is `Design/phase-2-analyses.md`, written one analysis at a time as each is started.
+**Started 2026-10-29.** The next release ships with it whole (decided 2026-10-29), so everything
+below is in that release, and *Before the next release* lists what else it needs. The design is
+`Design/phase-2-analyses.md`, written one analysis at a time as each is started.
 
-The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage,
-cyclic-dependency detection and external-resource validation. See §2 below for the three-state
-resolution model these are built on — it is the thing that keeps a reference into an invisible
-library from flooding a real repository with false errors.
+**Where it stands (2026-10-29): every analysis has its first increment, built, measured on MSL 4.1
+and Buildings, and reviewed** - external-resource validation, cyclic-dependency detection, the rest
+of broken references (`modelica://` class links), connection integrity (incompatible and duplicate)
+and deprecated-API usage (obsolete classes). Each is off by default. What is left is a choice of
+further increments, each recorded with why it was not done in its row below: connection direction,
+unconnected connectors, and MSL-version compatibility. And the decision in *Before the next
+release* item 3, which only the user can make: which of these rules ship on.
+
+See §2 below for the three-state resolution model these are built on — it is the thing that keeps a
+reference into an invisible library from flooding a real repository with false errors.
 
 **External-resource validation is the one added after the phase-1 testing**, and it is a gap rather
-than an enhancement: MLQT already finds missing resources and shows them on the External Resources
-tab, but they are `ResourceWarning`s rather than `Finding`s. They have no rule id, so they never
-reach `mlqt check`, cannot be baselined and cannot fail a build — a library can lose a file out of
-`Resources/` and every gate stays green.
+than an enhancement: MLQT already found missing resources and showed them on the External Resources
+tab, but as `ResourceWarning`s rather than `Finding`s, with no rule id, so they never reached `mlqt
+check`, could not be baselined and could not fail a build.
 
 ### Before the next release
 
@@ -175,8 +180,12 @@ release works, not about adding to it. `Design/release-checklist.md` still appli
 3. **Whether phase 2's new rules are on by default.** A decision, not a task. A project gating CI
    with `mlqt check` and a baseline gets every new finding as new debt on upgrade, so a rule that
    ships on turns its builds red with nothing in its code changed. Either the new rules ship off,
-   as most of the catalogue does, or the release notes say plainly which are on. Settle it rule by
-   rule while they are written. Until decided, they are built **off**.
+   as most of the catalogue does, or the release notes say plainly which are on. **All are written
+   now and built off; the decision is still open**: `MLQT.Resource.Missing`,
+   `MLQT.Resource.AbsolutePath`, `MLQT.Structure.DependencyCycle`, `MLQT.Connection.Incompatible`,
+   `MLQT.Connection.Duplicate` and `MLQT.Reference.Obsolete`. Whatever is decided, the release notes
+   also owe one existing rule a line: `MLQT.Reference.ModelReferences` now reports fewer links (none
+   into a library that is not loaded), so a baseline taken before it will show accepted debt gone.
 4. **B281: server GC in the desktop app over a long session.** The setting ships in this release,
    measured in the CLI only. Phase 2's testing over a large library is the long session, so watch
    the app's memory and responsiveness then.
@@ -422,7 +431,7 @@ to files instead of classes.
 | **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | **Names in code shipped 2026-10-25** as `MLQT.Reference.Undeclared` (`UndeclaredNameAnalyzer`): variables, calls, types, bases, imports, members and modification targets, reported only in state 3. **`modelica://` class links done (2026-10-29), ships in the next release**: `MLQT.Reference.ModelReferences` now reports only a link MLQT can tell is broken - not one into a library that is not loaded or a class with an unreadable base - and finds inherited classes. MSL 4.1 went from 7 findings to none; Buildings keeps its 42 real ones. See `Design/phase-2-analyses.md` §5 |
 | **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | **Incompatible and duplicate done (2026-10-29), ship in the next release.** `MLQT.Connection.Incompatible` and `MLQT.Connection.Duplicate`, off by default, from `ConnectionIntegrityAnalyzer`. Connectors compare by `ConnectorSignature`, which the MCP server's `add_connection` now uses too - its own read an alias connector as unequal to its base and refused the connection. A connector MLQT cannot see, an expandable one or a replaceable port is never judged. MSL 4.1: 99% of 9,627 connects judged, nothing reported; Buildings: 19 real duplicates. **Direction and unconnected connectors are not done**: the first needs inside/outside and causality through short classes, the second the whole instance. See `Design/phase-2-analyses.md` §2 |
 | **Deprecated-API usage** | ⭐⭐ | M | **Obsolete classes done (2026-10-29), ships in the next release.** `MLQT.Reference.Obsolete`, off by default, from `ObsoleteClassAnalyzer`: a use of a class marked `annotation(obsolete=...)` or inside one, quoting the library's message; uses from inside an obsolete class are not reported. The annotation is now read at load (`ModelNode.ObsoleteMessage`). MSL 4.1: nothing; Buildings: 84, all inside `Buildings.Obsolete`, at 0.2 s. **MSL-version compatibility is not done**: a removed name is already `MLQT.Reference.Undeclared`, and what is left - "renamed in 4.0.0" from the conversion script, or a class added after the declared version - is an increment of its own. See `Design/phase-2-analyses.md` §3 |
-| **Cyclic-dependency detection** | ⭐⭐ | S | **Done (2026-10-29), ships in the next release.** `MLQT.Structure.DependencyCycle`, off by default: packages under one parent that depend on each other, never classes, with examples (`experiment(...)`) left out. 24 cycles in MSL 4.1 and 20 in Buildings, at 0.1 s each. See `Design/phase-2-analyses.md` §4 |
+| **Cyclic-dependency detection** | ⭐⭐ | S | **Done (2026-10-29), ships in the next release.** `MLQT.Structure.DependencyCycle`, off by default: packages under one parent that depend on each other, never classes, with examples (`experiment(...)`) left out. 24 cycles in MSL 4.1 (and `Modelica` with `ModelicaServices`, which use each other) and 20 in Buildings, at 0.1 s each. After the branch review it reports only the cycles a checked class is in, and a cycle between libraries on each checked one, so every tool gives the same findings. See `Design/phase-2-analyses.md` §4 |
 | **External-resource validation** | ⭐⭐⭐ | M | **Done (2026-10-29), ships in the next release.** `MLQT.Resource.Missing` (a file or annotated directory that is not there) and `MLQT.Resource.AbsolutePath`, both off by default, from `ExternalResourceAnalyzer`. They decide through `ResourceProblems`, which the External Resources tab reads too, so the two agree. A missing directory annotation is now recorded (it was dropped). Existence is read from disk when asked, and the Refresh button picks up changed resource files (B521, fixed with it). Removing a class now forgets its resource references, which it never did, so a class loaded again had its old ones too (B522, found by the rule's journey and fixed with it). HTML shown as text in documentation is no longer taken for a reference (B209 had it the other way). Over MSL 4.1 and Buildings it reports five files that really are missing and nothing else. See `Design/phase-2-analyses.md` §1 |
 
 ### Flagships (phase 3; brush the no-simulation boundary — keep inside it)

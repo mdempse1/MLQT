@@ -77,4 +77,11 @@ public interface IExternalResourceService
     /// or deleted changed nothing on screen until the project was reloaded.
     /// </remarks>
     IReadOnlyList<string> TakePendingResourceChanges();
+
+    /// <summary>
+    /// Gives back classes <see cref="TakePendingResourceChanges"/> returned that were not re-checked,
+    /// because the refresh taking them failed, so the next one takes them again. Counted as one more
+    /// pending change while any are waiting.
+    /// </summary>
+    void RequeueResourceChanges(IEnumerable<string> modelIds);
 }

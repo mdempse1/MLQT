@@ -123,6 +123,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     IsPublic = !IsInProtectedSection(context)
                 };
 
+                ExtractShortClassAnnotation(shortSpec.comment(), modelInfo);
+
                 _models.Add(modelInfo);
             }
         }
@@ -150,6 +152,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     IsPartial = GetIsPartial(prefixes),
                     IsPublic = !IsInProtectedSection(context)
                 };
+
+                ExtractShortClassAnnotation(derSpec.comment(), modelInfo);
 
                 _models.Add(modelInfo);
             }
@@ -230,11 +234,25 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
     {
         if (composition == null) return;
 
-        // The class's own annotation, found by position: the last in the composition is the
-        // external clause's when the class has no trailing annotation (B446).
-        var classAnnotation = CompositionAnnotations.Of(composition).Class;
-        if (classAnnotation == null) return;
+        // The class's own annotations, found by position: the last in the composition is the
+        // external clause's when the class has no trailing annotation (B446). Both of them - a
+        // leading annotation(obsolete=...) before a trailing Documentation one is still the class's.
+        foreach (var classAnnotation in CompositionAnnotations.Of(composition).ClassLevel)
+            ExtractAnnotation(classAnnotation, modelInfo);
+    }
 
+    /// <summary>
+    /// A short class (<c>type T = Real(...)</c>, <c>connector C = Pin</c>, an enumeration) has no
+    /// body: its annotation is in its comment, after the description.
+    /// </summary>
+    private static void ExtractShortClassAnnotation(modelicaParser.CommentContext? comment, ModelInfo modelInfo)
+    {
+        if (comment?.annotation() is { } annotation)
+            ExtractAnnotation(annotation, modelInfo);
+    }
+
+    private static void ExtractAnnotation(modelicaParser.AnnotationContext classAnnotation, ModelInfo modelInfo)
+    {
         var classMod = classAnnotation.class_modification();
         var argList = classMod?.argument_list();
         if (argList == null) return;

@@ -91,9 +91,10 @@ settings it used — `note: settings from <path>`, or `note: settings from built
 | `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) — and any unexpected failure inside `mlqt` itself, which is reported as a defect to report rather than left as a crash |
 
 Because most built-in **style** rules report at **warning** severity by default
-(`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are
-Error, `MLQT.Unused.PublicClass` is Info), `--fail-on error` is largely report-only for them (it
-surfaces their findings but exits `0` — except on those three). Use `--fail-on warning` for a
+(`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`,
+`MLQT.Resource.Missing` and `MLQT.Connection.Incompatible` are Error, `MLQT.Unused.PublicClass` is
+Info), `--fail-on error` is largely report-only for them (it surfaces their findings but exits `0`
+— except on those five). Use `--fail-on warning` for a
 strict gate, or `--fail-on off` to never fail.
 
 Two things do report as errors and so fail even the default gate. **Diagnostics** are one — see
@@ -110,9 +111,11 @@ Worth checking if a hand-written settings file has stopped producing ordering fi
 ## Resolving references into other libraries
 
 `mlqt check <path>` loads only what is under that path. A reference into a library it has not loaded
-cannot resolve, and several rules then report findings the code did not earn — most visibly
-`MLQT.Doc.ClassIcon`, which cannot see that an icon is inherited from `Modelica.Icons.*`, and
-`MLQT.Reference.ModelReferences`, which cannot resolve a `modelica://` link into MSL.
+cannot resolve. Rules built on the three-state footing (`MLQT.Reference.Undeclared`,
+`MLQT.Reference.ModelReferences`, the `MLQT.Resource.*` and `MLQT.Connection.*` rules) then say
+nothing about it, since MLQT cannot tell whether it is broken — so the reference goes unchecked. Others
+report findings the code did not earn — most visibly `MLQT.Doc.ClassIcon`, which cannot see that an
+icon is inherited from `Modelica.Icons.*`.
 
 `--dependency <path>` loads a library for resolution only. It is never reported on — you want MSL's
 classes visible, not MSL's findings:
@@ -271,8 +274,8 @@ belong to a repository, and a repository usually holds several libraries under o
 accepted spellings, your team sees in the app.
 
 **Per-rule severity.** Most rules default to `Warning` (`MLQT.Duplicate.Declaration`,
-`MLQT.Structure.WithinClause` and `MLQT.Reference.Undeclared` are `Error`, `MLQT.Unused.PublicClass`
-is `Info`). To make a rule fail the gate at
+`MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`, `MLQT.Resource.Missing` and
+`MLQT.Connection.Incompatible` are `Error`, `MLQT.Unused.PublicClass` is `Info`). To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
 
 ```json
