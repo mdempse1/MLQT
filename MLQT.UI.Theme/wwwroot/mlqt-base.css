@@ -5,12 +5,60 @@
    MudBlazor would let a rule that loses today start to apply. The overrides that do need to come
    after MudBlazor are mlqt-density.css. */
 
+/* ── The theme's tokens ──────────────────────────────────────────────────────────
+   Every value the theme's two stylesheets would otherwise repeat, and that a tool on the theme
+   may want to read or change. Each name is public, like a type: PublicCss.txt beside the project
+   lists them and ThemeCssContractTests holds the stylesheets to it.
+
+   Where MudBlazor already has the value, the token is that variable rather than a copy of it. The
+   text sizes are MlqtTheme's typography, which MudThemeProvider writes as --mud-typography-*, so
+   the controls sized here cannot drift from the text they hold; the fallback is the same size, for
+   a page with no MudThemeProvider on it.
+
+   --mlqt-control-border is not --mud-palette-lines-default, though in the light palette the two
+   are the same rgb(0,0,0,0.118): the MudBlazor variable turns white in dark mode, and this border
+   does not. Aliasing it would change every outlined input and button group in the dark theme,
+   which is a decision, not a refactor. */
+:root {
+    --mlqt-font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mlqt-font-size: var(--mud-typography-body1-size, 0.75rem);
+    --mlqt-font-size-small: var(--mud-typography-caption-size, 0.625rem);
+
+    --mlqt-space-1: 4px;
+    --mlqt-space-2: 8px;
+    --mlqt-space-4: 16px;
+
+    --mlqt-control-height: 2rem;
+    --mlqt-icon-size-small: 1rem;
+    --mlqt-icon-size-medium: 1.25rem;
+    --mlqt-icon-size-large: 1.5rem;
+
+    --mlqt-link-color: #006bb7;
+    --mlqt-control-border: rgb(0,0,0,0.118);
+    --mlqt-divider-color: var(--mud-palette-lines-default);
+
+    /* A selected row, and a search match: washes over content that keeps its own colours. */
+    --mlqt-highlight-selected: rgba(25, 118, 210, 0.15);
+    --mlqt-highlight-match: rgba(255, 213, 79, 0.55);
+
+    --mlqt-scrollbar-size: 4px;
+    --mlqt-scrollbar-thumb: rgba(128, 128, 128, 0.45);
+    --mlqt-scrollbar-thumb-hover: rgba(128, 128, 128, 0.7);
+}
+
+/* The light match wash is legible on white and glares on near-black. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --mlqt-highlight-match: rgba(255, 213, 79, 0.3);
+    }
+}
+
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: var(--mlqt-font-family);
 }
 
 a {
-    color: #006bb7;
+    color: var(--mlqt-link-color);
 }
 
 /* FocusOnNavigate moves focus to the page's h1, which is for screen readers, not a box to draw. */
@@ -68,8 +116,8 @@ body * {
 }
 
 ::-webkit-scrollbar {
-    width: 4px !important;
-    height: 4px !important;
+    width: var(--mlqt-scrollbar-size) !important;
+    height: var(--mlqt-scrollbar-size) !important;
 }
 
 ::-webkit-scrollbar-track {
@@ -77,7 +125,7 @@ body * {
 }
 
 ::-webkit-scrollbar-thumb {
-    background-color: rgba(128, 128, 128, 0.45);
+    background-color: var(--mlqt-scrollbar-thumb);
     border-radius: 2px;
 }
 
@@ -89,7 +137,7 @@ body * {
    having again; at this width the track is the inset. */
 
 ::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(128, 128, 128, 0.7);
+    background-color: var(--mlqt-scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {
@@ -200,7 +248,7 @@ body * {
 
 /* MudSplitPanel's divider is a gap with nothing in it; this draws the line the old splitter had. */
 .mlqt-split-divider {
-    background-color: var(--mud-palette-lines-default);
+    background-color: var(--mlqt-divider-color);
 }
 
 /* The divider's grab area grows into the second panel only. MudBlazor widens it with a ::before

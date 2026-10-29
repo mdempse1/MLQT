@@ -6,7 +6,7 @@
 
 /* Custom table styling for Dependencies page */
 .impact-row-selected td {
-    background-color: rgba(25, 118, 210, 0.15) !important;
+    background-color: var(--mlqt-highlight-selected) !important;
 }
 
 /* The tree beside the tabs is a list as long as the libraries, and scrolls in its pane. */
@@ -105,15 +105,9 @@
    colour anyway, and saying so stops a later edit from "tidying" it into a foreground
    colour. */
 
+/* The wash is the theme's --mlqt-highlight-match, which is also where it dims for a dark theme. */
 .code-search-match {
-    background-color: rgba(255, 213, 79, 0.55);
+    background-color: var(--mlqt-highlight-match);
     color: inherit;
     border-radius: 2px;
-}
-
-/* Dark themes get a dimmer wash: the light one is legible on white and glares on near-black. */
-@media (prefers-color-scheme: dark) {
-    .code-search-match {
-        background-color: rgba(255, 213, 79, 0.3);
-    }
 }

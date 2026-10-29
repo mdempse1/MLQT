@@ -164,8 +164,9 @@ using MLQT.Services.Interfaces;
 `ModelicaParser`, `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface`,
 `MLQT.Services` and `MLQT.UI.Theme` are built from source **outside this repository**, by other
 projects, so a public type or member in them is something code we cannot see may depend on. For the
-theme that includes what no analyzer sees: the CSS class names its stylesheets define and the asset
-paths `ThemeAssetManifest` lists are as much its public surface as its types. Each one sets
+theme that includes what no analyzer sees: the CSS class names and `--mlqt-*` tokens its
+stylesheets define are as much its public surface as its types, and are listed in
+`MLQT.UI.Theme/PublicCss.txt`, which `ThemeCssContractTests` holds them to. Each one sets
 `<TrackPublicApi>true</TrackPublicApi>`, and `Microsoft.CodeAnalysis.PublicApiAnalyzers` holds its
 public surface to two files beside the project:
 

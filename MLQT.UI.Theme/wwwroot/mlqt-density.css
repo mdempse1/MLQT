@@ -5,8 +5,10 @@
    list), not before it with mlqt-base.css. It was an inline <style> in MLQT's MainLayout until the
    theme became a package, which is how it always came last.
 
-   The typography sizes these work with are in MlqtTheme (body text 0.75rem); the two go together,
-   and a page that has one without the other has controls sized for text it does not have. */
+   The sizes are mlqt-base.css's tokens, and the text sizes among them are MlqtTheme's typography,
+   so a control and the text in it cannot be sized from two different numbers. What is left as a
+   literal is an optical correction to one control - a pixel for a border, a nudge to a label - which
+   would mean nothing as a token. */
 
 .mud-layout {
     height: 100vh;
@@ -24,36 +26,37 @@
 
 /* Changes the font size for page controls at the bottom of a table */
 .mud-table-pagination {
-   font-size: 0.75rem;
+   font-size: var(--mlqt-font-size);
 }
 
 /* Changes the size of the tabs */
 .mud-tabs-tabbar .mud-tabs-tabbar-inner {
-    min-height: 2rem;
+    min-height: var(--mlqt-control-height);
 }
 
 .mud-tab {
-    min-height: 2rem;
-    font-size: 0.75rem;
+    min-height: var(--mlqt-control-height);
+    font-size: var(--mlqt-font-size);
 }
 
 /* Changes the border on text fields */
 .mud-input.mud-input-outlined .mud-input-outlined-border {
-    border-color: rgb(0,0,0,0.118);
+    border-color: var(--mlqt-control-border);
 }
 
 /* Changes the border on MudButtonGroups that don't have an explicit Color set */
 /* Changes the padding for icons on text buttons to align the size with IconButtons */
 .mud-button-group-outlined.mud-button-group-override-styles .mud-button-root {
-    border-color: rgb(0,0,0,0.118);
-    padding-top: 4px;
-    padding-bottom: 4px;
+    border-color: var(--mlqt-control-border);
+    padding-top: var(--mlqt-space-1);
+    padding-bottom: var(--mlqt-space-1);
 }
 
+/* One pixel more below than above, as it has always been; nothing records why. */
 .mud-button-outlined-size-small {
-    padding-top: 4px !important;
+    padding-top: var(--mlqt-space-1) !important;
     padding-bottom: 5px !important;
-    font-size: 0.75rem !important;
+    font-size: var(--mlqt-font-size) !important;
 }
 
 /* Reduce the padding to account for the border and prevent the button from growing */
@@ -69,14 +72,14 @@
 }
 
 .mud-treeview-item-icon {
-    width: 1.5rem;
+    width: var(--mlqt-icon-size-large);
     margin-right: 0px;
     margin-inline-end: 0px;
 }
 
 .mud-treeview-item-checkbox {
-    width: 1rem;
-    height: 1rem;
+    width: var(--mlqt-icon-size-small);
+    height: var(--mlqt-icon-size-small);
 }
 
 .mud-treeview-item .mud-treeview-item-arrow .mud-icon-button{
@@ -84,13 +87,13 @@
 }
 
 .mud-treeview-item-arrow .mud-icon-size-medium{
-    width: 1rem !important;
-    height: 1rem !important;
+    width: var(--mlqt-icon-size-small) !important;
+    height: var(--mlqt-icon-size-small) !important;
 }
 
 .mud-treeview-item-checkbox .mud-icon-size-medium{
-    width: 1rem !important;
-    height: 1rem !important;
+    width: var(--mlqt-icon-size-small) !important;
+    height: var(--mlqt-icon-size-small) !important;
 }
 
 .mud-treeview-item-checkbox .mud-icon-button{
@@ -98,34 +101,34 @@
 }
 
 .mud-toolbar{
-    --mud-internal-toolbar-height: 2rem;
+    --mud-internal-toolbar-height: var(--mlqt-control-height);
 }
 
 .mud-table-toolbar{
-    padding: 0.5rem;
-    padding-inline-start: 0.5rem;
+    padding: var(--mlqt-space-2);
+    padding-inline-start: var(--mlqt-space-2);
 }
 
 /* Table cells and text in the theme's sizes, for a MudTable's CellClass or a cell's Class. */
 .compact-table {
-    font-size: 0.625rem !important;
+    font-size: var(--mlqt-font-size-small) !important;
     font-family: var(--mud-typography-body1-family) !important;
     padding-top: 3px !important;
     padding-bottom: 3px !important;
 }
 
 .body1-table {
-    font-size: var(--mud-typography-body1-size) !important;
+    font-size: var(--mlqt-font-size) !important;
     font-family: var(--mud-typography-body1-family) !important;
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: var(--mlqt-space-1) !important;
+    padding-bottom: var(--mlqt-space-1) !important;
 }
 
 .body1-table-right {
-    font-size: var(--mud-typography-body1-size) !important;
+    font-size: var(--mlqt-font-size) !important;
     font-family: var(--mud-typography-body1-family) !important;
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: var(--mlqt-space-1) !important;
+    padding-bottom: var(--mlqt-space-1) !important;
     text-align: right !important;
 }
 
@@ -134,12 +137,12 @@
 }
 
 .mud-picker .mud-typography-subtitle1 {
-    font-size: var(--mud-typography-body1-size) !important;
+    font-size: var(--mlqt-font-size) !important;
     font-family: var(--mud-typography-body1-family) !important;
 }
 
 .mud-input-control>.mud-input-control-input-container>.mud-input-label-inputcontrol {
-    font-size: var(--mud-typography-body1-size) !important;
+    font-size: var(--mlqt-font-size) !important;
     font-family: var(--mud-typography-body1-family) !important;
 }
 
@@ -148,8 +151,8 @@
 }
 
 .mud-toolbar-gutters {
-    padding-left: 4px;
-    padding-right: 16px;
+    padding-left: var(--mlqt-space-1);
+    padding-right: var(--mlqt-space-4);
 }
 
 .mud-dialog-width-lg {
@@ -157,28 +160,28 @@
 }
 
 .mud-icon-size-small {
-    font-size: 1.0rem !important;
+    font-size: var(--mlqt-icon-size-small) !important;
 }
 
 .mud-icon-size-medium {
-    font-size: 1.25rem !important;
+    font-size: var(--mlqt-icon-size-medium) !important;
 }
 
 .mud-icon-size-large {
-    font-size: 1.5rem !important;
+    font-size: var(--mlqt-icon-size-large) !important;
 }
 
 .mud-button-group-root.mud-button-group-text-size-small .mud-button-root {
-    font-size: 0.75rem;
-    padding: 4px 4px;
+    font-size: var(--mlqt-font-size);
+    padding: var(--mlqt-space-1) var(--mlqt-space-1);
 }
 
 .compact-icon-button {
-    padding: 4px !important;
+    padding: var(--mlqt-space-1) !important;
 }
 
 .mud-button-text-size-small {
-    font-size: 0.75rem;
+    font-size: var(--mlqt-font-size);
     line-height: 1.25rem;
 }
 
