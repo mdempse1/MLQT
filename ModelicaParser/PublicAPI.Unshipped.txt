@@ -1,5 +1,6 @@
 #nullable enable
 const ModelicaParser.StyleRules.RuleIds.AbsoluteResourcePath = "MLQT.Resource.AbsolutePath" -> string!
+const ModelicaParser.StyleRules.RuleIds.DependencyCycle = "MLQT.Structure.DependencyCycle" -> string!
 const ModelicaParser.StyleRules.RuleIds.MissingResource = "MLQT.Resource.Missing" -> string!
 ModelicaParser.Comparison.ClassSignature.Dialog.get -> string!
 ModelicaParser.Comparison.ClassSignature.Dialog.init -> void

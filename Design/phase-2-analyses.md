@@ -128,9 +128,35 @@ connections, nested ones included.
 References to classes marked `obsolete`, and compatibility with a given MSL version. It needs the
 target library visible, so a reference into one that is not loaded is "cannot tell".
 
-## 4. Cyclic-dependency detection — not designed yet
+## 4. Cyclic-dependency detection — done (2026-10-29)
 
-Package dependency cycles, on the dependency graph that already exists. The smallest of the five.
+`MLQT.Structure.DependencyCycle`, Warning when on, off by default. `DependencyCycleAnalyzer` builds
+on the dependency edges that already exist. Nothing in MLQT detected a cycle before; several places
+only guard against one.
+
+**What is a cycle worth reporting.** Packages that depend on each other, not classes: classes that
+refer to each other are ordinary Modelica. The first run compared at whatever level two names
+parted, and 21 of its 45 MSL findings were classes naming each other - inverse functions, the
+`dp_*_DP`/`dp_*_MFLOW` pairs of `Fluid.Dissipation`, `Matrices.inv` and `norm`. So both sides at that
+level must be packages. A dependency is counted at that one level only, so a deep cycle is reported
+once. A class using its own enclosing scope counts for nothing.
+
+**Examples.** A class with `experiment(...)` contributes nothing, the exemption `MLQT.Unused.Class`
+makes: without it `Blocks.Examples` building circuits from `Electrical` and `Mechanics` made most of
+MSL's top level one cycle. A helper inside an `Examples` package with no experiment of its own still
+counts (one of MSL's 24, one of Buildings' 20). Guessing from a package being called `Examples` was
+considered and not done: it is a convention, not a rule of the language, and `__MLQT` waives a cycle
+that is meant.
+
+**Three states.** Only edges inside the libraries being checked are followed, so a cycle through a
+reference or excluded library is not reported. Dependency edges exist only between loaded classes,
+so a library that is not loaded can hide a cycle but never invent one.
+
+**The finding.** On the parent package (for libraries depending on each other, the first of them),
+`ElementPath` the sorted members - a different route through the same packages is the same cycle -
+and the message the shortest route round it with the first-by-name class making each step. Measured
+on MSL 4.1 and Buildings: 24 and 20 cycles, all package-level coupling such as `Rotational.Interfaces`
+using `Rotational.Components.Fixed`, at 0.1 s each.
 
 ## 5. The rest of broken references — not designed yet
 

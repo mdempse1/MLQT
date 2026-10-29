@@ -27,6 +27,7 @@ public static class GraphAnalysisRunner
         new UnusedImportAnalyzer(),
         new UndeclaredNameAnalyzer(),
         new ExternalResourceAnalyzer(),
+        new DependencyCycleAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)

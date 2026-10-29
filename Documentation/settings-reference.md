@@ -305,6 +305,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), child classes not listed (missing), and entries listed more than once (duplicate). | GUI, CLI, MCP |
 | `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`) and one that would be written to the same file or directory name as a sibling, ignoring case, are left alone. The comparison is between what would be written, not between class names: a model `JFET` becomes `JFET.mo` and a package `Jfet` becomes the directory `Jfet`, so the two do not collide. For the same reason a *package* called `Package` may be split out, while a model of that name may not. Such classes are left alone because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
 | `MLQT.Structure.WithinClause` | Error | A file stored in a package's directory whose `within` clause does not name that package — the rule of [MLS 13.4.3](https://specification.modelica.org/maint/3.6/packages.html#the-within-clause): "For a sub-entity of an enclosing structured entity, the within-clause shall designate the class of the enclosing entity". A `package.mo` is its directory's package, so it names the package of the directory above. A missing `within` below the top level is reported too. Only files inside a loaded package directory are judged: a library's root `package.mo`, or a `.mo` file in a directory with no `package.mo`, is a top-level entity whose `within` cannot be judged from where it is stored. The expected name is built from the root package's loaded name and the class names in each nested `package.mo`, so one wrong `package.mo` is one finding rather than one on every correct file below it. | GUI, CLI, MCP |
+| `MLQT.Structure.DependencyCycle` | Warning | Packages under the same parent that depend on each other in a cycle — `Components` using `Interfaces` while `Interfaces` uses `Components` — so that neither can be understood, tested or moved without the other. Each finding is on the parent package, names the packages in the cycle, and gives one route round it with the class that makes each step, which is where to start breaking it. ⊕ | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
@@ -348,6 +349,19 @@ operator record from `Complex.mo`, not one of the predefined types of MLS 3.7 §
 a `ComplexInput` is judged like any record's member. Without `Complex.mo` loaded, it is a library
 that is not loaded. Each distinct name is reported once per class, at its first use. Over MSL
 4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
+
+⊕ **What counts as a dependency cycle.** Packages are compared, never classes: two functions that
+name each other, or a model and the record it uses, are ordinary Modelica and are not reported. A
+dependency counts at the one level where the two names part, so `Lib.Blocks.Math.Harmonic` using
+`Lib.Blocks.Sources.Table` is a dependency of `Math` on `Sources` inside `Lib.Blocks`, and a cycle
+there is reported once, on `Lib.Blocks`. A class using its own enclosing package (a constant, a base
+defined there) is not a dependency between packages. A class with an `experiment(...)` annotation is
+an entry point nothing depends on, so what it uses is not counted. A helper class inside an
+`Examples` package with no experiment of its own *is* counted; waive one with
+`__MLQT(suppress="MLQT.Structure.DependencyCycle")` on the parent package if that is the intent.
+Libraries that depend on each other are reported the same way, on the first of them. Only
+dependencies within the libraries being checked are followed. Over MSL 4.1 it reports 24 cycles and
+over Buildings 20, such as `Rotational.Interfaces` using `Rotational.Components.Fixed`.
 
 ◊ **A resource is reported only when MLQT can tell where it should be.** A `modelica://` URI into a
 library that is not loaded cannot be resolved, so it is never reported: whether the file exists says

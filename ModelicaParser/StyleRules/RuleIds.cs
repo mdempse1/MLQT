@@ -51,6 +51,9 @@ public static class RuleIds
     public const string MissingResource = "MLQT.Resource.Missing";
     public const string AbsoluteResourcePath = "MLQT.Resource.AbsolutePath";
 
+    // Packages that depend on each other (phase 2).
+    public const string DependencyCycle = "MLQT.Structure.DependencyCycle";
+
     // Parse diagnostics. These are NOT style rules: they are always reported regardless of the
     // severity map and cannot be suppressed or baselined, because code that does not parse cannot
     // be meaningfully checked — every other rule silently under-reports on it.

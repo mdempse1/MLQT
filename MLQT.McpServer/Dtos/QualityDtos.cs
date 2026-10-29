@@ -74,6 +74,10 @@ public sealed class StyleSettingsInput
     [Description("Reports a resource referred to by an absolute file-system path rather than a modelica:// URI or a " +
                  "relative path, since it exists only on the machine it was written on.")]
     public bool? CheckAbsoluteResourcePaths { get; set; }
+    [Description("Reports packages under the same parent that depend on each other in a cycle - Components " +
+                 "using Interfaces while Interfaces uses Components - with one route round it and the class " +
+                 "that makes each step. Classes referring to each other are not reported.")]
+    public bool? CheckDependencyCycles { get; set; }
 
     [Description("The tools whose own built-in functions and flags checkUndeclaredNames accepts as declared: " +
                  "\"Dymola\" (classDirectory(), Advanced.* and Hidden.* flags, Dymola_AST_*), \"OpenModelica\" " +
@@ -132,6 +136,7 @@ public sealed class StyleSettingsInput
         new(RuleIds.GrammarConformance, i => i.CheckGrammarConformance, (i, v) => i.CheckGrammarConformance = v),
         new(RuleIds.MissingResource, i => i.CheckMissingResources, (i, v) => i.CheckMissingResources = v),
         new(RuleIds.AbsoluteResourcePath, i => i.CheckAbsoluteResourcePaths, (i, v) => i.CheckAbsoluteResourcePaths = v),
+        new(RuleIds.DependencyCycle, i => i.CheckDependencyCycles, (i, v) => i.CheckDependencyCycles = v),
     ];
 
     /// <summary>The rules this input can set, for the test that holds it to <see cref="RuleCatalog"/>.</summary>

@@ -698,6 +698,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.AbsoluteResourcePath);
         set => SetRuleEnabled(RuleIds.AbsoluteResourcePath, value);
     }
+    public bool CheckDependencyCycles
+    {
+        get => IsRuleEnabled(RuleIds.DependencyCycle);
+        set => SetRuleEnabled(RuleIds.DependencyCycle, value);
+    }
 
     /// <summary>
     /// The tools whose own built-in functions and flags <c>MLQT.Reference.Undeclared</c> accepts as

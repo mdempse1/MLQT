@@ -1,4 +1,10 @@
 #nullable enable
+ModelicaGraph.Analysis.DependencyCycleAnalyzer
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.DependencyCycleAnalyzer() -> void
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.NeedsDependencyAnalysis.get -> bool
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.ExternalResourceAnalyzer
 ModelicaGraph.Analysis.ExternalResourceAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
 ModelicaGraph.Analysis.ExternalResourceAnalyzer.ExternalResourceAnalyzer() -> void
@@ -56,6 +62,8 @@ ModelicaGraph.ReadOnlySourceLoader
 ModelicaGraph.ReadOnlySources
 ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckDependencyCycles.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckDependencyCycles.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckMissingResources.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckMissingResources.set -> void
 ModelicaGraph.SuppliedText
