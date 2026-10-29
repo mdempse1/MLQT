@@ -31,20 +31,17 @@ are set under **Settings > Manage Repositories** and stored in that repository's
 `.mlqt/settings.json`, so they travel with the code and every tool that reads it (the app, the `mlqt`
 CLI, the MCP server) applies the same ones.
 
-A newly added repository starts with every rule **Off** except one, and a library loaded outside any
-repository — a reference library, say — has no rules at all and is never reported on.
+A newly added repository starts with **every rule Off**, and a library loaded outside any
+repository — a reference library, say — has no rules at all and is never reported on. Nothing is
+checked until you choose it, and a new version of MLQT never switches a rule on for you.
 
-**The exception is [`MLQT.Structure.SingleFilePackage`](#static-analysis-rules), which is on at
-Warning unless you turn it off.** Every other rule waits to be discovered, which is right for a
-matter of taste. This one reports a library drifting away from the layout MLQT maintains, and the
-drift happens without anyone doing anything: another tool saves a new package as a single `.mo`
-file, MLQT's incremental formatting tidies it in place — it never moves a class between files — and
-nothing says the package is now stored differently from the rest of the library. A user who has not
-heard of the rule is exactly the user who needs it, so it is not something to opt into.
-
-Switch it off in the usual way if your repository keeps libraries single-file on purpose. That choice
-is written into `.mlqt/settings.json` as `"MLQT.Structure.SingleFilePackage": "Off"` rather than by
-removing the entry, because for this rule an absent entry means *on*.
+**`MLQT.Structure.SingleFilePackage` was the one exception until this release**, on at Warning
+unless turned off. A repository whose settings were saved while it was on keeps the line MLQT wrote
+then — `"MLQT.Structure.SingleFilePackage": "Warning"` keeps it on, `"Off"` keeps it off — so only
+a repository that never recorded either sees it go quiet. It is worth switching on: it reports a
+library drifting away from the layout MLQT maintains, which happens without anyone doing anything —
+another tool saves a new package as a single `.mo` file, and MLQT's incremental formatting tidies it
+in place without moving a class between files.
 
 ---
 
@@ -307,8 +304,8 @@ The reference validator handles several edge cases found in real Modelica librar
 
 ### Static Analysis Rules
 
-These rules find structural problems beyond the style/documentation checks above. All but one are
-**off by default** — `MLQT.Structure.SingleFilePackage` is on. Enable them in the **Static analysis**
+These rules find structural problems beyond the style/documentation checks above. All of them are
+**off by default**. Enable them in the **Static analysis**
 section of the Edit Repository Details dialog — each rule has a per-rule **Off / Info / Warning /
 Error** selector, labelled with the rule's description and grouped under its category (Correctness,
 Units, Unused, Structure, Conformance, Resources, Connections), where **Error**
@@ -326,7 +323,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. A link in that chain may be a short alias or a `type` written in the long form around one `extends` (`type ReferenceAngle extends SI.Angle; ... end ReferenceAngle;`, the form a type with an `equalityConstraint` needs), so MSL's `Modelica.Icons.TypeReal` - `type TypeReal extends Real` - is followed like any other. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
 | `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), child classes not listed (missing), and entries listed more than once (duplicate). | GUI, CLI, MCP |
-| `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`) and one that would be written to the same file or directory name as a sibling, ignoring case, are left alone. The comparison is between what would be written, not between class names: a model `JFET` becomes `JFET.mo` and a package `Jfet` becomes the directory `Jfet`, so the two do not collide. For the same reason a *package* called `Package` may be split out, while a model of that name may not. Such classes are left alone because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
+| `MLQT.Structure.SingleFilePackage` | Warning | A package that keeps classes in its own `.mo` file when each could have a file of its own — including a package that is only **partly** split, which is the usual way a library drifts. Judged on whether a class *could* be moved: one that must be inline (`replaceable`, `redeclare`, `inner`, `outer`) and one that would be written to the same file or directory name as a sibling, ignoring case, are left alone. The comparison is between what would be written, not between class names: a model `JFET` becomes `JFET.mo` and a package `Jfet` becomes the directory `Jfet`, so the two do not collide. For the same reason a *package* called `Package` may be split out, while a model of that name may not. Such classes are left alone because MLQT's formatter would not write them as separate files either. Reported against the class that owns the file, once per file. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
 | `MLQT.Structure.WithinClause` | Error | A file stored in a package's directory whose `within` clause does not name that package — the rule of [MLS 13.4.3](https://specification.modelica.org/maint/3.6/packages.html#the-within-clause): "For a sub-entity of an enclosing structured entity, the within-clause shall designate the class of the enclosing entity". A `package.mo` is its directory's package, so it names the package of the directory above. A missing `within` below the top level is reported too. Only files inside a loaded package directory are judged: a library's root `package.mo`, or a `.mo` file in a directory with no `package.mo`, is a top-level entity whose `within` cannot be judged from where it is stored. The expected name is built from the root package's loaded name and the class names in each nested `package.mo`, so one wrong `package.mo` is one finding rather than one on every correct file below it. | GUI, CLI, MCP |
 | `MLQT.Structure.DependencyCycle` | Warning | Packages under the same parent that depend on each other in a cycle — `Components` using `Interfaces` while `Interfaces` uses `Components` — so that neither can be understood, tested or moved without the other. Each finding is on the parent package, names the packages in the cycle, and gives one route round it with the class that makes each step, which is where to start breaking it. ⊕ † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
@@ -603,10 +600,10 @@ also works for the built-in style rules:
 }
 ```
 
-`MLQT.Structure.SingleFilePackage` has no on/off key of its own: it is on by default, and the only way
-to set it in `settings.json` is through `RuleSeverities`, for example
-`"MLQT.Structure.SingleFilePackage": "Off"`. `MLQT.Structure.WithinClause` has no on/off key either;
-it is off by default, and is enabled with `"MLQT.Structure.WithinClause": "Error"`.
+`MLQT.Structure.SingleFilePackage` has no on/off key of its own: it is set in `settings.json` through
+`RuleSeverities`, for example `"MLQT.Structure.SingleFilePackage": "Warning"`.
+`MLQT.Structure.WithinClause` has no on/off key either, and is enabled with
+`"MLQT.Structure.WithinClause": "Error"`.
 
 A per-finding waiver can be written into the source with a `__MLQT(suppress="<rule id>")` annotation
 (see [Code Review](code-review.md#suppressing-a-rule)).
@@ -798,8 +795,8 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 ### When Settings Are Loaded and Saved
 
-- **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used and a new file is written with them, rules that are on by default included. **An existing file is never rewritten by loading**, switching project or reordering repositories — so opening MLQT never leaves a modified settings file in a commit dialog.
-- **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application settings. This is also when rules that are on by default are written into the file explicitly, so the file is the whole answer for the repository. The file keeps its own line endings, and if nothing in it would change it is not touched.
+- **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used — every rule off — and a new file is written with them. **An existing file is never rewritten by loading**, switching project or reordering repositories — so opening MLQT never leaves a modified settings file in a commit dialog.
+- **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application settings. The file keeps its own line endings, and if nothing in it would change it is not touched.
 - **After a settings change:** Style checking is re-run for that repository alone. Findings for the project's other repositories are left as they are — their rules have not changed, so there is nothing to re-check.
 - **The `.mlqt` directory is created automatically** if it does not exist when settings are first saved.
 

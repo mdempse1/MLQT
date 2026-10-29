@@ -259,12 +259,10 @@ for good.
 ## Settings
 
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
-desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, only the rules that are on
-by default run — currently `MLQT.Structure.SingleFilePackage` — alongside the
-[diagnostics](#diagnostics), and `mlqt` says so with `note: only the rules that are on by default are
-enabled; nothing else has been configured for this library. See settings-reference.md to choose the
-rules you want.` (`note: no style rules are enabled; no findings will be produced.` appears only when
-every rule has been turned off.) See [settings-reference.md](settings-reference.md).
+desktop app writes to `<repo>/.mlqt/settings.json`. Every rule is off until a config switches it
+on, so if no config is found only the [diagnostics](#diagnostics) are reported, and `mlqt` says so
+with `note: no style rules are enabled; no findings will be produced. See settings-reference.md to
+choose the rules you want.` See [settings-reference.md](settings-reference.md).
 
 **Where they are found.** Without `--config`, `mlqt` looks for `.mlqt/settings.json` in the library
 directory and then in each directory above it, stopping at a working-copy root (one holding `.git` or

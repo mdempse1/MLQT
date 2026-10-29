@@ -175,8 +175,8 @@ public interface IRepositoryService
 
     /// <summary>
     /// The user applied <paramref name="repositoryId"/>'s settings: records the default-on rules in
-    /// them explicitly (B244), then saves as <see cref="SaveRepositorySettingsAsync"/> does. The one
-    /// path that adds anything to a committed settings file the user did not set themselves.
+    /// them explicitly (B244; there are none since 2026-10-29), then saves as
+    /// <see cref="SaveRepositorySettingsAsync"/> does.
     /// </summary>
     Task ApplyRepositorySettingsAsync(string repositoryId);
 

@@ -154,13 +154,11 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.MissingUnit, "Quantity declares a unit", "Units", RuleSeverity.Warning, "A numeric quantity should declare a unit, or use a type that fixes one. A plain Real is always judged; any other type is followed through its alias chain, so an SI type passes and an alias of Real that fixes nothing does not."),
             new RuleDefinition(RuleIds.UnusedImport, "No unused imports", "Unused", RuleSeverity.Warning, "An import must be referenced in the class that declares it, or in a class nested inside it."),
             new RuleDefinition(RuleIds.PackageOrder, "package.order is consistent", "Structure", RuleSeverity.Warning, "package.order entries must match the package's classes/members, and every child class must be listed, once."),
-            // The one rule that is on unless a repository turns it off. Every other rule waits to be
-            // discovered; this one reports a library drifting away from the layout MLQT maintains,
-            // which happens without anyone doing anything — another tool saves a new package as a
-            // single file and the incremental formatter, which never moves a class between files,
-            // leaves it that way. A user who has not heard of the rule is exactly the user who needs
-            // it, so the default is the wrong place to ask them to opt in.
-            new RuleDefinition(RuleIds.SingleFilePackage, "Packages are stored as directories", "Structure", RuleSeverity.Warning, "A package whose classes could each be stored in their own file must be a directory rather than a single .mo file.", EnabledByDefault: true),
+            // Off by default like every rule (decided 2026-10-29). It was the one rule on unless a
+            // repository turned it off (B241), because a library drifts into single-file packages
+            // without anyone doing anything; every rule now waits to be switched on, so an upgrade
+            // never changes what a repository reports.
+            new RuleDefinition(RuleIds.SingleFilePackage, "Packages are stored as directories", "Structure", RuleSeverity.Warning, "A package whose classes could each be stored in their own file must be a directory rather than a single .mo file."),
             // An Error when enabled: the file is not where its within clause puts it, so MLQT shows
             // the class somewhere no other Modelica tool will find it, and Format All refuses the
             // library rather than lose the file (B458). Opt-in like the rest, as the user decided.

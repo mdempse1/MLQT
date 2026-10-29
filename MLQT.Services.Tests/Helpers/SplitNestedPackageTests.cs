@@ -66,7 +66,9 @@ public class SplitNestedPackageTests : IDisposable
 
     private static List<Finding> Findings(DirectedGraph graph)
     {
-        var context = new GraphAnalysisContext(graph, new StyleCheckingSettings(), graph.ModelNodes.ToList());
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.SingleFilePackage, true);
+        var context = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
         return GraphAnalysisRunner.Run(context)
             .Where(f => f.RuleId == RuleIds.SingleFilePackage)
             .ToList();

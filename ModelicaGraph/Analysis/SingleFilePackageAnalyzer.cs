@@ -12,10 +12,11 @@ namespace ModelicaGraph.Analysis;
 /// which is why this is a rule with a severity rather than a hard-coded warning: some repositories
 /// want it, some have libraries they deliberately keep single-file, and a few have both.</para>
 ///
-/// <para><b>It is on by default</b>, unlike every other rule (B241). A library drifts into this
-/// state without anyone doing anything — another tool saves a new package as one file, and the
-/// incremental formatter rewrites it in place because it never moves a class between files — so a
-/// user who has not heard of the rule is exactly the user who needs it.</para>
+/// <para><b>Off by default, like every rule</b> (decided 2026-10-29). It was the one rule on by
+/// default from B241 until then, because a library drifts into this state without anyone doing
+/// anything — another tool saves a new package as one file, and the incremental formatter rewrites
+/// it in place because it never moves a class between files. Every rule now waits to be switched on,
+/// so an upgrade never changes what a repository reports.</para>
 ///
 /// <para><b>It reports the class that owns the file, once per file.</b> A package nested inside
 /// another class's file has no file of its own and cannot be given a directory until its parent has

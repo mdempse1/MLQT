@@ -74,6 +74,10 @@ public class StyleCheckingSettings
     ///
     /// <para>It only ever adds. A rule switched off is already written as <c>Off</c>, and an
     /// explicit severity is left exactly as it is.</para>
+    ///
+    /// <para>No rule is on by default since 2026-10-29, so it records nothing; it is kept because it
+    /// is the public answer to "make this file the whole answer", and a default-on rule would need it
+    /// again.</para>
     /// </summary>
     public void RecordDefaults()
     {
@@ -139,10 +143,10 @@ public class StyleCheckingSettings
         if (RuleCatalog.RequiredRuleFor(ruleId) is { } prerequisite && !IsRuleEnabled(prerequisite))
             return RuleSeverity.Off;
 
-        // Absent means "not configured", which is off for almost every rule — and on for one that
-        // reports a library drifting away from the layout MLQT maintains (see
-        // RuleDefinition.EnabledByDefault). A rule that is on by default is turned off by storing
-        // Off, not by removing the key, so an absent key can be read as "never asked" either way.
+        // Absent means "not configured", which is off - for every rule since 2026-10-29. A rule
+        // marked RuleDefinition.EnabledByDefault (none is now; SingleFilePackage was from B241) is
+        // on when absent, and turned off by storing Off rather than removing the key, so an absent
+        // key can be read as "never asked" either way.
         if (!RuleSeverities.TryGetValue(ruleId, out var stored))
             return RuleCatalog.IsEnabledByDefault(ruleId)
                 ? RuleCatalog.DefaultSeverityFor(ruleId)
@@ -626,10 +630,11 @@ public class StyleCheckingSettings
         set => SetRuleEnabled(RuleIds.PackageOrder, value);
     }
     /// <summary>
-    /// Not serialized, unlike the other facades: a bool cannot say "not configured", and for a rule
-    /// that is on by default that is the difference between a file saying nothing and a file saying
-    /// yes. Writing it out added a key to every settings file that was merely read and written back.
-    /// The severity map is the only store for this rule, which is what it should be.
+    /// Not serialized, unlike the other facades: a bool cannot say "not configured", and while this
+    /// rule was on by default (B241 to 2026-10-29) that was the difference between a file saying
+    /// nothing and a file saying yes. Writing it out added a key to every settings file that was
+    /// merely read and written back. The severity map is the only store for this rule, which is
+    /// what it should be, and serializing it now would add the key to every file again.
     /// </summary>
     [JsonIgnore]
     public bool CheckSingleFilePackage

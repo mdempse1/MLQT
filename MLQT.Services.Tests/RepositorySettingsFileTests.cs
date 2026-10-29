@@ -9,6 +9,7 @@ namespace MLQT.Services.Tests;
 /// user changed something. It used to be rewritten at the end of every load, on every project switch
 /// and on every reorder, and since B244 each rewrite added the default-on rules to it: the first launch
 /// after that change put a modified file in every repository's commit dialog that nobody had edited.
+/// No rule has been on by default since 2026-10-29, so there is nothing for Apply to add either.
 /// </summary>
 public class RepositorySettingsFileTests : IDisposable
 {
@@ -77,7 +78,7 @@ public class RepositorySettingsFileTests : IDisposable
     }
 
     [Fact]
-    public async Task ApplyingARepositorysSettings_RecordsTheDefaults_InThatRepositoryOnly()
+    public async Task ApplyingARepositorysSettings_WritesThatRepositoryOnly()
     {
         var service = Build();
         var ours = WriteRepository("Ours", Committed);
@@ -85,10 +86,28 @@ public class RepositorySettingsFileTests : IDisposable
         var added = await service.AddRepositoryAsync(ours, startMonitoring: false);
         await service.AddRepositoryAsync(theirs, startMonitoring: false);
 
-        await service.ApplyRepositorySettingsAsync(added.Repository!.Id);
+        added.Repository!.StyleSettings!.SetRuleEnabled(RuleIds.SingleFilePackage, true);
+        await service.ApplyRepositorySettingsAsync(added.Repository.Id);
 
         Assert.Contains(RuleIds.SingleFilePackage, File.ReadAllText(SettingsPath(ours)));
         Assert.Equal(Committed, File.ReadAllText(SettingsPath(theirs)));
+    }
+
+    [Fact]
+    public async Task ApplyingAddsNoRuleTheUserDidNotSwitchOn()
+    {
+        // Until every rule defaulted to off, Apply wrote the default-on rule into the file (B244).
+        // There is none now, so a repository's file holds only what its users chose.
+        var service = Build();
+        var root = WriteRepository("Ours", Committed);
+        var added = await service.AddRepositoryAsync(root, startMonitoring: false);
+
+        added.Repository!.StyleSettings!.ClassHasIcon = true;
+        await service.ApplyRepositorySettingsAsync(added.Repository.Id);
+
+        var written = File.ReadAllText(SettingsPath(root));
+        Assert.DoesNotContain(RuleIds.SingleFilePackage, written);
+        Assert.Contains("\"ClassHasIcon\": true", written);
     }
 
     [Fact]
@@ -140,7 +159,7 @@ public class RepositorySettingsFileTests : IDisposable
     }
 
     [Fact]
-    public async Task ARepositoryWithNoSettingsFile_StillGetsOne_WithTheDefaultsWritten()
+    public async Task ARepositoryWithNoSettingsFile_StillGetsOne_WithEveryRuleOff()
     {
         // Creating the file changes nothing anybody committed, and it is how a new repository gets
         // settings the team can share (and how a read-only one is found, B223).
@@ -149,6 +168,8 @@ public class RepositorySettingsFileTests : IDisposable
 
         await service.AddRepositoryAsync(root, startMonitoring: false);
 
-        Assert.Contains(RuleIds.SingleFilePackage, File.ReadAllText(SettingsPath(root)));
+        Assert.True(File.Exists(SettingsPath(root)));
+        var written = StyleCheckingSettings.FromJson(File.ReadAllText(SettingsPath(root)))!;
+        Assert.False(written.HasAnyStyleRuleEnabled);
     }
 }

@@ -218,8 +218,9 @@ file and still leaves it as one file. Nothing moves it to a directory until you 
 [Format All Files](#format-all-files-button), or change a formatting setting and let the full
 reformat run.
 
-What you get instead is a finding. **`MLQT.Structure.SingleFilePackage` is on by default**, at
-Warning, precisely so this does not pass unnoticed:
+What you get instead is a finding, once **`MLQT.Structure.SingleFilePackage`** is switched on in the
+repository's settings (it reports at Warning; like every rule, it is off until you choose it). It
+exists so this does not pass unnoticed:
 
 ```
 package Pumps is stored as a single file; its 4 classes could each have a file of their own

@@ -42,7 +42,7 @@ public class JsonContractTests
         Assert.Equal(settings.ToJson(), read.ToJson());
         Assert.Equal(RuleSeverity.Error, read.RuleSeverities[RuleIds.ClassDescription]);
         Assert.Equal(["Old"], read.ExcludedLibraries);
-        Assert.Equal(RuleSeverity.Off, read.RuleSeverities[RuleCatalog.Configurable.First(d => d.EnabledByDefault).Id]);
+        Assert.Equal(RuleSeverity.Warning, read.RuleSeverities[RuleIds.SingleFilePackage]);
     }
 
     [Fact]
@@ -73,9 +73,7 @@ public class JsonContractTests
             SpellCheckLanguages = ["en_GB"],
         };
         settings.RuleSeverities[RuleIds.ClassDescription] = RuleSeverity.Error;
-        // Off is written down only for a rule that is on until switched off; for any other rule it is
-        // the absence of a key, and a hand-written Off would be dropped on reading.
-        settings.SetRuleEnabled(RuleCatalog.Configurable.First(d => d.EnabledByDefault).Id, false);
+        settings.SetRuleEnabled(RuleIds.SingleFilePackage, true);
         settings.NamingConvention.ModelNaming = NamingStyle.CamelCase;
         settings.RecordDefaults();
         return settings;

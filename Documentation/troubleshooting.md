@@ -231,7 +231,7 @@ This removes the repository from MLQT's project — it does not delete any files
 Only per repository, under **Settings > Manage Repositories > click a repository**. They are stored
 in that repository's `.mlqt/settings.json` and shared via version control, so everyone on the team —
 and the `mlqt` CLI in CI — checks against the same rules. A new repository starts with every rule
-Off except the one that is on by default, `MLQT.Structure.SingleFilePackage`. There is no
+Off. There is no
 application-wide copy of these settings.
 
 ### Can multiple people use MLQT on the same repository simultaneously?

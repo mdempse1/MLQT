@@ -810,7 +810,8 @@ public class RepositoryService : IRepositoryService
             // is what makes a saved settings file the whole answer for that repository (B244) - and
             // it is done here, when the user applies this repository's settings, rather than on
             // every save, where it rewrote every committed file on the first launch after it
-            // arrived (B310).
+            // arrived (B310). No rule is on by default since 2026-10-29, so this records nothing
+            // until one is.
             lock (_lock)
                 repository.StyleSettings?.RecordDefaults();
         }

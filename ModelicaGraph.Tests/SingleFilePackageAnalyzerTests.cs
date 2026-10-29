@@ -190,26 +190,29 @@ public class SingleFilePackageAnalyzerTests
     }
 
     [Fact]
-    public void TheRuleIsOnUnlessItIsSwitchedOff()
+    public void TheRuleIsOffUntilARepositorySwitchesItOn()
     {
-        // The one rule that does not wait to be discovered. A library drifts away from the
-        // one-class-per-file layout without anyone doing anything — another tool saves a new package
-        // as a single file, and the incremental formatter, which never moves a class between files,
-        // reformats it in place and leaves it that way. A user who has not heard of this rule is
-        // exactly the user who needs it.
+        // On by default from B241 until 2026-10-29, when every rule was made to wait to be switched
+        // on, so an upgrade never changes what a repository reports.
         var graph = Build([("A", "P.mo", true)]);
-        var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings(), graph.ModelNodes.ToList());
 
-        Assert.Single(GraphAnalysisRunner.Run(ctx), f => f.RuleId == RuleIds.SingleFilePackage);
+        var fresh = new GraphAnalysisContext(graph, new StyleCheckingSettings(), graph.ModelNodes.ToList());
+        Assert.DoesNotContain(GraphAnalysisRunner.Run(fresh), f => f.RuleId == RuleIds.SingleFilePackage);
+
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.SingleFilePackage, true);
+        var on = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
+        Assert.Single(GraphAnalysisRunner.Run(on), f => f.RuleId == RuleIds.SingleFilePackage);
     }
 
     [Fact]
-    public void ARepositoryCanStillSwitchItOff()
+    public void ARepositoryCanSwitchItOffAgain()
     {
         // Single-file storage is a repository's choice in the end — some libraries are deliberately
-        // kept that way. The default decides who has to know the rule exists, not who decides.
+        // kept that way.
         var graph = Build([("A", "P.mo", true)]);
         var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.SingleFilePackage, true);
         settings.SetRuleEnabled(RuleIds.SingleFilePackage, false);
         var ctx = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
 

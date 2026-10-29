@@ -79,10 +79,9 @@ repo is a single library or several side by side. A single `<root>/.mlqt/setting
 mlqt check /path/to/MyLibrary
 ```
 
-Out of the box only the rules that are **on by default** run — currently just
-`MLQT.Structure.SingleFilePackage` — so you'll see `note: only the rules that are on by default are
-enabled; nothing else has been configured for this library. See settings-reference.md to choose the
-rules you want.` Enable rules next.
+Out of the box **no rule runs** — every rule is off until you switch it on — so you'll see
+`note: no style rules are enabled; no findings will be produced. See settings-reference.md to choose
+the rules you want.` Enable rules next.
 
 One more thing is reported even with no rules configured: a **parse error**. If a file has a syntax error
 you will see it on this very first run, and the command will exit `1`. That is deliberate — see
@@ -712,8 +711,7 @@ error: coverage gate: Class description 75% is below the required 80%
 
 | Symptom | Cause / fix |
 |---|---|
-| `note: only the rules that are on by default are enabled; …` | No settings file, or one that enables nothing beyond the defaults. Enable rules (§3). |
-| `note: no style rules are enabled; no findings will be produced.` | Every rule, including the ones on by default, has been turned off in `.mlqt/settings.json`. Enable rules (§3). |
+| `note: no style rules are enabled; no findings will be produced.` | No settings file, or one that switches no rule on — every rule is off until you choose it. Enable rules (§3). |
 | Lots of `MLQT.Doc.ClassIcon` findings | The libraries it uses (MSL, etc.) aren't loaded, so an icon inherited from `Modelica.Icons.*` cannot be seen. Pass `--dependency <path to the library it uses, e.g. MSL>`. A `modelica://` link into a library that is not loaded is not reported at all, so loading it is also what lets `MLQT.Reference.ModelReferences` check those links. |
 | Spelling flags valid domain terms | Build a custom dictionary — see [spell-checking.md](spell-checking.md). |
 | `error: '<path>' is not inside a Git or SVN working copy` | `--changed-from` needs to run inside the VCS working copy. |
