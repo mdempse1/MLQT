@@ -99,7 +99,8 @@ public static class StyleChecking
         Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null,
         CheckTimings? timings = null,
         Func<string, string, bool>? isSimpleType = null,
-        Func<string, IReadOnlyList<SuppressionSet>>? enclosingSuppressions = null)
+        Func<string, IReadOnlyList<SuppressionSet>>? enclosingSuppressions = null,
+        Func<string, ClassReferenceTarget>? classReferenceTarget = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -186,7 +187,14 @@ public static class StyleChecking
                 settings.ClassHasIcon, basePackage, baseClassHasIcon),
                 parsedCode, findings, timings);
         }
-        if (settings.ValidateModelReferences && knownModelIds != null)
+        // The graph's three-state verdict when the caller has one (CreateClassReferenceLookup, which
+        // the shared pipeline passes); the bare set of loaded ids otherwise, which can only say found
+        // or missing and reports a link into a library that is not loaded.
+        if (settings.ValidateModelReferences && classReferenceTarget != null)
+        {
+            RunRule(CheckModelReferences.WithVerdict(classReferenceTarget, basePackage), parsedCode, findings, timings);
+        }
+        else if (settings.ValidateModelReferences && knownModelIds != null)
         {
             RunRule(new CheckModelReferences(knownModelIds, basePackage), parsedCode, findings, timings);
         }
@@ -311,6 +319,19 @@ public static class StyleChecking
             var imports = importsByModel.GetOrAdd(key.ModelId, id => ImportsOf(graph, id));
             return UnitResolver.Resolve(graph, key.ModelId, key.TypeName, imports, unitCache, ancestors);
         });
+    }
+
+    /// <summary>
+    /// Creates the verdict <c>MLQT.Reference.ModelReferences</c> asks of each <c>modelica://</c> link
+    /// to a class: found (declared or inherited), missing, or something MLQT cannot see - a library
+    /// that is not loaded, a class with a base it cannot read - which is not reported. Null when there
+    /// is no graph. One per check, shared across classes; see <c>Analysis.ClassReferences</c>.
+    /// </summary>
+    public static Func<string, ClassReferenceTarget>? CreateClassReferenceLookup(DirectedGraph? graph)
+    {
+        if (graph == null) return null;
+        var references = new Analysis.ClassReferences(graph);
+        return references.TargetOf;
     }
 
     /// <summary>

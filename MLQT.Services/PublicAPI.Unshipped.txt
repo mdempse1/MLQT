@@ -1,4 +1,5 @@
 #nullable enable
+MLQT.Services.Checking.StyleCheckContext.ClassReferenceTarget.get -> System.Func<string!, ModelicaParser.StyleRules.ClassReferenceTarget>?
 MLQT.Services.DataTypes.LibrarySourceType.Supplied = 6 -> MLQT.Services.DataTypes.LibrarySourceType
 MLQT.Services.DataTypes.LoadedLibrary.IsReadOnly.get -> bool
 MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.get -> ModelicaGraph.ReadOnlySourceKind?

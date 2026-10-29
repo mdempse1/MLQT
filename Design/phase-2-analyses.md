@@ -158,8 +158,31 @@ and the message the shortest route round it with the first-by-name class making 
 on MSL 4.1 and Buildings: 24 and 20 cycles, all package-level coupling such as `Rotational.Interfaces`
 using `Rotational.Components.Fixed`, at 0.1 s each.
 
-## 5. The rest of broken references — not designed yet
+## 5. The rest of broken references — done (2026-10-29)
 
-Names in code shipped on 2026-10-25 as `MLQT.Reference.Undeclared`. What is left is putting
-`modelica://` references to classes on the same three-state footing: `MLQT.Reference.ModelReferences`
-(`CheckModelReferences`) reports every miss today, including one into a library that is not loaded.
+Names in code shipped on 2026-10-25 as `MLQT.Reference.Undeclared`. `modelica://` links to classes,
+`MLQT.Reference.ModelReferences`, are now on the same three-state footing.
+
+**The verdict.** `CheckModelReferences` is a per-class rule in ModelicaParser, which has no graph, so
+it was given the set of loaded ids and reported every name not in it. It now asks a verdict
+(`ClassReferenceTarget`: found, missing, cannot tell) built once per check in ModelicaGraph
+(`ClassReferences`, through `StyleChecking.CreateClassReferenceLookup` and `StyleCheckContext`, so the
+desktop app, the CLI and MCP all get it). The name is walked a segment at a time with
+`TypeResolver.MemberClass`, which finds inherited classes; a first segment not loaded cannot be told;
+a segment found nowhere is missing only if the class it was looked for in is complete.
+
+**One "complete", with a choice.** The completeness test was private to `UndeclaredNameAnalyzer`; it
+is now `ClassCompleteness`, shared. Building this found a decision the test suite already held: a
+link into an encrypted library's documented package, naming a class the documentation does not
+list, is reported (`EncryptedLibraryEndToEndTests`). The help HTML lists a package's classes but not
+every member, so for a class link a recovered class counts as known, and for an undeclared name it
+does not. `ClassCompleteness` takes which question it answers.
+
+**API.** `CheckModelReferences.WithVerdict` is a factory rather than a second constructor: two public
+overloads with optional parameters are a source break (RS0026/RS0027). `RunStyleCheckingFindings`
+gained a trailing optional `classReferenceTarget`, its shipped line moved to Unshipped; a trailing
+optional parameter is source-compatible for every caller that calls it.
+
+**Measured.** MSL 4.1: 7 findings before, all into ModelicaReference, not loaded; none after, and none
+with ModelicaReference loaded either, its quoted names (`'assert()'`) resolving. Buildings: 42 before
+and after, all broken, sampled against the source.

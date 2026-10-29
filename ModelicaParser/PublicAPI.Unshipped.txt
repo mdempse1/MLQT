@@ -15,6 +15,10 @@ ModelicaParser.Comparison.CosmeticCategory.Dialog = 2 -> ModelicaParser.Comparis
 ModelicaParser.Comparison.CosmeticCategory.Documentation = 1 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Graphics = 0 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Tooling = 3 -> ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.StyleRules.ClassReferenceTarget
+ModelicaParser.StyleRules.ClassReferenceTarget.CannotTell = 2 -> ModelicaParser.StyleRules.ClassReferenceTarget
+ModelicaParser.StyleRules.ClassReferenceTarget.Found = 0 -> ModelicaParser.StyleRules.ClassReferenceTarget
+ModelicaParser.StyleRules.ClassReferenceTarget.Missing = 1 -> ModelicaParser.StyleRules.ClassReferenceTarget
 static ModelicaParser.Comparison.SimulationAnnotations.CategoryOf(string! name) -> ModelicaParser.Comparison.CosmeticCategory?
 ModelicaParser.DataTypes.RuleSeverityText
 static ModelicaParser.DataTypes.RuleSeverityText.Of(ModelicaParser.DataTypes.RuleSeverity severity) -> string!
@@ -48,6 +52,7 @@ override ModelicaParser.StyleRules.GrammarConformance.VisitShort_class_specifier
 override ModelicaParser.StyleRules.GrammarConformance.VisitStatement(modelicaParser.StatementContext! context) -> object?
 override ModelicaParser.StyleRules.GrammarConformance.VisitTerminal(Antlr4.Runtime.Tree.ITerminalNode! node) -> object?
 static ModelicaParser.Helpers.ModelicaUriScanner.IsShownAsText(string! text, int uriStart) -> bool
+static ModelicaParser.StyleRules.CheckModelReferences.WithVerdict(System.Func<string!, ModelicaParser.StyleRules.ClassReferenceTarget>! target, string! basePackage = "") -> ModelicaParser.StyleRules.CheckModelReferences!
 static ModelicaParser.StyleRules.GrammarConformance.Code(ModelicaParser.StyleRules.GrammarConformance.Kind kind) -> string!
 ModelicaParser.Helpers.ToolBuiltIns
 const ModelicaParser.Helpers.ToolBuiltIns.Dymola = "Dymola" -> string!

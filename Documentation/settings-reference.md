@@ -274,6 +274,25 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT first re
 
 It does **not** check that the types a class uses (component types, `extends` base classes) resolve. [`MLQT.Reference.Undeclared`](#static-analysis-rules) does that, along with every other name a class uses; the MCP server's `mlqt_check` also has a references check of its own, for a class or a whole library — see [MCP server](mcp-server.md#checking-that-types-resolve).
 
+**A link is reported only when MLQT can tell it is broken.** Like `MLQT.Reference.Undeclared`, it
+follows the roadmap's three states — found, missing, or something MLQT cannot see — and reports only
+missing:
+
+- **A link into a library that is not loaded is not reported.** Whether
+  `modelica://ModelicaReference.Operators.'assert()'` exists says nothing about your library until
+  ModelicaReference is loaded; MSL has seven such links, and before this they were all reported.
+  Load the library it names (a [reference library](#reference-libraries) will do) and it is judged.
+- **A class a package inherits is found.** `modelica://Modelica.Media.Water.StandardWater.ThermodynamicState`
+  names a class `StandardWater` gets by extending `PartialMedium`, and is followed as every tool
+  follows it.
+- **A class missing from one whose base MLQT cannot read is not reported**, since that base could
+  declare it. A class recovered from an [encrypted library](encrypted-libraries.md)'s documentation
+  is not such a case: its documentation lists the classes it holds, so a link naming one it does not
+  list is reported.
+
+Over MSL 4.1 nothing is reported, and over Buildings the 42 links it reports are all broken — a typo
+(`PIDWIthAutotuning`), two names run together, classes since renamed or removed.
+
 The reference validator handles several edge cases found in real Modelica libraries:
 
 - **Quoted identifiers** — URIs like `modelica://ModelicaReference.Operators.'semiLinear()'` are matched exactly, preserving the single-quoted identifier including any special characters such as parentheses

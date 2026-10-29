@@ -47,6 +47,13 @@ opposite of the shared-pipeline principle that keeps GUI, CLI and MCP reporting 
 The cost is that a stub looks like an ordinary node to code that **writes**, and that is bought off
 with exactly one flag.
 
+**A stub is complete for one question and not the other** (`ModelicaGraph/Analysis/ClassCompleteness`).
+The help HTML lists the classes each package holds, so for *which classes are in it* - a `modelica://`
+link, `MLQT.Reference.ModelReferences` - a stub counts as known, and a link into a documented package
+naming a class the documentation does not list is reported. It does not list every member a class
+declares, so for *which names does it declare* - `MLQT.Reference.Undeclared` - a stub is incomplete
+and a miss there is never reported. `ClassCompleteness` takes `trustRecoveredClassLists` to say which.
+
 ### The one exception, and why it is not a crack in the rule
 
 **A class's members cannot be synthesized**, because a Modelica declaration needs a *type* and the

@@ -87,7 +87,7 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
 
         private readonly ClassElementResolver.InterfaceCache _interfaces = new();
         private readonly TypeResolver.AncestorCache _ancestors = new();
-        private readonly ConcurrentDictionary<string, bool> _complete = new(StringComparer.Ordinal);
+        private ClassCompleteness? _completeness;
         private readonly ConcurrentDictionary<string, bool> _expandable = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, bool> _replaceable = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string?> _predefinedRoot = new(StringComparer.Ordinal);
@@ -146,36 +146,10 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
         /// True when every member <paramref name="node"/> has is known: it is readable source, and every
         /// base it names resolves to a class of which the same is true.
         /// </summary>
-        public bool IsComplete(ModelNode node) => IsComplete(node, []);
-
-        private bool IsComplete(ModelNode node, HashSet<string> visiting)
-        {
-            if (_complete.TryGetValue(node.Id, out var known))
-                return known;
-            if (!visiting.Add(node.Id))
-                return true;  // a cycle adds nothing a member could come from
-
-            var complete = !node.IsExternalStub && !node.IsParseFailurePlaceholder;
-            if (complete)
-            {
-                var imports = ModelicaGraph.ClassImports.For(node.Definition);
-                foreach (var written in ModelicaGraph.ClassImports.BasesOf(node.Definition))
-                {
-                    if (TypeResolver.IsPredefined(written))
-                        continue;
-                    if (ClassElementResolver.ResolveBaseOf(graph, node, written, imports, _ancestors) is not { } baseNode
-                        || !IsComplete(baseNode, visiting))
-                    {
-                        complete = false;
-                        break;
-                    }
-                }
-            }
-
-            visiting.Remove(node.Id);
-            _complete[node.Id] = complete;
-            return complete;
-        }
+        // Made on first use, once however many threads ask: it needs _ancestors, which a field
+        // initializer cannot reach.
+        public bool IsComplete(ModelNode node) =>
+            LazyInitializer.EnsureInitialized(ref _completeness, () => new ClassCompleteness(graph, _ancestors)).IsComplete(node);
 
         /// <summary>
         /// Whether <paramref name="node"/> is declared <c>replaceable</c> (or <c>redeclare</c>) in the

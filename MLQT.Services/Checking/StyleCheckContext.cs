@@ -17,6 +17,14 @@ public sealed class StyleCheckContext
     public IReadOnlySet<string>? KnownModelIds { get; private init; }
 
     /// <summary>
+    /// What a <c>modelica://</c> class link leads to, in three states, when model-reference
+    /// validation is on; null otherwise. It is what the rule asks in place of
+    /// <see cref="KnownModelIds"/>, which can only say found or missing and so reported a link into
+    /// a library that is not loaded. One per check, shared by every class.
+    /// </summary>
+    public Func<string, ClassReferenceTarget>? ClassReferenceTarget { get; private init; }
+
+    /// <summary>
     /// Every class the graph holds, which is every class that gets a check of its own. Null for a
     /// check with no graph behind it (a snippet), where nothing else will report a nested class and
     /// its parent's walk is all there is. See <see cref="StyleCheckRunner"/>.
@@ -144,6 +152,7 @@ public sealed class StyleCheckContext
             // it when they are created, and one assigned later would leave their work unmeasured.
             Timings = timings,
             KnownModelIds = knownModelIds,
+            ClassReferenceTarget = settings.ValidateModelReferences ? StyleChecking.CreateClassReferenceLookup(graph) : null,
             ClassesCheckedSeparately = classIds,
             KnownModelNames = knownModelNames,
             SpellChecker = spellChecker,

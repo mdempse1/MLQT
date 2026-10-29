@@ -313,7 +313,8 @@ B501 is a limitation found while fixing how omc and Dymola are started, not a fa
 B505 is a limitation of the MCP server found measuring B503; what can be said and refused without a
 change of design is in place, and the rest is a design item.
 B520 is a small defect found tokenising the theme (2026-10-29) and left as it was, because that change
-was not to alter how anything looks.
+was not to alter how anything looks. B523 is a pair of intermittent failures seen on one day and not
+reproduced; like B492 and B496, find the cause from its evidence if it recurs.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
@@ -322,6 +323,7 @@ was not to alter how anything looks.
 | B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and a host that puts omc in a Job Object ends it when that host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
 | B505 | Tasks that share one MLQT MCP server share one session. A client keeps its servers across `/clear` and new sessions, subagents use their parent's, and sessions of one app running at once may share them; MCP gives a server no conversation id, and MLQT holds one copy of each library under ids that do not say whose. So a conversation can inherit what an earlier one loaded, and two tasks editing their own copies of one library would edit one copy. In place: every library says when it was loaded, a second copy is refused with why and what replacing it does (whatever its folder is called), a reset goes back to empty, and `analyse` flags a run whose server was not new. Until the design below, the documentation says to give each such task a server of its own | Design sessions scoped to a workspace inside one server: each task's libraries kept apart, keyed by the folder they were loaded from, with every call naming its workspace - an id `mlqt_load` returns, or the client's MCP roots where it sends them. Every tool takes part, so it needs a design note of its own |
 | B520 | The find-in-code match wash (`--mlqt-highlight-match`) dims for a dark theme under `@media (prefers-color-scheme: dark)`, which is the operating system's setting, not MLQT's. MLQT's Dark theme is chosen in its own settings and set through `MudThemeProvider.IsDarkMode`. So MLQT in Dark on a light desktop draws the bright wash the comment says glares on near-black, and MLQT in Light on a dark desktop draws the dim one on white. Not reported; found by reading | Key the dark value off MLQT's mode instead: a class on the layout root from `_isDarkMode`, or a MudBlazor palette variable that already differs between the two palettes. Then check `code-review` screenshots in both themes |
+| B523 | On 2026-10-29, while phase 2 was being built on the developer's machine: `build/check-coverage.ps1` stopped at `RevisionControl.Tests` as "did not pass" while every test in it reported passing, so the process exited non-zero after its results; and one run of `MLQT.Cli.Tests` failed 18 tests across `MultipleReportTests`, `ChangedFromChecksLessTests`, `CheckCommandTests`, `ReviewCommandTests` and three more, all of which drive the CLI over a git working copy in a temp folder. Neither reproduced: the gate passed when run again, and the CLI suite passed four times after, alone and after the MCP suite as before. The machine was slow that day (a journey run of 10+ minutes against the usual 2.5). The failures' messages were not kept - the output had been filtered | Keep the output whole: `dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli.trx`, and the coverage gate's full log. Look first at what the CLI tests share - the git temp folders and their clean-up - and at a test host exiting non-zero after its last test |
 ---
 
 ## Item ids
@@ -333,7 +335,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B523**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B524**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
@@ -417,7 +419,7 @@ to files instead of classes.
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | **Names in code shipped 2026-10-25** as `MLQT.Reference.Undeclared` (`UndeclaredNameAnalyzer`): variables, calls, types, bases, imports, members and modification targets, reported only in state 3. Left: `modelica://` references on the same three-state footing (`ValidateModelReferences` reports any miss) |
+| **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | **Names in code shipped 2026-10-25** as `MLQT.Reference.Undeclared` (`UndeclaredNameAnalyzer`): variables, calls, types, bases, imports, members and modification targets, reported only in state 3. **`modelica://` class links done (2026-10-29), ships in the next release**: `MLQT.Reference.ModelReferences` now reports only a link MLQT can tell is broken - not one into a library that is not loaded or a class with an unreadable base - and finds inherited classes. MSL 4.1 went from 7 findings to none; Buildings keeps its 42 real ones. See `Design/phase-2-analyses.md` §5 |
 | **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | Promotes the `ConnectorCompatibility` helper; connector *types* may be external → same three-state gate |
 | **Deprecated-API usage** | ⭐⭐ | M | References to `obsolete` classes + MSL-version compatibility. Needs the target library visible |
 | **Cyclic-dependency detection** | ⭐⭐ | S | **Done (2026-10-29), ships in the next release.** `MLQT.Structure.DependencyCycle`, off by default: packages under one parent that depend on each other, never classes, with examples (`experiment(...)`) left out. 24 cycles in MSL 4.1 and 20 in Buildings, at 0.1 s each. See `Design/phase-2-analyses.md` §4 |
