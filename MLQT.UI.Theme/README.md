@@ -46,8 +46,8 @@ different one.
 }
 ```
 
-To match MLQT's app bar, give yours `Color="Color.Primary"`, as MLQT's does. Left at MudBlazor's
-default, an app bar takes the palette's `AppbarBackground`, which is a different blue.
+A plain `<MudAppBar>` comes out in MLQT's primary colour, the same as MLQT's own, because the
+palettes set its background to that colour.
 
 **4. Load the assets in the order `ThemeAssetManifest` gives**, with your own around the middle:
 

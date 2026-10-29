@@ -46,7 +46,21 @@ public class MlqtThemeTests
         var palette = MlqtTheme.GetDefaultPaletteLight();
 
         AssertColour("#6a70b1", palette.Primary);
-        AssertColour("#6a93b1", palette.AppbarBackground);
+    }
+
+    [Fact]
+    public void APlainAppBar_IsThePrimaryColour_InBothPalettes()
+    {
+        // MLQT's own app bar asks for Color.Primary, so it is the primary colour whatever the palette's
+        // AppbarBackground says. A tool on the theme with a plain <MudAppBar> gets AppbarBackground -
+        // which was once a lighter blue, #6a93b1, that MLQT never showed and McpTester did. Equal, the
+        // two app bars match without the tool having to know to ask.
+        var light = MlqtTheme.GetDefaultPaletteLight();
+        var dark = MlqtTheme.GetDefaultPaletteDark();
+
+        AssertColour(light.Primary.Value, light.AppbarBackground);
+        AssertColour(dark.Primary.Value, dark.AppbarBackground);
+        AssertColour(light.Primary.Value, dark.AppbarBackground);
     }
 
     [Fact]

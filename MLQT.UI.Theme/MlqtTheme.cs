@@ -18,24 +18,36 @@ namespace MLQT.UI.Theme;
 /// </remarks>
 public static class MlqtTheme
 {
+    /// <summary>
+    /// MLQT's primary colour, which is also its app bar's.
+    /// </summary>
+    /// <remarks>
+    /// <para>The app bar's colour is the primary one in both palettes, so a tool's plain
+    /// <c>&lt;MudAppBar&gt;</c> looks like MLQT's without being told to. MLQT's own asks for
+    /// <c>Color.Primary</c>, which MudBlazor paints in <c>Primary</c> whatever <c>AppbarBackground</c>
+    /// says; the palettes once set that to a lighter blue, <c>#6a93b1</c>, which MLQT never showed and
+    /// every other tool on the theme did. The custom palette has always made the two one colour.</para>
+    /// </remarks>
+    private const string PrimaryColour = "#6a70b1";
+
     public static PaletteLight GetDefaultPaletteLight() => new PaletteLight()
     {
-        Primary = "#6a70b1",
+        Primary = PrimaryColour,
         Secondary = "#666666",
         Tertiary = "#a18ac1",
-        TextPrimary = "#6a70b1",
-        AppbarBackground = "#6a93b1",
+        TextPrimary = PrimaryColour,
+        AppbarBackground = PrimaryColour,
         AppbarText = "#ffffff",
-        Info = "#6a70b1",
+        Info = PrimaryColour,
         PrimaryContrastText = "#ffffff"
     };
 
     public static PaletteDark GetDefaultPaletteDark() => new PaletteDark()
     {
-        Primary = "#6a70b1",
+        Primary = PrimaryColour,
         Secondary = "#666666",
         Tertiary = "#a18ac1",
-        AppbarBackground = "#6a93b1",
+        AppbarBackground = PrimaryColour,
         AppbarText = "#ffffff",
         Background = "#32333d"
     };
