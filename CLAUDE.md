@@ -176,12 +176,13 @@ its screenshots are generated rather than taken). **Contributor documentation** 
 
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
 forward plan and what a release needs beyond CI. **Read the roadmap before starting anything
-substantial.** These three are the whole of `Design/`; one piece of work is planned in a note of its
-own: the unit-consistency flagship, not started.
+substantial.** These four are the whole of `Design/`; two pieces of work are planned in notes of
+their own: phase 2, in progress, and the unit-consistency flagship, not started.
 
 | Document | Covers |
 |----------|--------|
 | `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, where the project is, which design notes were retired into what, what was *decided against*, the *known open issues*, and the item-id rule |
+| `Design/phase-2-analyses.md` | **The design for phase 2, the Wave-2 analyses, in progress**: what every analysis shares (one `IGraphAnalyzer` each, three-state reporting, built off by default), then each analysis in turn, designed as it is started. Retire it when the phase ships |
 | `Design/unit-consistency.md` | **The design for the phase-3 unit / dimensional consistency check, not started**: what it builds on (measured), the unit algebra, three-state typing of an equation, the finding, the increments, and the questions the user decides first. Retire it when the check ships |
 | `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity and resolution corpora (opt-in, so an ordinary run says nothing about them), the nightly WebKit rehearsal, the `.deb` job that only a tag exercises, and the protected-build comparison of the MCP stack. Adding to it is a decision that something *cannot* be a gate on every push |
 
