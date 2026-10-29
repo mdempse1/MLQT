@@ -307,7 +307,7 @@ These rules find structural problems beyond the style/documentation checks above
 **off by default** — `MLQT.Structure.SingleFilePackage` is on. Enable them in the **Static analysis**
 section of the Edit Repository Details dialog — each rule has a per-rule **Off / Info / Warning /
 Error** selector, labelled with the rule's description and grouped under its category (Correctness,
-Units, Unused, Structure, Conformance, Resources), where **Error**
+Units, Unused, Structure, Conformance, Resources, Connections), where **Error**
 fails the CI quality gate and Warning/Info are reported only — or edit `settings.json` directly (see
 below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
 
@@ -335,6 +335,8 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Conformance.Grammar` | Warning | Code that parses only because MLQT's grammar accepts what Dymola accepts beyond the Modelica Language Specification 3.7. Each finding names the widening it relies on. See [Strict Modelica 3.7 syntax](#strict-modelica-37-syntax). | GUI, CLI, MCP |
 | `MLQT.Resource.Missing` | Error | A file or directory the code refers to that is not there: a `loadResource` call, a `modelica://` URI to a file, a `loadSelector` parameter's file, an external function's `Include` header, or an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation. The [External Resources](external-resources.md) tab shows the same references, and the two always agree. ◊ | GUI, CLI, MCP |
 | `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ | GUI, CLI, MCP |
+| `MLQT.Connection.Incompatible` | Error | A `connect` that joins two connectors which cannot be connected: a `Pin` to a `HeatPort`, a connector whose `i` is `flow` to one whose `i` is not, or a `Real` signal to an `Integer` one. The message names both connector classes and their members. ⊗ | GUI, CLI, MCP |
+| `MLQT.Connection.Duplicate` | Warning | The same two ports connected twice in one class, either way round and however spaced. The finding is on the second, and names the line of the first. ⊗ | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
 then in each enclosing class in turn, and a package directory's children are lexically nested inside
@@ -393,6 +395,20 @@ example rather than an image. Each reference is reported once per class, at the 
 written. Over MSL 4.1 and Buildings, the two rules together report five files that really are missing
 and nothing else. Whether a file exists is read from disk each time the check
 runs, so adding a missing file clears its finding on the next check.
+
+⊗ **Two connectors are compared by what they carry.** A connector with members is compared by their
+names and their `flow` or `stream` prefixes, inherited members included, so `Pin` (`v`, `flow i`)
+and `HeatPort` (`T`, `flow Q_flow`) differ. Member types are not compared. A connector defined as a
+value (`connector RealInput = input Real`, or one of type `SI.Voltage`) is that value's predefined
+type, so a `RealOutput` may feed a `VoltageInput`; causality and units are other questions. An alias
+(`connector PositivePin = Pin`) is the connector it names. Nothing is reported unless both ends are
+known: a port that does not resolve (that is `MLQT.Reference.Undeclared`'s to report), a connector
+that is encrypted or has a base that is not loaded, an `expandable` connector, whose members are
+whatever is connected to it, and a port declared `replaceable` are all left alone. A pair connected
+in both branches of an `if` is two connections that never exist together, and is not a duplicate;
+`a[1]` and `a[2]` are different ports. Over MSL 4.1 the two rules judge 99% of its 9,627 connections
+and report nothing; over Buildings they report 19 duplicates and no incompatible connection. Whether
+a connector is left unconnected, and whether two ports' directions agree, are not checked yet.
 
 #### Accepting a tool's built-ins
 

@@ -1,4 +1,12 @@
 #nullable enable
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.ConnectionIntegrityAnalyzer() -> void
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.ConnectorSignature
+ModelicaGraph.Analysis.ConnectorSignature.ConnectorSignature(ModelicaGraph.DirectedGraph! graph) -> void
+ModelicaGraph.Analysis.ConnectorSignature.Of(ModelicaGraph.DataTypes.ModelNode! connector) -> string?
 ModelicaGraph.Analysis.DependencyCycleAnalyzer
 ModelicaGraph.Analysis.DependencyCycleAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
 ModelicaGraph.Analysis.DependencyCycleAnalyzer.DependencyCycleAnalyzer() -> void
@@ -64,6 +72,10 @@ ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckDependencyCycles.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckDependencyCycles.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckDuplicateConnections.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckDuplicateConnections.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckIncompatibleConnections.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckIncompatibleConnections.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckMissingResources.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckMissingResources.set -> void
 ModelicaGraph.SuppliedText
@@ -85,6 +97,8 @@ override ModelicaGraph.ReadOnlySourceLoad.ToString() -> string!
 override ModelicaGraph.SuppliedText.Equals(object? obj) -> bool
 override ModelicaGraph.SuppliedText.GetHashCode() -> int
 override ModelicaGraph.SuppliedText.ToString() -> string!
+static ModelicaGraph.Analysis.ConnectorSignature.Describe(string! signature) -> string!
+static ModelicaGraph.Analysis.ConnectorSignature.HasMembers(string! signature) -> bool
 static ModelicaGraph.Analysis.ResourceProblem.operator !=(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool
 static ModelicaGraph.Analysis.ResourceProblem.operator ==(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool
 static ModelicaGraph.Analysis.ResourceProblems.Exists(ModelicaGraph.Interfaces.IGraphNode! node) -> bool

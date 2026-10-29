@@ -703,6 +703,16 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.DependencyCycle);
         set => SetRuleEnabled(RuleIds.DependencyCycle, value);
     }
+    public bool CheckIncompatibleConnections
+    {
+        get => IsRuleEnabled(RuleIds.IncompatibleConnection);
+        set => SetRuleEnabled(RuleIds.IncompatibleConnection, value);
+    }
+    public bool CheckDuplicateConnections
+    {
+        get => IsRuleEnabled(RuleIds.DuplicateConnection);
+        set => SetRuleEnabled(RuleIds.DuplicateConnection, value);
+    }
 
     /// <summary>
     /// The tools whose own built-in functions and flags <c>MLQT.Reference.Undeclared</c> accepts as

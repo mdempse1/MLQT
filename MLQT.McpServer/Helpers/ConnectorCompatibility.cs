@@ -59,35 +59,18 @@ internal static class ConnectorCompatibility
     }
 
     /// <summary>
-    /// A structural signature of a connector, ignoring input/output causality: an alias connector
-    /// (e.g. <c>connector RealInput = input Real</c>) by its base type; a composite connector by its
-    /// members' names and flow flags. Two connectors are compatible when their signatures are equal.
-    /// Null when the class is not a recognisable connector.
+    /// A structural signature of a connector, ignoring input/output causality, or null when MLQT
+    /// cannot tell what it is. Two connectors are compatible when their signatures are equal.
     /// </summary>
-    public static string? Signature(ILibraryDataService libraries, ModelNode connector)
-    {
-        var spec = connector.Definition.EnsureParsed()?.class_definition()?.FirstOrDefault()?.class_specifier();
-        if (spec is null)
-            return null;
-
-        if (spec.short_class_specifier() is { } shortSpec)
-        {
-            var baseType = shortSpec.type_specifier()?.GetText()?.Trim();
-            return string.IsNullOrEmpty(baseType) ? null : "alias:" + baseType;
-        }
-
-        if (spec.long_class_specifier() is not null)
-        {
-            var members = ClassElementResolver
-                .Collect(libraries.CombinedGraph, connector, includeProtected: false, includeInherited: true)
-                .Where(m => m.Element.Kind == ClassElementKind.Component)
-                .Select(m => $"{m.Element.Name}|{(m.Element.Connection == "flow" ? "flow" : "")}")
-                .OrderBy(s => s, StringComparer.Ordinal);
-            return "composite:" + string.Join(",", members);
-        }
-
-        return null;
-    }
+    /// <remarks>
+    /// <see cref="ConnectorSignature"/>, the definition <c>MLQT.Connection.Incompatible</c> uses, so
+    /// this tool and the rule cannot disagree about which connections are wrong. This file had its own
+    /// until phase 2, which read an alias connector (<c>connector Frame_a = Frame</c>) as the text
+    /// <c>alias:Frame</c> - never equal to Frame's own signature, so wiring an alias to its base was
+    /// refused - and ignored <c>stream</c>.
+    /// </remarks>
+    public static string? Signature(ILibraryDataService libraries, ModelNode connector) =>
+        new ConnectorSignature(libraries.CombinedGraph).Of(connector);
 
     public static bool SignaturesCompatible(string? a, string? b)
         => a is not null && b is not null && string.Equals(a, b, StringComparison.Ordinal);

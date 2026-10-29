@@ -88,7 +88,6 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
         private readonly ClassElementResolver.InterfaceCache _interfaces = new();
         private readonly TypeResolver.AncestorCache _ancestors = new();
         private ClassCompleteness? _completeness;
-        private readonly ConcurrentDictionary<string, bool> _expandable = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, bool> _replaceable = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string?> _predefinedRoot = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, IReadOnlySet<string>?> _literals = new(StringComparer.Ordinal);
@@ -223,24 +222,8 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
 
         /// <summary>Whether <paramref name="node"/> or a class it extends is an expandable connector,
         /// whose members are whatever is connected to it.</summary>
-        public bool IsExpandable(ModelNode node) => IsExpandable(node, []);
-
-        private bool IsExpandable(ModelNode node, HashSet<string> visiting)
-        {
-            if (_expandable.TryGetValue(node.Id, out var known))
-                return known;
-            if (!visiting.Add(node.Id))
-                return false;
-
-            var expandable = node.Definition.Borrow(
-                    tree => tree.class_definition() is [var c, ..] && c.class_prefixes()?.GetText().Contains("expandable") == true,
-                    false)
-                || ClassElementResolver.DirectBases(graph, node, _ancestors).Any(b => IsExpandable(b.Base, visiting));
-
-            visiting.Remove(node.Id);
-            _expandable[node.Id] = expandable;
-            return expandable;
-        }
+        public bool IsExpandable(ModelNode node) =>
+            LazyInitializer.EnsureInitialized(ref _completeness, () => new ClassCompleteness(graph, _ancestors)).IsExpandable(node);
 
         /// <summary>
         /// Whether a first segment that nothing declares could be a top-level class MLQT has not

@@ -54,6 +54,10 @@ public static class RuleIds
     // Packages that depend on each other (phase 2).
     public const string DependencyCycle = "MLQT.Structure.DependencyCycle";
 
+    // The connect equations a class writes (phase 2).
+    public const string IncompatibleConnection = "MLQT.Connection.Incompatible";
+    public const string DuplicateConnection = "MLQT.Connection.Duplicate";
+
     // Parse diagnostics. These are NOT style rules: they are always reported regardless of the
     // severity map and cannot be suppressed or baselined, because code that does not parse cannot
     // be meaningfully checked — every other rule silently under-reports on it.

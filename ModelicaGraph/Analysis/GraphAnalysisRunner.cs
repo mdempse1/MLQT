@@ -28,6 +28,7 @@ public static class GraphAnalysisRunner
         new UndeclaredNameAnalyzer(),
         new ExternalResourceAnalyzer(),
         new DependencyCycleAnalyzer(),
+        new ConnectionIntegrityAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)

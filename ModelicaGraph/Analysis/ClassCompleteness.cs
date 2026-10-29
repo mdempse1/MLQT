@@ -33,8 +33,33 @@ internal sealed class ClassCompleteness(
     DirectedGraph graph, TypeResolver.AncestorCache ancestors, bool trustRecoveredClassLists = false)
 {
     private readonly ConcurrentDictionary<string, bool> _complete = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, bool> _expandable = new(StringComparer.Ordinal);
 
     public bool IsComplete(ModelNode node) => IsComplete(node, []);
+
+    /// <summary>
+    /// Whether <paramref name="node"/> or a class it extends is an expandable connector, whose members
+    /// are whatever is connected to it - so nothing can be concluded from what it does or does not
+    /// declare. Asked beside <see cref="IsComplete"/> by every rule that judges a class by its members.
+    /// </summary>
+    public bool IsExpandable(ModelNode node) => IsExpandable(node, []);
+
+    private bool IsExpandable(ModelNode node, HashSet<string> visiting)
+    {
+        if (_expandable.TryGetValue(node.Id, out var known))
+            return known;
+        if (!visiting.Add(node.Id))
+            return false;
+
+        var expandable = node.Definition.Borrow(
+                tree => tree.class_definition() is [var c, ..] && c.class_prefixes()?.GetText().Contains("expandable") == true,
+                false)
+            || ClassElementResolver.DirectBases(graph, node, ancestors).Any(b => IsExpandable(b.Base, visiting));
+
+        visiting.Remove(node.Id);
+        _expandable[node.Id] = expandable;
+        return expandable;
+    }
 
     private bool IsComplete(ModelNode node, HashSet<string> visiting)
     {

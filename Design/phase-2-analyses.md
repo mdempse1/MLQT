@@ -116,12 +116,39 @@ back and appears when its file goes.
 `ResourceDirectoryNode` whose `DirectoryExists` is false, with nothing scanned in it. The tab then
 shows it, as it shows a missing file. A library with no binary stays unrecorded, as above.
 
-## 2. Connection integrity — not designed yet
+## 2. Connection integrity — incompatible and duplicate done (2026-10-29)
 
-Unconnected, incompatible and duplicate `connect` equations, and direction. It promotes the
-`ConnectorCompatibility` helper. Connector *types* may come from a library that is not loaded, so it
-needs the same three-state gate. `ConnectClauses` (ModelicaParser) is the one reader of a class's
-connections, nested ones included.
+`MLQT.Connection.Incompatible` (Error when on) and `MLQT.Connection.Duplicate` (Warning when on), off
+by default, in a new **Connections** category. `ConnectionIntegrityAnalyzer` reads each class's
+connects through `ConnectClauses.WithEquations`, the one reader, nested ones included.
+
+**One signature.** The MCP server's `ConnectorCompatibility` had a private signature for
+`add_connection`. Promoting it found a bug: an alias connector (`connector Frame_a = Frame`) was the
+text `alias:Frame`, which nothing equals, so wiring an alias to its base was refused - a rule built
+on it would have reported every such connection. It also ignored `stream`. `ConnectorSignature`
+(ModelicaGraph) is now the one definition, and the MCP helper delegates to it: members by name with
+`flow`/`stream`, inherited ones included; a value connector its predefined type (causality and unit
+are separate questions); an enumeration itself; an alias its base. Member types are not compared,
+which keeps it lenient - what it reports is two connectors with different members.
+
+**Three states.** A port resolves through `ClassElementResolver.ReferencesIn`, so through
+inheritance and with subscripts dropped. No signature - a connector not loaded, encrypted, with an
+unreadable base, or `expandable` - is "cannot tell". A port that does not resolve is
+`MLQT.Reference.Undeclared`'s, and a `replaceable` port is whatever a redeclaration makes it.
+
+**Duplicates** are the unordered pair, spacing removed outside quoted names, under the same
+`for`/`if`/`when` branches - the same pair in both branches of an `if` never exists twice. Reported
+on the second occurrence, naming the first's line.
+
+**Measured.** MSL 4.1: 99% of 9,627 connects judged, nothing reported, 0.9 s after running a class at
+a time in parallel (5.7 s serially). Buildings: no incompatible connection and 19 duplicates, sampled
+against the source and real.
+
+**Not done, and why.** *Direction* (an inside `input` joined to an inside `input`, and the rest of MLS
+§9.3) needs to know whether each end is an inside or outside connector and its causality through the
+whole chain of short classes. *Unconnected connectors* needs the whole instance - a connector left
+open in a partial model is connected in the class that extends it - which no analysis here has. Each
+is an increment of its own if wanted.
 
 ## 3. Deprecated-API usage — not designed yet
 

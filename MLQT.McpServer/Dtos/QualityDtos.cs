@@ -78,6 +78,11 @@ public sealed class StyleSettingsInput
                  "using Interfaces while Interfaces uses Components - with one route round it and the class " +
                  "that makes each step. Classes referring to each other are not reported.")]
     public bool? CheckDependencyCycles { get; set; }
+    [Description("Reports a connect joining two connectors of different structure - a Pin to a HeatPort, or members " +
+                 "that differ - only where both ports resolve and neither connector is encrypted, expandable or replaceable.")]
+    public bool? CheckIncompatibleConnections { get; set; }
+    [Description("Reports the same two ports connected twice in a class, either way round, under the same for/if/when branches.")]
+    public bool? CheckDuplicateConnections { get; set; }
 
     [Description("The tools whose own built-in functions and flags checkUndeclaredNames accepts as declared: " +
                  "\"Dymola\" (classDirectory(), Advanced.* and Hidden.* flags, Dymola_AST_*), \"OpenModelica\" " +
@@ -137,6 +142,8 @@ public sealed class StyleSettingsInput
         new(RuleIds.MissingResource, i => i.CheckMissingResources, (i, v) => i.CheckMissingResources = v),
         new(RuleIds.AbsoluteResourcePath, i => i.CheckAbsoluteResourcePaths, (i, v) => i.CheckAbsoluteResourcePaths = v),
         new(RuleIds.DependencyCycle, i => i.CheckDependencyCycles, (i, v) => i.CheckDependencyCycles = v),
+        new(RuleIds.IncompatibleConnection, i => i.CheckIncompatibleConnections, (i, v) => i.CheckIncompatibleConnections = v),
+        new(RuleIds.DuplicateConnection, i => i.CheckDuplicateConnections, (i, v) => i.CheckDuplicateConnections = v),
     ];
 
     /// <summary>The rules this input can set, for the test that holds it to <see cref="RuleCatalog"/>.</summary>

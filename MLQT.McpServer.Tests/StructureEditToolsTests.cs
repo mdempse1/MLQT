@@ -532,6 +532,14 @@ public class StructureEditToolsTests
             Sink sink1;
             Ground g1;
           end Sys;
+          connector PositivePin = Pin;
+          model Probe
+            PositivePin p;
+          end Probe;
+          model AliasSys
+            Ground g1;
+            Probe probe1;
+          end AliasSys;
         end C;
         """;
 
@@ -680,6 +688,17 @@ public class StructureEditToolsTests
             await LoadConn(host).AddConnection("C.Sys", "source1.y", "sink1.u"));
         Assert.True(res.Changed);
         Assert.Contains("connect(source1.y, sink1.u);", host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task AddConnection_AliasConnectorToItsBase_Allowed()
+    {
+        // connector PositivePin = Pin: the tool's own signature read it as "alias:Pin", which nothing
+        // equals, and refused this. It now shares ConnectorSignature with MLQT.Connection.Incompatible.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.AliasSys", "g1.p", "probe1.p"));
+        Assert.True(res.Changed);
     }
 
     [Fact]
