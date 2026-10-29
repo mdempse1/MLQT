@@ -239,6 +239,13 @@ public class ModelNode : GraphNode
     public bool HasExperimentAnnotation { get; set; }
 
     /// <summary>
+    /// The message of this class's own <c>obsolete</c> annotation, or null when it is not marked
+    /// obsolete. A class inside an obsolete package is obsolete too, which this does not say:
+    /// <c>ObsoleteClassAnalyzer</c> asks the enclosing classes.
+    /// </summary>
+    public string? ObsoleteMessage { get; set; }
+
+    /// <summary>
     /// Element-level prefix keywords (e.g., "redeclare", "inner replaceable") that precede
     /// the class definition. Empty when the class has no element prefix.
     /// </summary>

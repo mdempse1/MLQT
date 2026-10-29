@@ -251,6 +251,10 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
             {
                 modelInfo.HasExperimentAnnotation = true;
             }
+            else if (name == "obsolete")
+            {
+                modelInfo.ObsoleteMessage = ResourceArgument.SoleStringLiteral(elemMod.modification()?.modification_expression()) ?? string.Empty;
+            }
             else if (name == "version")
             {
                 // version="1.2.3" -> modification -> '=' modification_expression -> expression (STRING)

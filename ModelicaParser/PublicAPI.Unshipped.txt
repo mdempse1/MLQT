@@ -4,6 +4,7 @@ const ModelicaParser.StyleRules.RuleIds.DependencyCycle = "MLQT.Structure.Depend
 const ModelicaParser.StyleRules.RuleIds.DuplicateConnection = "MLQT.Connection.Duplicate" -> string!
 const ModelicaParser.StyleRules.RuleIds.IncompatibleConnection = "MLQT.Connection.Incompatible" -> string!
 const ModelicaParser.StyleRules.RuleIds.MissingResource = "MLQT.Resource.Missing" -> string!
+const ModelicaParser.StyleRules.RuleIds.ObsoleteClass = "MLQT.Reference.Obsolete" -> string!
 ModelicaParser.Comparison.ClassSignature.Dialog.get -> string!
 ModelicaParser.Comparison.ClassSignature.Dialog.init -> void
 ModelicaParser.Comparison.ClassSignature.Documentation.get -> string!
@@ -17,6 +18,8 @@ ModelicaParser.Comparison.CosmeticCategory.Dialog = 2 -> ModelicaParser.Comparis
 ModelicaParser.Comparison.CosmeticCategory.Documentation = 1 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Graphics = 0 -> ModelicaParser.Comparison.CosmeticCategory
 ModelicaParser.Comparison.CosmeticCategory.Tooling = 3 -> ModelicaParser.Comparison.CosmeticCategory
+ModelicaParser.DataTypes.ModelInfo.ObsoleteMessage.get -> string?
+ModelicaParser.DataTypes.ModelInfo.ObsoleteMessage.set -> void
 ModelicaParser.StyleRules.ClassReferenceTarget
 ModelicaParser.StyleRules.ClassReferenceTarget.CannotTell = 2 -> ModelicaParser.StyleRules.ClassReferenceTarget
 ModelicaParser.StyleRules.ClassReferenceTarget.Found = 0 -> ModelicaParser.StyleRules.ClassReferenceTarget

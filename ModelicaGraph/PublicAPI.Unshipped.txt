@@ -19,6 +19,12 @@ ModelicaGraph.Analysis.ExternalResourceAnalyzer.ExternalResourceAnalyzer() -> vo
 ModelicaGraph.Analysis.ExternalResourceAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.ExternalResourceAnalyzer.NeedsDependencyAnalysis.get -> bool
 ModelicaGraph.Analysis.ExternalResourceAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.NeedsDependencyAnalysis.get -> bool
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.ObsoleteClassAnalyzer() -> void
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.ResourceProblem
 ModelicaGraph.Analysis.ResourceProblem.<Clone>$() -> ModelicaGraph.Analysis.ResourceProblem!
 ModelicaGraph.Analysis.ResourceProblem.Deconstruct(out ModelicaGraph.Analysis.ResourceProblemKind Kind, out string! ModelId, out string! RawPath, out string! ResolvedPath, out ModelicaParser.DataTypes.ResourceReferenceType ReferenceType) -> void
@@ -38,6 +44,8 @@ ModelicaGraph.Analysis.ResourceProblemKind
 ModelicaGraph.Analysis.ResourceProblemKind.AbsolutePath = 1 -> ModelicaGraph.Analysis.ResourceProblemKind
 ModelicaGraph.Analysis.ResourceProblemKind.Missing = 0 -> ModelicaGraph.Analysis.ResourceProblemKind
 ModelicaGraph.Analysis.ResourceProblems
+ModelicaGraph.DataTypes.ModelNode.ObsoleteMessage.get -> string?
+ModelicaGraph.DataTypes.ModelNode.ObsoleteMessage.set -> void
 ModelicaGraph.IReadOnlyClassSource
 ModelicaGraph.IReadOnlyClassSource.Kind.get -> ModelicaGraph.ReadOnlySourceKind
 ModelicaGraph.IReadOnlyClassSource.LibraryName.get -> string!
@@ -78,6 +86,8 @@ ModelicaGraph.StyleCheckingSettings.CheckIncompatibleConnections.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckIncompatibleConnections.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckMissingResources.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckMissingResources.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckObsoleteClasses.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckObsoleteClasses.set -> void
 ModelicaGraph.SuppliedText
 ModelicaGraph.SuppliedText.<Clone>$() -> ModelicaGraph.SuppliedText!
 ModelicaGraph.SuppliedText.Deconstruct(out string! RelativePath, out string! Text) -> void

@@ -135,6 +135,16 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
         return references;
     }
 
+    /// <summary>
+    /// The package the walked text sits in, for a class's own stored source, which carries no
+    /// <c>within</c> clause: without it the class would be taken for a top-level one, and its
+    /// references looked up from the wrong scope.
+    /// </summary>
+    internal string Within
+    {
+        init => _withinPrefix = value;
+    }
+
     public IReadOnlyList<ReferenceSite> Sites => _sites;
 
     /// <summary>The <c>redeclare</c>s in modifications that replace a target class.</summary>

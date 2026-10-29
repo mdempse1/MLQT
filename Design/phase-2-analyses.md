@@ -150,10 +150,47 @@ whole chain of short classes. *Unconnected connectors* needs the whole instance 
 open in a partial model is connected in the class that extends it - which no analysis here has. Each
 is an increment of its own if wanted.
 
-## 3. Deprecated-API usage — not designed yet
+## 3. Deprecated-API usage — obsolete classes done (2026-10-29)
 
-References to classes marked `obsolete`, and compatibility with a given MSL version. It needs the
-target library visible, so a reference into one that is not loaded is "cannot tell".
+`MLQT.Reference.Obsolete`, Warning when on, off by default, in **Correctness**.
+`ObsoleteClassAnalyzer`. Nothing in MLQT read the `obsolete` annotation before.
+
+**Read at load.** `ModelExtractorVisitor` reads the class annotation's `obsolete` with the
+`experiment` it already looked for, onto `ModelInfo.ObsoleteMessage` and `ModelNode.ObsoleteMessage`:
+the message, empty for a mark that is not one string literal, null for none. Kept on the class like
+`HasExperimentAnnotation`, so asking costs no parse.
+
+**What is obsolete.** The class marked, and everything inside it, with the outermost mark winning so
+the reader is told about the package. The annotation is not inherited (MLS §18.1 does not say it is,
+and a class extending an obsolete one is the user to tell).
+
+**Finding the uses.** The dependency edges say which classes a class uses, so a class using nothing
+obsolete is passed over without reading its text - which is nearly every class. Where one does, the
+`ReferenceLocator` the rename and move tools use finds each site, resolved as dependency analysis
+resolves it; a class's own stored text carries no `within`, so the locator is told its package
+(`Within`, internal). A package's text holds its inline children, which are checked as themselves, so
+only sites whose scope is the class itself count. One finding per obsolete class per user, at its
+first use.
+
+**Three states.** Obsolete is something MLQT reads, never infers: a class not loaded or encrypted
+shows no annotation and is never reported. That can only under-report.
+
+**Not reported:** a use from a class that is itself obsolete, or inside one. Exempting a package called
+`Obsolete`, or the obsolete class's sibling `Validation` package, was considered and not done - the
+same reasoning as `Examples` in §4: it is a convention, not the language, and `__MLQT(suppress=...)` on
+the package waives every class inside it.
+
+**Measured.** MSL 4.1: nothing (its obsolete `TLine1`-`3` are unused). Buildings: 84, every one inside
+`Buildings.Obsolete` - validation models and the old G36 sequences using the obsolete blocks they sit
+beside, sampled against the source. 0.2 s.
+
+**Not done: compatibility with a given MSL version.** MSL's `conversion` annotation and its
+3.2.3-to-4.0.0 script say which names a library written for an older version must change. A library
+loaded against a newer MSL than it declares is already refused by the CLI unless
+`--allow-version-mismatch`, and a name the newer version removed is already
+`MLQT.Reference.Undeclared`. What is left is a better message for that finding - "renamed to X in
+4.0.0", read from the script - and judging a class added after the declared version, which needs the
+declared version loaded. Either is an increment of its own if wanted.
 
 ## 4. Cyclic-dependency detection — done (2026-10-29)
 

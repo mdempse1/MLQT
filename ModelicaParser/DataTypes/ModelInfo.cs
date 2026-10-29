@@ -83,6 +83,13 @@ public class ModelInfo
     public bool HasExperimentAnnotation { get; set; }
 
     /// <summary>
+    /// The message of the outermost class's <c>obsolete</c> annotation (MLS §18.1), or null when the
+    /// class is not marked obsolete. Empty when it is marked with something other than one string
+    /// literal, which still marks it.
+    /// </summary>
+    public string? ObsoleteMessage { get; set; }
+
+    /// <summary>
     /// Element-level prefix keywords (e.g., "redeclare", "inner replaceable") that precede
     /// the class definition in the parent element rule. Empty when the class has no element prefix.
     /// These prefixes are not part of the class_definition grammar rule and cannot appear

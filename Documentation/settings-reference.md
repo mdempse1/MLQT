@@ -337,6 +337,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ | GUI, CLI, MCP |
 | `MLQT.Connection.Incompatible` | Error | A `connect` that joins two connectors which cannot be connected: a `Pin` to a `HeatPort`, a connector whose `i` is `flow` to one whose `i` is not, or a `Real` signal to an `Integer` one. The message names both connector classes and their members. ⊗ | GUI, CLI, MCP |
 | `MLQT.Connection.Duplicate` | Warning | The same two ports connected twice in one class, either way round and however spaced. The finding is on the second, and names the line of the first. ⊗ | GUI, CLI, MCP |
+| `MLQT.Reference.Obsolete` | Warning | A use of a class its library marks `annotation(obsolete="...")`, or of anything inside a package marked that way: a component's type, a base class, a function called, an import or a constant. The message quotes the library's, which usually names the replacement. ⊘ | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
 then in each enclosing class in turn, and a package directory's children are lexically nested inside
@@ -409,6 +410,18 @@ in both branches of an `if` is two connections that never exist together, and is
 `a[1]` and `a[2]` are different ports. Over MSL 4.1 the two rules judge 99% of its 9,627 connections
 and report nothing; over Buildings they report 19 duplicates and no incompatible connection. Whether
 a connector is left unconnected, and whether two ports' directions agree, are not checked yet.
+
+⊘ **What counts as obsolete, and who is told.** A class is obsolete when it carries the `obsolete`
+annotation itself or sits inside a class that does; the annotation is not inherited, so extending an
+obsolete class is a use of it, not a way of becoming one. A class that is obsolete itself, or sits
+inside an obsolete one, may use others without a finding, since obsolete classes use each other. Each
+obsolete class is reported once per class using it, at its first use. A class MLQT cannot read, such
+as one in an encrypted library, shows no annotation and is never known to be obsolete. Over MSL 4.1
+the rule reports nothing. Over Buildings it reports 84 uses, all inside `Buildings.Obsolete`: the
+library keeps validation models and older sequences there beside the obsolete classes they use,
+without marking them. A holding package like that is waived for every class inside it with
+`__MLQT(suppress="MLQT.Reference.Obsolete")` on the package. Whether a library is compatible with a
+given version of the Modelica Standard Library is not checked yet.
 
 #### Accepting a tool's built-ins
 

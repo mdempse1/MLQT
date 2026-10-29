@@ -29,6 +29,7 @@ public static class GraphAnalysisRunner
         new ExternalResourceAnalyzer(),
         new DependencyCycleAnalyzer(),
         new ConnectionIntegrityAnalyzer(),
+        new ObsoleteClassAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)

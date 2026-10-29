@@ -128,6 +128,7 @@ public static class GraphBuilder
                 modelNode.IsPublic = modelInfo.IsPublic;
                 modelNode.CanBeStoredStandalone = modelInfo.CanBeStoredStandalone;
                 modelNode.HasExperimentAnnotation = modelInfo.HasExperimentAnnotation;
+                modelNode.ObsoleteMessage = modelInfo.ObsoleteMessage;
                 modelNode.ElementPrefix = modelInfo.ElementPrefix;
                 modelNode.Version = modelInfo.Version;
                 modelNode.Uses = modelInfo.Uses;

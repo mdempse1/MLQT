@@ -58,6 +58,9 @@ public static class RuleIds
     public const string IncompatibleConnection = "MLQT.Connection.Incompatible";
     public const string DuplicateConnection = "MLQT.Connection.Duplicate";
 
+    // A class the library marks obsolete, used (phase 2).
+    public const string ObsoleteClass = "MLQT.Reference.Obsolete";
+
     // Parse diagnostics. These are NOT style rules: they are always reported regardless of the
     // severity map and cannot be suppressed or baselined, because code that does not parse cannot
     // be meaningfully checked — every other rule silently under-reports on it.

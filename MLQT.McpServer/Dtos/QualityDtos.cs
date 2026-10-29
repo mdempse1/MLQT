@@ -83,6 +83,9 @@ public sealed class StyleSettingsInput
     public bool? CheckIncompatibleConnections { get; set; }
     [Description("Reports the same two ports connected twice in a class, either way round, under the same for/if/when branches.")]
     public bool? CheckDuplicateConnections { get; set; }
+    [Description("Reports a use of a class its library marks obsolete (annotation(obsolete=...)), or of one inside " +
+                 "an obsolete package, quoting the library's message. Uses from inside an obsolete class are not reported.")]
+    public bool? CheckObsoleteClasses { get; set; }
 
     [Description("The tools whose own built-in functions and flags checkUndeclaredNames accepts as declared: " +
                  "\"Dymola\" (classDirectory(), Advanced.* and Hidden.* flags, Dymola_AST_*), \"OpenModelica\" " +
@@ -144,6 +147,7 @@ public sealed class StyleSettingsInput
         new(RuleIds.DependencyCycle, i => i.CheckDependencyCycles, (i, v) => i.CheckDependencyCycles = v),
         new(RuleIds.IncompatibleConnection, i => i.CheckIncompatibleConnections, (i, v) => i.CheckIncompatibleConnections = v),
         new(RuleIds.DuplicateConnection, i => i.CheckDuplicateConnections, (i, v) => i.CheckDuplicateConnections = v),
+        new(RuleIds.ObsoleteClass, i => i.CheckObsoleteClasses, (i, v) => i.CheckObsoleteClasses = v),
     ];
 
     /// <summary>The rules this input can set, for the test that holds it to <see cref="RuleCatalog"/>.</summary>

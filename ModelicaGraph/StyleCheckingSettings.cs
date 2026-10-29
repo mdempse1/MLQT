@@ -713,6 +713,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.DuplicateConnection);
         set => SetRuleEnabled(RuleIds.DuplicateConnection, value);
     }
+    public bool CheckObsoleteClasses
+    {
+        get => IsRuleEnabled(RuleIds.ObsoleteClass);
+        set => SetRuleEnabled(RuleIds.ObsoleteClass, value);
+    }
 
     /// <summary>
     /// The tools whose own built-in functions and flags <c>MLQT.Reference.Undeclared</c> accepts as

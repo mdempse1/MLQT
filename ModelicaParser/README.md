@@ -102,6 +102,7 @@ The `ModelInfo` class provides:
 | `StartIndex` / `StopIndex` | `int` | Character offsets in the source (-1 when unknown) |
 | `ElementPrefix` | `string` | `replaceable`/`redeclare`/`inner`/`outer` prefixes, if any |
 | `HasExperimentAnnotation` | `bool` | Carries an `experiment` annotation |
+| `ObsoleteMessage` | `string?` | The `obsolete` annotation's message; empty when it is not one string, null when the class is not marked |
 | `Version` | `string?` | The `version` annotation, if any |
 
 ### Code Formatting with ModelicaRenderer
