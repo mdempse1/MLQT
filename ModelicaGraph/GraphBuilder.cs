@@ -1017,23 +1017,29 @@ public static class GraphBuilder
             case ResourceReferenceType.ExternalSourceDirectory:
                 // These are directory references - create directory node AND scan for files within
                 resolvedPath = ResolveModelicaUri(info.RawPath, libraries, FilePathOf(model, graph));
-                if (resolvedPath != null && Directory.Exists(resolvedPath))
-                {
-                    // Create the directory node
-                    var dirNode = graph.GetOrCreateResourceDirectoryNode(resolvedPath);
-                    var dirEdge = new ResourceEdge
-                    {
-                        RawPath = info.RawPath,
-                        ReferenceType = info.ReferenceType,
-                        ParameterName = info.ParameterName,
-                        IsAbsolutePath = IsAbsoluteFilePath(info.RawPath)
-                    };
-                    try
-                    {
-                        graph.AddModelReferencesResource(model.Id, dirNode.Id, dirEdge);
-                    }
-                    catch { /* Edge may already exist */ }
+                if (resolvedPath == null)
+                    return;   // into a library that is not loaded: cannot tell, so nothing recorded
 
+                // Recorded whether or not the directory is there. One the annotation names and the
+                // library does not have was dropped here until phase 2, so neither the tab nor
+                // MLQT.Resource.Missing could report it: a class could declare an IncludeDirectory
+                // that did not exist and nothing anywhere noticed.
+                var dirNode = graph.GetOrCreateResourceDirectoryNode(resolvedPath);
+                var dirEdge = new ResourceEdge
+                {
+                    RawPath = info.RawPath,
+                    ReferenceType = info.ReferenceType,
+                    ParameterName = info.ParameterName,
+                    IsAbsolutePath = IsAbsoluteFilePath(info.RawPath)
+                };
+                try
+                {
+                    graph.AddModelReferencesResource(model.Id, dirNode.Id, dirEdge);
+                }
+                catch { /* Edge may already exist */ }
+
+                if (Directory.Exists(resolvedPath))
+                {
                     // Scan directory for source files and create nodes for each
                     // Note: IncludeDirectory often contains both .c and .h files in practice (e.g., C-Sources)
                     var extensions = info.ReferenceType switch

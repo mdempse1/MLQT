@@ -35,7 +35,7 @@ public static class ModelicaUriScanner
                 uriEnd++;
 
             var uri = text[uriStart..uriEnd];
-            if (NamesAFile(uri))
+            if (NamesAFile(uri) && !IsShownAsText(text, uriStart))
                 yield return uri;
 
             startIndex = uriEnd;
@@ -43,16 +43,38 @@ public static class ModelicaUriScanner
     }
 
     /// <summary>
+    /// Whether the URI at <paramref name="uriStart"/> is part of HTML the documentation shows as text
+    /// rather than markup it renders: its opening quote written as an entity, <c>&amp;quot;</c> or
+    /// <c>&amp;#34;</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>In a Modelica documentation string the HTML's own quotes are <c>\"</c>.
+    /// <c>&amp;lt;img src=&amp;quot;modelica://…&amp;quot;&amp;gt;</c> renders as the characters
+    /// <c>&lt;img src="modelica://…"&gt;</c> - an example of how to write an image, which is what MSL's
+    /// <c>UsersGuide.Conventions</c> uses it for. It names no file the library needs.</para>
+    ///
+    /// <para>Measured over MSL and Buildings: 1,792 image references written with <c>\"</c>, five with
+    /// <c>&amp;quot;</c>, and all five in that guide's examples. B209 took the entity form for the
+    /// ordinary one and kept those five as references, cut at the entity, so the External Resources
+    /// tab listed the guide's example image as a missing file - and <c>MLQT.Resource.Missing</c>, run
+    /// over MSL, reported it. <c>CheckModelReferences</c> had always skipped them, for this reason, with
+    /// a copy of this test of its own; it uses this one now.</para>
+    /// </remarks>
+    public static bool IsShownAsText(string text, int uriStart) =>
+        EndsAt(text, uriStart, "&quot;", StringComparison.OrdinalIgnoreCase)
+        || EndsAt(text, uriStart, "&#34;", StringComparison.Ordinal);
+
+    private static bool EndsAt(string text, int end, string entity, StringComparison comparison) =>
+        end >= entity.Length && string.Compare(text, end - entity.Length, entity, 0, entity.Length, comparison) == 0;
+
+    /// <summary>
     /// Where a URI stops.
     /// </summary>
     /// <remarks>
-    /// <para><c>&amp;</c> is the one that was missing (B209). A Modelica documentation string carries
-    /// HTML inside a Modelica string, so the HTML's own quotes are commonly written as entities:</para>
-    /// <code>&amp;lt;img src=&amp;quot;modelica://Modelica/Resources/Images/foo.png&amp;quot;&amp;gt;</code>
-    /// <para>With no literal quote to stop at, the scan ran past the end of the file name and kept the
-    /// entity — <c>foo.png&amp;quot;</c> — a path that cannot exist and is therefore reported missing
-    /// for ever. The Modelica Standard Library has two of those, and one of them names a file that is
-    /// on disk. No Modelica resource path contains <c>&amp;</c>, so stopping there costs nothing.</para>
+    /// <para><c>&amp;</c> was added for B209, which met a URI between entity quotes,
+    /// <c>&amp;quot;modelica://…/foo.png&amp;quot;</c>, and read on past the file name into the entity.
+    /// Such a URI is now not a reference at all (<see cref="IsShownAsText"/>), but no Modelica resource
+    /// path contains <c>&amp;</c>, so stopping there still costs nothing.</para>
     /// </remarks>
     private static bool IsTerminator(char c) =>
         char.IsWhiteSpace(c) || c is '"' or '\'' or '>' or '<' or ')' or '&' or '\\';

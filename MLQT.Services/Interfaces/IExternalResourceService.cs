@@ -58,4 +58,23 @@ public interface IExternalResourceService
     /// Gets all resource references across all models.
     /// </summary>
     List<ExternalResourceReference> GetAllResources();
+
+    /// <summary>
+    /// Raised when a referenced resource file is added, changed or deleted on disk, after the change
+    /// is queued. The desktop app counts these with the library file changes on its refresh button.
+    /// </summary>
+    event Action? OnPendingResourceChangesUpdated;
+
+    /// <summary>How many referenced resource files have changed on disk and not yet been taken.</summary>
+    int PendingResourceChangeCount { get; }
+
+    /// <summary>
+    /// The classes that reference a resource file changed on disk since the last call, which are the
+    /// ones whose resource analysis and checks are out of date, and clears the queue.
+    /// </summary>
+    /// <remarks>
+    /// Until B521 the watchers queued each change where nothing read it, so a file that was restored
+    /// or deleted changed nothing on screen until the project was reloaded.
+    /// </remarks>
+    IReadOnlyList<string> TakePendingResourceChanges();
 }

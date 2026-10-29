@@ -1,4 +1,5 @@
 using Antlr4.Runtime.Misc;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.StyleRules;
 
@@ -67,7 +68,7 @@ public class CheckModelReferences : VisitorWithModelNameTracking
 
             // Skip HTML entity-encoded links (e.g., &quot;modelica://...&quot; in example code).
             // These appear when documentation shows HTML source as visible text.
-            if (IsInsideHtmlEntity(text, uriStart))
+            if (ModelicaUriScanner.IsShownAsText(text, uriStart))
             {
                 startIndex = uriStart + "modelica://".Length;
                 continue;
@@ -124,21 +125,6 @@ public class CheckModelReferences : VisitorWithModelNameTracking
 
             startIndex = uriEnd;
         }
-    }
-
-    /// <summary>
-    /// Checks whether the modelica:// URI at the given position is preceded by an HTML entity
-    /// like &amp;quot; or &amp;#34;, indicating it's inside entity-encoded example markup
-    /// rather than a real link.
-    /// </summary>
-    private static bool IsInsideHtmlEntity(string text, int uriStart)
-    {
-        // Look for &quot; or &#34; immediately before the URI
-        if (uriStart >= 6 && text.Substring(uriStart - 6, 6).Equals("&quot;", StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (uriStart >= 5 && text.Substring(uriStart - 5, 5).Equals("&#34;", StringComparison.Ordinal))
-            return true;
-        return false;
     }
 
     private static string StripQuotes(string text)

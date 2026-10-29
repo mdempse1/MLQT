@@ -126,14 +126,13 @@ public class ResourceRuleParityTests
     }
 
     [Fact]
-    public void TheGraphBuild_StopsAnEntityQuotedUriAtTheFileName()
+    public void TheGraphBuild_TreatsAnEntityQuotedUriAsText()
     {
+        // HTML shown as text, not an image: see ModelicaUriScanner.IsShownAsText.
         var found = ByGraphBuild(
             """model TestModel annotation(Documentation(info="&lt;img src=&quot;modelica://Lib/Resources/Images/foo.png&quot;&gt;")); end TestModel;""");
 
-        var uri = Assert.Single(found);
-        Assert.Equal(ResourceReferenceType.UriReference, uri.ReferenceType);
-        Assert.Equal("modelica://Lib/Resources/Images/foo.png", uri.RawPath);
+        Assert.Empty(found);
     }
 
     [Fact]
@@ -175,11 +174,13 @@ public class ResourceRuleParityTests
     }
 
     /// <summary>
-    /// B209 end to end: through <c>GraphBuilder.AnalyzeDependenciesAsync</c>, the entity-quoted image
-    /// resolves to the file on disk rather than to a missing <c>foo.png&amp;quot;</c>.
+    /// End to end, through <c>GraphBuilder.AnalyzeDependenciesAsync</c>: an image written with the
+    /// documentation's own quotes resolves to the file on disk, and the same image shown as text, with
+    /// entity quotes, is no reference at all. B209 took the second for the first; MSL writes 1,261
+    /// images the first way and five the second, all of them examples in UsersGuide.Conventions.
     /// </summary>
     [Fact]
-    public async Task AnalyzeDependencies_ResolvesAnEntityQuotedImageToTheFileOnDisk()
+    public async Task AnalyzeDependencies_ResolvesAnImage_AndLeavesTheSameImageShownAsTextAlone()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "ResParity_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -191,7 +192,8 @@ public class ResourceRuleParityTests
 
             const string content = """
                 model Lib "A model"
-                  annotation (Documentation(info="&lt;img src=&quot;modelica://Lib/Resources/Images/foo.png&quot;&gt;"));
+                  annotation (Documentation(info="<img src=\"modelica://Lib/Resources/Images/foo.png\">
+                    Written like this: &lt;img src=&quot;modelica://Lib/Resources/Images/example.png&quot;&gt;"));
                 end Lib;
                 """;
 

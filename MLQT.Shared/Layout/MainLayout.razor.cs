@@ -121,6 +121,7 @@ public partial class MainLayout : IDisposable
 
         RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
         FileMonitoringService.OnPendingChangesUpdated += OnPendingChangesUpdated;
+        ExternalResourceService.OnPendingResourceChangesUpdated += OnPendingChangesUpdated;
         StyleCheckingService.OnProgressChanged += OnStyleCheckingProgressChanged;
         // Persist background style-checking findings here, in the always-mounted layout, rather than
         // in the CodeReview page — otherwise findings are dropped whenever checking runs while the
@@ -1518,6 +1519,7 @@ public partial class MainLayout : IDisposable
         RepositoryService.OnProjectChanged -= OnProjectChanged;
         RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
         FileMonitoringService.OnPendingChangesUpdated -= OnPendingChangesUpdated;
+        ExternalResourceService.OnPendingResourceChangesUpdated -= OnPendingChangesUpdated;
         StyleCheckingService.OnProgressChanged -= OnStyleCheckingProgressChanged;
         StyleCheckingService.OnFindingsFound -= OnStyleFindingsFound;
         StyleCheckingService.OnSpellCheckWarning -= OnSpellCheckWarning;
@@ -1951,7 +1953,8 @@ public partial class MainLayout : IDisposable
     {
         await InvokeAsync(() =>
         {
-            _pendingChangesCount = FileMonitoringService.GetPendingChangesSummary().TotalChanges;
+            _pendingChangesCount = FileMonitoringService.GetPendingChangesSummary().TotalChanges
+                                   + ExternalResourceService.PendingResourceChangeCount;
             StateHasChanged();
         });
     }
@@ -1981,6 +1984,9 @@ public partial class MainLayout : IDisposable
             parts.Add($"{summary.DeletedFiles} deleted");
         if (summary.RenamedFiles > 0)
             parts.Add($"{summary.RenamedFiles} renamed");
+        var resourceChanges = ExternalResourceService.PendingResourceChangeCount;
+        if (resourceChanges > 0)
+            parts.Add($"{resourceChanges} resource file{(resourceChanges == 1 ? "" : "s")} changed");
 
         return $"Refresh libraries ({string.Join(", ", parts)})";
     }
@@ -2007,9 +2013,22 @@ public partial class MainLayout : IDisposable
         try
         {
             var pendingChanges = FileMonitoringService.PendingChanges.ToList();
+
+            // The classes whose referenced resource files changed on disk (B521). Counted on this
+            // button with the library files, and re-checked here, because until now a restored or
+            // deleted resource file changed nothing on screen until the project was reloaded.
+            var resourceChangedModels = ExternalResourceService.TakePendingResourceChanges();
+
             if (pendingChanges.Count == 0)
             {
-                Snackbar.Add("No pending changes to process", Severity.Info);
+                if (resourceChangedModels.Count == 0)
+                {
+                    Snackbar.Add("No pending changes to process", Severity.Info);
+                    return;
+                }
+
+                await RecheckResourceChangesAsync(resourceChangedModels);
+                Snackbar.Add($"Re-checked {resourceChangedModels.Count} class(es) whose resource files changed", Severity.Success);
                 return;
             }
 
@@ -2131,6 +2150,9 @@ public partial class MainLayout : IDisposable
             FileMonitoringService.ClearPendingChanges();
             pause.Dispose();
 
+            // Resource changes for classes the library changes did not already re-check.
+            await RecheckResourceChangesAsync(resourceChangedModels.Except(affectedModelIds).ToList());
+
             LogProcessEnd("MainLayout", $"Processing {pendingChanges.Count} file changes");
             Snackbar.Add($"Successfully processed {pendingChanges.Count} file changes", Severity.Success);
         }
@@ -2142,8 +2164,34 @@ public partial class MainLayout : IDisposable
         finally
         {
             _isRefreshing = false;
+            // The resource queue was taken above and raises nothing when it empties.
+            OnPendingChangesUpdated();
             StateHasChanged();
         }
+    }
+
+    /// <summary>
+    /// Brings the resource analysis and the findings of <paramref name="modelIds"/> up to date after
+    /// files they reference changed on disk: the External Resources tab, and the checks - the graph
+    /// analyses among them, which is where <c>MLQT.Resource.Missing</c> is decided. Both read whether a
+    /// file exists from disk when they run (<c>ResourceProblems</c>), so re-running them is enough.
+    /// </summary>
+    private async Task RecheckResourceChangesAsync(IReadOnlyList<string> modelIds)
+    {
+        var graph = LibraryDataService.CombinedGraph;
+        var present = modelIds.Where(id => graph.GetNode<ModelNode>(id) is not null).ToList();
+        if (present.Count == 0)
+            return;
+
+        Info("MainLayout", $"Re-checking {present.Count} class(es) whose resource files changed");
+
+        if (NavState.HasExternalResourcesAnalyzed)
+            await ExternalResourceService.AnalyzeResourcesForModelsAsync(present, graph);
+
+        CodeReviewService.RemoveLogMessagesForModels(present);
+        // The clear above takes the parser findings with it — put them back.
+        SurfaceParserErrors(present);
+        await Task.Run(async () => await StyleCheckingService.CheckModelsAsync(present, graph));
     }
 
     /// <summary>

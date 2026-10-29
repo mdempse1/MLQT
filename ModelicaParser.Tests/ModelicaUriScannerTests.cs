@@ -13,15 +13,28 @@ namespace ModelicaParser.Tests;
 /// </summary>
 public class ModelicaUriScannerTests
 {
-    [Fact]
-    public void AnEntityQuotedUriStopsAtTheFileName()
+    [Theory]
+    [InlineData("&lt;img src=&quot;modelica://Modelica/Resources/Images/foo.png&quot;&gt;")]
+    [InlineData("&lt;img src=&#34;modelica://Modelica/Resources/Images/foo.png&#34;&gt;")]
+    [InlineData("&lt;img src=&QUOT;modelica://Modelica/Resources/Images/foo.png&QUOT;&gt;")]
+    public void AnEntityQuotedUri_IsHtmlShownAsText_NotAReference(string text)
     {
-        // The defect. Documentation carries HTML inside a Modelica string, so its quotes are written
-        // as entities and there is no literal quote to stop at.
-        var found = ModelicaUriScanner.FindFileUris(
-            "&lt;img src=&quot;modelica://Modelica/Resources/Images/foo.png&quot;&gt;").ToList();
+        // B209 took this for the ordinary way documentation writes an image and kept the URI, cut at
+        // the entity. It is the opposite: in a Modelica string the HTML's quotes are \", and this form
+        // renders as the characters <img src="..."> - an example. Over MSL and Buildings, 1,792 images
+        // are written with \" and five like this, all in UsersGuide.Conventions' examples, so the
+        // External Resources tab listed the guide's example picture as a missing file.
+        Assert.Empty(ModelicaUriScanner.FindFileUris(text));
+    }
 
-        Assert.Equal(["modelica://Modelica/Resources/Images/foo.png"], found);
+    [Fact]
+    public void AnEntityBeforeTheUri_IsWhatSaysSo_NotOneSomewhereElse()
+    {
+        const string text = "&quot;example&quot; then <img src=\"modelica://Lib/Resources/a.png\">";
+
+        Assert.Equal(["modelica://Lib/Resources/a.png"], ModelicaUriScanner.FindFileUris(text).ToList());
+        Assert.False(ModelicaUriScanner.IsShownAsText(text, text.IndexOf("modelica://", StringComparison.Ordinal)));
+        Assert.False(ModelicaUriScanner.IsShownAsText("modelica://Lib/a.png", 0));
     }
 
     [Theory]
@@ -38,7 +51,7 @@ public class ModelicaUriScannerTests
     public void SeveralUrisInOneStringAreAllFound()
     {
         var found = ModelicaUriScanner.FindFileUris(
-            "&quot;modelica://Lib/Resources/a.png&quot; and &quot;modelica://Lib/Resources/b.mat&quot;").ToList();
+            "\"modelica://Lib/Resources/a.png\" and \"modelica://Lib/Resources/b.mat\"").ToList();
 
         Assert.Equal(["modelica://Lib/Resources/a.png", "modelica://Lib/Resources/b.mat"], found);
     }

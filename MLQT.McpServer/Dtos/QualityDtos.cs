@@ -67,6 +67,13 @@ public sealed class StyleSettingsInput
     [Description("Reports code that parses only because MLQT also accepts what Dymola accepts beyond the Modelica 3.7 " +
                  "grammar, such as a class annotation before the elements, ':=' in a modification, or an escape MLS does not define.")]
     public bool? CheckGrammarConformance { get; set; }
+    [Description("Reports a file or directory the code refers to that does not exist: loadResource, modelica:// URIs, " +
+                 "loadSelector parameters, external Include headers and Include/Library/Source directory annotations. " +
+                 "A reference into a library that is not loaded is never reported.")]
+    public bool? CheckMissingResources { get; set; }
+    [Description("Reports a resource referred to by an absolute file-system path rather than a modelica:// URI or a " +
+                 "relative path, since it exists only on the machine it was written on.")]
+    public bool? CheckAbsoluteResourcePaths { get; set; }
 
     [Description("The tools whose own built-in functions and flags checkUndeclaredNames accepts as declared: " +
                  "\"Dymola\" (classDirectory(), Advanced.* and Hidden.* flags, Dymola_AST_*), \"OpenModelica\" " +
@@ -123,6 +130,8 @@ public sealed class StyleSettingsInput
         new(RuleIds.UnusedMember, i => i.CheckUnusedMembers, (i, v) => i.CheckUnusedMembers = v),
         new(RuleIds.UndeclaredName, i => i.CheckUndeclaredNames, (i, v) => i.CheckUndeclaredNames = v),
         new(RuleIds.GrammarConformance, i => i.CheckGrammarConformance, (i, v) => i.CheckGrammarConformance = v),
+        new(RuleIds.MissingResource, i => i.CheckMissingResources, (i, v) => i.CheckMissingResources = v),
+        new(RuleIds.AbsoluteResourcePath, i => i.CheckAbsoluteResourcePaths, (i, v) => i.CheckAbsoluteResourcePaths = v),
     ];
 
     /// <summary>The rules this input can set, for the test that holds it to <see cref="RuleCatalog"/>.</summary>

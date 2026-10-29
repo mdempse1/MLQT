@@ -79,7 +79,7 @@ Next to the file type filters, a separate set of chips headed **Warnings:** lets
 
 | Filter | What It Shows |
 |--------|---------------|
-| **Missing** | Resources where the file or directory does not exist on disk. This includes resolved paths that point to non-existent files and unresolved `modelica://` URIs that could not be mapped to a path at all. |
+| **Missing** | Resources where the file or directory does not exist on disk: a file a reference resolves to, or a directory an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation names. A `modelica://` URI into a library that is not loaded is not here, since MLQT cannot tell where it would be (see [References MLQT cannot resolve](#references-mlqt-cannot-resolve)). |
 | **Absolute Paths** | Resources referenced using non-portable absolute paths (e.g., `C:\Data\file.mat`) instead of `modelica://` URIs. These will break when the library is used on a different machine. |
 
 When a warning filter is active it decides on its own what is shown, and the file type filters are set aside: selecting "Missing" shows everything that is missing, whatever kind of file it is. That is deliberate — the file type filters cover only data, C code and libraries by default, so combining the two used to hide missing images, documents and anything with an unusual extension while the chip went on counting them.
@@ -110,9 +110,14 @@ Files and annotated directories show a count in parentheses after their name, in
 
 Regular (non-annotated) directories do not show a count.
 
-### Unresolved References
+### References MLQT cannot resolve
 
-If MLQT cannot resolve a `modelica://` URI to a file on disk, the resource appears under a special **`<Unresolved References>`** node in the tree. These are shown with warning icons and indicate potential problems — the referenced file may have been moved, deleted, or the URI may be incorrect.
+A `modelica://` URI names a library, and MLQT can only say where it points when that library is
+loaded. One into a library that is not loaded is **not shown at all**, rather than shown as missing:
+whether the file exists says nothing about the library you are looking at, and a library that refers
+to the Modelica Standard Library's resources would otherwise be all warnings until MSL was loaded.
+Load the library it names (as a [reference library](settings-reference.md#reference-libraries) if you
+do not work on it) and its references appear.
 
 ## Detail Panel
 
@@ -152,8 +157,26 @@ Warnings in the External Resources view help identify potential problems:
 |---------|---------|--------|
 | **File not found** | The referenced file does not exist at the resolved path | Check if the file was deleted, moved, or never committed to the repository |
 | **Directory not found** | An annotated directory (Include, Library, or Source) does not exist | The external function annotations may reference a directory that needs to be created or populated |
-| **Could not resolve path** | A `modelica://` URI could not be mapped to a file on disk | Check for typos in the URI, or ensure the referenced library is loaded |
 | **Absolute path is not portable: <path>** | The resource is referenced using an absolute path rather than a `modelica://` URI | Absolute paths break portability — consider converting to a `modelica://` URI |
+
+A reference is warned about on the class that writes it. A package stored in one file contains the
+source of the classes nested in it, but a reference written in `Lib.Components.Reader` is
+`Lib.Components.Reader`'s, not the package's.
+
+### When a file changes on disk
+
+MLQT watches the folders your resources are in. Add, delete or restore a referenced file outside MLQT
+and the **Refresh** button above the library tree counts it, with a badge and a tooltip such as
+"1 resource file changed", the same way it counts a changed `.mo` file. Click it and the classes that
+reference the file are checked again, so this page and the findings list catch up together.
+
+## Reporting these as findings
+
+The same two problems can be reported by the checks, so that `mlqt check` and a CI build see them
+and not only this page: switch on **`MLQT.Resource.Missing`** and **`MLQT.Resource.AbsolutePath`** in
+the **Static analysis** section of the repository's settings (category *Resources*). Both are off
+unless you switch them on. They decide what is a problem exactly as this page does, so the findings
+and the warnings here always agree. See [Static Analysis Rules](settings-reference.md#static-analysis-rules).
 
 ## Practical Use Cases
 

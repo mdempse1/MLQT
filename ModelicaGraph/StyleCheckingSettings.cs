@@ -688,6 +688,16 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.UndeclaredName);
         set => SetRuleEnabled(RuleIds.UndeclaredName, value);
     }
+    public bool CheckMissingResources
+    {
+        get => IsRuleEnabled(RuleIds.MissingResource);
+        set => SetRuleEnabled(RuleIds.MissingResource, value);
+    }
+    public bool CheckAbsoluteResourcePaths
+    {
+        get => IsRuleEnabled(RuleIds.AbsoluteResourcePath);
+        set => SetRuleEnabled(RuleIds.AbsoluteResourcePath, value);
+    }
 
     /// <summary>
     /// The tools whose own built-in functions and flags <c>MLQT.Reference.Undeclared</c> accepts as

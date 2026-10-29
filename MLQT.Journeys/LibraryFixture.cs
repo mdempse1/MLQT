@@ -559,6 +559,26 @@ public sealed class LibraryFixture : IDisposable
     }
 
     /// <summary>
+    /// Switches the named rules on at their catalogue severity, in the repository's
+    /// <c>.mlqt/settings.json</c>. Call before adding the repository; it replaces any settings
+    /// file <see cref="EnableFormatting"/> wrote.
+    /// </summary>
+    public void EnableRules(params string[] ruleIds)
+    {
+        var mlqt = Path.Combine(RepositoryPath, ".mlqt");
+        Directory.CreateDirectory(mlqt);
+        var severities = string.Join(",\n    ", ruleIds.Select(id =>
+            $"\"{id}\": \"{ModelicaParser.StyleRules.RuleCatalog.BuiltIn[id].DefaultSeverity}\""));
+        File.WriteAllText(Path.Combine(mlqt, "settings.json"), $$"""
+            {
+              "RuleSeverities": {
+                {{severities}}
+              }
+            }
+            """);
+    }
+
+    /// <summary>
     /// Adds <c>Broken.mo</c>, a class with a syntax error that is also laid out the way the formatter
     /// would put right - so a formatter that ignored the error would visibly rewrite it (B414).
     /// </summary>

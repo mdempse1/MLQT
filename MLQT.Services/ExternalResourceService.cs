@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using MLQT.Services.DataTypes;
@@ -113,16 +114,21 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         bool isImageFile = false;
         bool isDirectory = false;
 
+        // What is wrong with this reference, decided where MLQT.Resource.Missing and
+        // MLQT.Resource.AbsolutePath decide it, so the tab and the findings cannot disagree. It also
+        // reads existence from the disk now, rather than trusting the node's flag from whenever the
+        // node was made (B521).
+        var problems = ResourceProblems.Of(graph, edge).ToList();
+        fileExists = !problems.Any(p => p.Kind == ResourceProblemKind.Missing);
+
         if (resourceNode is ResourceFileNode fileNode)
         {
             resolvedPath = fileNode.ResolvedPath;
-            fileExists = fileNode.FileExists;
             isImageFile = fileNode.IsImageFile;
         }
         else if (resourceNode is ResourceDirectoryNode dirNode)
         {
             resolvedPath = dirNode.ResolvedPath;
-            fileExists = dirNode.DirectoryExists;
             isDirectory = true;
 
             // Also add entries for files contained within this directory.
@@ -170,11 +176,9 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
             }
         }
 
-        // Generate warnings (skip for directories and non-path reference types)
-        if (!isDirectory)
-        {
-            GenerateWarnings(reference);
-        }
+        // Directories included: a directory annotation that names nothing is recorded since phase 2,
+        // and the rule reports it, so the tab has to as well.
+        GenerateWarnings(problems);
     }
 
     public List<ExternalResourceReference> GetResourcesForModel(string modelId)
@@ -335,32 +339,30 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
     }
 
     /// <summary>
-    /// Generates warnings for a resource reference.
+    /// The tab's warnings for one reference: the problems <see cref="ResourceProblems"/> found, each
+    /// as the warning the page shows.
     /// </summary>
-    private void GenerateWarnings(ExternalResourceReference reference)
+    private void GenerateWarnings(IReadOnlyList<ResourceProblem> problems)
     {
         lock (_lock)
         {
-            if (reference.IsAbsolutePath)
+            foreach (var problem in problems)
             {
-                _warnings.Add(new ResourceWarning
-                {
-                    ModelId = reference.ModelId,
-                    ResourcePath = reference.RawPath,
-                    WarningType = ResourceWarningType.AbsolutePath,
-                    Message = $"Absolute path is not portable: {reference.RawPath}"
-                });
-            }
-
-            if (reference.ResolvedPath != null && !reference.FileExists)
-            {
-                _warnings.Add(new ResourceWarning
-                {
-                    ModelId = reference.ModelId,
-                    ResourcePath = reference.ResolvedPath,
-                    WarningType = ResourceWarningType.MissingFile,
-                    Message = $"Resource file not found: {reference.ResolvedPath}"
-                });
+                _warnings.Add(problem.Kind == ResourceProblemKind.AbsolutePath
+                    ? new ResourceWarning
+                    {
+                        ModelId = problem.ModelId,
+                        ResourcePath = problem.RawPath,
+                        WarningType = ResourceWarningType.AbsolutePath,
+                        Message = $"Absolute path is not portable: {problem.RawPath}"
+                    }
+                    : new ResourceWarning
+                    {
+                        ModelId = problem.ModelId,
+                        ResourcePath = problem.ResolvedPath,
+                        WarningType = ResourceWarningType.MissingFile,
+                        Message = $"Resource file not found: {problem.ResolvedPath}"
+                    });
             }
         }
     }
@@ -547,6 +549,7 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         _lastChange[normalizedPath] = (now, changeType);
 
         // Consolidate changes (matching FileMonitoringService pattern)
+        var cancelledOut = false;
         lock (_lock)
         {
             var existingIndex = _pendingResourceChanges.FindIndex(c =>
@@ -563,7 +566,7 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
                 {
                     // Added + Deleted = no net change
                     _pendingResourceChanges.RemoveAt(existingIndex);
-                    return;
+                    cancelledOut = true;
                 }
                 else if (existing.ChangeType == WatcherChangeTypes.Created &&
                          changeType == WatcherChangeTypes.Changed)
@@ -607,7 +610,16 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
             }
         }
 
-        // Look up affected models and fire event
+        // Raised outside the lock: a subscriber marshals onto the UI thread, and under Photino that
+        // waits for it (desktop-host skill), so raising while holding a lock invites a deadlock.
+        if (cancelledOut)
+        {
+            OnPendingResourceChangesUpdated?.Invoke();
+            return;
+        }
+
+        // Look up affected models, and say a change is waiting. Until B521 this only logged, under a
+        // comment saying it fired an event, and nothing ever read the queue above.
         List<string> affectedModels;
         lock (_lock)
         {
@@ -620,6 +632,39 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
         {
             Debug("ExternalResourceService",
                 $"Resource file {changeType}: {fullPath} (affects {affectedModels.Count} model(s))");
+        }
+
+        OnPendingResourceChangesUpdated?.Invoke();
+    }
+
+    /// <inheritdoc/>
+    public event Action? OnPendingResourceChangesUpdated;
+
+    /// <inheritdoc/>
+    public int PendingResourceChangeCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _pendingResourceChanges.Count;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> TakePendingResourceChanges()
+    {
+        lock (_lock)
+        {
+            var affected = _pendingResourceChanges
+                .SelectMany(change => _reverseIndex.TryGetValue(change.ResolvedPath, out var models)
+                    ? models
+                    : Enumerable.Empty<string>())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            _pendingResourceChanges.Clear();
+            return affected;
         }
     }
 

@@ -1,7 +1,9 @@
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaGraph.Interfaces;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using MLQT.Services.DataTypes;
 
 namespace MLQT.Services.Tests;
@@ -540,8 +542,11 @@ public class ExternalResourceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AnalyzeResources_DirectoryDoesNotExist_NoWarningGenerated()
+    public async Task AnalyzeResources_DirectoryDoesNotExist_IsAMissingResource()
     {
+        // Until phase 2 a missing directory produced no warning. It was never in the graph either,
+        // so nothing could have produced one; now the graph build records it and
+        // MLQT.Resource.Missing reports it, so the tab has to say the same.
         var missingDir = Path.Combine(_tempDir, "Resources", "MissingSources");
 
         var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
@@ -551,11 +556,80 @@ public class ExternalResourceServiceTests : IDisposable
 
         await _service.AnalyzeResourcesAsync(graph);
 
-        // Directories don't generate warnings (only files do)
         var modelResources = _service.GetResourcesForModel("TestLib.TestModel");
         Assert.Single(modelResources);
         Assert.False(modelResources[0].FileExists);
         Assert.True(modelResources[0].IsDirectory);
+
+        var warning = Assert.Single(_service.GetWarnings());
+        Assert.Equal(ResourceWarningType.MissingFile, warning.WarningType);
+        Assert.Equal(missingDir, warning.ResourcePath);
+    }
+
+    [Fact]
+    public async Task AFileThatComesBack_IsNoLongerMissing_OnTheNextAnalysis()
+    {
+        // B521: the graph's node kept its answer from when it was made, so the tab said "missing"
+        // until the project was reloaded. Existence is read from disk when the analysis asks.
+        var file = Path.Combine(_tempDir, "Resources", "late.mat");
+        var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
+        {
+            (file, ResourceReferenceType.LoadResource, "modelica://TestLib/Resources/late.mat", false)
+        });
+        await _service.AnalyzeResourcesAsync(graph);
+        Assert.Single(_service.GetWarnings());
+
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "");
+        await _service.AnalyzeResourcesAsync(graph);
+
+        Assert.Empty(_service.GetWarnings());
+        Assert.True(Assert.Single(_service.GetResourcesForModel("TestLib.TestModel")).FileExists);
+    }
+
+    [Fact]
+    public async Task TheTabsWarnings_AreTheRulesFindings()
+    {
+        // The tab and MLQT.Resource.* decide through one primitive, so over the same graph they report
+        // the same problems against the same classes - a nested reference included, which the graph
+        // also records against every enclosing class in the file.
+        var libraryRoot = Path.Combine(_tempDir, "TestLib");
+        Directory.CreateDirectory(libraryRoot);
+        var absolute = Path.Combine(_tempDir, "elsewhere.mat").Replace('\\', '/');
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(libraryRoot, "package.mo"), $$"""
+            package TestLib
+              package Inner
+                model Reader
+                  parameter String a = Modelica.Utilities.Files.loadResource("modelica://TestLib/Resources/a.mat");
+                  parameter String b = Modelica.Utilities.Files.loadResource("{{absolute}}");
+                end Reader;
+              end Inner;
+              function f
+                input Real x;
+                output Real y;
+                external "C" y = f(x) annotation(IncludeDirectory="modelica://TestLib/Resources/C-Sources");
+              end f;
+            end TestLib;
+            """);
+        await GraphBuilder.AnalyzeDependenciesAsync(graph, [new LibraryInfo("TestLib", libraryRoot)]);
+
+        await _service.AnalyzeResourcesAsync(graph);
+        var settings = new StyleCheckingSettings { CheckMissingResources = true, CheckAbsoluteResourcePaths = true };
+        var findings = new ExternalResourceAnalyzer()
+            .Analyze(new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList(), dependenciesAnalyzed: true))
+            .ToList();
+
+        var fromTab = _service.GetWarnings()
+            .Select(w => (w.ModelId, Missing: w.WarningType == ResourceWarningType.MissingFile))
+            .Order().ToList();
+        var fromRule = findings
+            .Select(f => (f.ModelId, Missing: f.RuleId == RuleIds.MissingResource))
+            .Order().ToList();
+
+        Assert.Equal(4, fromRule.Count);   // a.mat and the absolute file missing, the absolute path, the directory
+        Assert.Equal(fromRule, fromTab);
+        Assert.DoesNotContain(fromTab, w => w.ModelId == "TestLib" || w.ModelId == "TestLib.Inner");
     }
 
     [Fact]
@@ -1022,6 +1096,72 @@ public class ExternalResourceServiceTests : IDisposable
         var pending = _service.GetPendingChanges();
         Assert.Single(pending);
         Assert.Equal(WatcherChangeTypes.Changed, pending[0].ChangeType);
+    }
+
+    [Fact]
+    public async Task ATrackedChange_IsAnnounced_AndTakenOnce_AsTheClassesThatReferenceIt()
+    {
+        // B521: the queue above was written and never read, so a restored or deleted file changed
+        // nothing on screen. The desktop app counts these on its refresh button and re-checks the
+        // classes that reference them.
+        var resourceDir = Path.Combine(_tempDir, "TakeTest");
+        Directory.CreateDirectory(resourceDir);
+        var resourceFile = Path.Combine(resourceDir, "data.mat");
+        var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
+        {
+            (resourceFile, ResourceReferenceType.LoadResource, "modelica://TestLib/data.mat", false)
+        });
+        await _service.AnalyzeResourcesAsync(graph);
+        var raised = 0;
+        _service.OnPendingResourceChangesUpdated += () => raised++;
+
+        _service.OnResourceFileSystemEvent(resourceDir, resourceFile, WatcherChangeTypes.Created);
+
+        Assert.Equal(1, raised);
+        Assert.Equal(1, _service.PendingResourceChangeCount);
+        Assert.Equal(["TestLib.TestModel"], _service.TakePendingResourceChanges());
+        Assert.Equal(0, _service.PendingResourceChangeCount);
+        Assert.Empty(_service.TakePendingResourceChanges());
+    }
+
+    [Fact]
+    public async Task AChangeThatCancelsOut_IsStillAnnounced_SoTheCountComesDown()
+    {
+        var resourceDir = Path.Combine(_tempDir, "CancelTest");
+        Directory.CreateDirectory(resourceDir);
+        var resourceFile = Path.Combine(resourceDir, "data.mat");
+        var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
+        {
+            (resourceFile, ResourceReferenceType.LoadResource, "modelica://TestLib/data.mat", false)
+        });
+        await _service.AnalyzeResourcesAsync(graph);
+        var raised = 0;
+        _service.OnPendingResourceChangesUpdated += () => raised++;
+
+        _service.OnResourceFileSystemEvent(resourceDir, resourceFile, WatcherChangeTypes.Created);
+        _service.OnResourceFileSystemEvent(resourceDir, resourceFile, WatcherChangeTypes.Deleted);
+
+        Assert.Equal(2, raised);
+        Assert.Equal(0, _service.PendingResourceChangeCount);
+    }
+
+    [Fact]
+    public async Task AnUntrackedChange_IsNotAnnounced()
+    {
+        var resourceDir = Path.Combine(_tempDir, "UntrackedAnnounce");
+        Directory.CreateDirectory(resourceDir);
+        var graph = CreateGraphWithResourceNodes("TestLib.TestModel", new List<(string, ResourceReferenceType, string, bool)>
+        {
+            (Path.Combine(resourceDir, "data.mat"), ResourceReferenceType.LoadResource, "modelica://TestLib/data.mat", false)
+        });
+        await _service.AnalyzeResourcesAsync(graph);
+        var raised = 0;
+        _service.OnPendingResourceChangesUpdated += () => raised++;
+
+        _service.OnResourceFileSystemEvent(resourceDir, Path.Combine(resourceDir, "other.txt"), WatcherChangeTypes.Created);
+
+        Assert.Equal(0, raised);
+        Assert.Equal(0, _service.PendingResourceChangeCount);
     }
 
     [Fact]

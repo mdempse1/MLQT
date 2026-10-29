@@ -1,4 +1,29 @@
 #nullable enable
+ModelicaGraph.Analysis.ExternalResourceAnalyzer
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.ExternalResourceAnalyzer() -> void
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.NeedsDependencyAnalysis.get -> bool
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.ResourceProblem
+ModelicaGraph.Analysis.ResourceProblem.<Clone>$() -> ModelicaGraph.Analysis.ResourceProblem!
+ModelicaGraph.Analysis.ResourceProblem.Deconstruct(out ModelicaGraph.Analysis.ResourceProblemKind Kind, out string! ModelId, out string! RawPath, out string! ResolvedPath, out ModelicaParser.DataTypes.ResourceReferenceType ReferenceType) -> void
+ModelicaGraph.Analysis.ResourceProblem.Equals(ModelicaGraph.Analysis.ResourceProblem? other) -> bool
+ModelicaGraph.Analysis.ResourceProblem.Kind.get -> ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblem.Kind.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ModelId.get -> string!
+ModelicaGraph.Analysis.ResourceProblem.ModelId.init -> void
+ModelicaGraph.Analysis.ResourceProblem.RawPath.get -> string!
+ModelicaGraph.Analysis.ResourceProblem.RawPath.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ReferenceType.get -> ModelicaParser.DataTypes.ResourceReferenceType
+ModelicaGraph.Analysis.ResourceProblem.ReferenceType.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ResolvedPath.get -> string!
+ModelicaGraph.Analysis.ResourceProblem.ResolvedPath.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ResourceProblem(ModelicaGraph.Analysis.ResourceProblemKind Kind, string! ModelId, string! RawPath, string! ResolvedPath, ModelicaParser.DataTypes.ResourceReferenceType ReferenceType) -> void
+ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblemKind.AbsolutePath = 1 -> ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblemKind.Missing = 0 -> ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblems
 ModelicaGraph.IReadOnlyClassSource
 ModelicaGraph.IReadOnlyClassSource.Kind.get -> ModelicaGraph.ReadOnlySourceKind
 ModelicaGraph.IReadOnlyClassSource.LibraryName.get -> string!
@@ -29,6 +54,10 @@ ModelicaGraph.ReadOnlySourceLoad.Superseded.get -> int
 ModelicaGraph.ReadOnlySourceLoad.Superseded.init -> void
 ModelicaGraph.ReadOnlySourceLoader
 ModelicaGraph.ReadOnlySources
+ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckMissingResources.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckMissingResources.set -> void
 ModelicaGraph.SuppliedText
 ModelicaGraph.SuppliedText.<Clone>$() -> ModelicaGraph.SuppliedText!
 ModelicaGraph.SuppliedText.Deconstruct(out string! RelativePath, out string! Text) -> void
@@ -39,12 +68,20 @@ ModelicaGraph.SuppliedText.SuppliedText(string! RelativePath, string! Text) -> v
 ModelicaGraph.SuppliedText.Text.get -> string!
 ModelicaGraph.SuppliedText.Text.init -> void
 const ModelicaGraph.ReadOnlySources.InMemoryPathPrefix = "mlqt-readonly://" -> string!
+override ModelicaGraph.Analysis.ResourceProblem.Equals(object? obj) -> bool
+override ModelicaGraph.Analysis.ResourceProblem.GetHashCode() -> int
+override ModelicaGraph.Analysis.ResourceProblem.ToString() -> string!
 override ModelicaGraph.ReadOnlySourceLoad.Equals(object? obj) -> bool
 override ModelicaGraph.ReadOnlySourceLoad.GetHashCode() -> int
 override ModelicaGraph.ReadOnlySourceLoad.ToString() -> string!
 override ModelicaGraph.SuppliedText.Equals(object? obj) -> bool
 override ModelicaGraph.SuppliedText.GetHashCode() -> int
 override ModelicaGraph.SuppliedText.ToString() -> string!
+static ModelicaGraph.Analysis.ResourceProblem.operator !=(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool
+static ModelicaGraph.Analysis.ResourceProblem.operator ==(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool
+static ModelicaGraph.Analysis.ResourceProblems.Exists(ModelicaGraph.Interfaces.IGraphNode! node) -> bool
+static ModelicaGraph.Analysis.ResourceProblems.For(ModelicaGraph.DirectedGraph! graph, string! modelId) -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.Analysis.ResourceProblem!>!
+static ModelicaGraph.Analysis.ResourceProblems.Of(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ResourceEdge! edge) -> System.Collections.Generic.IEnumerable<ModelicaGraph.Analysis.ResourceProblem!>!
 static ModelicaGraph.ReadOnlySourceLoad.operator !=(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
 static ModelicaGraph.ReadOnlySourceLoad.operator ==(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
 static ModelicaGraph.ReadOnlySourceLoader.Load(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.IReadOnlyClassSource! source, ModelicaGraph.ReadOnlySourceContent! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> ModelicaGraph.ReadOnlySourceLoad!

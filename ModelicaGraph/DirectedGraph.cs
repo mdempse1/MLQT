@@ -12,6 +12,14 @@ public class DirectedGraph
     private readonly ConcurrentDictionary<string, IGraphNode> _nodes;
     private readonly ConcurrentDictionary<string, HashSet<string>> _edges;
     private readonly ConcurrentDictionary<string, ResourceEdge> _resourceEdges;
+
+    // The resource edges again, by the class that makes them and by the resource they reach, kept in
+    // step with _resourceEdges by StoreResourceEdge/ForgetResourceEdge, which every write goes through.
+    // Both questions were a scan of every resource edge in the graph, and MLQT.Resource.Missing asks
+    // them for every class it checks - 1.6 s of a check of MSL, growing with the graph rather than
+    // with what was checked, until they were indexed.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ResourceEdge>> _resourceEdgesByModel = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ResourceEdge>> _resourceEdgesByResource = new();
     private Lock _lock = new();
 
     public DirectedGraph()
@@ -200,6 +208,7 @@ public class DirectedGraph
 
             // Remove the node's edges
             _edges.Remove(nodeId, out _);
+            DropResourceReferencesOf(new HashSet<string>(StringComparer.Ordinal) { nodeId });
 
             // Remove the node
             return _nodes.Remove(nodeId, out _);
@@ -245,6 +254,8 @@ public class DirectedGraph
                     edges.RemoveWhere(ids.Contains);
             }
 
+            DropResourceReferencesOf(ids);
+
             var removed = 0;
             foreach (var id in ids)
             {
@@ -254,6 +265,87 @@ public class DirectedGraph
             }
 
             return removed;
+        }
+    }
+
+    /// <summary>
+    /// Forgets the resource references the given classes made, as part of removing them. Called with
+    /// the lock held, before the nodes go.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>B522.</b> A class's resource references are kept in <c>_resourceEdges</c> by class id,
+    /// and removal took the class's node and graph edges and left these. A class loaded again under the
+    /// same id - after an edit re-parses its file, a library is reloaded, or another checkout of the
+    /// library is opened - then had its old references as well as its new ones. An edited
+    /// <c>loadResource</c> path kept the old one, and a library opened from a second checkout kept
+    /// the first checkout's paths, which the External Resources tab showed and
+    /// <c>MLQT.Resource.Missing</c> reported once that folder was gone. Found by the journey that
+    /// checks the rule, run after other journeys had loaded a library of the same name.</para>
+    ///
+    /// <para>One pass over the resource edges, whatever the number of classes, for the reason
+    /// <see cref="RemoveNodes"/> gives. The resource nodes themselves stay - the next reference to the
+    /// same path reuses one - but no longer list a class that has gone.</para>
+    /// </remarks>
+    private void DropResourceReferencesOf(IReadOnlySet<string> modelIds)
+    {
+        if (_resourceEdges.IsEmpty)
+            return;
+
+        foreach (var modelId in modelIds)
+        {
+            if (!_resourceEdgesByModel.TryGetValue(modelId, out var made))
+                continue;
+
+            foreach (var (key, edge) in made.ToList())
+                ForgetResourceEdge(key, edge);
+        }
+    }
+
+    /// <summary>Records a resource edge in the table and both indexes. Called with the lock held.</summary>
+    private void StoreResourceEdge(string key, ResourceEdge edge)
+    {
+        if (_resourceEdges.TryGetValue(key, out var replaced))
+            ForgetResourceEdge(key, replaced);
+
+        _resourceEdges[key] = edge;
+        _resourceEdgesByModel.GetOrAdd(edge.ModelId, _ => new())[key] = edge;
+        _resourceEdgesByResource.GetOrAdd(edge.ResourceNodeId, _ => new())[key] = edge;
+    }
+
+    /// <summary>
+    /// Removes a resource edge from the table and both indexes, and the class from the resource's list
+    /// of who references it. Called with the lock held.
+    /// </summary>
+    private void ForgetResourceEdge(string key, ResourceEdge edge)
+    {
+        _resourceEdges.Remove(key, out _);
+        if (_resourceEdgesByModel.TryGetValue(edge.ModelId, out var byModel))
+        {
+            byModel.Remove(key, out _);
+            if (byModel.IsEmpty)
+                _resourceEdgesByModel.Remove(edge.ModelId, out _);
+        }
+        if (_resourceEdgesByResource.TryGetValue(edge.ResourceNodeId, out var byResource))
+        {
+            byResource.Remove(key, out _);
+            if (byResource.IsEmpty)
+                _resourceEdgesByResource.Remove(edge.ResourceNodeId, out _);
+        }
+
+        // Only when no other edge of this class reaches the resource: one class can reference a file
+        // in two ways (a loadResource and a URI), and loses neither by losing one.
+        if (_resourceEdgesByModel.TryGetValue(edge.ModelId, out var remaining)
+            && remaining.Values.Any(e => e.ResourceNodeId == edge.ResourceNodeId))
+            return;
+
+        switch (GetNode(edge.ResourceNodeId))
+        {
+            case ResourceFileNode file:
+                file.RemoveReferencingModel(edge.ModelId);
+                break;
+            case ResourceDirectoryNode directory:
+                directory.RemoveReferencingModel(edge.ModelId);
+                break;
         }
     }
 
@@ -605,7 +697,7 @@ public class DirectedGraph
 
             // Store edge metadata
             var edgeKey = edgeData.GetEdgeKey();
-            _resourceEdges[edgeKey] = edgeData;
+            StoreResourceEdge(edgeKey, edgeData);
 
             // Update model's resource references
             modelNode.AddReferencedResource(resourceNodeId);
@@ -712,14 +804,12 @@ public class DirectedGraph
 
                 // Remove graph edge
                 _edges[modelId].Remove(resourceId);
-
-                // Remove edge metadata
-                var edgeKeysToRemove = _resourceEdges.Keys
-                    .Where(k => k.StartsWith($"{modelId}|{resourceId}|"))
-                    .ToList();
-                foreach (var key in edgeKeysToRemove)
-                    _resourceEdges.Remove(key, out _);
             }
+
+            // Remove edge metadata
+            if (_resourceEdgesByModel.TryGetValue(modelId, out var made))
+                foreach (var (key, edge) in made.ToList())
+                    ForgetResourceEdge(key, edge);
 
             // Clear model's resource references
             modelNode.ReferencedResourceIds.Clear();
@@ -729,18 +819,14 @@ public class DirectedGraph
     /// <summary>
     /// Gets all resource edges for a given model.
     /// </summary>
-    public IEnumerable<ResourceEdge> GetResourceEdgesForModel(string modelId)
-    {
-        return _resourceEdges.Values.Where(e => e.ModelId == modelId);
-    }
+    public IEnumerable<ResourceEdge> GetResourceEdgesForModel(string modelId) =>
+        _resourceEdgesByModel.TryGetValue(modelId, out var made) ? made.Values.ToList() : [];
 
     /// <summary>
     /// Gets all resource edges pointing to a given resource node.
     /// </summary>
-    public IEnumerable<ResourceEdge> GetModelEdgesToResource(string resourceNodeId)
-    {
-        return _resourceEdges.Values.Where(e => e.ResourceNodeId == resourceNodeId);
-    }
+    public IEnumerable<ResourceEdge> GetModelEdgesToResource(string resourceNodeId) =>
+        _resourceEdgesByResource.TryGetValue(resourceNodeId, out var reaching) ? reaching.Values.ToList() : [];
 
     /// <summary>
     /// Gets all resources (files and directories) referenced by a model.
@@ -794,6 +880,8 @@ public class DirectedGraph
             _nodes.Clear();
             _edges.Clear();
             _resourceEdges.Clear();
+            _resourceEdgesByModel.Clear();
+            _resourceEdgesByResource.Clear();
         }
         InvalidateDependencyAnalysis();
     }

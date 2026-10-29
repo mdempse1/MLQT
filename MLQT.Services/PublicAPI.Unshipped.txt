@@ -7,6 +7,12 @@ MLQT.Services.DataTypes.LoadedLibrary.ResourceRoot.get -> string?
 MLQT.Services.DataTypes.LoadedLibrary.ResourceRoot.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.Version.get -> string?
 MLQT.Services.DataTypes.LoadedLibrary.Version.set -> void
+MLQT.Services.ExternalResourceService.OnPendingResourceChangesUpdated -> System.Action?
+MLQT.Services.ExternalResourceService.PendingResourceChangeCount.get -> int
+MLQT.Services.ExternalResourceService.TakePendingResourceChanges() -> System.Collections.Generic.IReadOnlyList<string!>!
+MLQT.Services.Interfaces.IExternalResourceService.OnPendingResourceChangesUpdated -> System.Action?
+MLQT.Services.Interfaces.IExternalResourceService.PendingResourceChangeCount.get -> int
+MLQT.Services.Interfaces.IExternalResourceService.TakePendingResourceChanges() -> System.Collections.Generic.IReadOnlyList<string!>!
 MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.LibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 static MLQT.Services.LibraryDiscovery.ReadLibraryName(string! libraryPath) -> string?

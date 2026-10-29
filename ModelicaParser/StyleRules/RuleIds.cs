@@ -46,6 +46,11 @@ public static class RuleIds
     public const string UndeclaredName = "MLQT.Reference.Undeclared";
     public const string GrammarConformance = "MLQT.Conformance.Grammar";
 
+    // Wave-2 analyses (phase 2): a library's external resources, as the External Resources tab
+    // finds them, reported as findings so a build can fail on a file that is not there.
+    public const string MissingResource = "MLQT.Resource.Missing";
+    public const string AbsoluteResourcePath = "MLQT.Resource.AbsolutePath";
+
     // Parse diagnostics. These are NOT style rules: they are always reported regardless of the
     // severity map and cannot be suppressed or baselined, because code that does not parse cannot
     // be meaningfully checked — every other rule silently under-reports on it.

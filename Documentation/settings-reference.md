@@ -288,7 +288,7 @@ These rules find structural problems beyond the style/documentation checks above
 **off by default** — `MLQT.Structure.SingleFilePackage` is on. Enable them in the **Static analysis**
 section of the Edit Repository Details dialog — each rule has a per-rule **Off / Info / Warning /
 Error** selector, labelled with the rule's description and grouped under its category (Correctness,
-Units, Unused, Structure, Conformance), where **Error**
+Units, Unused, Structure, Conformance, Resources), where **Error**
 fails the CI quality gate and Warning/Info are reported only — or edit `settings.json` directly (see
 below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
 
@@ -313,6 +313,8 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
 | `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
 | `MLQT.Conformance.Grammar` | Warning | Code that parses only because MLQT's grammar accepts what Dymola accepts beyond the Modelica Language Specification 3.7. Each finding names the widening it relies on. See [Strict Modelica 3.7 syntax](#strict-modelica-37-syntax). | GUI, CLI, MCP |
+| `MLQT.Resource.Missing` | Error | A file or directory the code refers to that is not there: a `loadResource` call, a `modelica://` URI to a file, a `loadSelector` parameter's file, an external function's `Include` header, or an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation. The [External Resources](external-resources.md) tab shows the same references, and the two always agree. ◊ | GUI, CLI, MCP |
+| `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
 then in each enclosing class in turn, and a package directory's children are lexically nested inside
@@ -346,6 +348,18 @@ operator record from `Complex.mo`, not one of the predefined types of MLS 3.7 §
 a `ComplexInput` is judged like any record's member. Without `Complex.mo` loaded, it is a library
 that is not loaded. Each distinct name is reported once per class, at its first use. Over MSL
 4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
+
+◊ **A resource is reported only when MLQT can tell where it should be.** A `modelica://` URI into a
+library that is not loaded cannot be resolved, so it is never reported: whether the file exists says
+nothing about the library being checked. Nor is a header the C compiler supplies (`<stdio.h>` and the
+rest of the standard library), whose absence from the library's `Resources/Include` is normal. Nor is a
+`Library="…"` with no binary in the library's `Resources/Library`, because a tool also links the
+system's own libraries, and MLQT cannot tell one from the other. Nor is a URI in documentation that
+shows HTML as text — `&lt;img src=&quot;modelica://…&quot;&gt;`, which displays the markup as an
+example rather than an image. Each reference is reported once per class, at the line where it is
+written. Over MSL 4.1 and Buildings, the two rules together report five files that really are missing
+and nothing else. Whether a file exists is read from disk each time the check
+runs, so adding a missing file clears its finding on the next check.
 
 #### Accepting a tool's built-ins
 

@@ -11,7 +11,7 @@ MLQT monitors each loaded repository's directory tree for:
 - **Package order files** (`package.order`) — Files that define the ordering of child elements in packages
 - **Directory changes** — New or deleted directories that may represent new or removed packages
 
-Other file types (data files, images, documentation) are not monitored for the library browser, but are tracked separately by the [External Resources](external-resources.md) system.
+Other file types (data files, images, documentation) are not monitored for the library browser, but are tracked separately by the [External Resources](external-resources.md) system. A file one of your classes refers to — a data file, a header, an image — is watched there, and when it is added, deleted or restored outside MLQT it is counted on the Refresh button below as well.
 
 When several libraries are checked out in one working copy, MLQT watches the working copy once and
 records each change against the library whose folder it is in, so a change is formatted with that
@@ -59,6 +59,7 @@ The Refresh button provides several visual cues:
 
 Hover over the Refresh button to see a detailed breakdown of pending changes:
 - "Refresh libraries (2 added, 3 modified, 1 deleted, 1 renamed)" — Shows counts by change type
+- "Refresh libraries (1 resource file changed)" — A file a class refers to changed on disk
 - "Refresh libraries" — No pending changes
 - "Refreshing..." — A refresh is in progress
 
@@ -74,9 +75,10 @@ When you click Refresh, MLQT processes all pending changes in this order:
 6. **Dependency analysis** — Re-analyzes dependencies for affected models only (not the entire library), if dependency analysis has run
 7. **Style checking** — Re-runs style checks on affected models
 8. **External resource analysis** — Re-analyzes external resource references for affected models, if external resource analysis has run
-9. **Cleanup** — Clears the pending changes list and resets the badge
+9. **Resource files** — Checks again, and re-reads the resources of, the classes that refer to a resource file that changed on disk, unless step 7 already checked them
+10. **Cleanup** — Clears the pending changes list and resets the badge
 
-A message saying how many file changes are being processed appears when it starts, and "Successfully processed N file changes" when it completes. Clicking Refresh with nothing pending says "No pending changes to process".
+A message saying how many file changes are being processed appears when it starts, and "Successfully processed N file changes" when it completes. When only resource files changed it says "Re-checked N class(es) whose resource files changed". Clicking Refresh with nothing pending says "No pending changes to process".
 
 ### Incremental Processing
 

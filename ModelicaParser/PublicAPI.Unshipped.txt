@@ -1,4 +1,6 @@
 #nullable enable
+const ModelicaParser.StyleRules.RuleIds.AbsoluteResourcePath = "MLQT.Resource.AbsolutePath" -> string!
+const ModelicaParser.StyleRules.RuleIds.MissingResource = "MLQT.Resource.Missing" -> string!
 ModelicaParser.Comparison.ClassSignature.Dialog.get -> string!
 ModelicaParser.Comparison.ClassSignature.Dialog.init -> void
 ModelicaParser.Comparison.ClassSignature.Documentation.get -> string!
@@ -44,6 +46,7 @@ override ModelicaParser.StyleRules.GrammarConformance.VisitModification(modelica
 override ModelicaParser.StyleRules.GrammarConformance.VisitShort_class_specifier(modelicaParser.Short_class_specifierContext! context) -> object?
 override ModelicaParser.StyleRules.GrammarConformance.VisitStatement(modelicaParser.StatementContext! context) -> object?
 override ModelicaParser.StyleRules.GrammarConformance.VisitTerminal(Antlr4.Runtime.Tree.ITerminalNode! node) -> object?
+static ModelicaParser.Helpers.ModelicaUriScanner.IsShownAsText(string! text, int uriStart) -> bool
 static ModelicaParser.StyleRules.GrammarConformance.Code(ModelicaParser.StyleRules.GrammarConformance.Kind kind) -> string!
 ModelicaParser.Helpers.ToolBuiltIns
 const ModelicaParser.Helpers.ToolBuiltIns.Dymola = "Dymola" -> string!

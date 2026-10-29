@@ -313,8 +313,7 @@ B501 is a limitation found while fixing how omc and Dymola are started, not a fa
 B505 is a limitation of the MCP server found measuring B503; what can be said and refused without a
 change of design is in place, and the rest is a design item.
 B520 is a small defect found tokenising the theme (2026-10-29) and left as it was, because that change
-was not to alter how anything looks. B521 was found designing external-resource validation, and is
-fixed as part of it (`Design/phase-2-analyses.md` §1).
+was not to alter how anything looks.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
@@ -323,8 +322,6 @@ fixed as part of it (`Design/phase-2-analyses.md` §1).
 | B501 | On Windows omc inherits every inheritable handle of its host, the host's own stdio among them, because `Process.Start` passes them all; only its stdin is redirected (so a host reading its stdin can still start it). Measured: an omc left running by a killed host kept the host's stdout open until omc was ended - under a stdio MCP server, a client that never sees the server go. MLQT ends omc when it exits, and a host that puts omc in a Job Object ends it when that host dies, so it needs the host killed and omc not ended. Dymola, which outlives MLQT by design, is started by `IsolatedProcess` instead, which omc cannot use as it stands: omc's stdout is how it announces its port | If an omc is ever found holding a dead host's channel, start it with `CreateProcess` and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` naming only its own three pipes |
 | B505 | Tasks that share one MLQT MCP server share one session. A client keeps its servers across `/clear` and new sessions, subagents use their parent's, and sessions of one app running at once may share them; MCP gives a server no conversation id, and MLQT holds one copy of each library under ids that do not say whose. So a conversation can inherit what an earlier one loaded, and two tasks editing their own copies of one library would edit one copy. In place: every library says when it was loaded, a second copy is refused with why and what replacing it does (whatever its folder is called), a reset goes back to empty, and `analyse` flags a run whose server was not new. Until the design below, the documentation says to give each such task a server of its own | Design sessions scoped to a workspace inside one server: each task's libraries kept apart, keyed by the folder they were loaded from, with every call naming its workspace - an id `mlqt_load` returns, or the client's MCP roots where it sends them. Every tool takes part, so it needs a design note of its own |
 | B520 | The find-in-code match wash (`--mlqt-highlight-match`) dims for a dark theme under `@media (prefers-color-scheme: dark)`, which is the operating system's setting, not MLQT's. MLQT's Dark theme is chosen in its own settings and set through `MudThemeProvider.IsDarkMode`. So MLQT in Dark on a light desktop draws the bright wash the comment says glares on near-black, and MLQT in Light on a dark desktop draws the dim one on white. Not reported; found by reading | Key the dark value off MLQT's mode instead: a class on the layout root from `_isDarkMode`, or a MudBlazor palette variable that already differs between the two palettes. Then check `code-review` screenshots in both themes |
-| B521 | In the desktop app, whether a referenced resource exists is never re-read. `DirectedGraph.GetOrCreateResource*Node` reads the disk only when it creates a node, and nothing updates `FileExists`/`DirectoryExists` afterwards. The resource watchers queue each change in a list nothing reads; the handler's comment says it fires an event and it only logs. So restoring or deleting a referenced file changes nothing on the External Resources tab until the project is reloaded. Found by reading, while designing external-resource validation | Being fixed with that rule: existence read from disk when the analysis asks, and the watcher's changes re-running the resource and graph analyses for the affected classes |
-
 ---
 
 ## Item ids
@@ -336,7 +333,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B522**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B523**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
@@ -424,7 +421,7 @@ to files instead of classes.
 | **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | Promotes the `ConnectorCompatibility` helper; connector *types* may be external → same three-state gate |
 | **Deprecated-API usage** | ⭐⭐ | M | References to `obsolete` classes + MSL-version compatibility. Needs the target library visible |
 | **Cyclic-dependency detection** | ⭐⭐ | S | The directed graph already exists; surface package dependency cycles |
-| **External-resource validation** | ⭐⭐⭐ | M | **Nothing checks these today.** Missing data files, images and C sources are found — `ExternalResourceService` does the work and the External Resources tab shows it — but they are `ResourceWarning`s and not `Finding`s, so they have no rule id, never reach `mlqt check`, cannot be baselined, and cannot gate CI. A library can lose a `Resources/` file and every gate stays green. Needs a rule id per kind (missing file, missing annotated directory, absolute path), which then brings severity, suppression and the ratchet with it |
+| **External-resource validation** | ⭐⭐⭐ | M | **Done (2026-10-29), ships in the next release.** `MLQT.Resource.Missing` (a file or annotated directory that is not there) and `MLQT.Resource.AbsolutePath`, both off by default, from `ExternalResourceAnalyzer`. They decide through `ResourceProblems`, which the External Resources tab reads too, so the two agree. A missing directory annotation is now recorded (it was dropped). Existence is read from disk when asked, and the Refresh button picks up changed resource files (B521, fixed with it). Removing a class now forgets its resource references, which it never did, so a class loaded again had its old ones too (B522, found by the rule's journey and fixed with it). HTML shown as text in documentation is no longer taken for a reference (B209 had it the other way). Over MSL 4.1 and Buildings it reports five files that really are missing and nothing else. See `Design/phase-2-analyses.md` §1 |
 
 ### Flagships (phase 3; brush the no-simulation boundary — keep inside it)
 

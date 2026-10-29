@@ -23,7 +23,12 @@ those would flood every real repository on its first run.
 **Every new rule is built off by default** until the release decision (roadmap, *Before the next
 release*, item 3) is taken rule by rule.
 
-## 1. External-resource validation — designed, in progress
+## 1. External-resource validation — done (2026-10-29)
+
+Built as designed below, with the change recorded under *The rules*: a library with no binary is not
+reported. The durable parts are in the code, the `external-resources` skill, and
+`Documentation/external-resources.md` / `settings-reference.md`. When the phase ships, this section
+needs nothing kept.
 
 ### The gap
 
@@ -40,9 +45,9 @@ find. But those are `ResourceWarning`s on one page. They have no rule id, so the
 - **Two kinds of missing resource are never recorded at all**, so neither the tab nor a rule could
   report them:
   - an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` that does not exist: the
-    directory branch makes an edge only when `Directory.Exists`;
+    directory branch makes an edge only when `Directory.Exists`. Now recorded;
   - a `Library="name"` with no binary under any library directory: `ResolveAllLibraryFiles` finds
-    nothing and no edge is made.
+    nothing and no edge is made. Left unrecorded, deliberately (below).
 - **Existence goes stale in the desktop app (B521).** `DirectedGraph.GetOrCreateResource*Node`
   reads the disk only when it creates a node and returns the existing node afterwards, and nothing
   else ever updates `FileExists` or `DirectoryExists`. The resource watchers record each change in a
@@ -53,7 +58,7 @@ find. But those are `ResourceWarning`s on one page. They have no rule id, so the
 
 | Rule id | Reports | Severity when on |
 |---|---|---|
-| `MLQT.Resource.Missing` | A reference that resolved to a place in a loaded library, or to a path on disk, where nothing is: a file, a directory annotation, a header in the declared include directories, or a library binary with no platform variant in any library directory | Error: a model that loads a missing file fails at run time or will not compile |
+| `MLQT.Resource.Missing` | A reference that resolved to a place in a loaded library, or to a path on disk, where nothing is: a file, a directory annotation, or a header in the declared include directories | Error: a model that loads a missing file fails at run time or will not compile |
 | `MLQT.Resource.AbsolutePath` | A reference written as an absolute file-system path, which works only on the machine it was written on | Warning |
 
 Both are attributed to the class holding the reference, at the line where the raw path first
@@ -61,9 +66,34 @@ appears in its source, else line 1. The finding's element is the reference as wr
 path) and its discriminator the reference kind, so the fingerprint does not move when the file is
 reformatted or the library moves on disk.
 
-**Not reported:** a reference into a library that is not loaded (cannot tell); a header the C
-compiler supplies (B172 already keeps those out); the contents of a scanned directory, which no
-model references by name.
+**Not reported:**
+- a reference into a library that is not loaded (cannot tell);
+- a header the C compiler supplies (B172 already keeps those out);
+- **a `Library="name"` with no binary under the library's directories.** A tool also links the
+  system's own libraries (`Library="m"`, `Library="Ws2_32"`), so the absence of a binary from
+  `Resources/Library` is often normal, and MLQT cannot tell which case it is. Decided while
+  implementing, reversing the first version of this note, for the reason B172 gives for headers;
+- the contents of a scanned directory, which no model references by name.
+
+**Attributed to the innermost class.** Found while building it: `ModelAnalyzer` deliberately reads
+resources from the whole of a class's source, nested classes included, so a package stored in one
+file had an edge for every reference its nested classes make, and each of them had its own. The
+first run reported each reference once per enclosing class. `ResourceProblems` gives a reference
+to the innermost class that makes it, and the tab's warnings follow the same rule.
+
+**B522, found by the rule's journey.** Removing a class from the graph never removed its resource
+references, so a class loaded again under the same id kept its old ones beside its new ones: an
+edited `loadResource` path, a reloaded library, another checkout of the same library. The journey
+passed alone and failed after the other journeys, which had loaded libraries called `Lib` from
+checkouts since deleted. `DirectedGraph.RemoveNode`/`RemoveNodes` now drop them.
+
+**Measured on real libraries.** Over MSL 4.1 and Buildings, with both rules on, the first run
+reported one false positive: an example image in `UsersGuide.Conventions` written as HTML shown as
+text (`&lt;img src=&quot;…&quot;&gt;`), which B209 had taken for a reference. Every such URI is now
+skipped, as `CheckModelReferences` always did, through one shared test. What is left is five files
+that really are missing, one in MSL and four in Buildings. The analyzer first cost 1.6 s of the MSL
+check, because finding a class's references and the classes reaching a resource were both scans of
+every resource edge; `DirectedGraph` now indexes both, and it costs 0.2 s, most of it reading the disk.
 
 ### One decision, shared
 
@@ -80,12 +110,11 @@ make one run. The watcher's changes are raised as an event, and the desktop app 
 analysis and the graph analyses for the affected classes, so a finding clears when its file comes
 back and appears when its file goes.
 
-### Recording the two missing kinds
+### Recording a missing directory annotation
 
-`GraphBuilder` records a missing directory annotation as a `ResourceDirectoryNode` whose
-`DirectoryExists` is false. It records a library with no binary as a node at the path where the
-library would be expected in the first library directory searched, flagged as a library that was
-not found under any platform. The tab then shows both, as it shows a missing file today.
+`GraphBuilder` records a directory annotation that resolves but does not exist as a
+`ResourceDirectoryNode` whose `DirectoryExists` is false, with nothing scanned in it. The tab then
+shows it, as it shows a missing file. A library with no binary stays unrecorded, as above.
 
 ## 2. Connection integrity — not designed yet
 

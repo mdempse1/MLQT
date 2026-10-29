@@ -51,16 +51,8 @@ public class ReloadDuringProjectSwitchJourney(TestHostFixture host) : IAsyncLife
     }
 
     /// <summary>Polls a condition on the host's services, which nothing on the page announces.</summary>
-    private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 60_000)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("the host did not reach the expected state in time");
-            await Task.Delay(100);
-        }
-    }
+    private static Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 60_000) =>
+        HostPolling.UntilAsync(condition, timeoutMs);
 
     /// <summary>Settings, Manage Repositories, and the named project's Load project button.</summary>
     private static async Task LoadProjectAsync(IPage page, string name)

@@ -38,12 +38,15 @@ public class ExternalResourceEntityTests
     }
 
     [Fact]
-    public void AnEntityQuotedImageSourceStopsAtTheFileName()
+    public void AnEntityQuotedImageSource_IsHtmlShownAsText_NotAResource()
     {
+        // B209 kept this as a reference, cut at the entity. It renders as the characters
+        // <img src="...">, an example of how to write an image - MSL's UsersGuide.Conventions is where
+        // all five such URIs in MSL are - so it names no file the library needs (ModelicaUriScanner.IsShownAsText).
         var found = UriResourcesIn(
             "&lt;img src=&quot;modelica://Modelica/Resources/Images/foo.png&quot;&gt;");
 
-        Assert.Equal(["modelica://Modelica/Resources/Images/foo.png"], found);
+        Assert.Empty(found);
     }
 
     [Fact]

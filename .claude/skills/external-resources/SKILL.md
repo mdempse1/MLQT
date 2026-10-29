@@ -128,6 +128,12 @@ fails if a resource rule reappears in `ModelAnalyzer.cs` — so a case added to 
 checked against the graph build without a second edit. Keep those tests' snippets in the
 `var code = @"...";` form the parity test reads.
 
+**A URI between entity quotes is HTML shown as text, not a reference** (`ModelicaUriScanner.IsShownAsText`,
+shared with `CheckModelReferences`). In a Modelica documentation string the HTML's quotes are `\"`;
+`&lt;img src=&quot;modelica://…&quot;&gt;` displays the markup as an example. Measured over MSL and
+Buildings: 1,792 images written with `\"`, five with `&quot;`, all in `UsersGuide.Conventions`'
+examples. B209 had it the other way round and listed the guide's example image as a missing file.
+
 **Extracted Sources:**
 - `loadResource()` function calls
 - `modelica://` URIs in strings
@@ -161,6 +167,35 @@ Resolves raw paths and creates graph nodes, inside `AnalyzeDependenciesAsync` /
 5. Create ResourceFileNode or ResourceDirectoryNode
 6. Create ResourceEdge linking model to resource
 
+**A reference that does not resolve is not recorded** — no node, no edge. That is a `modelica://` URI
+into a library that is not loaded, and it is the "cannot tell" of the roadmap's three-state rule: a
+miss there says nothing about the library being checked, so it must never become a warning or a
+finding. A directory annotation that **does** resolve is recorded whether or not the directory exists
+(since phase 2), so a missing one can be reported; a `Library="x"` with no binary is not, because a
+tool also links the system's libraries and MLQT cannot tell one from the other.
+
+**Removing a class removes its resource references** (`DirectedGraph.RemoveNode`/`RemoveNodes`, B522).
+They are kept by class id in the graph's resource-edge table, and until phase 2 removal left them
+there, so a class re-parsed after an edit, a reloaded library, or a library opened from a second
+checkout carried its old references beside its new ones. `RemoveModelResourceEdges` and
+`CleanupOrphanedResourceNodes` exist and are still called by nothing in production.
+
+### What is a problem: `ResourceProblems` (ModelicaGraph/Analysis)
+
+**One decision, two readers**: `ExternalResourceAnalyzer` (the `MLQT.Resource.Missing` and
+`MLQT.Resource.AbsolutePath` findings) and `ExternalResourceService` (the tab's warnings) both ask
+`ResourceProblems.Of(graph, edge)`, so the page and the build cannot disagree. Two rules it keeps:
+
+- **Existence is read from disk when it is asked**, and written back onto the node. A node used to
+  keep the answer from when it was created, and the graph hands back the same node for as long as
+  anything references the path, so a restored file read as missing until the project was reloaded
+  (B521). Never read `FileExists`/`DirectoryExists` to decide a problem; call `Exists(node)`.
+- **A reference belongs to the innermost class that makes it.** `ModelAnalyzer` deliberately descends
+  into nested classes, so a package stored in one file has an edge for every reference its nested
+  classes make, and each nested class has its own. `Of` yields nothing for an edge a nested class also
+  makes (`IsMadeByANestedClass`, asked of the edges to the same resource, which are few). Without it
+  every reference was reported once per enclosing class.
+
 ### 4. ExternalResourceService (MLQT.Services)
 
 Reads from graph, generates warnings, monitors files.
@@ -181,6 +216,13 @@ List<string> modelIds = ExternalResourceService.GetModelsReferencingResource(res
 // Get warnings
 List<ResourceWarning> warnings = ExternalResourceService.GetWarnings();
 ```
+
+**When a watched file changes**, the service queues it and raises `OnPendingResourceChangesUpdated`.
+MainLayout adds `PendingResourceChangeCount` to the Refresh button's badge, and a refresh calls
+`TakePendingResourceChanges()` for the classes that reference what changed and re-runs their resource
+analysis and checks (`RecheckResourceChangesAsync`). Until B521 the queue was written and never read.
+`MissingResourceJourney` holds the whole loop. The event is raised outside the service's lock,
+because a subscriber marshals onto the UI thread and under Photino that waits.
 
 ## Path Resolution
 
@@ -298,6 +340,8 @@ public enum DirectoryAnnotationType
 | `ModelicaGraph/DataTypes/ResourceDirectoryNode.cs` | Directory resource graph node |
 | `ModelicaGraph/DataTypes/ResourceEdge.cs` | Edge metadata |
 | `ModelicaGraph/GraphBuilder.cs` | Resolution and node creation |
+| `ModelicaGraph/Analysis/ResourceProblems.cs` | What is a problem with a reference — read by the rule and the tab alike |
+| `ModelicaGraph/Analysis/ExternalResourceAnalyzer.cs` | `MLQT.Resource.Missing` / `MLQT.Resource.AbsolutePath` |
 | `MLQT.Services/Interfaces/IExternalResourceService.cs` | Service interface |
 | `MLQT.Services/ExternalResourceService.cs` | Service implementation, warnings, file watchers |
 | `MLQT.Services/DataTypes/ExternalResourceReference.cs` | What the service returns per reference |
@@ -319,5 +363,7 @@ Key test files:
 - `ModelicaGraph.Tests/ResourceRuleParityTests.cs` - the graph build finds what the extractor finds (B511)
 - `ModelicaGraph.Tests/LoadSelectorAnalyzerTests.cs` and `LoadSelectorPassTwoScopeTests.cs`
 - `ModelicaGraph.Tests/GraphBuilderTests.cs` - External resource resolution tests (`AnalyzeDependencies_WithExternal*`)
-- `MLQT.Services.Tests/ExternalResourceServiceTests.cs`
+- `MLQT.Services.Tests/ExternalResourceServiceTests.cs` — including `TheTabsWarnings_AreTheRulesFindings`
+- `ModelicaGraph.Tests/ExternalResourceAnalyzerTests.cs` - the rules, the three-state cases, B521
+- `MLQT.Journeys/MissingResourceJourney.cs` - a missing file reported, restored, and cleared from the Refresh button
 - `MLQT.Shared.Tests/Pages/ExternalResourceCategoryTests.cs` - the page's file-type categories
