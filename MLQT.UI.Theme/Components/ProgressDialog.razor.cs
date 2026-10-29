@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 
-namespace MLQT.Shared.Components;
+namespace MLQT.UI.Theme.Components;
 
 /// <summary>
 /// An inline dialog whose visibility the application sets - a progress dialog - which closes when it

@@ -161,9 +161,12 @@ using MLQT.Services.Interfaces;
 
 ### Public API of the Assemblies Others Build On
 
-`ModelicaParser`, `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and
-`MLQT.Services` are built from source **outside this repository**, by other projects, so a public type
-or member in them is something code we cannot see may depend on. Each one sets
+`ModelicaParser`, `ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface`,
+`MLQT.Services` and `MLQT.UI.Theme` are built from source **outside this repository**, by other
+projects, so a public type or member in them is something code we cannot see may depend on. For the
+theme that includes what no analyzer sees: the CSS class names and `--mlqt-*` tokens its
+stylesheets define are as much its public surface as its types, and are listed in
+`MLQT.UI.Theme/PublicCss.txt`, which `ThemeCssContractTests` holds them to. Each one sets
 `<TrackPublicApi>true</TrackPublicApi>`, and `Microsoft.CodeAnalysis.PublicApiAnalyzers` holds its
 public surface to two files beside the project:
 
@@ -194,7 +197,7 @@ and `ModelicaParser/.editorconfig` turns off RS0041 for those generated files on
 
 ### Names That Must Survive Obfuscation
 
-The MCP stack — the six assemblies above and `MLQT.McpServer` — ships inside a product protected by
+The MCP stack — the assemblies above other than `MLQT.UI.Theme`, and `MLQT.McpServer` — ships inside a product protected by
 an obfuscator at its strongest settings, which renames **every** type, member and parameter, public
 ones included, and **can delete an enum's members from metadata altogether** (B502). So in those
 seven assemblies, nothing a file, a client or a native library

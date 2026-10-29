@@ -1,0 +1,182 @@
+/* MLQT's density: MudBlazor made small and tight.
+
+   Every rule here overrides one of MudBlazor's own at the same specificity, and wins only by coming
+   later in the page - so this file is loaded AFTER MudBlazor.min.css (ThemeAssetManifest's trailing
+   list), not before it with mlqt-base.css. It was an inline <style> in MLQT's MainLayout until the
+   theme became a package, which is how it always came last.
+
+   The sizes are mlqt-base.css's tokens, and the text sizes among them are MlqtTheme's typography,
+   so a control and the text in it cannot be sized from two different numbers. What is left as a
+   literal is an optical correction to one control - a pixel for a border, a nudge to a label - which
+   would mean nothing as a token. */
+
+/* Nothing here sizes the page itself. MLQT's window is one screen that never scrolls, and its
+   `.mud-layout { height: 100vh; width: 100vw }` says so - which is why that rule is in MLQT's
+   MainLayout and not here: on a page that does scroll, 100vw includes the vertical scrollbar and
+   the layout overflows sideways by its width (measured: 800px of layout in a 796px page). */
+
+/* Changes the font size for page controls at the bottom of a table */
+.mud-table-pagination {
+   font-size: var(--mlqt-font-size);
+}
+
+/* Changes the size of the tabs */
+.mud-tabs-tabbar .mud-tabs-tabbar-inner {
+    min-height: var(--mlqt-control-height);
+}
+
+.mud-tab {
+    min-height: var(--mlqt-control-height);
+    font-size: var(--mlqt-font-size);
+}
+
+/* Changes the border on text fields */
+.mud-input.mud-input-outlined .mud-input-outlined-border {
+    border-color: var(--mlqt-control-border);
+}
+
+/* Changes the border on MudButtonGroups that don't have an explicit Color set */
+/* Changes the padding for icons on text buttons to align the size with IconButtons */
+.mud-button-group-outlined.mud-button-group-override-styles .mud-button-root {
+    border-color: var(--mlqt-control-border);
+    padding-top: var(--mlqt-space-1);
+    padding-bottom: var(--mlqt-space-1);
+}
+
+/* One pixel more below than above, as it has always been; nothing records why. */
+.mud-button-outlined-size-small {
+    padding-top: var(--mlqt-space-1) !important;
+    padding-bottom: 5px !important;
+    font-size: var(--mlqt-font-size) !important;
+}
+
+/* Reduce the padding to account for the border and prevent the button from growing */
+.mud-button-outlined.mud-button-outlined-primary {
+    padding-left: 11px !important;
+    padding-right: 11px !important;
+}
+
+/* Treeview adjustments to make more compact */
+.mud-treeview-item-arrow {
+    width: 0.8rem;
+    margin: 0px;
+}
+
+.mud-treeview-item-icon {
+    width: var(--mlqt-icon-size-large);
+    margin-right: 0px;
+    margin-inline-end: 0px;
+}
+
+.mud-treeview-item-checkbox {
+    width: var(--mlqt-icon-size-small);
+    height: var(--mlqt-icon-size-small);
+}
+
+.mud-treeview-item .mud-treeview-item-arrow .mud-icon-button{
+    padding: 0px;
+}
+
+.mud-treeview-item-arrow .mud-icon-size-medium{
+    width: var(--mlqt-icon-size-small) !important;
+    height: var(--mlqt-icon-size-small) !important;
+}
+
+.mud-treeview-item-checkbox .mud-icon-size-medium{
+    width: var(--mlqt-icon-size-small) !important;
+    height: var(--mlqt-icon-size-small) !important;
+}
+
+.mud-treeview-item-checkbox .mud-icon-button{
+    padding: 0px !important;
+}
+
+.mud-toolbar{
+    --mud-internal-toolbar-height: var(--mlqt-control-height);
+}
+
+.mud-table-toolbar{
+    padding: var(--mlqt-space-2);
+    padding-inline-start: var(--mlqt-space-2);
+}
+
+/* Table cells and text in the theme's sizes, for a MudTable's CellClass or a cell's Class. */
+.compact-table {
+    font-size: var(--mlqt-font-size-small) !important;
+    font-family: var(--mud-typography-body1-family) !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+}
+
+.body1-table {
+    font-size: var(--mlqt-font-size) !important;
+    font-family: var(--mud-typography-body1-family) !important;
+    padding-top: var(--mlqt-space-1) !important;
+    padding-bottom: var(--mlqt-space-1) !important;
+}
+
+.body1-table-right {
+    font-size: var(--mlqt-font-size) !important;
+    font-family: var(--mud-typography-body1-family) !important;
+    padding-top: var(--mlqt-space-1) !important;
+    padding-bottom: var(--mlqt-space-1) !important;
+    text-align: right !important;
+}
+
+.pre-wrap {
+    white-space: pre-wrap;
+}
+
+.mud-picker .mud-typography-subtitle1 {
+    font-size: var(--mlqt-font-size) !important;
+    font-family: var(--mud-typography-body1-family) !important;
+}
+
+.mud-input-control>.mud-input-control-input-container>.mud-input-label-inputcontrol {
+    font-size: var(--mlqt-font-size) !important;
+    font-family: var(--mud-typography-body1-family) !important;
+}
+
+.mud-picker .mud-input-label-inputcontrol {
+    transform: translate(0, 20px) scale(1);
+}
+
+.mud-toolbar-gutters {
+    padding-left: var(--mlqt-space-1);
+    padding-right: var(--mlqt-space-4);
+}
+
+.mud-dialog-width-lg {
+    max-width: 90%;
+}
+
+.mud-icon-size-small {
+    font-size: var(--mlqt-icon-size-small) !important;
+}
+
+.mud-icon-size-medium {
+    font-size: var(--mlqt-icon-size-medium) !important;
+}
+
+.mud-icon-size-large {
+    font-size: var(--mlqt-icon-size-large) !important;
+}
+
+.mud-button-group-root.mud-button-group-text-size-small .mud-button-root {
+    font-size: var(--mlqt-font-size);
+    padding: var(--mlqt-space-1) var(--mlqt-space-1);
+}
+
+.compact-icon-button {
+    padding: var(--mlqt-space-1) !important;
+}
+
+.mud-button-text-size-small {
+    font-size: var(--mlqt-font-size);
+    line-height: 1.25rem;
+}
+
+.mud-list-item-avatar {
+    min-width: 32px;
+    flex-shrink: 0;
+}

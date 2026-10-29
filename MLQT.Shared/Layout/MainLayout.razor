@@ -29,6 +29,12 @@
         background-color: var(--mud-palette-action-default-hover);
     }
 
+    @* MudBlazor's density - tabs, buttons, trees, icons - is MLQT.UI.Theme's mlqt-density.css. What
+       stays here is this application's own. *@
+
+    @* MLQT's window is one screen that never scrolls: the panes scroll inside it. That is a fact
+       about this shell, not about the theme - on a page that scrolls, 100vw counts the scrollbar
+       and the layout overflows sideways by its width - so it stays here rather than in the theme. *@
     .mud-layout {
         height: 100vh;
         width: 100vw;
@@ -41,58 +47,6 @@
         position: relative;
         list-style: none;
         overscroll-behavior-y: contain;
-    }
-
-    @* Changes the font size for page controls at the bottom of a table *@
-    .mud-table-pagination {
-       font-size: 0.75rem;
-    }
-
-    @* Changes the size of the tabs *@
-    .mud-tabs-tabbar .mud-tabs-tabbar-inner {
-        min-height: 2rem;
-    }
-
-    .mud-tab {
-        min-height: 2rem;
-        font-size: 0.75rem;
-    }
-
-    @* Changes the border on text fields *@
-    .mud-input.mud-input-outlined .mud-input-outlined-border {
-        border-color: rgb(0,0,0,0.118);
-    }
-
-    @* Changes the border on MudButtonGroups that don't have an explicit Color set *@
-    @* Changes the padding for icons on text buttons to align the size with IconButtons *@
-    .mud-button-group-outlined.mud-button-group-override-styles .mud-button-root {
-        border-color: rgb(0,0,0,0.118);
-        padding-top: 4px;
-        padding-bottom: 4px;
-    }
-    
-    .mud-button-outlined-size-small {
-        padding-top: 4px !important;
-        padding-bottom: 5px !important;
-        font-size: 0.75rem !important;
-    }
-
-    @* Reduce the padding to account for the border and prevent the button from growing *@
-    .mud-button-outlined.mud-button-outlined-primary {
-        padding-left: 11px !important;
-        padding-right: 11px !important;
-    }
-
-    @* Treeview adjustments to make more compact *@
-    .mud-treeview-item-arrow {
-        width: 0.8rem;
-        margin: 0px;
-    }
-
-    .mud-treeview-item-icon {
-        width: 1.5rem;
-        margin-right: 0px;
-        margin-inline-end: 0px;
     }
 
     /* Custom Modelica icon styles */
@@ -109,119 +63,6 @@
     .modelica-tree-icon svg {
         width: 100%;
         height: 100%;
-    }
-
-    .mud-treeview-item-checkbox {
-        width: 1rem;
-        height: 1rem;
-    }
-
-    .mud-treeview-item .mud-treeview-item-arrow .mud-icon-button{
-        padding: 0px;
-    }
-
-    .mud-treeview-item-arrow .mud-icon-size-medium{
-        width: 1rem !important;
-        height: 1rem !important;
-    }
-
-    .mud-treeview-item-checkbox .mud-icon-size-medium{
-        width: 1rem !important;
-        height: 1rem !important;
-    }
-
-    .mud-treeview-item-checkbox .mud-icon-button{
-        padding: 0px !important;
-    }
-
-
-    .mud-toolbar{
-        --mud-internal-toolbar-height: 2rem;
-    }
-
-    .mud-table-toolbar{
-        padding: 0.5rem;
-        padding-inline-start: 0.5rem;
-    }
-
-    .compact-table {
-        font-size: 0.625rem !important;
-        font-family: var(--mud-typography-body1-family) !important;
-        padding-top: 3px !important;
-        padding-bottom: 3px !important;
-    }
-
-    .body1-table {
-        font-size: var(--mud-typography-body1-size) !important;
-        font-family: var(--mud-typography-body1-family) !important;
-        padding-top: 4px !important;
-        padding-bottom: 4px !important;
-    }
-
-    .body1-table-right {
-        font-size: var(--mud-typography-body1-size) !important;
-        font-family: var(--mud-typography-body1-family) !important;
-        padding-top: 4px !important;
-        padding-bottom: 4px !important;
-        text-align: right !important;
-    }
-
-    .pre-wrap {
-        white-space: pre-wrap;
-    }
-
-    .mud-picker .mud-typography-subtitle1 {
-        font-size: var(--mud-typography-body1-size) !important;
-        font-family: var(--mud-typography-body1-family) !important; 
-    }
-
-    .mud-input-control>.mud-input-control-input-container>.mud-input-label-inputcontrol {
-        font-size: var(--mud-typography-body1-size) !important;
-        font-family: var(--mud-typography-body1-family) !important; 
-    }
-
-    .mud-picker .mud-input-label-inputcontrol {
-        transform: translate(0, 20px) scale(1);
-    }
-
-    .mud-toolbar-gutters {
-        padding-left: 4px;
-        padding-right: 16px;
-    }
-
-    .mud-dialog-width-lg {
-        max-width: 90%;
-    }
-
-    .mud-icon-size-small {
-        font-size: 1.0rem !important;
-    }
-
-    .mud-icon-size-medium {
-        font-size: 1.25rem !important;
-    }
-
-    .mud-icon-size-large {
-        font-size: 1.5rem !important;
-    }
-
-    .mud-button-group-root.mud-button-group-text-size-small .mud-button-root {
-        font-size: 0.75rem;
-        padding: 4px 4px;
-    }
-
-    .compact-icon-button {
-        padding: 4px !important;
-    }
-
-    .mud-button-text-size-small {
-        font-size: 0.75rem;
-        line-height: 1.25rem;
-    }
-
-    .mud-list-item-avatar {
-        min-width: 32px;
-        flex-shrink: 0;
     }
 </style>
 

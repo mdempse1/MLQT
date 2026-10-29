@@ -5,7 +5,7 @@ the root `CLAUDE.md`; this file carries what is specific to the parser.
 
 ANTLR 4 based parser for Modelica source code. Includes code formatting, icon extraction, style rule
 checking, and external resource extraction. **This assembly requires >95% coverage for every class**,
-as it is critical to the project, and it is one of the six whose public surface is tracked in
+as it is critical to the project, and it is one of the seven whose public surface is tracked in
 `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`.
 
 ```csharp

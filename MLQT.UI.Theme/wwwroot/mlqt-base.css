@@ -1,0 +1,277 @@
+/* MLQT's base stylesheet: the page, its scrollbars, and the split and tab layouts that fill a window.
+
+   Loaded BEFORE MudBlazor.min.css, where MLQT's app.css always was (ThemeAssetManifest's leading
+   list), so a rule here takes effect only where MudBlazor's sheet has nothing for the same
+   property at the same specificity, or where it carries !important. Every rule here was checked
+   against MudBlazor 9.11's sheet for that. A rule overriding something MudBlazor styles belongs
+   in mlqt-density.css, which comes after it.
+
+   The page's font and link colour were here, out of the old app.css, and never applied:
+   MudBlazor's own `body { font-family }` and `a { color }` come later at the same specificity and
+   won. They were removed rather than moved after MudBlazor, which would have changed MLQT's look.
+   The font is MlqtTheme's typography (Roboto), and links take MudBlazor's text colour. */
+
+/* ── The theme's tokens ──────────────────────────────────────────────────────────
+   Every value the theme's two stylesheets would otherwise repeat, and that a tool on the theme
+   may want to read or change. Each name is public, like a type: PublicCss.txt beside the project
+   lists them and ThemeCssContractTests holds the stylesheets to it.
+
+   Where MudBlazor already has the value, the token is that variable rather than a copy of it. The
+   text sizes are MlqtTheme's typography, which MudThemeProvider writes as --mud-typography-*, so
+   the controls sized here cannot drift from the text they hold; the fallback is the same size, for
+   a page with no MudThemeProvider on it.
+
+   --mlqt-control-border is not --mud-palette-lines-default, though in the light palette the two
+   are the same rgb(0,0,0,0.118): the MudBlazor variable turns white in dark mode, and this border
+   does not. Aliasing it would change every outlined input and button group in the dark theme,
+   which is a decision, not a refactor. */
+:root {
+    --mlqt-font-size: var(--mud-typography-body1-size, 0.75rem);
+    --mlqt-font-size-small: var(--mud-typography-caption-size, 0.625rem);
+
+    --mlqt-space-1: 4px;
+    --mlqt-space-2: 8px;
+    --mlqt-space-4: 16px;
+
+    --mlqt-control-height: 2rem;
+    --mlqt-icon-size-small: 1rem;
+    --mlqt-icon-size-medium: 1.25rem;
+    --mlqt-icon-size-large: 1.5rem;
+
+    --mlqt-control-border: rgb(0,0,0,0.118);
+    --mlqt-divider-color: var(--mud-palette-lines-default);
+
+    /* A selected row, and a search match: washes over content that keeps its own colours. */
+    --mlqt-highlight-selected: rgba(25, 118, 210, 0.15);
+    --mlqt-highlight-match: rgba(255, 213, 79, 0.55);
+
+    --mlqt-scrollbar-size: 4px;
+    --mlqt-scrollbar-thumb: rgba(128, 128, 128, 0.45);
+    --mlqt-scrollbar-thumb-hover: rgba(128, 128, 128, 0.7);
+}
+
+/* The light match wash is legible on white and glares on near-black. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --mlqt-highlight-match: rgba(255, 213, 79, 0.3);
+    }
+}
+
+/* FocusOnNavigate moves focus to the page's h1, which is for screen readers, not a box to draw. */
+h1:focus {
+    outline: none;
+}
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+    .blazor-error-boundary::after {
+        content: "An error has occurred."
+    }
+
+/* Scrollbars.
+
+   Nothing of ours styled these, so each engine drew its own - and the difference that matters is not
+   width, it is that **WebKitGTK uses overlay scrollbars**: they take no layout width and float on top
+   of the content, so in the library browser the bar sat over the "more actions" and revert buttons and
+   swallowed clicks meant for them. WebView2's are classic and occupy layout, so nothing is ever
+   underneath one. Reported against the Linux build with a screenshot (phase 7b-6, B140).
+
+   Giving ::-webkit-scrollbar any rule at all is what fixes that: WebKit then renders a classic,
+   layout-occupying scrollbar and lays the content out beside it. The width below is almost beside the
+   point.
+
+   THE !important IS LOAD-BEARING, and this is the part that took two failed attempts to find.
+   Something in the MudBlazor stack injects a <style> at runtime containing:
+
+       html, body * { scrollbar-color: rgb(196,196,196) transparent; scrollbar-width: thin; }
+
+   and **setting either standard property makes WebKit ignore every -webkit- scrollbar rule in the
+   document**, falling back to the overlay bar. That injected sheet comes after this file, so without
+   !important it wins and nothing here has any effect. It is assembled in code from theme values - the
+   literal appears in no shipped static asset - so grepping the packages for it finds nothing.
+
+   The same precedence is why this file must NOT declare scrollbar-width or scrollbar-color itself.
+   The first attempt at this declared both "as a hedge, whichever the engine honours", which disabled
+   its own -webkit- rules. Measured in WebKitGTK 2.52 as the gutter a scrollable div reserves:
+
+       ::-webkit-scrollbar { width: 14px }                     ->  14
+       ...plus scrollbar-width: thin, anywhere above it        ->   0
+       ...plus scrollbar-color, anywhere above it              ->   0
+       nothing at all                                          ->   0
+
+   Chromium applies the same precedence, so one mechanism covers both hosts. */
+
+html,
+body * {
+    scrollbar-width: auto !important;
+    scrollbar-color: auto !important;
+}
+
+::-webkit-scrollbar {
+    width: var(--mlqt-scrollbar-size) !important;
+    height: var(--mlqt-scrollbar-size) !important;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--mlqt-scrollbar-thumb);
+    border-radius: 2px;
+}
+
+/* No transparent border insetting the thumb, and that is tied to the track width above. The inset
+   was `border: 3px solid transparent` with `background-clip: content-box`, which is the usual way to
+   keep a thumb off the content - and it consumes 3px from each side, so in a 4px track the thumb's
+   content box is 0 wide and **nothing is painted at all**. Rendered and looked at: the gutter was
+   reserved and the scrollbar was invisible. If the track is ever widened past 8px an inset is worth
+   having again; at this width the track is the inset. */
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--mlqt-scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* ── The tab pane, and why no page in it subtracts from the viewport ─────────────
+   The same rule as the findings pane below, one level out, and for the same reason.
+
+   Every page in the tab host used to set its own height as `calc(100vh - N)`: 185px on Code
+   Review, 140px on Dependencies, 135px on External Resources. Three different numbers for the same
+   distance, which is the tell — N stands for the app bar, the pane margins, the current-class box,
+   the tab header and the page's own toolbar, and nobody can keep a constant equal to the sum of
+   five things they do not control.
+
+   Measured, Code Review's was right to within 12px. That is not a margin, it is the absence of
+   one: the parse-error alert is 34px, so a class with a syntax error made the page taller than the
+   window, and the first thing a page-level scrollbar carries out of view is the box telling you
+   which class you are looking at (B250).
+
+   So the chain from this pane down to a page is a flex column and each page fills what is left.
+   `min-height: 0` at every step is what allows a flex item to be shorter than its content; without
+   it each one's floor is its content height, nothing ever shrinks, and the overflow reappears
+   further out. The panels scroll rather than clip, so a page that does want more room than there
+   is gets a scrollbar of its own instead of moving the furniture. */
+
+.mlqt-tab-host {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* MudStack renders as `d-flex flex-column`; there is no `mud-stack` class to hang this on. */
+.mlqt-tab-host > .d-flex,
+.mlqt-tab-host .mud-tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-tab-host .mud-tabs-panels {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* A page's own root, and the stack inside it. Both have to pass the height through or the page
+   sizes to its content and the pane scrolls instead of the page filling it. */
+.mlqt-page-fill,
+.mlqt-page-fill > .d-flex {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* ── The split panes ─────────────────────────────────────────────────────────────
+   Every resizable divide is a MudSplitPanel: the tree from the tabs, the code from the findings,
+   the resource tree from its details. It replaced MudBlazor.Extensions' MudExSplitPanel, the only
+   thing that package was here for, which brought a vulnerable ImageSharp in with it.
+
+   MudSplitPanel starts its panes in proportion only one way, which is 50/50: its script gives both
+   panes `width: 100%` (or `height`) and lets flexbox shrink them to fit. Its initial size is in
+   pixels, which no proportion of a window is. So the proportion is set by how much each pane gives
+   up in that shrink — flexbox takes from each pane in proportion to `flex-shrink` times its size,
+   and the two sizes start equal. A first pane giving up 3 parts in 4 is left a quarter. Dragging
+   writes pixel sizes that already fit, so after a drag the weights decide only how a window resize
+   is shared out.
+
+   Its one `MinPanelSize` is both panes' floor; a pane needing more says so with `min-width`, which
+   flexbox holds through a window resize as well as a drag.
+
+   `overflow: clip` because the divider's grab area is a pseudo-element reaching 12px past each of
+   its ends: on the divider running the window's full height that made the page 12px taller than the
+   window, and scrolling it carried the current-class box out of view (ResizablePanesJourney). Clip,
+   not hidden, so the split does not become a scroll container. */
+.mlqt-split {
+    height: 100%;
+    overflow: clip;
+}
+
+.mlqt-split > .child-panel {
+    min-width: 0;
+    min-height: 0;
+}
+
+.mlqt-split-quarter > .child-panel:first-child {
+    flex-shrink: 3;
+}
+
+.mlqt-split-third > .child-panel:first-child {
+    flex-shrink: 2;
+}
+
+.mlqt-split-two-thirds > .child-panel:last-child {
+    flex-shrink: 2;
+}
+
+.mlqt-split > .child-panel.mlqt-pane-min-240 {
+    min-width: 240px;
+}
+
+.mlqt-split > .child-panel.mlqt-pane-min-400 {
+    min-width: 400px;
+}
+
+/* MudSplitPanel's divider is a gap with nothing in it; this draws the line the old splitter had. */
+.mlqt-split-divider {
+    background-color: var(--mlqt-divider-color);
+}
+
+/* The divider's grab area grows into the second panel only. MudBlazor widens it with a ::before
+   reaching 12px past every side of the gap, which lies on top of the first panel's scrollbar - the
+   tree's vertical one beside the tabs, the code viewer's horizontal one above the findings - so a
+   click meant for the scrollbar started a drag instead, and only the wheel could scroll. In every
+   split of ours the scrollbar against the gap is the first panel's, and the second panel has
+   nothing there.
+
+   The z-index is what lets that half be grabbed at all. A second pane that is positioned - Code
+   Review's findings pane is `position: relative` - paints after the divider and over its ::before,
+   so without it the grab area there was the 4px gap and nothing more. */
+.mud-split-panel .divider.mlqt-split-divider {
+    z-index: 1;
+}
+
+.mud-split-panel .divider.mlqt-split-divider::before {
+    inset: -12px -8px -12px 0;
+}
+
+.mud-split-panel .divider.horizontal.mlqt-split-divider::before {
+    inset: 0 -12px -8px -12px;
+}
+
+/* A split that takes the room left over in a page, rather than its parent's whole height. */
+.mlqt-fill-splitter {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+}

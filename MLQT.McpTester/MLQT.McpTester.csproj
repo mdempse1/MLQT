@@ -33,8 +33,15 @@
              Photino's net9.0 asset group brings in. 7b-0 confirmed both work; this is tidiness. -->
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="10.0.9" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
-        <PackageReference Include="MudBlazor" Version="9.11.0" />
         <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- MLQT's look, and MudBlazor with it at the version the theme's stylesheets are written
+             for. A reference this standalone tool can afford, unlike MLQT.Services above: the theme
+             brings MudBlazor and nothing of Modelica. It is also the theme's proof that a tool can
+             take MLQT's look without MLQT.Shared. -->
+        <ProjectReference Include="..\MLQT.UI.Theme\MLQT.UI.Theme.csproj" />
     </ItemGroup>
 
 </Project>

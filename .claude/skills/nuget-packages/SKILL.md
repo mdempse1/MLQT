@@ -58,8 +58,12 @@ consumed unmodified as NuGet-delivered libraries.
 
 ### MudBlazor (v9.11.0)
 - **Purpose**: Blazor component library for Material Design UI
-- **Used in**: MLQT.Shared, MLQT.McpTester
+- **Used in**: MLQT.UI.Theme (MLQT.Shared and MLQT.McpTester take it from there)
 - **License**: [MIT](https://github.com/MudBlazor/MudBlazor/blob/dev/LICENSE)
+- **Upgrading it is a change to the theme**: MLQT.UI.Theme is the only project in the repository
+  that references it, because its stylesheets override MudBlazor's rules by name and a consumer of
+  the theme must get the version they were written against. Regenerate the documentation
+  screenshots after an upgrade (the `user-documentation` skill) and compare them
 - **NuGet**: https://www.nuget.org/packages/MudBlazor
 - **Components used**: MudTreeView, MudChipSet, MudTable, MudDialog, MudAlert, MudSplitPanel, etc.
 - **Note**: 9.11.0 is the first version with `MudSplitPanel`, which is why it is the floor. It
@@ -266,9 +270,10 @@ Test packages are marked as development dependencies and don't ship with the app
 | DymolaInterface | Microsoft.Extensions.DependencyInjection, PublicApiAnalyzers |
 | OpenModelicaInterface | NetMQ, Microsoft.Extensions.DependencyInjection, System.Security.Cryptography.Xml, PublicApiAnalyzers |
 | MLQT.Services | NLog, PublicApiAnalyzers _(UI-free: no MudBlazor)_ |
-| MLQT.Shared | MudBlazor, NLog, Microsoft.AspNetCore.Components.Web |
+| MLQT.UI.Theme | MudBlazor, Microsoft.AspNetCore.Components.Web, PublicApiAnalyzers |
+| MLQT.Shared | NLog, Microsoft.AspNetCore.Components.Web _(MudBlazor through MLQT.UI.Theme)_ |
 | MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
 | MLQT.Cli, MLQT.TestHost | none of their own _(project references only)_ |
 | MLQT.McpServer | ModelContextProtocol, Microsoft.Extensions.Hosting, Svg.Skia, SkiaSharp.NativeAssets.Linux |
-| MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol, Microsoft.Extensions.Logging.Debug |
+| MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, ModelContextProtocol, Microsoft.Extensions.Logging.Debug _(MudBlazor through MLQT.UI.Theme)_ |
 | Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (Moq in DymolaInterface/OpenModelicaInterface/Services/Shared/McpServer tests; MLQT.Shared.Tests also bunit; RevisionControl.Tests also SharpSvn; DymolaInterface.Tests also DependencyInjection; MLQT.Journeys also Microsoft.Playwright and LibGit2Sharp) |

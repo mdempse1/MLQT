@@ -1,0 +1,26 @@
+#nullable enable
+const MLQT.UI.Theme.ThemeAssetManifest.ContentRoot = "_content/MLQT.UI.Theme/" -> string!
+const MLQT.UI.Theme.ThemeAssetManifest.MudBlazorScript = "_content/MudBlazor/MudBlazor.min.js" -> string!
+const MLQT.UI.Theme.ThemeAssetManifest.MudBlazorStylesheet = "_content/MudBlazor/MudBlazor.min.css" -> string!
+MLQT.UI.Theme.Components.ProgressDialog
+MLQT.UI.Theme.Components.ProgressDialog.DialogActions.get -> Microsoft.AspNetCore.Components.RenderFragment?
+MLQT.UI.Theme.Components.ProgressDialog.DialogActions.set -> void
+MLQT.UI.Theme.Components.ProgressDialog.DialogContent.get -> Microsoft.AspNetCore.Components.RenderFragment?
+MLQT.UI.Theme.Components.ProgressDialog.DialogContent.set -> void
+MLQT.UI.Theme.Components.ProgressDialog.Options.get -> MudBlazor.DialogOptions?
+MLQT.UI.Theme.Components.ProgressDialog.Options.set -> void
+MLQT.UI.Theme.Components.ProgressDialog.ProgressDialog() -> void
+MLQT.UI.Theme.Components.ProgressDialog.TitleContent.get -> Microsoft.AspNetCore.Components.RenderFragment?
+MLQT.UI.Theme.Components.ProgressDialog.TitleContent.set -> void
+MLQT.UI.Theme.Components.ProgressDialog.Visible.get -> bool
+MLQT.UI.Theme.Components.ProgressDialog.Visible.set -> void
+MLQT.UI.Theme.MlqtTheme
+MLQT.UI.Theme.ThemeAssetManifest
+static MLQT.UI.Theme.MlqtTheme.BuildTheme(MudBlazor.PaletteLight! paletteLight) -> MudBlazor.MudTheme!
+static MLQT.UI.Theme.MlqtTheme.GetDefaultPaletteDark() -> MudBlazor.PaletteDark!
+static MLQT.UI.Theme.MlqtTheme.GetDefaultPaletteLight() -> MudBlazor.PaletteLight!
+static MLQT.UI.Theme.ThemeAssetManifest.LeadingScripts.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static MLQT.UI.Theme.ThemeAssetManifest.LeadingStylesheets.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static MLQT.UI.Theme.ThemeAssetManifest.TrailingScripts.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static MLQT.UI.Theme.ThemeAssetManifest.TrailingStylesheets.get -> System.Collections.Generic.IReadOnlyList<string!>!
+~override MLQT.UI.Theme.Components.ProgressDialog.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void

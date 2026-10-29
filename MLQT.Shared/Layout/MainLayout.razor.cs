@@ -1,5 +1,6 @@
 using MLQT.Shared.Pages;
 using MLQT.Shared.Theming;
+using MLQT.UI.Theme;
 using DymolaInterface;
 using OpenModelicaInterface;
 using System.IO;
@@ -2247,7 +2248,7 @@ public partial class MainLayout : IDisposable
     {
         _isDarkMode = uiSettings.Theme == Theme.Dark;
         _myTheme = uiSettings.Theme == Theme.Custom
-            ? MlqtTheme.BuildTheme(MlqtTheme.BuildCustomPalette(uiSettings))
+            ? MlqtTheme.BuildTheme(CustomPalette.FromSettings(uiSettings))
             : MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
     }
 

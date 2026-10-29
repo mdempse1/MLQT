@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using MLQT.Shared;
+using MLQT.UI.Theme;
 using Xunit;
 
 namespace MLQT.Shared.Tests;
@@ -228,13 +229,16 @@ public class HostAssetManifestTests
             + "no error anywhere: " + string.Join(", ", offenders));
     }
 
+    /// <summary>The bundled font's folder, which moved to the theme package with the rest of the look.</summary>
+    private static string FontsFolder() => Path.Combine(RepositoryRoot(), "MLQT.UI.Theme", "wwwroot", "fonts");
+
     [Fact]
     public void EveryFontFileTheBundledStylesheetNamesExists()
     {
         // The manifest names roboto.css and EveryLocalAssetTheManifestNamesExists checks that file is
         // there - but the nine .woff2 files are named inside it, one level below anything the manifest
         // can see. A missing one fails the way the network link did: silently, in a fallback typeface.
-        var fonts = Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot", "fonts");
+        var fonts = FontsFolder();
         var css = File.ReadAllText(Path.Combine(fonts, "roboto.css"));
 
         // The urls are unquoted because the file is generated from the Google Fonts CSS, which writes
@@ -252,7 +256,7 @@ public class HostAssetManifestTests
         // The link it replaced requested 300, 400, 500 and 700. A variable face declaring 100 900
         // covers all four and anything MudBlazor adds later; a bundle of static weights would not,
         // and the symptom - one component in a slightly wrong weight - is not one anybody reports.
-        var css = File.ReadAllText(Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot", "fonts", "roboto.css"));
+        var css = File.ReadAllText(Path.Combine(FontsFolder(), "roboto.css"));
 
         Assert.Equal(9, Regex.Matches(css, @"font-weight:\s*100 900").Count);
         Assert.Contains("font-family: 'Roboto'", css);
@@ -264,7 +268,7 @@ public class HostAssetManifestTests
         // Redistributing a font means shipping its licence. Roboto moved from Apache 2.0 to the SIL
         // Open Font License with Roboto 3, which is the version Google Fonts serves - so this is the
         // licence that has to be here, not the one Roboto is remembered as having.
-        var licence = Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot", "fonts", "OFL.txt");
+        var licence = Path.Combine(FontsFolder(), "OFL.txt");
 
         Assert.True(File.Exists(licence), "the bundled font has no licence file");
         Assert.Contains("SIL Open Font License", File.ReadAllText(licence));
@@ -274,17 +278,65 @@ public class HostAssetManifestTests
     public void EveryLocalAssetTheManifestNamesExists()
     {
         // A path that resolves to nothing fails silently in a browser: the script does not load and
-        // whatever needed it is simply absent.
-        var shared = Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot");
-
+        // whatever needed it is simply absent. Both of this repository's libraries serve assets, and
+        // each path is looked for in the wwwroot of the one it names.
+        var checkedAny = new HashSet<string>();
         foreach (var asset in HostAssetManifest.Scripts.Concat(HostAssetManifest.Stylesheets))
         {
-            const string prefix = "_content/MLQT.Shared/";
-            if (!asset.StartsWith(prefix))
-                continue;   // another package's, or the host's own, or a URL
+            foreach (var project in new[] { "MLQT.Shared", "MLQT.UI.Theme" })
+            {
+                var prefix = $"_content/{project}/";
+                if (!asset.StartsWith(prefix))
+                    continue;   // another package's, or the host's own, or a URL
 
-            var path = Path.Combine(shared, asset[prefix.Length..].Replace('/', Path.DirectorySeparatorChar));
-            Assert.True(File.Exists(path), $"{asset} is in the manifest but not in MLQT.Shared/wwwroot");
+                var path = Path.Combine(RepositoryRoot(), project, "wwwroot",
+                                        asset[prefix.Length..].Replace('/', Path.DirectorySeparatorChar));
+                Assert.True(File.Exists(path), $"{asset} is in the manifest but not in {project}/wwwroot");
+                checkedAny.Add(project);
+            }
         }
+
+        // Without this, a prefix that stopped matching would check nothing and pass.
+        Assert.Equal(["MLQT.Shared", "MLQT.UI.Theme"], checkedAny.Order());
+    }
+
+    [Fact]
+    public void TheMcpTestersPage_LoadsTheTheme_InTheOrderTheThemeGives()
+    {
+        // The tester takes MLQT's look from MLQT.UI.Theme and nothing else of MLQT, so its page is
+        // held to ThemeAssetManifest directly rather than to HostAssetManifest, with its own app.css
+        // where a tool's own stylesheets go. It is the theme's second consumer in this repository,
+        // and the proof that a host page written from ThemeAssetManifest alone is complete.
+        var html = File.ReadAllText(Path.Combine(RepositoryRoot(), "MLQT.McpTester", "wwwroot", "index.html"));
+
+        Assert.Equal(
+            [.. ThemeAssetManifest.LeadingStylesheets, "app.css", .. ThemeAssetManifest.TrailingStylesheets],
+            StylesheetsIn(html));
+
+        Assert.Equal(
+            [.. ThemeAssetManifest.LeadingScripts, .. ThemeAssetManifest.TrailingScripts],
+            ScriptsIn(html).Where(s => s != HostAssetManifest.WebViewBootstrapScript).ToList());
+
+        Assert.Contains("MLQT.McpTester.styles.css", html);
+    }
+
+    [Fact]
+    public void TheThemesAssetsSurroundMlqtsOwn_InTheOrderTheThemeGives()
+    {
+        // ThemeAssetManifest's contract with any host: its leading stylesheets first, its trailing
+        // ones - the font, MudBlazor, the density overrides - after the tool's own. The density file
+        // has to follow MudBlazor's sheet or none of its overrides win.
+        var sheets = HostAssetManifest.Stylesheets;
+        Assert.Equal(ThemeAssetManifest.LeadingStylesheets, sheets.Take(ThemeAssetManifest.LeadingStylesheets.Count));
+        Assert.Equal(ThemeAssetManifest.TrailingStylesheets, sheets.TakeLast(ThemeAssetManifest.TrailingStylesheets.Count));
+
+        var trailing = ThemeAssetManifest.TrailingStylesheets.ToList();
+        Assert.True(trailing.IndexOf(ThemeAssetManifest.ContentRoot + "mlqt-density.css")
+                    > trailing.IndexOf(ThemeAssetManifest.MudBlazorStylesheet),
+            "mlqt-density.css must come after MudBlazor's stylesheet");
+
+        var scripts = HostAssetManifest.Scripts;
+        Assert.Equal(ThemeAssetManifest.LeadingScripts, scripts.Take(ThemeAssetManifest.LeadingScripts.Count));
+        Assert.Equal(ThemeAssetManifest.TrailingScripts, scripts.TakeLast(ThemeAssetManifest.TrailingScripts.Count));
     }
 }

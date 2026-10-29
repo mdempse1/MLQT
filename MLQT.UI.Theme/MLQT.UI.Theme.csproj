@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    MLQT's look, for any Blazor tool that wants it: the MudBlazor theme, the stylesheets that make
+    MudBlazor small and dense, the bundled font, and the few generic components. MLQT.Shared builds
+    on it, so the application and every other tool take their appearance from one place.
+
+    Built on outside this repository, so its public surface is tracked like the other six
+    assemblies CLAUDE.md lists. Its stylesheets' class names and tokens are a contract too, which the
+    analyzer cannot see: PublicCss.txt lists them and ThemeCssContractTests holds the stylesheets
+    to it.
+
+    MudBlazor is referenced here and nowhere else in the repository, so a consumer gets the
+    version the theme was built against rather than choosing one that might disagree with its CSS.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TrackPublicApi>true</TrackPublicApi>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- RS0041 (an oblivious reference type in public API) fires on BuildRenderTree, which the Razor
+         compiler generates for every component outside any nullable context. Its line in
+         PublicAPI.Unshipped.txt already records that with a leading `~`. ModelicaParser silences the
+         same diagnostic for its ANTLR output with a scoped .editorconfig, but a source generator's
+         output is not a file on disk, and a section matches nothing there - tried. Everything written
+         by hand here is under <Nullable>enable</Nullable>, so only generated code can raise it. -->
+    <NoWarn>$(NoWarn);RS0041</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MLQT.Shared.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.9" />
+    <PackageReference Include="MudBlazor" Version="9.11.0" />
+  </ItemGroup>
+
+</Project>

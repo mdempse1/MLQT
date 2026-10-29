@@ -4,7 +4,7 @@ Loaded when working in `MLQT.Services/` or `MLQT.Services.Tests/`. The repositor
 where interfaces live, and that every reusable service is registered in `AddMlqtCore()` — are in the
 root `CLAUDE.md`; this file carries each service's contract and the shared check pipeline.
 
-One of the six assemblies whose public surface is tracked in `PublicAPI.*.txt`.
+One of the seven assemblies whose public surface is tracked in `PublicAPI.*.txt`.
 
 ## Key files
 

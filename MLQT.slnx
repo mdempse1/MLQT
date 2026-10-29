@@ -3,6 +3,7 @@
     <Project Path="DymolaInterface/DymolaInterface.csproj" />
     <Project Path="MLQT.Shared/MLQT.Shared.csproj" />
     <Project Path="MLQT.Shared.Tests/MLQT.Shared.Tests.csproj" />
+    <Project Path="MLQT.UI.Theme/MLQT.UI.Theme.csproj" />
     <Project Path="MLQT.TestHost/MLQT.TestHost.csproj" />
     <Project Path="MLQT.Journeys/MLQT.Journeys.csproj" />
     <Project Path="MLQT.Photino/MLQT.Photino.csproj" />

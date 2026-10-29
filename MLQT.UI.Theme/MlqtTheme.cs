@@ -1,17 +1,15 @@
-using MLQT.Shared.Models;
 using MudBlazor;
 
-namespace MLQT.Shared.Theming;
+namespace MLQT.UI.Theme;
 
 /// <summary>
-/// MLQT's MudBlazor theme: the default palettes, the palette built from a user's custom colours,
-/// and the typography and layout every theme shares.
+/// MLQT's MudBlazor theme: the default palettes, and the typography and layout every theme shares.
 /// </summary>
 /// <remarks>
-/// <para>Lifted out of <c>MainLayout</c> in phase 7a-4. Four pure functions of a
-/// <see cref="UISettings"/> had no business in a 3,000-line layout component, and while they were
-/// there nothing could ask what colour the app would use without rendering the whole application
-/// shell.</para>
+/// <para>Lifted out of <c>MainLayout</c> in phase 7a-4, and out of <c>MLQT.Shared</c> into this
+/// package so that other tools can look like MLQT without referencing the application. The palette
+/// built from a user's custom colours stayed behind as <c>MLQT.Shared.Theming.CustomPalette</c>:
+/// it reads MLQT's settings, which are the application's business and not the theme's.</para>
 ///
 /// <para>The typography is the part worth reading: MLQT deliberately runs smaller than MudBlazor's
 /// defaults - body text at 0.75rem, headings scaled to match - because the windows this app fills
@@ -20,43 +18,38 @@ namespace MLQT.Shared.Theming;
 /// </remarks>
 public static class MlqtTheme
 {
+    /// <summary>
+    /// MLQT's primary colour, which is also its app bar's.
+    /// </summary>
+    /// <remarks>
+    /// <para>The app bar's colour is the primary one in both palettes, so a tool's plain
+    /// <c>&lt;MudAppBar&gt;</c> looks like MLQT's without being told to. MLQT's own asks for
+    /// <c>Color.Primary</c>, which MudBlazor paints in <c>Primary</c> whatever <c>AppbarBackground</c>
+    /// says; the palettes once set that to a lighter blue, <c>#6a93b1</c>, which MLQT never showed and
+    /// every other tool on the theme did. The custom palette has always made the two one colour.</para>
+    /// </remarks>
+    private const string PrimaryColour = "#6a70b1";
+
     public static PaletteLight GetDefaultPaletteLight() => new PaletteLight()
     {
-        Primary = "#6a70b1",
+        Primary = PrimaryColour,
         Secondary = "#666666",
         Tertiary = "#a18ac1",
-        TextPrimary = "#6a70b1",
-        AppbarBackground = "#6a93b1",
+        TextPrimary = PrimaryColour,
+        AppbarBackground = PrimaryColour,
         AppbarText = "#ffffff",
-        Info = "#6a70b1",
+        Info = PrimaryColour,
         PrimaryContrastText = "#ffffff"
     };
 
     public static PaletteDark GetDefaultPaletteDark() => new PaletteDark()
     {
-        Primary = "#6a70b1",
+        Primary = PrimaryColour,
         Secondary = "#666666",
         Tertiary = "#a18ac1",
-        AppbarBackground = "#6a93b1",
+        AppbarBackground = PrimaryColour,
         AppbarText = "#ffffff",
         Background = "#32333d"
-    };
-
-    public static PaletteLight BuildCustomPalette(UISettings uiSettings) => new PaletteLight()
-    {
-        Black = uiSettings.CustomBlack,
-        White = uiSettings.CustomWhite,
-        Primary = uiSettings.CustomPrimary,
-        PrimaryContrastText = uiSettings.CustomPrimaryContrastText,
-        Secondary = uiSettings.CustomSecondary,
-        SecondaryContrastText = uiSettings.CustomSecondaryContrastText,
-        Tertiary = uiSettings.CustomTertiary,
-        TertiaryContrastText = uiSettings.CustomTertiaryContrastText,
-        Info = uiSettings.CustomInfo,
-        InfoContrastText = uiSettings.CustomInfoContrastText,
-        TextPrimary = uiSettings.CustomPrimary,
-        AppbarBackground = uiSettings.CustomPrimary,
-        AppbarText = uiSettings.CustomPrimaryContrastText
     };
 
     public static MudTheme BuildTheme(PaletteLight paletteLight) => new MudTheme()

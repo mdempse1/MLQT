@@ -1,3 +1,5 @@
+using MLQT.UI.Theme;
+
 namespace MLQT.Shared;
 
 /// <summary>
@@ -24,19 +26,21 @@ public static class HostAssetManifest
     /// named after the host assembly, so it is not here — each host adds its own.
     /// </summary>
     /// <remarks>
-    /// <b>Every entry is a local path, and that is an invariant rather than a coincidence</b> —
+    /// <para><b>Every entry is a local path, and that is an invariant rather than a coincidence</b> —
     /// <see cref="MLQT.Shared.Tests"/>'s manifest tests fail on an <c>http</c> anywhere in either
     /// list. Roboto was linked from <c>fonts.googleapis.com</c> until 7b-4, which put a network
     /// round-trip on the startup path of a desktop application: slow on a good connection, and on an
     /// offline or locked-down machine a silent failure that shows up as the whole UI in the wrong
-    /// typeface. The font is now in <c>MLQT.Shared/wwwroot/fonts</c>.
+    /// typeface. The font is now in <c>MLQT.UI.Theme/wwwroot/fonts</c>.</para>
+    /// <para>The theme's stylesheets go either side of MLQT's own, as
+    /// <see cref="ThemeAssetManifest"/> says; this list is that, with MLQT's two in the middle.</para>
     /// </remarks>
     public static IReadOnlyList<string> Stylesheets { get; } =
     [
+        .. ThemeAssetManifest.LeadingStylesheets,
         "_content/MLQT.Shared/app.css",
         "app.css",
-        "_content/MLQT.Shared/fonts/roboto.css",
-        "_content/MudBlazor/MudBlazor.min.css",
+        .. ThemeAssetManifest.TrailingStylesheets,
     ];
 
     /// <summary>
@@ -45,7 +49,7 @@ public static class HostAssetManifest
     /// </summary>
     public static IReadOnlyList<string> Scripts { get; } =
     [
-        "_content/MudBlazor/MudBlazor.min.js",
+        .. ThemeAssetManifest.LeadingScripts,
 
         // Cytoscape and its layout extensions. Every line below cytoscape.min.js registers against
         // the global it defines, and the last three build on the two before them.
@@ -65,9 +69,10 @@ public static class HostAssetManifest
         "_content/MLQT.Shared/diffViewer.js",
         "_content/MLQT.Shared/spellCheck.js",
 
-        // Edits MudBlazor's stylesheet, so it has to come after the stylesheets - which every script
-        // here does, since a script waits for the sheets above it.
-        "_content/MLQT.Shared/mudBlazorWorkarounds.js",
+        // The theme's mudBlazorWorkarounds.js, which edits MudBlazor's stylesheet and so has to come
+        // after the stylesheets - which every script here does, since a script waits for the sheets
+        // above it.
+        .. ThemeAssetManifest.TrailingScripts,
     ];
 
     /// <summary>

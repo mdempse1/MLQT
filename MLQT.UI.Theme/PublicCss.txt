@@ -1,0 +1,42 @@
+# The public CSS of MLQT.UI.Theme: every class its stylesheets define for a tool to use, and every
+# custom property they define for a tool to read or set. PublicAPI.*.txt does this for the types;
+# nothing can do it for CSS except this list and the test that holds the stylesheets to it
+# (MLQT.Shared.Tests/Theming/ThemeCssContractTests.cs).
+#
+# Adding a class or token: add its line here. Removing or renaming one breaks every tool that uses
+# it by name, with no compiler to say so - the page simply stops being styled. Prefer adding the new
+# name beside the old for a release. MudBlazor's own classes (mud-*) are not listed: the theme
+# styles them, it does not define them.
+
+.body1-table
+.body1-table-right
+.compact-icon-button
+.compact-table
+.mlqt-fill-splitter
+.mlqt-page-fill
+.mlqt-pane-min-240
+.mlqt-pane-min-400
+.mlqt-split
+.mlqt-split-divider
+.mlqt-split-quarter
+.mlqt-split-third
+.mlqt-split-two-thirds
+.mlqt-tab-host
+.pre-wrap
+
+--mlqt-control-border
+--mlqt-control-height
+--mlqt-divider-color
+--mlqt-font-size
+--mlqt-font-size-small
+--mlqt-highlight-match
+--mlqt-highlight-selected
+--mlqt-icon-size-large
+--mlqt-icon-size-medium
+--mlqt-icon-size-small
+--mlqt-scrollbar-size
+--mlqt-scrollbar-thumb
+--mlqt-scrollbar-thumb-hover
+--mlqt-space-1
+--mlqt-space-2
+--mlqt-space-4
