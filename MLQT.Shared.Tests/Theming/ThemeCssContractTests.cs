@@ -112,6 +112,23 @@ public class ThemeCssContractTests
     }
 
     [Fact]
+    public void TheThemeNeverSizesAnythingToTheViewport()
+    {
+        // MLQT's window never scrolls, so MLQT sizes its MudLayout to 100vh x 100vw - in MainLayout.
+        // Every tool on the theme got that rule while it was in mlqt-density.css, and on a page that
+        // scrolls 100vw counts the vertical scrollbar, so the layout overflowed sideways by its width
+        // (measured: 800px of layout in a 796px page). Sizing the page is the tool's business.
+        var offenders = ThemeStylesheets()
+            .SelectMany(path => Regex.Matches(WithoutComments(File.ReadAllText(path)), @"[\d.]+(vw|vh|dvh|svh|lvh)\b")
+                                     .Select(m => $"{Path.GetFileName(path)}: {m.Value}"))
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "The theme sizes something to the viewport, which every tool's page then inherits: "
+            + string.Join(", ", offenders) + ". Put viewport sizing in the application's own layout.");
+    }
+
+    [Fact]
     public void EveryFrameworkClassTheTestExemptsIsStillStyled()
     {
         // An exemption for a class the stylesheets stopped naming is a hole the next class of ours

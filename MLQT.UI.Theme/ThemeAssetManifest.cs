@@ -13,8 +13,9 @@ namespace MLQT.UI.Theme;
 /// <para><c>MLQT.Photino</c>'s page is written this way through <c>HostAssetManifest</c>, and
 /// <c>MLQT.McpTester</c>'s from this list alone; <c>HostAssetManifestTests</c> holds both.</para>
 /// <para><c>mlqt-base.css</c> comes before MudBlazor's stylesheet, where MLQT's <c>app.css</c> always
-/// was: its rules either carry <c>!important</c> or win on specificity, and moving it after
-/// MudBlazor would let rules that lose today start to apply. <c>mlqt-density.css</c> comes
+/// was, so it holds only rules MudBlazor's sheet does not contest: ones for the theme's own classes,
+/// ones more specific than MudBlazor's, and the <c>!important</c> scrollbar rules. Its header says
+/// how that was checked. <c>mlqt-density.css</c> comes
 /// <b>after</b> MudBlazor's, because it is a set of overrides of MudBlazor's own rules at the same
 /// specificity, and wins only by coming later. It was an inline <c>&lt;style&gt;</c> in MLQT's
 /// <c>MainLayout</c> until the theme became a package, which is how it always came last.</para>

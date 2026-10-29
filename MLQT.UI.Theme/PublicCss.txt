@@ -27,7 +27,6 @@
 --mlqt-control-border
 --mlqt-control-height
 --mlqt-divider-color
---mlqt-font-family
 --mlqt-font-size
 --mlqt-font-size-small
 --mlqt-highlight-match
@@ -35,7 +34,6 @@
 --mlqt-icon-size-large
 --mlqt-icon-size-medium
 --mlqt-icon-size-small
---mlqt-link-color
 --mlqt-scrollbar-size
 --mlqt-scrollbar-thumb
 --mlqt-scrollbar-thumb-hover

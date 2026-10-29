@@ -10,19 +10,10 @@
    literal is an optical correction to one control - a pixel for a border, a nudge to a label - which
    would mean nothing as a token. */
 
-.mud-layout {
-    height: 100vh;
-    width: 100vw;
-    position: relative;
-}
-
-.mud-navmenu {
-    margin: 0;
-    height: 100%;
-    position: relative;
-    list-style: none;
-    overscroll-behavior-y: contain;
-}
+/* Nothing here sizes the page itself. MLQT's window is one screen that never scrolls, and its
+   `.mud-layout { height: 100vh; width: 100vw }` says so - which is why that rule is in MLQT's
+   MainLayout and not here: on a page that does scroll, 100vw includes the vertical scrollbar and
+   the layout overflows sideways by its width (measured: 800px of layout in a 796px page). */
 
 /* Changes the font size for page controls at the bottom of a table */
 .mud-table-pagination {

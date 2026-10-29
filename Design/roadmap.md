@@ -195,7 +195,7 @@ look is MLQT's current one, and no logo or brand name goes in the theme. **Step 
 the project exists, and MLQT.Shared builds on it. It holds `MlqtTheme`, `mlqt-base.css`,
 `mlqt-density.css` (out of MainLayout's inline style), Roboto, `mudBlazorWorkarounds.js`,
 `ProgressDialog` and `ThemeAssetManifest`, with no visible change: the documentation screenshots
-matched before and after. **Step 2, done:** 18 `--mlqt-*` tokens for type, spacing, sizes, colours,
+matched before and after. **Step 2, done:** 16 `--mlqt-*` tokens for type sizes, spacing, sizes, colours,
 highlight washes and the scrollbar. A token is a MudBlazor variable where the stylesheet already used
 one, or where the value is MlqtTheme's own typography, and never where aliasing would change the dark
 theme. The theme's two stylesheets and MLQT's `app.css` use them, again with no visible change.

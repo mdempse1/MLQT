@@ -1,6 +1,6 @@
 /* MLQT's own styles: the rules that belong to this application's pages.
 
-   The rest of the look - the page font, the scrollbars, the split panes and the tab host, and
+   The rest of the look - the tokens, the scrollbars, the split panes and the tab host, and
    MudBlazor's density - is MLQT.UI.Theme's mlqt-base.css and mlqt-density.css, which other tools
    share. A rule that would make sense in any of them belongs there, not here. */
 

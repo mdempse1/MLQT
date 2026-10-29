@@ -1,9 +1,15 @@
 /* MLQT's base stylesheet: the page, its scrollbars, and the split and tab layouts that fill a window.
 
    Loaded BEFORE MudBlazor.min.css, where MLQT's app.css always was (ThemeAssetManifest's leading
-   list). Every rule here either carries !important or wins on specificity; moving the file after
-   MudBlazor would let a rule that loses today start to apply. The overrides that do need to come
-   after MudBlazor are mlqt-density.css. */
+   list), so a rule here takes effect only where MudBlazor's sheet has nothing for the same
+   property at the same specificity, or where it carries !important. Every rule here was checked
+   against MudBlazor 9.11's sheet for that. A rule overriding something MudBlazor styles belongs
+   in mlqt-density.css, which comes after it.
+
+   The page's font and link colour were here, out of the old app.css, and never applied:
+   MudBlazor's own `body { font-family }` and `a { color }` come later at the same specificity and
+   won. They were removed rather than moved after MudBlazor, which would have changed MLQT's look.
+   The font is MlqtTheme's typography (Roboto), and links take MudBlazor's text colour. */
 
 /* ── The theme's tokens ──────────────────────────────────────────────────────────
    Every value the theme's two stylesheets would otherwise repeat, and that a tool on the theme
@@ -20,7 +26,6 @@
    does not. Aliasing it would change every outlined input and button group in the dark theme,
    which is a decision, not a refactor. */
 :root {
-    --mlqt-font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     --mlqt-font-size: var(--mud-typography-body1-size, 0.75rem);
     --mlqt-font-size-small: var(--mud-typography-caption-size, 0.625rem);
 
@@ -33,7 +38,6 @@
     --mlqt-icon-size-medium: 1.25rem;
     --mlqt-icon-size-large: 1.5rem;
 
-    --mlqt-link-color: #006bb7;
     --mlqt-control-border: rgb(0,0,0,0.118);
     --mlqt-divider-color: var(--mud-palette-lines-default);
 
@@ -51,14 +55,6 @@
     :root {
         --mlqt-highlight-match: rgba(255, 213, 79, 0.3);
     }
-}
-
-html, body {
-    font-family: var(--mlqt-font-family);
-}
-
-a {
-    color: var(--mlqt-link-color);
 }
 
 /* FocusOnNavigate moves focus to the page's h1, which is for screen readers, not a box to draw. */

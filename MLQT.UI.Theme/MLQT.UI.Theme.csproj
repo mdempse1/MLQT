@@ -5,12 +5,12 @@
     MudBlazor small and dense, the bundled font, and the few generic components. MLQT.Shared builds
     on it, so the application and every other tool take their appearance from one place.
 
-    Built on outside this repository, so its public surface is tracked like the six assemblies
-    CLAUDE.md lists. Its stylesheets' class names and tokens are a contract too, which the
+    Built on outside this repository, so its public surface is tracked like the other six
+    assemblies CLAUDE.md lists. Its stylesheets' class names and tokens are a contract too, which the
     analyzer cannot see: PublicCss.txt lists them and ThemeCssContractTests holds the stylesheets
     to it.
 
-    MudBlazor is referenced here and nowhere else in MLQT.Shared's chain, so a consumer gets the
+    MudBlazor is referenced here and nowhere else in the repository, so a consumer gets the
     version the theme was built against rather than choosing one that might disagree with its CSS.
   -->
   <PropertyGroup>

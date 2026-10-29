@@ -32,6 +32,23 @@
     @* MudBlazor's density - tabs, buttons, trees, icons - is MLQT.UI.Theme's mlqt-density.css. What
        stays here is this application's own. *@
 
+    @* MLQT's window is one screen that never scrolls: the panes scroll inside it. That is a fact
+       about this shell, not about the theme - on a page that scrolls, 100vw counts the scrollbar
+       and the layout overflows sideways by its width - so it stays here rather than in the theme. *@
+    .mud-layout {
+        height: 100vh;
+        width: 100vw;
+        position: relative;
+    }
+
+    .mud-navmenu {
+        margin: 0;
+        height: 100%;
+        position: relative;
+        list-style: none;
+        overscroll-behavior-y: contain;
+    }
+
     /* Custom Modelica icon styles */
     .modelica-tree-icon {
         width: 20px;
