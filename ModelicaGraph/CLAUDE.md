@@ -4,7 +4,7 @@ Loaded when working in `ModelicaGraph/` or `ModelicaGraph.Tests/`. The repositor
 the root `CLAUDE.md`; this file carries what is specific to the graph.
 
 Directed graph for tracking file/model relationships, dependencies, external resources, and style
-checking. One of the six assemblies whose public surface is tracked in `PublicAPI.*.txt`.
+checking. One of the seven assemblies whose public surface is tracked in `PublicAPI.*.txt`.
 
 **After any change to `TypeResolver`, `ClassElementResolver` or `UnitResolver`, run the resolution
 corpus by hand** — the `test-tooling` skill has the command.

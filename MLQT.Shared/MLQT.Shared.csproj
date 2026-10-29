@@ -14,13 +14,14 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.9" />
-    <PackageReference Include="MudBlazor" Version="9.11.0" />
     <PackageReference Include="NLog" Version="6.1.3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DymolaInterface\DymolaInterface.csproj" />
     <ProjectReference Include="..\MLQT.Services\MLQT.Services.csproj" />
+    <!-- The theme, and with it MudBlazor: its version is set there, once, for every tool. -->
+    <ProjectReference Include="..\MLQT.UI.Theme\MLQT.UI.Theme.csproj" />
     <ProjectReference Include="..\ModelicaParser\ModelicaParser.csproj" />
     <ProjectReference Include="..\ModelicaGraph\ModelicaGraph.csproj" />
     <ProjectReference Include="..\OpenModelicaInterface\OpenModelicaInterface.csproj" />

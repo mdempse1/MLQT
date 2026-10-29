@@ -2,7 +2,7 @@ using System.Reflection;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
-using MLQT.Shared.Components;
+using MLQT.UI.Theme.Components;
 using MudBlazor;
 using Xunit;
 

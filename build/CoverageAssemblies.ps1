@@ -34,6 +34,7 @@ $MlqtBars = @{
     'RevisionControl' = 80.0
     'mlqt'            = 80.0   # the assembly name of MLQT.Cli, from its ToolCommandName
     'MLQT.Shared'     = 80.0   # joined the gate in phase 7a-5
+    'MLQT.UI.Theme'   = 80.0   # measured from MLQT.Shared.Tests, which holds its tests
     # Measured from their tests needing no tool - the trait filters CI uses (B399, B438).
     'DymolaInterface'       = 80.0
     'OpenModelicaInterface' = 80.0

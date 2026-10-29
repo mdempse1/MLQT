@@ -39,7 +39,7 @@ Centralized state container in `MLQT.Shared/Models/AppState.cs`:
 
 ## User Interface
 
-UI components should be used from MudBlazor.  Any custom components should be created as Components in MLQT.Shared.
+UI components should be used from MudBlazor.  Any custom components should be created as Components in MLQT.Shared — or in `MLQT.UI.Theme` when nothing about them is MLQT's, as `ProgressDialog` is (`MLQT.UI.Theme/CLAUDE.md` says what belongs there). A style rule follows the same line: one any tool would want goes in the theme's stylesheets, one about an MLQT page stays in `wwwroot/app.css` or the component's `.razor.css`.
 
 Use the following styling guidelines
 * Use Small size options when available
@@ -64,6 +64,6 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 
 **Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
 
-**A dialog the application opens and closes** — a progress dialog, shown while work runs — is a `ProgressDialog` (`Components/ProgressDialog.razor`), never `<MudDialog @bind-Visible="_running">`. MudBlazor opens an inline dialog asynchronously, and a flag cleared before the dialog has finished opening is written back to `true` when it does: work faster than a browser round trip left "Formatting all files" on screen for good (the B414 journey on CI). A dialog the user opens and closes with its own buttons cannot be withdrawn before it has opened, and stays a plain bound `MudDialog`.
+**A dialog the application opens and closes** — a progress dialog, shown while work runs — is a `ProgressDialog` (`MLQT.UI.Theme/Components/ProgressDialog.razor`, since it is generic), never `<MudDialog @bind-Visible="_running">`. MudBlazor opens an inline dialog asynchronously, and a flag cleared before the dialog has finished opening is written back to `true` when it does: work faster than a browser round trip left "Formatting all files" on screen for good (the B414 journey on CI). A dialog the user opens and closes with its own buttons cannot be withdrawn before it has opened, and stays a plain bound `MudDialog`.
 
 **Graph Visualization**: Interactive network graphs use the `CytoscapeGraph` component (`Components/CytoscapeGraph.razor`) backed by Cytoscape.js. It accepts generic `DiagramNode`/`DiagramEdge` parameters. See the `cytoscape` skill for full details.

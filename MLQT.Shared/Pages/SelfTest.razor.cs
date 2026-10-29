@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using MLQT.Shared.Theming;
+using MLQT.UI.Theme;
 using RevisionControl;
 
 namespace MLQT.Shared.Pages;
@@ -285,7 +285,8 @@ public partial class SelfTest
         await Probe("fonts.roboto", "Roboto is available to the page", async () =>
         {
             // A real assertion since 7b-4, where the font stopped coming from fonts.googleapis.com and
-            // started coming from MLQT.Shared/wwwroot/fonts. While it was a network font, absence was
+            // started coming from the bundle in MLQT.UI.Theme/wwwroot/fonts (MLQT.Shared's until the
+            // theme became a package). While it was a network font, absence was
             // legitimate - an offline or locked-down machine had no Roboto through no fault of the
             // build - so this recorded the answer and always passed. Bundled, absence means the file
             // is missing or the path is wrong, which is a defect, and one whose only symptom is the

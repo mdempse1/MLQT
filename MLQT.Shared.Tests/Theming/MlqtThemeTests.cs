@@ -1,5 +1,6 @@
 using MLQT.Shared.Models;
 using MLQT.Shared.Theming;
+using MLQT.UI.Theme;
 using MudBlazor;
 using MudBlazor.Utilities;
 using Xunit;
@@ -7,10 +8,13 @@ using Xunit;
 namespace MLQT.Shared.Tests.Theming;
 
 /// <summary>
-/// <see cref="MlqtTheme"/>, lifted out of <c>MainLayout</c> in phase 7a-4.
+/// <see cref="MlqtTheme"/>, lifted out of <c>MainLayout</c> in phase 7a-4, and the
+/// <see cref="CustomPalette"/> that stayed in <c>MLQT.Shared</c> when the theme moved to
+/// <c>MLQT.UI.Theme</c>.
 ///
 /// <para>The first of the extractions, and the smallest on purpose: four pure functions with no
-/// dependencies, so it proves the shape of the move before the analysis pipeline follows.</para>
+/// dependencies, so it proves the shape of the move before the analysis pipeline follows. The
+/// tests stay together because the last of them is about the two working together.</para>
 /// </summary>
 public class MlqtThemeTests
 {
@@ -56,7 +60,7 @@ public class MlqtThemeTests
     [Fact]
     public void ACustomPalette_TakesEveryColourFromTheSettings()
     {
-        var palette = MlqtTheme.BuildCustomPalette(Custom());
+        var palette = CustomPalette.FromSettings(Custom());
 
         AssertColour("#112233", palette.Primary);
         AssertColour("#445566", palette.Secondary);
@@ -69,7 +73,7 @@ public class MlqtThemeTests
     {
         // There is no separate setting for either, and a user who picks a dark primary and gets
         // black-on-black text has no way to correct it from the settings page.
-        var palette = MlqtTheme.BuildCustomPalette(Custom());
+        var palette = CustomPalette.FromSettings(Custom());
 
         AssertColour("#112233", palette.AppbarBackground);
         AssertColour("#112233", palette.TextPrimary);
@@ -114,7 +118,7 @@ public class MlqtThemeTests
         // The characterisation this extraction needed: MainLayout chooses between two palettes and
         // builds the theme the same way from either, so everything except PaletteLight has to match.
         var standard = MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
-        var custom = MlqtTheme.BuildTheme(MlqtTheme.BuildCustomPalette(Custom()));
+        var custom = MlqtTheme.BuildTheme(CustomPalette.FromSettings(Custom()));
 
         Assert.NotEqual(standard.PaletteLight.Primary.Value, custom.PaletteLight.Primary.Value);
         Assert.Equal(standard.PaletteDark.Background.Value, custom.PaletteDark.Background.Value);

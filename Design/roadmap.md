@@ -187,6 +187,27 @@ works and what the measurements taught. The plan, `Design/mcp-tool-consolidation
 when it landed, and its history has every measurement. Before the release, re-run the protected-build
 comparison of `Design/release-checklist.md` §7 against the 16.
 
+### Alongside: a shared UI theme (`MLQT.UI.Theme`) — step 1 done
+
+Other internal tools are to look like MLQT, so its look is a Razor class library they reference from
+source, as they do the parser and graph. The first consumer is on the same MudBlazor version; the
+look is MLQT's current one, and no logo or brand name goes in the theme. **Step 1, done:**
+the project exists, and MLQT.Shared builds on it. It holds `MlqtTheme`, `mlqt-base.css`,
+`mlqt-density.css` (out of MainLayout's inline style), Roboto, `mudBlazorWorkarounds.js`,
+`ProgressDialog` and `ThemeAssetManifest`, with no visible change: the documentation screenshots
+matched before and after. What is left, in order:
+
+1. **Tokens.** Add `--mlqt-*` custom properties for spacing, borders and highlight washes, aliased to
+   `--mud-palette-*` where one exists. Replace the hard-coded colours in the theme's CSS with them, and
+   add a guard test that holds the public class and token names, which the analyzer cannot see.
+2. **A second consumer in the repository.** McpTester takes the theme and `McpTesterTheme` (B124's
+   system-font workaround) goes, which proves the package works without MLQT.Shared.
+3. **When a consumer needs them:** a `SplitView` component over `MudSplitPanel` and the `mlqt-split*`
+   classes, then panel and header shells. NuGet packaging only if a feed is ever wanted
+   (`RELEASING.md` publishes to none).
+
+`MLQT.UI.Theme/CLAUDE.md` holds what belongs in the theme and the rules a change there keeps.
+
 ### Deferred, with no place in the sequence
 
 **macOS.** Photino supports it and the intent predates the migration, but nothing depends on it and

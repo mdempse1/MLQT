@@ -7,7 +7,8 @@
     <base href="/" />
 
     <!--
-        Generated from MLQT.Shared/HostAssetManifest.cs and held to it by
+        Generated from MLQT.Shared/HostAssetManifest.cs (which takes the theme's assets from
+        MLQT.UI.Theme/ThemeAssetManifest.cs) and held to it by
         MLQT.Shared.Tests/HostAssetManifestTests, which checks every host page loads exactly the
         manifest's scripts in exactly the manifest's order. Order is load-bearing: every cytoscape-*
         extension registers against the global cytoscape.min.js defines, and MLQT's own interop comes
@@ -18,10 +19,12 @@
         Photino does not, so with the attribute present the window opens and no component is ever
         created, with no error anywhere. Found by 7b-0's Windows leg.
     -->
+    <link rel="stylesheet" href="_content/MLQT.UI.Theme/mlqt-base.css" />
     <link rel="stylesheet" href="_content/MLQT.Shared/app.css" />
     <link rel="stylesheet" href="app.css" />
-    <link rel="stylesheet" href="_content/MLQT.Shared/fonts/roboto.css" />
+    <link rel="stylesheet" href="_content/MLQT.UI.Theme/fonts/roboto.css" />
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="_content/MLQT.UI.Theme/mlqt-density.css" />
     <link rel="stylesheet" href="MLQT.Photino.styles.css" />
     <link rel="icon" href="data:," />
 </head>
@@ -50,7 +53,7 @@
     <script src="_content/MLQT.Shared/cytoscapeGraph.js"></script>
     <script src="_content/MLQT.Shared/diffViewer.js"></script>
     <script src="_content/MLQT.Shared/spellCheck.js"></script>
-    <script src="_content/MLQT.Shared/mudBlazorWorkarounds.js"></script>
+    <script src="_content/MLQT.UI.Theme/mudBlazorWorkarounds.js"></script>
 
     <script>
         // The inline helper MLQT.Shared's BrowserService calls. Every host page defines it.

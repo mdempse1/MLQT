@@ -9,8 +9,8 @@ namespace MLQT.McpTester;
 /// <para>Backlog B124. The host page used to pull Roboto from <c>fonts.googleapis.com</c>, so a tool
 /// whose whole job is launching local MCP servers rendered differently with no network — and phase
 /// 7b-4 removed exactly that dependency everywhere else. It could not be fixed the same way here:
-/// MLQT bundles Roboto in <c>MLQT.Shared/wwwroot/fonts</c>, and this project deliberately has no
-/// reference to <c>MLQT.Shared</c>.</para>
+/// MLQT bundled Roboto in <c>MLQT.Shared/wwwroot/fonts</c> (now <c>MLQT.UI.Theme/wwwroot/fonts</c>),
+/// and this project deliberately has no reference to <c>MLQT.Shared</c>.</para>
 ///
 /// <para>So it asks for the platform's own UI font instead, rather than committing a second 231 KB
 /// copy of a webfont for a diagnostic tool nobody ships. Roboto stays in the stack because it is

@@ -10,7 +10,8 @@
                  "ModelicaGraph":  80,
                  "DymolaInterface":  80,
                  "ModelicaParser":  95,
-                 "MLQT.Shared":  80
+                 "MLQT.Shared":  80,
+                 "MLQT.UI.Theme":  80
              },
     "classes":  {
                     "MLQT.McpServer::MLQT.McpServer.Helpers.EntityResolver":  {

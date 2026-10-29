@@ -18,6 +18,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 | Project (+ `.Tests`) | What it is | Detail |
 |---|---|---|
 | **MLQT.Shared** | Shared Blazor components, pages, layouts, `AppState`; logic in `.razor.cs` code-behind | `MLQT.Shared/CLAUDE.md`, `gui-testing` skill |
+| **MLQT.UI.Theme** | MLQT's look as a Razor class library other tools reference: the MudBlazor theme, the base and density stylesheets, Roboto, `ProgressDialog`. MLQT.Shared builds on it, and it alone pins MudBlazor | `MLQT.UI.Theme/CLAUDE.md` |
 | **MLQT.Photino** | **The desktop host**, Photino.Blazor on Windows and Linux. `Program.cs` is the whole of it: `AddMlqtCore()`, the three platform services, the window, settings migration from MAUI | `desktop-host` skill |
 | **MLQT.Services** | Business logic services and the shared check pipeline (`Checking/`) | `MLQT.Services/CLAUDE.md` |
 | **MLQT.McpServer** | Headless MCP server over stdio; every tool `mlqt_`-prefixed; `AddMlqtMcpServer` lets another server be built on it | `MLQT.McpServer/CLAUDE.md`, `README.md` |
@@ -30,9 +31,9 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 | **MLQT.TestHost** / **MLQT.Journeys** | Blazor Server host of the shared UI, and the Playwright journeys driven against it (also the documentation screenshots) | `gui-testing` skill |
 | **TestSupport/** | Source files linked into the test projects (`SvnTestRepository`, `TestPaths`, `InMemorySettingsService`, the settings and JSON contracts) | `test-tooling` skill |
 
-**Six of these are built on outside this repository.** Other projects build `ModelicaParser`,
-`ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface` and `MLQT.Services`
-from source, so those six track their public surface in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`
+**Seven of these are built on outside this repository.** Other projects build `ModelicaParser`,
+`ModelicaGraph`, `RevisionControl`, `DymolaInterface`, `OpenModelicaInterface`, `MLQT.Services` and
+`MLQT.UI.Theme` from source, so those seven track their public surface in `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`
 (`Microsoft.CodeAnalysis.PublicApiAnalyzers`, switched on by `<TrackPublicApi>`). A new public member
 fails the build until it is listed, and a removed one until its line goes, so every change a consumer
 would feel is a reviewed diff. See `CODING_GUIDELINES.md` §Public API of the Assemblies Others Build On.
@@ -159,7 +160,7 @@ Each project's `CLAUDE.md` lists its own key files.
 ## Where the Detail Lives
 
 **Project `CLAUDE.md` files** — `ModelicaParser/`, `ModelicaGraph/`, `MLQT.Services/`, `MLQT.Shared/`,
-`MLQT.McpServer/`, `MLQT.Cli/`. Each is read when you work in its folder.
+`MLQT.UI.Theme/`, `MLQT.McpServer/`, `MLQT.Cli/`. Each is read when you work in its folder.
 
 **Skills** (`.claude/skills/<name>/SKILL.md`, chosen by their description): `revision-control`,
 `simulation-tools`, `external-resources`, `icon-extraction`, `nuget-packages`, `cytoscape`,

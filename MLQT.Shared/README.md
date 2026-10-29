@@ -147,7 +147,7 @@ that `Layout/MainLayout.razor` hosts.
 |---------------|-------|
 | `Dialogs/` | The VCS dialogs (commit, merge, rebase, branch, revert, history, pull request) and the rest; a VCS dialog records what it did in a `VcsDialogOutcome` rather than firing `VcsFilesChanged` itself |
 | `Helpers/` | `MonitorPause`, `VcsPipelineQueue`, `VcsStatusHelper`, `ExternalCheckSession`, `ChangeMarker` |
-| `Theming/` | `MlqtTheme` and `ThemePresets` |
+| `Theming/` | `CustomPalette` (the user's custom colours, for `MlqtTheme.BuildTheme`) and `ThemePresets`. `MlqtTheme` itself, and the stylesheets, font and `ProgressDialog`, are in `MLQT.UI.Theme` |
 | `MlqtServiceCollectionExtensions.cs` | `AddMlqtCore()`, the service registrations every host calls |
 | `HostAssetManifest.cs` | What a host must serve from `wwwroot` (see the `desktop-host` skill) |
 
