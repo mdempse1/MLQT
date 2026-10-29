@@ -142,9 +142,10 @@ beside it ships, and one named only in a package's prose is counted by no item l
 B268 each escaped one of those two ways. Check it when items are opened, not only when a package
 closes.
 
-### 2. Wave-2 analyses — next
+### 2. Wave-2 analyses — next, and the next release waits for it
 
-**The next phase.** The `backlog` branch merged on 2026-09-28 (PR #10), so nothing is ahead of it.
+**The next phase**, started 2026-10-29. The next release ships with it whole (decided 2026-10-29),
+so everything below is in that release, and *Before the next release* lists what else it needs.
 
 The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage,
 cyclic-dependency detection and external-resource validation. See §2 below for the three-state
@@ -156,6 +157,37 @@ than an enhancement: MLQT already finds missing resources and shows them on the 
 tab, but they are `ResourceWarning`s rather than `Finding`s. They have no rule id, so they never
 reach `mlqt check`, cannot be baselined and cannot fail a build — a library can lose a file out of
 `Resources/` and every gate stays green.
+
+### Before the next release
+
+Agreed on 2026-10-29: what the release needs beyond phase 2. Each item is about whether the
+release works, not about adding to it. `Design/release-checklist.md` still applies on top of these.
+
+1. **The protected-build comparison against the 16 MCP tools** (`Design/release-checklist.md` §7).
+   The obfuscated build was verified against the 66 tools, and the consolidation is this release's
+   biggest change for anyone using the MCP server.
+2. **The theme by eye under WebKitGTK.** PR #29 moved all of MLQT's CSS into `MLQT.UI.Theme`, and
+   every automated comparison of it ran in Chromium, which is WebView2's engine. McpTester was
+   opened and checked on Windows on 2026-10-29. Still to check: MLQT and McpTester on Linux, beside
+   a Windows build, which is the method the desktop-host skill records as the one that finds
+   differences.
+3. **Whether phase 2's new rules are on by default.** A decision, not a task. A project gating CI
+   with `mlqt check` and a baseline gets every new finding as new debt on upgrade, so a rule that
+   ships on turns its builds red with nothing in its code changed. Either the new rules ship off,
+   as most of the catalogue does, or the release notes say plainly which are on. Settle it rule by
+   rule while they are written. Until decided, they are built **off**.
+4. **B281: server GC in the desktop app over a long session.** The setting ships in this release,
+   measured in the CLI only. Phase 2's testing over a large library is the long session, so watch
+   the app's memory and responsiveness then.
+5. **The release mechanics:**
+   - move `PublicAPI.Unshipped.txt` into `PublicAPI.Shipped.txt` for all seven tracked assemblies,
+     `MLQT.UI.Theme` among them;
+   - the release notes call out the MCP change from 66 tools to 16, pointing at
+     `Documentation/mcp-server.md` §Moving from the 66 tools;
+   - and say which phase-2 rules ship on, per item 3.
+
+Worth doing if there is time, and not a reason to hold the release: B520, the search-match wash
+that follows the operating system's dark mode rather than MLQT's.
 
 ### 3. Extensibility, then the flagships
 
