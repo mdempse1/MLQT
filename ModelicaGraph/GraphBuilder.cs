@@ -446,8 +446,9 @@ public static class GraphBuilder
 
     /// <summary>
     /// Gives the package a directory's <c>package.mo</c> defines the order its <c>package.order</c>
-    /// declares, or none when the directory has no <c>package.order</c>. The one reader of that file:
-    /// a load, a changed-files update and a reload of one file each used to read it for themselves,
+    /// declares, or none when the directory has no <c>package.order</c>. The one reader of that file on
+    /// disk (a supplied library's order arrives as text, through <c>ReadOnlySourceLoader</c>): a load, a
+    /// changed-files update and a reload of one file each used to read it for themselves,
     /// and the reload did not read it at all, so a class written and listed by MLQT read as missing
     /// from the order until the library was loaded again.
     /// </summary>
@@ -474,6 +475,28 @@ public static class GraphBuilder
             ? ModelicaFileEncoding.ReadAllLinesOnly(orderPath).Select(l => l.Trim()).Where(l => l.Length > 0).ToArray()
             : null;
         return package.Id;
+    }
+
+    /// <summary>
+    /// Re-reads the orders a changed <c>.mo</c> file can bear on, after it is re-parsed or deleted: the
+    /// package of its own directory, which lists a class written to its own file, and - for a
+    /// <c>package.mo</c> - the package above, which lists this one. A <c>package.mo</c> re-parsed is a
+    /// new node with no order, so without this its package lost the order it had.
+    /// </summary>
+    /// <returns>The packages given their order again.</returns>
+    public static List<string> ApplyPackageOrdersAround(DirectedGraph graph, string moFilePath)
+    {
+        var packages = new List<string>();
+        if (Path.GetDirectoryName(moFilePath) is not { } directory)
+            return packages;
+
+        var directories = Path.GetFileName(moFilePath).Equals("package.mo", StringComparison.OrdinalIgnoreCase)
+            ? new[] { directory, Path.GetDirectoryName(directory) }
+            : new[] { directory };
+        foreach (var orderDirectory in directories.OfType<string>())
+            if (ApplyPackageOrder(graph, orderDirectory) is { } packageId)
+                packages.Add(packageId);
+        return packages;
     }
 
     /// <summary>
@@ -1661,12 +1684,16 @@ public static class GraphBuilder
 
         affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(graph));
 
-        // Step 3: Update changed package.order files - a deleted one included, which leaves its
+        // Step 3: the orders - of every package a changed .mo file bears on, as a reload of one file
+        // reads them, and of each changed package.order, a deleted one included, which leaves its
         // package with no declared order rather than the one it had.
+        foreach (var relativePath in changedMoFiles)
+            affectedModelIds.AddRange(ApplyPackageOrdersAround(graph, ResolveChangedFile(rootPath, relativePath)));
         foreach (var relativePath in changedOrderFiles)
         {
-            if (Path.GetDirectoryName(ResolveChangedFile(rootPath, relativePath)) is { } directory)
-                ApplyPackageOrder(graph, directory);
+            if (Path.GetDirectoryName(ResolveChangedFile(rootPath, relativePath)) is { } directory
+                && ApplyPackageOrder(graph, directory) is { } packageId)
+                affectedModelIds.Add(packageId);
         }
 
         return affectedModelIds.Distinct().ToList();

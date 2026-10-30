@@ -79,7 +79,7 @@ public class BaselineViewTests
             },
             StatusByClass(result));
         Assert.All(result.Findings, f => Assert.Equal(RuleIds.ClassDescription, f.RuleId));
-        Assert.Equal(new BaselineSummary(New: 1, TouchedDebt: 1, AcceptedDebt: 1, NotShown: 0), result.Baseline);
+        Assert.Equal(new BaselineSummary(New: 1, TouchedDebt: 1, AcceptedDebt: 1, Unclassified: 0, NotShown: 0), result.Baseline);
         Assert.Equal(3, result.FindingCount);
     }
 
@@ -178,6 +178,114 @@ public class BaselineViewTests
 
         Assert.Contains("\"status\":\"New\"", check);
         Assert.Contains("\"status\":\"New\"", listed);
+    }
+
+    [Fact]
+    public async Task ABaselineTheCliWrites_ClassifiesTheSame()
+    {
+        // What `mlqt baseline` writes: Baseline.FromFindings over the shared pipeline's findings, with
+        // the rules recorded - not the server's own output read back.
+        using var host = new TestHost();
+        var (style, root) = await RepositoryWithBaselineAsync(host, writeBaseline: false);
+        var settings = host.Repositories.Repositories.Single().StyleSettings!;
+        var models = host.Libraries.Libraries.Single().ModelIds.Select(id => host.Libraries.GetModelById(id)!).ToList();
+        var findings = LibraryCheckSession.Check(host.Libraries.CombinedGraph, models, settings,
+            host.CustomDictionary, host.DictionaryManager, honorSuppressions: true, repositoryRoot: root);
+        Baseline.FromFindings(findings.Where(f => f.ModelId != "TestLib.Added"), settings: settings)
+            .Save(Path.Combine(root, ".mlqt", "baseline.json"));
+
+        var library = ToolAssert.Ok<CheckResult>(await style.CheckLibrary(baseline: "new"));
+        var oneClass = ToolAssert.Ok<CheckResult>(style.CheckClass("TestLib.Kept", baseline: "new"));
+
+        Assert.Equal("TestLib.Added", Assert.Single(library.Findings).ModelName);
+        Assert.Null(library.BaselineWarnings);   // taken with the same rules
+        Assert.Empty(oneClass.Findings);
+    }
+
+    [Fact]
+    public async Task ABaselineThatCannotBeRead_IsSaidSo()
+    {
+        // "No status" read as "nothing is new" would hide everything an agent introduced.
+        using var host = new TestHost();
+        var (style, root) = await RepositoryWithBaselineAsync(host, writeBaseline: false);
+        File.WriteAllText(Path.Combine(root, ".mlqt", "baseline.json"), "<<<<<<< HEAD\n{");
+
+        var result = ToolAssert.Ok<CheckResult>(await style.CheckLibrary(baseline: "new"));
+        var listed = ToolAssert.Ok<FindingsResult>(style.ListFindings());
+
+        Assert.Equal(3, result.FindingCount);
+        Assert.Contains("Could not read the baseline", Assert.Single(result.BaselineWarnings!));
+        Assert.Contains("Could not read the baseline", Assert.Single(listed.BaselineWarnings!));
+    }
+
+    [Fact]
+    public async Task ABaselineTakenWithOtherRules_IsSaidSo()
+    {
+        // ClassHasDescription was off when this baseline was taken, so its findings read as New.
+        using var host = new TestHost();
+        var (style, root) = await RepositoryWithBaselineAsync(host, writeBaseline: false);
+        new Baseline([], rules: new Dictionary<string, ModelicaParser.DataTypes.RuleSeverity>())
+            .Save(Path.Combine(root, ".mlqt", "baseline.json"));
+
+        var result = ToolAssert.Ok<CheckResult>(await style.CheckLibrary());
+
+        var warning = Assert.Single(result.BaselineWarnings!);
+        Assert.Contains("enabled since: " + RuleIds.ClassDescription, warning);
+        Assert.Equal(3, result.Baseline!.New);
+    }
+
+    [Fact]
+    public async Task TheView_IsReadInAnyCase()
+    {
+        using var host = new TestHost();
+        var (style, _) = await RepositoryWithBaselineAsync(host);
+
+        var result = ToolAssert.Ok<CheckResult>(await style.CheckLibrary(baseline: " New "));
+
+        Assert.Equal("TestLib.Added", Assert.Single(result.Findings).ModelName);
+    }
+
+    [Fact]
+    public async Task TheNewFindings_AreFoundPastTheCapOnWhatIsReturned()
+    {
+        // 205 classes of accepted debt and one new: unfiltered, the 200 returned were all debt.
+        using var host = new TestHost();
+        var classes = string.Concat(Enumerable.Range(0, 205).Select(i => $"  model Old{i:D3}\n  end Old{i:D3};\n"));
+        var root = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["TestLib/package.mo"] = $"package TestLib \"Test library\"\n{classes}  model Zed\n  end Zed;\nend TestLib;\n",
+        });
+        var added = await host.Repositories.AddRepositoryAsync(root, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        var style = new StyleTools(host.Libraries, host.CodeReview, host.Repositories, host.CustomDictionary,
+            host.DictionaryManager, host.Session,
+            new BaselineStatusService(host.Libraries, host.Repositories, host.FileMonitoring));
+        await style.SetStyleSettings(new StyleSettingsInput { ClassHasDescription = true });
+        Assert.True(ToolAssert.Ok<CheckResult>(await style.CheckLibrary()).Truncated);
+        new Baseline(host.CodeReview.LogMessages
+                .Where(m => m.ModelName != "TestLib.Zed")
+                .Select(m => new BaselineEntry(m.Fingerprint!, m.RuleId!, m.ModelName, m.ElementPath, m.Summary))
+                .ToList())
+            .Save(Path.Combine(root, ".mlqt", "baseline.json"));
+
+        var result = ToolAssert.Ok<CheckResult>(await style.CheckLibrary(baseline: "new"));
+
+        Assert.Equal("TestLib.Zed", Assert.Single(result.Findings).ModelName);
+        Assert.False(result.Truncated);
+        Assert.Equal(205, result.Baseline!.NotShown);
+    }
+
+    [Fact]
+    public async Task MlqtCheck_RefusesAViewThatDoesNotExist()
+    {
+        using var host = new TestHost();
+        await RepositoryWithBaselineAsync(host);
+        var tools = new AnalysisFacadeTools(host.Libraries, host.Repositories, host.Resources, host.CodeReview,
+            host.CustomDictionary, host.DictionaryManager, host.Impact, host.Session);
+
+        var error = ToolAssert.Error(await tools.Check(checks: ["spelling"], classId: "TestLib.Added", baseline: "fresh"));
+
+        Assert.Contains("all, new, changed", error.Error);
     }
 
     [Fact]

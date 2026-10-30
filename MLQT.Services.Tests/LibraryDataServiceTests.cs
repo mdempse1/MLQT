@@ -174,6 +174,40 @@ end TestModel;
     }
 
     [Fact]
+    public async Task RemoveLibrary_ACopyInAnotherFolder_TakesItsOwnClassesWithIt()
+    {
+        // Two copies at different paths list the same ids, and the graph holds the last one's nodes.
+        // Keeping them because the other copy lists the ids left classes pointing into a folder that
+        // was no longer loaded, where an edit or a format would then have written.
+        var root = Path.Combine(Path.GetTempPath(), "TwoCopies_" + Guid.NewGuid().ToString("N"));
+        var first = Path.Combine(root, "A", "Lib");
+        var second = Path.Combine(root, "B", "Lib");
+        Directory.CreateDirectory(first);
+        Directory.CreateDirectory(second);
+        File.WriteAllText(Path.Combine(first, "package.mo"), "package Lib\nend Lib;\n");
+        File.WriteAllText(Path.Combine(second, "package.mo"), "package Lib\nend Lib;\n");
+        try
+        {
+            var service = new LibraryDataService();
+            await service.AddLibraryFromDirectoryAsync(first);
+            var removed = await service.AddLibraryFromDirectoryAsync(second);
+            Assert.Equal(2, service.Libraries.Count);
+
+            service.RemoveLibrary(removed.Id);
+
+            var file = service.GetModelById("Lib") is { } node
+                ? service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(node.ContainingFileId!)?.FilePath
+                : null;
+            Assert.False(file is not null && file.StartsWith(second, StringComparison.OrdinalIgnoreCase),
+                $"'Lib' still comes from the copy that was removed: {file}");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ClearAllLibraries_RemovesAllLibraries()
     {
         var service = new LibraryDataService();

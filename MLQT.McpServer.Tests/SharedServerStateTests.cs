@@ -106,6 +106,30 @@ public class SharedServerStateTests
         var read = await server.CallAsync("mlqt_get_class", new() { ["classIds"] = new[] { "Lib" } });
         Assert.NotEqual(true, read.IsError);
         Assert.DoesNotContain("not loaded", MlqtMcpServerExtensionsTests.Text(read));
+        Assert.Contains("now loaded as part of repository", MlqtMcpServerExtensionsTests.Text(load));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/")]
+    public async Task AFolderOfLibrariesLoadedAgain_LoadsEachOnce(string suffix)
+    {
+        // The repository was the same one, and loading its libraries again added a second copy of each
+        // to it, over the same class ids.
+        using var host = new TestHost();
+        await using var server = await InProcessServer.StartAsync();
+        var folder = host.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(folder, "Lib"));
+        File.WriteAllText(Path.Combine(folder, "Lib", "package.mo"), "package Lib\nend Lib;\n");
+        await server.CallAsync("mlqt_load", new() { ["paths"] = new[] { folder }, ["withDependencies"] = false });
+
+        var again = await server.CallAsync("mlqt_load",
+            new() { ["paths"] = new[] { folder + suffix }, ["withDependencies"] = false });
+
+        Assert.NotEqual(true, again.IsError);
+        using var status = JsonDocument.Parse(MlqtMcpServerExtensionsTests.Text(await server.CallAsync("mlqt_session", [])));
+        Assert.Single(status.RootElement.GetProperty("libraries").EnumerateArray(),
+            l => l.GetProperty("name").GetString() == "Lib");
     }
 
     [Fact]

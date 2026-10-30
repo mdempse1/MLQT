@@ -510,13 +510,13 @@ public static class ClassInterfaceExtractor
     {
         if (spec is null)
             return null;
-        if (spec.long_class_specifier() is { } lng)
-            return ReadStringComment(lng.string_comment());
-        if (spec.short_class_specifier() is { } sht)
-            return ReadStringComment(sht.comment()?.string_comment());
-        if (spec.der_class_specifier() is { } der)
-            return ReadStringComment(der.comment()?.string_comment());
-        return null;
+        var own = spec.long_class_specifier() is { } lng ? ReadStringComment(lng.string_comment())
+            : spec.short_class_specifier() is { } sht ? ReadStringComment(sht.comment()?.string_comment())
+            : spec.der_class_specifier() is { } der ? ReadStringComment(der.comment()?.string_comment())
+            : null;
+        // A replaceable class written where it is declared carries it after its constraining clause,
+        // where the description rule finds it too (ComponentComment).
+        return own ?? ReadStringComment(ComponentComment.ClassDescriptionAfterConstraint(spec));
     }
 
     private static string ClassName(modelicaParser.Class_specifierContext? spec)

@@ -229,6 +229,13 @@ public class ModelAnalyzer : ExternalResourceExtractor
         // _hasLoadResourceDefault) and comment/annotation (sets _hasLoadSelector)
         var result = base.VisitComponent_declaration(context);
 
+        // After constrainedby the annotation is the element's, and is visited only once this declaration
+        // is done with, so a loadSelector there was never seen (ComponentComment). Asked again of a
+        // declaration's own annotation, the answer is the one already found.
+        if (_isParameterDeclaration && !_hasLoadSelector
+            && ComponentComment.Annotation(context)?.class_modification() is { } elementAnnotation)
+            CheckForLoadSelector(elementAnnotation);
+
         // After visiting children, process loadSelector/loadResource results
         if (_isParameterDeclaration && _hasLoadSelector && _currentParameterName != null)
         {

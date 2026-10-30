@@ -67,6 +67,18 @@ public class MlqtSuppressionWriterTests
     }
 
     [Fact]
+    public void ComponentLevel_SharingItsAnnotation_IsRefused()
+    {
+        // One annotation after constrainedby is both components': a waiver for e1 would waive e2 too.
+        var code = "model Foo\n  replaceable Engine e1, e2 constrainedby Base annotation(Placement());\nend Foo;";
+
+        Assert.False(MlqtSuppressionWriter.TryAddSuppression(code, "e1", "Naming.Convention", null, out var outCode, out var error));
+
+        Assert.Equal(code, outCode);
+        Assert.Contains("'e2'", error);
+    }
+
+    [Fact]
     public void MergesIntoExistingSuppressList()
     {
         var code = "model Foo\n  Real x;\n  annotation(__MLQT(suppress=\"A\"));\nend Foo;";

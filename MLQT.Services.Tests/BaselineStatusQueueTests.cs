@@ -29,13 +29,15 @@ public class BaselineStatusQueueTests : IDisposable
     }
 
     /// <summary>
-    /// A service over one repository holding one real library, so a refresh reaches the working-copy
-    /// query rather than returning early for want of models — as in
-    /// <see cref="BaselineStatusDoesNotBlockTests"/>, whose first version passed for that reason.
+    /// A service over one repository holding one real library and a baseline, so a refresh reaches the
+    /// working-copy query rather than returning early for want of models — as in
+    /// <see cref="BaselineStatusDoesNotBlockTests"/>, whose first version passed for that reason - or
+    /// of a baseline, without which there is nothing for the query to change.
     /// </summary>
     private (BaselineStatusService Service, Mock<IRepositoryService> Repositories, string RepositoryId) Build(
         Action onQuery)
     {
+        new Baseline([]).Save(Baseline.CommittedPath(_repoDir));
         var libraries = new LibraryDataService();
         var library = libraries.AddLibraryFromFileAsync(
                 Path.Combine(_repoDir, "Lib.mo"),

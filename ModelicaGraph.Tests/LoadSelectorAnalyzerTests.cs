@@ -77,6 +77,23 @@ end CombiTimeTable;";
     }
 
     [Fact]
+    public void ALoadSelectorAfterConstrainedBy_IsDetected()
+    {
+        // The annotation is the element's there, visited only after the declaration was done with.
+        var code = @"
+model Table
+  replaceable parameter String fileName=""data.mat"" constrainedby String ""File where matrix is stored""
+    annotation (Dialog(loadSelector(filter=""MATLAB MAT-files (*.mat)"")));
+end Table;";
+
+        var (graph, model) = CreateGraphWithModel("Lib.Table", code);
+        var resources = AnalyzeWithModelAnalyzer("Lib.Table", code, graph);
+
+        Assert.Contains("fileName", model.LoadSelectorParameters);
+        Assert.Equal("data.mat", Assert.Single(resources, r => r.ReferenceType == ResourceReferenceType.LoadSelector).RawPath);
+    }
+
+    [Fact]
     public void ParameterWithLoadSelectorAndRealDefaultValue_IsDetected()
     {
         var code = @"

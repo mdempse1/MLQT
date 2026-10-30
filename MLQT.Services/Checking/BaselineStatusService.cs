@@ -34,6 +34,15 @@ public sealed class BaselineStatusSnapshot
 
     public int TouchedFileCount { get; }
 
+    /// <summary>
+    /// Each committed baseline that exists and could not be read, as "path: reason". Its classes have no
+    /// status, as if there were no baseline, which a caller must not pass off as "nothing is new".
+    /// </summary>
+    public IReadOnlyList<string> UnreadableBaselines { get; init; } = [];
+
+    /// <summary>The baseline the class is classified against, or null when its repository has none.</summary>
+    public Baseline? BaselineFor(string modelId) => _baselineByModel.GetValueOrDefault(modelId);
+
     /// <inheritdoc cref="IBaselineStatusService.StatusOf"/>
     public FindingStatus? StatusOf(LogMessage message)
     {
@@ -272,6 +281,7 @@ public sealed class BaselineStatusService : IBaselineStatusService
             var baselineByModel = new Dictionary<string, Baseline>(StringComparer.Ordinal);
             var touchedModels = new HashSet<string>(StringComparer.Ordinal);
             var touchedFiles = 0;
+            var unreadable = new List<string>();
 
             foreach (var repository in _repositories.Repositories)
             {
@@ -279,17 +289,25 @@ public sealed class BaselineStatusService : IBaselineStatusService
                 if (models.Count == 0)
                     continue;
 
-                var baseline = LoadBaseline(repository);
-                if (baseline is not null)
-                    foreach (var modelId in models)
-                        baselineByModel[modelId] = baseline;
+                var baseline = LoadBaseline(repository, unreadable);
+                // Pending commit only matters against a baseline - "touched" is accepted debt in a
+                // changed class - and finding it is a status scan of the whole working copy. Asked of
+                // every repository, a session with no baseline anywhere paid one per check.
+                if (baseline is null)
+                    continue;
+
+                foreach (var modelId in models)
+                    baselineByModel[modelId] = baseline;
 
                 var (changedModels, changedFiles) = PendingCommit(repository);
                 touchedModels.UnionWith(changedModels);
                 touchedFiles += changedFiles;
             }
 
-            _snapshot = new BaselineStatusSnapshot(baselineByModel, touchedModels, touchedFiles);
+            _snapshot = new BaselineStatusSnapshot(baselineByModel, touchedModels, touchedFiles)
+            {
+                UnreadableBaselines = unreadable,
+            };
 
             // Only wake the UI when something it displays actually moved — but "what it displays"
             // includes every input to the classification, not just the two headline numbers.
@@ -300,7 +318,7 @@ public sealed class BaselineStatusService : IBaselineStatusService
             // was then correctly replaced and silently never shown, so a view kept rendering the old
             // classification until something unrelated re-rendered it — which is why leaving the Code
             // Review tab and coming back "fixed" the count.
-            var signature = Signature(baselineByModel, touchedModels, touchedFiles);
+            var signature = Signature(baselineByModel, touchedModels, touchedFiles) + "|" + unreadable.Count;
             changed = !string.Equals(signature, _signature, StringComparison.Ordinal);
             if (changed)
                 _signature = signature;
@@ -344,13 +362,14 @@ public sealed class BaselineStatusService : IBaselineStatusService
             .SelectMany(l => l.ModelIds)
             .ToList();
 
-    /// <summary>The repository's committed baseline, or null when it has none or cannot be read.</summary>
-    private static Baseline? LoadBaseline(Repository repository)
+    /// <summary>The repository's committed baseline, or null when it has none or cannot be read - which
+    /// is recorded in <paramref name="unreadable"/>.</summary>
+    private static Baseline? LoadBaseline(Repository repository, List<string> unreadable)
     {
         if (string.IsNullOrEmpty(repository.LocalPath))
             return null;
 
-        var path = Path.Combine(repository.LocalPath, ".mlqt", "baseline.json");
+        var path = Baseline.CommittedPath(repository.LocalPath);
         if (!File.Exists(path))
             return null;
 
@@ -360,8 +379,10 @@ public sealed class BaselineStatusService : IBaselineStatusService
         }
         catch (Exception ex)
         {
-            // A malformed baseline must not break the issues list; it just means nothing classifies.
+            // A malformed baseline must not break the issues list; it means nothing classifies, which
+            // the snapshot says, so a caller does not read "no status" as "nothing is new".
             Error("BaselineStatusService", $"Could not read baseline '{path}'", ex);
+            unreadable.Add($"{path}: {ex.Message}");
             return null;
         }
     }

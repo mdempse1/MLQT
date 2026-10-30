@@ -125,13 +125,26 @@ under `line`, because it answers a question about a class rather than about a fi
    - `TouchedDebt`: accepted debt in a class the working copy has changed.
    - `AcceptedDebt`: everything else the baseline holds.
 
-   The check's `baseline` field counts each. Pass `baseline: "new"` and only the `New` findings come
-   back. That is what an agent's change introduced, so check the classes it wrote or edited, or the
-   whole library, and fix what is returned. `baseline: "changed"` also returns the debt in the classes
-   it touched. Filtering happens before the 200-finding limit, so a library carrying thousands of
-   accepted findings still returns the few new ones. The classification is the desktop app's: "touched"
-   means changed in the working copy and not yet committed, re-read on every call. With no baseline,
-   no finding has a status and every view returns everything.
+   The check's `baseline` field counts each, and also counts as `unclassified` the findings of classes
+   whose repository has no baseline. Pass `baseline: "new"` and only the `New` findings come back.
+   That is what an agent's change introduced, so check the classes it wrote or edited, or the whole
+   library, and fix what is returned. `baseline: "changed"` also returns the debt in the classes it
+   touched. With a view, `findingCount` is what the view returns, and the `baseline` counts give the
+   whole. Filtering happens before the 200-finding limit, so a library carrying thousands of accepted
+   findings still returns the few new ones.
+
+   The classification is the desktop app's. "Touched" means changed in the working copy and not yet
+   committed, re-read on every call. That is not what `mlqt check --baseline` means: there, a finding
+   is touched debt only when `--changed-from` names a commit the change is measured from, so the two
+   can disagree about the same finding. With no baseline, no finding has a status and every view
+   returns everything.
+
+   `baselineWarnings` says when the statuses are less than they look:
+   - **The baseline could not be read**, a merge conflict in it for example. Its classes then have
+     no status, and `new` returns every one of their findings.
+   - **The baseline was taken with different rules.** A rule enabled since then reports the findings
+     it had all along as `New`, so they are not what the change introduced. `mlqt baseline update`
+     records the current rules.
 
 7. **Edit surgically.** `mlqt_edit_class` changes part of one class with a list of operations, all or none: usually `replace`, of text that occurs once in the class (or every occurrence, with `all: true`), and element operations that do what a text patch cannot — `add_connection` refuses incompatible connectors and draws the line, `remove_component` takes the component's connections with it. `mlqt_write_class` writes whole classes, and `mlqt_refactor_class` renames, moves or deletes one with every reference rewritten. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
 
@@ -420,7 +433,7 @@ Two things differ from a harness run:
 - **A bypass needs a Modelica target.** A real session may also work outside Modelica, so a Read, Edit, Write, Grep or Glob counts as a bypass only when the file or path it is aimed at is a `.mo` file, a `package.order` or under a `--library-dir`. A shell command is judged on its whole text, so its count is approximate. **For a session given only to Modelica work, pass `--dedicated`**: every built-in file or shell call then counts, as in a harness run, all of them are listed with their input, and the call sequences show every call. This is how to see what an agent does for itself that MLQT could have done.
 - **The server log is matched by time.** It carries no session id, so two sessions running at once share each other's server times. For a clean comparison, give each experiment its own log with `MLQT_MCP_TOOL_LOG`, set in the server's `env` in your client configuration, and restart the client so the server starts with it.
 
-The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value. A single string given for a list, such as `"classIds":"P.A"` for one class, is read as a list of one.
+The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value. A single string given for a list, such as `"classIds":"P.A"` for one class, is read as a list of one, and a list sent as the text of a JSON array (`"classIds":"[\"P.A\"]"`) as that list.
 
 ## When the client says the server disconnected
 

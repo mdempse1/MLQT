@@ -464,8 +464,18 @@ public class RepositoryService : IRepositoryService
 
         try
         {
-            var pathsToLoad = libraryPaths?.ToList()
-                ?? repository.DiscoveredLibraries.Keys.ToList();
+            // Not a library this repository has loaded already: asked to load its folder again, it
+            // added a second copy of every library over the same class ids, and removing either copy
+            // later left the other listing classes that were gone. A refresh removes them first, so
+            // it still reloads them all.
+            var alreadyLoaded = _libraryDataService.Libraries
+                .Where(l => l.RepositoryId == repositoryId)
+                .Select(l => l.RelativePathInRepository)
+                .OfType<string>()
+                .ToHashSet(StringComparer.Ordinal);
+            var pathsToLoad = (libraryPaths?.ToList() ?? repository.DiscoveredLibraries.Keys.ToList())
+                .Where(p => !alreadyLoaded.Contains(p))
+                .ToList();
 
             Info("RepositoryService", $"Loading {pathsToLoad.Count} libraries from repository: {repository.Name}");
 

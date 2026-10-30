@@ -116,6 +116,7 @@ static ModelicaGraph.Analysis.ResourceProblems.Exists(ModelicaGraph.Interfaces.I
 static ModelicaGraph.Analysis.ResourceProblems.For(ModelicaGraph.DirectedGraph! graph, string! modelId) -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.Analysis.ResourceProblem!>!
 static ModelicaGraph.Analysis.ResourceProblems.Of(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ResourceEdge! edge) -> System.Collections.Generic.IEnumerable<ModelicaGraph.Analysis.ResourceProblem!>!
 static ModelicaGraph.GraphBuilder.ApplyPackageOrder(ModelicaGraph.DirectedGraph! graph, string! directory) -> string?
+static ModelicaGraph.GraphBuilder.ApplyPackageOrdersAround(ModelicaGraph.DirectedGraph! graph, string! moFilePath) -> System.Collections.Generic.List<string!>!
 static ModelicaGraph.ReadOnlySourceLoad.operator !=(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
 static ModelicaGraph.ReadOnlySourceLoad.operator ==(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
 static ModelicaGraph.ReadOnlySourceLoader.Load(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.IReadOnlyClassSource! source, ModelicaGraph.ReadOnlySourceContent! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> ModelicaGraph.ReadOnlySourceLoad!

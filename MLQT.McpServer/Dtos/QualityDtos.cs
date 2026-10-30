@@ -247,23 +247,28 @@ public sealed record StyleFindingDto(
 
 /// <summary>
 /// A check's findings. With a baseline, <see cref="FindingCount"/> and <see cref="Findings"/> are the
-/// ones the requested view shows, and <see cref="Baseline"/> counts every finding by status.
+/// ones the requested view shows - the whole count is in <see cref="Baseline"/> - and
+/// <see cref="BaselineWarnings"/> says what makes the statuses less than they look: a baseline that
+/// could not be read, or one taken with different rules.
 /// </summary>
 public sealed record CheckResult(
     int ModelsChecked,
     int FindingCount,
     IReadOnlyList<StyleFindingDto> Findings,
     bool Truncated,
-    BaselineSummary? Baseline = null);
+    BaselineSummary? Baseline = null,
+    IReadOnlyList<string>? BaselineWarnings = null);
 
 /// <summary>
 /// Every finding of a check counted by where it stands against the baseline, and how many the view
-/// asked for left out. Null on a result when no loaded repository has a baseline.
+/// asked for left out. <see cref="Unclassified"/> are findings of classes whose repository has no
+/// baseline, which every view shows. Null on a result when no loaded repository has a baseline.
 /// </summary>
 public sealed record BaselineSummary(
     int New,
     int TouchedDebt,
     int AcceptedDebt,
+    int Unclassified,
     int NotShown);
 
 /// <summary>
@@ -295,7 +300,8 @@ public sealed record FindingsResult(
     int Total,
     int Offset,
     int Count,
-    IReadOnlyList<FindingItem> Items);
+    IReadOnlyList<FindingItem> Items,
+    IReadOnlyList<string>? BaselineWarnings = null);
 
 public sealed record FormatCodeResult(
     string Source);

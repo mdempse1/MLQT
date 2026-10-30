@@ -130,12 +130,14 @@ public sealed class StyleTools
         StyleSettingsInput? settings = null,
         string? baseline = null)
     {
-        if (BaselineViewError(baseline) is { } badView)
+        var (view, badView) = BaselineView(baseline);
+        if (badView is not null)
             return badView;
 
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        var effective = settings?.ToSettings() ?? RepoSettingsForClass(classId);
         // A class that failed to parse still has something worth returning: the parse error itself.
         // Refusing outright left the caller unable to tell "no findings" from "never looked".
         if (node.IsParseFailurePlaceholder)
@@ -143,10 +145,11 @@ public sealed class StyleTools
             var parseOnly = ParserErrorReporter.ToLogMessages([node]);
             _codeReview.RemoveLogMessagesForModels([classId]);
             _codeReview.AddLogMessages(parseOnly);
-            return ToCheckResult(parseOnly, modelsChecked: 0, CurrentBaseline(), baseline);
+            var parseBaseline = CurrentBaseline();
+            return ToCheckResult(parseOnly, modelsChecked: 0, parseBaseline, view,
+                BaselineWarnings(parseBaseline, [([classId], effective)]));
         }
 
-        var effective = settings?.ToSettings() ?? RepoSettingsForClass(classId);
         var context = StyleCheckContext.Build(
             effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
             DictionaryScope.RootForModel(_libraries, _repositories, classId));
@@ -159,7 +162,9 @@ public sealed class StyleTools
         _codeReview.RemoveLogMessagesForModels([classId]);
         _codeReview.AddLogMessages(findings);
 
-        return ToCheckResult(findings, modelsChecked: 1, CurrentBaseline(), baseline);
+        var snapshot = CurrentBaseline();
+        return ToCheckResult(findings, modelsChecked: 1, snapshot, view,
+            BaselineWarnings(snapshot, [([classId], effective)]));
     }
 
     internal async Task<object> CheckLibrary(
@@ -167,10 +172,16 @@ public sealed class StyleTools
         StyleSettingsInput? settings = null,
         string? baseline = null)
     {
-        if (BaselineViewError(baseline) is { } badView)
+        var (view, badView) = BaselineView(baseline);
+        if (badView is not null)
             return badView;
         if (ToolDiagnostics.RequireLibrary(_libraries, "checking a library") is { } noLib)
             return noLib;
+
+        // Before the packages are trimmed: it scans working copies, and other calls see trimmed
+        // package source for as long as this one takes.
+        var snapshot = CurrentBaseline();
+        var scopes = new List<(IEnumerable<string> ModelIds, StyleCheckingSettings Settings)>();
 
         List<LoadedLibrary> targets;
         if (libraryId is not null)
@@ -238,6 +249,7 @@ public sealed class StyleTools
 
                 // Each library is checked with its own repository settings unless an override was passed.
                 var effective = explicitSettings ?? RepoSettingsForLibrary(library);
+                scopes.Add((library.ModelIds, effective));
                 // Classes an ExcludedLibraries pattern takes out of scope are not checked, so they are
                 // not counted as checked either — the CLI subtracts them for the reason it gives at
                 // its own count: a mistyped library name then shows up as an unexpected number rather
@@ -282,7 +294,7 @@ public sealed class StyleTools
             _codeReview.RemoveLogMessagesForModels(checkedIds);
             _codeReview.AddLogMessages(reported);
 
-            return ToCheckResult(reported, modelsChecked, CurrentBaseline(), baseline);
+            return ToCheckResult(reported, modelsChecked, snapshot, view, BaselineWarnings(snapshot, scopes));
         }
         finally
         {
@@ -329,7 +341,8 @@ public sealed class StyleTools
         [Description("Items to skip for pagination (default 0).")] int offset = 0,
         [Description(BaselineParameter)] string baseline = "all")
     {
-        if (BaselineViewError(baseline) is { } badView)
+        var (view, badView) = BaselineView(baseline);
+        if (badView is not null)
             return badView;
         // Asked about one class with nothing loaded: name the library that class is in.
         if (classId is not null && _libraries.Libraries.Count == 0)
@@ -341,7 +354,8 @@ public sealed class StyleTools
         offset = Math.Max(offset, 0);
 
         var snapshot = CurrentBaseline();
-        var findings = new List<FindingItem>();
+        // With its status as the enum, which the filter reads: the item carries it as text.
+        var findings = new List<(FindingItem Item, FindingStatus? Status)>();
 
         if (includeParseErrors)
         {
@@ -352,11 +366,12 @@ public sealed class StyleTools
             // class - one field, two conventions.
             foreach (var finding in ParserErrorReporter.ToFindings(_libraries.GetAllModels()))
             {
-                findings.Add(Item(
+                var status = snapshot?.StatusOf(ParserErrorReporter.ToLogMessage(finding));
+                findings.Add((Item(
                     finding.ModelId, "parse",
                     finding.RuleId == RuleIds.ParseFailure ? "FatalParseError" : "SyntaxError",
                     finding.LineNumber, finding.Message, string.Empty, ParserErrorReporter.SourceName,
-                    finding.RuleId, snapshot?.StatusOf(ParserErrorReporter.ToLogMessage(finding))));
+                    finding.RuleId, status), status));
             }
         }
 
@@ -368,14 +383,16 @@ public sealed class StyleTools
             if (string.Equals(m.Source, ParserErrorReporter.SourceName, StringComparison.Ordinal))
                 continue;
 
-            findings.Add(Item(
+            var status = snapshot?.StatusOf(m);
+            findings.Add((Item(
                 m.ModelName, "style", m.Severity, m.LineNumber, m.Summary, m.Details,
                 string.IsNullOrEmpty(m.Source) ? LogMessage.StyleCheckingSource : m.Source,
-                m.RuleId, snapshot?.StatusOf(m)));
+                m.RuleId, status), status));
         }
 
         IEnumerable<FindingItem> filtered = findings
-            .Where(i => Shows(baseline, i.Status));
+            .Where(f => Shows(view, f.Status))
+            .Select(f => f.Item);
         if (!string.IsNullOrWhiteSpace(severity))
             filtered = filtered.Where(i => i.Severity.Contains(severity, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(source))
@@ -389,7 +406,7 @@ public sealed class StyleTools
             .ToList();
 
         var page = list.Skip(offset).Take(limit).ToList();
-        return new FindingsResult(list.Count, offset, page.Count, page);
+        return new FindingsResult(list.Count, offset, page.Count, page, BaselineWarnings(snapshot, []));
     }
 
     // ----- settings resolution helpers -----
@@ -455,71 +472,121 @@ public sealed class StyleTools
         "'changed' those plus accepted debt in classes the working copy has changed. With no baseline, " +
         "every finding is shown and none has a status.";
 
-    private static ToolError? BaselineViewError(string? view) =>
-        view is null || BaselineViews.Contains(view)
-            ? null
-            : new ToolError($"'{view}' is not a baseline view. Views: {string.Join(", ", BaselineViews)}.");
+    /// <summary>
+    /// The view asked for - trimmed, any case, 'all' when none is given - or an error naming the views.
+    /// The one reading of the parameter, for every tool that takes it.
+    /// </summary>
+    internal static (string View, ToolError? Error) BaselineView(string? view)
+    {
+        var normal = string.IsNullOrWhiteSpace(view) ? "all" : view.Trim().ToLowerInvariant();
+        return BaselineViews.Contains(normal)
+            ? (normal, null)
+            : (normal, new ToolError($"'{view}' is not a baseline view. Views: {string.Join(", ", BaselineViews)}."));
+    }
 
     /// <summary>
     /// Whether a view shows a finding of this status. One with no status - no baseline holds its
     /// class - is shown by every view: "cannot be classified" is not "already accepted", which is the
     /// desktop app's rule too (<see cref="BaselineStatusSnapshot.IsChangedFromBaseline"/>).
     /// </summary>
-    private static bool Shows(string? view, string? status) => view switch
+    private static bool Shows(string view, FindingStatus? status) => view switch
     {
-        "new" => status is null or nameof(FindingStatus.New),
-        "changed" => status is not nameof(FindingStatus.AcceptedDebt),
+        "new" => status is null or FindingStatus.New,
+        "changed" => status is not FindingStatus.AcceptedDebt,
         _ => true,
     };
 
     /// <summary>
-    /// The baseline classification as it stands now, or null when no loaded repository has a baseline.
-    /// Refreshed for each call rather than read from the last refresh: the caller has usually just
-    /// written the files, and which classes are pending commit is half the answer. The classification
-    /// is the desktop app's, so the two cannot disagree about a finding.
+    /// The baseline classification as it stands now, or null when no loaded repository has a baseline
+    /// file. Refreshed for each call rather than read from the last refresh: the caller has usually
+    /// just written the files, and which classes are pending commit is half the answer. The
+    /// classification is the desktop app's, so the two cannot disagree about a finding.
     /// </summary>
     /// <remarks>
     /// The working-copy status is kept for five minutes and cleared by the file monitor, which this
     /// server never starts. Without clearing it here, a class edited after the first check read as
-    /// untouched debt until the five minutes were up.
+    /// untouched debt until the five minutes were up. Only a repository with a baseline is cleared and
+    /// re-read: for one without, the status changes nothing, and reading it is a scan of its whole
+    /// working copy on every call.
     /// </remarks>
     private BaselineStatusSnapshot? CurrentBaseline()
     {
         if (_baselineStatus is null)
             return null;
 
-        _repositories.InvalidateWorkingCopyCache();
+        var withBaseline = _repositories.Repositories
+            .Where(r => !string.IsNullOrEmpty(r.LocalPath) && File.Exists(Baseline.CommittedPath(r.LocalPath)))
+            .ToList();
+        if (withBaseline.Count == 0)
+            return null;
+
+        foreach (var repository in withBaseline)
+            _repositories.InvalidateWorkingCopyCache(repository.Id);
         _baselineStatus.Refresh();
-        var snapshot = _baselineStatus.Snapshot;
-        return snapshot.HasBaseline ? snapshot : null;
+        return _baselineStatus.Snapshot;
+    }
+
+    /// <summary>
+    /// What a caller must know before trusting the statuses: a baseline that could not be read, whose
+    /// classes then have none, and a baseline taken with different rules, under which a rule enabled
+    /// since reports the debt it had all along as New - and an agent told to fix "what your change
+    /// introduced" goes after findings it did not cause. The CLI warns of both on stderr.
+    /// </summary>
+    private IReadOnlyList<string>? BaselineWarnings(
+        BaselineStatusSnapshot? snapshot, IEnumerable<(IEnumerable<string> ModelIds, StyleCheckingSettings Settings)> scopes)
+    {
+        if (snapshot is null)
+            return null;
+
+        var warnings = snapshot.UnreadableBaselines
+            .Select(u => $"Could not read the baseline {u}. Its classes have no status, and 'new' shows every one of their findings.")
+            .ToList();
+
+        var loaded = _libraries.Libraries.Select(l => l.Name).ToList();
+        var judged = new HashSet<Baseline>(ReferenceEqualityComparer.Instance);
+        foreach (var (modelIds, settings) in scopes)
+        {
+            foreach (var baseline in modelIds.Select(snapshot.BaselineFor).OfType<Baseline>())
+            {
+                if (!judged.Add(baseline))
+                    continue;
+                // What else happens to be loaded says nothing about the baseline, so only libraries it
+                // was taken with and are missing now count.
+                var drift = baseline.DriftFrom(settings, loaded) with { DependenciesAdded = [] };
+                if (drift.HasDrifted)
+                    warnings.Add("The baseline was taken with a different configuration (" +
+                                 string.Join("; ", drift.Describe()) + "). Findings of a rule enabled since " +
+                                 "are reported as New although they were there before.");
+            }
+        }
+
+        return warnings.Count == 0 ? null : warnings;
     }
 
     private static CheckResult ToCheckResult(
-        IReadOnlyList<LogMessage> findings, int modelsChecked, BaselineStatusSnapshot? baseline, string? view)
+        IReadOnlyList<LogMessage> findings, int modelsChecked, BaselineStatusSnapshot? baseline, string? view,
+        IReadOnlyList<string>? warnings = null)
     {
-        var classified = findings
-            .Select(f => (Finding: f, Status: baseline?.StatusOf(f) is { } status ? WireNames.Of(status) : null))
-            .ToList();
+        var classified = findings.Select(f => (Finding: f, Status: baseline?.StatusOf(f))).ToList();
         // Filtered before the cap, so a library carrying thousands of accepted findings still returns
         // the few new ones rather than the first 200 of its debt.
-        var kept = classified.Where(c => Shows(view, c.Status)).ToList();
+        var kept = classified.Where(c => Shows(view ?? "all", c.Status)).ToList();
         var shown = kept
             .Take(MaxReturnedFindings)
             .Select(c => new StyleFindingDto(c.Finding.ModelName, c.Finding.Severity, c.Finding.LineNumber,
                 c.Finding.Summary, c.Finding.Details,
                 string.IsNullOrEmpty(c.Finding.Source) ? LogMessage.StyleCheckingSource : c.Finding.Source,
-                c.Finding.RuleId, c.Status))
+                c.Finding.RuleId, c.Status is { } status ? WireNames.Of(status) : null))
             .ToList();
 
-        var summary = baseline is null
+        var summary = baseline is not { HasBaseline: true }
             ? null
             : new BaselineSummary(
-                // A class in a repository with no baseline counts as new, as the CLI counts every
-                // finding of a library it has no baseline for.
-                classified.Count(c => c.Status is null or nameof(FindingStatus.New)),
-                classified.Count(c => c.Status is nameof(FindingStatus.TouchedDebt)),
-                classified.Count(c => c.Status is nameof(FindingStatus.AcceptedDebt)),
+                classified.Count(c => c.Status is FindingStatus.New),
+                classified.Count(c => c.Status is FindingStatus.TouchedDebt),
+                classified.Count(c => c.Status is FindingStatus.AcceptedDebt),
+                classified.Count(c => c.Status is null),
                 classified.Count - kept.Count);
-        return new CheckResult(modelsChecked, kept.Count, shown, kept.Count > shown.Count, summary);
+        return new CheckResult(modelsChecked, kept.Count, shown, kept.Count > shown.Count, summary, warnings);
     }
 }

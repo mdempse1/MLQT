@@ -97,6 +97,18 @@ public class AddRepositoryLoadsItsLibraryTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadingTheLibrariesAgain_LoadsNoSecondCopy()
+    {
+        // Every library went in a second time, over the same class ids.
+        var (service, libraries) = CreateService();
+        var id = await AddAsTheDialogDoes(service, SingleLibraryAtTopLevel());
+
+        await service.LoadLibrariesAsync(id);
+
+        Assert.Single(libraries.Libraries);
+    }
+
+    [Fact]
     public async Task ATopLevelLibraryIsDiscovered()
     {
         var (service, _) = CreateService();

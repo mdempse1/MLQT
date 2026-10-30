@@ -412,25 +412,31 @@ internal sealed class DependencyLoader
         var adopted = new List<(DiscoveredLibrarySummary Discovered, LoadedLibrary Existing)>();
         foreach (var discovered in look.DiscoveredLibraries)
         {
-            if (_libraries.Libraries.FirstOrDefault(l => l.Name == discovered.LibraryName &&
-                                                         l.RepositoryId != look.RepositoryId) is not { } existing)
-                continue;
-            if (SamePath(existing.SourcePath, discovered.FullPath))
+            // Every loaded copy of that name, not the first: a copy of the same files must not hide one
+            // elsewhere, which is a conflict whichever is found first.
+            foreach (var existing in _libraries.Libraries
+                         .Where(l => l.Name == discovered.LibraryName && l.RepositoryId != look.RepositoryId)
+                         .ToList())
             {
-                adopted.Add((discovered, existing));
-                continue;
+                // Another repository cannot hold these files: discovery looks one folder deep, and the
+                // same folder by another spelling is the same repository, which the query above leaves out.
+                if (SamePath(existing.SourcePath, discovered.FullPath))
+                {
+                    adopted.Add((discovered, existing));
+                    continue;
+                }
+                // As for a path: an encrypted build beside readable source is left to the source, not chosen between.
+                if (!existing.IsReadOnly && EncryptedLibraryDetector.IsEncryptedLibraryRoot(discovered.FullPath))
+                    continue;
+                // And a build of the release the host supplied is left to the supplied copy, which the library
+                // service keeps in its place as the repository loads.
+                if (SuppliedDescribesThisBuild(existing, discovered.FullPath) is { } release)
+                {
+                    _warnings.Add(SuppliedForThisBuild(existing.Name, discovered.FullPath, existing, release));
+                    continue;
+                }
+                conflicts.Add((discovered, existing));
             }
-            // As for a path: an encrypted build beside readable source is left to the source, not chosen between.
-            if (!existing.IsReadOnly && EncryptedLibraryDetector.IsEncryptedLibraryRoot(discovered.FullPath))
-                continue;
-            // And a build of the release the host supplied is left to the supplied copy, which the library
-            // service keeps in its place as the repository loads.
-            if (SuppliedDescribesThisBuild(existing, discovered.FullPath) is { } release)
-            {
-                _warnings.Add(SuppliedForThisBuild(existing.Name, discovered.FullPath, existing, release));
-                continue;
-            }
-            conflicts.Add((discovered, existing));
         }
         var refused = conflicts.Where(c => OriginOf(c.Existing) == Explicit && !replace).ToList();
         if (refused.Count > 0)

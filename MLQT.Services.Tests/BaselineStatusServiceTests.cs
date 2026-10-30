@@ -171,9 +171,13 @@ public class BaselineStatusServiceTests : IDisposable
         var repositories = new Mock<IRepositoryService>();
         repositories.SetupGet(r => r.Repositories).Returns([repository]);
         repositories.Setup(r => r.GetWorkingCopyChanges(repository.Id)).Returns(workingCopyChanges.ToList());
+        _repositories = repositories;
 
         return new BaselineStatusService(libraries, repositories.Object, new Mock<IFileMonitoringService>().Object);
     }
+
+    /// <summary>The repository service the last <see cref="BuildService"/> made.</summary>
+    private Mock<IRepositoryService>? _repositories;
 
     private void WriteBaseline(params Finding[] accepted)
         => Baseline.FromFindings(accepted).Save(Path.Combine(_repoDir, ".mlqt", "baseline.json"));
@@ -187,6 +191,19 @@ public class BaselineStatusServiceTests : IDisposable
 
         Assert.False(service.HasBaseline);
         Assert.Null(service.StatusOf(F("Lib.A", "x").ToLogMessage()));
+    }
+
+    [Fact]
+    public void Refresh_WithNoBaselineFile_DoesNotScanTheWorkingCopy()
+    {
+        // Being touched only changes a status against a baseline, and finding out is a status scan of
+        // the whole working copy - which the MCP server asked for on every check.
+        var service = BuildService(new VcsWorkingCopyFile { Path = "Lib.mo", Status = VcsFileStatus.Modified });
+
+        service.Refresh();
+
+        _repositories!.Verify(r => r.GetWorkingCopyChanges(It.IsAny<string>()), Times.Never);
+        Assert.Equal(0, service.TouchedFileCount);
     }
 
     [Fact]
@@ -250,6 +267,20 @@ public class BaselineStatusServiceTests : IDisposable
         service.Refresh();
 
         Assert.False(service.HasBaseline);
+        // ...and says so, so nobody reads "no status" as "nothing is new".
+        Assert.Contains("baseline.json", Assert.Single(service.Snapshot.UnreadableBaselines));
+    }
+
+    [Fact]
+    public void BaselineFor_IsTheRepositorysBaseline()
+    {
+        WriteBaseline(F("Lib.A", "x"));
+        var service = BuildService();
+
+        service.Refresh();
+
+        Assert.Single(service.Snapshot.BaselineFor("Lib.A")!.Entries);
+        Assert.Null(service.Snapshot.BaselineFor("Elsewhere.B"));
     }
 
     [Fact]

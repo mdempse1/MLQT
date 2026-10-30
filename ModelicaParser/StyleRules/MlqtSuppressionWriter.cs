@@ -331,6 +331,13 @@ public static class MlqtSuppressionWriter
             error = $"component '{component}' was not found in the class";
             return false;
         }
+        if (target.SharedWith.Count > 0)
+        {
+            error = $"component '{component}' is declared with {string.Join(", ", target.SharedWith.Select(s => $"'{s}'"))} " +
+                    "before one constrainedby clause, so they share one annotation, and a waiver for it would waive " +
+                    "the rule for them too. Declare it on its own first";
+            return false;
+        }
 
         newCode = target.Apply(sourceCode, argument, value, reason);
         return true;
@@ -352,6 +359,7 @@ public static class MlqtSuppressionWriter
         public (int Start, int Stop)? AnnotationSpan;  // the whole `annotation(…)`, without its `;`
         public int MlqtArgCount;
         public int AnnotationArgCount;
+        public IReadOnlyList<string> SharedWith = [];  // components whose annotation this one is (ComponentComment.SharedWith)
 
         public string Apply(string code, string argument, string value, string? reason)
         {
@@ -526,7 +534,12 @@ public static class MlqtSuppressionWriter
             {
                 // Merged into the annotation the component has - after constrainedby, the element's -
                 // or a new one added where that would go.
-                var target = new Target { Inline = true, InsertOffset = ComponentComment.AnnotationInsertOffset(context) };
+                var target = new Target
+                {
+                    Inline = true,
+                    InsertOffset = ComponentComment.AnnotationInsertOffset(context),
+                    SharedWith = ComponentComment.SharedWith(context),
+                };
                 FillFromAnnotation(target, ComponentComment.Annotation(context), _argument);
                 ComponentTarget = target;
             }

@@ -425,6 +425,9 @@ public sealed class GuidanceTools
               'changed' adds the debt in classes you touched, if you are asked to leave them cleaner.
               mlqt_list_findings takes the same baseline filter.
             - With no baseline there is no status, and every view shows every finding.
+            - Read baselineWarnings first: a baseline that could not be read gives its classes no
+              status, and one taken with different rules reports a newly enabled rule's old findings
+              as New - those are not yours to fix.
 
             Severities are real. A style finding carries the severity its rule is configured with, written
             as 'Style error', 'Style warning' or 'Style info'; a parse diagnostic is a bare 'Error' or

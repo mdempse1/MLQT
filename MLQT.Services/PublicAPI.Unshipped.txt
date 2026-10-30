@@ -26,3 +26,7 @@ static MLQT.Services.LibraryPrecedence.SameLibrary(string? a, string? b) -> bool
 MLQT.Services.MlqtServicesJson
 static MLQT.Services.Helpers.FileMonitoringServiceHelpers.IsInHiddenDirectory(string! path, string? root) -> bool
 static MLQT.Services.MlqtServicesJson.SettingValues.get -> System.Text.Json.JsonSerializerOptions!
+static MLQT.Services.Checking.Baseline.CommittedPath(string! root) -> string!
+MLQT.Services.Checking.BaselineStatusSnapshot.BaselineFor(string! modelId) -> MLQT.Services.Checking.Baseline?
+MLQT.Services.Checking.BaselineStatusSnapshot.UnreadableBaselines.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MLQT.Services.Checking.BaselineStatusSnapshot.UnreadableBaselines.init -> void

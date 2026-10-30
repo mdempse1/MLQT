@@ -1318,10 +1318,36 @@ end Bar;";
             var affected = GraphBuilder.UpdateGraphForChangedFiles(
                 graph, tempDir, new HashSet<string> { "package.order" });
 
-            // package.order changes don't touch model nodes, so affected list stays empty
-            Assert.Empty(affected);
+            // The package whose order changed is the class to re-check, as a reload of one file says
+            Assert.Equal(["P"], affected);
             // Blank lines must be filtered, surviving entries trimmed
             Assert.Equal(new[] { "New1", "New2", "New3" }, pkg.PackageOrder);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_APackageMoChanged_KeepsItsOrder()
+    {
+        // The re-parsed package is a new node; it came back with no order, so the check skipped it
+        // and the next format wrote a package.order of its own in place of the user's.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbKeepOrd_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var pkgPath = Path.Combine(tempDir, "package.mo");
+            File.WriteAllText(pkgPath, "package P\nend P;");
+            File.WriteAllLines(Path.Combine(tempDir, "package.order"), new[] { "B", "A" });
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaDirectory(graph, tempDir);
+
+            File.WriteAllText(pkgPath, "package P \"now described\"\nend P;");
+            GraphBuilder.UpdateGraphForChangedFiles(graph, tempDir, new HashSet<string> { "package.mo" });
+
+            Assert.Equal(new[] { "B", "A" }, graph.ModelNodes.Single(m => m.Definition.Name == "P").PackageOrder);
         }
         finally
         {

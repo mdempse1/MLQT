@@ -255,6 +255,12 @@ public sealed class Baseline
         TypeInfoResolver = MlqtServicesJsonContext.Default,
     };
 
+    /// <summary>
+    /// Where a library or repository keeps its committed baseline: <c>&lt;root&gt;/.mlqt/baseline.json</c>,
+    /// the file <c>mlqt baseline</c> writes by default and the desktop app and the MCP server read.
+    /// </summary>
+    public static string CommittedPath(string root) => Path.Combine(root, ".mlqt", "baseline.json");
+
     public static Baseline Load(string path)
     {
         var file = JsonSerializer.Deserialize<BaselineFile>(File.ReadAllText(path), Options)

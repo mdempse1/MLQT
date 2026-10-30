@@ -141,7 +141,11 @@ public sealed class DiagramTools
         if (error is not null)
             return error;
 
-        var newClassCode = SetPlacement(ctx!.ClassCode, componentName, x1, y1, x2, y2, rotation);
+        if (ModelicaNav.FindComponent(ctx!.ClassCode, componentName) is { } declared
+            && ComponentComment.SharedWith(declared) is { Count: > 0 } sharing)
+            return SharedAnnotationRefusal(componentName, sharing, "placement");
+
+        var newClassCode = SetPlacement(ctx.ClassCode, componentName, x1, y1, x2, y2, rotation);
         if (newClassCode is null)
             return new ToolError($"'{classId}' has no component named '{componentName}'.");
 
@@ -158,6 +162,15 @@ public sealed class DiagramTools
     }
 
     private static int ToInt(double value) => (int)Math.Round(value);
+
+    /// <summary>
+    /// The refusal for a component whose annotation and description it shares with others declared
+    /// beside it before <c>constrainedby</c> - changing one would change them all.
+    /// </summary>
+    internal static ToolError SharedAnnotationRefusal(string componentName, IReadOnlyList<string> sharing, string what) =>
+        new($"'{componentName}' is declared with {string.Join(", ", sharing.Select(s => $"'{s}'"))} before one " +
+            $"constrainedby clause, so they share one description and annotation, and setting its {what} " +
+            "would set theirs too. Declare it on its own first (mlqt_edit_class replace), then set it.");
 
     // Set the Placement on a component, returning the new class code, or null if the component is absent.
     private static string? SetPlacement(string classCode, string componentName, int x1, int y1, int x2, int y2, int rotation)

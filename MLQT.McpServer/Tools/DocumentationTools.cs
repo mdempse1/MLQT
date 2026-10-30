@@ -87,6 +87,8 @@ public sealed class DocumentationTools
         var decl = ModelicaNav.FindComponent(code, componentName);
         if (decl is null)
             return new ToolError($"'{classId}' has no component named '{componentName}'.");
+        if (ComponentComment.SharedWith(decl) is { Count: > 0 } sharing)
+            return DiagramTools.SharedAnnotationRefusal(componentName, sharing, "description");
 
         var quoted = ModelicaNav.Quote(description);
         var sc = ComponentComment.Description(decl);

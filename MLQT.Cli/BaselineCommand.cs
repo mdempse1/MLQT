@@ -22,7 +22,7 @@ internal sealed record BaselineOptions
     public string ResolvedBaselinePath =>
         BaselinePath is not null
             ? RepoPath.Resolve(LibraryPath, BaselinePath)
-            : Path.Combine(LibraryPath, ".mlqt", "baseline.json");
+            : Baseline.CommittedPath(LibraryPath);
 
     public static bool TryParse(IReadOnlyList<string> args, out BaselineOptions? options, out string? error)
     {

@@ -51,6 +51,40 @@ public static class ComponentComment
         return last.Stop.StopIndex + 1;
     }
 
+    /// <summary>
+    /// The other components whose description and annotation are this one's: those declared beside it
+    /// before a constraining clause, as in <c>replaceable Engine e1, e2 constrainedby Base annotation(...)</c>,
+    /// where the one comment after the clause belongs to the element and so to both. Empty otherwise,
+    /// each component then having a comment of its own. A writer changing this component's
+    /// annotation or description would change theirs too, and Modelica has no way to give them
+    /// different ones short of splitting the declaration.
+    /// </summary>
+    public static IReadOnlyList<string> SharedWith(modelicaParser.Component_declarationContext declaration)
+    {
+        if (ConstrainedElement(declaration) is null || declaration.Parent is not modelicaParser.Component_listContext list)
+            return [];
+        return list.component_declaration()
+            .Where(d => !ReferenceEquals(d, declaration))
+            .Select(d => d.declaration()?.IDENT()?.GetText())
+            .OfType<string>()
+            .ToList();
+    }
+
+    /// <summary>
+    /// The description a replaceable <i>class</i> carries after its constraining clause -
+    /// <c>replaceable package Medium = Water constrainedby PartialMedium "The medium"</c> - or null when it
+    /// has none there. The same rule as a component's, for a class written where its element is: the
+    /// description rule read it, and the interface view, which did not, told an agent the class had none.
+    /// </summary>
+    public static modelicaParser.String_commentContext? ClassDescriptionAfterConstraint(modelicaParser.Class_specifierContext specifier) =>
+        // class_specifier -> class_definition -> element
+        specifier.Parent?.Parent is modelicaParser.ElementContext element
+        && element.constraining_clause() is not null
+        && element.comment()?.string_comment() is { } description
+        && description.STRING().Length > 0
+            ? description
+            : null;
+
     // component_declaration -> component_list -> component_clause -> element: the only place a
     // component clause appears in the grammar.
     private static modelicaParser.ElementContext? ConstrainedElement(modelicaParser.Component_declarationContext declaration) =>

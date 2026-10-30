@@ -17,7 +17,9 @@ public interface IBaselineStatusService
     /// <summary>True when at least one loaded repository has a baseline to compare against.</summary>
     bool HasBaseline { get; }
 
-    /// <summary>Number of files whose changes are pending commit, across all repositories.</summary>
+    /// <summary>Number of files whose changes are pending commit, across the repositories that have a
+    /// baseline - the only ones where being touched changes a finding's status, and so the only ones
+    /// whose working copy is scanned.</summary>
     int TouchedFileCount { get; }
 
     /// <summary>

@@ -75,8 +75,8 @@ public sealed class AnalysisFacadeTools
             .Select(c => c.Trim().ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToList();
         if (wanted.FirstOrDefault(c => !Checks.Contains(c)) is { } unknown)
             return new ToolError($"'{unknown}' is not a check. Checks: {string.Join(", ", Checks)}.");
-        if (!StyleTools.BaselineViews.Contains(baseline))
-            return new ToolError($"'{baseline}' is not a baseline view. Views: {string.Join(", ", StyleTools.BaselineViews)}.");
+        if (StyleTools.BaselineView(baseline).Error is { } badView)
+            return badView;
 
         var hasClass = !string.IsNullOrWhiteSpace(classId);
         var hasSource = !string.IsNullOrWhiteSpace(source);

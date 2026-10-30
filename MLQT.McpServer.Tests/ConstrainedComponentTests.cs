@@ -78,6 +78,28 @@ public class ConstrainedComponentTests
     }
 
     [Fact]
+    public async Task OneOfTwoSharingAnAnnotation_IsRefused_RatherThanMovingBoth()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage W \"w\"\n  model Car\n    replaceable Real e1, e2 constrainedby Real " +
+                             "annotation (Placement(transformation(extent={{0,0},{10,10}})));\n  end Car;\nend W;\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var before = host.Libraries.GetModelById("W.Car")!.Definition.ModelicaCode;
+
+        var placed = ToolAssert.Error(await new DiagramTools(host.Libraries, host.Resources, host.Session)
+            .SetComponentPlacement("W.Car", "e1", 20, 20, 40, 40));
+        var described = ToolAssert.Error(await new DocumentationTools(host.Libraries, host.Resources, host.Session)
+            .SetComponentDescription("W.Car", "e1", "First"));
+
+        Assert.Contains("'e2'", placed.Error);
+        Assert.Contains("'e2'", described.Error);
+        Assert.Equal(before, host.Libraries.GetModelById("W.Car")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
     public async Task DescribingIt_ChangesTheDescriptionItHas()
     {
         using var host = Load(new TestHost());

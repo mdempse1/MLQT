@@ -790,18 +790,19 @@ public class LibraryDataService : ILibraryDataService
     /// </remarks>
     private int RemoveSuppliedNodes(LoadedLibrary library)
     {
-        // Another registered library of the same kind listing an id has the node too - two copies of
-        // one library loaded from the same files, by two routes that each thought it was the first.
-        // Removing one took the other's classes with it, and the survivor listed classes that were gone.
-        var listedElsewhere = _libraries
-            .Where(l => !ReferenceEquals(l, library) && l.ReadOnlySource == library.ReadOnlySource)
-            .SelectMany(l => l.ModelIds)
-            .ToHashSet(StringComparer.Ordinal);
+        // Another registered copy of the same files - one library loaded by two routes that each
+        // thought it was the first - holds the very nodes this one lists, so removing this one removes
+        // none of them: it once took the other's classes with it, leaving it listing classes that were
+        // gone. Asked of the files, not the ids: a copy of the library in another folder lists the same
+        // ids for nodes that are one copy's or the other's, and those still go with the one removed.
+        if (!string.IsNullOrEmpty(library.SourcePath) && _libraries.Any(l =>
+                !ReferenceEquals(l, library) && l.ReadOnlySource == library.ReadOnlySource && SameSource(l.SourcePath, library.SourcePath)))
+            return 0;
 
         var supplied = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in library.ModelIds)
         {
-            if (!listedElsewhere.Contains(id) && _combinedGraph.GetNode<ModelNode>(id) is { } node && Owns(library, node))
+            if (_combinedGraph.GetNode<ModelNode>(id) is { } node && Owns(library, node))
                 supplied.Add(id);
         }
 
@@ -828,6 +829,24 @@ public class LibraryDataService : ILibraryDataService
         }
 
         return supplied.Count;
+    }
+
+    private static bool SameSource(string? a, string? b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            return false;
+        try
+        {
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch (Exception)
+        {
+            // An in-memory root of a supplied library is not a path on disk.
+            return string.Equals(a, b, StringComparison.Ordinal);
+        }
     }
 
     /// <inheritdoc/>
@@ -1017,20 +1036,10 @@ public class LibraryDataService : ILibraryDataService
         {
             affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(_combinedGraph));
 
-            // The order of the package this file sits in - a class written to its own file is listed
-            // there - and, for a package.mo, of the package above it, which lists this one. Read with
-            // the file, because whoever wrote the file wrote the order beside it: the MCP server writes
-            // both and runs no file monitor, so the order it had just written read as stale until the
-            // library was loaded again. A package.mo just re-parsed also lost the order it had.
-            if (Path.GetDirectoryName(filePath) is { } directory)
-            {
-                var orderDirectories = Path.GetFileName(filePath).Equals("package.mo", StringComparison.OrdinalIgnoreCase)
-                    ? new[] { directory, Path.GetDirectoryName(directory) }
-                    : new[] { directory };
-                foreach (var orderDirectory in orderDirectories.OfType<string>())
-                    if (GraphBuilder.ApplyPackageOrder(_combinedGraph, orderDirectory) is { } packageId)
-                        affectedModelIds.Add(packageId);
-            }
+            // Read with the file, because whoever wrote the file wrote the order beside it: the MCP
+            // server writes both and runs no file monitor, so the order it had just written read as
+            // stale until the library was loaded again.
+            affectedModelIds.AddRange(GraphBuilder.ApplyPackageOrdersAround(_combinedGraph, filePath));
         }
 
         RefreshVersions(affectedModelIds);

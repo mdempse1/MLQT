@@ -3,10 +3,12 @@ ModelicaParser.DataTypes.ClassBodyComponent.AnnotationSpan.get -> (int Start, in
 ModelicaParser.DataTypes.ClassBodyComponent.AnnotationSpan.init -> void
 ModelicaParser.Helpers.ComponentComment
 override ModelicaParser.StyleRules.SpellCheckDescriptions.VisitElement(modelicaParser.ElementContext! context) -> object?
+static ModelicaParser.Helpers.ComponentComment.ClassDescriptionAfterConstraint(modelicaParser.Class_specifierContext! specifier) -> modelicaParser.String_commentContext?
 static ModelicaParser.Helpers.ComponentComment.Annotation(modelicaParser.Component_declarationContext! declaration) -> modelicaParser.AnnotationContext?
 static ModelicaParser.Helpers.ComponentComment.AnnotationInsertOffset(modelicaParser.Component_declarationContext! declaration) -> int
 static ModelicaParser.Helpers.ComponentComment.Description(modelicaParser.Component_declarationContext! declaration) -> modelicaParser.String_commentContext?
 static ModelicaParser.Helpers.ComponentComment.DescriptionInsertOffset(modelicaParser.Component_declarationContext! declaration) -> int
+static ModelicaParser.Helpers.ComponentComment.SharedWith(modelicaParser.Component_declarationContext! declaration) -> System.Collections.Generic.IReadOnlyList<string!>!
 const ModelicaParser.StyleRules.RuleIds.AbsoluteResourcePath = "MLQT.Resource.AbsolutePath" -> string!
 const ModelicaParser.StyleRules.RuleIds.DependencyCycle = "MLQT.Structure.DependencyCycle" -> string!
 const ModelicaParser.StyleRules.RuleIds.DuplicateConnection = "MLQT.Connection.Duplicate" -> string!

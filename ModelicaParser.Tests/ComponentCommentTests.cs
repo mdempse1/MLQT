@@ -93,6 +93,16 @@ public class ComponentCommentTests
         Assert.EndsWith(before, code[..at]);
     }
 
+    [Fact]
+    public void ComponentsDeclaredBeforeOneConstraint_ShareItsComment()
+    {
+        var code = "model M\n  replaceable Engine e1, e2 constrainedby Base \"Both\";\n  Real a, b \"own\";\nend M;";
+
+        Assert.Equal(["e2"], ComponentComment.SharedWith(Declaration(code, "e1")));
+        Assert.Empty(ComponentComment.SharedWith(Declaration(code, "a")));
+        Assert.Empty(ComponentComment.SharedWith(Declaration(Constrained, "engine")));
+    }
+
     // ---- what reads it ---------------------------------------------------------------------------
 
     [Fact]
@@ -112,6 +122,45 @@ public class ComponentCommentTests
             .Elements.Single(e => e.Name == "engine");
 
         Assert.Equal("The engine", engine.Description);
+    }
+
+    [Fact]
+    public void AReplaceableClass_TakesItsDescriptionFromAfterTheConstraint()
+    {
+        var code = "model M\n  replaceable package Medium = Water constrainedby PartialMedium \"The medium\";\n  " +
+                   "replaceable package Other = Water;\nend M;";
+        var classes = ModelicaParserHelper.Parse(code).class_definition()[0].class_specifier().long_class_specifier()
+            .composition().element_list()[0].element()
+            .Select(e => e.class_definition()?.class_specifier()).OfType<modelicaParser.Class_specifierContext>().ToList();
+
+        Assert.Equal("\"The medium\"", ComponentComment.ClassDescriptionAfterConstraint(classes[0])!.GetText());
+        Assert.Null(ComponentComment.ClassDescriptionAfterConstraint(classes[1]));
+        // What the interface view tells an agent about the class, as the description rule reads it.
+        Assert.Equal("The medium", ClassInterfaceExtractor.Extract(ModelicaParserHelper.Parse(code))
+            .Elements.Single(e => e.Name == "Medium").Description);
+    }
+
+    [Fact]
+    public void AConstrainedParameterDescribedAfterTheClause_IsDescribed()
+    {
+        var code = "model M\n  replaceable parameter Real k = 1 constrainedby Real \"Gain\";\n  " +
+                   "replaceable parameter Real j = 1 constrainedby Real;\nend M;";
+        var rule = new PublicParametersAndConstantsHaveDescription(parameterHasDescription: true, constantHasDescription: false);
+
+        rule.Visit(ModelicaParserHelper.Parse(code));
+
+        Assert.Equal(["j"], rule.RuleFindings.Select(f => f.ElementPath));
+    }
+
+    [Fact]
+    public void TheSpellingCorrector_CorrectsTheDescriptionAfterTheConstraint()
+    {
+        var code = "model M\n  replaceable Engine e constrainedby Base \"The enjine\";\nend M;";
+
+        var (corrected, replacements) = ModelicaParser.SpellChecking.SpellingCorrector.ReplaceWordInStrings(code, "enjine", "engine");
+
+        Assert.Equal(1, replacements);
+        Assert.Contains("\"The engine\"", corrected);
     }
 
     [Fact]

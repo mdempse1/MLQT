@@ -38,13 +38,15 @@ public class BaselineStatusDoesNotBlockTests : IDisposable
     }
 
     /// <summary>
-    /// A service with one repository holding one real library, so a refresh actually reaches the
-    /// working-copy query. Without the library it returns before asking anything, and a test built
-    /// on that would pass however the refresh was scheduled — which the first version of this did.
+    /// A service with one repository holding one real library and a baseline, so a refresh actually
+    /// reaches the working-copy query. Without the library - or the baseline, for which alone the
+    /// query is made - it returns before asking anything, and a test built on that would pass however
+    /// the refresh was scheduled — which the first version of this did.
     /// </summary>
     private (FileMonitoringService Monitor, string RepositoryId, ManualResetEventSlim Queried) Build(
         Action? onQuery = null)
     {
+        new Baseline([]).Save(Baseline.CommittedPath(_repoDir));
         var libraries = new LibraryDataService();
         var library = libraries.AddLibraryFromFileAsync(
                 Path.Combine(_repoDir, "Lib.mo"),

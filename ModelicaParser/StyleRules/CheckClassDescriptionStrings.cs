@@ -1,5 +1,6 @@
 using Antlr4.Runtime.Misc;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.StyleRules;
 
@@ -69,19 +70,11 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
     }
 
     /// <summary>
-    /// Checks whether a class specifier's parent element has a description string
-    /// on its constraining clause comment. This handles the Modelica pattern:
+    /// Whether the class carries its description after a constraining clause, as in
     /// <code>replaceable model X = Y constrainedby Z "description";</code>
-    /// where the description is on the element, not the short class specifier.
+    /// where it is the element's, not the short class specifier's (<see cref="ComponentComment"/>).
     /// </summary>
-    private static bool HasElementLevelDescription(Antlr4.Runtime.ParserRuleContext context)
-    {
-        // Walk up: *_class_specifier → class_specifier → class_definition → element
-        var element = context.Parent?.Parent?.Parent as modelicaParser.ElementContext;
-        if (element == null)
-            return false;
-
-        var comment = element.comment();
-        return comment?.string_comment() != null && comment.string_comment().GetText().Length > 0;
-    }
+    private static bool HasElementLevelDescription(Antlr4.Runtime.ParserRuleContext context) =>
+        context.Parent is modelicaParser.Class_specifierContext specifier
+        && ComponentComment.ClassDescriptionAfterConstraint(specifier) is not null;
 }
