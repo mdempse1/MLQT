@@ -232,38 +232,34 @@ declared version loaded. Either is an increment of its own if wanted.
 on the dependency edges that already exist. Nothing in MLQT detected a cycle before; several places
 only guard against one.
 
-**What is a cycle worth reporting.** Packages that depend on each other, not classes: classes that
-refer to each other are ordinary Modelica. The first run compared at whatever level two names
-parted, and 21 of its 45 MSL findings were classes naming each other - inverse functions, the
-`dp_*_DP`/`dp_*_MFLOW` pairs of `Fluid.Dissipation`, `Matrices.inv` and `norm`. So both sides at that
-level must be packages. A dependency is counted at that one level only, so a deep cycle is reported
-once. A class using its own enclosing scope counts for nothing.
+**What is a cycle worth reporting.** Top-level libraries that depend on each other (2026-10-30).
+The first runs compared packages at whatever level two names parted - 21 of the first 45 MSL
+findings were classes naming each other (inverse functions, `Matrices.inv` and `norm`), so both
+sides had to be packages, and that left 24 cycles in MSL and 20 in Buildings, all between packages
+inside one library, such as `Rotational.Interfaces` using `Rotational.Components.Fixed`. Those were
+then dropped: a library's packages are loaded, versioned and released together, so a cycle between
+them costs nothing anyone outside it can see and nobody would act on one. A dependency now counts
+only between two top-level packages; a top-level class that is not a package is not a library.
 
 **Examples.** A class with `experiment(...)` contributes nothing, the exemption `MLQT.Unused.Class`
-makes: without it `Blocks.Examples` building circuits from `Electrical` and `Mechanics` made most of
-MSL's top level one cycle. A helper inside an `Examples` package with no experiment of its own still
-counts (one of MSL's 24, one of Buildings' 20). Guessing from a package being called `Examples` was
-considered and not done: it is a convention, not a rule of the language, and `__MLQT` waives a cycle
-that is meant.
+makes. Guessing from a package being called `Examples` was considered and not done: it is a
+convention, not a rule of the language, and `__MLQT` waives a cycle that is meant.
 
 **Three states.** Dependency edges exist only between loaded classes, so a library that is not
 loaded can hide a cycle but never invent one.
 
-**What is followed, and where it is reported** (changed after the branch review, 2026-10-29). A
-cycle inside a library is found over the whole library and reported when a checked class is inside
-one of its packages: the first version reported every cycle in a library for a check of one changed
-class. Between libraries, edges are followed across every loaded library and the cycle is reported on
-each checked library in it. The first version followed only the checked libraries and reported on
-the first of them, so the MCP server, which checks one library per call, never saw a cycle the
-desktop app (a repository at a time) reported - the same libraries, different findings by tool. A
-reference or excluded library is followed and never reported on.
+**What is followed, and where it is reported** (changed after the branch review, 2026-10-29). Edges
+are followed across every loaded library and the cycle is reported on each checked library in it.
+The first version followed only the checked libraries and reported on the first of them, so the MCP
+server, which checks one library per call, never saw a cycle the desktop app (a repository at a time)
+reported - the same libraries, different findings by tool. A reference or excluded library is
+followed and never reported on.
 
-**The finding.** On the parent package (for libraries depending on each other, on each checked one),
-`ElementPath` the sorted members - a different route through the same packages is the same cycle -
-and the message the shortest route round it with the first-by-name class making each step. Measured
-on MSL 4.1 and Buildings: 24 and 20 cycles, all package-level coupling such as `Rotational.Interfaces`
-using `Rotational.Components.Fixed`, at 0.1 s each. Following loaded libraries that are not checked
-added one on MSL: `Modelica` and `ModelicaServices` use each other, which is how MSL is split.
+**The finding.** On each checked library in the cycle, `ElementPath` the sorted libraries - a
+different route through the same libraries is the same cycle - and the message the shortest route
+round it with the first-by-name class making each step. Measured on 2026-10-30: one in MSL 4.1,
+`Modelica` and `ModelicaServices`, which use each other because that is how MSL is split, and none in
+Buildings.
 
 ## 5. The rest of broken references — done (2026-10-29)
 

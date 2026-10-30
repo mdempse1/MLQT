@@ -6,38 +6,27 @@ using RuleIdsRef = ModelicaParser.StyleRules.RuleIds;
 namespace ModelicaGraph.Analysis;
 
 /// <summary>
-/// <c>MLQT.Structure.DependencyCycle</c>: packages that depend on each other. <c>Components</c> uses
-/// <c>Interfaces</c> and <c>Interfaces</c> uses <c>Components</c>, so neither can be understood,
-/// tested or moved on its own.
+/// <c>MLQT.Structure.DependencyCycle</c>: top-level libraries that depend on each other. <c>LibA</c>
+/// uses <c>LibB</c> and <c>LibB</c> uses <c>LibA</c>, so neither can be loaded, versioned or released
+/// without the other.
 /// </summary>
 /// <remarks>
-/// <para><b>Packages, not classes.</b> Classes that refer to each other are ordinary Modelica - a
-/// function and the record it returns, a model and the connector it declares - and reporting them
-/// would be noise. What a cycle costs is a layering one, so each class-to-class dependency is lifted
-/// to the one level where the two names part: <c>Lib.Components.Source</c> using
-/// <c>Lib.Interfaces.Pin</c> is a dependency of <c>Lib.Components</c> on <c>Lib.Interfaces</c>, among
-/// the children of <c>Lib</c>. A class using something in its own enclosing scope - a constant of its
-/// package, the package itself - is not a dependency between packages and counts for nothing.</para>
+/// <para><b>Libraries, not their sub-libraries.</b> Only a dependency between two top-level
+/// libraries counts. Packages inside one library depending on each other - <c>Interfaces</c> using
+/// <c>Components</c> - are that library's own business: they are loaded, versioned and released
+/// together, so a cycle between them costs nothing a user of the library can see. The first version
+/// lifted every dependency to the level where the two names part and reported 24 such cycles in
+/// MSL, none of which anybody would act on. A top-level class that is not a package (a lone model
+/// file) is not a library, and a class using its own library counts for nothing.</para>
 ///
-/// <para><b>Once, at that level.</b> Because each dependency counts only where the two names part,
-/// a cycle between two classes deep inside <c>Lib.Blocks</c> is reported among <c>Lib.Blocks</c>'
-/// children and not again among <c>Lib</c>'s. The cycles among one package's children are its
-/// strongly connected components, each reported once against that package, with one concrete
-/// cycle through it and the class that makes each step, which is what a reader needs to break it.
-/// Distinct libraries depending on each other are the same question one level up.</para>
-///
-/// <para><b>Found over whole libraries, reported where a checked class is.</b> A cycle inside a
-/// library is found over all of it, whichever of its classes are being checked, and reported only
-/// when a checked class lies inside one of the cycle's packages: a check of a few changed classes
-/// reports the cycles they are part of, not every cycle in the library. A check of the whole library
-/// reports all of them.</para>
-///
-/// <para><b>Libraries depending on each other are reported on each checked one.</b> Their
-/// dependencies are followed across every library loaded, and the cycle is reported once on each
-/// checked library in it. Reported once "on the first", a surface checking one library at a time
-/// (the MCP server) could never see it while one checking a repository (the desktop app) did, so
-/// the same libraries gave different findings by tool. A library that is loaded but not checked
-/// is followed and never reported on. Needs the dependency edges.</para>
+/// <para><b>Reported on each checked library in the cycle.</b> Dependencies are followed across
+/// every library loaded, and a cycle is reported once on each checked library in it. Reported once
+/// "on the first", a surface checking one library at a time (the MCP server) could never see it while
+/// one checking a repository (the desktop app) did, so the same libraries gave different findings by
+/// tool. A library that is loaded but not checked is followed and never reported on. The cycles are
+/// the strongly connected components of the libraries' dependencies, each with one concrete route
+/// round it and the class that makes each step, which is what a reader needs to break it. Needs the
+/// dependency edges.</para>
 /// </remarks>
 public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
 {
@@ -57,43 +46,30 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
             .Select(m => ModelicaName.RootLibraryOf(m.Id))
             .ToHashSet(StringComparer.Ordinal);
 
-        // Every checked class and every package around one: a cycle is reported when one of its
-        // members is in here.
-        var touched = context.Models
-            .SelectMany(m => ModelicaName.EnclosingNamesOf(m.Id).Append(m.Id))
-            .ToHashSet(StringComparer.Ordinal);
-
-        var groups = PackageDependencies(context.Graph, checkedRoots);
+        var libraries = LibraryDependencies(context.Graph);
 
         var findings = new List<Finding>();
-        foreach (var (parent, group) in groups.OrderBy(g => g.Key, StringComparer.Ordinal))
+        foreach (var component in libraries.CyclicComponents())
         {
-            foreach (var component in group.CyclicComponents())
+            // On each checked library in it; a cycle of libraries none of which is checked is
+            // nobody's to report.
+            var owners = component.Where(checkedRoots.Contains).ToList();
+            if (owners.Count == 0)
+                continue;
+
+            var cycle = libraries.ShortestCycleThrough(component[0], component);
+            foreach (var owner in owners)
             {
-                if (!component.Any(touched.Contains))
-                    continue;
-
-                var cycle = group.ShortestCycleThrough(component[0], component);
-
-                // Inside a library, on the package whose children are in it. Libraries have no
-                // common package, so on each checked library in the cycle.
-                var owners = parent.Length > 0
-                    ? [OwnerOf(context.Graph, parent, component)]
-                    : component.Where(checkedRoots.Contains).ToList();
-
-                foreach (var owner in owners)
+                findings.Add(new Finding
                 {
-                    findings.Add(new Finding
-                    {
-                        RuleId = RuleIdsRef.DependencyCycle,
-                        ModelId = owner,
-                        // Which packages are in it, which is what the cycle *is*: a different route
-                        // through the same packages is the same cycle, so the route is not part of it.
-                        ElementPath = string.Join(", ", component),
-                        Message = MessageFor(parent, component, cycle, group),
-                        LineNumber = 1,
-                    });
-                }
+                    RuleId = RuleIdsRef.DependencyCycle,
+                    ModelId = owner,
+                    // Which libraries are in it, which is what the cycle *is*: a different route
+                    // through the same libraries is the same cycle, so the route is not part of it.
+                    ElementPath = string.Join(", ", component),
+                    Message = MessageFor(component, cycle, libraries),
+                    LineNumber = 1,
+                });
             }
         }
 
@@ -101,103 +77,69 @@ public sealed class DependencyCycleAnalyzer : IGraphAnalyzer
     }
 
     /// <summary>
-    /// Every class-to-class dependency lifted to the packages where the two names part, grouped by
-    /// the package whose children they are: inside each checked library, and between any two loaded
-    /// libraries ("" for those), so a cycle between libraries is seen whichever of them is checked.
+    /// Every class-to-class dependency between two loaded top-level libraries, as a dependency of the
+    /// one library on the other, whichever of them is being checked.
     /// </summary>
-    internal static Dictionary<string, SiblingGraph> PackageDependencies(DirectedGraph graph, IReadOnlySet<string> checkedRoots)
+    internal static LibraryGraph LibraryDependencies(DirectedGraph graph)
     {
-        var groups = new Dictionary<string, SiblingGraph>(StringComparer.Ordinal);
+        var libraries = new LibraryGraph();
 
         foreach (var model in graph.ModelNodes)
         {
             if (model.IsParseFailurePlaceholder || model.IsExternalStub)
                 continue;
 
-            // A library not being checked contributes only what it uses of other libraries.
-            var fromChecked = checkedRoots.Contains(ModelicaName.RootLibraryOf(model.Id));
-
             // An example is an entry point that nothing depends on, so what it uses costs nobody
-            // anything; its whole job is to use parts from across the library. Counted, MSL's
-            // Blocks.Examples building circuits from Electrical and Mechanics put most of MSL's
-            // top-level packages in one cycle. The same exemption MLQT.Unused.Class makes.
+            // anything; its whole job is to use parts from wherever they are. The same exemption
+            // MLQT.Unused.Class makes.
             if (model.HasExperimentAnnotation)
                 continue;
 
-            var from = ModelicaName.Segments(model.Id);
+            var fromLibrary = ModelicaName.RootLibraryOf(model.Id);
             foreach (var usedId in model.UsedModelIds)
             {
                 var used = graph.GetNode<ModelNode>(usedId);
                 if (used is null || used.IsExternalStub)
                     continue;
 
-                var to = ModelicaName.Segments(usedId);
-                var shared = 0;
-                while (shared < from.Count && shared < to.Count
-                       && string.Equals(from[shared], to[shared], StringComparison.Ordinal))
-                    shared++;
-
-                if (shared > 0 && !fromChecked)
+                // Within one library, however far apart: its sub-libraries are its own business.
+                var toLibrary = ModelicaName.RootLibraryOf(usedId);
+                if (string.Equals(fromLibrary, toLibrary, StringComparison.Ordinal))
                     continue;
 
-                // One is inside the other: a class and its own enclosing scope.
-                if (shared == from.Count || shared == to.Count)
+                if (!IsPackage(graph, fromLibrary) || !IsPackage(graph, toLibrary))
                     continue;
 
-                // Packages on both sides, at the level where the names part. Where that is two
-                // classes - inverse functions naming each other, a model and the record it uses -
-                // they are classes referring to each other, which is ordinary Modelica.
-                var fromPackage = string.Join(".", from.Take(shared + 1));
-                var toPackage = string.Join(".", to.Take(shared + 1));
-                if (!IsPackage(graph, fromPackage) || !IsPackage(graph, toPackage))
-                    continue;
-
-                var parent = string.Join(".", from.Take(shared));
-                if (!groups.TryGetValue(parent, out var group))
-                    groups[parent] = group = new SiblingGraph();
-
-                group.Add(fromPackage, toPackage, model.Id, usedId);
+                libraries.Add(fromLibrary, toLibrary, model.Id, usedId);
             }
         }
 
-        return groups;
+        return libraries;
     }
 
     private static bool IsPackage(DirectedGraph graph, string id) =>
         graph.GetNode<ModelNode>(id) is { ClassType: "package" };
 
-    /// <summary>
-    /// The class a cycle is reported on: the package whose children are in it, or for libraries that
-    /// depend on each other - which have no common package - the first of them.
-    /// </summary>
-    private static string OwnerOf(DirectedGraph graph, string parent, IReadOnlyList<string> component) =>
-        parent.Length > 0 && graph.GetNode<ModelNode>(parent) is not null ? parent : component[0];
-
-    private static string MessageFor(string parent, IReadOnlyList<string> component, IReadOnlyList<string> cycle, SiblingGraph group)
+    private static string MessageFor(IReadOnlyList<string> component, IReadOnlyList<string> cycle, LibraryGraph libraries)
     {
-        var shortNames = component.Select(c => ShortName(parent, c)).ToList();
-        var what = parent.Length == 0 ? "libraries" : "packages";
-        var who = shortNames.Count == 2
-            ? $"{shortNames[0]} and {shortNames[1]}"
-            : string.Join(", ", shortNames.Take(shortNames.Count - 1)) + " and " + shortNames[^1];
+        var who = component.Count == 2
+            ? $"{component[0]} and {component[1]}"
+            : string.Join(", ", component.Take(component.Count - 1)) + " and " + component[^1];
 
         var steps = new List<string>();
         for (var i = 0; i < cycle.Count; i++)
         {
-            var (user, used) = group.ExampleOf(cycle[i], cycle[(i + 1) % cycle.Count]);
+            var (user, used) = libraries.ExampleOf(cycle[i], cycle[(i + 1) % cycle.Count]);
             steps.Add($"{user} uses {used}");
         }
 
-        return $"The {what} {who} depend on each other: {string.Join("; ", steps)}";
+        return $"The libraries {who} depend on each other: {string.Join("; ", steps)}";
     }
 
-    private static string ShortName(string parent, string member) =>
-        parent.Length == 0 ? member : member[(parent.Length + 1)..];
-
     /// <summary>
-    /// The dependencies among one package's children, with one class-level example for each.
+    /// The dependencies between top-level libraries, with one class-level example for each.
     /// </summary>
-    internal sealed class SiblingGraph
+    internal sealed class LibraryGraph
     {
         private readonly Dictionary<string, SortedSet<string>> _edges = new(StringComparer.Ordinal);
         private readonly Dictionary<(string From, string To), (string User, string Used)> _examples = new();

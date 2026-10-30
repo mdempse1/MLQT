@@ -7,8 +7,8 @@ using Xunit;
 namespace ModelicaGraph.Tests;
 
 /// <summary>
-/// <c>MLQT.Structure.DependencyCycle</c>: packages under one parent that depend on each other, and
-/// none of the class-level cycles that are ordinary Modelica.
+/// <c>MLQT.Structure.DependencyCycle</c>: top-level libraries that depend on each other, and none of
+/// the cycles inside one library, which are that library's own business.
 /// </summary>
 public class DependencyCycleAnalyzerTests
 {
@@ -42,89 +42,60 @@ public class DependencyCycleAnalyzerTests
             .ToList();
     }
 
+    /// <summary>Libraries named, each a package holding one model <c>M</c>.</summary>
+    private void Libraries(params string[] names)
+    {
+        foreach (var name in names)
+        {
+            Package(name);
+            Model($"{name}.M");
+        }
+    }
+
     /// <summary>Lib with Components and Interfaces, each holding one class.</summary>
-    private void TwoSiblingPackages()
+    private void TwoSubLibraries()
     {
         Package("Lib");
         Package("Lib.Components");
         Package("Lib.Interfaces");
         Model("Lib.Components.Source");
         Model("Lib.Interfaces.Pin");
-        Model("Lib.Interfaces.PartialTwoPin");
     }
 
     [Fact]
-    public void TwoPackagesThatUseEachOther_AreOneCycle_OnTheirParent()
+    public void LibrariesThatUseEachOther_AreACycle_ReportedOnEachCheckedOne()
     {
-        TwoSiblingPackages();
-        Uses("Lib.Components.Source", "Lib.Interfaces.PartialTwoPin");
+        Package("LibA");
+        Package("LibA.Blocks");
+        Model("LibA.Blocks.Gain");
+        Libraries("LibB");
+        Uses("LibA.Blocks.Gain", "LibB.M");
+        Uses("LibB.M", "LibA.Blocks.Gain");
+
+        var findings = Analyze();
+
+        Assert.Equal(["LibA", "LibB"], findings.Select(f => f.ModelId));
+        Assert.All(findings, f => Assert.Equal(RuleIds.DependencyCycle, f.RuleId));
+        Assert.All(findings, f => Assert.Equal("LibA, LibB", f.ElementPath));
+        Assert.All(findings, f => Assert.Equal(1, f.LineNumber));
+        Assert.All(findings, f => Assert.Equal(
+            "The libraries LibA and LibB depend on each other: LibA.Blocks.Gain uses LibB.M; LibB.M uses LibA.Blocks.Gain",
+            f.Message));
+    }
+
+    [Fact]
+    public void SubLibrariesThatUseEachOther_AreTheLibrarysOwnBusiness()
+    {
+        TwoSubLibraries();
+        Uses("Lib.Components.Source", "Lib.Interfaces.Pin");
         Uses("Lib.Interfaces.Pin", "Lib.Components.Source");
 
-        var finding = Assert.Single(Analyze());
-
-        Assert.Equal(RuleIds.DependencyCycle, finding.RuleId);
-        Assert.Equal("Lib", finding.ModelId);
-        Assert.Equal("Lib.Components, Lib.Interfaces", finding.ElementPath);
-        Assert.Equal(1, finding.LineNumber);
-        Assert.Equal(
-            "The packages Components and Interfaces depend on each other: " +
-            "Lib.Components.Source uses Lib.Interfaces.PartialTwoPin; Lib.Interfaces.Pin uses Lib.Components.Source",
-            finding.Message);
-    }
-
-    [Fact]
-    public void ADependencyOneWay_IsNotACycle()
-    {
-        TwoSiblingPackages();
-        Uses("Lib.Components.Source", "Lib.Interfaces.Pin");
-
         Assert.Empty(Analyze());
     }
 
     [Fact]
-    public void ClassesThatReferToEachOther_AreOrdinaryModelica()
+    public void ADeepCycleInsideOneLibrary_IsNotReportedEither()
     {
-        // Inverse functions name each other; a model uses the record it declares a parameter of.
-        // Where the names part at two classes, there is no package dependency to report.
-        Package("Lib");
-        Package("Lib.Functions");
-        Model("Lib.Functions.f");
-        Model("Lib.Functions.f_inv");
-        Uses("Lib.Functions.f", "Lib.Functions.f_inv");
-        Uses("Lib.Functions.f_inv", "Lib.Functions.f");
-
-        Assert.Empty(Analyze());
-    }
-
-    [Fact]
-    public void APackageAndAClassBesideIt_AreNotPackagesDependingOnEachOther()
-    {
-        Package("Lib");
-        Package("Lib.Components");
-        Model("Lib.Components.Source");
-        Model("Lib.Helper");
-        Uses("Lib.Components.Source", "Lib.Helper");
-        Uses("Lib.Helper", "Lib.Components.Source");
-
-        Assert.Empty(Analyze());
-    }
-
-    [Fact]
-    public void UsingItsOwnEnclosingScope_IsNotADependencyBetweenPackages()
-    {
-        TwoSiblingPackages();
-        Uses("Lib.Components.Source", "Lib.Components");   // a constant of its own package
-        Uses("Lib.Components.Source", "Lib");
-        Uses("Lib.Components", "Lib.Components.Source");
-
-        Assert.Empty(Analyze());
-    }
-
-    [Fact]
-    public void ADeepCycle_IsReportedWhereTheNamesPart_AndNotAgainAbove()
-    {
-        // Each dependency counts at one level, so a cycle inside Lib.Blocks is Lib.Blocks' to report,
-        // and its classes being deep inside Lib does not make Lib.Blocks depend on anything.
         Package("Lib");
         Package("Lib.Blocks");
         Package("Lib.Blocks.Math");
@@ -134,79 +105,82 @@ public class DependencyCycleAnalyzerTests
         Uses("Lib.Blocks.Math.Harmonic", "Lib.Blocks.Sources.Table");
         Uses("Lib.Blocks.Sources.Table", "Lib.Blocks.Math.Harmonic");
 
-        var finding = Assert.Single(Analyze());
-
-        Assert.Equal("Lib.Blocks", finding.ModelId);
-        Assert.Equal("Lib.Blocks.Math, Lib.Blocks.Sources", finding.ElementPath);
+        Assert.Empty(Analyze());
     }
 
     [Fact]
-    public void ThreePackages_AreOneCycle_WithTheShortestRouteRoundIt()
+    public void SubLibrariesInACycle_DoNotHideOneBetweenLibraries()
     {
-        Package("Lib");
-        foreach (var p in new[] { "A", "B", "C" })
-        {
-            Package($"Lib.{p}");
-            Model($"Lib.{p}.M");
-        }
-        Uses("Lib.A.M", "Lib.B.M");
-        Uses("Lib.B.M", "Lib.C.M");
-        Uses("Lib.C.M", "Lib.A.M");
-
-        var finding = Assert.Single(Analyze());
-
-        Assert.Equal("Lib.A, Lib.B, Lib.C", finding.ElementPath);
-        Assert.Equal(
-            "The packages A, B and C depend on each other: Lib.A.M uses Lib.B.M; Lib.B.M uses Lib.C.M; Lib.C.M uses Lib.A.M",
-            finding.Message);
-    }
-
-    [Fact]
-    public void TwoSeparateCycles_UnderOneParent_AreTwoFindings()
-    {
-        Package("Lib");
-        foreach (var p in new[] { "A", "B", "C", "D" })
-        {
-            Package($"Lib.{p}");
-            Model($"Lib.{p}.M");
-        }
-        Uses("Lib.A.M", "Lib.B.M");
-        Uses("Lib.B.M", "Lib.A.M");
-        Uses("Lib.C.M", "Lib.D.M");
-        Uses("Lib.D.M", "Lib.C.M");
-        Uses("Lib.B.M", "Lib.C.M");   // joins them one way only, so they stay two cycles
-
-        Assert.Equal(["Lib.A, Lib.B", "Lib.C, Lib.D"], Analyze().Select(f => f.ElementPath));
-    }
-
-    [Fact]
-    public void AnExample_IsAnEntryPoint_SoWhatItUsesMakesNoCycle()
-    {
-        // MSL's Blocks.Examples building circuits from Electrical put most of MSL's top level in one
-        // cycle until examples were left out, as MLQT.Unused.Class leaves them out.
-        TwoSiblingPackages();
-        Model("Lib.Interfaces.Demo", experiment: true);
+        TwoSubLibraries();
         Uses("Lib.Components.Source", "Lib.Interfaces.Pin");
-        Uses("Lib.Interfaces.Demo", "Lib.Components.Source");
+        Uses("Lib.Interfaces.Pin", "Lib.Components.Source");
+        Libraries("Other");
+        Uses("Lib.Interfaces.Pin", "Other.M");
+        Uses("Other.M", "Lib.Components.Source");
+
+        Assert.Equal("Lib, Other", Assert.Single(Analyze("Lib.Interfaces.Pin")).ElementPath);
+    }
+
+    [Fact]
+    public void ADependencyOneWay_IsNotACycle()
+    {
+        Libraries("LibA", "LibB");
+        Uses("LibA.M", "LibB.M");
 
         Assert.Empty(Analyze());
     }
 
     [Fact]
-    public void LibrariesThatUseEachOther_AreACycle_ReportedOnEachCheckedOne()
+    public void ATopLevelClassThatIsNotAPackage_IsNotALibrary()
     {
-        Package("LibA");
-        Package("LibB");
-        Model("LibA.M");
-        Model("LibB.M");
-        Uses("LibA.M", "LibB.M");
-        Uses("LibB.M", "LibA.M");
+        // A lone model file loaded beside a library uses it, and the library names it back.
+        Libraries("Lib");
+        Model("Helper");
+        Uses("Lib.M", "Helper");
+        Uses("Helper", "Lib.M");
+
+        Assert.Empty(Analyze());
+    }
+
+    [Fact]
+    public void ThreeLibraries_AreOneCycle_WithTheShortestRouteRoundIt()
+    {
+        Libraries("A", "B", "C");
+        Uses("A.M", "B.M");
+        Uses("B.M", "C.M");
+        Uses("C.M", "A.M");
 
         var findings = Analyze();
 
-        Assert.Equal(["LibA", "LibB"], findings.Select(f => f.ModelId));
-        Assert.All(findings, f => Assert.StartsWith("The libraries LibA and LibB depend on each other", f.Message));
-        Assert.All(findings, f => Assert.Equal("LibA, LibB", f.ElementPath));
+        Assert.Equal(["A", "B", "C"], findings.Select(f => f.ModelId));
+        Assert.All(findings, f => Assert.Equal("A, B, C", f.ElementPath));
+        Assert.All(findings, f => Assert.Equal(
+            "The libraries A, B and C depend on each other: A.M uses B.M; B.M uses C.M; C.M uses A.M",
+            f.Message));
+    }
+
+    [Fact]
+    public void TwoSeparateCycles_AreTwoFindingsEach()
+    {
+        Libraries("A", "B", "C", "D");
+        Uses("A.M", "B.M");
+        Uses("B.M", "A.M");
+        Uses("C.M", "D.M");
+        Uses("D.M", "C.M");
+        Uses("B.M", "C.M");   // joins them one way only, so they stay two cycles
+
+        Assert.Equal(["A, B", "A, B", "C, D", "C, D"], Analyze().Select(f => f.ElementPath));
+    }
+
+    [Fact]
+    public void AnExample_IsAnEntryPoint_SoWhatItUsesMakesNoCycle()
+    {
+        Libraries("LibA", "LibB");
+        Model("LibB.Demo", experiment: true);
+        Uses("LibA.M", "LibB.M");
+        Uses("LibB.Demo", "LibA.M");
+
+        Assert.Empty(Analyze());
     }
 
     [Fact]
@@ -214,10 +188,7 @@ public class DependencyCycleAnalyzerTests
     {
         // The MCP server checks one library per call and the desktop app a repository at a time.
         // Reported on the first library only, the one-at-a-time surface never saw the cycle.
-        Package("LibA");
-        Package("LibB");
-        Model("LibA.M");
-        Model("LibB.M");
+        Libraries("LibA", "LibB");
         Uses("LibA.M", "LibB.M");
         Uses("LibB.M", "LibA.M");
 
@@ -232,10 +203,7 @@ public class DependencyCycleAnalyzerTests
     public void ALibraryLoadedButNotChecked_IsFollowed_AndNotReportedOn()
     {
         // A reference library, or an excluded one: its classes are in the graph and are not checked.
-        Package("LibA");
-        Package("LibB");
-        Model("LibA.M");
-        Model("LibB.M");
+        Libraries("LibA", "LibB");
         Uses("LibA.M", "LibB.M");
         Uses("LibB.M", "LibA.M");
 
@@ -243,25 +211,18 @@ public class DependencyCycleAnalyzerTests
     }
 
     [Fact]
-    public void ACheckOfSomeClasses_ReportsTheCyclesTheyArePartOf_NotEveryCycleInTheLibrary()
+    public void ACheckOfOneLibrary_ReportsTheCyclesItIsIn_NotEveryCycleLoaded()
     {
-        Package("Lib");
-        Package("Lib.A");
-        Package("Lib.B");
-        Package("Lib.C");
-        Package("Lib.D");
-        Model("Lib.A.M");
-        Model("Lib.B.M");
-        Model("Lib.C.M");
-        Model("Lib.D.M");
-        Uses("Lib.A.M", "Lib.B.M");
-        Uses("Lib.B.M", "Lib.A.M");
-        Uses("Lib.C.M", "Lib.D.M");
-        Uses("Lib.D.M", "Lib.C.M");
+        Libraries("A", "B", "C", "D");
+        Uses("A.M", "B.M");
+        Uses("B.M", "A.M");
+        Uses("C.M", "D.M");
+        Uses("D.M", "C.M");
 
-        // The cycle is found over the whole library - Lib.B.M is not checked - and only A's reported.
-        Assert.Equal("Lib.A, Lib.B", Assert.Single(Analyze("Lib.A.M")).ElementPath);
-        Assert.Equal(2, Analyze().Count);
+        // Found whether or not B is checked, and only A's reported.
+        var finding = Assert.Single(Analyze("A.M"));
+        Assert.Equal(("A", "A, B"), (finding.ModelId, finding.ElementPath));
+        Assert.Equal(4, Analyze().Count);
     }
 
     [Fact]
@@ -269,34 +230,35 @@ public class DependencyCycleAnalyzerTests
     {
         // The example named for each step is the first by name, not whichever was met first, so a
         // message - and a baseline built from it - does not move between runs.
-        TwoSiblingPackages();
-        Model("Lib.Components.Ground");
-        Uses("Lib.Components.Source", "Lib.Interfaces.Pin");
-        Uses("Lib.Components.Ground", "Lib.Interfaces.Pin");
-        Uses("Lib.Interfaces.PartialTwoPin", "Lib.Components.Source");
+        Libraries("LibA", "LibB");
+        Model("LibA.Ground");
+        Uses("LibA.M", "LibB.M");
+        Uses("LibA.Ground", "LibB.M");
+        Uses("LibB.M", "LibA.M");
 
-        var first = Analyze().Single();
-        var again = Analyze().Single();
+        var first = Analyze("LibA.M").Single();
+        var again = Analyze("LibA.M").Single();
 
         Assert.Equal(first.Message, again.Message);
         Assert.Equal(first.Fingerprint, again.Fingerprint);
-        Assert.Contains("Lib.Components.Ground uses Lib.Interfaces.Pin", first.Message);
+        Assert.Contains("LibA.Ground uses LibB.M", first.Message);
     }
 
     [Fact]
     public void OffByDefault_AndSilentThroughTheRunnerUntilEnabled()
     {
-        TwoSiblingPackages();
-        Uses("Lib.Components.Source", "Lib.Interfaces.Pin");
-        Uses("Lib.Interfaces.Pin", "Lib.Components.Source");
+        Libraries("LibA", "LibB");
+        Uses("LibA.M", "LibB.M");
+        Uses("LibB.M", "LibA.M");
+        var checkedClasses = new List<ModelNode> { _graph.GetNode<ModelNode>("LibA.M")! };
 
         Assert.False(RuleCatalog.IsEnabledByDefault(RuleIds.DependencyCycle));
         Assert.DoesNotContain(
-            GraphAnalysisRunner.Run(new GraphAnalysisContext(_graph, new StyleCheckingSettings(), _graph.ModelNodes.ToList(), dependenciesAnalyzed: true)),
+            GraphAnalysisRunner.Run(new GraphAnalysisContext(_graph, new StyleCheckingSettings(), checkedClasses, dependenciesAnalyzed: true)),
             f => f.RuleId == RuleIds.DependencyCycle);
 
         var finding = Assert.Single(
-            GraphAnalysisRunner.Run(new GraphAnalysisContext(_graph, new StyleCheckingSettings { CheckDependencyCycles = true }, _graph.ModelNodes.ToList(), dependenciesAnalyzed: true)),
+            GraphAnalysisRunner.Run(new GraphAnalysisContext(_graph, new StyleCheckingSettings { CheckDependencyCycles = true }, checkedClasses, dependenciesAnalyzed: true)),
             f => f.RuleId == RuleIds.DependencyCycle);
         Assert.Equal(RuleSeverity.Warning, finding.Severity);
     }
@@ -305,19 +267,19 @@ public class DependencyCycleAnalyzerTests
     public async Task FromRealSource_TheDependencyAnalysisEdgesGiveTheSameAnswer()
     {
         // The hand-built graphs above stand for what the dependency analysis records; this is that
-        // analysis, on a library whose interfaces use one of its components.
+        // analysis, on two libraries that use each other and a cycle inside one of them.
         var graph = await RealCycleAsync(waived: false);
 
-        var finding = Assert.Single(new DependencyCycleAnalyzer().Analyze(new GraphAnalysisContext(
-            graph, new StyleCheckingSettings { CheckDependencyCycles = true }, graph.ModelNodes.ToList(), dependenciesAnalyzed: true)));
+        var findings = new DependencyCycleAnalyzer().Analyze(new GraphAnalysisContext(
+            graph, new StyleCheckingSettings { CheckDependencyCycles = true }, graph.ModelNodes.ToList(), dependenciesAnalyzed: true)).ToList();
 
-        Assert.Equal("Lib", finding.ModelId);
-        Assert.Equal("Lib.Components, Lib.Interfaces", finding.ElementPath);
-        Assert.Contains("Lib.Interfaces.TwoPin uses Lib.Components.Ground", finding.Message);
+        Assert.Equal(["Circuits", "Parts"], findings.Select(f => f.ModelId));
+        Assert.All(findings, f => Assert.Equal("Circuits, Parts", f.ElementPath));
+        Assert.All(findings, f => Assert.Contains("Parts.Ground uses Circuits.Interfaces.Pin", f.Message));
     }
 
     [Fact]
-    public async Task ACycleIsWaived_OnThePackageItIsReportedOn()
+    public async Task ACycleIsWaived_OnTheLibraryItIsReportedOn()
     {
         // What the settings reference tells a user to do with a cycle they mean to keep.
         var graph = await RealCycleAsync(waived: true);
@@ -331,10 +293,12 @@ public class DependencyCycleAnalyzerTests
     private static async Task<DirectedGraph> RealCycleAsync(bool waived)
     {
         var graph = new DirectedGraph();
-        var root = Path.Combine(Path.GetTempPath(), "CycleLib_" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "CycleLibs_" + Guid.NewGuid().ToString("N"));
         var waiver = waived ? """  annotation(__MLQT(suppress="MLQT.Structure.DependencyCycle"));""" : "";
-        GraphBuilder.LoadModelicaFile(graph, Path.Combine(root, "package.mo"), $$"""
-            package Lib
+        var circuits = Path.Combine(root, "Circuits");
+        var parts = Path.Combine(root, "Parts");
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(circuits, "package.mo"), $$"""
+            package Circuits
               package Interfaces
                 connector Pin
                   Real v;
@@ -343,20 +307,29 @@ public class DependencyCycleAnalyzerTests
                 partial model TwoPin
                   Pin p;
                   Pin n;
-                  Lib.Components.Ground g "A component an interface should not need";
+                  Circuits.Components.Resistor r "A cycle inside the library, not reported";
                 end TwoPin;
               end Interfaces;
               package Components
-                model Ground
-                  Lib.Interfaces.Pin p;
-                equation
-                  p.v = 0;
-                end Ground;
+                model Resistor
+                  Circuits.Interfaces.Pin p;
+                  Parts.Ground g "A part from the other library";
+                end Resistor;
               end Components;
             {{waiver}}
-            end Lib;
+            end Circuits;
             """);
-        await GraphBuilder.AnalyzeDependenciesAsync(graph, [new LibraryInfo("Lib", root)]);
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(parts, "package.mo"), $$"""
+            package Parts
+              model Ground
+                Circuits.Interfaces.Pin p;
+              equation
+                p.v = 0;
+              end Ground;
+            {{waiver}}
+            end Parts;
+            """);
+        await GraphBuilder.AnalyzeDependenciesAsync(graph, [new LibraryInfo("Circuits", circuits), new LibraryInfo("Parts", parts)]);
         return graph;
     }
 }
