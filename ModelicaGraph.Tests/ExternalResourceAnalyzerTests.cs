@@ -196,6 +196,50 @@ public sealed class ExternalResourceAnalyzerTests : IDisposable
         Assert.Contains("mylib.h", finding.Message);
     }
 
+    [Theory]
+    [InlineData("\"modelica://VendorLib/Resources/Include\"")]
+    [InlineData("{\"modelica://TestLib/Resources/Include\",\"modelica://VendorLib/Resources/Include\"}")]
+    public async Task AHeaderAnIncludeDirectoryIntoAnUnloadedLibraryMayHold_IsNotJudged(string directories)
+    {
+        // The three-state rule: VendorLib is not loaded, so whether it ships vendor.h is not something
+        // MLQT can see. It was reported missing from TestLib's own Resources/Include.
+        Directory.CreateDirectory(Path.Combine(_root, "Resources", "Include"));
+        var graph = await BuildAsync(_root, $$"""
+            package TestLib
+              function f
+                input Real x;
+                output Real y;
+                external "C" y = f(x)
+                  annotation(Include="#include \"vendor.h\"", IncludeDirectory={{directories}});
+              end f;
+            end TestLib;
+            """);
+
+        Assert.DoesNotContain(Analyze(graph, BothRulesOn()), f => f.Discriminator == "include");
+    }
+
+    [Fact]
+    public async Task AHeaderInTheLoadedDirectory_IsStillFound_BesideOneThatIsNotLoaded()
+    {
+        var include = Path.Combine(_root, "Resources", "Include");
+        Directory.CreateDirectory(include);
+        File.WriteAllText(Path.Combine(include, "vendor.h"), "");
+        var graph = await BuildAsync(_root, """
+            package TestLib
+              function f
+                input Real x;
+                output Real y;
+                external "C" y = f(x)
+                  annotation(Include="#include \"vendor.h\"",
+                    IncludeDirectory={"modelica://VendorLib/Resources/Include","modelica://TestLib/Resources/Include"});
+              end f;
+            end TestLib;
+            """);
+
+        Assert.Contains(graph.ResourceFileNodes, n => n.ResolvedPath.EndsWith("vendor.h", StringComparison.Ordinal));
+        Assert.Empty(Analyze(graph, BothRulesOn()));
+    }
+
     [Fact]
     public async Task AHeaderTheCompilerSupplies_IsNotReported()
     {

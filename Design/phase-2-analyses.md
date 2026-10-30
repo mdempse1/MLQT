@@ -42,17 +42,20 @@ find. But those are `ResourceWarning`s on one page. They have no rule id, so the
 
 - **A reference into a library that is not loaded is dropped**, which is right: `ResolveModelicaUri`
   returns null and no edge is made. That is "cannot tell", and it must stay unreported.
-- **Two kinds of missing resource are never recorded at all**, so neither the tab nor a rule could
+- **Two kinds of missing resource were never recorded at all**, so neither the tab nor a rule could
   report them:
   - an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` that does not exist: the
-    directory branch makes an edge only when `Directory.Exists`. Now recorded;
+    directory branch made an edge only when `Directory.Exists`. Now recorded;
   - a `Library="name"` with no binary under any library directory: `ResolveAllLibraryFiles` finds
     nothing and no edge is made. Left unrecorded, deliberately (below).
-- **Existence goes stale in the desktop app (B521).** `DirectedGraph.GetOrCreateResource*Node`
-  reads the disk only when it creates a node and returns the existing node afterwards, and nothing
-  else ever updates `FileExists` or `DirectoryExists`. The resource watchers record each change in a
-  pending list that nothing reads; the handler's comment says it fires an event and it only logs. So
-  restoring or deleting a referenced file changes nothing until the project is reloaded.
+- **Existence went stale in the desktop app (B521, fixed with this).**
+  `DirectedGraph.GetOrCreateResource*Node` read the disk only when it created a node, and nothing
+  else updated `FileExists` or `DirectoryExists`. The resource watchers recorded each change in a
+  pending list that nothing read; the handler's comment said it fired an event and it only logged.
+  So restoring or deleting a referenced file changed nothing until the project was reloaded.
+- **A header behind an `IncludeDirectory` into a library that is not loaded** was looked for in the
+  class's own `Resources/Include` instead and reported missing from it (found by the branch's second
+  review). Any unresolved include directory now makes a header found nowhere "cannot tell".
 
 ### The rules
 
@@ -108,7 +111,14 @@ it is asked, and writes the answer back onto the node, so whichever runs, both a
 Reading the disk at analysis time makes the answer current whenever an analysis runs. It does not
 make one run. The watcher's changes are raised as an event, and the desktop app re-runs the resource
 analysis and the graph analyses for the affected classes, so a finding clears when its file comes
-back and appears when its file goes.
+back and appears when its file goes. In deferred mode the watchers start once the rule is on in any
+repository, not only with the External Resources tab, since the rule runs without the tab.
+
+A file whose folder is missing too is watched from the nearest folder that exists, **for its own
+entries only**: the folder coming back is an event there, and the re-check moves the watcher down.
+A recursive watcher there was unbounded - an absolute path written on another machine walked up to
+`C:\Users` or `/`, and on Linux a recursive watch costs an inotify watch per directory below it
+(B163). What is not done: a path's kind, file or directory, is fixed when the graph is built (B524).
 
 ### Recording a missing directory annotation
 
@@ -135,21 +145,31 @@ which keeps it lenient - what it reports is two connectors with different member
 inheritance and with subscripts dropped. No signature - a connector not loaded, encrypted, with an
 unreadable base, or `expandable` - is "cannot tell". A port that does not resolve is
 `MLQT.Reference.Undeclared`'s, and whatever a redeclaration decides is left to it: a `replaceable`
-port, one reached through a replaceable component, one whose class is replaceable.
+port, one reached through a replaceable component, one whose class is replaceable, and one reached
+through a component declared as a replaceable class (`replaceable model M = Heater; M h;`) - which
+the second review found judged, because an inherited port's owner is the base that declares it.
 
 **One answer to "which connector is this port?"** `ConnectorSignature.ConnectorOf`, asked of a port
 resolved with `ReferencesIn`, by the rule and by `add_connection` alike. The review found the MCP
 tool still resolved ports its own way: it split `a[1].p` into a segment `a[1]`, which no component
 is called, and refused a valid array connect, and it judged a replaceable port the rule leaves
-alone. Its walk now only words the error when a port does not resolve.
+alone. Its walk now only words the error when a port does not resolve, and a signal an expandable
+bus does not yet declare is accepted with a note, as the rule accepts it.
 
 **Duplicates** are the unordered pair, spacing removed outside quoted names, under branches that
 apply at the same time: the same `for`/`if`/`when` headers and, for each, the same earlier conditions
 false (`ConnectScope.PreviousConditions`, `Applies`). The same pair in both branches of an `if`
 never exists twice; the first version also keyed an `else` on the word alone, so the `else`
 branches of two different statements read as one branch. Two `if useB` statements still match: both
-connect when `useB` holds. Reported on the second occurrence, naming the first's line. Incompatible
-uses the same ordered pair, so `connect(a,b)` and `connect(b,a)` are one incompatible connection.
+connect when `useB` holds. A condition is compared with its white space collapsed. Reported on
+the second occurrence, naming the first's line, with the branches' full conditions as the
+discriminator and, from the third copy on, its number - so every duplicate has a fingerprint of its
+own and a baseline cannot accept a copy added later. Incompatible uses the same ordered pair, so
+`connect(a,b)` and `connect(b,a)` are one incompatible connection.
+
+**A connect outside an `if` and the same one inside it** are not reported, although both hold when
+the condition does: "the same branches" is the key, and telling which branches can hold at once is
+an increment of its own.
 
 **Measured.** MSL 4.1: 99% of 9,627 connects judged, nothing reported, 0.9 s after running a class at
 a time in parallel (5.7 s serially). Buildings: no incompatible connection and 19 duplicates, sampled
@@ -281,7 +301,13 @@ does not. `ClassCompleteness` takes which question it answers.
 **API.** `CheckModelReferences.WithVerdict` is a factory rather than a second constructor: two public
 overloads with optional parameters are a source break (RS0026/RS0027). `RunStyleCheckingFindings`
 gained a trailing optional `classReferenceTarget`, its shipped line moved to Unshipped; a trailing
-optional parameter is source-compatible for every caller that calls it.
+optional parameter is source-compatible for every caller that calls it. It is not binary-compatible,
+which matters to nobody here: every project using these assemblies builds them from source.
+
+**One end for a link.** The rule cut a URI with a loop of its own - quoted identifiers read, stopping
+at `#` - while the resource scan did neither, so a file link with an anchor
+(`…/doc.html#usage`) was looked for as a file of that name. `ModelicaUriScanner.EndOf` is now the
+one answer, for both.
 
 **Measured.** MSL 4.1: 7 findings before, all into ModelicaReference, not loaded; none after, and none
 with ModelicaReference loaded either, its quoted names (`'assert()'`) resolving. Buildings: 42 before

@@ -62,12 +62,20 @@ internal static class ConnectorCompatibility
         if (segments.Length == 0)
             return new PortResolution(null, $"'{portRef}' is not a valid port reference.", null);
 
+        var signatures = new ConnectorSignature(libraries.CombinedGraph);
         var currentId = classId;
         for (var i = 0; i < segments.Length; i++)
         {
             var owner = libraries.GetModelById(currentId);
             if (owner is null)
                 return new PortResolution(null, null, $"could not resolve '{portRef}' (class '{currentId}' not loaded)");
+
+            // A signal on an expandable bus is declared by connecting it, which is what this edit is
+            // doing - so MLQT.Connection.Incompatible accepts it, and refusing it here broke this
+            // tool's promise to refuse only what the rule reports.
+            if (i > 0 && signatures.IsExpandable(owner))
+                return new PortResolution(null, null,
+                    $"'{segments[i - 1]}' is an expandable connector ('{currentId}'), so '{segments[i]}' is declared by connecting it");
 
             var member = ClassElementResolver
                 .Collect(libraries.CombinedGraph, owner, includeProtected: true, includeInherited: true)

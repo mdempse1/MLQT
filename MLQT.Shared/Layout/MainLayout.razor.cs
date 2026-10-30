@@ -1144,6 +1144,11 @@ public partial class MainLayout : IDisposable
         {
             PowerManagementService.AllowSleep();
         }
+
+        // The resource edges exist from here on, and MLQT.Resource.Missing reads them. Every deferred
+        // style check that runs the rule comes through here first, since the rule needs the edges.
+        if (AnyRepositoryReportsMissingResources(RepositoryService.Repositories))
+            await RunDeferredExternalResourcesAsync();
     }
 
     /// <summary>
@@ -1164,6 +1169,18 @@ public partial class MainLayout : IDisposable
     // (e.g. unused-class, uses hygiene), so the graph analyses can produce their findings.
     private bool AnyEnabledRuleNeedsDependencies()
         => ModelScope.RequiresDependencyAnalysis(RepositoryService.Repositories);
+
+    /// <summary>
+    /// Whether any repository reports missing resources, so the resource watchers have to run
+    /// whether or not the External Resources tab has been asked for.
+    /// </summary>
+    /// <remarks>
+    /// In deferred mode the watchers started only with the tab's analysis, while the rule runs with
+    /// style checking: a restored file raised no event, and its finding stayed until the project was
+    /// reloaded - B521's defect, left on the one path its fix did not reach.
+    /// </remarks>
+    internal static bool AnyRepositoryReportsMissingResources(IEnumerable<Repository> repositories)
+        => repositories.Any(r => r.StyleSettings?.IsRuleEnabled(ModelicaParser.StyleRules.RuleIds.MissingResource) == true);
 
     /// <summary>
     /// Entry point for the AppState event, which carries no arguments. Pages asking for a run have

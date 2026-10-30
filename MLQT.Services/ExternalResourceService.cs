@@ -429,38 +429,39 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
     {
         var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
-        // Each directory to watch, and whether what it must report is further down than its own
-        // entries.
-        Dictionary<string, bool> neededDirectories;
+        HashSet<string> neededDirectories;
 
         lock (_lock)
         {
-            neededDirectories = new Dictionary<string, bool>(comparer);
+            neededDirectories = new HashSet<string>(comparer);
 
             foreach (var resolvedPath in _reverseIndex.Keys)
             {
-                // The nearest directory that exists. A missing file in a missing Resources/Data is
-                // heard coming back only by watching what is above it, recursively, since the
-                // directory it will appear in does not exist to be watched.
-                var parent = Path.GetDirectoryName(resolvedPath);
-                var dir = parent;
+                // The nearest directory that exists. A missing file in a missing Resources/Data cannot
+                // be watched for where it will appear, so what is above it is watched instead - for
+                // its own entries only. The folder coming back is an event there, which queues the
+                // tracked paths under it (OnResourceFileSystemEvent); the re-check reads the disk,
+                // and its re-analysis moves the watcher down to whatever then exists.
+                //
+                // Not recursively: the walk is unbounded, and an absolute path written on another
+                // machine (C:/Users/someone/data/table.mat) ends at C:\Users or C:\ - one recursive
+                // watcher there is an inotify watch for every directory under it on Linux, B163's
+                // starvation again, and a flood of events to reject on Windows.
+                var dir = Path.GetDirectoryName(resolvedPath);
                 while (dir != null && !Directory.Exists(dir))
                     dir = Path.GetDirectoryName(dir);
-                if (dir == null)
-                    continue;
-
-                var deeper = !comparer.Equals(dir, parent);
-                neededDirectories[dir] = neededDirectories.GetValueOrDefault(dir) || deeper;
+                if (dir != null)
+                    neededDirectories.Add(dir);
             }
         }
 
-        // Collapse those directories to the roots actually watched; a root is recursive when its own
-        // rule says so or when any directory it covers needs it.
+        // Collapse those directories to the roots actually watched; a root is recursive when any
+        // directory it covers needs it to be.
         var neededRoots = new Dictionary<string, bool>(comparer);
-        foreach (var (dir, deeper) in neededDirectories)
+        foreach (var dir in neededDirectories)
         {
             var (root, recursive) = WatchRootFor(dir);
-            neededRoots[root] = neededRoots.GetValueOrDefault(root) || recursive || deeper;
+            neededRoots[root] = neededRoots.GetValueOrDefault(root) || recursive;
         }
 
         lock (_lock)

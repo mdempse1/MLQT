@@ -748,21 +748,23 @@ public class StyleCheckingSettings
     public List<string> SvnBranchDirectories { get; set; } = ["trunk", "branches", "tags"];
 
     /// <summary>
+    /// Whether anything is enabled beyond the rules that are on without being asked for.
+    ///
+    /// <para>The question the CLI asked before telling a user their report was thinner than it
+    /// looked, while one rule was on by default. Since every rule defaults to off (2026-10-29) it is
+    /// <see cref="HasAnyStyleRuleEnabled"/> and nothing calls it; it stays, marked, because it is
+    /// shipped API another project may build against.</para>
+    /// </summary>
+    [Obsolete("Every rule defaults to off, so this is HasAnyStyleRuleEnabled. Use that.")]
+    public bool HasAnyRuleEnabledBeyondTheDefaults =>
+        RuleCatalog.Configurable.Any(d => !d.EnabledByDefault && IsRuleEnabled(d.Id));
+
+    /// <summary>
     /// True when at least one rule will actually run. Asks <see cref="SeverityFor"/> rather than
     /// reading the stored values, because the two can disagree: a rule whose prerequisite is off is
     /// in the map and does nothing, and a settings file holding only those would otherwise announce
     /// that rules are enabled and then report nothing, which is the least debuggable outcome there is.
     /// </summary>
-    /// <summary>
-    /// Whether anything is enabled beyond the rules that are on without being asked for.
-    ///
-    /// <para>The question a tool asks before telling a user their report is thinner than it looks:
-    /// a library nobody has configured is not silent any more, and one rule's worth of findings
-    /// reads like a clean bill of health.</para>
-    /// </summary>
-    public bool HasAnyRuleEnabledBeyondTheDefaults =>
-        RuleCatalog.Configurable.Any(d => !d.EnabledByDefault && IsRuleEnabled(d.Id));
-
     public bool HasAnyStyleRuleEnabled =>
         RuleSeverities.Keys.Any(IsRuleEnabled)
         // ...and the rules that are on without a key, which no repository has to mention.

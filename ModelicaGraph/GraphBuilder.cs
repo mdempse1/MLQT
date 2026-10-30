@@ -738,31 +738,10 @@ public static class GraphBuilder
         var libraryList = libraries?.ToList() ?? new List<LibraryInfo>();
         foreach (var kvp in modelResources)
         {
-            var modelId = kvp.Key;
-            var resources = kvp.Value;
-            var model = graph.GetNode<ModelNode>(modelId);
+            var model = graph.GetNode<ModelNode>(kvp.Key);
             if (model == null) continue;
 
-            // Every directory, not just the last one seen (B211). IncludeDirectory and
-            // LibraryDirectory are commonly arrays - VehicleLib.Roads.Functions.Internal.readNormal
-            // declares IncludeDirectory={"modelica://VehicleLib/...","modelica://VendorLib/..."} - and
-            // assigning to a single variable kept whichever came last, so every #include in the
-            // class was looked for in that one directory and reported missing from it.
-            var includeDirectories = new List<string>();
-            var libraryDirectories = new List<string>();
-
-            foreach (var info in resources)
-            {
-                if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    AddResolved(includeDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
-                else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    AddResolved(libraryDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
-            }
-
-            foreach (var info in resources)
-            {
-                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectories, libraryDirectories);
-            }
+            CreateResourceNodesAndEdges(graph, model, kvp.Value, libraryList);
         }
 
         // Only now are UsedModelIds/UsedByModelIds complete. Consumers that need the edges gate on
@@ -966,28 +945,39 @@ public static class GraphBuilder
             var model = graph.GetNode<ModelNode>(kvp.Key);
             if (model == null) continue;
 
-            // Every directory, not just the last one seen (B211). IncludeDirectory and
-            // LibraryDirectory are commonly arrays - VehicleLib.Roads.Functions.Internal.readNormal
-            // declares IncludeDirectory={"modelica://VehicleLib/...","modelica://VendorLib/..."} - and
-            // assigning to a single variable kept whichever came last, so every #include in the
-            // class was looked for in that one directory and reported missing from it.
-            var includeDirectories = new List<string>();
-            var libraryDirectories = new List<string>();
-
-            foreach (var info in kvp.Value)
-            {
-                if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    AddResolved(includeDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
-                else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    AddResolved(libraryDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
-            }
-
-            foreach (var info in kvp.Value)
-                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectories, libraryDirectories);
+            CreateResourceNodesAndEdges(graph, model, kvp.Value, libraryList);
         }
 
         // Parse trees were already released in Phases 1 and 3 immediately after use.
         await Task.CompletedTask; // preserve async signature for future parallel additions
+    }
+
+    /// <summary>
+    /// Records one class's resource references in the graph - for the whole-graph build and the
+    /// incremental one alike, which kept a copy each of this until phase 2.
+    /// </summary>
+    private static void CreateResourceNodesAndEdges(
+        DirectedGraph graph, ModelNode model, IReadOnlyList<ExternalResourceInfo> resources, List<LibraryInfo> libraries)
+    {
+        // Every directory, not just the last one seen (B211). IncludeDirectory and
+        // LibraryDirectory are commonly arrays - VehicleLib.Roads.Functions.Internal.readNormal
+        // declares IncludeDirectory={"modelica://VehicleLib/...","modelica://VendorLib/..."} - and
+        // assigning to a single variable kept whichever came last, so every #include in the
+        // class was looked for in that one directory and reported missing from it.
+        var includeDirectories = new List<string>();
+        var libraryDirectories = new List<string>();
+        var includeDirectoryUnresolved = false;
+
+        foreach (var info in resources)
+        {
+            if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
+                includeDirectoryUnresolved |= !AddResolved(includeDirectories, info.RawPath, libraries, FilePathOf(model, graph));
+            else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
+                AddResolved(libraryDirectories, info.RawPath, libraries, FilePathOf(model, graph));
+        }
+
+        foreach (var info in resources)
+            CreateResourceNodeAndEdge(graph, model, info, libraries, includeDirectories, libraryDirectories, includeDirectoryUnresolved);
     }
 
     /// <summary>
@@ -999,7 +989,8 @@ public static class GraphBuilder
         ExternalResourceInfo info,
         List<LibraryInfo> libraries,
         IReadOnlyList<string> includeDirectories,
-        IReadOnlyList<string> libraryDirectories)
+        IReadOnlyList<string> libraryDirectories,
+        bool includeDirectoryUnresolved)
     {
         string? resolvedPath = null;
         bool isDirectory = false;
@@ -1083,8 +1074,14 @@ public static class GraphBuilder
                         // IncludeDirectory behaves like a -I path, so a bracketed include can
                         // legitimately resolve there; whether the file is actually present is what
                         // settles it, which keeps this from hiding a header the library does ship.
+                        //
+                        // An IncludeDirectory into a library that is not loaded could hold the header,
+                        // so a header found nowhere MLQT can see is then "cannot tell", not missing:
+                        // it was reported missing from the class's own Resources/Include, a directory
+                        // the class never asked the compiler to look in.
                         if (File.Exists(candidate)
-                            || !StandardCHeaders.IsSupplied(directive.Header, directive.IsSystemInclude))
+                            || (!includeDirectoryUnresolved
+                                && !StandardCHeaders.IsSupplied(directive.Header, directive.IsSystemInclude)))
                         {
                             resolvedPath = candidate;
                         }
@@ -1285,20 +1282,22 @@ public static class GraphBuilder
 
 
     /// <summary>Resolves a directory URI and records it, skipping duplicates and failures.</summary>
-    private static void AddResolved(
+    /// <returns>False when the directory could not be resolved - it is in a library not loaded.</returns>
+    private static bool AddResolved(
         List<string> directories, string rawPath, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         var resolved = ResolveModelicaUri(rawPath, libraries, referencingFilePath);
         if (resolved is null)
-            return;
+            return false;
 
         foreach (var existing in directories)
         {
             if (string.Equals(existing, resolved, PathComparison))
-                return;
+                return true;
         }
 
         directories.Add(resolved);
+        return true;
     }
 
     /// <summary>A one-or-no-element list, for the default directory when a class declares none.</summary>

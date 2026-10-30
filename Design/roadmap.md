@@ -146,7 +146,8 @@ closes.
 
 **Started 2026-10-29.** The next release ships with it whole (decided 2026-10-29), so everything
 below is in that release, and *Before the next release* lists what else it needs. The design is
-`Design/phase-2-analyses.md`, written one analysis at a time as each is started.
+`Design/phase-2-analyses.md`: what every analysis shares, then each as built, with the increments
+not done and why. Retire it when the release ships.
 
 **Where it stands (2026-10-29): every analysis has its first increment, built, measured on MSL 4.1
 and Buildings, and reviewed** - external-resource validation, cyclic-dependency detection, the rest
@@ -187,9 +188,10 @@ release works, not about adding to it. `Design/release-checklist.md` still appli
    switched on in a repository's settings. **And every other rule defaults to off too**:
    `MLQT.Structure.SingleFilePackage`, on by default since B241, is off from this release. A
    repository whose settings file recorded it (B244 wrote it on Apply) keeps it, `Warning` on and
-   `Off` off; one whose file never mentions it stops reporting it, which the release notes must say
-   - with the reminder that it is worth switching on. They also owe one existing rule a line: `MLQT.Reference.ModelReferences` now reports fewer links (none
-   into a library that is not loaded), so a baseline taken before it will show accepted debt gone.
+   `Off` off; one whose file never mentions it stops reporting it, which the release notes must say,
+   with the reminder that it is worth switching on. They also owe one existing rule a line:
+   `MLQT.Reference.ModelReferences` now reports fewer links (none into a library that is not
+   loaded), so a baseline taken before it will show accepted debt gone.
 4. **B281: server GC in the desktop app over a long session.** The setting ships in this release,
    measured in the CLI only. Phase 2's testing over a large library is the long session, so watch
    the app's memory and responsiveness then.
@@ -198,7 +200,8 @@ release works, not about adding to it. `Design/release-checklist.md` still appli
      `MLQT.UI.Theme` among them;
    - the release notes call out the MCP change from 66 tools to 16, pointing at
      `Documentation/mcp-server.md` §Moving from the 66 tools;
-   - and say which phase-2 rules ship on, per item 3.
+   - and say that every rule now defaults to off, `MLQT.Structure.SingleFilePackage` included, per
+     item 3.
 
 Worth doing if there is time, and not a reason to hold the release: B520, the search-match wash
 that follows the operating system's dark mode rather than MLQT's.
@@ -327,7 +330,8 @@ B505 is a limitation of the MCP server found measuring B503; what can be said an
 change of design is in place, and the rest is a design item.
 B520 is a small defect found tokenising the theme (2026-10-29) and left as it was, because that change
 was not to alter how anything looks. B523 is a pair of intermittent failures seen on one day and not
-reproduced; like B492 and B496, find the cause from its evidence if it recurs.
+reproduced; like B492 and B496, find the cause from its evidence if it recurs. B524 is a limitation
+of resource tracking found reviewing phase 2 (2026-10-30), not a failure anyone has seen.
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
@@ -337,6 +341,8 @@ reproduced; like B492 and B496, find the cause from its evidence if it recurs.
 | B505 | Tasks that share one MLQT MCP server share one session. A client keeps its servers across `/clear` and new sessions, subagents use their parent's, and sessions of one app running at once may share them; MCP gives a server no conversation id, and MLQT holds one copy of each library under ids that do not say whose. So a conversation can inherit what an earlier one loaded, and two tasks editing their own copies of one library would edit one copy. In place: every library says when it was loaded, a second copy is refused with why and what replacing it does (whatever its folder is called), a reset goes back to empty, and `analyse` flags a run whose server was not new. Until the design below, the documentation says to give each such task a server of its own | Design sessions scoped to a workspace inside one server: each task's libraries kept apart, keyed by the folder they were loaded from, with every call naming its workspace - an id `mlqt_load` returns, or the client's MCP roots where it sends them. Every tool takes part, so it needs a design note of its own |
 | B520 | The find-in-code match wash (`--mlqt-highlight-match`) dims for a dark theme under `@media (prefers-color-scheme: dark)`, which is the operating system's setting, not MLQT's. MLQT's Dark theme is chosen in its own settings and set through `MudThemeProvider.IsDarkMode`. So MLQT in Dark on a light desktop draws the bright wash the comment says glares on near-black, and MLQT in Light on a dark desktop draws the dim one on white. Not reported; found by reading | Key the dark value off MLQT's mode instead: a class on the layout root from `_isDarkMode`, or a MudBlazor palette variable that already differs between the two palettes. Then check `code-review` screenshots in both themes |
 | B523 | On 2026-10-29, while phase 2 was being built on the developer's machine: `build/check-coverage.ps1` stopped at `RevisionControl.Tests` as "did not pass" while every test in it reported passing, so the process exited non-zero after its results; and one run of `MLQT.Cli.Tests` failed 18 tests across `MultipleReportTests`, `ChangedFromChecksLessTests`, `CheckCommandTests`, `ReviewCommandTests` and three more, all of which drive the CLI over a git working copy in a temp folder. Neither reproduced: the gate passed when run again, and the CLI suite passed four times after, alone and after the MCP suite as before. The machine was slow that day (a journey run of 10+ minutes against the usual 2.5). The failures' messages were not kept - the output had been filtered. A third, later that day: in the coverage gate's run of `MLQT.Shared.Tests`, `ReferenceOnlyToggleTests.UntickingReferenceOnly_ShowsTheRepositorysChanges` timed out in a bUnit `WaitForAssertion` (line 80, waiting for one changed file after `OnRepositoriesChanged`), having passed in the ordinary run minutes before; the gate passed when run again. Its services are mocks, so it is timing under coverage instrumentation, not behaviour | Keep the output whole: `dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli.trx`, and the coverage gate's full log. Look first at what the CLI tests share - the git temp folders and their clean-up - and at a test host exiting non-zero after its last test |
+| B524 | Whether a resolved resource is a file or a directory is decided when the graph is built, from what is on disk then. A `loadResource` naming a directory that was missing at load becomes a file node, and once the directory is restored the file test stays false, so `MLQT.Resource.Missing` and the tab keep reporting it; and an `IncludeDirectory` restored after load is reported present but its files are not listed, since its contents were scanned only at load. The Refresh re-check reads existence again and nothing else. Both are put right by reloading the project | Re-resolve a re-checked class's resource references (`AnalyzeDependenciesForModelsAsync` for it) instead of re-reading existence alone, so the node is rebuilt from what is on disk now |
+
 ---
 
 ## Item ids
@@ -348,7 +354,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B524**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B525**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
@@ -433,7 +439,7 @@ to files instead of classes.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | **Names in code shipped 2026-10-25** as `MLQT.Reference.Undeclared` (`UndeclaredNameAnalyzer`): variables, calls, types, bases, imports, members and modification targets, reported only in state 3. **`modelica://` class links done (2026-10-29), ships in the next release**: `MLQT.Reference.ModelReferences` now reports only a link MLQT can tell is broken - not one into a library that is not loaded or a class with an unreadable base - and finds inherited classes. MSL 4.1 went from 7 findings to none; Buildings keeps its 42 real ones. See `Design/phase-2-analyses.md` §5 |
-| **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | **Incompatible and duplicate done (2026-10-29), ship in the next release.** `MLQT.Connection.Incompatible` and `MLQT.Connection.Duplicate`, off by default, from `ConnectionIntegrityAnalyzer`. Connectors compare by `ConnectorSignature`, which the MCP server's `add_connection` now uses too - its own read an alias connector as unequal to its base and refused the connection. A connector MLQT cannot see, an expandable one or a replaceable port is never judged. MSL 4.1: 99% of 9,627 connects judged, nothing reported; Buildings: 19 real duplicates. **Direction and unconnected connectors are not done**: the first needs inside/outside and causality through short classes, the second the whole instance. See `Design/phase-2-analyses.md` §2 |
+| **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | **Incompatible and duplicate done (2026-10-29), ship in the next release.** `MLQT.Connection.Incompatible` and `MLQT.Connection.Duplicate`, off by default, from `ConnectionIntegrityAnalyzer`. Connectors compare by `ConnectorSignature`, which the MCP server's `add_connection` now uses too - its own read an alias connector as unequal to its base and refused the connection. A connector MLQT cannot see, an expandable one or a replaceable port is never judged, nor is a port reached through a component declared as a replaceable class. A duplicate is the same pair under the same branches, so a connect outside an `if` and the same one inside it are not yet reported, although both hold when the condition does. MSL 4.1: 99% of 9,627 connects judged, nothing reported; Buildings: 19 real duplicates. **Direction and unconnected connectors are not done**: the first needs inside/outside and causality through short classes, the second the whole instance. See `Design/phase-2-analyses.md` §2 |
 | **Deprecated-API usage** | ⭐⭐ | M | **Obsolete classes done (2026-10-29), ships in the next release.** `MLQT.Reference.Obsolete`, off by default, from `ObsoleteClassAnalyzer`: a use of a class marked `annotation(obsolete=...)` or inside one, quoting the library's message; uses from inside an obsolete class are not reported. The annotation is now read at load (`ModelNode.ObsoleteMessage`). MSL 4.1: nothing; Buildings: 84, all inside `Buildings.Obsolete`, at 0.2 s. **MSL-version compatibility is not done**: a removed name is already `MLQT.Reference.Undeclared`, and what is left - "renamed in 4.0.0" from the conversion script, or a class added after the declared version - is an increment of its own. See `Design/phase-2-analyses.md` §3 |
 | **Cyclic-dependency detection** | ⭐⭐ | S | **Done (2026-10-29), ships in the next release.** `MLQT.Structure.DependencyCycle`, off by default: packages under one parent that depend on each other, never classes, with examples (`experiment(...)`) left out. 24 cycles in MSL 4.1 (and `Modelica` with `ModelicaServices`, which use each other) and 20 in Buildings, at 0.1 s each. After the branch review it reports only the cycles a checked class is in, and a cycle between libraries on each checked one, so every tool gives the same findings. See `Design/phase-2-analyses.md` §4 |
 | **External-resource validation** | ⭐⭐⭐ | M | **Done (2026-10-29), ships in the next release.** `MLQT.Resource.Missing` (a file or annotated directory that is not there) and `MLQT.Resource.AbsolutePath`, both off by default, from `ExternalResourceAnalyzer`. They decide through `ResourceProblems`, which the External Resources tab reads too, so the two agree. A missing directory annotation is now recorded (it was dropped). Existence is read from disk when asked, and the Refresh button picks up changed resource files (B521, fixed with it). Removing a class now forgets its resource references, which it never did, so a class loaded again had its old ones too (B522, found by the rule's journey and fixed with it). HTML shown as text in documentation is no longer taken for a reference (B209 had it the other way). Over MSL 4.1 and Buildings it reports five files that really are missing and nothing else. See `Design/phase-2-analyses.md` §1 |

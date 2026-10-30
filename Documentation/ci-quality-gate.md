@@ -133,9 +133,8 @@ every report):
 | `ValidateModelReferences` | `MLQT.Reference.ModelReferences` | `modelica://` model references resolve |
 
 Severities in `RuleSeverities` are `Off`, `Info`, `Warning`, or `Error`; the map wins over the
-booleans. Most rules default to `Warning` (`MLQT.Duplicate.Declaration`,
-`MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`, `MLQT.Resource.Missing` and
-`MLQT.Connection.Incompatible` are `Error`, `MLQT.Unused.PublicClass` is `Info`).
+booleans. Most rules default to `Warning`; the ones that do not are listed in
+[cli.md → Exit codes](cli.md#exit-codes).
 
 The table is the documentation and layout rules a first trial usually starts with, not the whole
 set: the correctness, structure, unused-code and units rules are listed with their settings in
@@ -725,4 +724,4 @@ error: coverage gate: Class description 75% is below the required 80%
 | A baselined check accepts *more* findings than the baseline holds | Also expected, and the same cause: classification is per finding, so several findings can match one entry. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | `error: dependency version mismatch` | The `--dependency` checkout is not the version the library's `uses(...)` declares. Point it at the right version, update the annotation, or pass `--allow-version-mismatch` if the difference is deliberate. |
-| Gate passes but you expected a failure | Most rules default to `Warning` (`MLQT.Duplicate.Declaration`, `MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`, `MLQT.Resource.Missing` and `MLQT.Connection.Incompatible` are `Error`, `MLQT.Unused.PublicClass` is `Info`), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |
+| Gate passes but you expected a failure | Most rules default to `Warning` (the exceptions are listed in [cli.md → Exit codes](cli.md#exit-codes)), so the default `--fail-on error` fails only on those errors and the diagnostics; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

@@ -895,10 +895,10 @@ public class StyleCheckingService : IStyleCheckingService
             else
             {
                 // Classes outside every repository — a library loaded only for reference. Nothing has
-                // set rules for them, so nothing is checked. NothingEnabled, not a fresh object: that
-                // stopped meaning "nothing on" when B241 made SingleFilePackage default-on, and it is
-                // only by that rule running over the graph rather than per class that a fresh object
-                // happened to check nothing here.
+                // set rules for them, so nothing is checked. NothingEnabled, not a fresh object: a
+                // fresh object means "the defaults", which meant SingleFilePackage on from B241 until
+                // every rule went off by default (2026-10-29), and would again if a rule ever
+                // defaulted on.
                 settings = StyleCheckingSettings.NothingEnabled();
             }
 

@@ -126,31 +126,9 @@ public class CheckModelReferences : VisitorWithModelNameTracking
                 continue;
             }
 
-            // Extract the URI up to the next delimiter, but skip delimiters
-            // inside Modelica quoted identifiers ('...' sections)
-            var uriEnd = uriStart + "modelica://".Length;
-            bool inQuotedId = false;
-            while (uriEnd < text.Length)
-            {
-                var ch = text[uriEnd];
-                if (ch == '\'')
-                {
-                    inQuotedId = !inQuotedId;
-                    uriEnd++;
-                    continue;
-                }
-                if (inQuotedId)
-                {
-                    uriEnd++;
-                    continue;
-                }
-                if (char.IsWhiteSpace(ch) ||
-                    ch == '"' || ch == '>' || ch == '<' ||
-                    ch == ')' || ch == '\\' || ch == '#' || ch == '&')
-                    break;
-                uriEnd++;
-            }
-
+            // Where it ends is the scanner's answer, the one the resource extraction uses, so a link and
+            // a file reference are cut the same way: at an anchor, and past a quoted identifier.
+            var uriEnd = ModelicaUriScanner.EndOf(text, uriStart);
             var uri = text.Substring(uriStart, uriEnd - uriStart);
             var pathPart = uri.Substring("modelica://".Length);
 

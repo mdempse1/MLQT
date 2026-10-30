@@ -255,7 +255,7 @@ Available style rules:
 | `FollowNamingConvention` | Checks class/element names against configurable naming conventions |
 | `SpellCheckDescriptions` | Spell checks description strings on classes and components |
 | `SpellCheckDocumentation` | Spell checks Documentation annotation HTML content |
-| `CheckModelReferences` | Referenced classes must exist among the loaded libraries |
+| `CheckModelReferences` | A `modelica://` class link MLQT can tell is broken - never one into a library that is not loaded (the verdict is passed in, `WithVerdict`) |
 | `DuplicateDeclarations` | No duplicate declarations, and no duplicate imports, in a class |
 | `MissingUnits` | A plain `Real` variable or parameter should declare a unit |
 | `ComponentsBeforeClasses` | Component declarations should come before nested class definitions |

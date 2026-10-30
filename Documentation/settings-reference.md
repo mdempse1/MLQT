@@ -35,8 +35,8 @@ A newly added repository starts with **every rule Off**, and a library loaded ou
 repository — a reference library, say — has no rules at all and is never reported on. Nothing is
 checked until you choose it, and a new version of MLQT never switches a rule on for you.
 
-**`MLQT.Structure.SingleFilePackage` was the one exception until this release**, on at Warning
-unless turned off. A repository whose settings were saved while it was on keeps the line MLQT wrote
+**`MLQT.Structure.SingleFilePackage` was the one exception up to and including 2026.5.0**, on at
+Warning unless turned off. A repository whose settings were saved while it was on keeps the line MLQT wrote
 then — `"MLQT.Structure.SingleFilePackage": "Warning"` keeps it on, `"Off"` keeps it off — so only
 a repository that never recorded either sees it go quiet. It is worth switching on: it reports a
 library drifting away from the layout MLQT maintains, which happens without anyone doing anything —
@@ -267,7 +267,7 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT first re
 
 | Setting | Rule id | Default | Description |
 |---------|---------|---------|-------------|
-| **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
+| **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that exist, wherever MLQT can tell - a link into a library that is not loaded is not judged (below). An anchor (`#info`) is not part of the name. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
 It does **not** check that the types a class uses (component types, `extends` base classes) resolve. [`MLQT.Reference.Undeclared`](#static-analysis-rules) does that, along with every other name a class uses; the MCP server's `mlqt_check` also has a references check of its own, for a class or a whole library — see [MCP server](mcp-server.md#checking-that-types-resolve).
 
@@ -277,7 +277,7 @@ missing:
 
 - **A link into a library that is not loaded is not reported.** Whether
   `modelica://ModelicaReference.Operators.'assert()'` exists says nothing about your library until
-  ModelicaReference is loaded; MSL has seven such links, and before this they were all reported.
+  ModelicaReference is loaded; MSL has seven such links, and up to 2026.5.0 they were all reported.
   Load the library it names (a [reference library](#reference-libraries) will do) and it is judged.
   This holds whatever your library's `uses(...)` says. `MLQT.Reference.Undeclared` reports a name in
   code that `uses` rules out, because code needs what it names; a link in documentation does not,

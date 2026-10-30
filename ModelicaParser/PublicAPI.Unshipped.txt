@@ -59,6 +59,7 @@ override ModelicaParser.StyleRules.GrammarConformance.VisitModification(modelica
 override ModelicaParser.StyleRules.GrammarConformance.VisitShort_class_specifier(modelicaParser.Short_class_specifierContext! context) -> object?
 override ModelicaParser.StyleRules.GrammarConformance.VisitStatement(modelicaParser.StatementContext! context) -> object?
 override ModelicaParser.StyleRules.GrammarConformance.VisitTerminal(Antlr4.Runtime.Tree.ITerminalNode! node) -> object?
+static ModelicaParser.Helpers.ModelicaUriScanner.EndOf(string! text, int uriStart) -> int
 static ModelicaParser.Helpers.ModelicaUriScanner.IsShownAsText(string! text, int uriStart) -> bool
 static ModelicaParser.StyleRules.CheckModelReferences.WithVerdict(System.Func<string!, ModelicaParser.StyleRules.ClassReferenceTarget>! target, string! basePackage = "") -> ModelicaParser.StyleRules.CheckModelReferences!
 static ModelicaParser.StyleRules.GrammarConformance.Code(ModelicaParser.StyleRules.GrammarConformance.Kind kind) -> string!

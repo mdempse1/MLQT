@@ -98,27 +98,39 @@ public sealed class ConnectionIntegrityAnalyzer : IGraphAnalyzer
 
     private static IEnumerable<Finding> Duplicates(ModelNode model, List<Connect> connects)
     {
-        var seen = new Dictionary<string, Connect>(StringComparer.Ordinal);
+        var seen = new Dictionary<string, (Connect First, int Copies)>(StringComparer.Ordinal);
         foreach (var connect in connects)
         {
             var pair = PairOf(connect);
             var key = pair + " | " + connect.Applies;
 
-            if (seen.TryGetValue(key, out var first))
+            if (seen.TryGetValue(key, out var earlier))
             {
+                var copies = earlier.Copies + 1;
+                seen[key] = (earlier.First, copies);
+
+                // The fingerprint has to tell every duplicate apart, or a baseline that accepted one
+                // accepts a copy added later. So the discriminator is what decided it was a duplicate -
+                // the branches by their full conditions, which two else branches of different ifs do
+                // not share although their headers read the same - and, from a third copy on, which
+                // copy it is.
+                var discriminator = connect.Applies.Length == 0 ? null : connect.Applies;
+                if (copies > 2)
+                    discriminator = $"{discriminator} #{copies}";
+
                 yield return new Finding
                 {
                     RuleId = RuleIdsRef.DuplicateConnection,
                     ModelId = model.Id,
                     ElementPath = pair,
-                    Discriminator = connect.Within.Count == 0 ? null : string.Join(" / ", connect.Within),
-                    Message = $"connect({connect.PortA}, {connect.PortB}) joins the same ports as the connect on line {first.Line}",
+                    Discriminator = discriminator,
+                    Message = $"connect({connect.PortA}, {connect.PortB}) joins the same ports as the connect on line {earlier.First.Line}",
                     LineNumber = connect.Line,
                 };
                 continue;
             }
 
-            seen[key] = connect;
+            seen[key] = (connect, 1);
         }
     }
 

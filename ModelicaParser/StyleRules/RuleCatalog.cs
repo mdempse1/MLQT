@@ -52,10 +52,11 @@ public sealed record RuleDefinition(
 ///
 /// Note: <see cref="RuleDefinition.DefaultSeverity"/> is the severity a rule carries WHEN ENABLED —
 /// it is not whether the rule is enabled by default. Enablement default is "off" (a rule id absent
-/// from <c>StyleCheckingSettings.RuleSeverities</c> is disabled), matching the historical booleans,
-/// <b>except</b> where <see cref="RuleDefinition.EnabledByDefault"/> says otherwise. A rule that is
-/// on by default has to be turned off explicitly, so its <c>Off</c> is stored rather than removed —
-/// see <c>StyleCheckingSettings.SetRuleSeverity</c>.
+/// from <c>StyleCheckingSettings.RuleSeverities</c> is disabled), matching the historical booleans.
+/// No rule sets <see cref="RuleDefinition.EnabledByDefault"/> since 2026-10-29, and
+/// <c>RuleDefaultsTests.NoRuleIsOnByDefault</c> holds that; the mechanism stays for consumers. A rule
+/// that was on by default had to be turned off explicitly, so its <c>Off</c> was stored rather than
+/// removed — see <c>StyleCheckingSettings.SetRuleSeverity</c>.
 /// </summary>
 public static class RuleCatalog
 {

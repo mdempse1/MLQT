@@ -30,10 +30,7 @@ public static class ModelicaUriScanner
             if (uriStart < 0)
                 yield break;
 
-            var uriEnd = uriStart + Scheme.Length;
-            while (uriEnd < text.Length && !IsTerminator(text[uriEnd]))
-                uriEnd++;
-
+            var uriEnd = EndOf(text, uriStart);
             var uri = text[uriStart..uriEnd];
             if (NamesAFile(uri) && !IsShownAsText(text, uriStart))
                 yield return uri;
@@ -68,16 +65,44 @@ public static class ModelicaUriScanner
         end >= entity.Length && string.Compare(text, end - entity.Length, entity, 0, entity.Length, comparison) == 0;
 
     /// <summary>
-    /// Where a URI stops.
+    /// The index just past the <c>modelica://</c> URI starting at <paramref name="uriStart"/> - for a
+    /// file and a class link alike.
     /// </summary>
     /// <remarks>
-    /// <para><c>&amp;</c> was added for B209, which met a URI between entity quotes,
-    /// <c>&amp;quot;modelica://…/foo.png&amp;quot;</c>, and read on past the file name into the entity.
-    /// Such a URI is now not a reference at all (<see cref="IsShownAsText"/>), but no Modelica resource
-    /// path contains <c>&amp;</c>, so stopping there still costs nothing.</para>
+    /// <para><b>One end, for both kinds of link.</b> <c>CheckModelReferences</c> had a loop of its own,
+    /// which stopped at <c>#</c> and read quoted identifiers, while this one did neither: a file link
+    /// with an anchor, <c>modelica://Lib/Resources/doc.html#usage</c>, was looked for as a file called
+    /// <c>doc.html#usage</c> and reported missing.</para>
+    ///
+    /// <para>A <c>'</c> right after the scheme, a <c>.</c> or a <c>/</c> opens a quoted identifier,
+    /// <c>modelica://Lib.'a b'.C</c>, read to its closing quote; any other <c>'</c> ends the URI, as
+    /// the closing quote of an attribute written <c>src='modelica://…'</c> does. <c>&amp;</c> was added
+    /// for B209, which met a URI between entity quotes and read on into the entity; such a URI is now
+    /// not a reference at all (<see cref="IsShownAsText"/>), but no Modelica resource path contains
+    /// <c>&amp;</c>, so stopping there costs nothing.</para>
     /// </remarks>
-    private static bool IsTerminator(char c) =>
-        char.IsWhiteSpace(c) || c is '"' or '\'' or '>' or '<' or ')' or '&' or '\\';
+    public static int EndOf(string text, int uriStart)
+    {
+        var end = uriStart + Scheme.Length;
+        while (end < text.Length)
+        {
+            var c = text[end];
+            if (c == '\'' && text[end - 1] is '/' or '.')
+            {
+                var close = text.IndexOf('\'', end + 1);
+                if (close < 0)
+                    return text.Length;
+                end = close + 1;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c) || c is '"' or '\'' or '>' or '<' or ')' or '&' or '\\' or '#')
+                break;
+            end++;
+        }
+
+        return end;
+    }
 
     /// <summary>
     /// Whether a URI points at a file rather than at a class — <c>modelica://Modelica.Blocks</c> is a

@@ -64,17 +64,35 @@ public sealed class ConnectorSignature(DirectedGraph graph)
             || port.Path.Skip(1).Any(step => graph.GetNode<ModelNode>(step.OwnerId) is { } owner && IsReplaceable(owner)))
             return null;
 
+        // The owner is the class that declares the member, which for an inherited port is a base: in
+        // `replaceable model M = TwoPin; M m;`, m.p's owner is TwoPin and M never appeared above. So
+        // the class each component on the way is declared as is asked too.
+        for (var i = 0; i < port.Path.Count - 1; i++)
+        {
+            var step = port.Path[i];
+            if (TypeResolver.Resolve(graph, step.OwnerId, step.Element.Type, step.OwnerImports) is { } declared
+                && IsReplaceable(declared))
+                return null;
+        }
+
         return type;
     }
 
     private static bool IsReplaceable(ModelNode node) =>
         node.ElementPrefix?.Contains("replaceable", StringComparison.Ordinal) == true;
 
+    /// <summary>
+    /// Whether <paramref name="node"/>, or a class it extends, is an expandable connector - whose
+    /// members are whatever is connected to it, so a reference into it naming nothing it declares is
+    /// still a valid port.
+    /// </summary>
+    public bool IsExpandable(ModelNode node) => Completeness.IsExpandable(node);
+
     /// <summary>Whether a signature describes a connector with members, as opposed to a value.</summary>
-    public static bool HasMembers(string signature) => signature.StartsWith("members:", StringComparison.Ordinal);
+    internal static bool HasMembers(string signature) => signature.StartsWith("members:", StringComparison.Ordinal);
 
     /// <summary>A signature as a reader would want it named: its members, or its value type.</summary>
-    public static string Describe(string signature) =>
+    internal static string Describe(string signature) =>
         signature[(signature.IndexOf(':') + 1)..] is { Length: > 0 } rest ? rest : "nothing";
 
     private string? Of(ModelNode node, int depth)

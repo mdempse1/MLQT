@@ -172,7 +172,11 @@ into a library that is not loaded, and it is the "cannot tell" of the roadmap's 
 miss there says nothing about the library being checked, so it must never become a warning or a
 finding. A directory annotation that **does** resolve is recorded whether or not the directory exists
 (since phase 2), so a missing one can be reported; a `Library="x"` with no binary is not, because a
-tool also links the system's libraries and MLQT cannot tell one from the other.
+tool also links the system's libraries and MLQT cannot tell one from the other. **A header is
+"cannot tell" too when any of the class's `IncludeDirectory`s did not resolve** and no loaded one
+holds it: it was looked for in the class's own `Resources/Include` and reported missing from a
+directory the class never named. Both the whole-graph build and the incremental one record a class's
+resources through one method, `CreateResourceNodesAndEdges`; they had a copy each.
 
 **Removing a class removes its resource references** (`DirectedGraph.RemoveNode`/`RemoveNodes`, B522).
 They are kept by class id in the graph's resource-edge table, and until phase 2 removal left them
@@ -223,6 +227,16 @@ MainLayout adds `PendingResourceChangeCount` to the Refresh button's badge, and 
 analysis and checks (`RecheckResourceChangesAsync`). Until B521 the queue was written and never read.
 `MissingResourceJourney` holds the whole loop. The event is raised outside the service's lock,
 because a subscriber marshals onto the UI thread and under Photino that waits.
+
+**A file whose folder is missing too** is watched from the nearest folder that exists, **never
+recursively** because of it: a folder created or deleted there queues every tracked path under it,
+and the re-check's re-analysis (`UpdateWatchers`) moves the watcher down to what now exists. A
+recursive watch at the end of an unbounded walk up was a watch on `C:\Users` or `/` for an absolute
+path written on another machine, and on Linux an inotify watch per directory below it (B163's shape).
+`ResourceWatchRootTests` holds both. **In deferred mode** the watchers start when
+`MLQT.Resource.Missing` is on in any repository (`MainLayout.AnyRepositoryReportsMissingResources`,
+asked after the deferred dependency pass), not only with the tab. **Not done (B524):** whether a path
+is a file or a directory is fixed at load, and the re-check re-reads existence, not resolution.
 
 ## Path Resolution
 

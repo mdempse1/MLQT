@@ -42,9 +42,24 @@ public class ModelicaUriScannerTests
     [InlineData("<img src='modelica://Lib/Resources/a.png'>")]
     [InlineData("see modelica://Lib/Resources/a.png for details")]
     [InlineData("loadResource(\"modelica://Lib/Resources/a.png\")")]
+    [InlineData("<a href=\"modelica://Lib/Resources/a.png#part\">")]   // the anchor is no part of the file
     public void TheDelimitersThatAlreadyWorkedStillDo(string text)
     {
         Assert.Equal(["modelica://Lib/Resources/a.png"], ModelicaUriScanner.FindFileUris(text).ToList());
+    }
+
+    [Theory]
+    [InlineData("<a href=\"modelica://Lib.'a b'.C\">", "modelica://Lib.'a b'.C")]
+    [InlineData("<a href=\"modelica://Lib.'a#b'\">", "modelica://Lib.'a#b'")]
+    [InlineData("<a href='modelica://Lib.M'>", "modelica://Lib.M")]
+    [InlineData("<a href=\"modelica://Lib.M#info\">", "modelica://Lib.M")]
+    [InlineData("modelica://Lib.'unclosed", "modelica://Lib.'unclosed")]
+    public void AUriEnds_PastAQuotedIdentifier_AndAtAnAnchorOrAClosingQuote(string text, string expected)
+    {
+        // One end for a class link and a file reference alike (CheckModelReferences had its own).
+        var start = text.IndexOf("modelica://", StringComparison.Ordinal);
+
+        Assert.Equal(expected, text[start..ModelicaUriScanner.EndOf(text, start)]);
     }
 
     [Fact]

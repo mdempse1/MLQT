@@ -142,7 +142,10 @@ public class ResourceWatchRootTests : IDisposable
     public async Task AFileInAFolderThatDoesNotExist_IsWatchedFromTheNearestFolderThatDoes()
     {
         // The folder a missing file would come back in cannot be watched while it does not exist,
-        // so the watch goes up to what does - and has to be recursive to hear the file arrive.
+        // so the watch goes up to what does - for its own entries only. Recursive, an absolute path
+        // written on another machine walked up to C:\Users or / and watched everything below it;
+        // Data arriving is an event at this level, which queues the file (see
+        // ExternalResourceServiceTests.AFolderCreatedOrDeletedWhole_QueuesTheReferencedFilesInsideIt).
         var outside = Path.Combine(_tempDir, "shared");
         Directory.CreateDirectory(outside);
         var file = Path.Combine(outside, "Data", "Tables", "curve.mat");
@@ -153,7 +156,28 @@ public class ResourceWatchRootTests : IDisposable
         var root = Assert.Single(_service.GetWatchedRoots());
         Assert.Equal(Path.GetFullPath(outside), root,
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        Assert.True(_service.IsWatchedRecursively(root));
+        Assert.False(_service.IsWatchedRecursively(root));
+    }
+
+    [Fact]
+    public async Task OnceTheFolderIsBack_TheWatcherMovesDownToIt()
+    {
+        // What a re-check does after the folder event: re-analysis puts the watcher on the nearest
+        // folder that now exists.
+        var outside = Path.Combine(_tempDir, "shared");
+        Directory.CreateDirectory(outside);
+        var file = Path.Combine(outside, "Data", "Tables", "curve.mat");
+        var graph = GraphWith("Other.Model", new[] { file });
+
+        await _service.AnalyzeResourcesAsync(graph);
+        _service.StartMonitoringResources();
+        Directory.CreateDirectory(Path.Combine(outside, "Data"));
+        await _service.AnalyzeResourcesForModelsAsync(new[] { "Other.Model" }, graph);
+
+        var root = Assert.Single(_service.GetWatchedRoots());
+        Assert.Equal(Path.GetFullPath(Path.Combine(outside, "Data")), root,
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        Assert.False(_service.IsWatchedRecursively(root));
     }
 
     [Fact]

@@ -548,6 +548,12 @@ public class StructureEditToolsTests
             replaceable Ground g1;
             Source source1;
           end ChoosableSys;
+          expandable connector Bus
+          end Bus;
+          model BusSys
+            Bus bus;
+            Source source1;
+          end BusSys;
         end C;
         """;
 
@@ -730,6 +736,19 @@ public class StructureEditToolsTests
             await LoadConn(host).AddConnection("C.ChoosableSys", "g1.p", "source1.y"));
         Assert.True(res.Changed);
         Assert.Contains("replaceable", res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_ASignalAnExpandableBusDoesNotYetDeclare_IsAccepted()
+    {
+        // Connecting is how a signal on an expandable connector is declared, and
+        // MLQT.Connection.Incompatible accepts it (AnExpandableConnector_TakesAnything). The tool
+        // refused it as "'speed' is not a component of 'C.Bus'".
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.BusSys", "bus.speed", "source1.y"));
+        Assert.True(res.Changed);
+        Assert.Contains("expandable", res.Note);
     }
 
     [Fact]

@@ -152,6 +152,38 @@ public class ConnectionIntegrityAnalyzerTests
         Assert.Empty(Check(Model("  Lib.Box b;\n  Lib.Heater h;", "  connect(b.p, h.port);")));
     }
 
+    [Theory]
+    [InlineData("replaceable model M = Lib.Heater;")]
+    [InlineData("replaceable model M\n    extends Lib.Heater;\n  end M;")]
+    public void APortInheritedByAReplaceableClass_IsLeftToTheRedeclaration(string declaration)
+    {
+        // h.p's owner is Heater, the class declaring it; the replaceable M is only the class h is
+        // declared as, and a redeclaration may make it one whose p is something else.
+        Assert.Empty(Check($$"""
+            model Test
+              {{declaration}}
+              M h;
+              Lib.TwoPin r;
+            equation
+              connect(r.p, h.port);
+            end Test;
+            """));
+    }
+
+    [Fact]
+    public void APortInheritedByAClassThatIsNotReplaceable_IsJudged()
+    {
+        Assert.Single(Check("""
+            model Test
+              model M = Lib.Heater;
+              M h;
+              Lib.TwoPin r;
+            equation
+              connect(r.p, h.port);
+            end Test;
+            """));
+    }
+
     [Fact]
     public void AnExpandableConnector_TakesAnything()
     {
@@ -250,6 +282,49 @@ public class ConnectionIntegrityAnalyzerTests
                 connect(a.n, b.p);
               end if;
               if useB then
+                connect(a.n, b.p);
+              end if;
+            """)));
+    }
+
+    [Fact]
+    public void EveryDuplicate_HasAFingerprintOfItsOwn()
+    {
+        // A baseline is keyed by fingerprint, so two duplicates sharing one made a copy added later
+        // read as accepted debt: two else branches of different ifs carried the same header, and a
+        // third copy of a connect the same everything as the second.
+        var findings = Check(Model(
+            "  parameter Boolean useB = true;\n  Lib.TwoPin a;\n  Lib.TwoPin b;",
+            """
+              if useB then
+              else
+                connect(a.n, b.p);
+                connect(a.n, b.p);
+              end if;
+              if not useB then
+              else
+                connect(a.n, b.p);
+                connect(a.n, b.p);
+              end if;
+              connect(a.p, b.n);
+              connect(a.p, b.n);
+              connect(a.p, b.n);
+            """));
+
+        Assert.Equal(4, findings.Count);
+        Assert.Equal(4, findings.Select(f => f.Fingerprint).Distinct().Count());
+    }
+
+    [Fact]
+    public void ABranchIsItsCondition_HoweverItIsSpaced()
+    {
+        Assert.Single(Check(Model(
+            "  parameter Boolean useB = true;\n  Lib.TwoPin a;\n  Lib.TwoPin b;",
+            """
+              if useB then
+                connect(a.n, b.p);
+              end if;
+              if  useB   then
                 connect(a.n, b.p);
               end if;
             """)));

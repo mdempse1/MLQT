@@ -286,6 +286,10 @@ question no single class can answer — and run per repository alongside the per
 | `SingleFilePackageAnalyzer` | A package held entirely in one `.mo` file when its classes could each have a file of their own |
 | `WithinClauseAnalyzer` | A file whose `within` clause does not name the package whose directory holds it |
 | `UndeclaredNameAnalyzer` | A name used where nothing of that name is declared (variable, function, type, base class, import, modification target) |
+| `ExternalResourceAnalyzer` | A resource reference into a loaded library, or to a path on disk, where nothing is; and one written as an absolute path |
+| `DependencyCycleAnalyzer` | Packages under one parent that depend on each other, and libraries that use each other |
+| `ConnectionIntegrityAnalyzer` | A `connect` joining connectors with different members or value types, and the same pair connected twice under the same branches |
+| `ObsoleteClassAnalyzer` | A use of a class its library marks `obsolete`, or of a class inside one |
 
 They need dependency edges, so the runner arranges for `DirectedGraph.DependenciesAnalyzed` to be
 true first; without the edges the edge-dependent ones are skipped rather than guessing.

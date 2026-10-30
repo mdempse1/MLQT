@@ -112,7 +112,8 @@ Worth checking if a hand-written settings file has stopped producing ordering fi
 
 `mlqt check <path>` loads only what is under that path. A reference into a library it has not loaded
 cannot resolve. Rules built on the three-state footing (`MLQT.Reference.Undeclared`,
-`MLQT.Reference.ModelReferences`, the `MLQT.Resource.*` and `MLQT.Connection.*` rules) then say
+`MLQT.Reference.ModelReferences`, `MLQT.Reference.Obsolete`, `MLQT.Structure.DependencyCycle`, the
+`MLQT.Resource.*` and `MLQT.Connection.*` rules) then say
 nothing about it, since MLQT cannot tell whether it is broken — so the reference goes unchecked. Others
 report findings the code did not earn — most visibly `MLQT.Doc.ClassIcon`, which cannot see that an
 icon is inherited from `Modelica.Icons.*`.
@@ -271,9 +272,8 @@ belong to a repository, and a repository usually holds several libraries under o
 `mlqt check MyRepo/MyLibrary` uses `MyRepo/.mlqt/settings.json` — the same rules, and the same
 accepted spellings, your team sees in the app.
 
-**Per-rule severity.** Most rules default to `Warning` (`MLQT.Duplicate.Declaration`,
-`MLQT.Structure.WithinClause`, `MLQT.Reference.Undeclared`, `MLQT.Resource.Missing` and
-`MLQT.Connection.Incompatible` are `Error`, `MLQT.Unused.PublicClass` is `Info`). To make a rule fail the gate at
+**Per-rule severity.** Most rules default to `Warning`; the ones that do not are listed under
+[Exit codes](#exit-codes). To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
 
 ```json

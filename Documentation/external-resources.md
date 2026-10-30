@@ -172,7 +172,12 @@ reference the file are checked again, so this page and the findings list catch u
 
 A missing file is watched for too, from the nearest folder above it that exists, so restoring a whole
 folder — `Resources/Data` with its files — is noticed as well as restoring one file. So is an
-`IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` folder coming and going.
+`IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` folder coming and going. With the
+missing-resources check on, this happens whether or not you have opened this page.
+
+One case still needs a project reload: a reference to a folder that was missing when the project
+was loaded is treated as a file, so restoring the folder does not clear its warning, and a restored
+include or library folder is shown without its files.
 
 ## Reporting these as findings
 

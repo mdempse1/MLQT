@@ -109,13 +109,15 @@ public static class ConnectClauses
         IReadOnlyList<string>? indices = null, IReadOnlyList<string>? previous = null)
         => [.. outer, new ConnectScope(kind, header, indices ?? []) { PreviousConditions = previous ?? [] }];
 
-    // The text as written, spaces included - GetText() would join `i in 1:n` into `iin1:n`. A
-    // condition written across lines becomes one line: a header is a label, read on one.
+    // The text as written, spaces included - GetText() would join `i in 1:n` into `iin1:n` - with each
+    // run of white space one space. A condition written across lines becomes one line, since a header
+    // is a label, read on one; and `if  useB` is `if useB`, since MLQT.Connection.Duplicate compares
+    // branches by this text and spacing does not make a different branch.
     private static string Text(ParserRuleContext? context)
         => context?.Start is null || context.Stop is null || context.Stop.StopIndex < context.Start.StartIndex
             ? string.Empty
-            : LineBreak.Replace(
+            : WhiteSpace.Replace(
                 context.Start.InputStream.GetText(Interval.Of(context.Start.StartIndex, context.Stop.StopIndex)), " ");
 
-    private static readonly Regex LineBreak = new(@"[ \t]*\n[ \t]*", RegexOptions.Compiled);
+    private static readonly Regex WhiteSpace = new(@"\s+", RegexOptions.Compiled);
 }
