@@ -123,7 +123,8 @@ public class PublicParametersAndConstantsHaveDescription : VisitorWithModelNameT
 
         if (comment != null && (_isParameter || _isConstant))
         {
-            var description = comment.string_comment();
+            // After constrainedby the description follows the constraining clause (ComponentComment).
+            var description = ComponentComment.Description(context) ?? comment.string_comment();
             if (description != null)
             {
                 var strings = description.STRING();

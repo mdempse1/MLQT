@@ -311,9 +311,12 @@ internal static class DiagramGeometry
         var layout = ClassBodyLocator.Analyze(classCode);
         foreach (var c in layout.Components)
         {
-            if (c.DeclStart < 0 || c.DeclStop >= classCode.Length || c.DeclStop < c.DeclStart)
+            // The component's annotation, wherever it is: after constrainedby it follows the
+            // constraining clause, outside the declaration, and looking in the declaration left every
+            // constrained replaceable component off the diagram.
+            if (c.AnnotationSpan is not { } span || span.Start < 0 || span.Stop >= classCode.Length || span.Stop < span.Start)
                 continue;
-            if (ParsePlacement(classCode[c.DeclStart..(c.DeclStop + 1)], layer) is { } placement)
+            if (ParsePlacement(classCode[span.Start..(span.Stop + 1)], layer) is { } placement)
                 result[c.Name] = placement;
         }
         return result;

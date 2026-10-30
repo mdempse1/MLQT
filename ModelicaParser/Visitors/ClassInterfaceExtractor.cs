@@ -201,7 +201,7 @@ public static class ClassInterfaceExtractor
                 Modifications = ScalarModifications(declaration.modification()?.class_modification()),
                 Redeclarations = Redeclarations(declaration.modification()?.class_modification()),
                 Condition = SourceText(decl.condition_attribute()?.expression()),
-                Description = ReadStringComment(decl.comment()?.string_comment()),
+                Description = ReadStringComment(ComponentComment.Description(decl)),
                 IsPublic = isPublic,
                 Prefixes = prefixes,
                 Line = decl.Start.Line

@@ -1330,6 +1330,34 @@ end Bar;";
     }
 
     [Fact]
+    public void UpdateGraphForChangedFiles_APackageOrderDeleted_LeavesThePackageWithNoOrder()
+    {
+        // Skipped once the file was gone, so the package kept the order it no longer had.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbDelOrd_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "package.mo"), "package P\nend P;");
+            var ordPath = Path.Combine(tempDir, "package.order");
+            File.WriteAllLines(ordPath, new[] { " A ", "", "B" });
+
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaDirectory(graph, tempDir);
+            var pkg = graph.ModelNodes.Single(m => m.Definition.Name == "P");
+            Assert.Equal(new[] { "A", "B" }, pkg.PackageOrder);   // trimmed at load as well
+
+            File.Delete(ordPath);
+            GraphBuilder.UpdateGraphForChangedFiles(graph, tempDir, new HashSet<string> { "package.order" });
+
+            Assert.Null(pkg.PackageOrder);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public void UpdateGraphForChangedFiles_PackageOrderWithoutPackageMo_IsIgnored()
     {
         // Defensive: a stray package.order with no sibling package.mo must not crash.

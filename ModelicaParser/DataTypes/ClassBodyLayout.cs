@@ -11,7 +11,16 @@ public sealed record ClassBodyComponent(
     bool SoleInClause,      // true when the clause declares only this component
     int? ModStart,          // modification span, or null if the component has none
     int? ModStop,
-    int BindingInsertOffset); // where to insert a modifier when the component has none (after name/subscripts)
+    int BindingInsertOffset) // where to insert a modifier when the component has none (after name/subscripts)
+{
+    /// <summary>
+    /// The span of the annotation that applies to the component, or null when it has none. Not always
+    /// inside the declaration's span: after <c>constrainedby</c> it is the element's
+    /// (<see cref="Helpers.ComponentComment"/>), so a placement looked for in the declaration alone was
+    /// never found.
+    /// </summary>
+    public (int Start, int Stop)? AnnotationSpan { get; init; }
+}
 
 /// <summary>
 /// The structural layout of a class body (from <see cref="Visitors.ClassBodyLocator"/>): the character

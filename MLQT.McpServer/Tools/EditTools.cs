@@ -1215,6 +1215,11 @@ public sealed class EditTools
         string WrittenTo(string path) =>
             renamedFile is not null && string.Equals(path, ownFile, StringComparison.OrdinalIgnoreCase) ? renamedFile : path;
 
+        // Before the files are reloaded, as every other edit does: a reload reads the package.order
+        // beside the file, and read before this it kept the old name.
+        if (orderDirectory is not null)
+            RenameInPackageOrder(orderDirectory, oldLeaf, newName);
+
         var affected = new List<string>();
         foreach (var (path, newContent, _) in planned)
         {
@@ -1223,8 +1228,6 @@ public sealed class EditTools
                 affected.AddRange(await _libraries.ReloadFileAsync(path)); // gone -> its old ids are removed
             affected.AddRange(await _libraries.ReloadFileAsync(WrittenTo(path)));
         }
-        if (orderDirectory is not null)
-            RenameInPackageOrder(orderDirectory, oldLeaf, newName);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
 
         var changes = planned.Select(p => new RenameFileChange(WrittenTo(p.path), p.count, null)).ToList();

@@ -445,6 +445,38 @@ public static class GraphBuilder
     }
 
     /// <summary>
+    /// Gives the package a directory's <c>package.mo</c> defines the order its <c>package.order</c>
+    /// declares, or none when the directory has no <c>package.order</c>. The one reader of that file:
+    /// a load, a changed-files update and a reload of one file each used to read it for themselves,
+    /// and the reload did not read it at all, so a class written and listed by MLQT read as missing
+    /// from the order until the library was loaded again.
+    /// </summary>
+    /// <remarks>
+    /// The order belongs to the file's <b>top-level</b> package only - for <c>Blocks/package.mo</c>,
+    /// <c>Modelica.Blocks</c>, not a package nested inline in it. Each line is trimmed and a blank one
+    /// dropped, as a supplied library's order is: the load used to keep them as written, so the tree,
+    /// which compares names without trimming, put a class listed as <c>"A "</c> last.
+    /// </remarks>
+    /// <returns>The id of the package given the order, or null when the directory defines none.</returns>
+    public static string? ApplyPackageOrder(DirectedGraph graph, string directory)
+    {
+        var packageMoPath = Path.Combine(directory, "package.mo");
+        var fileId = GenerateFileId(packageMoPath);
+        var package = graph.GetModelsInFile(fileId).FirstOrDefault(m =>
+            m.ClassType == "package"
+            && (string.IsNullOrEmpty(m.ParentModelName)
+                || graph.GetNode<ModelNode>(m.ParentModelName) is { } parent && parent.ContainingFileId != fileId));
+        if (package is null)
+            return null;
+
+        var orderPath = Path.Combine(directory, "package.order");
+        package.PackageOrder = File.Exists(orderPath)
+            ? ModelicaFileEncoding.ReadAllLinesOnly(orderPath).Select(l => l.Trim()).Where(l => l.Length > 0).ToArray()
+            : null;
+        return package.Id;
+    }
+
+    /// <summary>
     /// Loads all Modelica files from a directory and adds them to the graph.
     /// Also reads package.order files and stores them in package model nodes.
     /// </summary>
@@ -464,63 +496,11 @@ public static class GraphBuilder
         var modelList = LoadModelicaFiles(graph, filePaths);
 
         // Read package.order files for each directory that contains a package.mo
-        //foreach (var filePath in filePaths)
-        Parallel.ForEach(filePaths, filePath => 
+        Parallel.ForEach(filePaths, filePath =>
         {
-            if (Path.GetFileName(filePath).Equals("package.mo", StringComparison.OrdinalIgnoreCase))
-            {
-                var directory = Path.GetDirectoryName(filePath);
-                if (directory != null)
-                {
-                    var packageOrderPath = Path.Combine(directory, "package.order");
-                    if (File.Exists(packageOrderPath))
-                    {
-                        // Read the package.order file
-                        var packageOrderContent = ModelicaFileEncoding.ReadAllLinesOnly(packageOrderPath);
-
-                        // Find the TOP-LEVEL package model from the package.mo file
-                        // A package.order file only applies to the main package in the file, not nested packages
-                        var fileId = GenerateFileId(filePath);
-                        var modelsInFile = graph.GetModelsInFile(fileId);
-
-                        // Find the top-level package (the one without "." in its name relative to the file)
-                        // For example, if the file is Blocks\package.mo, we want Modelica.Blocks, not Modelica.Blocks.Examples
-                        var topLevelPackage = modelsInFile
-                            .Where(m =>
-                            {
-                                var classType = m.ClassType;
-                                if (classType != "package")
-                                    return false;
-
-                                // Check if this is a top-level package (not nested)
-                                // Top-level packages don't have a ParentModelName property or it's empty
-                                var parentName = m.ParentModelName;
-
-                                // If it has no parent, it's top-level
-                                if (string.IsNullOrEmpty(parentName))
-                                    return true;
-
-                                // If it has a parent, check if the parent is defined in a different file
-                                // (meaning this is the top package in THIS file)
-                                var parentNode = graph.GetNode<ModelNode>(parentName);
-                                if (parentNode != null)
-                                {
-                                    var parentFileId = parentNode.ContainingFileId;
-                                    return parentFileId != fileId;  // Parent is in a different file
-                                }
-
-                                return false;
-                            })
-                            .FirstOrDefault();
-
-                        // Store the package.order content only in the top-level package
-                        if (topLevelPackage != null)
-                        {
-                            topLevelPackage.PackageOrder = packageOrderContent;
-                        }
-                    }
-                }
-            }
+            if (Path.GetFileName(filePath).Equals("package.mo", StringComparison.OrdinalIgnoreCase)
+                && Path.GetDirectoryName(filePath) is { } directory)
+                ApplyPackageOrder(graph, directory);
         });
         return modelList;
         //return fileNodes;
@@ -1681,30 +1661,12 @@ public static class GraphBuilder
 
         affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(graph));
 
-        // Step 3: Update changed package.order files
+        // Step 3: Update changed package.order files - a deleted one included, which leaves its
+        // package with no declared order rather than the one it had.
         foreach (var relativePath in changedOrderFiles)
         {
-            var fullPath = ResolveChangedFile(rootPath, relativePath);
-            if (!File.Exists(fullPath)) continue;
-
-            // Find the package model by looking at the directory's package.mo
-            var directory = Path.GetDirectoryName(fullPath);
-            if (directory == null) continue;
-
-            var packageMoPath = Path.Combine(directory, "package.mo");
-            if (!File.Exists(packageMoPath)) continue;
-
-            var packageFileId = GenerateFileId(packageMoPath);
-            var packageModels = graph.GetModelsInFile(packageFileId).ToList();
-            if (packageModels.Count > 0)
-            {
-                var packageNode = packageModels[0]; // The package model
-                var orderLines = ModelicaFileEncoding.ReadAllLinesOnly(fullPath)
-                    .Select(l => l.Trim())
-                    .Where(l => !string.IsNullOrEmpty(l))
-                    .ToArray();
-                packageNode.PackageOrder = orderLines;
-            }
+            if (Path.GetDirectoryName(ResolveChangedFile(rootPath, relativePath)) is { } directory)
+                ApplyPackageOrder(graph, directory);
         }
 
         return affectedModelIds.Distinct().ToList();

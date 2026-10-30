@@ -52,7 +52,8 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
     public override object? VisitComponent_declaration([NotNull] modelicaParser.Component_declarationContext context)
     {
         var name = context.declaration()?.IDENT()?.GetText();
-        var annotation = context.comment()?.annotation();
+        // After constrainedby the component's annotation follows the constraining clause.
+        var annotation = ComponentComment.Annotation(context);
         if (name is not null && annotation is not null)
             ReadMlqt(annotation, component: StripQuotes(name));
         return base.VisitComponent_declaration(context);

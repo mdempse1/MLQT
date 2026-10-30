@@ -178,6 +178,14 @@ public static class SpellingCorrector
             return base.VisitComponent_declaration(context);
         }
 
+        public override object? VisitElement([NotNull] modelicaParser.ElementContext context)
+        {
+            // The description after a constraining clause, as SpellCheckDescriptions reads it.
+            if (context.constraining_clause() is not null)
+                CollectDescription(context.comment()?.string_comment());
+            return base.VisitElement(context);
+        }
+
         public override object? VisitAnnotation([NotNull] modelicaParser.AnnotationContext context)
         {
             var argList = context.class_modification()?.argument_list();

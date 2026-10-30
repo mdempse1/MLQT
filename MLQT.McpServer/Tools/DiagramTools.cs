@@ -171,7 +171,7 @@ public sealed class DiagramTools
         var transformation = "transformation(extent=" + extent + rot + ")";
         var placement = "Placement(" + transformation + ")";
 
-        var annotation = decl.comment()?.annotation();
+        var annotation = ComponentComment.Annotation(decl);
         if (annotation is not null)
         {
             var existing = FindPlacementArgument(annotation);
@@ -187,8 +187,9 @@ public sealed class DiagramTools
             return classCode[..at] + insert + classCode[at..];
         }
 
-        // No annotation at all: add one after the declaration (before the terminating ';').
-        var end = decl.Stop.StopIndex + 1;
+        // No annotation at all: add one after the declaration - after its constraining clause, if it
+        // has one - before the terminating ';'.
+        var end = ComponentComment.AnnotationInsertOffset(decl);
         return classCode[..end] + " annotation (" + placement + ")" + classCode[end..];
     }
 

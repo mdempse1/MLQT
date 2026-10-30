@@ -420,7 +420,7 @@ Two things differ from a harness run:
 - **A bypass needs a Modelica target.** A real session may also work outside Modelica, so a Read, Edit, Write, Grep or Glob counts as a bypass only when the file or path it is aimed at is a `.mo` file, a `package.order` or under a `--library-dir`. A shell command is judged on its whole text, so its count is approximate. **For a session given only to Modelica work, pass `--dedicated`**: every built-in file or shell call then counts, as in a harness run, all of them are listed with their input, and the call sequences show every call. This is how to see what an agent does for itself that MLQT could have done.
 - **The server log is matched by time.** It carries no session id, so two sessions running at once share each other's server times. For a clean comparison, give each experiment its own log with `MLQT_MCP_TOOL_LOG`, set in the server's `env` in your client configuration, and restart the client so the server starts with it.
 
-The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value.
+The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value. A single string given for a list, such as `"classIds":"P.A"` for one class, is read as a list of one.
 
 ## When the client says the server disconnected
 

@@ -826,8 +826,8 @@ public class ModelicaPackageSaver
 
         // Get stored package.order, each entry once and trimmed: a name listed twice is what
         // MLQT.Structure.PackageOrder reports as a duplicate, and the first place it is listed is the
-        // one kept. Trimmed because some load paths store the lines as read, and "A " would
-        // otherwise not match the child "A" below and be listed a second time.
+        // one kept. Trimmed although GraphBuilder.ApplyPackageOrder stores the lines trimmed, because
+        // "A " would otherwise not match the child "A" below and be listed a second time.
         if (model.PackageOrder is string[] storedOrder)
         {
             foreach (var entry in storedOrder.Select(e => e.Trim()))

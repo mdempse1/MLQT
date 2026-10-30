@@ -579,58 +579,16 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <summary>
-    /// Processes package.order files for the loaded Modelica files.
-    /// This is similar to what GraphBuilder.LoadModelicaDirectory does,
-    /// but we need to do it here since we're using LoadModelicaFiles instead.
+    /// Processes package.order files for the loaded Modelica files, as GraphBuilder.LoadModelicaDirectory
+    /// does, since this loads with LoadModelicaFiles instead.
     /// </summary>
     private void ProcessPackageOrderFiles(List<string> loadedFiles)
     {
-        // Find all package.mo files that were loaded
-        var packageMoFiles = loadedFiles.Where(f =>
-            Path.GetFileName(f).Equals("package.mo", StringComparison.OrdinalIgnoreCase));
-
-        foreach (var packageMoFile in packageMoFiles)
+        foreach (var packageMoFile in loadedFiles.Where(f =>
+                     Path.GetFileName(f).Equals("package.mo", StringComparison.OrdinalIgnoreCase)))
         {
-            var directory = Path.GetDirectoryName(packageMoFile);
-            if (directory == null) continue;
-
-            var packageOrderPath = Path.Combine(directory, "package.order");
-            if (!File.Exists(packageOrderPath)) continue;
-
-            // Read the package.order file
-            var packageOrderContent = ModelicaFileEncoding.ReadAllLinesOnly(packageOrderPath);
-
-            // Find the top-level package model from the package.mo file
-            var fileId = GraphBuilder.GenerateFileId(packageMoFile);
-            var modelsInFile = _combinedGraph.GetModelsInFile(fileId);
-
-            // Find the top-level package
-            var topLevelPackage = modelsInFile
-                .Where(m =>
-                {
-                    if (m.ClassType != "package")
-                        return false;
-
-                    var parentName = m.ParentModelName;
-
-                    if (string.IsNullOrEmpty(parentName))
-                        return true;
-
-                    var parentNode = _combinedGraph.GetNode<ModelNode>(parentName);
-                    if (parentNode != null)
-                    {
-                        var parentFileId = parentNode.ContainingFileId;
-                        return parentFileId != fileId;
-                    }
-
-                    return false;
-                })
-                .FirstOrDefault();
-
-            if (topLevelPackage != null)
-            {
-                topLevelPackage.PackageOrder = packageOrderContent;
-            }
+            if (Path.GetDirectoryName(packageMoFile) is { } directory)
+                GraphBuilder.ApplyPackageOrder(_combinedGraph, directory);
         }
     }
 
@@ -832,10 +790,18 @@ public class LibraryDataService : ILibraryDataService
     /// </remarks>
     private int RemoveSuppliedNodes(LoadedLibrary library)
     {
+        // Another registered library of the same kind listing an id has the node too - two copies of
+        // one library loaded from the same files, by two routes that each thought it was the first.
+        // Removing one took the other's classes with it, and the survivor listed classes that were gone.
+        var listedElsewhere = _libraries
+            .Where(l => !ReferenceEquals(l, library) && l.ReadOnlySource == library.ReadOnlySource)
+            .SelectMany(l => l.ModelIds)
+            .ToHashSet(StringComparer.Ordinal);
+
         var supplied = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in library.ModelIds)
         {
-            if (_combinedGraph.GetNode<ModelNode>(id) is { } node && Owns(library, node))
+            if (!listedElsewhere.Contains(id) && _combinedGraph.GetNode<ModelNode>(id) is { } node && Owns(library, node))
                 supplied.Add(id);
         }
 
@@ -1048,7 +1014,24 @@ public class LibraryDataService : ILibraryDataService
         // A package whose imports changed changes what names mean in its children's files too (B347),
         // and so does a class added to or removed from it (B387).
         lock (_lock)
+        {
             affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(_combinedGraph));
+
+            // The order of the package this file sits in - a class written to its own file is listed
+            // there - and, for a package.mo, of the package above it, which lists this one. Read with
+            // the file, because whoever wrote the file wrote the order beside it: the MCP server writes
+            // both and runs no file monitor, so the order it had just written read as stale until the
+            // library was loaded again. A package.mo just re-parsed also lost the order it had.
+            if (Path.GetDirectoryName(filePath) is { } directory)
+            {
+                var orderDirectories = Path.GetFileName(filePath).Equals("package.mo", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { directory, Path.GetDirectoryName(directory) }
+                    : new[] { directory };
+                foreach (var orderDirectory in orderDirectories.OfType<string>())
+                    if (GraphBuilder.ApplyPackageOrder(_combinedGraph, orderDirectory) is { } packageId)
+                        affectedModelIds.Add(packageId);
+            }
+        }
 
         RefreshVersions(affectedModelIds);
         RaiseTreeDataChanged();
@@ -1189,7 +1172,9 @@ public class LibraryDataService : ILibraryDataService
     /// recovered from documentation (<see cref="ReadOnlySources.KindOf"/>). Since B268 a lower-ranked
     /// copy is never registered beside a higher one of the same library, so this rarely has two
     /// candidates to choose between; it is what <see cref="RemoveSuppliedNodes"/> asks so that removing
-    /// a library cannot take another library's classes with it, whatever the index says.</para>
+    /// a library cannot take another kind of library's classes with it, whatever the index says. Two
+    /// libraries of the same kind listing one class is a different question, which that method
+    /// answers for itself.</para>
     /// </summary>
     private static bool Owns(LoadedLibrary library, ModelNode node) =>
         ReadOnlySources.KindOf(node) == library.ReadOnlySource;

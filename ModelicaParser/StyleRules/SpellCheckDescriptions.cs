@@ -46,6 +46,15 @@ public class SpellCheckDescriptions : SpellCheckVisitorBase
         return base.VisitComponent_declaration(context);
     }
 
+    public override object? VisitElement([NotNull] modelicaParser.ElementContext context)
+    {
+        // After constrainedby the description is the element's, not a declaration's (ComponentComment),
+        // and is checked here, once, however many components the element declares.
+        if (context.constraining_clause() is not null)
+            CheckStringComment(context.comment()?.string_comment());
+        return base.VisitElement(context);
+    }
+
     private void CheckStringComment(modelicaParser.String_commentContext? stringComment)
     {
         if (stringComment == null)

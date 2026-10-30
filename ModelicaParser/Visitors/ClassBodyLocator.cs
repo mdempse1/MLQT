@@ -133,12 +133,16 @@ public static class ClassBodyLocator
                 modStop = mod.Stop.StopIndex;
             }
 
+            var annotation = ComponentComment.Annotation(decl);
             components.Add(new ClassBodyComponent(
                 name, type,
                 decl.Start.StartIndex, decl.Stop.StopIndex,
                 cc.Start.StartIndex, cc.Stop.StopIndex,
                 sole, modStart, modStop,
-                BindingInsertOffset: declaration.Stop.StopIndex + 1));
+                BindingInsertOffset: declaration.Stop.StopIndex + 1)
+            {
+                AnnotationSpan = annotation is null ? null : (annotation.Start.StartIndex, annotation.Stop.StopIndex),
+            });
         }
     }
 

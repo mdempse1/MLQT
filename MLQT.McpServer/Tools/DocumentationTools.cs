@@ -89,15 +89,15 @@ public sealed class DocumentationTools
             return new ToolError($"'{classId}' has no component named '{componentName}'.");
 
         var quoted = ModelicaNav.Quote(description);
-        var sc = decl.comment()?.string_comment();
+        var sc = ComponentComment.Description(decl);
         string newCode;
-        if (sc is not null && sc.STRING().Length > 0)
+        if (sc is not null)
             newCode = code[..sc.STRING(0).Symbol.StartIndex] + quoted + code[(sc.Stop.StopIndex + 1)..];
         else
         {
-            // Insert after the declaration (name/subscripts/modification), before any annotation.
-            var declStop = decl.declaration().Stop.StopIndex;
-            newCode = code[..(declStop + 1)] + " " + quoted + code[(declStop + 1)..];
+            // After the declaration - or its constraining clause - and before any annotation.
+            var at = ComponentComment.DescriptionInsertOffset(decl);
+            newCode = code[..at] + " " + quoted + code[at..];
         }
 
         return ToResult(classId, await ClassBodyEditor.ApplyAsync(

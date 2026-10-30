@@ -405,12 +405,21 @@ internal sealed class DependencyLoader
             return;
         }
         var conflicts = new List<(DiscoveredLibrarySummary Discovered, LoadedLibrary Existing)>();
+        // The same files loaded already, but not as this repository's - mlqt_create_library made the
+        // library, or its folder was loaded by path. Nothing to refuse and nothing to choose: the
+        // repository takes it over. Left alone, the repository loaded a second copy over the same class
+        // ids, and unloading either took the other's classes with it.
+        var adopted = new List<(DiscoveredLibrarySummary Discovered, LoadedLibrary Existing)>();
         foreach (var discovered in look.DiscoveredLibraries)
         {
             if (_libraries.Libraries.FirstOrDefault(l => l.Name == discovered.LibraryName &&
-                                                         l.RepositoryId != look.RepositoryId &&
-                                                         !SamePath(l.SourcePath, discovered.FullPath)) is not { } existing)
+                                                         l.RepositoryId != look.RepositoryId) is not { } existing)
                 continue;
+            if (SamePath(existing.SourcePath, discovered.FullPath))
+            {
+                adopted.Add((discovered, existing));
+                continue;
+            }
             // As for a path: an encrypted build beside readable source is left to the source, not chosen between.
             if (!existing.IsReadOnly && EncryptedLibraryDetector.IsEncryptedLibraryRoot(discovered.FullPath))
                 continue;
@@ -437,15 +446,25 @@ internal sealed class DependencyLoader
         // loaded - or, where it outranks the installed build of its own release, once that was turned away.
         foreach (var (_, existing) in conflicts.Where(c => c.Existing.ReadOnlySource != ReadOnlySourceKind.Supplied))
             Unload(existing);
+        foreach (var (_, existing) in adopted)
+            Unload(existing);
 
         var result = await loadRepository(root, true);
         _repositoriesLoaded.Add(result);
         if (!result.Success)
         {
             _errors.Add(result.ErrorMessage ?? $"'{root}' could not be loaded as a repository.");
-            foreach (var (discovered, existing) in conflicts)
+            foreach (var (discovered, existing) in conflicts.Concat(adopted))
                 await RestoreIfGoneAsync(existing, discovered.FullPath);
             return;
+        }
+
+        foreach (var (discovered, existing) in adopted)
+        {
+            if (_libraries.Libraries.Any(l => l.RepositoryId == result.RepositoryId && l.Name == existing.Name))
+                _warnings.Add($"'{existing.Name}' was already loaded from '{discovered.FullPath}'; it is now loaded as part of repository '{result.Name}', once.");
+            else
+                await RestoreIfGoneAsync(existing, discovered.FullPath);
         }
 
         foreach (var (discovered, existing) in conflicts)

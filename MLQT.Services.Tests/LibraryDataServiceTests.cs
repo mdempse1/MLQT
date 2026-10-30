@@ -158,6 +158,22 @@ end TestModel;
     }
 
     [Fact]
+    public async Task RemoveLibrary_LeavesTheClassesAnotherCopyStillLists()
+    {
+        // Two routes loaded the same files - a library created, then the working copy holding it - and
+        // unloading one emptied the other: it listed classes that were no longer in the graph.
+        var service = new LibraryDataService();
+        var first = await service.AddLibraryFromFileAsync("test.mo", "model Test end Test;");
+        var second = await service.AddLibraryFromFileAsync("test.mo", "model Test end Test;");
+        Assert.Equal(2, service.Libraries.Count);
+
+        service.RemoveLibrary(first.Id);
+
+        Assert.Equal(second.Id, Assert.Single(service.Libraries).Id);
+        Assert.NotNull(service.GetModelById("Test"));
+    }
+
+    [Fact]
     public async Task ClearAllLibraries_RemovesAllLibraries()
     {
         var service = new LibraryDataService();

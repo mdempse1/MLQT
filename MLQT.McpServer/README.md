@@ -39,7 +39,9 @@ logging on at that path, or to `off` to force it off.
 parameter actually declares before the argument is bound, so a quoted scalar behaves the same as the
 bare value instead of failing with an opaque "An error occurred invoking '<tool>'". The coercion is
 directed by each tool's input schema, so a parameter that is genuinely a string is never altered, and a
-tool a host built on this server adds is covered as MLQT's are.
+tool a host built on this server adds is covered as MLQT's are. A list of strings is treated the same
+way: `"classIds":"P.A"` is a list of one, and the text of a JSON array (`"classIds":"[\"P.A\"]"`) is
+that array.
 
 ## What an agent is told
 
@@ -177,7 +179,7 @@ A style finding carries the severity the repository configured for its rule, as 
 - `Services/SessionState.cs` — tracks whether opt-in analysis has run.
 - `Services/McpServerJson.cs` / `McpServerJsonContext.cs` — the options every tool is registered with, and the compiled JSON contracts of every record in `Dtos/`, so a client reads the same field names from an obfuscated build (B502). A new result or argument record is listed in the context; `ObfuscationReadinessTests` fails until it is.
 - `Services/ToolParameterCheck.cs` — refuses to start a server whose tool parameters have been renamed, which would otherwise bind no client's arguments.
-- `Services/ToolArgumentCoercion.cs` — turns a quoted boolean or number into the scalar a tool's input schema asks for.
+- `Services/ToolArgumentCoercion.cs` — turns a quoted boolean or number into the scalar a tool's input schema asks for, and one string into a list of strings.
 - `Services/ServerInstructions.cs`, `ToolUsageLogger.cs`, `McpHostSettings.cs` — the connect-time instructions, the opt-in usage log, and the generic host's settings.
 - `Helpers/WireNames.cs` — the text each enum in a result is sent as, spelled rather than taken from `ToString()`.
 - `dev/smoke.sh` — an `initialize` handshake over stdio. Calling tools by hand is what McpTester is for, and `InProcessServer` in the tests.

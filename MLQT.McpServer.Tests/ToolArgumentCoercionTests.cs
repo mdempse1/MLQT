@@ -11,8 +11,8 @@ public class ToolArgumentCoercionTests
 {
     private static JsonElement Str(string s) => JsonSerializer.SerializeToElement(s);
 
-    private static ToolArgumentCoercion.ScalarParameters Scalars(string[] bools, string[] nums)
-        => new(new HashSet<string>(bools), new HashSet<string>(nums));
+    private static ToolArgumentCoercion.ScalarParameters Scalars(string[] bools, string[] nums, string[]? lists = null)
+        => new(new HashSet<string>(bools), new HashSet<string>(nums), new HashSet<string>(lists ?? []));
 
     [Fact]
     public void Coerce_StringEncodedBoolean_BecomesJsonBoolean()
@@ -74,7 +74,54 @@ public class ToolArgumentCoercionTests
     }
 
     [Fact]
-    public void ForSchema_ReadsBooleansAndNumbers()
+    public void Coerce_OneStringForAList_IsAListOfOne()
+    {
+        // mlqt_get_class asked about one class, as classIds: "P.A".
+        var args = new Dictionary<string, JsonElement> { ["classIds"] = Str("P.A") };
+        var result = ToolArgumentCoercion.Coerce(args, Scalars([], [], ["classIds"]));
+
+        Assert.Equal(["P.A"], result["classIds"].Deserialize<string[]>()!);
+    }
+
+    [Fact]
+    public void Coerce_AListSentAsItsJsonText_IsThatList()
+    {
+        var args = new Dictionary<string, JsonElement> { ["classIds"] = Str("""["P.A", "P.B"]""") };
+        var result = ToolArgumentCoercion.Coerce(args, Scalars([], [], ["classIds"]));
+
+        Assert.Equal(["P.A", "P.B"], result["classIds"].Deserialize<string[]>()!);
+    }
+
+    [Fact]
+    public void Coerce_TextThatOnlyLooksLikeAList_IsOneItem()
+    {
+        var args = new Dictionary<string, JsonElement> { ["classIds"] = Str("[not json") };
+        var result = ToolArgumentCoercion.Coerce(args, Scalars([], [], ["classIds"]));
+
+        Assert.Equal(["[not json"], result["classIds"].Deserialize<string[]>()!);
+    }
+
+    [Fact]
+    public async Task ThroughTheServer_OneClassIdAsAString_IsRead()
+    {
+        await using var server = await InProcessServer.StartAsync();
+        await server.CallAsync("mlqt_create_library", new() { ["name"] = "Lib", ["directory"] = server.TempDirectory() });
+
+        var result = await server.CallAsync("mlqt_get_class", new() { ["classIds"] = "Lib", ["views"] = "info" });
+
+        Assert.NotEqual(true, result.IsError);
+        Assert.Contains("\"Lib\"", MlqtMcpServerExtensionsTests.Text(result));
+    }
+
+    [Fact]
+    public void Coerce_AListAlready_IsUnchanged()
+    {
+        var args = new Dictionary<string, JsonElement> { ["classIds"] = JsonSerializer.SerializeToElement(new[] { "P.A" }) };
+        Assert.Same(args, ToolArgumentCoercion.Coerce(args, Scalars([], [], ["classIds"])));
+    }
+
+    [Fact]
+    public void ForSchema_ReadsBooleansNumbersAndStringLists()
     {
         var schema = JsonDocument.Parse("""
             {"type":"object","properties":{
@@ -83,6 +130,9 @@ public class ToolArgumentCoercionTests
               "count":{"type":"integer"},
               "scale":{"type":["number","null"]},
               "name":{"type":"string"},
+              "ids":{"type":"array","items":{"type":"string"}},
+              "views":{"type":["array","null"],"items":{"type":"string"}},
+              "operations":{"type":"array","items":{"type":"object"}},
               "untyped":{}
             }}
             """).RootElement;
@@ -91,6 +141,7 @@ public class ToolArgumentCoercionTests
 
         Assert.Equal(["flag", "maybe"], scalars.Booleans.Order(StringComparer.Ordinal));
         Assert.Equal(["count", "scale"], scalars.Numbers.Order(StringComparer.Ordinal));
+        Assert.Equal(["ids", "views"], scalars.StringLists.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -133,6 +184,10 @@ public class ToolArgumentCoercionTests
             Assert.Equal(
                 parameters.Where(p => NumericTypes.Contains(p.Type)).Select(p => p.Item1).Order(StringComparer.Ordinal),
                 scalars.Numbers.Order(StringComparer.Ordinal));
+            Assert.Equal(
+                parameters.Where(p => p.Type != typeof(string) && typeof(IEnumerable<string>).IsAssignableFrom(p.Type))
+                    .Select(p => p.Item1).Order(StringComparer.Ordinal),
+                scalars.StringLists.Order(StringComparer.Ordinal));
         }
     }
 

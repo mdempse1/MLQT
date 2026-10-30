@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Services;
 using MLQT.McpServer.Tools;
@@ -76,6 +77,36 @@ public class SharedServerStateTests
     }
 
     // ---- Another copy of a library ---------------------------------------------------------------
+
+    [Fact]
+    public async Task ALibraryCreated_ThenItsWorkingCopyLoaded_IsLoadedOnce_AsTheRepositorys()
+    {
+        // The same files, by two routes: the working copy loaded a second copy over the same class ids,
+        // and unloading either one left the other listing classes that were gone.
+        using var host = new TestHost();   // its clean-up survives Git's read-only object files
+        await using var server = await InProcessServer.StartAsync();
+        var root = host.NewTempDir();
+        await server.CallAsync("mlqt_create_library", new() { ["name"] = "Lib", ["directory"] = root });
+        LibGit2Sharp.Repository.Init(root);
+        using (var git = new LibGit2Sharp.Repository(root))
+        {
+            var author = new LibGit2Sharp.Signature("Test Author", "test@test.com", DateTimeOffset.Now);
+            LibGit2Sharp.Commands.Stage(git, "*");
+            git.Commit("Initial commit", author, author, new LibGit2Sharp.CommitOptions());
+        }
+
+        var load = await server.CallAsync("mlqt_load", new() { ["paths"] = new[] { root }, ["withDependencies"] = false });
+
+        Assert.NotEqual(true, load.IsError);
+        using var status = JsonDocument.Parse(MlqtMcpServerExtensionsTests.Text(await server.CallAsync("mlqt_session", [])));
+        var lib = Assert.Single(status.RootElement.GetProperty("libraries").EnumerateArray(),
+            l => l.GetProperty("name").GetString() == "Lib");
+        Assert.Equal(JsonValueKind.String, lib.GetProperty("repositoryId").ValueKind);
+
+        var read = await server.CallAsync("mlqt_get_class", new() { ["classIds"] = new[] { "Lib" } });
+        Assert.NotEqual(true, read.IsError);
+        Assert.DoesNotContain("not loaded", MlqtMcpServerExtensionsTests.Text(read));
+    }
 
     [Fact]
     public async Task AnotherCopy_IsRefused_SayingWhoseItMayBe_AndWhatReplacingItDoes()

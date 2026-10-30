@@ -42,6 +42,31 @@ public class MlqtSuppressionWriterTests
     }
 
     [Fact]
+    public void ComponentLevel_AfterConstrainedBy_MergesIntoTheAnnotationThere()
+    {
+        // The component's annotation follows its constraining clause; a waiver added before
+        // constrainedby was a second annotation, and the Placement stayed in the first.
+        var code = "model Foo\n  replaceable Engine e constrainedby Base annotation(Placement(transformation(extent={{0,0},{1,1}})));\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, "e", "Naming.Convention", null, out var outCode, out _));
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(outCode, "annotation"));
+        Assert.Contains("constrainedby Base annotation(", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(Suppresses(outCode, "Foo", "e", "MLQT.Naming.Convention"));
+    }
+
+    [Fact]
+    public void ComponentLevel_AfterConstrainedBy_CreatesTheAnnotationAfterTheClause()
+    {
+        var code = "model Foo\n  replaceable Engine e constrainedby Base \"The engine\";\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, "e", "Naming.Convention", null, out var outCode, out _));
+
+        Assert.Contains("constrainedby Base \"The engine\" annotation(__MLQT(", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(Suppresses(outCode, "Foo", "e", "MLQT.Naming.Convention"));
+    }
+
+    [Fact]
     public void MergesIntoExistingSuppressList()
     {
         var code = "model Foo\n  Real x;\n  annotation(__MLQT(suppress=\"A\"));\nend Foo;";

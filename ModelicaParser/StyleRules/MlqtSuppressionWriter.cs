@@ -524,8 +524,10 @@ public static class MlqtSuppressionWriter
             if (_inTarget && _component is not null && ComponentTarget is null &&
                 StripQuotes(context.declaration()?.IDENT()?.GetText() ?? "") == _component)
             {
-                var target = new Target { Inline = true, InsertOffset = context.Stop.StopIndex + 1 };
-                FillFromAnnotation(target, context.comment()?.annotation(), _argument);
+                // Merged into the annotation the component has - after constrainedby, the element's -
+                // or a new one added where that would go.
+                var target = new Target { Inline = true, InsertOffset = ComponentComment.AnnotationInsertOffset(context) };
+                FillFromAnnotation(target, ComponentComment.Annotation(context), _argument);
                 ComponentTarget = target;
             }
             return base.VisitComponent_declaration(context);
