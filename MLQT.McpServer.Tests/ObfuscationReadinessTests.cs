@@ -150,7 +150,7 @@ public sealed class ObfuscationReadinessTests
         var mappings = typeof(WireNames).GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Where(m => m.Name == nameof(WireNames.Of))
             .ToList();
-        Assert.Equal(8, mappings.Count);
+        Assert.Equal(9, mappings.Count);
 
         foreach (var mapping in mappings)
         {

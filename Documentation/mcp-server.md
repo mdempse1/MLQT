@@ -118,7 +118,22 @@ under `line`, because it answers a question about a class rather than about a fi
    and an annotation written on its own lines leaves them blank rather than closing the gap. So the
    two tools describe the same text, which is what re-rendering could not do.
 
-6. **Edit surgically.** `mlqt_edit_class` changes part of one class with a list of operations, all or none: usually `replace`, of text that occurs once in the class (or every occurrence, with `all: true`), and element operations that do what a text patch cannot — `add_connection` refuses incompatible connectors and draws the line, `remove_component` takes the component's connections with it. `mlqt_write_class` writes whole classes, and `mlqt_refactor_class` renames, moves or deletes one with every reference rewritten. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
+6. **In a library with accepted debt, ask for what is new.** Where a repository has a committed
+   baseline (`.mlqt/baseline.json`, written by [`mlqt baseline`](cli.md)), each finding from
+   `mlqt_check` and `mlqt_list_findings` carries a `status`:
+   - `New`: the baseline doesn't hold it.
+   - `TouchedDebt`: accepted debt in a class the working copy has changed.
+   - `AcceptedDebt`: everything else the baseline holds.
+
+   The check's `baseline` field counts each. Pass `baseline: "new"` and only the `New` findings come
+   back. That is what an agent's change introduced, so check the classes it wrote or edited, or the
+   whole library, and fix what is returned. `baseline: "changed"` also returns the debt in the classes
+   it touched. Filtering happens before the 200-finding limit, so a library carrying thousands of
+   accepted findings still returns the few new ones. The classification is the desktop app's: "touched"
+   means changed in the working copy and not yet committed, re-read on every call. With no baseline,
+   no finding has a status and every view returns everything.
+
+7. **Edit surgically.** `mlqt_edit_class` changes part of one class with a list of operations, all or none: usually `replace`, of text that occurs once in the class (or every occurrence, with `all: true`), and element operations that do what a text patch cannot — `add_connection` refuses incompatible connectors and draws the line, `remove_component` takes the component's connections with it. `mlqt_write_class` writes whole classes, and `mlqt_refactor_class` renames, moves or deletes one with every reference rewritten. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
 
 ## Tool names
 

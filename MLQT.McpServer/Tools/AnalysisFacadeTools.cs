@@ -33,10 +33,11 @@ public sealed class AnalysisFacadeTools
 
     public AnalysisFacadeTools(ILibraryDataService libraries, IRepositoryService repositories,
         IExternalResourceService resources, ICodeReviewService codeReview, ICustomDictionaryService customDictionary,
-        IDictionaryManagerService dictionaryManager, IImpactAnalysisService impact, SessionState session)
+        IDictionaryManagerService dictionaryManager, IImpactAnalysisService impact, SessionState session,
+        IBaselineStatusService? baselineStatus = null)
     {
         _session = session;
-        _style = new StyleTools(libraries, codeReview, repositories, customDictionary, dictionaryManager, session);
+        _style = new StyleTools(libraries, codeReview, repositories, customDictionary, dictionaryManager, session, baselineStatus);
         _spelling = new SpellingTools(libraries, repositories, customDictionary, dictionaryManager, resources, session);
         _views = new ViewTools(libraries);
         _resources = new ResourceTools(libraries, resources, session);
@@ -52,6 +53,9 @@ public sealed class AnalysisFacadeTools
                  "'resources' (files the loaded libraries refer to that are missing). Each check answers as its " +
                  "own tool would; one that does not apply to the target says so in its place. settings " +
                  "overrides the style rules for this call only. limit and offset page references and resources. " +
+                 "Where the repository has a committed baseline, each style finding has a status (New, " +
+                 "TouchedDebt, AcceptedDebt); baseline 'new' returns only what the baseline does not hold, " +
+                 "which is what your change introduced. " +
                  "This is a style and static check, not a compile check - the simulator does that.")]
     public async Task<object> Check(
         [Description("Optional: one class by full id.")] string? classId = null,
@@ -61,7 +65,8 @@ public sealed class AnalysisFacadeTools
         [Description("Optional: style rules to use for this call, in the shape mlqt_style_settings returns.")]
         StyleSettingsInput? settings = null,
         [Description("For references and resources: most results (default 100).")] int limit = 100,
-        [Description("For references and resources: results to skip (default 0).")] int offset = 0)
+        [Description("For references and resources: results to skip (default 0).")] int offset = 0,
+        [Description("For style: " + StyleTools.BaselineParameter)] string baseline = "all")
     {
         var targets = new[] { classId, libraryId, source }.Count(t => !string.IsNullOrWhiteSpace(t));
         if (targets > 1)
@@ -70,6 +75,8 @@ public sealed class AnalysisFacadeTools
             .Select(c => c.Trim().ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToList();
         if (wanted.FirstOrDefault(c => !Checks.Contains(c)) is { } unknown)
             return new ToolError($"'{unknown}' is not a check. Checks: {string.Join(", ", Checks)}.");
+        if (!StyleTools.BaselineViews.Contains(baseline))
+            return new ToolError($"'{baseline}' is not a baseline view. Views: {string.Join(", ", StyleTools.BaselineViews)}.");
 
         var hasClass = !string.IsNullOrWhiteSpace(classId);
         var hasSource = !string.IsNullOrWhiteSpace(source);
@@ -77,9 +84,9 @@ public sealed class AnalysisFacadeTools
         object? style = null, spelling = null, references = null, resources = null;
         IReadOnlyList<SpellSuggestionsResult>? suggestions = null;
         if (wanted.Contains("style"))
-            style = hasClass ? _style.CheckClass(classId!, settings)
+            style = hasClass ? _style.CheckClass(classId!, settings, baseline)
                 : hasSource ? _style.CheckStyle(source!, settings)
-                : await _style.CheckLibrary(libraryId, settings);
+                : await _style.CheckLibrary(libraryId, settings, baseline);
         if (wanted.Contains("spelling"))
         {
             spelling = hasClass || hasSource

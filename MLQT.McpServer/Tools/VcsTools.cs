@@ -116,6 +116,11 @@ public sealed class VcsTools
         var vcsRoot = string.IsNullOrEmpty(repo.VcsRootPath) ? repo.LocalPath : repo.VcsRootPath;
         var localCanon = string.IsNullOrEmpty(repo.LocalPath) ? null : Canon(repo.LocalPath);
 
+        // The working-copy status is kept for five minutes and cleared by the file monitor, which this
+        // server never starts, so a file written since the last call would not be in it.
+        if (revision is null)
+            _repositories.InvalidateWorkingCopyCache(repo.Id);
+
         IEnumerable<(string Path, string Status)> changes = revision is null
             ? _repositories.GetWorkingCopyChanges(repo.Id).Select(c => (c.Path, WireNames.Of(c.Status)))
             : _repositories.GetChangedFiles(repo.Id, revision).Select(c => (c.Path, WireNames.Of(c.ChangeType)));

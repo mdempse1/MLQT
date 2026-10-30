@@ -1,3 +1,4 @@
+using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using ModelicaGraph;
 using ModelicaParser.DataTypes;
@@ -92,6 +93,14 @@ internal static class WireNames
         ClassElementKind.Extends => "Extends",
         ClassElementKind.Import => "Import",
         ClassElementKind.Class => "Class",
+        _ => Unnamed(value),
+    };
+
+    public static string Of(FindingStatus value) => value switch
+    {
+        FindingStatus.New => "New",
+        FindingStatus.AcceptedDebt => "AcceptedDebt",
+        FindingStatus.TouchedDebt => "TouchedDebt",
         _ => Unnamed(value),
     };
 

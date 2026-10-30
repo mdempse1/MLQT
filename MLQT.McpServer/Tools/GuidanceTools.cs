@@ -416,6 +416,16 @@ public sealed class GuidanceTools
             - mlqt_list_findings aggregates parse errors (available at load) plus style and spelling findings
               from any check that has run. Filter by severity / source / classId.
 
+            What your change introduced, in a library carrying accepted debt:
+            - A repository whose .mlqt/baseline.json is committed (made with `mlqt baseline`) gives each
+              finding a status: New (not in the baseline), TouchedDebt (accepted debt in a class the
+              working copy has changed) or AcceptedDebt. The result's baseline field counts each.
+            - mlqt_check(classId or libraryId, baseline='new') returns only the New findings - check the
+              classes you wrote or edited, or the whole library, and fix what comes back. baseline=
+              'changed' adds the debt in classes you touched, if you are asked to leave them cleaner.
+              mlqt_list_findings takes the same baseline filter.
+            - With no baseline there is no status, and every view shows every finding.
+
             Severities are real. A style finding carries the severity its rule is configured with, written
             as 'Style error', 'Style warning' or 'Style info'; a parse diagnostic is a bare 'Error' or
             'Fatal'. The filter is a case-insensitive substring, so 'error' matches both kinds and
@@ -432,8 +442,8 @@ public sealed class GuidanceTools
             - Prefer narrowing to paging. severity for triage, classId to work on one class, source to
               separate parse errors from style findings.
             - For a genuine full dump, use the CLI rather than this server: `mlqt check <lib> --format
-              json --out findings.json` runs the same pipeline to the same counts and adds Fingerprint
-              and Status, which is what baseline/ratchet work needs. There is no bulk export here.
+              json --out findings.json` runs the same pipeline to the same counts and adds Fingerprint,
+              which is what writing or updating a baseline needs. There is no bulk export here.
             """,
 
         ["spelling"] = """

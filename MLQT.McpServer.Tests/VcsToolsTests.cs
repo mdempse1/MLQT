@@ -51,6 +51,30 @@ public class VcsToolsTests
     }
 
     [Fact]
+    public async Task GetChangedClasses_SeesAFileWrittenSinceTheLastCall()
+    {
+        // The working-copy status is kept for five minutes and cleared by the file monitor, which the
+        // server never starts: an edit after the first call went unseen until the five minutes were up.
+        using var host = new TestHost();
+        var root = host.WriteLibraryDir(LibFiles.ToDictionary(f => "DepLib/" + f.Key, f => f.Value));
+        LibGit2Sharp.Repository.Init(root);
+        using (var git = new LibGit2Sharp.Repository(root))
+        {
+            var author = new LibGit2Sharp.Signature("Test Author", "test@test.com", DateTimeOffset.Now);
+            LibGit2Sharp.Commands.Stage(git, "*");
+            git.Commit("Initial commit", author, author, new LibGit2Sharp.CommitOptions());
+        }
+        var added = await host.Repositories.AddRepositoryAsync(root, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        var vcs = new VcsTools(host.Libraries, host.Repositories, host.Impact, host.Session);
+
+        Assert.Empty(ToolAssert.Ok<ChangedClassesResult>(vcs.GetChangedClasses(added.Repository.Id)).ClassIds);
+        File.AppendAllText(Path.Combine(root, "DepLib", "Base.mo"), "// edited\n");
+
+        Assert.Contains("DepLib.Base", ToolAssert.Ok<ChangedClassesResult>(vcs.GetChangedClasses(added.Repository.Id)).ClassIds);
+    }
+
+    [Fact]
     public void GetChangedClasses_ByRepositoryName_Works()
     {
         using var host = new TestHost();

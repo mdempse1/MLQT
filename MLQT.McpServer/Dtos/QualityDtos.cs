@@ -230,19 +230,41 @@ public sealed record SetStyleSettingsResult(
     string? Note,
     StyleSettingsInput Settings);
 
+/// <summary>
+/// One finding of a check. <see cref="Status"/> is where it stands against the repository's committed
+/// baseline - <c>New</c>, <c>TouchedDebt</c> (accepted debt in a class the working copy changed) or
+/// <c>AcceptedDebt</c> - and null when there is no baseline to compare it with.
+/// </summary>
 public sealed record StyleFindingDto(
     string ModelName,
     string Severity,
     int Line,
     string Summary,
     string Details,
-    string Source);
+    string Source,
+    string? RuleId = null,
+    string? Status = null);
 
+/// <summary>
+/// A check's findings. With a baseline, <see cref="FindingCount"/> and <see cref="Findings"/> are the
+/// ones the requested view shows, and <see cref="Baseline"/> counts every finding by status.
+/// </summary>
 public sealed record CheckResult(
     int ModelsChecked,
     int FindingCount,
     IReadOnlyList<StyleFindingDto> Findings,
-    bool Truncated);
+    bool Truncated,
+    BaselineSummary? Baseline = null);
+
+/// <summary>
+/// Every finding of a check counted by where it stands against the baseline, and how many the view
+/// asked for left out. Null on a result when no loaded repository has a baseline.
+/// </summary>
+public sealed record BaselineSummary(
+    int New,
+    int TouchedDebt,
+    int AcceptedDebt,
+    int NotShown);
 
 /// <summary>
 /// One finding, with both line numbers it has. <see cref="Line"/> is the line in
@@ -253,6 +275,8 @@ public sealed record CheckResult(
 /// lines down a <c>package.mo</c> has findings whose two lines are a thousand apart. The names match
 /// the CLI's JSON report (<c>Line</c>, <c>ModelLine</c>, <c>File</c>) so the two surfaces cannot be
 /// read as meaning different things.</para>
+///
+/// <para><see cref="Status"/> is the same classification as <see cref="StyleFindingDto.Status"/>.</para>
 /// </summary>
 public sealed record FindingItem(
     string ModelId,
@@ -263,7 +287,9 @@ public sealed record FindingItem(
     string Summary,
     string Details,
     string Source,
-    string? FilePath);
+    string? FilePath,
+    string? RuleId = null,
+    string? Status = null);
 
 public sealed record FindingsResult(
     int Total,
