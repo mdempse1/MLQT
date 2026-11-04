@@ -128,8 +128,9 @@ python build/obfuscation/mcp_session.py <protected>\MLQT.McpServer.exe TestFixtu
 of calls to each of the 16 tools, covering every view, action, check and edit operation - edits as
 previews, then real writes and a reload, a wired diagram image, a routed connection, change impact
 over git - and the `.mlqt/settings.json` the session wrote. `toolsNotCalled` in the transcript must be
-empty. The session was ported to the 16 tools at B503's cut-over and has not yet been run against a
-protected build of them; the reference figures below are from the 66. A difference is decoded with the obfuscator's mapping file. **Judge the build by running it,
+empty. The session was ported to the 16 tools at B503's cut-over and was first run against a
+protected build of them on 2026-11-04 (merged, hardest settings): the transcript was byte-identical
+to the plain build's, `toolsNotCalled` empty, and the reference figures below are from that run. A difference is decoded with the obfuscator's mapping file. **Judge the build by running it,
 not by inspecting it**: a protected assembly's metadata on disk can be emptied (parameter names) and
 scrambled (resource names) and restored as it loads.
 
@@ -139,10 +140,18 @@ To time a large library with each build, where control flow and string encryptio
 python build/obfuscation/mcp_session.py <protected>\MLQT.McpServer.exe --time-check C:\Projects\Modelica\ModelicaStandardLibrary\Modelica protected-time.json
 ```
 
-For reference (2026-10-14, MSL 4.1): a load took 123-210% of the plain time and a check 135-169%;
-the first call into protected code paid about a second once; and a wired diagram image took 3.8 s
-against 0.24 s. If a consumer finds the load too slow, the generated ANTLR parser (partial classes,
-so an attribute can be added beside them) is where to exclude control flow first.
+For reference, the 16-tool merged build over MSL 4.1's `Modelica` (6,487 classes, 0 findings on
+both), median of four runs each (2026-11-04): a load took 123% of the plain time (3.7 s against
+3.0 s) and a check 223% (116 ms against 52 ms). The check ratio is larger than the load's only
+because the plain check is so small that the fixed cost of entering protected code dominates it -
+64 ms, which is why the figure to watch is the load. The wired diagram image is the one that hurt on
+the 66 tools (3.8 s against 0.24 s), and `--time-check` does not measure it, so re-time it from the
+full session when the diagram path changes. If a consumer finds the load too slow, the generated
+ANTLR parser (partial classes, so an attribute can be added beside them) is where to exclude control
+flow first.
+
+The 66-tool figures these replace, for comparison (2026-10-14, MSL 4.1): a load took 123-210% and a
+check 135-169%, and the first call into protected code paid about a second once.
 
 **Required whenever the release carries a change to a JSON contract, an MCP tool's parameters, or
 anything `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation covers.** It needs a licence for
