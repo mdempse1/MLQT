@@ -67,11 +67,14 @@ MLQT.Services.Checking.BaselineStatusService.Snapshot.get -> MLQT.Services.Check
 MLQT.Services.Checking.BaselineStatusService.StatusOf(ModelicaParser.DataTypes.LogMessage! message) -> MLQT.Services.Checking.FindingStatus?
 MLQT.Services.Checking.BaselineStatusService.TouchedFileCount.get -> int
 MLQT.Services.Checking.BaselineStatusSnapshot
+MLQT.Services.Checking.BaselineStatusSnapshot.BaselineFor(string! modelId) -> MLQT.Services.Checking.Baseline?
 MLQT.Services.Checking.BaselineStatusSnapshot.BaselineStatusSnapshot(System.Collections.Generic.IReadOnlyDictionary<string!, MLQT.Services.Checking.Baseline!>! baselineByModel, System.Collections.Generic.IReadOnlySet<string!>! touchedModels, int touchedFileCount) -> void
 MLQT.Services.Checking.BaselineStatusSnapshot.HasBaseline.get -> bool
 MLQT.Services.Checking.BaselineStatusSnapshot.IsChangedFromBaseline(ModelicaParser.DataTypes.LogMessage! message) -> bool
 MLQT.Services.Checking.BaselineStatusSnapshot.StatusOf(ModelicaParser.DataTypes.LogMessage! message) -> MLQT.Services.Checking.FindingStatus?
 MLQT.Services.Checking.BaselineStatusSnapshot.TouchedFileCount.get -> int
+MLQT.Services.Checking.BaselineStatusSnapshot.UnreadableBaselines.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MLQT.Services.Checking.BaselineStatusSnapshot.UnreadableBaselines.init -> void
 MLQT.Services.Checking.ChangedLineResolver
 MLQT.Services.Checking.ChangedLineResult
 MLQT.Services.Checking.ChangedLineResult.<Clone>$() -> MLQT.Services.Checking.ChangedLineResult!
@@ -181,6 +184,7 @@ MLQT.Services.Checking.SpellingAcceptance
 MLQT.Services.Checking.StyleCheckContext
 MLQT.Services.Checking.StyleCheckContext.BaseClassHasIcon.get -> System.Func<string!, string!, bool>?
 MLQT.Services.Checking.StyleCheckContext.ClassesCheckedSeparately.get -> System.Collections.Generic.IReadOnlySet<string!>?
+MLQT.Services.Checking.StyleCheckContext.ClassReferenceTarget.get -> System.Func<string!, ModelicaParser.StyleRules.ClassReferenceTarget>?
 MLQT.Services.Checking.StyleCheckContext.Coverage.get -> ModelicaGraph.Analysis.CoverageMeasurer?
 MLQT.Services.Checking.StyleCheckContext.EnclosingSuppressions.get -> System.Func<string!, System.Collections.Generic.IReadOnlyList<ModelicaParser.StyleRules.SuppressionSet!>!>?
 MLQT.Services.Checking.StyleCheckContext.InheritedElementNames.get -> System.Func<string!, System.Collections.Generic.IReadOnlySet<string!>!>?
@@ -378,6 +382,7 @@ MLQT.Services.DataTypes.LibrarySourceType.Directory = 1 -> MLQT.Services.DataTyp
 MLQT.Services.DataTypes.LibrarySourceType.EncryptedDirectory = 5 -> MLQT.Services.DataTypes.LibrarySourceType
 MLQT.Services.DataTypes.LibrarySourceType.File = 0 -> MLQT.Services.DataTypes.LibrarySourceType
 MLQT.Services.DataTypes.LibrarySourceType.Git = 3 -> MLQT.Services.DataTypes.LibrarySourceType
+MLQT.Services.DataTypes.LibrarySourceType.Supplied = 6 -> MLQT.Services.DataTypes.LibrarySourceType
 MLQT.Services.DataTypes.LibrarySourceType.SVN = 4 -> MLQT.Services.DataTypes.LibrarySourceType
 MLQT.Services.DataTypes.LibrarySourceType.Zip = 2 -> MLQT.Services.DataTypes.LibrarySourceType
 MLQT.Services.DataTypes.LoadedLibrary
@@ -387,6 +392,7 @@ MLQT.Services.DataTypes.LoadedLibrary.DocumentedClassCount.get -> int?
 MLQT.Services.DataTypes.LoadedLibrary.DocumentedClassCount.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.Id.get -> string!
 MLQT.Services.DataTypes.LoadedLibrary.Id.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.IsReadOnly.get -> bool
 MLQT.Services.DataTypes.LoadedLibrary.IsReferenceOnly.get -> bool
 MLQT.Services.DataTypes.LoadedLibrary.IsReferenceOnly.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.IsSingleFile.get -> bool
@@ -395,10 +401,14 @@ MLQT.Services.DataTypes.LoadedLibrary.ModelIds.get -> System.Collections.Generic
 MLQT.Services.DataTypes.LoadedLibrary.ModelIds.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.Name.get -> string!
 MLQT.Services.DataTypes.LoadedLibrary.Name.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.get -> ModelicaGraph.ReadOnlySourceKind?
+MLQT.Services.DataTypes.LoadedLibrary.ReadOnlySource.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.RelativePathInRepository.get -> string?
 MLQT.Services.DataTypes.LoadedLibrary.RelativePathInRepository.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.RepositoryId.get -> string?
 MLQT.Services.DataTypes.LoadedLibrary.RepositoryId.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.ResourceRoot.get -> string?
+MLQT.Services.DataTypes.LoadedLibrary.ResourceRoot.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.Revision.get -> string?
 MLQT.Services.DataTypes.LoadedLibrary.Revision.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.RootDirectory.get -> string!
@@ -410,6 +420,8 @@ MLQT.Services.DataTypes.LoadedLibrary.SupersededBy.get -> string?
 MLQT.Services.DataTypes.LoadedLibrary.SupersededBy.set -> void
 MLQT.Services.DataTypes.LoadedLibrary.TopLevelModelIds.get -> System.Collections.Generic.List<string!>!
 MLQT.Services.DataTypes.LoadedLibrary.TopLevelModelIds.set -> void
+MLQT.Services.DataTypes.LoadedLibrary.Version.get -> string?
+MLQT.Services.DataTypes.LoadedLibrary.Version.set -> void
 MLQT.Services.DataTypes.ModelCheckProgress
 MLQT.Services.DataTypes.ModelCheckProgress.CurrentModel.get -> string!
 MLQT.Services.DataTypes.ModelCheckProgress.CurrentModel.set -> void
@@ -625,8 +637,12 @@ MLQT.Services.ExternalResourceService.GetAllResources() -> System.Collections.Ge
 MLQT.Services.ExternalResourceService.GetModelsReferencingResource(string! resolvedFilePath) -> System.Collections.Generic.List<string!>!
 MLQT.Services.ExternalResourceService.GetResourcesForModel(string! modelId) -> System.Collections.Generic.List<MLQT.Services.DataTypes.ExternalResourceReference!>!
 MLQT.Services.ExternalResourceService.GetWarnings() -> System.Collections.Generic.List<MLQT.Services.DataTypes.ResourceWarning!>!
+MLQT.Services.ExternalResourceService.OnPendingResourceChangesUpdated -> System.Action?
+MLQT.Services.ExternalResourceService.PendingResourceChangeCount.get -> int
+MLQT.Services.ExternalResourceService.RequeueResourceChanges(System.Collections.Generic.IEnumerable<string!>! modelIds) -> void
 MLQT.Services.ExternalResourceService.StartMonitoringResources() -> void
 MLQT.Services.ExternalResourceService.StopMonitoringResources() -> void
+MLQT.Services.ExternalResourceService.TakePendingResourceChanges() -> System.Collections.Generic.IReadOnlyList<string!>!
 MLQT.Services.ExternalToolShutdown
 MLQT.Services.ExternalToolShutdown.EndWith(System.AppDomain! domain) -> void
 MLQT.Services.ExternalToolShutdown.ExternalToolShutdown(OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory! openModelica, DymolaInterface.Interfaces.IDymolaInterfaceFactory! dymola) -> void
@@ -797,8 +813,12 @@ MLQT.Services.Interfaces.IExternalResourceService.GetAllResources() -> System.Co
 MLQT.Services.Interfaces.IExternalResourceService.GetModelsReferencingResource(string! resolvedFilePath) -> System.Collections.Generic.List<string!>!
 MLQT.Services.Interfaces.IExternalResourceService.GetResourcesForModel(string! modelId) -> System.Collections.Generic.List<MLQT.Services.DataTypes.ExternalResourceReference!>!
 MLQT.Services.Interfaces.IExternalResourceService.GetWarnings() -> System.Collections.Generic.List<MLQT.Services.DataTypes.ResourceWarning!>!
+MLQT.Services.Interfaces.IExternalResourceService.OnPendingResourceChangesUpdated -> System.Action?
+MLQT.Services.Interfaces.IExternalResourceService.PendingResourceChangeCount.get -> int
+MLQT.Services.Interfaces.IExternalResourceService.RequeueResourceChanges(System.Collections.Generic.IEnumerable<string!>! modelIds) -> void
 MLQT.Services.Interfaces.IExternalResourceService.StartMonitoringResources() -> void
 MLQT.Services.Interfaces.IExternalResourceService.StopMonitoringResources() -> void
+MLQT.Services.Interfaces.IExternalResourceService.TakePendingResourceChanges() -> System.Collections.Generic.IReadOnlyList<string!>!
 MLQT.Services.Interfaces.IFileMonitoringService
 MLQT.Services.Interfaces.IFileMonitoringService.ClearPendingChanges() -> void
 MLQT.Services.Interfaces.IFileMonitoringService.ClearPendingChanges(string! repositoryId) -> void
@@ -834,6 +854,7 @@ MLQT.Services.Interfaces.ILibraryDataService.AddEncryptedLibraryFromDirectoryAsy
 MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromDirectoryAsync(string! directoryPath) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromFileAsync(string! filePath, string? content = null) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromPathAsync(string! path) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
+MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.Interfaces.ILibraryDataService.AddLibraryFromZipAsync(System.Collections.Generic.Dictionary<string!, string!>! files) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.Interfaces.ILibraryDataService.ClearAllLibraries() -> void
 MLQT.Services.Interfaces.ILibraryDataService.CombinedGraph.get -> ModelicaGraph.DirectedGraph!
@@ -972,6 +993,7 @@ MLQT.Services.LibraryDataService.AddEncryptedLibraryFromDirectoryAsync(string! d
 MLQT.Services.LibraryDataService.AddLibraryFromDirectoryAsync(string! directoryPath) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.LibraryDataService.AddLibraryFromFileAsync(string! filePath, string? content = null) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.LibraryDataService.AddLibraryFromPathAsync(string! path) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
+MLQT.Services.LibraryDataService.AddLibraryFromSourceAsync(ModelicaGraph.IReadOnlyClassSource! source, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.LibraryDataService.AddLibraryFromZipAsync(System.Collections.Generic.Dictionary<string!, string!>! files) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.LoadedLibrary!>!
 MLQT.Services.LibraryDataService.ClearAllLibraries() -> void
 MLQT.Services.LibraryDataService.CombinedGraph.get -> ModelicaGraph.DirectedGraph!
@@ -998,8 +1020,10 @@ MLQT.Services.LibraryDataService.SuppressTreeDataChanged() -> System.IDisposable
 MLQT.Services.LibraryDataService.TotalModelCount.get -> int
 MLQT.Services.LibraryDataService.UpdateChangedFilesAsync(System.Collections.Generic.IReadOnlyCollection<string!>! changedFilePaths, string! rootPath) -> System.Threading.Tasks.Task<System.Collections.Generic.HashSet<string!>!>!
 MLQT.Services.LibraryDiscovery
+MLQT.Services.LibraryPrecedence
 MLQT.Services.LoggingService
 MLQT.Services.MauiPreferencesFile
+MLQT.Services.MlqtServicesJson
 MLQT.Services.ModelChangeClassifier
 MLQT.Services.ModelChangeClassifier.Classify(MLQT.Services.DataTypes.Repository! repository, System.Collections.Generic.IReadOnlyList<RevisionControl.VcsWorkingCopyFile!>! changes) -> System.Collections.Generic.IReadOnlyDictionary<string!, ModelicaParser.Comparison.ClassChangeKind>!
 MLQT.Services.ModelChangeClassifier.Invalidate(string? repositoryId = null) -> void
@@ -1166,6 +1190,7 @@ override MLQT.Services.Interfaces.DictionaryInfo.GetHashCode() -> int
 override MLQT.Services.Interfaces.DictionaryInfo.ToString() -> string!
 override MLQT.Services.OpenModelicaCheckingService.ToolName.get -> string!
 override MLQT.Services.WindowBounds.GetHashCode() -> int
+static MLQT.Services.Checking.Baseline.CommittedPath(string! root) -> string!
 static MLQT.Services.Checking.Baseline.CoverageOf(System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>! findings) -> MLQT.Services.Checking.BaselineCoverage!
 static MLQT.Services.Checking.Baseline.FromFindings(System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>! findings, System.DateTime? createdUtc = null, MLQT.Services.Checking.VcsStamp? stamp = null, ModelicaGraph.StyleCheckingSettings? settings = null, System.Collections.Generic.IReadOnlyList<string!>? dependencies = null) -> MLQT.Services.Checking.Baseline!
 static MLQT.Services.Checking.Baseline.Load(string! path) -> MLQT.Services.Checking.Baseline!
@@ -1260,6 +1285,7 @@ static MLQT.Services.GraphicsEnvironment.Probe() -> string?
 static MLQT.Services.Helpers.DirectoryWritability.CanWriteInto(string? path) -> bool
 static MLQT.Services.Helpers.EmptyDirectoryCleaner.RemoveEmptyDirectories(string? rootPath) -> System.Collections.Generic.IReadOnlyList<string!>!
 static MLQT.Services.Helpers.FileMonitoringServiceHelpers.IsInHiddenDirectory(string! path) -> bool
+static MLQT.Services.Helpers.FileMonitoringServiceHelpers.IsInHiddenDirectory(string! path, string? root) -> bool
 static MLQT.Services.Helpers.FileToFormat.operator !=(MLQT.Services.Helpers.FileToFormat? left, MLQT.Services.Helpers.FileToFormat? right) -> bool
 static MLQT.Services.Helpers.FileToFormat.operator ==(MLQT.Services.Helpers.FileToFormat? left, MLQT.Services.Helpers.FileToFormat? right) -> bool
 static MLQT.Services.Helpers.FormattableLibraries.Select(System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.LoadedLibrary!>! libraries, MLQT.Services.Interfaces.IRepositoryService! repositories, string? filterRepositoryId) -> System.Collections.Generic.IReadOnlyList<MLQT.Services.DataTypes.LoadedLibrary!>!
@@ -1313,6 +1339,10 @@ static MLQT.Services.Interfaces.DictionaryInfo.operator !=(MLQT.Services.Interfa
 static MLQT.Services.Interfaces.DictionaryInfo.operator ==(MLQT.Services.Interfaces.DictionaryInfo? left, MLQT.Services.Interfaces.DictionaryInfo? right) -> bool
 static MLQT.Services.LibraryDiscovery.DiscoverLibraryPaths(string! basePath) -> System.Collections.Generic.IReadOnlyList<string!>!
 static MLQT.Services.LibraryDiscovery.NothingFoundIn(string! path) -> string!
+static MLQT.Services.LibraryDiscovery.ReadLibraryName(string! libraryPath) -> string?
+static MLQT.Services.LibraryPrecedence.ReadableSourceFor(string? encryptedName, System.Collections.Generic.IEnumerable<(string! Name, string! Location)>! readable) -> string?
+static MLQT.Services.LibraryPrecedence.Retires(MLQT.Services.DataTypes.LoadedLibrary! arriving, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.LoadedLibrary!>! loaded) -> System.Collections.Generic.IReadOnlyList<MLQT.Services.DataTypes.LoadedLibrary!>!
+static MLQT.Services.LibraryPrecedence.SameLibrary(string? a, string? b) -> bool
 static MLQT.Services.LoggingService.Debug(string! source, string! message) -> void
 static MLQT.Services.LoggingService.Error(string! source, string! message) -> void
 static MLQT.Services.LoggingService.Error(string! source, string! message, System.Exception! ex) -> void
@@ -1331,9 +1361,11 @@ static MLQT.Services.LoggingService.Shutdown() -> void
 static MLQT.Services.LoggingService.Warn(string! source, string! message) -> void
 static MLQT.Services.MauiPreferencesFile.Locate(string? localApplicationData = null) -> string?
 static MLQT.Services.MauiPreferencesFile.Read(string! path) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+static MLQT.Services.MlqtServicesJson.SettingValues.get -> System.Text.Json.JsonSerializerOptions!
 static MLQT.Services.ProjectNameRules.IsAvailable(string? name, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.ProjectProfile!>! existing, string? ignoringProjectId = null) -> bool
 static MLQT.Services.ProjectNameRules.Normalise(string? name) -> string!
 static MLQT.Services.ProjectNameRules.Validate(string? name, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.ProjectProfile!>! existing, string? ignoringProjectId = null) -> string?
+static MLQT.Services.ReferenceLibraryRules.CandidateName(string! libraryPath, bool isEncrypted) -> string?
 static MLQT.Services.ReferenceLibraryRules.ReasonToSkip(string! libraryPath, bool isEncrypted, string? encryptedName, System.Collections.Generic.IReadOnlyList<MLQT.Services.DataTypes.LoadedLibrary!>! loaded, bool useEncryptedDocumentation) -> string?
 static MLQT.Services.SourceSupersedesEncrypted.ReadableSourceFor(string? encryptedName, System.Collections.Generic.IEnumerable<(string! Name, string! Location)>! readable) -> string?
 static MLQT.Services.SourceSupersedesEncrypted.Retires(MLQT.Services.DataTypes.LoadedLibrary! arriving, System.Collections.Generic.IEnumerable<MLQT.Services.DataTypes.LoadedLibrary!>! loaded) -> System.Collections.Generic.IReadOnlyList<MLQT.Services.DataTypes.LoadedLibrary!>!

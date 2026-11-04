@@ -6,6 +6,7 @@ const ModelicaGraph.Analysis.CheckTimings.Phase.Parse = "parse" -> string!
 const ModelicaGraph.Analysis.CheckTimings.Phase.RulePrefix = "rule:" -> string!
 const ModelicaGraph.Analysis.CheckTimings.Phase.RulesTail = "rules:post" -> string!
 const ModelicaGraph.ExternalStubBuilder.EncryptedPackageExtension = ".moe" -> string!
+const ModelicaGraph.ReadOnlySources.InMemoryPathPrefix = "mlqt-readonly://" -> string!
 const ModelicaGraph.RuleSettingsLayout.Formatting = "Code formatting" -> string!
 const ModelicaGraph.RuleSettingsLayout.Naming = "Naming" -> string!
 const ModelicaGraph.RuleSettingsLayout.ReferenceValidation = "Reference validation" -> string!
@@ -36,6 +37,15 @@ ModelicaGraph.Analysis.ComponentReferences
 ModelicaGraph.Analysis.ComponentReferences.Resolve(string! reference) -> ModelicaGraph.Analysis.ResolvedReference?
 ModelicaGraph.Analysis.ComponentReferences.Start(string! reference) -> ModelicaGraph.Analysis.ReferenceStart?
 ModelicaGraph.Analysis.ComponentValues
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.ConnectionIntegrityAnalyzer() -> void
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.ConnectorSignature
+ModelicaGraph.Analysis.ConnectorSignature.ConnectorSignature(ModelicaGraph.DirectedGraph! graph) -> void
+ModelicaGraph.Analysis.ConnectorSignature.IsExpandable(ModelicaGraph.DataTypes.ModelNode! node) -> bool
+ModelicaGraph.Analysis.ConnectorSignature.Of(ModelicaGraph.DataTypes.ModelNode! connector) -> string?
 ModelicaGraph.Analysis.CoverageCount
 ModelicaGraph.Analysis.CoverageCount.<Clone>$() -> ModelicaGraph.Analysis.CoverageCount!
 ModelicaGraph.Analysis.CoverageCount.Compliant.get -> int
@@ -64,6 +74,18 @@ ModelicaGraph.Analysis.CoverageMetric.Eligible.get -> int
 ModelicaGraph.Analysis.CoverageMetric.Eligible.init -> void
 ModelicaGraph.Analysis.CoverageMetric.Equals(ModelicaGraph.Analysis.CoverageMetric? other) -> bool
 ModelicaGraph.Analysis.CoverageMetric.Percent.get -> double
+ModelicaGraph.Analysis.DependencyCycleAnalyzer
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.DependencyCycleAnalyzer() -> void
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.NeedsDependencyAnalysis.get -> bool
+ModelicaGraph.Analysis.DependencyCycleAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.ExternalResourceAnalyzer
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.ExternalResourceAnalyzer() -> void
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.NeedsDependencyAnalysis.get -> bool
+ModelicaGraph.Analysis.ExternalResourceAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.GraphAnalysisContext
 ModelicaGraph.Analysis.GraphAnalysisContext.DependenciesAnalyzed.get -> bool
 ModelicaGraph.Analysis.GraphAnalysisContext.Graph.get -> ModelicaGraph.DirectedGraph!
@@ -75,6 +97,7 @@ ModelicaGraph.Analysis.GraphAnalysisContext.Timings.set -> void
 ModelicaGraph.Analysis.GraphAnalysisRunner
 ModelicaGraph.Analysis.IGraphAnalyzer
 ModelicaGraph.Analysis.IGraphAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.IGraphAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.IGraphAnalyzer.NeedsDependencyAnalysis.get -> bool
 ModelicaGraph.Analysis.IGraphAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.LibraryMetrics
@@ -139,8 +162,15 @@ ModelicaGraph.Analysis.NameResolution.Node.get -> ModelicaGraph.DataTypes.ModelN
 ModelicaGraph.Analysis.NameResolution.Node.init -> void
 ModelicaGraph.Analysis.NameResolution.Path.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.NameResolution.Path.init -> void
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.NeedsDependencyAnalysis.get -> bool
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.ObsoleteClassAnalyzer() -> void
+ModelicaGraph.Analysis.ObsoleteClassAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.PackageOrderAnalyzer
 ModelicaGraph.Analysis.PackageOrderAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.PackageOrderAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.PackageOrderAnalyzer.PackageOrderAnalyzer() -> void
 ModelicaGraph.Analysis.PackageOrderAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.ReferenceStart
@@ -186,38 +216,70 @@ ModelicaGraph.Analysis.ResolvedReference.Scope.get -> ModelicaGraph.DataTypes.Mo
 ModelicaGraph.Analysis.ResolvedReference.Scope.init -> void
 ModelicaGraph.Analysis.ResolvedReference.Type.get -> ModelicaGraph.DataTypes.ModelNode?
 ModelicaGraph.Analysis.ResolvedReference.Type.init -> void
+ModelicaGraph.Analysis.ResourceProblem
+ModelicaGraph.Analysis.ResourceProblem.<Clone>$() -> ModelicaGraph.Analysis.ResourceProblem!
+ModelicaGraph.Analysis.ResourceProblem.Deconstruct(out ModelicaGraph.Analysis.ResourceProblemKind Kind, out string! ModelId, out string! RawPath, out string! ResolvedPath, out ModelicaParser.DataTypes.ResourceReferenceType ReferenceType) -> void
+ModelicaGraph.Analysis.ResourceProblem.Equals(ModelicaGraph.Analysis.ResourceProblem? other) -> bool
+ModelicaGraph.Analysis.ResourceProblem.IsDirectory.get -> bool
+ModelicaGraph.Analysis.ResourceProblem.Kind.get -> ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblem.Kind.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ModelId.get -> string!
+ModelicaGraph.Analysis.ResourceProblem.ModelId.init -> void
+ModelicaGraph.Analysis.ResourceProblem.RawPath.get -> string!
+ModelicaGraph.Analysis.ResourceProblem.RawPath.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ReferenceType.get -> ModelicaParser.DataTypes.ResourceReferenceType
+ModelicaGraph.Analysis.ResourceProblem.ReferenceType.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ResolvedPath.get -> string!
+ModelicaGraph.Analysis.ResourceProblem.ResolvedPath.init -> void
+ModelicaGraph.Analysis.ResourceProblem.ResourceProblem(ModelicaGraph.Analysis.ResourceProblemKind Kind, string! ModelId, string! RawPath, string! ResolvedPath, ModelicaParser.DataTypes.ResourceReferenceType ReferenceType) -> void
+ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblemKind.AbsolutePath = 1 -> ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblemKind.Missing = 0 -> ModelicaGraph.Analysis.ResourceProblemKind
+ModelicaGraph.Analysis.ResourceProblems
 ModelicaGraph.Analysis.ShadowingAnalyzer
 ModelicaGraph.Analysis.ShadowingAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.ShadowingAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.ShadowingAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.ShadowingAnalyzer.ShadowingAnalyzer() -> void
 ModelicaGraph.Analysis.SingleFilePackageAnalyzer
 ModelicaGraph.Analysis.SingleFilePackageAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.SingleFilePackageAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.SingleFilePackageAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.SingleFilePackageAnalyzer.SingleFilePackageAnalyzer() -> void
 ModelicaGraph.Analysis.TypeResolver
 ModelicaGraph.Analysis.TypeResolver.AncestorCache
 ModelicaGraph.Analysis.TypeResolver.AncestorCache.AncestorCache() -> void
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.Name.get -> string!
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.Analysis.UndeclaredNameAnalyzer.UndeclaredNameAnalyzer() -> void
 ModelicaGraph.Analysis.UnitResolver
 ModelicaGraph.Analysis.UnusedClassAnalyzer
 ModelicaGraph.Analysis.UnusedClassAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.UnusedClassAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.UnusedClassAnalyzer.NeedsDependencyAnalysis.get -> bool
 ModelicaGraph.Analysis.UnusedClassAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.UnusedClassAnalyzer.UnusedClassAnalyzer() -> void
 ModelicaGraph.Analysis.UnusedImportAnalyzer
 ModelicaGraph.Analysis.UnusedImportAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.UnusedImportAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.UnusedImportAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.UnusedImportAnalyzer.UnusedImportAnalyzer() -> void
 ModelicaGraph.Analysis.UnusedMembersAnalyzer
 ModelicaGraph.Analysis.UnusedMembersAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.UnusedMembersAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.UnusedMembersAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.UnusedMembersAnalyzer.UnusedMembersAnalyzer() -> void
 ModelicaGraph.Analysis.UsesHygieneAnalyzer
 ModelicaGraph.Analysis.UsesHygieneAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.UsesHygieneAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.UsesHygieneAnalyzer.NeedsDependencyAnalysis.get -> bool
 ModelicaGraph.Analysis.UsesHygieneAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.UsesHygieneAnalyzer.UsesHygieneAnalyzer() -> void
 ModelicaGraph.Analysis.WithinClauseAnalyzer
 ModelicaGraph.Analysis.WithinClauseAnalyzer.Analyze(ModelicaGraph.Analysis.GraphAnalysisContext! context) -> System.Collections.Generic.IEnumerable<ModelicaParser.DataTypes.Finding!>!
+ModelicaGraph.Analysis.WithinClauseAnalyzer.Name.get -> string!
 ModelicaGraph.Analysis.WithinClauseAnalyzer.RuleIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.Analysis.WithinClauseAnalyzer.WithinClauseAnalyzer() -> void
 ModelicaGraph.ClassImports
@@ -374,6 +436,8 @@ ModelicaGraph.DataTypes.ModelNode.ModelNode(string! id, ModelicaGraph.DataTypes.
 ModelicaGraph.DataTypes.ModelNode.ModelNode(string! id, string! modelName, string! modelicaCode = "") -> void
 ModelicaGraph.DataTypes.ModelNode.NestedChildrenOrder.get -> string![]?
 ModelicaGraph.DataTypes.ModelNode.NestedChildrenOrder.set -> void
+ModelicaGraph.DataTypes.ModelNode.ObsoleteMessage.get -> string?
+ModelicaGraph.DataTypes.ModelNode.ObsoleteMessage.set -> void
 ModelicaGraph.DataTypes.ModelNode.PackageOrder.get -> string![]?
 ModelicaGraph.DataTypes.ModelNode.PackageOrder.set -> void
 ModelicaGraph.DataTypes.ModelNode.ParentModelName.get -> string?
@@ -554,6 +618,14 @@ ModelicaGraph.Interfaces.IGraphNode
 ModelicaGraph.Interfaces.IGraphNode.Id.get -> string!
 ModelicaGraph.Interfaces.IGraphNode.Name.get -> string!
 ModelicaGraph.Interfaces.IGraphNode.NodeType.get -> ModelicaGraph.DataTypes.NodeType
+ModelicaGraph.IReadOnlyClassSource
+ModelicaGraph.IReadOnlyClassSource.Kind.get -> ModelicaGraph.ReadOnlySourceKind
+ModelicaGraph.IReadOnlyClassSource.LibraryName.get -> string!
+ModelicaGraph.IReadOnlyClassSource.LibraryVersion.get -> string?
+ModelicaGraph.IReadOnlyClassSource.Location.get -> string?
+ModelicaGraph.IReadOnlyClassSource.ProvenanceNote.get -> string!
+ModelicaGraph.IReadOnlyClassSource.Read(System.Threading.CancellationToken cancellationToken) -> ModelicaGraph.ReadOnlySourceContent!
+ModelicaGraph.IReadOnlyClassSource.ResourceRoot.get -> string?
 ModelicaGraph.LoadSelectorModificationAnalyzer
 ModelicaGraph.LoadSelectorModificationAnalyzer.LoadSelectorModificationAnalyzer(string! modelId, ModelicaGraph.DirectedGraph! graph) -> void
 ModelicaGraph.LoadSelectorModificationAnalyzer.LoadSelectorModificationAnalyzer(string! modelId, ModelicaGraph.DirectedGraph! graph, ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex! parameters) -> void
@@ -570,7 +642,7 @@ ModelicaGraph.LoadSelectorModificationAnalyzer.Resources.get -> System.Collectio
 ModelicaGraph.ModelAnalyzer
 ModelicaGraph.ModelAnalyzer.ModelAnalyzer(string! modelId, ModelicaGraph.DirectedGraph! graph, ModelicaGraph.Analysis.TypeResolver.AncestorCache? ancestors = null, ModelicaGraph.Analysis.ClassElementResolver.InterfaceCache? interfaces = null) -> void
 ModelicaGraph.ModelAnalyzer.ReferencedModels.get -> System.Collections.Generic.HashSet<string!>!
-ModelicaGraph.ModelAnalyzer.Resources.get -> System.Collections.Generic.List<ModelicaParser.DataTypes.ExternalResourceInfo!>!
+ModelicaGraph.ModelicaGraphJson
 ModelicaGraph.NameSegment
 ModelicaGraph.NameSegment.<Clone>$() -> ModelicaGraph.NameSegment!
 ModelicaGraph.NameSegment.Deconstruct(out string! Text, out int StartIndex, out int StopIndex) -> void
@@ -629,6 +701,28 @@ ModelicaGraph.NamingConventionSettings.TypeNaming.set -> void
 ModelicaGraph.PackageCodeTrimmer
 ModelicaGraph.PackageFileLayout
 ModelicaGraph.PathContainment
+ModelicaGraph.ReadOnlySourceContent
+ModelicaGraph.ReadOnlySourceContent.Documented.get -> System.Collections.Generic.IReadOnlyList<ModelicaParser.ExternalDocs.DocumentedClass!>!
+ModelicaGraph.ReadOnlySourceContent.Documented.init -> void
+ModelicaGraph.ReadOnlySourceContent.ReadOnlySourceContent() -> void
+ModelicaGraph.ReadOnlySourceContent.Texts.get -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.SuppliedText!>!
+ModelicaGraph.ReadOnlySourceContent.Texts.init -> void
+ModelicaGraph.ReadOnlySourceKind
+ModelicaGraph.ReadOnlySourceKind.RecoveredFromDocumentation = 0 -> ModelicaGraph.ReadOnlySourceKind
+ModelicaGraph.ReadOnlySourceKind.Supplied = 1 -> ModelicaGraph.ReadOnlySourceKind
+ModelicaGraph.ReadOnlySourceLoad
+ModelicaGraph.ReadOnlySourceLoad.<Clone>$() -> ModelicaGraph.ReadOnlySourceLoad!
+ModelicaGraph.ReadOnlySourceLoad.Deconstruct(out System.Collections.Generic.IReadOnlyList<string!>! ModelIds, out int Superseded) -> void
+ModelicaGraph.ReadOnlySourceLoad.Equals(ModelicaGraph.ReadOnlySourceLoad? other) -> bool
+ModelicaGraph.ReadOnlySourceLoad.ModelIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.ReadOnlySourceLoad.ModelIds.init -> void
+ModelicaGraph.ReadOnlySourceLoad.ReadOnlySourceLoad(System.Collections.Generic.IReadOnlyList<string!>! ModelIds, int Superseded) -> void
+ModelicaGraph.ReadOnlySourceLoad.Refused.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ModelicaGraph.ReadOnlySourceLoad.Refused.init -> void
+ModelicaGraph.ReadOnlySourceLoad.Superseded.get -> int
+ModelicaGraph.ReadOnlySourceLoad.Superseded.init -> void
+ModelicaGraph.ReadOnlySourceLoader
+ModelicaGraph.ReadOnlySources
 ModelicaGraph.RedeclarationSite
 ModelicaGraph.RedeclarationSite.<Clone>$() -> ModelicaGraph.RedeclarationSite!
 ModelicaGraph.RedeclarationSite.Deconstruct(out string! TargetId, out ModelicaGraph.NameSegment! Name, out int Line) -> void
@@ -699,14 +793,30 @@ ModelicaGraph.RuleSettingsRow.Section.init -> void
 ModelicaGraph.StandardCHeaders
 ModelicaGraph.StyleChecking
 ModelicaGraph.StyleCheckingSettings
+ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.get -> System.Collections.Generic.List<string!>!
+ModelicaGraph.StyleCheckingSettings.AcceptedToolBuiltIns.set -> void
 ModelicaGraph.StyleCheckingSettings.ApplyFormattingRules.get -> bool
 ModelicaGraph.StyleCheckingSettings.ApplyFormattingRules.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckAbsoluteResourcePaths.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckDependencyCycles.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckDependencyCycles.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckDuplicateConnections.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckDuplicateConnections.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckDuplicateDeclarations.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckDuplicateDeclarations.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckDuplicateImports.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckDuplicateImports.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckGrammarConformance.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckGrammarConformance.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckIncompatibleConnections.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckIncompatibleConnections.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckMissingResources.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckMissingResources.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckMissingUnits.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckMissingUnits.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckObsoleteClasses.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckObsoleteClasses.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckPackageOrder.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckPackageOrder.set -> void
 ModelicaGraph.StyleCheckingSettings.ChecksDifferFrom(ModelicaGraph.StyleCheckingSettings! other) -> bool
@@ -714,6 +824,8 @@ ModelicaGraph.StyleCheckingSettings.CheckShadowing.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckShadowing.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckSingleFilePackage.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckSingleFilePackage.set -> void
+ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckUndeclaredNames.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckUnusedClass.get -> bool
 ModelicaGraph.StyleCheckingSettings.CheckUnusedClass.set -> void
 ModelicaGraph.StyleCheckingSettings.CheckUnusedImports.get -> bool
@@ -802,8 +914,18 @@ ModelicaGraph.StyleCheckingSettings.StyleCheckingSettings() -> void
 ModelicaGraph.StyleCheckingSettings.SvnBranchDirectories.get -> System.Collections.Generic.List<string!>!
 ModelicaGraph.StyleCheckingSettings.SvnBranchDirectories.set -> void
 ModelicaGraph.StyleCheckingSettings.ToFormattingOptions() -> ModelicaParser.Visitors.FormattingOptions!
+ModelicaGraph.StyleCheckingSettings.ToJson() -> string!
 ModelicaGraph.StyleCheckingSettings.ValidateModelReferences.get -> bool
 ModelicaGraph.StyleCheckingSettings.ValidateModelReferences.set -> void
+ModelicaGraph.SuppliedText
+ModelicaGraph.SuppliedText.<Clone>$() -> ModelicaGraph.SuppliedText!
+ModelicaGraph.SuppliedText.Deconstruct(out string! RelativePath, out string! Text) -> void
+ModelicaGraph.SuppliedText.Equals(ModelicaGraph.SuppliedText? other) -> bool
+ModelicaGraph.SuppliedText.RelativePath.get -> string!
+ModelicaGraph.SuppliedText.RelativePath.init -> void
+ModelicaGraph.SuppliedText.SuppliedText(string! RelativePath, string! Text) -> void
+ModelicaGraph.SuppliedText.Text.get -> string!
+ModelicaGraph.SuppliedText.Text.init -> void
 override ModelicaGraph.Analysis.CheckTimings.PhaseTiming.GetHashCode() -> int
 override ModelicaGraph.Analysis.CoverageCount.Equals(object? obj) -> bool
 override ModelicaGraph.Analysis.CoverageCount.GetHashCode() -> int
@@ -829,6 +951,9 @@ override ModelicaGraph.Analysis.ResolvedElement.ToString() -> string!
 override ModelicaGraph.Analysis.ResolvedReference.Equals(object? obj) -> bool
 override ModelicaGraph.Analysis.ResolvedReference.GetHashCode() -> int
 override ModelicaGraph.Analysis.ResolvedReference.ToString() -> string!
+override ModelicaGraph.Analysis.ResourceProblem.Equals(object? obj) -> bool
+override ModelicaGraph.Analysis.ResourceProblem.GetHashCode() -> int
+override ModelicaGraph.Analysis.ResourceProblem.ToString() -> string!
 override ModelicaGraph.DataTypes.CoverageFacts.Equals(object? obj) -> bool
 override ModelicaGraph.DataTypes.CoverageFacts.GetHashCode() -> int
 override ModelicaGraph.DataTypes.CoverageFacts.ToString() -> string!
@@ -856,7 +981,6 @@ override ModelicaGraph.ModelAnalyzer.VisitClass_definition(modelicaParser.Class_
 override ModelicaGraph.ModelAnalyzer.VisitComponent_clause(modelicaParser.Component_clauseContext! context) -> object?
 override ModelicaGraph.ModelAnalyzer.VisitComponent_declaration(modelicaParser.Component_declarationContext! context) -> object?
 override ModelicaGraph.ModelAnalyzer.VisitComponent_reference(modelicaParser.Component_referenceContext! context) -> object?
-override ModelicaGraph.ModelAnalyzer.VisitComposition(modelicaParser.CompositionContext! context) -> object?
 override ModelicaGraph.ModelAnalyzer.VisitDeclaration(modelicaParser.DeclarationContext! context) -> object?
 override ModelicaGraph.ModelAnalyzer.VisitElement_modification(modelicaParser.Element_modificationContext! context) -> object?
 override ModelicaGraph.ModelAnalyzer.VisitExtends_clause(modelicaParser.Extends_clauseContext! context) -> object?
@@ -866,6 +990,9 @@ override ModelicaGraph.ModelAnalyzer.VisitType_specifier(modelicaParser.Type_spe
 override ModelicaGraph.NameSegment.Equals(object? obj) -> bool
 override ModelicaGraph.NameSegment.GetHashCode() -> int
 override ModelicaGraph.NameSegment.ToString() -> string!
+override ModelicaGraph.ReadOnlySourceLoad.Equals(object? obj) -> bool
+override ModelicaGraph.ReadOnlySourceLoad.GetHashCode() -> int
+override ModelicaGraph.ReadOnlySourceLoad.ToString() -> string!
 override ModelicaGraph.RedeclarationSite.Equals(object? obj) -> bool
 override ModelicaGraph.RedeclarationSite.GetHashCode() -> int
 override ModelicaGraph.RedeclarationSite.ToString() -> string!
@@ -880,6 +1007,9 @@ override ModelicaGraph.ReferenceSite.ToString() -> string!
 override ModelicaGraph.RuleSettingsRow.Equals(object? obj) -> bool
 override ModelicaGraph.RuleSettingsRow.GetHashCode() -> int
 override ModelicaGraph.RuleSettingsRow.ToString() -> string!
+override ModelicaGraph.SuppliedText.Equals(object? obj) -> bool
+override ModelicaGraph.SuppliedText.GetHashCode() -> int
+override ModelicaGraph.SuppliedText.ToString() -> string!
 static ModelicaGraph.Analysis.CheckTimings.Measure(ModelicaGraph.Analysis.CheckTimings? timings, string! phase, System.Action! work) -> void
 static ModelicaGraph.Analysis.CheckTimings.Measure<T>(ModelicaGraph.Analysis.CheckTimings? timings, string! phase, System.Func<T>! work) -> T
 static ModelicaGraph.Analysis.CheckTimings.MeasureNested<T>(ModelicaGraph.Analysis.CheckTimings? timings, string! phase, System.Func<T>! work) -> T
@@ -892,6 +1022,7 @@ static ModelicaGraph.Analysis.ClassElementResolver.DirectBases(ModelicaGraph.Dir
 static ModelicaGraph.Analysis.ClassElementResolver.ReferencesIn(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! classNode, ModelicaGraph.Analysis.ClassElementResolver.InterfaceCache? interfaces = null, ModelicaGraph.Analysis.TypeResolver.AncestorCache? ancestors = null) -> ModelicaGraph.Analysis.ComponentReferences!
 static ModelicaGraph.Analysis.ClassElementResolver.ResolveReference(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! classNode, string! reference, ModelicaGraph.Analysis.ClassElementResolver.InterfaceCache? interfaces = null, ModelicaGraph.Analysis.TypeResolver.AncestorCache? ancestors = null) -> ModelicaGraph.Analysis.ResolvedReference?
 static ModelicaGraph.Analysis.ComponentValues.For(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode? type, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? instanceModifications) -> System.Func<string!, string?>!
+static ModelicaGraph.Analysis.ConnectorSignature.ConnectorOf(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.Analysis.ResolvedReference? port) -> ModelicaGraph.DataTypes.ModelNode?
 static ModelicaGraph.Analysis.CoverageCount.operator !=(ModelicaGraph.Analysis.CoverageCount? left, ModelicaGraph.Analysis.CoverageCount? right) -> bool
 static ModelicaGraph.Analysis.CoverageCount.operator ==(ModelicaGraph.Analysis.CoverageCount? left, ModelicaGraph.Analysis.CoverageCount? right) -> bool
 static ModelicaGraph.Analysis.CoverageDimensions.ForClass(ModelicaGraph.DataTypes.CoverageDimension tracked, ModelicaGraph.StyleCheckingSettings! settings, string! modelId, ModelicaGraph.DataTypes.CoverageFacts? facts = null) -> ModelicaGraph.DataTypes.CoverageDimension
@@ -918,6 +1049,11 @@ static ModelicaGraph.Analysis.ResolvedElement.operator !=(ModelicaGraph.Analysis
 static ModelicaGraph.Analysis.ResolvedElement.operator ==(ModelicaGraph.Analysis.ResolvedElement? left, ModelicaGraph.Analysis.ResolvedElement? right) -> bool
 static ModelicaGraph.Analysis.ResolvedReference.operator !=(ModelicaGraph.Analysis.ResolvedReference? left, ModelicaGraph.Analysis.ResolvedReference? right) -> bool
 static ModelicaGraph.Analysis.ResolvedReference.operator ==(ModelicaGraph.Analysis.ResolvedReference? left, ModelicaGraph.Analysis.ResolvedReference? right) -> bool
+static ModelicaGraph.Analysis.ResourceProblem.operator !=(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool
+static ModelicaGraph.Analysis.ResourceProblem.operator ==(ModelicaGraph.Analysis.ResourceProblem? left, ModelicaGraph.Analysis.ResourceProblem? right) -> bool
+static ModelicaGraph.Analysis.ResourceProblems.Exists(ModelicaGraph.Interfaces.IGraphNode! node) -> bool
+static ModelicaGraph.Analysis.ResourceProblems.For(ModelicaGraph.DirectedGraph! graph, string! modelId) -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.Analysis.ResourceProblem!>!
+static ModelicaGraph.Analysis.ResourceProblems.Of(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ResourceEdge! edge) -> System.Collections.Generic.IEnumerable<ModelicaGraph.Analysis.ResourceProblem!>!
 static ModelicaGraph.Analysis.SingleFilePackageAnalyzer.ChildrenByParent(ModelicaGraph.DirectedGraph! graph) -> System.Collections.Generic.Dictionary<string!, System.Collections.Generic.List<ModelicaGraph.DataTypes.ModelNode!>!>!
 static ModelicaGraph.Analysis.SingleFilePackageAnalyzer.SplittableChildren(ModelicaGraph.DataTypes.ModelNode! package, System.Collections.Generic.IReadOnlyDictionary<string!, System.Collections.Generic.List<ModelicaGraph.DataTypes.ModelNode!>!>! childrenByParent, System.Func<string!, ModelicaGraph.DataTypes.ModelNode?>! byId) -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.DataTypes.ModelNode!>!
 static ModelicaGraph.Analysis.TypeResolver.IsPredefined(string? typeName) -> bool
@@ -953,6 +1089,8 @@ static ModelicaGraph.FormattingExclusion.Excludes(ModelicaGraph.DataTypes.ModelN
 static ModelicaGraph.FormattingExclusion.OptsOutInSource(ModelicaGraph.DataTypes.ModelNode! model) -> bool
 static ModelicaGraph.GraphBuilder.AnalyzeDependenciesAsync(ModelicaGraph.DirectedGraph! graph, System.Collections.Generic.IEnumerable<ModelicaGraph.DataTypes.LibraryInfo!>? libraries = null, System.Action<string!>? progressLog = null, System.Action<ModelicaGraph.DataTypes.ModelNode!>? postAnalysisAction = null, System.Action<ModelicaGraph.DataTypes.ModelNode!, System.Exception!>? onModelFailed = null) -> System.Threading.Tasks.Task!
 static ModelicaGraph.GraphBuilder.AnalyzeDependenciesForModelsAsync(ModelicaGraph.DirectedGraph! graph, System.Collections.Generic.IReadOnlySet<string!>! modelIds, System.Collections.Generic.IEnumerable<ModelicaGraph.DataTypes.LibraryInfo!>? libraries = null, System.Action<ModelicaGraph.DataTypes.ModelNode!>? postAnalysisAction = null, System.Action<ModelicaGraph.DataTypes.ModelNode!, System.Exception!>? onModelFailed = null) -> System.Threading.Tasks.Task!
+static ModelicaGraph.GraphBuilder.ApplyPackageOrder(ModelicaGraph.DirectedGraph! graph, string! directory) -> string?
+static ModelicaGraph.GraphBuilder.ApplyPackageOrdersAround(ModelicaGraph.DirectedGraph! graph, string! moFilePath) -> System.Collections.Generic.List<string!>!
 static ModelicaGraph.GraphBuilder.GenerateFileId(string! filePath) -> string!
 static ModelicaGraph.GraphBuilder.GenerateModelId(string? parentName, string! modelName) -> string!
 static ModelicaGraph.GraphBuilder.LoadModelicaDirectory(ModelicaGraph.DirectedGraph! graph, string! directoryPath, string! searchPattern = "*.mo", System.IO.SearchOption searchOption = System.IO.SearchOption.TopDirectoryOnly) -> System.Collections.Generic.List<string!>!
@@ -963,6 +1101,7 @@ static ModelicaGraph.GraphBuilder.UpdateGraphForChangedFiles(ModelicaGraph.Direc
 static ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex.Build(ModelicaGraph.DirectedGraph! graph) -> ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex!
 static ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex.operator !=(ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex? left, ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex? right) -> bool
 static ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex.operator ==(ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex? left, ModelicaGraph.LoadSelectorModificationAnalyzer.ParameterIndex? right) -> bool
+static ModelicaGraph.ModelicaGraphJson.Contracts.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver!
 static ModelicaGraph.NameSegment.operator !=(ModelicaGraph.NameSegment? left, ModelicaGraph.NameSegment? right) -> bool
 static ModelicaGraph.NameSegment.operator ==(ModelicaGraph.NameSegment? left, ModelicaGraph.NameSegment? right) -> bool
 static ModelicaGraph.NamingConventionPresets.All.get -> System.Collections.Generic.IReadOnlyList<(string! Name, System.Func<ModelicaGraph.NamingConventionSettings!>! Factory)>!
@@ -976,6 +1115,14 @@ static ModelicaGraph.PackageFileLayout.IsShortClassDefinition(ModelicaGraph.Data
 static ModelicaGraph.PackageFileLayout.StandaloneChildNames(System.Collections.Generic.IEnumerable<ModelicaGraph.DataTypes.ModelNode!>! children, System.Func<ModelicaGraph.DataTypes.ModelNode!, bool>? isShortClass = null) -> System.Collections.Generic.HashSet<string!>!
 static ModelicaGraph.PackageFileLayout.WrittenAsDirectory(ModelicaGraph.DataTypes.ModelNode! child, System.Func<ModelicaGraph.DataTypes.ModelNode!, bool>? isShortClass = null) -> bool
 static ModelicaGraph.PathContainment.IsWithin(string! path, string! root) -> bool
+static ModelicaGraph.ReadOnlySourceLoad.operator !=(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
+static ModelicaGraph.ReadOnlySourceLoad.operator ==(ModelicaGraph.ReadOnlySourceLoad? left, ModelicaGraph.ReadOnlySourceLoad? right) -> bool
+static ModelicaGraph.ReadOnlySourceLoader.Load(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.IReadOnlyClassSource! source, ModelicaGraph.ReadOnlySourceContent! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> ModelicaGraph.ReadOnlySourceLoad!
+static ModelicaGraph.ReadOnlySources.InMemoryRoot(string! libraryName) -> string!
+static ModelicaGraph.ReadOnlySources.IsInMemoryPath(string? path) -> bool
+static ModelicaGraph.ReadOnlySources.IsReadOnlyPath(string? path) -> bool
+static ModelicaGraph.ReadOnlySources.KindOf(ModelicaGraph.DataTypes.ModelNode! node) -> ModelicaGraph.ReadOnlySourceKind?
+static ModelicaGraph.ReadOnlySources.Precedence(ModelicaGraph.ReadOnlySourceKind? kind) -> int
 static ModelicaGraph.RedeclarationSite.operator !=(ModelicaGraph.RedeclarationSite? left, ModelicaGraph.RedeclarationSite? right) -> bool
 static ModelicaGraph.RedeclarationSite.operator ==(ModelicaGraph.RedeclarationSite? left, ModelicaGraph.RedeclarationSite? right) -> bool
 static ModelicaGraph.ReferenceLocator.Locate(ModelicaGraph.DirectedGraph! graph, modelicaParser.Stored_definitionContext! tree, System.Collections.Generic.IEnumerable<string!>? targetIds = null) -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.ReferenceSite!>!
@@ -997,15 +1144,21 @@ static ModelicaGraph.RuleSettingsRow.operator !=(ModelicaGraph.RuleSettingsRow? 
 static ModelicaGraph.RuleSettingsRow.operator ==(ModelicaGraph.RuleSettingsRow? left, ModelicaGraph.RuleSettingsRow? right) -> bool
 static ModelicaGraph.StandardCHeaders.IsSupplied(string! header, bool isSystemInclude) -> bool
 static ModelicaGraph.StyleChecking.CreateBaseClassHasIconCallback(ModelicaGraph.DirectedGraph? graph) -> System.Func<string!, string!, bool>?
+static ModelicaGraph.StyleChecking.CreateClassReferenceLookup(ModelicaGraph.DirectedGraph? graph) -> System.Func<string!, ModelicaParser.StyleRules.ClassReferenceTarget>?
 static ModelicaGraph.StyleChecking.CreateInheritedElementNamesCallback(ModelicaGraph.DirectedGraph? graph, ModelicaGraph.Analysis.CheckTimings? timings = null) -> System.Func<string!, System.Collections.Generic.IReadOnlySet<string!>!>?
 static ModelicaGraph.StyleChecking.CreateSimpleTypeLookup(ModelicaGraph.DirectedGraph? graph) -> System.Func<string!, string!, bool>?
 static ModelicaGraph.StyleChecking.CreateUnitLookup(ModelicaGraph.DirectedGraph? graph) -> System.Func<string!, string!, (bool IsRealDerived, bool TypeHasUnit)>?
 static ModelicaGraph.StyleChecking.RunStyleChecking(ModelicaGraph.DataTypes.ModelDefinition! _currentModel, ModelicaGraph.StyleCheckingSettings! settings, string! fullModelId = "", System.Collections.Generic.IReadOnlySet<string!>? knownModelIds = null, ModelicaParser.SpellChecking.SpellChecker? spellChecker = null, System.Collections.Generic.IReadOnlySet<string!>? knownModelNames = null, bool isExcludedFromFormatting = false, System.Func<string!, string!, bool>? baseClassHasIcon = null, ModelicaParser.StyleRules.NamingConventionConfig? namingConfig = null, System.Func<string!, System.Collections.Generic.IReadOnlySet<string!>!>? inheritedElementNames = null, System.Func<string!, string!, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null, System.Func<string!, string!, bool>? isSimpleType = null) -> System.Collections.Generic.List<ModelicaParser.DataTypes.LogMessage!>!
+static ModelicaGraph.StyleChecking.RunStyleCheckingFindings(ModelicaGraph.DataTypes.ModelDefinition! _currentModel, ModelicaGraph.StyleCheckingSettings! settings, string! fullModelId = "", System.Collections.Generic.IReadOnlySet<string!>? knownModelIds = null, ModelicaParser.SpellChecking.SpellChecker? spellChecker = null, System.Collections.Generic.IReadOnlySet<string!>? knownModelNames = null, bool isExcludedFromFormatting = false, System.Func<string!, string!, bool>? baseClassHasIcon = null, bool honorSuppressions = true, ModelicaParser.StyleRules.NamingConventionConfig? namingConfig = null, System.Func<string!, System.Collections.Generic.IReadOnlySet<string!>!>? inheritedElementNames = null, System.Func<string!, string!, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null, ModelicaGraph.Analysis.CheckTimings? timings = null, System.Func<string!, string!, bool>? isSimpleType = null, System.Func<string!, System.Collections.Generic.IReadOnlyList<ModelicaParser.StyleRules.SuppressionSet!>!>? enclosingSuppressions = null, System.Func<string!, ModelicaParser.StyleRules.ClassReferenceTarget>? classReferenceTarget = null) -> System.Collections.Generic.List<ModelicaParser.DataTypes.Finding!>!
+static ModelicaGraph.StyleCheckingSettings.FromJson(string! json) -> ModelicaGraph.StyleCheckingSettings?
 static ModelicaGraph.StyleCheckingSettings.NothingEnabled() -> ModelicaGraph.StyleCheckingSettings!
+static ModelicaGraph.SuppliedText.operator !=(ModelicaGraph.SuppliedText? left, ModelicaGraph.SuppliedText? right) -> bool
+static ModelicaGraph.SuppliedText.operator ==(ModelicaGraph.SuppliedText? left, ModelicaGraph.SuppliedText? right) -> bool
 static readonly ModelicaGraph.Analysis.CoverageDimensions.Ordered -> System.Collections.Generic.IReadOnlyList<(ModelicaGraph.DataTypes.CoverageDimension Dimension, string! Name)>!
 static readonly ModelicaGraph.Analysis.GraphAnalysisRunner.BuiltIn -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.Analysis.IGraphAnalyzer!>!
 static readonly ModelicaGraph.DataTypes.UnitAttributes.None -> ModelicaGraph.DataTypes.UnitAttributes
 static readonly ModelicaGraph.DataTypes.UnitAttributes.PlainReal -> ModelicaGraph.DataTypes.UnitAttributes
+static readonly ModelicaGraph.ExternalStubBuilder.RecoveredProvenanceNote -> string!
 static readonly ModelicaGraph.PackageFileLayout.ReservedEntries -> System.Collections.Generic.IReadOnlyList<string!>!
 static readonly ModelicaGraph.RuleSettingsLayout.CatalogDrivenCategories -> System.Collections.Generic.IReadOnlySet<string!>!
 ~override ModelicaGraph.Analysis.CheckTimings.PhaseTiming.Equals(object obj) -> bool
