@@ -13,7 +13,12 @@ Usage:
 import base64, hashlib, json, os, re, shutil, subprocess, sys, tempfile, threading, time
 
 # Case matters for the suffixes: "items" ends in "ms" too, and must be compared, not masked.
-TIME_KEY = re.compile(r"(?i:elapsed|duration)|Ms$|Seconds$")
+#
+# `...At` catches a wall-clock instant (a session records `loadedAt` when it loads a library), which
+# is as run-to-run as a duration and was the one field that slipped through: two builds' sessions run
+# seconds apart, so the merged-build comparison failed on nothing but the clock (2026-11-04). The
+# camelCase capital `A` is what keeps it to instant keys - no plain word ends in a capital `At`.
+TIME_KEY = re.compile(r"(?i:elapsed|duration)|Ms$|Seconds$|At$")
 GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
