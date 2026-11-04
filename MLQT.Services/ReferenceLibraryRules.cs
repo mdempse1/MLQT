@@ -38,11 +38,50 @@ public static class ReferenceLibraryRules
     }
 
     /// <summary>
+    /// The name to compare a discovered reference library by, for
+    /// <see cref="ReasonToSkip"/>'s <c>encryptedName</c>: the library's own name, read from the
+    /// library, with its folder or file name as the fallback for a readable one.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Here because the name was being taken from the path, and a tool's library folder
+    /// names almost nothing after the package it holds.</b> <c>Modelica 4.1.0</c> carries the
+    /// release, and <c>Complex.mo</c>, <c>ObsoleteModelica4.mo</c> and the rest are single-file
+    /// libraries with an extension. None of them matched a library already loaded from source, so a
+    /// reference path at a tool's library folder loaded a <i>second readable copy</i> of six of
+    /// MSL's eight libraries beside the user's checkout — and only <c>ModelicaReference</c>, whose
+    /// folder happens to be named after its package, was skipped (2026-11-04).</para>
+    ///
+    /// <para><b>And here rather than in the loading loop</b>, which is this class's whole point: the
+    /// one case that was handled before it was extracted had been written where nothing could reach
+    /// it, and resolving the name inline put a second part of the same decision back there.
+    /// <see cref="RepositoryService"/>'s discovery has always read the real name — which is why it
+    /// does not have this bug — through the same
+    /// <see cref="LibraryDiscovery.ReadLibraryName"/>.</para>
+    ///
+    /// <para>An encrypted library whose name cannot be read still gets null, so it is loaded and
+    /// found to contribute nothing rather than guessed at; a readable one falls back to the path's
+    /// name, which is all there was before.</para>
+    /// </remarks>
+    /// <param name="libraryPath">The directory or file <see cref="LibraryDiscovery"/> turned up.</param>
+    /// <param name="isEncrypted">Whether that path holds an encrypted library.</param>
+    public static string? CandidateName(string libraryPath, bool isEncrypted) =>
+        LibraryDiscovery.ReadLibraryName(libraryPath)
+        ?? (isEncrypted ? null : Path.GetFileName(libraryPath));
+
+    /// <summary>
     /// Why this library should not be loaded, or null to load it.
     /// </summary>
     /// <param name="libraryPath">The directory or file <see cref="LibraryDiscovery"/> turned up.</param>
     /// <param name="isEncrypted">Whether that path holds an encrypted library.</param>
-    /// <param name="encryptedName">Its name, when the vendor documentation gives one.</param>
+    /// <param name="encryptedName">
+    /// The candidate library's name, or null when it cannot be read — in which case it matches
+    /// nothing and is loaded. The parameter is named for the encrypted case it was written for, but
+    /// it is the name of whatever kind of library this is, and it must be the <b>library's</b> name
+    /// rather than its folder's: <see cref="LibraryDiscovery.ReadLibraryName"/> answers both kinds.
+    /// Passed a path's file name instead, a readable library in a versioned directory
+    /// (<c>Modelica 4.1.0</c>) or a single file (<c>Complex.mo</c>) matched no loaded library and a
+    /// second copy of it was loaded.
+    /// </param>
     /// <param name="loaded">Everything already in the graph, in load order.</param>
     /// <param name="useEncryptedDocumentation">The user's setting for reconstructing encrypted libraries.</param>
     /// <returns>A reason to log, or null.</returns>

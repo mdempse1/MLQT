@@ -30,3 +30,4 @@ static MLQT.Services.Checking.Baseline.CommittedPath(string! root) -> string!
 MLQT.Services.Checking.BaselineStatusSnapshot.BaselineFor(string! modelId) -> MLQT.Services.Checking.Baseline?
 MLQT.Services.Checking.BaselineStatusSnapshot.UnreadableBaselines.get -> System.Collections.Generic.IReadOnlyList<string!>!
 MLQT.Services.Checking.BaselineStatusSnapshot.UnreadableBaselines.init -> void
+static MLQT.Services.ReferenceLibraryRules.CandidateName(string! libraryPath, bool isEncrypted) -> string?

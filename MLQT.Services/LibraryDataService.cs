@@ -1261,15 +1261,28 @@ public class LibraryDataService : ILibraryDataService
                     {
                         foreach (var modelId in library.TopLevelModelIds)
                         {
+                            if (byModelId.ContainsKey(modelId))
+                                continue;
+
                             var model = _combinedGraph.GetNode<ModelNode>(modelId);
                             if (model == null)
                                 continue;
 
-                            // First claim wins unless a later library is the one that actually owns the node.
-                            if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
-                                continue;
+                            // **Asked the one way, which this was not.** The rule here was "the last
+                            // claimant of the node's kind wins", and LibraryOwnership.Owner — the
+                            // single answer to who owns a class, and what GetChildModelsAsync below
+                            // already asks — says the *first*. Two readable copies of one library
+                            // are the same kind, so every claimant won in turn and the last one
+                            // took it: a reference library readable at a tool's library folder
+                            // loads after the user's repositories, so the user's own top-level
+                            // class was stamped with the reference copy's library id and a
+                            // repository's browser, which filters the tree by exactly that
+                            // membership, dropped it. Six of MSL's eight libraries vanished from it
+                            // while the log reported all eight loaded, and the package's children
+                            // — attributed through Owner — were owned by the repository all along.
+                            var owner = LibraryOwnership.Owner(_libraries, modelId, _ => model) ?? library;
 
-                            byModelId[modelId] = (model, library);
+                            byModelId[modelId] = (model, owner);
                         }
                     }
                 }

@@ -862,10 +862,14 @@ public partial class MainLayout : IDisposable
                     // reference-library path can name the same folder and a real configuration did
                     // that three times over.
                     var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath);
+
+                    // The name is read from the library, not taken from its path - see
+                    // ReferenceLibraryRules.CandidateName, which is also where the reason it has to
+                    // be is written down.
                     var skip = ReferenceLibraryRules.ReasonToSkip(
                         libraryPath,
                         isEncrypted,
-                        isEncrypted ? EncryptedLibraryDetector.Detect(libraryPath)?.Name : Path.GetFileName(libraryPath),
+                        ReferenceLibraryRules.CandidateName(libraryPath, isEncrypted),
                         LibraryDataService.Libraries,
                         settings.UseEncryptedLibraryDocumentation);
 
