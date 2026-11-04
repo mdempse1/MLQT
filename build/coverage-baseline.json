@@ -126,7 +126,7 @@
                                                                                 "coverage":  71.4,
                                                                                 "lines":  35,
                                                                                 "bar":  80,
-                                                                                "reason":  "70%: driven through a switch with the VCS mocked, which is what holds the monitor off for the checkout (B296). What is left is the failure and cancel paths."
+                                                                                "reason":  "71%: driven through a switch with the VCS mocked, which is what holds the monitor off for the checkout (B296). What is left is the failure and cancel paths."
                                                                             },
                     "MLQT.Shared::MLQT.Shared.Dialogs.VCSHistory":  {
                                                                         "coverage":  0,
@@ -180,7 +180,7 @@
                                                                                         "coverage":  94.5,
                                                                                         "lines":  111,
                                                                                         "bar":  95,
-                                                                                        "reason":  "1.9 points under the bar. The uncovered lines are the rarer BOM and Latin-1 fallback combinations. Reachable from a fixture file; not yet written."
+                                                                                        "reason":  "0.5 points under the bar. The uncovered lines are the rarer BOM and Latin-1 fallback combinations. Reachable from a fixture file; not yet written."
                                                                                     },
                     "ModelicaParser::ModelicaParser.Helpers.ModelicaParserHelper":  {
                                                                                         "coverage":  87.9,
