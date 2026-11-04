@@ -469,4 +469,120 @@ public class SuppressionTests
         Assert.Single(StyleChecking.RunStyleCheckingFindings(inner, ParamRule, "P.M", honorSuppressions: false,
             enclosingSuppressions: id => ClassSuppressions.Enclosing(graph, id)));
     }
+
+    // ---- a class Dymola generated from an FMU waives everything ---------------------------------
+    // Generated code violating most rules, which nobody will fix: any class-level __Dymola_FMU*
+    // annotation counts as __MLQT(suppress="*") without the file being changed.
+
+    private static readonly StyleCheckingSettings ManyRules = new()
+    {
+        ParameterHasDescription = true,
+        ClassHasDescription = true,
+        ImportStatementsFirst = true,
+    };
+
+    private const string FmuImport = """
+        model TestModel
+          parameter Real x = 1.0;
+          import Modelica.Units.SI;
+          annotation(
+            __Dymola_FMUImportVersion="Dymola 2026x Refresh 1",
+            __Dymola_FMUImportPath="Interface.fmu",
+            __Dymola_FMUImportIncludeAllVariables="true",
+            __Dymola_FMUImportIntegrate="false",
+            __Dymola_FMUResourcePath="Resources/Library/FMU/Interface",
+            __Dymola_FMUImportDateTime="Thu Mar 5 16:12:21 2026 GMT");
+        end TestModel;
+        """;
+
+    [Fact]
+    public void ADymolaFmuImport_ReportsNothing()
+    {
+        Assert.Empty(Check(FmuImport, ManyRules));
+    }
+
+    [Fact]
+    public void ADymolaFmuImport_StillReportsWhenSuppressionsAreNotHonoured()
+    {
+        // The guard that the test above is not passing because the fixture breaks nothing.
+        Assert.Contains(Check(FmuImport, ManyRules, honor: false), f => f.RuleId == RuleIds.ParameterDescription);
+        Assert.Contains(Check(FmuImport, ManyRules, honor: false), f => f.RuleId == RuleIds.ClassDescription);
+    }
+
+    [Theory]
+    [InlineData("__Dymola_FMUImportVersion=\"Dymola 2026x\"")]
+    [InlineData("__Dymola_FMUResourcePath=\"Resources/Library/FMU/X\"")]
+    [InlineData("Documentation(info=\"<html></html>\"), __Dymola_FMUImportDateTime=\"Thu Mar 5 2026\"")]
+    public void AnyDymolaFmuAnnotation_MarksTheClass(string annotation)
+    {
+        var set = SetOn("P", annotation);
+
+        Assert.True(set.IsSuppressed(FindingOn("P", RuleIds.ClassDescription)));
+        Assert.True(set.IsSuppressed(FindingOn("P", RuleIds.ParameterDescription, element: "x")));
+    }
+
+    [Theory]
+    [InlineData("__Dymola_experimentSetupOutput(events=false)")]
+    [InlineData("__Dymola_Commands(file=\"fmu.mos\" \"Run\")")]
+    [InlineData("Documentation(info=\"__Dymola_FMUImportPath\")")]
+    public void OtherAnnotations_DoNotMarkTheClass(string annotation)
+    {
+        // A __Dymola_ annotation that is not an FMU import, or the prefix only inside a string, waives nothing.
+        Assert.True(SetOn("P", annotation).IsEmpty);
+    }
+
+    [Fact]
+    public void ADymolaFmuAnnotationOnAComponent_DoesNotMarkTheClass()
+    {
+        var set = ClassSuppressions.For(new ModelDefinition("P", """
+            package P
+              constant Real x = 1 annotation(__Dymola_FMUImportPath="a.fmu");
+            end P;
+            """), "P");
+
+        Assert.False(set.IsSuppressed(FindingOn("P", RuleIds.ClassDescription)));
+    }
+
+    [Fact]
+    public void ADymolaFmuImport_ReachesEveryClassNestedInIt_AndNoNamesake()
+    {
+        var set = SetOn("P", "__Dymola_FMUImportVersion=\"Dymola 2026x\"");
+
+        Assert.True(set.IsSuppressed(FindingOn("P.Inner")));
+        Assert.True(set.IsSuppressed(FindingOn("P.Sub.Deep.Inner", element: "x")));
+        Assert.False(set.IsSuppressed(FindingOn("PX.Inner")));
+    }
+
+    [Fact]
+    public void ADymolaFmuImport_IsNotAListAnyoneWrote()
+    {
+        // The dialog that edits a class's suppress list shows SuppressListOf and writes it back; a "*"
+        // there would be written into a generated file nobody asked to change.
+        var set = SetOn("P", "__Dymola_FMUImportVersion=\"Dymola 2026x\"");
+
+        Assert.False(set.IsEmpty);
+        Assert.Empty(set.SuppressListOf("P"));
+    }
+
+    [Fact]
+    public void ADymolaFmuImport_ReachesAClassInANodeOfItsOwn()
+    {
+        var graph = Graph(("P", "package P\n  annotation(__Dymola_FMUImportPath=\"a.fmu\");\nend P;"));
+        var inner = new ModelDefinition("M", "model M\n  parameter Real k = 1;\nend M;");
+
+        Assert.Empty(StyleChecking.RunStyleCheckingFindings(inner, ParamRule, "P.M",
+            enclosingSuppressions: id => ClassSuppressions.Enclosing(graph, id)));
+    }
+
+    [Fact]
+    public void AddingOrRemovingAnFmuImportMark_ReachesNestedClassesDifferently()
+    {
+        // A reload re-checks the classes below a package only when this says its waivers changed (B499).
+        var plain = SetOn("P", "Documentation(info=\"x\")");
+        var marked = SetOn("P", "__Dymola_FMUImportPath=\"a.fmu\"");
+
+        Assert.False(plain.ReachesNestedClassesAs(marked));
+        Assert.False(marked.ReachesNestedClassesAs(plain));
+        Assert.True(marked.ReachesNestedClassesAs(SetOn("P", "__Dymola_FMUImportPath=\"b.fmu\"")));
+    }
 }

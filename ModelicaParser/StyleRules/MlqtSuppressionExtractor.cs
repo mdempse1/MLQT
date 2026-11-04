@@ -20,18 +20,37 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
     // accepted in any.
     private readonly Dictionary<string, HashSet<string>> _spellingWords = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _reasons = new(StringComparer.Ordinal);
+    // Classes Dymola generated from an FMU: every rule is waived on them and on what they hold.
+    private readonly HashSet<string> _generatedImports = new(StringComparer.Ordinal);
 
     public MlqtSuppressionExtractor(string basePackage = "") : base(basePackage) { }
 
-    public SuppressionSet Build() => new(_classLevel, _inherited, _componentLevel, _preserveFormatting, _spellingWords, _reasons);
+    public SuppressionSet Build() =>
+        new(_classLevel, _inherited, _componentLevel, _preserveFormatting, _spellingWords, _reasons, _generatedImports);
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
         // The class's own annotations only, never the external clause's (B446).
         foreach (var annotation in CompositionAnnotations.ClassLevel(context))
+        {
             ReadMlqt(annotation, component: null);
+            if (IsDymolaFmuImport(annotation))
+                _generatedImports.Add(CurrentModelName);
+        }
         return base.VisitComposition(context);
     }
+
+    /// <summary>The vendor-annotation prefix Dymola writes on every class it generates from an FMU.</summary>
+    internal const string DymolaFmuPrefix = "__Dymola_FMU";
+
+    // Dymola's FMU import writes __Dymola_FMUImportVersion, __Dymola_FMUImportPath,
+    // __Dymola_FMUResourcePath and so on into the generated class's annotation. Generated code nobody
+    // will edit by hand, violating most rules: the class waives everything, as if it carried
+    // __MLQT(suppress="*").
+    private static bool IsDymolaFmuImport(modelicaParser.AnnotationContext annotation) =>
+        annotation.class_modification()?.argument_list()?.argument() is { } args
+        && args.Any(arg => arg.element_modification_or_replaceable()?.element_modification()?.name()?.GetText()
+            .StartsWith(DymolaFmuPrefix, StringComparison.Ordinal) == true);
 
     // Short/der class definitions (e.g. `type Length = Real(unit="m")`) have no composition — their
     // class-level annotation lives in the trailing comment. Read it as a class-level directive.

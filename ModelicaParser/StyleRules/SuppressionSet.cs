@@ -19,6 +19,12 @@ namespace ModelicaParser.StyleRules;
 /// reaches its enclosing packages' sets through <c>ClassSuppressions.Enclosing</c>, and a finding is
 /// waived when any of them waives it.</para>
 ///
+/// <para><b>A class Dymola generated from an FMU waives everything without being told to.</b> Any
+/// class-level annotation argument named <c>__Dymola_FMU…</c> (<c>__Dymola_FMUImportVersion</c>,
+/// <c>__Dymola_FMUImportPath</c>, ...) marks it, and it is treated as carrying
+/// <c>__MLQT(suppress="*")</c>, reaching its nested classes the same way. The file is not changed and
+/// <see cref="SuppressListOf"/> does not report it: it is not a list anyone wrote.</para>
+///
 /// <para>Two directives stay with the class they are written on. A component-level <c>suppress</c>
 /// is about one declaration. <c>preserveOrder</c>/<c>format=false</c> is a decision about how the
 /// formatter writes that class, and the formatter still writes a nested class in a file of its own
@@ -36,6 +42,11 @@ public sealed class SuppressionSet
     private readonly HashSet<string> _preserveFormatting;
     private readonly Dictionary<string, HashSet<string>> _spellingWords;
     private readonly Dictionary<string, string> _reasons;
+    // Classes Dymola generated from an FMU (a class-level __Dymola_FMU* annotation). Waived as if each
+    // carried suppress="*", and like a written class-level list it reaches every class nested in one.
+    // Kept apart from _inherited because SuppressListOf answers what the user wrote, and the dialog
+    // that edits that list would otherwise write a "*" nobody asked for into a generated file.
+    private readonly HashSet<string> _generatedImports;
 
     public static readonly SuppressionSet Empty = new(new(), new(), new(), new(), new(), new());
 
@@ -45,8 +56,10 @@ public sealed class SuppressionSet
         Dictionary<(string, string), HashSet<string>> componentLevel,
         HashSet<string> preserveFormatting,
         Dictionary<string, HashSet<string>> spellingWords,
-        Dictionary<string, string> reasons)
+        Dictionary<string, string> reasons,
+        HashSet<string>? generatedImports = null)
     {
+        _generatedImports = generatedImports ?? [];
         _reasons = reasons;
         _classLevel = classLevel;
         _inherited = inherited;
@@ -57,7 +70,7 @@ public sealed class SuppressionSet
 
     public bool IsEmpty =>
         _classLevel.Count == 0 && _inherited.Count == 0 && _componentLevel.Count == 0 && _preserveFormatting.Count == 0
-        && _spellingWords.Count == 0;
+        && _spellingWords.Count == 0 && _generatedImports.Count == 0;
 
     /// <summary>
     /// True if this finding is suppressed by a directive on its own class or component, or by a
@@ -65,6 +78,11 @@ public sealed class SuppressionSet
     /// </summary>
     public bool IsSuppressed(Finding finding)
     {
+        if (_generatedImports.Count > 0
+            && (_generatedImports.Contains(finding.ModelId)
+                || EnclosingClassesOf(finding.ModelId).Any(_generatedImports.Contains)))
+            return true;
+
         if (_classLevel.TryGetValue(finding.ModelId, out var classTokens) && Matches(classTokens, finding.RuleId))
             return true;
 
@@ -147,7 +165,8 @@ public sealed class SuppressionSet
     /// it.</para>
     /// </summary>
     public bool ReachesNestedClassesAs(SuppressionSet other) =>
-        SameEntries(_inherited, other._inherited) && SameEntries(_spellingWords, other._spellingWords);
+        SameEntries(_inherited, other._inherited) && SameEntries(_spellingWords, other._spellingWords)
+        && _generatedImports.SetEquals(other._generatedImports);
 
     private static bool SameEntries(Dictionary<string, HashSet<string>> a, Dictionary<string, HashSet<string>> b) =>
         a.Count == b.Count

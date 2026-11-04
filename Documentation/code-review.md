@@ -255,7 +255,7 @@ See [Code Formatting — A package that arrives from another tool](code-formatti
 Each style-rule finding row has a **Suppress** button at the end of the row — except a spelling finding, which gets the word-scoped **Ignore** in the correction menu instead, and a diagnostic (`MLQT.Parse.*`, `MLQT.Check.Failed`), which cannot be waived at all because it reports that the results are incomplete; the same action also appears in the Finding Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
 
 - MLQT writes a Modelica vendor annotation, `__MLQT(suppress="<rule id>")`, onto the class or, when the finding is about a specific component, onto that component.
-- The annotation is scoped to the element the finding is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class and every class nested in it (but not for sibling classes in the same file). To waive a rule for a whole sub-package, such as the generated `_fmu` models from a Dymola FMU import, put `__MLQT(suppress="<rule id>")` — or `suppress="*"` — in the package's own annotation; see [CI Quality Gate](ci-quality-gate.md#suppressing-intentional-findings).
+- The annotation is scoped to the element the finding is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class and every class nested in it (but not for sibling classes in the same file). To waive a rule for a whole sub-package of generated code, put `__MLQT(suppress="<rule id>")` — or `suppress="*"` — in the package's own annotation; see [CI Quality Gate](ci-quality-gate.md#suppressing-intentional-findings).
 - The file is re-formatted and **saved to disk immediately**, then re-parsed, and the resolved finding is removed. If the result would fail to parse, the change is aborted and the file is left unchanged.
 
 Because the waiver lives in the source, it survives re-formatting and is honoured everywhere findings are produced — the desktop app, the [`mlqt check` CLI](cli.md), and the [MCP server](mcp-server.md). This is the same suppression mechanism a reviewer or agent can apply headlessly; see the CI walk-through's suppression section in [CI Quality Gate](ci-quality-gate.md). `__MLQT` is a spec-sanctioned vendor annotation, so Dymola and OpenModelica ignore it.
@@ -263,9 +263,8 @@ Because the waiver lives in the source, it survives re-formatting and is honoure
 #### Suppressing Rules for a Whole Class
 
 **Suppress** on a row waives one finding's rule on one class. That isn't enough for generated code
-such as the models Dymola writes when it imports an FMU, whose findings are almost all in the
-records and types nested inside the model: with the model selected, those findings aren't the ones
-the table shows.
+whose findings are almost all in the records and types nested inside a model: with the model
+selected, those findings aren't the ones the table shows.
 
 The **Suppress rules in this class** button on the toolbar opens a dialog for the selected class:
 
@@ -283,9 +282,11 @@ and the classes nested in it are checked again so its findings come back. As wit
 the waiver lives in the source, so `mlqt check` and the MCP server honour it too, and
 `mlqt check --no-suppress` shows everything it hides.
 
-For an FMU import, consider suppressing on the **package** that holds the `_fmu` models rather than
-on each model: Dymola rewrites a model when the FMU is imported again, and the annotation goes with
-it.
+A model Dymola wrote when it imported an FMU needs none of this: any class whose annotation carries a
+`__Dymola_FMU…` entry (`__Dymola_FMUImportVersion`, `__Dymola_FMUImportPath`, ...) is treated as
+suppressing every rule, for itself and every class nested in it, without anything being written into
+the file. For other generated code, consider suppressing on the **package** that holds it rather than
+on each class, so the annotation survives the generator writing a class again.
 
 ### Very Large Classes
 
