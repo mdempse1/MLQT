@@ -38,6 +38,12 @@
     thing you wanted to find. A machine without the tools uses -CoreOnly, which is a decision rather
     than a shrug.
 
+    A failing suite's whole output is kept, at AllTestResults/failures/<Suite>.log, and the run names
+    the file. Only the "failed <name>" lines are printed, which is what reading "did this pass?"
+    needs - but those lines were once all that survived, and B523's record of three intermittent
+    failures says what that cost: "the failures' messages were not kept - the output had been
+    filtered". An intermittent failure is diagnosed from the run that failed or not at all.
+
 .PARAMETER Coverage
     Also collect coverage and print a per-assembly summary, over every assembly we own. This is the
     only way to see what the live-tool tests add to DymolaInterface and OpenModelicaInterface: CI runs
@@ -258,6 +264,14 @@ if ($Coverage -and (Test-Path $ResultsDirectory)) {
     Remove-Item $ResultsDirectory -Recurse -Force
 }
 
+# Where a failing suite's whole output is kept, cleared first for the same reason as the cobertura
+# files above: a log from an earlier run read as this one's is worse than no log, because the suite
+# it names may be green now. Cleared whether or not -Coverage wiped the directory it sits in.
+$failureLogDirectory = Join-Path $ResultsDirectory 'failures'
+if (Test-Path $failureLogDirectory) {
+    Remove-Item $failureLogDirectory -Recurse -Force
+}
+
 $results = foreach ($suite in $suites) {
     Write-Host "  $($suite.Name)" -NoNewline
 
@@ -288,10 +302,26 @@ $results = foreach ($suite in $suites) {
         Write-Host "  $count of $total  ($([int]$elapsed.TotalSeconds)s)" -ForegroundColor $colour
         if ($suite.Why) { Write-Host "      $($suite.Why)" -ForegroundColor DarkGray }
 
-        # Only the failing assertions, not the whole run.
+        # The failing assertions on screen, which is all that reading "did this pass?" needs.
         $output | Select-String '^\s*failed ' | Select-Object -First 10 | ForEach-Object {
             Write-Host "      $($_.Line.Trim())" -ForegroundColor DarkGray
         }
+
+        # And the whole run kept, which is what diagnosing it needs.
+        #
+        # **B523 twice over.** Three intermittent failures were reported against this script on
+        # 2026-10-29 and its record says plainly what stopped anyone learning from them: "the
+        # failures' messages were not kept - the output had been filtered". It was filtered here, by
+        # the lines above - $output held the whole run and nothing but the "failed <name>" lines
+        # survived, so every assertion message, stack and cancellation reason went with it. On
+        # 2026-11-04 the same three failed again, in a full suite run before a release, and again
+        # left nothing to read: the only evidence was that they passed when run again, which is the
+        # one thing B523 says not to settle for. Keeping the output costs a file per failing suite
+        # and is the difference between a finding and a shrug.
+        New-Item -ItemType Directory -Force -Path $failureLogDirectory | Out-Null
+        $log = Join-Path $failureLogDirectory "$($suite.Name).log"
+        Set-Content -Path $log -Value ($output | Out-String)
+        Write-Host "      whole output kept: $log" -ForegroundColor DarkGray
     }
 
     [pscustomobject]@{

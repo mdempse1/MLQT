@@ -225,4 +225,36 @@ public class TestRunnerScriptTests
         // when Playwright adds a platform is the whole change.
         Assert.Contains("\"ubuntu$NewestSupported-x64\"", script);
     }
+
+    [Fact]
+    public void AFailingSuitesWholeOutputIsKept()
+    {
+        // **B523, which this script's own filtering is what cost.** Three intermittent failures were
+        // reported against a full run on 2026-10-29 and the entry says what stopped anyone learning
+        // from them: "the failures' messages were not kept - the output had been filtered". The
+        // filtering is here - the run is captured whole into $output and only its "failed <name>"
+        // lines were printed - so the messages, stacks and cancellation reasons went nowhere. The
+        // same three failed again on 2026-11-04, in a pre-release run, and again left nothing but
+        // the fact that they passed when run again, which B523 says not to settle for.
+        //
+        // Asserted because an intermittent failure can only be diagnosed from the run that failed:
+        // lose the output once and the next recurrence is months away. The screen summary is checked
+        // too, so keeping the file is not mistaken for a licence to print the whole run instead.
+        var script = Script();
+
+        Assert.Contains("Set-Content -Path $log -Value ($output | Out-String)", script);
+        Assert.Contains("$failureLogDirectory = Join-Path $ResultsDirectory 'failures'", script);
+
+        // Named on screen, or the file is kept where nobody looks.
+        Assert.Contains("whole output kept: $log", script);
+
+        // Still only the failing assertions on screen.
+        Assert.Contains("Select-String '^\\s*failed '", script);
+
+        // And cleared at the start of a run: a log naming a suite that is green now is worse than
+        // none, and the directory it lives in is only wiped when -Coverage is passed.
+        var cleared = Regex.Match(script,
+            @"if \(Test-Path \$failureLogDirectory\) \{\n\s*Remove-Item \$failureLogDirectory -Recurse -Force\n\s*\}");
+        Assert.True(cleared.Success, "run-all-tests.ps1 no longer clears last run's failure logs");
+    }
 }
