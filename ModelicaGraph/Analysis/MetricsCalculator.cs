@@ -106,6 +106,11 @@ public static class MetricsCalculator
             if (settings is not null)
                 mask = CoverageDimensions.ForClass(mask, settings, model.Id, facts);
 
+            // On no dimension at all - a class Dymola generated from an FMU - contributes nothing,
+            // its components included.
+            if (mask == CoverageDimension.None)
+                continue;
+
             // Accumulated from the narrowed mask, and only for a class that was measured, because
             // `tracked` decides which rows the report has. Both halves matter: counting a dimension
             // the class was taken off would put back the row the narrowing exists to remove, and
@@ -188,6 +193,9 @@ public sealed class CoverageMeasurer
     private readonly CoverageDimension _dimensions;
     private readonly bool _honorSuppressions;
 
+    // For the enclosing classes' directives (IsGeneratedImport).
+    private readonly DirectedGraph _graph;
+
     // Whether a declared type is Real-derived and carries a unit, asked per (class, type). The
     // MissingUnits rule's own lookup, with both of the caches B174 found the time in: the question
     // memoised, not only the answer, and each class's extends chain collected once rather than once
@@ -226,6 +234,7 @@ public sealed class CoverageMeasurer
         bool honorSuppressions = true,
         Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null)
     {
+        _graph = graph;
         _dimensions = dimensions;
         _honorSuppressions = honorSuppressions;
         _unitLookup = unitLookup ?? StyleChecking.CreateUnitLookup(graph)!;
@@ -359,8 +368,22 @@ public sealed class CoverageMeasurer
             ConstantsWithDescription: constantWithDesc,
             Measured: needed,
             Failed: MeasureLayout(tree, model.Id, needed),
-            FormattingPreserved: PreservesFormatting(model));
+            FormattingPreserved: PreservesFormatting(model))
+        {
+            GeneratedImport = IsGeneratedImport(model),
+        };
     }
+
+    /// <summary>
+    /// Whether Dymola generated the class from an FMU, or generated a class it is nested in - read as
+    /// the checker reads it, from the class's own directives and its enclosing classes', and like
+    /// <see cref="PreservesFormatting"/> only when this run honours them. A record nested in an FMU
+    /// model is usually a node of its own, whose source does not hold the model's annotation.
+    /// </summary>
+    private bool IsGeneratedImport(ModelNode model) =>
+        _honorSuppressions
+        && (ClassSuppressions.For(model.Definition, model.Id).GeneratedImportOf(model.Id) is not null
+            || ClassSuppressions.Enclosing(_graph, model.Id).Any(s => s.GeneratedImportOf(model.Id) is not null));
 
     /// <summary>
     /// Whether the class opted out of formatting in its own source, with <c>__MLQT(format=false)</c>

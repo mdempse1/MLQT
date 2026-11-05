@@ -1221,6 +1221,11 @@ public partial class CodeReview : IAsyncDisposable
             // carrying a run of comments inside an equation section is quadratic, and was measured
             // at 69 seconds for 4,000 of them (B185, and B235 for the cause). The tree's colouring
             // replaces it when the parse lands.
+            // When the class first appeared, if the lexer's paint got there before the parse: that is
+            // when the user stopped waiting, so it is what "slow" is judged by. Written and read on
+            // the dispatcher only.
+            long? firstPaintMs = null;
+
             if ((modelNode.Definition.ModelicaCode?.Length ?? 0) > PaintBeforeParsingAbove)
             {
                 _ = Task.Run(() => FirstPaint(modelNode, graph, showHighlighted, showAnnotations, excludeClassDefs))
@@ -1235,6 +1240,8 @@ public partial class CodeReview : IAsyncDisposable
                             // Dropped if a later render was asked for, or if the parse beat it here.
                             if (!TryApplyQuickPaint(generation, quick.Result))
                                 return;
+
+                            firstPaintMs = totalSw.ElapsedMilliseconds;
 
                             LoggingService.Debug("CodeReview",
                                 $"  First paint from the lexer: {quick.Result.Lines.Count} lines");
@@ -1269,12 +1276,19 @@ public partial class CodeReview : IAsyncDisposable
                         // One line, and only for a render someone would have waited for. This was six
                         // lines for every class opened, most of a working day's log, and nothing in
                         // them mattered unless the class had been slow to appear.
-                        if (totalSw.ElapsedMilliseconds >= SlowRenderMs)
+                        //
+                        // Judged by when the class first appeared. A class big enough to be painted from
+                        // the lexer first is on screen long before its parse lands, and reporting the
+                        // parse as a slow render blamed a class the user was already reading.
+                        var appearedMs = firstPaintMs ?? totalSw.ElapsedMilliseconds;
+                        if (appearedMs >= SlowRenderMs)
                             LoggingService.Info("CodeReview",
                                 $"Slow to show {selectedModelId} ({classType}, {codeLength} chars, "
                                 + $"{shown.Lines.Count} lines, {shown.Elision.Ranges.Count} hidden range(s), "
-                                + $"parse tree cached={hadParsedCode}): rendered at {renderedMs}ms, "
-                                + $"waited {waitedMs}ms for the UI thread, {totalSw.ElapsedMilliseconds}ms in all");
+                                + $"parse tree cached={hadParsedCode}): "
+                                + (firstPaintMs is { } painted ? $"first painted at {painted}ms, " : "")
+                                + $"rendered at {renderedMs}ms, waited {waitedMs}ms for the UI thread, "
+                                + $"{totalSw.ElapsedMilliseconds}ms in all");
                     });
                 }
                 catch (Exception ex)
@@ -2713,7 +2727,16 @@ document.head.appendChild(style);
         var (currentList, currentReason, enclosingNotes) = await Task.Run(() =>
         {
             var own = ClassSuppressions.For(model.Definition, classId);
-            return (own.SuppressListOf(classId).ToList(), own.ReasonFor(classId), EnclosingSuppressionNotes(graph, classId));
+
+            // A class Dymola generated from an FMU waives everything without a list (it is not one
+            // anybody wrote), so without this the dialog showed nothing suppressed on a class with
+            // no findings, and nothing to say why.
+            var notes = EnclosingSuppressionNotes(graph, classId);
+            if (own.GeneratedImportOf(classId) is { } generated)
+                notes = [GeneratedImportNote(generated), .. notes];
+
+            return (own.SuppressListOf(classId).ToList(), own.ReasonFor(classId),
+                (IReadOnlyList<string>)notes.Distinct(StringComparer.Ordinal).ToList());
         });
 
         var parameters = new DialogParameters<SuppressRulesDialog>
@@ -2804,12 +2827,21 @@ document.head.appendChild(style);
             if (graph.GetNode<ModelNode>(enclosing)?.Definition is not { } definition)
                 continue;
 
-            var list = ClassSuppressions.For(definition, enclosing).SuppressListOf(enclosing);
+            var set = ClassSuppressions.For(definition, enclosing);
+            if (set.GeneratedImportOf(enclosing) == enclosing)
+                notes.Add(GeneratedImportNote(enclosing));
+
+            var list = set.SuppressListOf(enclosing);
             if (list.Count > 0)
                 notes.Add($"{enclosing} already suppresses here: {string.Join(", ", list)}");
         }
         return notes;
     }
+
+    /// <summary>What the suppress dialog says about a class Dymola generated from an FMU.</summary>
+    internal static string GeneratedImportNote(string generatedClassId) =>
+        $"{generatedClassId} was generated by Dymola from an FMU, so every rule is already suppressed here "
+        + "without any annotation";
 
     /// <summary>
     /// Waive the current finding's rule by writing a <c>__MLQT(suppress="…")</c> annotation onto the

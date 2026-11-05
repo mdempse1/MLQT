@@ -653,7 +653,8 @@ end Foo;
   carries any `__Dymola_FMU…` entry (`__Dymola_FMUImportVersion`, `__Dymola_FMUImportPath`,
   `__Dymola_FMUResourcePath`, ...) is treated as if it carried `__MLQT(suppress="*")`, together with
   every class nested in it. Nothing is written into the file, so re-importing the FMU loses nothing,
-  and `mlqt check --no-suppress` still reports everything in it.
+  and `mlqt check --no-suppress` still reports everything in it. Such a class is also left out of the
+  coverage figures (an audit run counts it again) and is never reformatted.
 
   A waiver on a package reaches down, never up or sideways: a class elsewhere in the library is
   still reported, and `mlqt check --no-suppress` shows everything the package annotation hides.

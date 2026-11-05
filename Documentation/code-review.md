@@ -285,7 +285,9 @@ the waiver lives in the source, so `mlqt check` and the MCP server honour it too
 A model Dymola wrote when it imported an FMU needs none of this: any class whose annotation carries a
 `__Dymola_FMU…` entry (`__Dymola_FMUImportVersion`, `__Dymola_FMUImportPath`, ...) is treated as
 suppressing every rule, for itself and every class nested in it, without anything being written into
-the file. For other generated code, consider suppressing on the **package** that holds it rather than
+the file. It is also left out of the [coverage figures](metrics-dashboard.md) and out of every
+[formatting pass](code-formatting.md#models-generated-from-an-fmu). Open the dialog on such a class,
+or on a class inside one, and it says so. For other generated code, consider suppressing on the **package** that holds it rather than
 on each class, so the annotation survives the generator writing a class again.
 
 ### Very Large Classes

@@ -202,6 +202,51 @@ public class IncrementalFormatterWriteTests : IDisposable
     }
 
     [Fact]
+    public async Task AFileAlreadyFormatted_IsNotWrittenAgain()
+    {
+        // Every startup formats every changed file. Already formatted by the last one, each was
+        // written again anyway - 17,372 writes for one working copy - and each new write time made
+        // the cached change classification of that file stale.
+        var (graph, path) = LoadPackage(PackageWithTwoClasses);
+        Assert.Single(await IncrementalFormatter.FormatAndWriteAsync(graph, new[] { path }, Formatting()));
+        var formatted = File.ReadAllBytes(path);
+        var writtenAt = DateTime.UtcNow.AddMinutes(-5);
+        File.SetLastWriteTimeUtc(path, writtenAt);
+
+        var again = LoadPackageFrom(path);
+        var written = await IncrementalFormatter.FormatAndWriteAsync(again, new[] { path }, Formatting());
+
+        Assert.Empty(written);
+        Assert.Equal(formatted, File.ReadAllBytes(path));
+        Assert.Equal(writtenAt, File.GetLastWriteTimeUtc(path));
+    }
+
+    [Fact]
+    public async Task AFileAlreadyFormatted_StillBringsAGraphThatHadNotCaughtUpWithIt()
+    {
+        // The write is skipped, the refresh is not: the graph may still hold the file as it was before
+        // an edit the file already has - formatted before a commit, say, ahead of the monitor.
+        var (graph, path) = LoadPackage(PackageWithTwoClasses);
+        var formattedGraph = LoadPackageFrom(path);
+        await IncrementalFormatter.FormatAndWriteAsync(formattedGraph, new[] { path }, Formatting());
+
+        // `graph` still has the unformatted text; the file on disk is formatted.
+        var written = await IncrementalFormatter.FormatAndWriteAsync(graph, new[] { path }, Formatting());
+
+        Assert.Empty(written);
+        var reloaded = LoadPackageFrom(path);
+        foreach (var id in new[] { "P", "P.A", "P.B" })
+            Assert.Equal(reloaded.GetNode<ModelNode>(id)!.Definition.ModelicaCode, graph.GetNode<ModelNode>(id)!.Definition.ModelicaCode);
+    }
+
+    private static DirectedGraph LoadPackageFrom(string path)
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, path, File.ReadAllText(path));
+        return graph;
+    }
+
+    [Fact]
     public async Task AClassWhoseFileCouldNotBeWritten_KeepsTheCodeOnDisk()
     {
         // The B374 shape on this path: the stored code was replaced before the write was attempted,

@@ -490,30 +490,123 @@ public class ModelChangeClassifierTests : IDisposable
     }
 
     [Fact]
-    public void TwoCallersAskingAboutOneRepositoryAtOnce_ReadEachFileOnce()
+    public void TwoRepositoriesInOneCheckoutAskingAtOnce_BothAnswer_ReadingEachFileOnce()
     {
-        // Every open tree asks after each notification. Each used to read every committed version for
-        // itself, which is why two svn processes were running side by side.
+        // Each used to read every committed version for itself, which is why two svn processes were
+        // running side by side. The second waits for the first and finds its reads in the cache.
         _repositories
-            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Setup(r => r.GetFileContentAtRevision(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns<string, string, string?>((_, path, _) =>
             {
                 Thread.Sleep(50);
                 return Committed.Replace("Resistor", Path.GetFileNameWithoutExtension(path));
             });
         var changes = ManyChangedFiles(8);
+        var sibling = Sibling();
 
         using var start = new Barrier(2);
-        var callers = Enumerable.Range(0, 2)
-            .Select(_ => Task.Run(() => { start.SignalAndWait(); return _classifier.Classify(_repository, changes); },
+        var callers = new[] { _repository, sibling }
+            .Select(repository => Task.Run(() => { start.SignalAndWait(); return _classifier.Classify(repository, changes); },
                 TestContext.Current.CancellationToken))
             .ToArray();
         Task.WaitAll(callers, TestContext.Current.CancellationToken);
 
+        Assert.Equal(8, callers[0].Result.Count);
         Assert.Equal(callers[0].Result, callers[1].Result);
         for (var i = 0; i < 8; i++)
             _repositories.Verify(
-                r => r.GetFileContentAtRevision("repo-1", $"R{i}.mo", It.IsAny<string?>()), Times.Once);
+                r => r.GetFileContentAtRevision(It.IsAny<string>(), $"R{i}.mo", It.IsAny<string?>()), Times.Once);
+    }
+
+    [Fact]
+    public void ARequestOvertakenByANewerOneForTheSameRepository_StopsAndAnswersNotAsked()
+    {
+        // Every refresh of a tree asks again, and the browser drops all but the newest answer. The
+        // older request used to queue for the gate holding a thread, and then run in full.
+        var firstRead = new ManualResetEventSlim();
+        var release = new ManualResetEventSlim();
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string, string?>((_, path, _) =>
+            {
+                firstRead.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+                return Committed.Replace("Resistor", Path.GetFileNameWithoutExtension(path));
+            });
+        var changes = ManyChangedFiles(64);
+        var token = TestContext.Current.CancellationToken;
+
+        var older = Task.Run(() => _classifier.Classify(_repository, changes), token);
+        Assert.True(firstRead.Wait(TimeSpan.FromSeconds(10), token));
+        var newer = Task.Run(() => _classifier.Classify(_repository, changes), token);
+
+        // Give the newer one time to take its ticket before the older one's reads come back.
+        Thread.Sleep(200);
+        release.Set();
+        Task.WaitAll([older, newer], token);
+
+        Assert.Empty(older.Result);
+        Assert.Equal(64, newer.Result.Count);
+        // What the older one read was kept for the newer one: nothing was read twice.
+        for (var i = 0; i < 64; i++)
+            _repositories.Verify(
+                r => r.GetFileContentAtRevision("repo-1", $"R{i}.mo", It.IsAny<string?>()), Times.AtMostOnce());
+    }
+
+    // ---------------------------------------------------------------- a failed read
+
+    [Fact]
+    public void AModifiedFileWhoseCommittedVersionCannotBeRead_IsNotCalledAdded_AndIsAskedAgain()
+    {
+        // Version control answers null both for "there is no committed version" and for a read that
+        // failed. A modified file has one, so null here is a failure - and taken as "none" every class
+        // in it read as Added, the simulation marker, and was cached until the revision changed.
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns((string?)null);
+        Write("Resistor.mo", Committed);
+
+        Assert.Equal(ClassChangeKind.Unknown, Classify(Change("Resistor.mo"))["MyLib.Resistor"]);
+
+        // And the next refresh tries again, finding it this time.
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(Committed);
+        Assert.Equal(ClassChangeKind.Unchanged, Classify(Change("Resistor.mo"))["MyLib.Resistor"]);
+    }
+
+    [Fact]
+    public void ARenamedFileWithNoOldPath_HasNoCommittedVersion_AndItsClassesAreAdded()
+    {
+        // The control: where nothing need be committed, null still means "none".
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns((string?)null);
+        Write("New.mo", Committed);
+
+        var kinds = Classify(new VcsWorkingCopyFile { Path = "New.mo", Status = VcsFileStatus.Renamed });
+
+        Assert.Equal(ClassChangeKind.Added, kinds["MyLib.Resistor"]);
+    }
+
+    [Fact]
+    public void NewFiles_DoNotCountTowardsTheLimit()
+    {
+        // They cost no read. A pile of generated files beside two edited ones used to switch the
+        // comparison off for the edited ones.
+        CommitEachFile();
+        var classifier = new ModelChangeClassifier(_repositories.Object, maxFilesToClassify: 2);
+        Write("New1.mo", Committed.Replace("Resistor", "New1"));
+        Write("New2.mo", Committed.Replace("Resistor", "New2"));
+        Write("New3.mo", Committed.Replace("Resistor", "New3"));
+
+        var kinds = classifier.Classify(_repository,
+            [.. ManyChangedFiles(2),
+             Change("New1.mo", VcsFileStatus.Untracked), Change("New2.mo", VcsFileStatus.Untracked),
+             Change("New3.mo", VcsFileStatus.Added)]);
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, kinds["MyLib.R0"]);
+        Assert.Equal(ClassChangeKind.Added, kinds["MyLib.New1"]);
     }
 
     // ---------------------------------------------------------------- two repositories, one checkout

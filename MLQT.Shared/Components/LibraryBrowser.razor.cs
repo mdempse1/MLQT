@@ -206,9 +206,11 @@ public partial class LibraryBrowser : IDisposable
             _modelVcsStatus = new Dictionary<string, VcsFileStatus>();
             _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
             _descendantChangeKinds = new Dictionary<string, ClassChangeKind>();
-            _filteredDescendantKinds.Clear();
+            _changeCounts = default;
+            _filteredDescendantKinds = new Dictionary<string, ClassChangeKind>();
             _changeFilter = ChangeFilter.None;
             _filteredTreeItems = new List<TreeItemData<ModelNode>>();
+            ++_filterGeneration;
             return;
         }
 
@@ -223,15 +225,23 @@ public partial class LibraryBrowser : IDisposable
         // much longer - and drawing the markers only once both were in left the old ones on screen
         // after a commit, or a revert, until the slow half had finished.
         //
-        // Both on a background thread: a status query whose cache has expired asks SVN, and the
-        // classification reads from the repository.
-        var (changes, modelStatus) = await Task.Run(() =>
+        // **This waits for the first answer only.** The second is left running and applies itself
+        // when it arrives. Every VCS operation calls this, and holds the VCS lock while it does -
+        // waiting for the classification kept every VCS button in the app disabled for as long as
+        // the comparison took, for an answer none of them use.
+        //
+        // Everything that walks the changes is on a background thread, the rollups and the chip
+        // counts included: with tens of thousands of changed classes they are not free, and this
+        // thread is the window's.
+        var previousKinds = _modelChangeKinds;   // replaced, never changed in place
+        var lookup = LibraryDataService.GetModelById;
+        var first = await Task.Run(() =>
         {
             var changes = RepositoryService.GetWorkingCopyChanges(repoId);
             var status = new Dictionary<string, VcsFileStatus>();
 
             if (changes == null || changes.Count == 0)
-                return (changes, status);
+                return new StatusAnswer(changes, status, EmptyKinds, new Dictionary<string, ClassChangeKind>(), default);
 
             foreach (var change in changes)
             {
@@ -251,53 +261,114 @@ public partial class LibraryBrowser : IDisposable
                 }
             }
 
-            return (changes, status);
+            // Until the classification comes back, a class keeps the kind it had if it is still
+            // changed, and a class no longer changed loses its marker now. Committing takes the chips
+            // off at once; an edit that turned a cosmetic change into a simulation one shows the old
+            // kind for as long as the comparison takes, which is what it showed before the edit.
+            var kinds = KindsStillChanged(previousKinds, status);
+            return new StatusAnswer(changes, status, kinds, DescendantKinds(status.Keys, kinds, lookup),
+                ChangeCounts.Of(status, kinds));
         });
 
-        if (generation != _statusGeneration || Repository?.Id != repoId)
-            return;
-
-        var hasChanges = changes is { Count: > 0 };
-        _hasUncommittedChanges = hasChanges;
-        _modelVcsStatus = modelStatus;
-
-        // Until the classification comes back, a class keeps the kind it had if it is still changed,
-        // and a class no longer changed loses its marker now. Committing takes the chips off at
-        // once; an edit that turned a cosmetic change into a simulation one shows the old kind for
-        // as long as the comparison takes, which is the same as it showed before the edit.
-        _modelChangeKinds = KindsStillChanged(_modelChangeKinds, modelStatus);
-        _descendantChangeKinds = DescendantKinds(modelStatus.Keys, _modelChangeKinds, LibraryDataService.GetModelById);
-
-        // A filter with nothing left to filter is withdrawn along with its control, or committing
-        // while "Affects simulation" is selected leaves the tree hidden behind an empty list and no
-        // visible way back to it. The same applies above, where a repository just marked reference
-        // only takes its changes - and its filter - out of the browser mid-session.
-        if (!hasChanges)
-            _changeFilter = ChangeFilter.None;
-
-        RefreshFilteredTree();
-
-        if (!hasChanges)
-            return;
-
-        StateHasChanged();
-
-        // A copy for the background thread. modelStatus is _modelVcsStatus now, and the dispatcher
-        // may clear or replace that - a repository ticked reference only - while this runs.
-        var changedIds = modelStatus.Keys.ToList();
-        var (kinds, descendants) = await Task.Run(() =>
+        // Applied through the dispatcher, for the reason RefreshFilteredTreeAsync gives.
+        await InvokeAsync(() =>
         {
-            var changeKinds = ModelChangeClassifier.Classify(repository, changes!);
-            return (changeKinds, DescendantKinds(changedIds, changeKinds, LibraryDataService.GetModelById));
+            if (generation != _statusGeneration || Repository?.Id != repoId)
+                return;
+
+            var hasChanges = first.Changes is { Count: > 0 };
+            _hasUncommittedChanges = hasChanges;
+            _modelVcsStatus = first.Status;
+            _modelChangeKinds = first.Kinds;
+            _descendantChangeKinds = first.Descendants;
+            _changeCounts = first.Counts;
+
+            // A filter with nothing left to filter is withdrawn along with its control, or committing
+            // while "Affects simulation" is selected leaves the tree hidden behind an empty list and
+            // no visible way back to it. The same applies above, where a repository just marked
+            // reference only takes its changes - and its filter - out of the browser mid-session.
+            if (!hasChanges)
+                _changeFilter = ChangeFilter.None;
+
+            _ = RefreshFilteredTreeAsync();
+
+            if (!hasChanges)
+                return;
+
+            StateHasChanged();
+
+            _ = ApplyClassificationAsync(generation, repository, first.Changes!, first.Status);
         });
-
-        if (generation != _statusGeneration || Repository?.Id != repoId)
-            return;
-
-        _modelChangeKinds = kinds;
-        _descendantChangeKinds = descendants;
-        RefreshFilteredTree();
     }
+
+    /// <summary>What the working-copy status says, worked out off the dispatcher.</summary>
+    private sealed record StatusAnswer(
+        IReadOnlyList<VcsWorkingCopyFile>? Changes,
+        Dictionary<string, VcsFileStatus> Status,
+        IReadOnlyDictionary<string, ClassChangeKind> Kinds,
+        Dictionary<string, ClassChangeKind> Descendants,
+        ChangeCounts Counts);
+
+    /// <summary>
+    /// The second answer: what kind of change each class carries, applied when it arrives unless a
+    /// newer question has been asked since. Nobody waits for it.
+    /// </summary>
+    private async Task ApplyClassificationAsync(
+        int generation, Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes,
+        IReadOnlyDictionary<string, VcsFileStatus> status)
+    {
+        try
+        {
+            var lookup = LibraryDataService.GetModelById;
+            var (kinds, descendants, counts) = await Task.Run(() =>
+            {
+                var kinds = ModelChangeClassifier.Classify(repository, changes);
+                return (kinds, DescendantKinds(status.Keys, kinds, lookup), ChangeCounts.Of(status, kinds));
+            });
+
+            await InvokeAsync(() =>
+            {
+                if (generation != _statusGeneration || Repository?.Id != repository.Id)
+                    return;
+
+                _modelChangeKinds = kinds;
+                _descendantChangeKinds = descendants;
+                _changeCounts = counts;
+                _ = RefreshFilteredTreeAsync();
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            // Nobody awaits this, so nobody else would see it. The plain markers stay up.
+            LoggingService.Warn(nameof(LibraryBrowser),
+                $"Could not classify the changes in {repository.Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>How many changed classes each filter chip stands for.</summary>
+    /// <remarks>
+    /// Worked out once per answer, off the dispatcher, rather than per render: each chip used to walk
+    /// every changed class on every render of the browser.
+    /// </remarks>
+    internal readonly record struct ChangeCounts(int Changed, int AffectsSimulation, int Cosmetic)
+    {
+        public static ChangeCounts Of(
+            IReadOnlyDictionary<string, VcsFileStatus> status, IReadOnlyDictionary<string, ClassChangeKind> kinds)
+        {
+            int changed = 0, simulation = 0, cosmetic = 0;
+            foreach (var modelId in status.Keys)
+            {
+                var kind = kinds.TryGetValue(modelId, out var known) ? known : ClassChangeKind.Unknown;
+                if (Selects(ChangeFilter.Changed, kind)) changed++;
+                if (Selects(ChangeFilter.AffectsSimulation, kind)) simulation++;
+                if (Selects(ChangeFilter.Cosmetic, kind)) cosmetic++;
+            }
+            return new ChangeCounts(changed, simulation, cosmetic);
+        }
+    }
+
+    private ChangeCounts _changeCounts;
 
     /// <summary>
     /// The kinds already known for the classes that are still changed, so a status refresh does not
@@ -432,28 +503,18 @@ public partial class LibraryBrowser : IDisposable
     internal Func<ModelNode?, Task<IReadOnlyCollection<TreeItemData<ModelNode>>>>? ActiveServerData =>
         _changeFilter == ChangeFilter.None ? LoadServerData : null;
 
-    /// <summary>The kind recorded for a model, or Unknown where the question was never asked.</summary>
-    private ClassChangeKind KindOf(string modelId) =>
-        _modelChangeKinds.TryGetValue(modelId, out var kind) ? kind : ClassChangeKind.Unknown;
 
     /// <summary>
     /// How many classes a filter would show. Displayed on its chip, so the user can see there is
     /// nothing under "Cosmetic only" without selecting it and reading an empty tree.
     /// </summary>
-    internal int CountFor(ChangeFilter filter)
+    internal int CountFor(ChangeFilter filter) => filter switch
     {
-        if (filter == ChangeFilter.None)
-            return 0;
-
-        var count = 0;
-        foreach (var modelId in _modelVcsStatus.Keys)
-        {
-            if (Selects(filter, KindOf(modelId)))
-                count++;
-        }
-
-        return count;
-    }
+        ChangeFilter.Changed => _changeCounts.Changed,
+        ChangeFilter.AffectsSimulation => _changeCounts.AffectsSimulation,
+        ChangeFilter.Cosmetic => _changeCounts.Cosmetic,
+        _ => 0,
+    };
 
     /// <summary>The classes the current filter selects.</summary>
     /// <remarks>
@@ -461,17 +522,21 @@ public partial class LibraryBrowser : IDisposable
     /// filter then decides on the kind. A class in a changed file that was not itself touched is
     /// never selected by any of them.
     /// </remarks>
-    internal IReadOnlyList<ModelNode> FilteredModels()
+    internal IReadOnlyList<ModelNode> FilteredModels() =>
+        Matching(_changeFilter, _modelVcsStatus, _modelChangeKinds, LibraryDataService.CombinedGraph);
+
+    private static List<ModelNode> Matching(
+        ChangeFilter filter, IReadOnlyDictionary<string, VcsFileStatus> status,
+        IReadOnlyDictionary<string, ClassChangeKind> kinds, DirectedGraph graph)
     {
-        if (_changeFilter == ChangeFilter.None)
-            return [];
-
-        var graph = LibraryDataService.CombinedGraph;
         var matches = new List<ModelNode>();
+        if (filter == ChangeFilter.None)
+            return matches;
 
-        foreach (var modelId in _modelVcsStatus.Keys)
+        foreach (var modelId in status.Keys)
         {
-            if (!Selects(_changeFilter, KindOf(modelId)))
+            var kind = kinds.TryGetValue(modelId, out var known) ? known : ClassChangeKind.Unknown;
+            if (!Selects(filter, kind))
                 continue;
 
             if (graph.GetNode<ModelNode>(modelId) is { } model)
@@ -573,26 +638,78 @@ public partial class LibraryBrowser : IDisposable
     /// <summary>
     /// Rebuilds the filtered tree from the current filter and the current set of changes.
     /// </summary>
-    private void RefreshFilteredTree()
+    /// <remarks>
+    /// Built on a background thread. With every changed class unclassified - more files changed than
+    /// the classifier compares - "Changed" selects all of them, and building that tree on the
+    /// dispatcher, twice per refresh, would hold the window. Numbered like the status, so a build
+    /// that finishes after a newer one was asked for is dropped.
+    /// </remarks>
+    private async Task RefreshFilteredTreeAsync()
     {
-        if (_changeFilter == ChangeFilter.None)
+        var generation = ++_filterGeneration;
+        var filter = _changeFilter;
+        if (filter == ChangeFilter.None)
         {
             _filteredTreeItems = new List<TreeItemData<ModelNode>>();
             _filteredDescendantKinds = new Dictionary<string, ClassChangeKind>();
             return;
         }
 
-        var matches = FilteredModels();
-        _filteredTreeItems = BuildFilteredTree(matches, LibraryDataService.GetModelById, _expandedNodeIds);
-        _filteredDescendantKinds = DescendantKinds(
-            matches.Select(m => m.Id), _modelChangeKinds, LibraryDataService.GetModelById);
+        // Taken here, on the dispatcher: the maps are replaced rather than changed, but the
+        // expansion record is changed in place as the user opens and closes nodes.
+        var status = _modelVcsStatus;
+        var kinds = _modelChangeKinds;
+        var expanded = new HashSet<string>(_expandedNodeIds, StringComparer.Ordinal);
+        var lookup = LibraryDataService.GetModelById;
+
+        // Choosing the classes is one pass over the changed ones and stays here. Building their tree
+        // walks every ancestor of each; a filter selecting a few hundred is built here too, and only
+        // a large one goes to the pool - a hop each time costs more than a small build, and under a
+        // busy pool it is a wait.
+        var matches = Matching(filter, status, kinds, LibraryDataService.CombinedGraph);
+        if (matches.Count <= BuildFilteredTreeInlineUpTo)
+        {
+            _filteredTreeItems = BuildFilteredTree(matches, lookup, expanded);
+            _filteredDescendantKinds = DescendantKinds(matches.Select(m => m.Id), kinds, lookup);
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var (items, descendants) = await Task.Run(() =>
+                (BuildFilteredTree(matches, lookup, expanded),
+                 DescendantKinds(matches.Select(m => m.Id), kinds, lookup)));
+
+            // Through the dispatcher, not on whatever thread the await came back on: started from a
+            // callback the renderer ran inline, this resumed on the pool and the render threw.
+            await InvokeAsync(() =>
+            {
+                if (generation != _filterGeneration)
+                    return;
+
+                _filteredTreeItems = items;
+                _filteredDescendantKinds = descendants;
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn(nameof(LibraryBrowser), $"Could not build the filtered tree: {ex.Message}");
+        }
     }
 
-    internal void OnChangeFilterChanged(ChangeFilter filter)
+    /// <summary>Counts filtered-tree builds, so only the latest one's result is shown.</summary>
+    private int _filterGeneration;
+
+    /// <summary>A filtered tree of up to this many classes is built on the dispatcher.</summary>
+    private const int BuildFilteredTreeInlineUpTo = 1000;
+
+    internal async Task OnChangeFilterChanged(ChangeFilter filter)
     {
         _changeFilter = filter;
-        RefreshFilteredTree();
         StateHasChanged();
+        await RefreshFilteredTreeAsync();
     }
 
     /// <summary>
@@ -978,15 +1095,29 @@ public partial class LibraryBrowser : IDisposable
 
     private async void OnModelChanged()
     {
-        _currentModelName = NavState.ModelID;
+        // On the dispatcher, all of it. The event is raised on whatever thread changed the model, and
+        // the reveal changes this component's state and may render it - which off the dispatcher
+        // throws, and in an async void handler takes the process with it.
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                _currentModelName = NavState.ModelID;
 
-        // Opened from somewhere else — a finding, a dependency, the navigation stack — so show where
-        // it is (B189). A class opened this way used to appear in the viewer while the tree stayed
-        // wherever it was, which left nothing to say what had just been opened or what it sits in.
-        if (!_selectingFromTree)
-            await RevealAsync(NavState.ModelID);
+                // Opened from somewhere else — a finding, a dependency, the navigation stack — so show
+                // where it is (B189). A class opened this way used to appear in the viewer while the
+                // tree stayed wherever it was, which left nothing to say what had just been opened or
+                // what it sits in.
+                if (!_selectingFromTree)
+                    await RevealAsync(NavState.ModelID);
 
-        await InvokeAsync(StateHasChanged);
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn(nameof(LibraryBrowser), $"Could not show {NavState.ModelID} in the tree: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -1058,8 +1189,8 @@ public partial class LibraryBrowser : IDisposable
 
         // Under a change filter the view is the filtered tree, whose items were opened when it was
         // built - so it is built again from the expansion record just updated, or the reveal opens
-        // the tree the user is not looking at (B358).
-        RefreshFilteredTree();
+        // the tree the user is not looking at (B358). Awaited: the selection below is in it.
+        await RefreshFilteredTreeAsync();
 
         var model = LibraryDataService.GetModelById(modelId);
         if (model is not null)

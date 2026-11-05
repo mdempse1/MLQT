@@ -1,1 +1,3 @@
 #nullable enable
+ModelicaGraph.DataTypes.CoverageFacts.GeneratedImport.get -> bool
+ModelicaGraph.DataTypes.CoverageFacts.GeneratedImport.init -> void

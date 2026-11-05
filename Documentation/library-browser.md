@@ -87,7 +87,9 @@ So MLQT compares **the class as it is now against the class as it was committed*
 
 **The tree appears before the comparison has finished.** Each changed class first shows the plain orange **M**, or the chip it had before if it was already changed, and takes its **M** or **C** once its file has been compared. After a commit or a revert, the chips on the classes it covered go at once.
 
-**When more than 2,000 Modelica files have changed**, MLQT does not compare them at all, and every class in a changed file keeps the plain orange **M** — including a class inside a large `package.mo` that was not itself touched, so the **Simulation** filter lists them all. Comparing means reading each file's committed version from version control, which for a change set that size takes minutes, and a change set that size is usually a reformat or a merge rather than something to review class by class.
+**When the committed version of a file cannot be read** — version control timed out, say — its classes keep the plain orange **M**, and MLQT tries again on the next refresh.
+
+**When more than 2,000 changed Modelica files need comparing**, MLQT does not compare them at all — new and untracked files have nothing to compare with and do not count — and every class in a changed file keeps the plain orange **M** — including a class inside a large `package.mo` that was not itself touched, so the **Simulation** filter lists them all. Comparing means reading each file's committed version from version control, which for a change set that size takes minutes, and a change set that size is usually a reformat or a merge rather than something to review class by class.
 
 ### Showing Only What Changed
 

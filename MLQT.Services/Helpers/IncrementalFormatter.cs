@@ -138,7 +138,7 @@ public static class IncrementalFormatter
 
         // Captured once: the parallel body below must not read settings that another thread may edit.
         var formatting = settings.ToFormattingOptions();
-        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text)>();
+        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text, bool Unchanged)>();
 
         // The same lookup the checker is given, for the same reason: the order written here and the
         // order MLQT.Style.DeclarationOrder asks for have to be one answer. Built only when the
@@ -176,7 +176,14 @@ public static class IncrementalFormatter
                 // How the file ends is ModelicaFileEncoding.EnsureFinalNewline's answer, applied by
                 // the write below. This path used to append "\n" itself, which is how it and the
                 // full library save came to disagree (B236).
-                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted);
+                //
+                // **Already formatted, then not written.** ForFile is what the write would put in the
+                // file - its line endings and final newline - and the encoding is kept, so the same
+                // text is the same file. Every startup formats every changed file, and with 17,372 of
+                // them, already formatted by the last startup, each one was written again: a write
+                // apiece, and a new write time that made every cached change classification stale.
+                var unchanged = ModelicaFileEncoding.ForFile(fileEntry.FilePath, formatted) == fileSource;
+                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted, unchanged);
             }
             catch (Exception ex)
             {
@@ -195,14 +202,26 @@ public static class IncrementalFormatter
         // **No line per file.** There was one, and a startup with 17,372 changed files wrote 17,372
         // of them - most of the day's log - while saying nothing about how far it had got. Progress
         // every so many files, and the total, say more.
-        foreach (var (filePath, (entry, content)) in formattedFiles)
+        var alreadyFormatted = 0;
+        var done = 0;
+        foreach (var (filePath, (entry, content, unchanged)) in formattedFiles)
         {
+            if (large && ++done % ProgressEvery == 0)
+                Info(nameof(IncrementalFormatter), $"Saved {done}/{formattedFiles.Count} formatted file(s)");
+
+            if (unchanged)
+            {
+                // Nothing to write - but the classes are still brought up to date from the text, as
+                // a write would: the graph may not have caught up with an edit the file already has.
+                alreadyFormatted++;
+                RefreshClassesFromWrittenFile(graph, entry, content);
+                continue;
+            }
+
             try
             {
                 await ModelicaFileEncoding.WriteAllTextAsync(filePath, content);
                 written[filePath] = File.GetLastWriteTimeUtc(filePath);
-                if (large && written.Count % ProgressEvery == 0)
-                    Info(nameof(IncrementalFormatter), $"Written {written.Count}/{formattedFiles.Count} formatted file(s)");
             }
             catch (Exception ex)
             {
@@ -215,9 +234,9 @@ public static class IncrementalFormatter
             RefreshClassesFromWrittenFile(graph, entry, content);
         }
 
-        var summary = $"Wrote {written.Count} formatted file(s) of {filesToProcess.Count} selected "
-            + $"({filesToProcess.Count - written.Count} not written); rendering {renderedMs}ms, "
-            + $"writing {stopwatch.ElapsedMilliseconds - renderedMs}ms";
+        var summary = $"Wrote {written.Count} formatted file(s) of {filesToProcess.Count} selected, "
+            + $"{alreadyFormatted} already formatted ({filesToProcess.Count - written.Count - alreadyFormatted} "
+            + $"not formatted); rendering {renderedMs}ms, saving {stopwatch.ElapsedMilliseconds - renderedMs}ms";
         if (large)
             Info(nameof(IncrementalFormatter), summary);
         else

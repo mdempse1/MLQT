@@ -947,6 +947,15 @@ The two mechanisms are otherwise interchangeable, and the name list stays suppor
 by the toolbar button, and you can still add names to it by hand — for a class whose source you
 cannot change, such as one in a reference-only repository.
 
+### Models generated from an FMU
+
+A model Dymola wrote when it imported an FMU is left alone by every formatting pass without being
+excluded: any class whose own annotation carries a `__Dymola_FMU…` entry (`__Dymola_FMUImportVersion`,
+`__Dymola_FMUImportPath`, ...) counts, and so does the file that holds it. Dymola writes the model
+again whenever the FMU is imported again, so formatting it would only be churn the next import throws
+away. Nothing in it is checked either; see
+[Code Review](code-review.md#suppressing-rules-for-a-whole-class).
+
 ### Effect on Style Checking
 
 Excluding a model from formatting affects which style findings are reported:

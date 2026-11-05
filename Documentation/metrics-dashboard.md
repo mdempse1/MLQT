@@ -180,6 +180,9 @@ slightly different questions and are meant to:
   layout rules skipped by the checker, so it is left off the layout dimensions too. Counting it would
   show a gap nothing will ever name, which is worse than not counting it. The same goes for a whole
   library named in `ExcludedLibraries`: nothing in it is reported on, so nothing in it is measured.
+  And for a model Dymola generated when it imported an FMU — any class with a `__Dymola_FMU…`
+  annotation, and every class nested in it: nothing in it is checked and nobody edits it, so it is
+  on no dimension at all.
   An audit run (`mlqt check --no-suppress`) reads no directives and so keeps those rows.
 - **Coverage counts every eligible class; a finding needs a rule to be on.** A dimension whose rule
   you switch off disappears from coverage entirely rather than reading 100%.

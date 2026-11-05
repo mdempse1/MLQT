@@ -50,14 +50,29 @@ public static class FormattingExclusion
     /// every class to find the handful carrying an annotation is the wrong shape. A class whose answer
     /// is already known skips it.</para>
     /// </summary>
+    /// <remarks>
+    /// <b>A class Dymola generated from an FMU is left alone too</b>, with no annotation: Dymola
+    /// writes it again whenever the FMU is imported again, so reformatting it is churn in the
+    /// repository that the next import throws away, and nothing in it is checked to report the
+    /// layout against. Like an opt-out, anywhere in the rendered definition takes all of it out.
+    /// </remarks>
     public static bool OptsOutInSource(ModelNode model)
     {
         var definition = model.Definition;
 
-        if (definition.Suppressions is null
-            && definition.ModelicaCode?.Contains("__MLQT", StringComparison.Ordinal) != true)
+        if (definition.Suppressions is null && !MayCarryDirective(definition.ModelicaCode))
             return false;
 
-        return ClassSuppressions.For(definition, model.Id).HasFormattingOptOut;
+        var suppressions = ClassSuppressions.For(definition, model.Id);
+        return suppressions.HasFormattingOptOut || suppressions.HasGeneratedImport;
     }
+
+    /// <summary>
+    /// Whether the source could hold anything <see cref="OptsOutInSource"/> looks for - the cheap
+    /// test before the parse. Both strings: a generated class carries no <c>__MLQT</c> at all.
+    /// </summary>
+    private static bool MayCarryDirective(string? code) =>
+        code is not null
+        && (code.Contains("__MLQT", StringComparison.Ordinal)
+            || code.Contains("__Dymola_FMU", StringComparison.Ordinal));
 }

@@ -32,11 +32,7 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
     {
         // The class's own annotations only, never the external clause's (B446).
         foreach (var annotation in CompositionAnnotations.ClassLevel(context))
-        {
-            ReadMlqt(annotation, component: null);
-            if (IsDymolaFmuImport(annotation))
-                _generatedImports.Add(CurrentModelName);
-        }
+            ReadClassLevel(annotation);
         return base.VisitComposition(context);
     }
 
@@ -57,15 +53,28 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
     public override object? VisitShort_class_specifier([NotNull] modelicaParser.Short_class_specifierContext context)
     {
         if (context.comment()?.annotation() is { } annotation)
-            ReadMlqt(annotation, component: null);
+            ReadClassLevel(annotation);
         return base.VisitShort_class_specifier(context);
     }
 
     public override object? VisitDer_class_specifier([NotNull] modelicaParser.Der_class_specifierContext context)
     {
         if (context.comment()?.annotation() is { } annotation)
-            ReadMlqt(annotation, component: null);
+            ReadClassLevel(annotation);
         return base.VisitDer_class_specifier(context);
+    }
+
+    /// <summary>
+    /// A class-level annotation, wherever the class keeps it: its directives, and whether Dymola
+    /// generated it from an FMU. One method, so the three kinds of class cannot read it differently -
+    /// the FMU mark was first read only from a composition, which left a short class carrying it
+    /// checked while one carrying <c>__MLQT(suppress="*")</c> was not.
+    /// </summary>
+    private void ReadClassLevel(modelicaParser.AnnotationContext annotation)
+    {
+        ReadMlqt(annotation, component: null);
+        if (IsDymolaFmuImport(annotation))
+            _generatedImports.Add(CurrentModelName);
     }
 
     public override object? VisitComponent_declaration([NotNull] modelicaParser.Component_declarationContext context)

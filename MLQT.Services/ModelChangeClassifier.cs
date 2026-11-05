@@ -52,7 +52,25 @@ public class ModelChangeClassifier : IModelChangeClassifier
     /// and finds the first one's answers in the cache. Per working copy rather than per repository,
     /// for the reason given at <see cref="CheckoutOf"/>.
     /// </summary>
-    private readonly ConcurrentDictionary<string, object> _checkoutGates = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _checkoutGates = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The newest request for each repository. A request that a newer one for the same repository has
+    /// overtaken is not wanted - the browser that asked drops the answer - so it stops waiting for
+    /// the gate, or stops reading if it already has it, and answers "not asked". What it read is
+    /// cached for the newer one. Without this every refresh during a burst of file activity queued
+    /// behind the last, each holding a thread, and each ran the whole classification in turn.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, long> _latestRequest = new(StringComparer.Ordinal);
+
+    /// <summary>How often a waiting request looks to see whether it has been overtaken.</summary>
+    private const int SupersededPollMs = 50;
+
+    /// <summary>
+    /// The change count each repository was last told was over the limit, so the log says so once
+    /// per change set rather than on every refresh of every tree.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, int> _overLimitLogged = new(StringComparer.Ordinal);
 
     /// <summary>
     /// How many committed versions are read at once. Each is mostly waiting - for a process to start
@@ -102,18 +120,54 @@ public class ModelChangeClassifier : IModelChangeClassifier
             .Where(change => change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
+        // Counted by what costs a read: an added or untracked file has no committed version to ask
+        // for, and a conflicted one is not compared, so a pile of new generated files does not switch
+        // the comparison off for the handful of edited ones beside it.
+        var toRead = modelicaChanges.Count(NeedsCommittedVersion);
+
         // Absence is "not asked" (IModelChangeClassifier), so every file is still marked modified.
-        if (modelicaChanges.Count > _maxFilesToClassify)
+        if (toRead > _maxFilesToClassify)
         {
-            Info("ModelChangeClassifier",
-                $"Not classifying the {modelicaChanges.Count} changed Modelica file(s) in {repository.Name}: "
-                + $"more than {_maxFilesToClassify}. They are marked as modified without saying how.");
+            if (_overLimitLogged.TryGetValue(repository.Id, out var logged) is false || logged != toRead)
+            {
+                _overLimitLogged[repository.Id] = toRead;
+                Info("ModelChangeClassifier",
+                    $"Not classifying the changes in {repository.Name}: {toRead} changed Modelica file(s) "
+                    + $"to compare, more than {_maxFilesToClassify}. They are marked as modified without saying how.");
+            }
             return EmptyKinds;
         }
 
-        lock (_checkoutGates.GetOrAdd(CheckoutOf(repository), _ => new object()))
-            return ClassifyAll(repository, changes, modelicaChanges);
+        var ticket = _latestRequest.AddOrUpdate(repository.Id, 1, (_, latest) => latest + 1);
+        bool Superseded() => _latestRequest.TryGetValue(repository.Id, out var latest) && latest != ticket;
+
+        var gate = _checkoutGates.GetOrAdd(CheckoutOf(repository), _ => new SemaphoreSlim(1, 1));
+        while (!gate.Wait(SupersededPollMs))
+        {
+            if (Superseded())
+                return EmptyKinds;
+        }
+
+        try
+        {
+            return Superseded() ? EmptyKinds : ClassifyAll(repository, changes, modelicaChanges, Superseded);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
+
+    /// <summary>
+    /// Whether comparing this change needs its committed version read from version control - and so
+    /// whether a missing one means the read failed rather than that there is none.
+    /// </summary>
+    private static bool NeedsCommittedVersion(VcsWorkingCopyFile change) => change.Status switch
+    {
+        VcsFileStatus.Modified or VcsFileStatus.Deleted => true,
+        VcsFileStatus.Renamed => !string.IsNullOrEmpty(change.OldPath),
+        _ => false,
+    };
 
     /// <summary>
     /// The working copy a repository is in, as a key: what the gate and both caches are kept by.
@@ -142,7 +196,8 @@ public class ModelChangeClassifier : IModelChangeClassifier
     private readonly ConcurrentDictionary<string, string> _checkouts = new(StringComparer.Ordinal);
 
     private IReadOnlyDictionary<string, ClassChangeKind> ClassifyAll(
-        Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes, List<VcsWorkingCopyFile> modelicaChanges)
+        Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes, List<VcsWorkingCopyFile> modelicaChanges,
+        Func<bool> superseded)
     {
         var logged = modelicaChanges.Count >= LoggedFrom;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -155,8 +210,15 @@ public class ModelChangeClassifier : IModelChangeClassifier
         // control gave them, so the result does not depend on which read finished first.
         var files = new CachedClassification[modelicaChanges.Count];
         var done = 0;
-        Parallel.For(0, modelicaChanges.Count, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism }, i =>
+        Parallel.For(0, modelicaChanges.Count, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism }, (i, loop) =>
         {
+            // Overtaken: what has been read stays cached for the newer request, the rest is its job.
+            if (superseded())
+            {
+                loop.Stop();
+                return;
+            }
+
             var change = modelicaChanges[i];
 
             // change.Path is relative to the VCS root and uses forward slashes on Git.
@@ -170,6 +232,15 @@ public class ModelChangeClassifier : IModelChangeClassifier
                 Info("ModelChangeClassifier",
                     $"Classified {count}/{modelicaChanges.Count} changed file(s) in {repository.Name}");
         });
+
+        if (superseded())
+        {
+            if (logged)
+                Info("ModelChangeClassifier",
+                    $"<<< COMPLETED: Classifying changes in {repository.Name} stopped after {done} file(s): "
+                    + $"a newer request took over ({stopwatch.ElapsedMilliseconds}ms)");
+            return EmptyKinds;
+        }
 
         var kinds = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
         var added = new Dictionary<string, ClassSignature>(StringComparer.Ordinal);
@@ -227,11 +298,10 @@ public class ModelChangeClassifier : IModelChangeClassifier
         var candidates = changes
             .Where(change => change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
                 && change.Status is not (VcsFileStatus.Added or VcsFileStatus.Untracked or VcsFileStatus.Conflicted))
-            .Select(CommittedPath)
-            .Distinct(StringComparer.Ordinal)
+            .DistinctBy(CommittedPath, StringComparer.Ordinal)
             .ToList();
         Parallel.ForEach(candidates, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism },
-            path => CommittedSignatures(repository, path));
+            change => CommittedSignatures(repository, change));
 
         foreach (var change in changes)
         {
@@ -242,7 +312,8 @@ public class ModelChangeClassifier : IModelChangeClassifier
                 || change.Status is VcsFileStatus.Added or VcsFileStatus.Untracked or VcsFileStatus.Conflicted)
                 continue;
 
-            var committed = CommittedSignatures(repository, CommittedPath(change));
+            // Unreadable - a failed read, or one that would not parse - has no classes to look in.
+            var (committed, _) = CommittedSignatures(repository, change);
             if (!committed.Parsed)
                 continue;
 
@@ -262,17 +333,36 @@ public class ModelChangeClassifier : IModelChangeClassifier
         string.IsNullOrEmpty(change.OldPath) ? change.Path : change.OldPath;
 
     /// <summary>
-    /// A file's committed version, parsed - read once per repository revision.
+    /// A changed file's committed version, parsed - read once per repository revision.
     /// </summary>
-    private ClassSignatures CommittedSignatures(Repository repository, string path)
+    /// <remarks>
+    /// <b>A failed read is not "there is no committed version".</b> Version control answers null for
+    /// both, and taken as absent, every class of a modified file read as Added - the simulation
+    /// marker - and stayed so until the revision changed, because the answer was cached. Where
+    /// <see cref="NeedsCommittedVersion"/> says there must be one, a null is a failure: it reads as
+    /// <see cref="ClassSignatures.Unreadable"/>, the plain "not compared" marker, is not cached, and
+    /// is asked for again next time.
+    /// </remarks>
+    private (ClassSignatures Signatures, bool ReadFailed) CommittedSignatures(
+        Repository repository, VcsWorkingCopyFile change)
     {
+        var path = CommittedPath(change);
         var cacheKey = CheckoutOf(repository) +"" + path;
         if (_committed.TryGetValue(cacheKey, out var cached) && cached.Revision == repository.CurrentRevision)
-            return cached.Signatures;
+            return (cached.Signatures, false);
 
-        var signatures = ClassSignatures.Of(_repositoryService.GetFileContentAtRevision(repository.Id, path));
+        var text = _repositoryService.GetFileContentAtRevision(repository.Id, path);
+        if (text is null && NeedsCommittedVersion(change))
+        {
+            Warn("ModelChangeClassifier",
+                $"Could not read the committed version of '{path}' in {repository.Name}; its classes are "
+                + "marked as modified without a kind, and it will be read again on the next refresh.");
+            return (ClassSignatures.Unreadable, true);
+        }
+
+        var signatures = ClassSignatures.Of(text);
         _committed[cacheKey] = new CommittedVersion(repository.CurrentRevision, signatures);
-        return signatures;
+        return (signatures, false);
     }
 
     /// <inheritdoc />
@@ -282,6 +372,16 @@ public class ModelChangeClassifier : IModelChangeClassifier
         {
             _cache.Clear();
             _committed.Clear();
+
+            // And what is kept about each repository and checkout, so a session that switches
+            // between projects does not accumulate every one it has seen. The gates stay: a
+            // classification may be holding one now, and there is one small object per checkout.
+            _checkouts.Clear();
+            _overLimitLogged.Clear();
+
+            // Which also tells a classification still running for the old project that it has been
+            // overtaken - its ticket no longer matches - so it stops reading.
+            _latestRequest.Clear();
             return;
         }
 
@@ -320,16 +420,19 @@ public class ModelChangeClassifier : IModelChangeClassifier
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.Key == key)
             return cached;
 
-        var (kinds, added) = Compare(repository, change, absolutePath);
+        var (kinds, added, readFailed) = Compare(repository, change, absolutePath);
         var classification = new CachedClassification(key, kinds, added);
-        _cache[cacheKey] = classification;
+
+        // Not kept when the committed version could not be read: the next refresh tries again.
+        if (!readFailed)
+            _cache[cacheKey] = classification;
         return classification;
     }
 
     /// <summary>
     /// The comparison itself: the working copy against the committed version, class by class.
     /// </summary>
-    private (IReadOnlyDictionary<string, ClassChangeKind> Kinds, IReadOnlyDictionary<string, ClassSignature> Added) Compare(
+    private (IReadOnlyDictionary<string, ClassChangeKind> Kinds, IReadOnlyDictionary<string, ClassSignature> Added, bool ReadFailed) Compare(
         Repository repository, VcsWorkingCopyFile change, string absolutePath)
     {
         try
@@ -339,14 +442,14 @@ public class ModelChangeClassifier : IModelChangeClassifier
             // A conflicted working copy holds conflict markers, not Modelica. Reading it would
             // report a parse failure, which is true and useless; "not known" is the honest answer.
             if (change.Status == VcsFileStatus.Conflicted)
-                return (AllUnknown(working), EmptySignatures);
+                return (AllUnknown(working), EmptySignatures, false);
 
             // Nothing was committed, so every class in it is new - here, at least; FindMovedClasses
             // asks about the rest. Asking the VCS for a version of an untracked file is a round trip
             // whose answer is already known. A renamed file is compared with its old path's version.
-            var committed = change.Status is VcsFileStatus.Added or VcsFileStatus.Untracked
-                ? ClassSignatures.Absent
-                : CommittedSignatures(repository, CommittedPath(change));
+            var (committed, readFailed) = change.Status is VcsFileStatus.Added or VcsFileStatus.Untracked
+                ? (ClassSignatures.Absent, false)
+                : CommittedSignatures(repository, change);
 
             var workingSignatures = ClassSignatures.Of(working);
             var kinds = ClassChangeClassifier.Compare(committed, workingSignatures);
@@ -358,13 +461,13 @@ public class ModelChangeClassifier : IModelChangeClassifier
                     (added ??= new(StringComparer.Ordinal))[fullName] = workingSignatures.Classes[fullName];
             }
 
-            return (kinds, added ?? EmptySignatures);
+            return (kinds, added ?? EmptySignatures, readFailed);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Warn("ModelChangeClassifier",
                 $"Could not classify changes in '{change.Path}': {ex.Message}. It is marked as modified without a kind.");
-            return (EmptyKinds, EmptySignatures);
+            return (EmptyKinds, EmptySignatures, true);
         }
     }
 

@@ -575,6 +575,101 @@ public class SuppressionTests
     }
 
     [Fact]
+    public void AShortClassCarryingTheFmuMark_IsMarked_AsOneCarryingTheWildcardIs()
+    {
+        // The mark was read only from a composition, so a short class carrying it was checked while
+        // one carrying __MLQT(suppress="*") in the same place was not.
+        var set = ClassSuppressions.For(
+            new ModelDefinition("T", "type T = Real annotation(__Dymola_FMUImportPath=\"a.fmu\");"), "T");
+
+        Assert.Equal("T", set.GeneratedImportOf("T"));
+        Assert.True(set.IsSuppressed(FindingOn("T", RuleIds.ClassDescription)));
+    }
+
+    [Fact]
+    public void GeneratedImportOf_NamesTheClassCarryingTheMark()
+    {
+        // So the suppress dialog on a record inside an FMU model can say which class's mark reaches it.
+        var set = SetOn("P", "__Dymola_FMUImportVersion=\"Dymola 2026x\"");
+
+        Assert.Equal("P", set.GeneratedImportOf("P"));
+        Assert.Equal("P", set.GeneratedImportOf("P.Sub.Record"));
+        Assert.Null(set.GeneratedImportOf("Q.Record"));
+        Assert.True(set.HasGeneratedImport);
+        Assert.False(SetOn("P", "Documentation(info=\"x\")").HasGeneratedImport);
+    }
+
+    // ---- ...and is left out of formatting and coverage -------------------------------------------
+
+    [Fact]
+    public void AnFmuImport_IsLeftAloneByTheFormatter()
+    {
+        // Dymola writes it again whenever the FMU is imported again, so reformatting it is churn the
+        // next import throws away.
+        var model = new ModelNode("M", "M", FmuImport.Replace("TestModel", "M"));
+
+        Assert.True(FormattingExclusion.OptsOutInSource(model));
+        Assert.True(FormattingExclusion.Excludes(model, new StyleCheckingSettings()));
+    }
+
+    [Fact]
+    public void APackageFileHoldingAnFmuImportInline_HasAClassTheFormatterLeavesAlone()
+    {
+        // The formatter rewrites a whole file or none of it, and leaves the file alone when any class
+        // in it is excluded (IncrementalFormatter.SelectFilesToFormat). The model inside the package is
+        // a class of its own once loaded, carrying its own mark.
+        var path = Path.Combine(Path.GetTempPath(), "mlqt-fmu-inline", "P", "package.mo");
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, path,
+            "package P\n  " + FmuImport.Replace("TestModel", "M") + "\nend P;");
+
+        var inFile = graph.GetModelsInFile(GraphBuilder.GenerateFileId(path)).ToList();
+
+        Assert.Contains(inFile, m => m.Id == "P.M");
+        Assert.Contains(inFile, FormattingExclusion.OptsOutInSource);
+    }
+
+    [Fact]
+    public void AnFmuImportAndWhatIsNestedInIt_AreOnNoCoverageDimension()
+    {
+        // The record is a node of its own, as a load makes it, so the mark reaches it only through
+        // its enclosing class.
+        var graph = Graph(
+            ("P", "package P\n  annotation(__Dymola_FMUImportPath=\"a.fmu\");\nend P;"),
+            ("P.R", "record R\n  parameter Real k = 1;\nend R;"),
+            ("Q", "package Q\nend Q;"));
+        var measurer = new ModelicaGraph.Analysis.CoverageMeasurer(graph);
+        var settings = new StyleCheckingSettings { ClassHasDescription = true, ParameterHasDescription = true };
+        var tracked = ModelicaGraph.Analysis.CoverageDimensions.TrackedFor(settings);
+        Assert.NotEqual(CoverageDimension.None, tracked);
+
+        foreach (var id in new[] { "P", "P.R" })
+        {
+            var facts = measurer.Measure(graph.GetNode<ModelNode>(id));
+            Assert.True(facts!.GeneratedImport, id);
+            Assert.Equal(CoverageDimension.None,
+                ModelicaGraph.Analysis.CoverageDimensions.ForClass(tracked, settings, id, facts));
+        }
+
+        // The control: a package beside it is measured as usual.
+        var other = measurer.Measure(graph.GetNode<ModelNode>("Q"));
+        Assert.False(other!.GeneratedImport);
+        Assert.NotEqual(CoverageDimension.None,
+            ModelicaGraph.Analysis.CoverageDimensions.ForClass(tracked, settings, "Q", other));
+    }
+
+    [Fact]
+    public void AnAudit_CountsAnFmuImportInCoverage()
+    {
+        // --no-suppress puts every finding back, so the coverage it reports must count the class too.
+        var graph = Graph(("P", "package P\n  annotation(__Dymola_FMUImportPath=\"a.fmu\");\nend P;"));
+        var facts = new ModelicaGraph.Analysis.CoverageMeasurer(graph, CoverageDimension.All, honorSuppressions: false)
+            .Measure(graph.GetNode<ModelNode>("P"));
+
+        Assert.False(facts!.GeneratedImport);
+    }
+
+    [Fact]
     public void AddingOrRemovingAnFmuImportMark_ReachesNestedClassesDifferently()
     {
         // A reload re-checks the classes below a package only when this says its waivers changed (B499).

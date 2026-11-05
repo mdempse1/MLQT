@@ -1,1 +1,3 @@
 #nullable enable
+ModelicaParser.StyleRules.SuppressionSet.GeneratedImportOf(string! modelId) -> string?
+ModelicaParser.StyleRules.SuppressionSet.HasGeneratedImport.get -> bool

@@ -26,8 +26,14 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
 {
     private static readonly string Root = Path.Combine(Path.GetTempPath(), "mlqt-tests", "TreeBeforeMarkers");
 
-    [Fact]
-    public async Task TheTreeIsShown_WhileTheChangesAreStillBeingClassified()
+    /// <summary>
+    /// A browser over one changed library whose classification is held until <c>Release</c> is set.
+    /// </summary>
+    private sealed record Held(
+        IRenderedComponent<LibraryBrowser> Browser, ModelNode Library, Repository Repository,
+        ManualResetEventSlim Started, ManualResetEventSlim Release);
+
+    private Held RenderWithClassificationHeld()
     {
         var graph = new DirectedGraph();
         var path = Path.Combine(Root, "Lib", "package.mo");
@@ -80,6 +86,14 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
             .Add(c => c.LibraryOnly, false)
             .Add(c => c.Repository, repository));
 
+        return new Held(browser, library, repository, started, release);
+    }
+
+    [Fact]
+    public async Task TheTreeIsShown_WhileTheChangesAreStillBeingClassified()
+    {
+        var (browser, library, _, started, release) = RenderWithClassificationHeld();
+
         try
         {
             Assert.True(started.Wait(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken),
@@ -102,6 +116,43 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
             Assert.Equal(ChangeMarker.For(VcsFileStatus.Modified, ClassChangeKind.AffectsSimulation, ClassChangeKind.Unchanged),
                 browser.Instance.MarkerFor(library)));
         await browser.InvokeAsync(() => { });
+    }
+
+    [Fact]
+    public async Task AVcsOperation_DoesNotWaitForTheClassification()
+    {
+        // Every VCS operation refreshes the markers while it holds the VCS lock. Waiting for the
+        // classification kept every VCS button disabled for as long as the comparison took - for an
+        // answer none of the operations uses.
+        var (browser, _, repository, started, release) = RenderWithClassificationHeld();
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken));
+
+            // A commit dialog closed without touching the working copy: a status refresh.
+            var refresh = browser.InvokeAsync(() =>
+                browser.Instance.AfterVcsDialogAsync(repository, new MLQT.Shared.Dialogs.VcsDialogOutcome(), "commit"));
+
+            var finished = await Task.WhenAny(refresh, Task.Delay(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken));
+            Assert.Same(refresh, finished);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
+    public void TheSuppressDialog_SaysWhenAnEnclosingClassIsAnFmuImport()
+    {
+        // A record inside an FMU model has no findings and no list of its own; the dialog says why.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("P", "P", "model P\n  annotation(__Dymola_FMUImportPath=\"a.fmu\");\nend P;"));
+        graph.AddNode(new ModelNode("P.R", "R", "record R\nend R;"));
+
+        var notes = MLQT.Shared.Pages.CodeReview.EnclosingSuppressionNotes(graph, "P.R");
+
+        Assert.Equal([MLQT.Shared.Pages.CodeReview.GeneratedImportNote("P")], notes);
     }
 
     [Fact]
