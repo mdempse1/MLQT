@@ -147,6 +147,47 @@ public class SvnIntegrationCreateBranchTests : IClassFixture<SvnTestRepository>
             SvnCli.Run("cat", _repository.RootUrl + "/branches/" + name + "/README.txt").StdOut);
     }
 
+    /// <summary>
+    /// An up-to-date working copy switched to a branch of HEAD has nothing rewritten, and is told
+    /// so: the libraries are not reloaded for it.
+    /// </summary>
+    [Fact]
+    public void AnUpToDateWorkingCopy_IsSwitchedWithoutAnyFileChanging()
+    {
+        var wc = _repository.CheckOut();
+        SvnCli.Run("update", wc).EnsureSuccess("update");
+        File.AppendAllText(Path.Combine(wc, "README.txt"), "A local change\n");
+        var readmeWritten = File.GetLastWriteTimeUtc(Path.Combine(wc, "README.txt"));
+        var packageWritten = File.GetLastWriteTimeUtc(Path.Combine(wc, "package.mo"));
+
+        var result = _svn.CreateBranch(wc, Unique("uptodate-"), switchToBranch: true, branchDirectories: null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.WorkingCopyChanged);
+        Assert.Equal(readmeWritten, File.GetLastWriteTimeUtc(Path.Combine(wc, "README.txt")));
+        Assert.Equal(packageWritten, File.GetLastWriteTimeUtc(Path.Combine(wc, "package.mo")));
+    }
+
+    /// <summary>
+    /// A working copy behind HEAD gets the commits it lacked with the switch, as an update brings
+    /// them, and is told its files changed so the libraries are read again.
+    /// </summary>
+    [Fact]
+    public void AWorkingCopyBehindHead_IsToldTheSwitchChangedItsFiles()
+    {
+        var behind = _repository.CheckOut();
+        var other = _repository.CheckOut();
+        var otherReadme = Path.Combine(other, "README.txt");
+        File.AppendAllText(otherReadme, "Committed by someone else\n");
+        SvnCli.Run("commit", otherReadme, "-m", "Someone else's commit").EnsureSuccess("commit");
+
+        var result = _svn.CreateBranch(behind, Unique("behind-"), switchToBranch: true, branchDirectories: null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.WorkingCopyChanged);
+        Assert.Contains("Committed by someone else", File.ReadAllText(Path.Combine(behind, "README.txt")));
+    }
+
     [Fact]
     public void WithoutSwitching_TheWorkingCopyStaysWhereItWas()
     {

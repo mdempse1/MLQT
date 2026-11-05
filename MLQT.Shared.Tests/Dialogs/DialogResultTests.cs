@@ -41,10 +41,16 @@ public class DialogResultTests : MlqtComponentTestBase
                      .Returns(new Repository { Id = "repo", Name = "Repo", LocalPath = "C:\\repo", CurrentBranch = "main" });
         _repositories.Setup(r => r.GetBranches(It.IsAny<string>(), It.IsAny<bool>()))
                      .Returns([new VcsBranchInfo { Name = "main", IsCurrent = true }]);
+        // What a switch holds the monitor off for. The loose mock's default is null, which the real
+        // service never returns: the pause threw, and a create that should close stayed open.
+        _repositories.Setup(r => r.GetRepositoriesSharingWorkingCopy(It.IsAny<string>()))
+                     .Returns(() => [_repositories.Object.GetRepository("repo")!]);
 
         Services.AddSingleton(_repositories.Object);
         Services.AddSingleton(new Mock<IFilePickerService>().Object);
         Services.AddSingleton(new Mock<IStyleCheckingService>().Object);
+        // CreateBranchDialog holds the monitor off for its switch.
+        Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
     }
 
     private static DialogParameters ForRepository() => new() { { "RepositoryId", "repo" } };

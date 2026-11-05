@@ -5,12 +5,21 @@ namespace MLQT.Shared.Dialogs;
 public partial class CreateBranchDialog
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+    [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
 
     [Parameter]
     public string RepositoryId { get; set; } = "";
+
+    /// <summary>
+    /// Told when switching to the new branch rewrote files, which it does when the working copy was
+    /// behind HEAD (an SVN branch is copied from HEAD). The caller reloads from it once the dialog
+    /// closes, however it closes (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
 
     private string _branchName = "";
     private bool _switchToBranch = true;
@@ -128,7 +137,20 @@ public partial class CreateBranchDialog
 
         try
         {
-            var result = await RepositoryService.CreateBranchAsync(RepositoryId, _branchName, _switchToBranch);
+            // The switch, when there is one, runs with the monitor held off for the whole working
+            // copy, as every other switch does. Watched, the files svn touched were each reported as
+            // the user's change, and each batch of them dropped the cached working-copy status, so
+            // the commit that usually follows a new branch had to ask SVN all over again.
+            VcsOperationResult result;
+            using (_switchToBranch
+                       ? MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId))
+                       : null)
+            {
+                result = await RepositoryService.CreateBranchAsync(RepositoryId, _branchName, _switchToBranch);
+            }
+
+            if (result.WorkingCopyChanged)
+                Outcome.WorkingCopyChanged = true;
 
             if (result.Success)
             {

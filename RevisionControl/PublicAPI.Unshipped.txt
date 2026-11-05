@@ -1,1 +1,3 @@
 #nullable enable
+RevisionControl.VcsOperationResult.WorkingCopyChanged.get -> bool
+RevisionControl.VcsOperationResult.WorkingCopyChanged.set -> void

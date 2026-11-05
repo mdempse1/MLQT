@@ -327,6 +327,13 @@ working copy root's revision: after a commit the working copy is mixed-revision 
 newer than the root), and a branch taken at the root's revision lacked the commit, so the switch
 rolled the committed files back (`AMixedRevisionWorkingCopy_KeepsWhatItCommitted`).
 
+**Whether a switch rewrote anything** is `VcsOperationResult.WorkingCopyChanged`, read from
+`svn switch`'s item lines (`SwitchChangedFiles`). An up-to-date working copy switched to a branch of
+HEAD changes nothing, and is not reloaded; one behind HEAD gets the missing commits and is.
+`CreateBranchDialog` holds a `MonitorPause` over the switch and records the answer in its
+`VcsDialogOutcome`, like the other VCS dialogs: watched, the switch's writes each dropped the cached
+working-copy status, and the commit that usually follows a new branch asked SVN all over again.
+
 ## Implementing Other VCS Systems
 
 To add support for Mercurial or other VCS:

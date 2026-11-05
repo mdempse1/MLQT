@@ -981,6 +981,8 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
 
             var switched = SvnCli.RunOnWorkingCopy(repositoryPath, "switch", branchUrl, repositoryPath);
+            // Asked of a failed switch too: one that stopped part way has still rewritten files.
+            result.WorkingCopyChanged = SwitchChangedFiles(switched.StdOut);
             if (!switched.Success)
             {
                 result.ErrorMessage = switched.FailureMessage("SVN switch failed.");
@@ -1086,6 +1088,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (switchToBranch)
             {
                 var switchResult = SwitchBranch(repositoryPath, relative);
+                result.WorkingCopyChanged = switchResult.WorkingCopyChanged;
                 if (!switchResult.Success)
                 {
                     result.ErrorMessage = $"Branch created at ^/{relative}, but switching the working copy to it failed, " +
@@ -1146,6 +1149,41 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
 
         return $"{defaultContainer.Trim('/')}/{name}";
+    }
+
+    /// <summary>
+    /// Whether <c>svn switch</c> (or <c>update</c>) says it changed anything in the working copy.
+    /// </summary>
+    /// <remarks>
+    /// Each item it touched is one line: up to four status columns - the item (A, D, U, C, G, E, R),
+    /// its properties (U, C, G), a lock (B) and a tree conflict (C) - then the path. Every other line
+    /// is a summary ("Updated to revision 19.", "At revision 19.", "Summary of conflicts:" and the
+    /// indented counts under it), and a switch with no item lines rewrote nothing. A property change
+    /// counts: svn:eol-style or svn:keywords rewrite the file they are set on.
+    /// </remarks>
+    internal static bool SwitchChangedFiles(string? output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return false;
+
+        foreach (var line in output.Split('\n'))
+        {
+            var text = line.TrimEnd('\r');
+            if (text.Length < 6)
+                continue;
+
+            var item = text[0];
+            var props = text[1];
+            var locked = text[2];
+            var tree = text[3];
+            var columnsValid = "ADUCGER ".Contains(item) && "UCG ".Contains(props)
+                && "B ".Contains(locked) && "C ".Contains(tree);
+            var anyFlag = item != ' ' || props != ' ' || locked != ' ' || tree != ' ';
+            if (columnsValid && anyFlag && text[4] == ' ' && !string.IsNullOrWhiteSpace(text[5..]))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

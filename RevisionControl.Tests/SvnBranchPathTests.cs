@@ -65,4 +65,31 @@ public class SvnBranchPathTests
     [InlineData("/")]
     public void AnEmptyName_HasNoPath(string typed) =>
         Assert.Null(SvnRevisionControlSystem.BranchPathFor(typed, Standard, Folders()));
+
+    // ---- What svn switch says it changed ------------------------------------------------------
+
+    [Theory]
+    [InlineData("Updating 'C:\\wc':\r\nAt revision 19.\r\n")]
+    [InlineData("Updating 'C:\\wc':\nUpdated to revision 19.\n")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ASwitchThatOnlyReportsTheRevision_ChangedNothing(string? output) =>
+        Assert.False(SvnRevisionControlSystem.SwitchChangedFiles(output));
+
+    [Theory]
+    [InlineData("U    C:\\wc\\package.mo")]
+    [InlineData("A    C:\\wc\\New.mo")]
+    [InlineData("D    C:\\wc\\Old.mo")]
+    [InlineData("G    C:\\wc\\Merged.mo")]
+    [InlineData("C    C:\\wc\\Conflicted.mo")]
+    [InlineData(" U   C:\\wc\\PropertyOnly.mo")]
+    [InlineData("   C C:\\wc\\TreeConflict")]
+    public void ASwitchWithAnItemLine_ChangedTheWorkingCopy(string itemLine) =>
+        Assert.True(SvnRevisionControlSystem.SwitchChangedFiles(
+            $"Updating 'C:\\wc':\r\n{itemLine}\r\nUpdated to revision 20.\r\n"));
+
+    [Fact]
+    public void TheConflictSummary_IsNotAnItemLine() =>
+        Assert.False(SvnRevisionControlSystem.SwitchChangedFiles(
+            "Updated to revision 20.\nSummary of conflicts:\n  Text conflicts: 1\n"));
 }

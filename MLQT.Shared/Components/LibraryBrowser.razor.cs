@@ -1544,18 +1544,32 @@ public partial class LibraryBrowser : IDisposable
         if (Repository == null)
             return;
 
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<CreateBranchDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true };
         var dialog = await DialogService.ShowAsync<CreateBranchDialog>("Create Branch", parameters, options);
         var result = await dialog.Result;
 
+        // The switch rewrote files - the working copy was behind HEAD, which the branch is copied
+        // from - so the libraries are reloaded from them and analysed, as after any switch. Asked
+        // whichever way the dialog closed: a switch that failed part way has still written.
+        if (outcome.WorkingCopyChanged)
+        {
+            await AfterVcsDialogAsync(repository, outcome, "branch switch");
+            if (result != null && !result.Canceled)
+                Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
+            return;
+        }
+
         if (result != null && !result.Canceled)
         {
-            // Nothing to reload: a new branch starts where the working copy already is, and
-            // CreateBranchAsync has already read the new branch name. This used to remove and
+            // Nothing to reload: the switch rewrote no file, so the libraries are what is on disk,
+            // and CreateBranchAsync has already read the new branch name. This used to remove and
             // reload every library for it (B296).
             Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
             StateHasChanged();

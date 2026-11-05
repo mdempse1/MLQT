@@ -199,6 +199,72 @@ public class VcsDialogMonitorTests : MlqtComponentTestBase
         _monitor.Verify(m => m.StopMonitoring(It.IsAny<string>()), Times.Never);
     }
 
+    /// <summary>
+    /// Creating a branch and switching to it runs with the monitor held off, as every switch does.
+    /// Watched, each file svn touched was reported as the user's change and dropped the cached
+    /// working-copy status, so the next commit had to ask SVN all over again.
+    /// </summary>
+    [Fact]
+    public async Task CreatingABranchAndSwitching_HoldsTheMonitorOff_AndReportsWhatTheSwitchChanged()
+    {
+        var monitorWasOffDuringTheSwitch = false;
+        _repositories.Setup(r => r.CreateBranchAsync("repo", "feature", true))
+            .Callback(() => monitorWasOffDuringTheSwitch = MonitorStoppedAndNotYetStarted())
+            .ReturnsAsync(new VcsOperationResult { Success = true, WorkingCopyChanged = true });
+
+        var (provider, dialog) = await ShowDialogAsync<CreateBranchDialog>(Parameters());
+        await TypeBranchName(provider, "feature");
+        await ClickButton(provider, "Create Branch");
+        var result = await dialog.Result.WaitAsync(DialogCloses, Xunit.TestContext.Current.CancellationToken);
+
+        Assert.False(result!.Canceled);
+        Assert.True(monitorWasOffDuringTheSwitch, "the switch ran with the monitor still watching");
+        _monitor.Verify(m => m.StartMonitoring("repo", Root), Times.Once);
+        Assert.True(_outcome.WorkingCopyChanged, "the switch rewrote files, and the outcome did not say so");
+    }
+
+    [Fact]
+    public async Task CreatingABranchWhoseSwitchChangedNothing_LeavesNothingToReload()
+    {
+        _repositories.Setup(r => r.CreateBranchAsync("repo", "feature", true))
+            .ReturnsAsync(new VcsOperationResult { Success = true });
+
+        var (provider, dialog) = await ShowDialogAsync<CreateBranchDialog>(Parameters());
+        await TypeBranchName(provider, "feature");
+        await ClickButton(provider, "Create Branch");
+        await dialog.Result.WaitAsync(DialogCloses, Xunit.TestContext.Current.CancellationToken);
+
+        Assert.False(_outcome.WorkingCopyChanged);
+    }
+
+    /// <summary>
+    /// How long a dialog that should close is given. Bounded: a dialog that stays open - a refused
+    /// create shows its error and waits - otherwise hangs the whole run rather than failing a test.
+    /// </summary>
+    private static readonly TimeSpan DialogCloses = TimeSpan.FromSeconds(15);
+
+    [Fact]
+    public async Task CreatingABranchWithoutSwitching_LeavesTheMonitorAlone()
+    {
+        _repositories.Setup(r => r.CreateBranchAsync("repo", "feature", false))
+            .ReturnsAsync(new VcsOperationResult { Success = true });
+
+        var (provider, dialog) = await ShowDialogAsync<CreateBranchDialog>(Parameters());
+        await TypeBranchName(provider, "feature");
+        await provider.InvokeAsync(() => provider.Find("input[type=checkbox]").Change(false));
+        await ClickButton(provider, "Create Branch");
+        await dialog.Result.WaitAsync(DialogCloses, Xunit.TestContext.Current.CancellationToken);
+
+        _repositories.Verify(r => r.CreateBranchAsync("repo", "feature", false), Times.Once);
+        _monitor.Verify(m => m.StopMonitoring(It.IsAny<string>()), Times.Never);
+    }
+
+    private static async Task TypeBranchName(IRenderedComponent<MudDialogProvider> provider, string name)
+    {
+        provider.WaitForAssertion(() => Assert.NotEmpty(provider.FindAll("input:not([type=checkbox])")));
+        await provider.InvokeAsync(() => provider.Find("input:not([type=checkbox])").Input(name));
+    }
+
     /// <summary>Whether the monitor has been stopped and not yet started again - asked mid-operation.</summary>
     private bool MonitorStoppedAndNotYetStarted()
     {
