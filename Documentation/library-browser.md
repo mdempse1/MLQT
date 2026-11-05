@@ -108,6 +108,8 @@ A class is one or the other, never both. If you changed an equation **and** move
 
 Click a class to open it, exactly as in the unfiltered tree. Click **All** — or the selected chip again — to go back; the full tree returns expanded as you left it, including anything you opened while the filter was on.
 
+A chip that selects more than a thousand classes takes a moment to build its tree, and says *Gathering the classes that match…* meanwhile, rather than leaving the previous chip's tree on screen.
+
 ![Screenshot: The row of filter chips above the tree - All, Changed, Simulation and Cosmetic - each of the last three carrying the number of classes behind it in brackets.](Images/library-browser-6.png)
 
 **None of this appears for a repository marked [Reference only](settings-reference.md#reference-only-repositories).** MLQT never formats, checks, commits or writes to one, so there is nothing for a change marker to be about — and because a reference repository is not watched for file changes either, anything shown would only ever be refreshed by loading the project.

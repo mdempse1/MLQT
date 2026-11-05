@@ -97,6 +97,16 @@ When MLQT starts (or when you switch projects), it formats any files that VCS re
 - Each repository's own formatting settings are used
 - Repositories with **Apply formatting rules** disabled are skipped entirely
 - Files are identified via VCS status (modified, added, or untracked `.mo` files)
+- A file that is already formatted is left exactly as it is — not written again — so its modification
+  time is untouched. Every startup goes through the same modified files, and most were formatted by
+  the one before
+- Models Dymola generated from an FMU are skipped; see
+  [Models generated from an FMU](#models-generated-from-an-fmu)
+
+With thousands of modified files, most of this step is version control working out which files are
+modified, not formatting them. MLQT starts asking while the libraries load, so the two overlap; see
+[Troubleshooting](troubleshooting.md#why-is-startup-slow-when-many-files-are-modified) for what
+decides how long it takes.
 
 ### After VCS Operations
 

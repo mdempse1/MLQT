@@ -27,7 +27,7 @@ corpus by hand** — the `test-tooling` skill has the command.
 
 ## Node types
 
-- `FileNode` - Represents a Modelica file
+- `FileNode` - Represents a Modelica file. `LoadedWriteTimeUtc` is the file's write time when `GraphBuilder.LoadModelicaFile` read it (null for a node made any other way); the startup format trusts the graph's classes only while it still matches
 - `ModelNode` - Represents a Modelica model with definition, dependencies, and `HasExperimentAnnotation` flag
 - `ResourceFileNode` - Represents an external resource file
 - `ResourceDirectoryNode` - Represents an external resource directory

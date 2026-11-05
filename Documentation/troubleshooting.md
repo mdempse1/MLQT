@@ -202,6 +202,28 @@ No. MLQT is a library management and quality tool, not a code editor. You edit c
 - **Git**: MLQT uses LibGit2Sharp (a built-in library) for local Git operations such as committing, branching, and reading history. However, operations that interact with a remote server — **fetch, push, rebase** — shell out to `git.exe` so that all configured credential helpers (Git Credential Manager, SSH keys, GitHub Desktop, etc.) are used automatically. You **must have Git installed** for these operations to work. MLQT never waits for a password typed at a terminal: a credential helper with a window of its own, such as Git Credential Manager, still asks, but if nothing can supply the credential the operation fails with git's message instead of waiting. A git command still running after 15 minutes is stopped and reported as failed.
 - **SVN**: MLQT performs all SVN operations through the `svn` command-line client. On **Windows** the installer ships its own bundled copy, so you do **not** need to install an SVN client. On **Linux** no client is bundled: MLQT runs `svn` from your `PATH`, and the `.deb` only recommends `subversion`, so install it (`sudo apt install subversion`) if you declined it — see [Installation](installation.md#svn-and-git-on-linux). If you prefer to use a specific svn executable, set the `MLQT_SVN_PATH` environment variable to its full path. An svn command that writes nothing for 10 minutes — a server that has stopped answering — is stopped and reported as failed; one that is still reporting files runs for as long as it needs.
 
+### Why is startup slow when many files are modified?
+
+Before it formats anything, MLQT asks version control which files are modified. With a large number
+of modified files that question is most of the startup. For SVN, `svn status` has to read every
+modified file and its committed copy to be sure it really changed. Measured on a working copy with
+17,000 modified files, that took about 4 seconds when the files had been read recently and 85 to 110
+seconds when they had not — after a reboot, say, or a long break — and five minutes while the machine
+was busy with other work and a virus scan.
+
+MLQT starts that question while the libraries are loading, so the two overlap, and asks it once: the
+formatter and the library tree share the answer. It cannot make the question itself cheaper. What can:
+
+- **Commit the files.** A working copy with few modified files answers in seconds whether its files
+  were read recently or not. If a formatting pass left thousands of files modified, committing them
+  is what makes startups quick again.
+- **Keep the working copy out of real-time virus scanning**, if your organisation allows it. A scanner
+  inspects each file as it is opened, and this step opens every modified file twice.
+
+[The log file](#the-log-file) shows where the time went. `Working-copy status of <repository> read ahead
+of the formatter: … in Nms` is how long version control took; the formatter's `waited Nms for it` is
+how much of that it was still waiting for when it started.
+
 ### Can I use both Git and SVN repositories in the same project?
 
 Yes. A project can contain any mix of Git, SVN, and local repositories. Each repository operates independently with its own settings.
@@ -242,7 +264,7 @@ Yes. Each person runs their own instance of MLQT. VCS operations (commit, update
 
 Only if you have **"Apply formatting rules"** enabled in the repository settings. When enabled, MLQT reformats files in these situations:
 
-- **At startup** — Only files that VCS reports as modified, added, or untracked since the last commit. Unchanged committed files are assumed to be correctly formatted and are not touched.
+- **At startup** — Only files that VCS reports as modified, added, or untracked since the last commit. Unchanged committed files are assumed to be correctly formatted and are not touched, and neither is a modified file that is already formatted.
 - **Before opening the commit dialog** — Any modified files that haven't been formatted yet are formatted first.
 - **After VCS operations that change files** (update, switch branch, merge, revert) — Only the files VCS reports as changed after the operation.
 - **When you click Refresh** to process external file changes — Only the changed files.
