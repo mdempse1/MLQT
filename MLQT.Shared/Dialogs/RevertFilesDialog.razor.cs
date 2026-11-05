@@ -5,6 +5,7 @@ namespace MLQT.Shared.Dialogs;
 public partial class RevertFilesDialog
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+    [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
@@ -38,7 +39,16 @@ public partial class RevertFilesDialog
         try
         {
             var selectedFiles = _changeReviewComponent!.GetSelectedFiles();
-            var result = await RepositoryService.RevertFilesAsync(RepositoryId, selectedFiles);
+
+            // With the monitor held off for the working copy, as every VCS operation that writes
+            // is. Watched, each reverted file was reported as the user's change - 17,000 of them for
+            // a large revert - and each batch dropped the cached working-copy status, though the
+            // library browser reloads exactly the reverted files itself once the dialog closes.
+            VcsOperationResult result;
+            using (MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId)))
+            {
+                result = await RepositoryService.RevertFilesAsync(RepositoryId, selectedFiles);
+            }
 
             if (result.Success)
             {

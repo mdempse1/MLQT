@@ -88,6 +88,33 @@ public class SvnBranchPathTests
         Assert.True(SvnRevisionControlSystem.SwitchChangedFiles(
             $"Updating 'C:\\wc':\r\n{itemLine}\r\nUpdated to revision 20.\r\n"));
 
+    // ---- Paths on a command line --------------------------------------------------------------
+
+    [Fact]
+    public void Chunks_KeepEveryPathInOrder_AndStayInsideTheLimit()
+    {
+        var paths = Enumerable.Range(0, 50).Select(i => $"C:\\wc\\File{i:D2}.mo").ToList();
+
+        var chunks = SvnRevisionControlSystem.CommandLineChunks(paths, maxChars: 100).ToList();
+
+        Assert.Equal(paths, chunks.SelectMany(c => c));
+        Assert.All(chunks, c => Assert.True(c.Sum(p => p.Length + 3) <= 100));
+        Assert.True(chunks.Count > 1);
+    }
+
+    [Fact]
+    public void APathLongerThanTheLimit_GoesInAChunkOfItsOwn()
+    {
+        var chunks = SvnRevisionControlSystem.CommandLineChunks(["short", new string('x', 200), "short2"], maxChars: 50).ToList();
+
+        Assert.Equal(3, chunks.Count);
+        Assert.Single(chunks[1]);
+    }
+
+    [Fact]
+    public void NoPaths_NoChunks() =>
+        Assert.Empty(SvnRevisionControlSystem.CommandLineChunks([]));
+
     [Fact]
     public void TheConflictSummary_IsNotAnItemLine() =>
         Assert.False(SvnRevisionControlSystem.SwitchChangedFiles(

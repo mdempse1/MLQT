@@ -418,23 +418,48 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            foreach (var file in filesToRevert)
-            {
-                var fullPath = Path.Combine(repositoryPath, file);
-                var status = GetSingleStatus(fullPath);
+            // **A handful of svn processes, not two per file.** This asked `svn status` of each file
+            // and then ran `svn revert` on it alone: every one a process that opens and locks the
+            // working copy's database, so reverting 17,000 files was 34,000 of them where TortoiseSVN
+            // runs one revert. Now one status per chunk of paths says which are unversioned, and one
+            // revert takes every other path from a --targets file.
+            var fullPaths = filesToRevert
+                .Select(file => Path.GetFullPath(Path.Combine(repositoryPath, file)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-                if (status?.Item == "unversioned")
+            var unversioned = UnversionedAmong(fullPaths);
+            var toRevert = fullPaths.Where(p => !unversioned.Contains(p)).ToList();
+
+            if (toRevert.Count > 0)
+            {
+                var targetsFile = Path.GetTempFileName();
+                SvnCli.Result revert;
+                try
                 {
-                    if (File.Exists(fullPath))
-                        File.Delete(fullPath);
-                    else if (Directory.Exists(fullPath))
-                        Directory.Delete(fullPath, recursive: true);
+                    File.WriteAllLines(targetsFile, toRevert);
+                    revert = SvnCli.RunOnWorkingCopy(repositoryPath, "revert", "--targets", targetsFile);
                 }
-                else
+                finally
                 {
-                    SvnCli.RunOnWorkingCopy(repositoryPath, "revert", fullPath);
+                    try { File.Delete(targetsFile); } catch { /* best effort */ }
+                }
+
+                // Checked, which the per-file revert never was: a locked working copy reverted
+                // nothing and the operation still reported success.
+                if (!revert.Success)
+                {
+                    result.ErrorMessage = $"Could not revert {toRevert.Count} file(s): {revert.FailureMessage("svn revert failed.")}";
+                    return result;
                 }
             }
+
+            // Unversioned files are deleted, which is what reverting a new file means. Files first,
+            // so a folder's own entry does not take a file listed after it from under the loop.
+            foreach (var path in unversioned.Where(File.Exists))
+                File.Delete(path);
+            foreach (var path in unversioned.Where(Directory.Exists))
+                Directory.Delete(path, recursive: true);
 
             result.Success = true;
         }
@@ -1932,6 +1957,77 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Which of these paths are unversioned: reported so by <c>svn status</c>, or not found by it
+    /// and on disk, which is a path inside a folder that is itself unversioned.
+    /// </summary>
+    /// <remarks>
+    /// <c>svn status</c> takes no <c>--targets</c> file, so the paths go on the command line in
+    /// chunks kept well inside Windows' 32,767-character limit: a process per chunk of a hundred or
+    /// so files rather than one per file. A path svn cannot find comes back as an empty
+    /// <c>&lt;target&gt;</c> with a W155010 warning, and the command still succeeds.
+    /// </remarks>
+    private static HashSet<string> UnversionedAmong(IReadOnlyList<string> fullPaths)
+    {
+        var unversioned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var chunk in CommandLineChunks(fullPaths))
+        {
+            var args = new List<string> { "status", "--depth", "empty" };
+            args.AddRange(chunk);
+            var targets = SvnCli.RunXml(args.ToArray())?.Root?.Elements("target");
+            if (targets is null)
+                continue;
+
+            foreach (var target in targets)
+            {
+                var path = target.Attribute("path")?.Value;
+                if (string.IsNullOrEmpty(path))
+                    continue;
+
+                var item = target.Element("entry")?.Element("wc-status")?.Attribute("item")?.Value;
+                if (item == "unversioned")
+                {
+                    unversioned.Add(Path.GetFullPath(path));
+                    continue;
+                }
+
+                // An empty target is a clean versioned path or one svn could not find, and only the
+                // second, on disk, is unversioned - asked with a process of its own, which only a
+                // file in a new folder, or one with nothing to revert, ever costs.
+                if (target.Element("entry") is null
+                    && (File.Exists(path) || Directory.Exists(path))
+                    && !IsVersioned(path))
+                    unversioned.Add(Path.GetFullPath(path));
+            }
+        }
+
+        return unversioned;
+    }
+
+    /// <summary>The paths in groups whose command line stays inside Windows' limit.</summary>
+    internal static IEnumerable<List<string>> CommandLineChunks(IReadOnlyList<string> paths, int maxChars = 24_000)
+    {
+        var chunk = new List<string>();
+        var length = 0;
+        foreach (var path in paths)
+        {
+            // Quotes and a space each, as the runtime writes them.
+            var cost = path.Length + 3;
+            if (chunk.Count > 0 && length + cost > maxChars)
+            {
+                yield return chunk;
+                chunk = new List<string>();
+                length = 0;
+            }
+
+            chunk.Add(path);
+            length += cost;
+        }
+
+        if (chunk.Count > 0)
+            yield return chunk;
     }
 
     /// <summary>

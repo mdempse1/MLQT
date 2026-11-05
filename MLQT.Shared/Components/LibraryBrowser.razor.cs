@@ -1715,44 +1715,37 @@ public partial class LibraryBrowser : IDisposable
         {
             var revertedRelativePaths = result.Data as List<string> ?? new List<string>();
 
-            // Reload only the reverted .mo files in the graph — avoids a full library reload
-            // for what may be a single-file revert. ReloadFileAsync handles both modified files
-            // (re-parses from disk) and formerly-added files deleted by the revert (removes
-            // their models from the graph).
-            bool hasMoChanges = false;
+            // Reload only the reverted files in the graph — avoids a full library reload for what may
+            // be a single-file revert. One batch, as Refresh and the VCS pipeline reload: the files
+            // are parsed in parallel, and a formerly-added file the revert deleted has its classes
+            // removed. A file at a time, reverting 17,000 files parsed them one after another.
+            var reloaded = RevertedFiles.ToReload(revertedRelativePaths, Repository.VcsRootPath);
+            var hasMoChanges = reloaded.Count > 0;
+
+            // Collect affected model IDs from the now-updated graph for model viewer refresh, and
+            // for the analysis below: the classes now in the files, and the classes in other files
+            // that a reverted package's imports or classes reach (B347, B387), which the reload
+            // reports and the per-file loop threw away.
+            var affectedModelIds = new HashSet<string>();
 
             // One tree announcement for the whole revert, not one per file (B293). Each announcement
             // costs every open tree a working-copy status query and a rebuild, and reverting a
             // reformatted library is thousands of files.
-            using (LibraryDataService.SuppressTreeDataChanged())
+            if (hasMoChanges)
             {
-                foreach (var relativePath in revertedRelativePaths)
-                {
-                    if (relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                    {
-                        hasMoChanges = true;
-                        var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
-                        await LibraryDataService.ReloadFileAsync(fullPath);
-                    }
-                    else if (Path.GetFileName(relativePath).Equals("package.order", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // package.order affects library structure — needs full pipeline but not a full
-                        // library reload; flag so VcsFilesChanged is fired below.
-                        hasMoChanges = true;
-                    }
-                }
-            }
+                HashSet<string> reloadedIds;
+                using (LibraryDataService.SuppressTreeDataChanged())
+                    reloadedIds = await LibraryDataService.UpdateChangedFilesAsync(reloaded, Repository.VcsRootPath);
 
-            // Collect affected model IDs from the now-updated graph for model viewer refresh.
-            var affectedModelIds = new HashSet<string>();
-            foreach (var relativePath in revertedRelativePaths)
-            {
-                if (!relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
-                var fileId = GraphBuilder.GenerateFileId(fullPath);
-                foreach (var model in LibraryDataService.CombinedGraph.GetModelsInFile(fileId))
-                    affectedModelIds.Add(model.Id);
+                // Only the ids still in the graph: a class the revert removed has nothing to analyse.
+                affectedModelIds.UnionWith(reloadedIds.Where(id => LibraryDataService.CombinedGraph.GetNode<ModelNode>(id) is not null));
+
+                foreach (var fullPath in reloaded.Where(p => p.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var fileId = GraphBuilder.GenerateFileId(fullPath);
+                    foreach (var model in LibraryDataService.CombinedGraph.GetModelsInFile(fileId))
+                        affectedModelIds.Add(model.Id);
+                }
             }
 
             await RefreshTreeThenChangesAsync();

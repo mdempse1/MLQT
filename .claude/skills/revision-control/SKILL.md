@@ -327,6 +327,13 @@ working copy root's revision: after a commit the working copy is mixed-revision 
 newer than the root), and a branch taken at the root's revision lacked the commit, so the switch
 rolled the committed files back (`AMixedRevisionWorkingCopy_KeepsWhatItCommitted`).
 
+**Never one svn process per file.** Each one opens and locks the working copy's database, about
+60 ms on a large one before it does anything, and a working copy with 17,000 changed files makes a
+loop over them half an hour. `RevertFiles` asked `svn status` and ran `svn revert` per file; it now
+runs one status per chunk of paths (`svn status` takes no `--targets`, so `CommandLineChunks` keeps
+each command line inside Windows' limit) and one `svn revert --targets`, which reverts the versioned
+paths and says `Skipped` for the rest. `Commit`'s preparation still asks status per file.
+
 **Whether a switch rewrote anything** is `VcsOperationResult.WorkingCopyChanged`, read from
 `svn switch`'s item lines (`SwitchChangedFiles`). An up-to-date working copy switched to a branch of
 HEAD changes nothing, and is not reloaded; one behind HEAD gets the missing commits and is.
