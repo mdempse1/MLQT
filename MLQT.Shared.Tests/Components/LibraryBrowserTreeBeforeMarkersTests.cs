@@ -199,8 +199,17 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
         // An overtaken classification answers "nothing", and applied as an answer it took every kind
         // away - every chip back to a plain M, the Simulation and Cosmetic counts to 0 - until the
         // next refresh. Here every request after the first is overtaken, retries included.
+        // Signalled by the classifier, not waited for by render: an overtaken answer is not applied,
+        // so the last calls draw nothing, and a wait that re-checks on render never saw them under a
+        // loaded machine.
+        var allAsked = new ManualResetEventSlim();
         var (browser, library, libraries, classifier) = RenderWith(
-            asked => asked == 1 ? LibAffectsSimulation : IModelChangeClassifier.Overtaken,
+            asked =>
+            {
+                if (asked == 5)
+                    allAsked.Set();
+                return asked == 1 ? LibAffectsSimulation : IModelChangeClassifier.Overtaken;
+            },
             [new VcsWorkingCopyFile { Path = "Lib/package.mo", Status = VcsFileStatus.Modified }]);
         var classified = ChangeMarker.For(VcsFileStatus.Modified, ClassChangeKind.AffectsSimulation, ClassChangeKind.Unchanged);
         browser.WaitForAssertion(() => Assert.Equal(classified, browser.Instance.MarkerFor(library)));
@@ -208,8 +217,10 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
         libraries.Raise(l => l.OnTreeDataChanged += null);
 
         // The first answer, the refresh's own, and its three retries.
-        browser.WaitForAssertion(() => classifier.Verify(
-            c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.Exactly(5)));
+        Assert.True(allAsked.Wait(TimeSpan.FromSeconds(30), Xunit.TestContext.Current.CancellationToken),
+            "the refresh did not ask the classifier, and retry, as expected");
+        classifier.Verify(
+            c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.Exactly(5));
         await browser.InvokeAsync(() => { });
         Assert.Equal(classified, browser.Instance.MarkerFor(library));
         Assert.Equal(1, browser.Instance.CountFor(LibraryBrowser.ChangeFilter.AffectsSimulation));

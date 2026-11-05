@@ -176,12 +176,6 @@
                                                                                          "bar":  95,
                                                                                          "reason":  "Reads a vendor\u0027s generated help HTML. Covered against the shapes Dymola 2024x emits; the gap is the malformed-input branches, which need fixtures nobody has captured a real example of."
                                                                                      },
-                    "ModelicaParser::ModelicaParser.Helpers.ModelicaFileEncoding":  {
-                                                                                        "coverage":  94.5,
-                                                                                        "lines":  111,
-                                                                                        "bar":  95,
-                                                                                        "reason":  "0.5 points under the bar. The uncovered lines are the rarer BOM and Latin-1 fallback combinations. Reachable from a fixture file; not yet written."
-                                                                                    },
                     "ModelicaParser::ModelicaParser.Helpers.ModelicaParserHelper":  {
                                                                                         "coverage":  87.9,
                                                                                         "lines":  108,
