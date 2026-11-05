@@ -112,6 +112,7 @@ public partial class MainLayout : IDisposable
         ApplyThemeFromSettings(_settings.UI);
 
         NavState.OnRepositorySettingsApplied += OnRepositorySettingsApplied;
+        NavState.OnFormatAllFilesRequested += OnFormatAllFilesRequested;
         _vcsPipelines = new VcsPipelineQueue(NavState);
         NavState.OnVcsFilesChanged += OnVcsFilesChanged;
         NavState.OnVcsModelsChanged += OnVcsModelsChanged;
@@ -1560,6 +1561,7 @@ public partial class MainLayout : IDisposable
     {
         NavState.OnThemeChanged -= OnThemeChangedHandler;
         NavState.OnRepositorySettingsApplied -= OnRepositorySettingsApplied;
+        NavState.OnFormatAllFilesRequested -= OnFormatAllFilesRequested;
         NavState.OnProjectSwitchStarting -= OnProjectSwitchStarting;
         NavState.OnProjectSwitchAbandoned -= OnProjectSwitchAbandoned;
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
@@ -1681,6 +1683,28 @@ public partial class MainLayout : IDisposable
 
         // The findings still follow the new rules; only the rewrite waits for the user.
         _ = Task.Run(() => ProcessRepositorySettingsAsync(repositoryId, false, styleSettingsChanged: true));
+    }
+
+    /// <summary>
+    /// Format All Files: queued as VCS work like a formatting change, or refused, with a message,
+    /// while VCS work runs (B385).
+    /// </summary>
+    /// <remarks>
+    /// Refused, it does nothing else. It used to arrive as a settings change, whose refusal re-checks
+    /// every class against the new rules - but this click changed no rule, so a revert's analysis
+    /// still running turned it into a full re-check that looked like the format getting under way,
+    /// beside a warning that said it had not. The settings panel said "Full format started" either
+    /// way; the layout, which knows, now says which.
+    /// </remarks>
+    private void OnFormatAllFilesRequested(string repositoryId)
+    {
+        if (_vcsPipelines.TryEnqueue(() => ProcessRepositorySettingsAsync(repositoryId, true, false)) is not null)
+            return;
+
+        Warn("MainLayout", "Format All Files refused: a version-control operation or its analysis is running");
+        _ = InvokeAsync(() => Snackbar.Add(
+            "Format All Files did not start: a version-control operation or its analysis is still running. " +
+            "Try again when it has finished.", Severity.Warning));
     }
 
     private async Task ProcessRepositorySettingsAsync(string repositoryId, bool formattingChanged, bool styleSettingsChanged)

@@ -163,6 +163,23 @@ public class AppStateTests
     }
 
     [Fact]
+    public void FormatAllFilesRequested_IsItsOwnRequest_NotASettingsChange()
+    {
+        // Refused, a settings change re-checks every class; a Format All Files click changed no rule,
+        // and arriving as a settings change is what made its refusal re-check everything anyway.
+        var state = new AppState();
+        string? requested = null;
+        var settingsApplied = false;
+        state.OnFormatAllFilesRequested += id => requested = id;
+        state.OnRepositorySettingsApplied += (_, _, _) => settingsApplied = true;
+
+        state.FormatAllFilesRequested("repo-1");
+
+        Assert.Equal("repo-1", requested);
+        Assert.False(settingsApplied);
+    }
+
+    [Fact]
     public void VcsModelsChanged_CarriesTheRepositoryAndTheModels()
     {
         var state = new AppState();

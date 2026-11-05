@@ -244,6 +244,25 @@ public class AppState
         OnRepositorySettingsApplied?.Invoke(repositoryId, formattingChanged, styleSettingsChanged);
     }
 
+    /// <summary>
+    /// Event fired when the user asks for every file of a repository to be formatted again - the
+    /// Format All Files button, with no setting changed. Parameter: repositoryId.
+    /// </summary>
+    /// <remarks>
+    /// Apart from <see cref="OnRepositorySettingsApplied"/>, because the two are refused differently.
+    /// A settings change refused while VCS work runs still re-checks the classes against the new
+    /// rules. A Format All Files click changed no rule, so refused there is nothing to re-check, and
+    /// it used to re-check every class anyway, which looked like the format it had just refused
+    /// getting under way.
+    /// </remarks>
+    public event Action<string>? OnFormatAllFilesRequested;
+
+    /// <summary>Asks for every file of a repository to be formatted again.</summary>
+    public void FormatAllFilesRequested(string repositoryId)
+    {
+        OnFormatAllFilesRequested?.Invoke(repositoryId);
+    }
+
     // ========== VCS Operations ==========
 
     /// <summary>

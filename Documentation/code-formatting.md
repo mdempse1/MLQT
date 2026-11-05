@@ -141,7 +141,7 @@ If you change any formatting-related settings in a repository's configuration (s
 
 ### Format All Files Button
 
-The **Format All Files** button in repository settings forces a complete reformat of every file in the repository. It is disabled while **Apply formatting rules** is off. Use this when:
+The **Format All Files** button in repository settings forces a complete reformat of every file in the repository. It is disabled while **Apply formatting rules** is off, and while a version-control operation or the analysis that follows one is running; its tooltip says which. The **Formatting all files** progress dialog shows once it has started. Use this when:
 
 - Setting up MLQT on an existing repository for the first time
 - After changing formatting rules and wanting to ensure complete consistency
@@ -149,7 +149,7 @@ The **Format All Files** button in repository settings forces a complete reforma
 
 This is the most thorough formatting operation, and the one that restructures the repository on disk: it writes every package as a directory with one file per class. See [One File Per Class](#one-file-per-class) — the first run on a single-file library produces a very large commit.
 
-A full reformat and a version-control operation never run at the same time. While a full reformat runs, the Library Browser's version-control actions and the **Refresh** button are disabled, as they are during an update's own analysis. And a full reformat is not started while a version-control operation or its analysis is running: MLQT says so, keeps the new settings and re-checks the findings against them, and you press **Format All Files** again once the operation has finished.
+A full reformat and a version-control operation never run at the same time. While a full reformat runs, the Library Browser's version-control actions and the **Refresh** button are disabled, as they are during an update's own analysis. And a full reformat is not started while a version-control operation or its analysis is running. **Format All Files** is disabled for that time, and if it is pressed just as one starts, MLQT says it did not start and does nothing else. A change to the formatting settings that is applied then is saved, and the findings are re-checked against it, and you press **Format All Files** once the operation has finished.
 
 ### On Manual Refresh
 
