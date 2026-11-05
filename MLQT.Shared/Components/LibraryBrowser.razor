@@ -252,7 +252,13 @@ else if (Repository != null)
                 </MudChipSet>
             }
 
-            @if (_changeFilter != ChangeFilter.None && _filteredTreeItems.Count == 0)
+            @if (_changeFilter != ChangeFilter.None && _filterBuilding)
+            {
+                <MudText Typo="Typo.caption" Class="ml-2 mb-2">
+                    Gathering the classes that match...
+                </MudText>
+            }
+            else if (_changeFilter != ChangeFilter.None && _filteredTreeItems.Count == 0)
             {
                 <MudText Typo="Typo.caption" Class="ml-2 mb-2">
                     No classes in this repository match that filter.

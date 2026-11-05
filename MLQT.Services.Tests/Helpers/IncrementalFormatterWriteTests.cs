@@ -239,15 +239,21 @@ public class IncrementalFormatterWriteTests : IDisposable
             Assert.Equal(reloaded.GetNode<ModelNode>(id)!.Definition.ModelicaCode, graph.GetNode<ModelNode>(id)!.Definition.ModelicaCode);
     }
 
+    /// <summary>The package, formatted on disk, and a graph loaded from it as a startup would.</summary>
+    private async Task<(DirectedGraph Graph, string Path)> FormattedAndFreshlyLoadedAsync()
+    {
+        var (_, path) = LoadPackage(PackageWithTwoClasses);
+        await IncrementalFormatter.FormatAndWriteAsync(LoadPackageFrom(path), new[] { path }, Formatting());
+        return (LoadPackageFrom(path), path);
+    }
+
     [Fact]
-    public async Task StraightAfterALoad_AFileAlreadyFormatted_IsNotReadBackIntoTheGraph()
+    public async Task StraightAfterALoad_AFileAlreadyFormattedAsLoaded_IsNotReadBackIntoTheGraph()
     {
         // At startup the classes were read from these very files a moment ago, so reading an already
         // formatted file back into them gives back what they hold - one parse per file, 35 seconds at
-        // a startup with 17,372 of them. The caller says so, and the refresh is skipped. Proved here
-        // with a graph that does NOT match, which only a skipped refresh leaves as it was.
-        var (graph, path) = LoadPackage(PackageWithTwoClasses);
-        await IncrementalFormatter.FormatAndWriteAsync(LoadPackageFrom(path), new[] { path }, Formatting());
+        // a startup with 17,372 of them. The same string object afterwards: a refresh assigns a new one.
+        var (graph, path) = await FormattedAndFreshlyLoadedAsync();
         var before = graph.GetNode<ModelNode>("P.B")!.Definition.ModelicaCode;
 
         var written = await IncrementalFormatter.FormatAndWriteAsync(
@@ -255,6 +261,34 @@ public class IncrementalFormatterWriteTests : IDisposable
 
         Assert.Empty(written);
         Assert.Same(before, graph.GetNode<ModelNode>("P.B")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public async Task StraightAfterALoad_AFileChangedSinceTheLoad_IsReadBackAllTheSame()
+    {
+        // The window is minutes long - the format waits for the working-copy status - and the monitor
+        // is not watching yet. A file saved in another editor then, already well formatted, has nothing
+        // to write; skipping the refresh as well left the graph on the text from before the edit.
+        var (graph, path) = await FormattedAndFreshlyLoadedAsync();
+        var before = graph.GetNode<ModelNode>("P.B")!.Definition.ModelicaCode;
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+        await IncrementalFormatter.FormatAndWriteAsync(
+            graph, new[] { path }, Formatting(), neverWritten: null, classesMatchFiles: true);
+
+        Assert.NotSame(before, graph.GetNode<ModelNode>("P.B")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public async Task AFileLoadedFromDisk_RecordsItsWriteTime_AndAWriteMovesIt()
+    {
+        var (graph, path) = LoadPackage(PackageWithTwoClasses);
+        var node = graph.GetNode<FileNode>(GraphBuilder.GenerateFileId(path))!;
+        Assert.Equal(File.GetLastWriteTimeUtc(path), node.LoadedWriteTimeUtc);
+
+        var written = await IncrementalFormatter.FormatAndWriteAsync(graph, new[] { path }, Formatting());
+
+        Assert.Equal(written[path], node.LoadedWriteTimeUtc);
     }
 
     private static DirectedGraph LoadPackageFrom(string path)

@@ -520,6 +520,35 @@ public class ModelicaFileEncodingTests : IDisposable
                 ModelicaFileEncoding.ForFileText(existing, rendered));
     }
 
+    /// <summary>
+    /// The same, for files in every encoding the reader recognises, with the text read back the way
+    /// the formatter reads it - so a byte-order mark, a UTF-16 CRLF and a Latin-1 accent all go
+    /// through the decoding the "already formatted" question really sees.
+    /// </summary>
+    [Theory]
+    [InlineData("utf-8-bom", "package P\r\nend P;\r\n")]
+    [InlineData("utf-16le", "package P\r\nend P;\r\n")]
+    [InlineData("utf-16be", "package P\nend P;\n")]
+    [InlineData("latin1", "package P \"café\"\r\nend P;\r\n")]
+    [InlineData("utf-8", "package P\rend P;\r")]                 // lone carriage returns
+    public void ForFileText_AgreesWithForFile_InEveryEncoding(string encodingName, string content)
+    {
+        var encoding = encodingName switch
+        {
+            "utf-8-bom" => new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
+            "latin1" => Encoding.Latin1,
+            "utf-8" => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            _ => Encoding.GetEncoding(encodingName),
+        };
+        var path = Write("encoded.mo", encoding.GetPreamble().Concat(encoding.GetBytes(content)).ToArray());
+        var existing = ModelicaFileEncoding.ReadAllTextOnly(path);
+
+        foreach (var rendered in new[] { "package P\nend P;\n", content })
+            Assert.Equal(
+                ModelicaFileEncoding.ForFile(path, rendered),
+                ModelicaFileEncoding.ForFileText(existing, rendered));
+    }
+
     #endregion
 
     #region Files with nothing in them

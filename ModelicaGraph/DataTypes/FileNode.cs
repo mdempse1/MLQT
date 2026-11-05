@@ -23,6 +23,18 @@ public class FileNode : GraphNode
     public string? Content { get; set; }
 
     /// <summary>
+    /// The file's last-write time when its classes were read into the graph, or null when that is not
+    /// known - a file not on disk, or a node made some other way than by loading the file.
+    /// </summary>
+    /// <remarks>
+    /// What lets the startup format tell "already formatted and as loaded" from "already formatted but
+    /// edited since": only a file whose write time still matches can skip having its classes read
+    /// back from it. Taken just after the text was read, so an edit landing between the two shows as
+    /// a newer time and the refresh happens.
+    /// </remarks>
+    public DateTime? LoadedWriteTimeUtc { get; set; }
+
+    /// <summary>
     /// Models contained in this file (IDs of ModelNode instances).
     /// </summary>
     public HashSet<string> ContainedModelIds { get; }

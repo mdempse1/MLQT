@@ -659,6 +659,42 @@ public class SuppressionTests
     }
 
     [Fact]
+    public void TheComponentTotal_LeavesOutAnFmuImport_AndOnlyThat()
+    {
+        // The skip was "on no dimension at all", which also caught a class in no repository and one in
+        // an excluded library - still counted among the classes, no longer among the components.
+        var graph = Graph(
+            ("P", "model P\n  Real a;\n  Real b;\n  annotation(__Dymola_FMUImportPath=\"a.fmu\");\nend P;"),
+            ("Q", "model Q\n  Real c;\nend Q;"));
+        var models = new[] { graph.GetNode<ModelNode>("P")!, graph.GetNode<ModelNode>("Q")! };
+
+        // Q is in no repository: on no dimension, and still counted, as it always was.
+        var metrics = ModelicaGraph.Analysis.MetricsCalculator.Compute(graph, models,
+            settingsFor: m => m.Id == "P" ? new StyleCheckingSettings { ClassHasDescription = true } : null);
+
+        Assert.Equal(2, metrics.TotalClasses);
+        Assert.Equal(1, metrics.TotalComponents);
+    }
+
+    [Fact]
+    public void WhetherAClassIsAnFmuImport_IsAskedAgain_WhenItsEnclosingClassChanges()
+    {
+        // The facts are cached on the record; the mark is its package's. Giving the package the mark
+        // changes nothing about the record's source, so its cached facts used to keep the old answer.
+        var graph = Graph(
+            ("P", "package P\nend P;"),
+            ("P.R", "record R\n  parameter Real k = 1;\nend R;"));
+        var record = graph.GetNode<ModelNode>("P.R")!;
+        var measurer = new ModelicaGraph.Analysis.CoverageMeasurer(graph);
+        Assert.False(measurer.Measure(record)!.GeneratedImport);
+
+        graph.GetNode<ModelNode>("P")!.Definition.ModelicaCode =
+            "package P\n  annotation(__Dymola_FMUImportPath=\"a.fmu\");\nend P;";
+
+        Assert.True(measurer.Measure(record)!.GeneratedImport);
+    }
+
+    [Fact]
     public void AnAudit_CountsAnFmuImportInCoverage()
     {
         // --no-suppress puts every finding back, so the coverage it reports must count the class too.

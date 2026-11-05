@@ -1162,7 +1162,7 @@ public class RepositoryService : IRepositoryService
         }
 
         // Started now, while the libraries load, rather than when the formatter asks for it.
-        StartWorkingCopyStatusQueries();
+        StartWorkingCopyStatusQueries(cancellationToken);
 
         // Load libraries for all repositories in parallel
         var tasks = Repositories.Select(repo =>
@@ -1188,12 +1188,25 @@ public class RepositoryService : IRepositoryService
     /// <para>Nobody waits for it. The formatter and the library browser join the query in flight
     /// (<see cref="GetWorkingCopyChanges"/> shares one per working copy), or find its answer cached.
     /// Nothing between here and the formatter invalidates the cache - the monitor has not started, and
-    /// loading libraries changes no repository - so the answer is used rather than asked for again.</para>
+    /// loading libraries changes no repository - so the answer is used rather than asked for again.
+    /// Called from both ways a project is loaded: at startup and on a switch.</para>
     ///
-    /// <para>Reference-only repositories are left out: nothing asks for their status (B354).</para>
+    /// <para><b>It does not make a failure recoverable.</b> The version-control layer answers a status
+    /// it could not read - a working copy locked by another client, say - with an empty or partial
+    /// list rather than an exception, and that is cached like any other answer, for
+    /// <see cref="WorkingCopyCacheLifetimeMs"/>. Starting early changes when that happens, not what
+    /// happens; a real exception reaches every caller waiting on the query, the formatter included,
+    /// which logs it and formats nothing.</para>
+    ///
+    /// <para>Reference-only repositories are left out: nothing asks for their status (B354). A load
+    /// already cancelled starts nothing; a query once started runs to the end, since the svn process
+    /// it waits on cannot be stopped from here.</para>
     /// </remarks>
-    private void StartWorkingCopyStatusQueries()
+    private void StartWorkingCopyStatusQueries(CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
         var wanted = Repositories
             .Where(r => !r.IsReferenceOnly && r.VcsType != RepositoryVcsType.Local)
             .GroupBy(r => WorkingCopyKey(r.Id), StringComparer.Ordinal)
@@ -1214,7 +1227,7 @@ public class RepositoryService : IRepositoryService
                 }
                 catch (Exception ex)
                 {
-                    // Whoever asks next asks again, and says what went wrong then.
+                    // Every caller waiting on the query has the same exception; this is the record of it.
                     Warn("RepositoryService",
                         $"Reading the working-copy status of {repository.Name} ahead of the formatter failed: {ex.Message}");
                 }
@@ -1562,6 +1575,9 @@ public class RepositoryService : IRepositoryService
                 Error("RepositoryService", $"Exception while loading repository {entry.Name}", ex);
             }
         }
+
+        // As at startup: the formatter runs once the switch has loaded, and asks first thing.
+        StartWorkingCopyStatusQueries(cancellationToken);
 
         // Load libraries for all repositories in parallel
         var tasks = Repositories.Select(repo =>

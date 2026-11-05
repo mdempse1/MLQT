@@ -142,6 +142,91 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
         }
     }
 
+    /// <summary>
+    /// A browser over one library in a changed file, with a classifier answering through
+    /// <paramref name="classify"/> (given how many times it has been asked) and the working copy's
+    /// changes read from <paramref name="changes"/> each time.
+    /// </summary>
+    private (IRenderedComponent<LibraryBrowser> Browser, ModelNode Library, Mock<ILibraryDataService> Libraries,
+        Mock<IModelChangeClassifier> Classifier)
+        RenderWith(Func<int, IReadOnlyDictionary<string, ClassChangeKind>> classify, List<VcsWorkingCopyFile> changes)
+    {
+        var graph = new DirectedGraph();
+        var path = Path.Combine(Root, "Lib", "package.mo");
+        var fileId = GraphBuilder.GenerateFileId(path);
+        var library = new ModelNode("Lib", "Lib", "package Lib end Lib;") { LibraryId = "lib-1", ClassType = "package" };
+        graph.AddNode(new FileNode(fileId, path));
+        graph.AddNode(library);
+        graph.AddFileContainsModel(fileId, library.Id);
+
+        var libraries = new Mock<ILibraryDataService>();
+        libraries.SetupGet(l => l.CombinedGraph).Returns(graph);
+        libraries.Setup(l => l.GetTopLevelModelsAsync()).ReturnsAsync(new List<ModelNode> { library });
+        libraries.Setup(l => l.GetChildModelsAsync(It.IsAny<ModelNode>())).ReturnsAsync(new List<ModelNode>());
+        libraries.Setup(l => l.GetModelById(It.IsAny<string>())).Returns<string>(id => graph.GetNode<ModelNode>(id));
+        libraries.Setup(l => l.ModelsWithDescendantParserErrors()).Returns(new HashSet<string>());
+
+        var repositories = new Mock<IRepositoryService>();
+        repositories.Setup(r => r.GetWorkingCopyChanges("repo-1")).Returns(() => changes.ToList());
+
+        var asked = 0;
+        var classifier = new Mock<IModelChangeClassifier>();
+        classifier.Setup(c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()))
+            .Returns(() => classify(Interlocked.Increment(ref asked)));
+
+        Services.AddSingleton(libraries.Object);
+        Services.AddSingleton(repositories.Object);
+        Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
+        Services.AddSingleton(classifier.Object);
+        RenderProviders();
+
+        var browser = Render<LibraryBrowser>(p => p
+            .Add(c => c.LibraryOnly, false)
+            .Add(c => c.Repository, new Repository
+            {
+                Id = "repo-1", Name = "Repo", LocalPath = Root, VcsRootPath = Root,
+                VcsType = RepositoryVcsType.SVN, LibraryIds = ["lib-1"],
+            }));
+        return (browser, library, libraries, classifier);
+    }
+
+    private static readonly IReadOnlyDictionary<string, ClassChangeKind> LibAffectsSimulation =
+        new Dictionary<string, ClassChangeKind> { ["Lib"] = ClassChangeKind.AffectsSimulation };
+
+    [Fact]
+    public async Task AnOvertakenAnswer_DoesNotTakeAwayTheKindsTheTreeHas()
+    {
+        // An overtaken classification answers "nothing", and applied as an answer it took every kind
+        // away - every chip back to a plain M, the Simulation and Cosmetic counts to 0 - until the
+        // next refresh. Here every request after the first is overtaken, retries included.
+        var (browser, library, libraries, classifier) = RenderWith(
+            asked => asked == 1 ? LibAffectsSimulation : IModelChangeClassifier.Overtaken,
+            [new VcsWorkingCopyFile { Path = "Lib/package.mo", Status = VcsFileStatus.Modified }]);
+        var classified = ChangeMarker.For(VcsFileStatus.Modified, ClassChangeKind.AffectsSimulation, ClassChangeKind.Unchanged);
+        browser.WaitForAssertion(() => Assert.Equal(classified, browser.Instance.MarkerFor(library)));
+
+        libraries.Raise(l => l.OnTreeDataChanged += null);
+
+        // The first answer, the refresh's own, and its three retries.
+        browser.WaitForAssertion(() => classifier.Verify(
+            c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.Exactly(5)));
+        await browser.InvokeAsync(() => { });
+        Assert.Equal(classified, browser.Instance.MarkerFor(library));
+        Assert.Equal(1, browser.Instance.CountFor(LibraryBrowser.ChangeFilter.AffectsSimulation));
+    }
+
+    [Fact]
+    public void ARefreshFindingNoChanges_StillTellsTheClassifier()
+    {
+        // So a classification still running for the changes there were - before a commit - is
+        // overtaken and stops, rather than holding the checkout's gate to the end.
+        var (browser, _, _, classifier) = RenderWith(_ => new Dictionary<string, ClassChangeKind>(), []);
+
+        browser.WaitForAssertion(() => classifier.Verify(
+            c => c.Classify(It.IsAny<Repository>(), It.Is<IReadOnlyList<VcsWorkingCopyFile>>(l => l.Count == 0)),
+            Times.Once));
+    }
+
     [Fact]
     public void TheSuppressDialog_SaysWhenAnEnclosingClassIsAnFmuImport()
     {

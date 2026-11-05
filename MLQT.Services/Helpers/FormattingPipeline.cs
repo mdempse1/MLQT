@@ -115,8 +115,11 @@ public sealed class FormattingPipeline : IFormattingPipeline
                 // which the log passed over in silence and read as formatting.
                 var statusTimer = System.Diagnostics.Stopwatch.StartNew();
                 var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
+                // "Waited", not "read": the query was usually started while the libraries loaded, so
+                // this is how long the format waited for it, not how long it took (RepositoryService
+                // logs that, "read ahead of the formatter").
                 var statusMessage = $"Working-copy status of repository {repository.Name}: "
-                    + $"{changedFilePaths.Count} changed Modelica file(s), read in {statusTimer.ElapsedMilliseconds}ms";
+                    + $"{changedFilePaths.Count} changed Modelica file(s), waited {statusTimer.ElapsedMilliseconds}ms for it";
 
                 // Kept out of a production log when there is nothing in it: no changes, read quickly.
                 if (changedFilePaths.Count > 0 || statusTimer.ElapsedMilliseconds >= SlowStatusMs)

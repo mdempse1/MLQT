@@ -106,9 +106,10 @@ public static class MetricsCalculator
             if (settings is not null)
                 mask = CoverageDimensions.ForClass(mask, settings, model.Id, facts);
 
-            // On no dimension at all - a class Dymola generated from an FMU - contributes nothing,
-            // its components included.
-            if (mask == CoverageDimension.None)
+            // A class Dymola generated from an FMU contributes nothing, its components included. Only
+            // that: a class on no dimension for another reason - in no repository, or in an excluded
+            // library - is still counted in the totals, as it always was and as the class count is.
+            if (facts.GeneratedImport)
                 continue;
 
             // Accumulated from the narrowed mask, and only for a class that was measured, because
@@ -264,7 +265,16 @@ public sealed class CoverageMeasurer
 
         var already = model.Definition.Coverage;
         if (already is not null && (needed & ~already.Measured) == CoverageDimension.None)
+        {
+            // Asked again, not trusted from the cache: the facts are kept on this class, but whether
+            // it is an FMU import can be decided by an enclosing class - whose mark can come or go
+            // while this class's source, and so its cached facts, stay as they were. Both reads behind
+            // it are kept on their classes, so this is cheap.
+            var generated = IsGeneratedImport(model);
+            if (generated != already.GeneratedImport)
+                model.Definition.Coverage = already = already with { GeneratedImport = generated };
             return already;
+        }
 
         try
         {

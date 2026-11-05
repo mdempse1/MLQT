@@ -49,9 +49,20 @@ public interface IModelChangeClassifier
     /// nothing changed: a class in a modified file that was not itself touched is present and
     /// <see cref="ClassChangeKind.Unchanged"/>. A caller that conflated the two would show a
     /// package in an unclassifiable repository as unmodified rather than as unknown.
+    /// <para><b>Or <see cref="Overtaken"/></b>, compared by reference: a newer request for the same
+    /// repository arrived while this one waited or read, so this one stopped and its answer is no
+    /// answer at all. Applied as one, it took away every kind the caller already had.</para>
     /// </returns>
     IReadOnlyDictionary<string, ClassChangeKind> Classify(
         Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes);
+
+    /// <summary>
+    /// What <see cref="Classify"/> returns for a request a newer one overtook. Empty, so a caller
+    /// that does not look for it reads "not asked" - but one that does, which is every caller that
+    /// keeps an earlier answer, keeps it rather than replacing it with nothing.
+    /// </summary>
+    static IReadOnlyDictionary<string, ClassChangeKind> Overtaken { get; } =
+        new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
 
     /// <summary>
     /// Discards what has been cached for a repository, or for all of them when given null.

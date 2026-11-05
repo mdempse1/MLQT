@@ -241,7 +241,13 @@ public partial class LibraryBrowser : IDisposable
             var status = new Dictionary<string, VcsFileStatus>();
 
             if (changes == null || changes.Count == 0)
+            {
+                // Told even so: a classification still running for the changes there were - before a
+                // commit, say - is overtaken by this, and stops, rather than holding the checkout's
+                // gate to the end for an answer nobody will apply.
+                ModelChangeClassifier.Classify(repository, []);
                 return new StatusAnswer(changes, status, EmptyKinds, new Dictionary<string, ClassChangeKind>(), default);
+            }
 
             foreach (var change in changes)
             {
@@ -320,11 +326,31 @@ public partial class LibraryBrowser : IDisposable
         try
         {
             var lookup = LibraryDataService.GetModelById;
-            var (kinds, descendants, counts) = await Task.Run(() =>
+            var answer = await Task.Run<(IReadOnlyDictionary<string, ClassChangeKind> Kinds,
+                Dictionary<string, ClassChangeKind> Descendants, ChangeCounts Counts)?>(() =>
             {
+                // Overtaken is no answer, and applied as one it took every kind away. A request is
+                // overtaken by a newer one, which for a refresh still current can only be an older
+                // refresh whose thread happened to start later - so it asks again, and this time is the
+                // newest. Bounded, in case something keeps asking.
                 var kinds = ModelChangeClassifier.Classify(repository, changes);
+                for (var retry = 0;
+                     retry < 3
+                     && ReferenceEquals(kinds, IModelChangeClassifier.Overtaken)
+                     && Volatile.Read(ref _statusGeneration) == generation;
+                     retry++)
+                {
+                    kinds = ModelChangeClassifier.Classify(repository, changes);
+                }
+
+                if (ReferenceEquals(kinds, IModelChangeClassifier.Overtaken))
+                    return null;
                 return (kinds, DescendantKinds(status.Keys, kinds, lookup), ChangeCounts.Of(status, kinds));
             });
+
+            if (answer is not { } classified)
+                return;
+            var (kinds, descendants, counts) = classified;
 
             await InvokeAsync(() =>
             {
@@ -491,7 +517,17 @@ public partial class LibraryBrowser : IDisposable
         _changeFilter == ChangeFilter.None ? _descendantChangeKinds : _filteredDescendantKinds;
 
     internal List<TreeItemData<ModelNode>> ActiveTreeItems =>
-        _changeFilter == ChangeFilter.None ? TreeItems : _filteredTreeItems;
+        _changeFilter == ChangeFilter.None ? TreeItems
+        : _filterBuilding ? NothingYet
+        : _filteredTreeItems;
+
+    /// <summary>
+    /// True while a large filtered tree is being built on the pool. The previous filter's tree is not
+    /// shown under the new chip meanwhile - it showed the classes the user had just filtered away.
+    /// </summary>
+    private bool _filterBuilding;
+
+    private static readonly List<TreeItemData<ModelNode>> NothingYet = new();
 
     /// <summary>
     /// The lazy loader, but only for the unfiltered tree.
@@ -644,10 +680,14 @@ public partial class LibraryBrowser : IDisposable
     /// dispatcher, twice per refresh, would hold the window. Numbered like the status, so a build
     /// that finishes after a newer one was asked for is dropped.
     /// </remarks>
-    private async Task RefreshFilteredTreeAsync()
+    /// <param name="filterChanged">True when the user has just chosen another filter: the tree on
+    /// screen is then the old filter's, and is not shown under the new chip while a large one is built.
+    /// A refresh of the same filter keeps showing it until the new one lands.</param>
+    private async Task RefreshFilteredTreeAsync(bool filterChanged = false)
     {
         var generation = ++_filterGeneration;
         var filter = _changeFilter;
+        _filterBuilding = false;
         if (filter == ChangeFilter.None)
         {
             _filteredTreeItems = new List<TreeItemData<ModelNode>>();
@@ -675,6 +715,12 @@ public partial class LibraryBrowser : IDisposable
             return;
         }
 
+        if (filterChanged)
+        {
+            _filterBuilding = true;
+            StateHasChanged();
+        }
+
         try
         {
             var (items, descendants) = await Task.Run(() =>
@@ -688,6 +734,7 @@ public partial class LibraryBrowser : IDisposable
                 if (generation != _filterGeneration)
                     return;
 
+                _filterBuilding = false;
                 _filteredTreeItems = items;
                 _filteredDescendantKinds = descendants;
                 StateHasChanged();
@@ -696,6 +743,13 @@ public partial class LibraryBrowser : IDisposable
         catch (Exception ex)
         {
             LoggingService.Warn(nameof(LibraryBrowser), $"Could not build the filtered tree: {ex.Message}");
+            await InvokeAsync(() =>
+            {
+                if (generation != _filterGeneration)
+                    return;
+                _filterBuilding = false;
+                StateHasChanged();
+            });
         }
     }
 
@@ -709,7 +763,7 @@ public partial class LibraryBrowser : IDisposable
     {
         _changeFilter = filter;
         StateHasChanged();
-        await RefreshFilteredTreeAsync();
+        await RefreshFilteredTreeAsync(filterChanged: true);
     }
 
     /// <summary>

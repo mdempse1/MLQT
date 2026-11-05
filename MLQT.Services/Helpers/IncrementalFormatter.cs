@@ -154,7 +154,7 @@ public static class IncrementalFormatter
 
         // Captured once: the parallel body below must not read settings that another thread may edit.
         var formatting = settings.ToFormattingOptions();
-        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text, bool Unchanged)>();
+        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text, bool Unchanged, bool AsLoaded)>();
 
         // The same lookup the checker is given, for the same reason: the order written here and the
         // order MLQT.Style.DeclarationOrder asks for have to be one answer. Built only when the
@@ -173,6 +173,15 @@ public static class IncrementalFormatter
                 // not. Reassembling from those pieces duplicated the within clause and re-emitted every
                 // nested class as a top-level sibling.
                 var fileSource = ModelicaFileEncoding.ReadAllTextOnly(fileEntry.FilePath);
+
+                // Whether the graph's classes are still this file's text: its write time is the one
+                // the load recorded, and no class in it has been changed in the graph since. Asked
+                // after the read, so an edit landing between the two reads as newer, never as loaded.
+                var asLoaded = classesMatchFiles
+                    && graph.GetNode<FileNode>(GraphBuilder.GenerateFileId(fileEntry.FilePath))?.LoadedWriteTimeUtc
+                        is { } loadedAt
+                    && File.GetLastWriteTimeUtc(fileEntry.FilePath) == loadedAt
+                    && fileEntry.Models.All(m => m.SourceMatchesFile);
 
                 var formatted = ModelicaPackageSaver.RenderFileSource(
                     fileSource, fileEntry.Owner.ParentModelName, formatting, out var parserErrors,
@@ -200,7 +209,7 @@ public static class IncrementalFormatter
                 // apiece, and a new write time that made every cached change classification stale.
                 // From the text already read, not by opening the file again (ForFileText).
                 var unchanged = ModelicaFileEncoding.ForFileText(fileSource, formatted) == fileSource;
-                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted, unchanged);
+                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted, unchanged, asLoaded);
             }
             catch (Exception ex)
             {
@@ -221,18 +230,20 @@ public static class IncrementalFormatter
         // every so many files, and the total, say more.
         var alreadyFormatted = 0;
         var done = 0;
-        foreach (var (filePath, (entry, content, unchanged)) in formattedFiles)
+        foreach (var (filePath, (entry, content, unchanged, asLoaded)) in formattedFiles)
         {
             if (large && ++done % ProgressEvery == 0)
                 Info(nameof(IncrementalFormatter), $"Saved {done}/{formattedFiles.Count} formatted file(s)");
 
             if (unchanged)
             {
-                // Nothing to write - but unless the caller knows they were read from this very text,
-                // the classes are still brought up to date from it, as a write would: the graph may
-                // not have caught up with an edit the file already has.
+                // Nothing to write - and nothing to read back either, when the classes are this very
+                // text: the caller says the graph was just loaded, and the file is as it was loaded.
+                // Otherwise they are brought up to date from it, as a write would: the graph may not
+                // have caught up with an edit the file already has - one made in another editor
+                // during a startup, before the monitor was watching, say.
                 alreadyFormatted++;
-                if (!classesMatchFiles)
+                if (!asLoaded)
                     RefreshClassesFromWrittenFile(graph, entry, content);
                 continue;
             }
@@ -251,6 +262,10 @@ public static class IncrementalFormatter
             // Only once the file holds it: a file that could not be written is still on disk as it
             // was, and so are its classes (B374's rule, on this path).
             RefreshClassesFromWrittenFile(graph, entry, content);
+
+            // The classes are now the file as written, which is what the recorded time stands for.
+            if (graph.GetNode<FileNode>(GraphBuilder.GenerateFileId(filePath)) is { } fileNode)
+                fileNode.LoadedWriteTimeUtc = written[filePath];
         }
 
         var summary = $"Wrote {written.Count} formatted file(s) of {filesToProcess.Count} selected, "

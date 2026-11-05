@@ -21,6 +21,20 @@ public static class GraphBuilder
     public static List<string> LoadModelicaFile(DirectedGraph graph, string filePath, string content)
         => LoadModelicaFile(graph, filePath, content, readOnly: null);
 
+    /// <summary>A file's last-write time, or null when it is not a file on disk.</summary>
+    internal static DateTime? WriteTimeOf(string path)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+            return file.Exists ? file.LastWriteTimeUtc : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
     /// <param name="readOnly">For a read-only library's supplied text (<see cref="ReadOnlySourceLoader"/>).
     /// When set, each class is marked <see cref="ModelNode.IsExternalStub"/> and given the banner
     /// <b>before</b> it reaches the graph, so it never stands in the graph as readable source, not even
@@ -34,7 +48,10 @@ public static class GraphBuilder
 
         // Create a file node (content is not stored to save memory — re-read from disk if needed)
         var fileId = GenerateFileId(filePath);
-        var fileNode = new FileNode(fileId, filePath);
+        var fileNode = new FileNode(fileId, filePath)
+        {
+            LoadedWriteTimeUtc = readOnly is null ? WriteTimeOf(filePath) : null,
+        };
 
         graph.AddNode(fileNode);
 

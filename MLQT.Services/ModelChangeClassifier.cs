@@ -116,9 +116,27 @@ public class ModelChangeClassifier : IModelChangeClassifier
     public IReadOnlyDictionary<string, ClassChangeKind> Classify(
         Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes)
     {
+        // The ticket first, before any way out: every request, whatever it turns out to need, is the
+        // newest, and overtakes the one running. A request with nothing to compare, or too much,
+        // used to return before taking one - so the run it should have replaced went on to the end,
+        // holding the checkout's gate, for an answer the browser was about to drop.
+        //
+        // Overtaken means "a newer ticket exists, or the epoch has moved" - and once true it stays
+        // true, because neither ever goes back. It was "a newer ticket is recorded", which a project
+        // switch clearing the table made false again: a run overtaken a moment earlier went back to
+        // being current, and read the classifications it had stopped before making.
+        var epoch = Volatile.Read(ref _epoch);
+        var ticket = _latestRequest.AddOrUpdate(repository.Id, 1, (_, latest) => latest + 1);
+        bool Superseded() =>
+            Volatile.Read(ref _epoch) != epoch
+            || !_latestRequest.TryGetValue(repository.Id, out var latest)
+            || latest != ticket;
+
         var modelicaChanges = changes
             .Where(change => change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
             .ToList();
+        if (modelicaChanges.Count == 0)
+            return EmptyKinds;
 
         // Counted by what costs a read: an added or untracked file has no committed version to ask
         // for, and a conflicted one is not compared, so a pile of new generated files does not switch
@@ -138,25 +156,30 @@ public class ModelChangeClassifier : IModelChangeClassifier
             return EmptyKinds;
         }
 
-        var ticket = _latestRequest.AddOrUpdate(repository.Id, 1, (_, latest) => latest + 1);
-        bool Superseded() => _latestRequest.TryGetValue(repository.Id, out var latest) && latest != ticket;
-
         var gate = _checkoutGates.GetOrAdd(CheckoutOf(repository), _ => new SemaphoreSlim(1, 1));
         while (!gate.Wait(SupersededPollMs))
         {
             if (Superseded())
-                return EmptyKinds;
+                return IModelChangeClassifier.Overtaken;
         }
 
         try
         {
-            return Superseded() ? EmptyKinds : ClassifyAll(repository, changes, modelicaChanges, Superseded);
+            return Superseded()
+                ? IModelChangeClassifier.Overtaken
+                : ClassifyAll(repository, changes, modelicaChanges, Superseded);
         }
         finally
         {
             gate.Release();
         }
     }
+
+    /// <summary>
+    /// Moved on by <see cref="Invalidate()"/>: every request taken before it is overtaken, for every
+    /// repository, without clearing <see cref="_latestRequest"/> under a request still reading it.
+    /// </summary>
+    private int _epoch;
 
     /// <summary>
     /// Whether comparing this change needs its committed version read from version control - and so
@@ -210,7 +233,7 @@ public class ModelChangeClassifier : IModelChangeClassifier
         // control gave them, so the result does not depend on which read finished first.
         var files = new CachedClassification[modelicaChanges.Count];
         var done = 0;
-        Parallel.For(0, modelicaChanges.Count, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism }, (i, loop) =>
+        var loopResult = Parallel.For(0, modelicaChanges.Count, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism }, (i, loop) =>
         {
             // Overtaken: what has been read stays cached for the newer request, the rest is its job.
             if (superseded())
@@ -233,13 +256,15 @@ public class ModelChangeClassifier : IModelChangeClassifier
                     $"Classified {count}/{modelicaChanges.Count} changed file(s) in {repository.Name}");
         });
 
-        if (superseded())
+        // A loop that stopped has files it never classified, so its answer is incomplete whatever
+        // superseded() says by now - which is what made the merge below read a null.
+        if (!loopResult.IsCompleted || superseded())
         {
             if (logged)
                 Info("ModelChangeClassifier",
                     $"<<< COMPLETED: Classifying changes in {repository.Name} stopped after {done} file(s): "
                     + $"a newer request took over ({stopwatch.ElapsedMilliseconds}ms)");
-            return EmptyKinds;
+            return IModelChangeClassifier.Overtaken;
         }
 
         var kinds = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
@@ -379,8 +404,10 @@ public class ModelChangeClassifier : IModelChangeClassifier
             _checkouts.Clear();
             _overLimitLogged.Clear();
 
-            // Which also tells a classification still running for the old project that it has been
-            // overtaken - its ticket no longer matches - so it stops reading.
+            // A classification still running for the old project is overtaken, and stops reading:
+            // the epoch moves first, so a request taking ticket 1 again after the clear is not
+            // mistaken for the old ticket 1 still running.
+            Interlocked.Increment(ref _epoch);
             _latestRequest.Clear();
             return;
         }

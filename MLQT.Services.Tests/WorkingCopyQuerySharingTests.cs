@@ -119,6 +119,45 @@ public class WorkingCopyQuerySharingTests : IDisposable
     }
 
     [Fact]
+    public async Task SwitchingToAProject_AsksForTheStatus_AsLoadingOneDoes()
+    {
+        // A switch loads through a path of its own, and the formatter runs after it just as it does
+        // after startup - so it waited for the whole query after the load.
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(Path.Combine(_directory, "package.mo"), "package TestLib\nend TestLib;\n");
+        Git("init");
+
+        var settings = new InMemorySettingsService();
+        var empty = new ProjectProfile { Name = "Empty" };
+        var withRepository = new ProjectProfile
+        {
+            Name = "Project",
+            Repositories = [new RepositorySettingsEntry { Name = "TestLib", LocalPath = _directory, AutoLoad = true }],
+        };
+        await settings.SetAsync("Repositories",
+            new RepositorySettingsCollection { Projects = [empty, withRepository], ActiveProjectId = empty.Id });
+
+        var service = new RepositoryService(new LibraryDataService(), settings, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+
+        var asked = new ManualResetEventSlim();
+        var queries = 0;
+        service.QueryWorkingCopy = _ =>
+        {
+            Interlocked.Increment(ref queries);
+            asked.Set();
+            return [new VcsWorkingCopyFile { Path = "package.mo", Status = VcsFileStatus.Modified }];
+        };
+
+        await service.SwitchProjectAsync(withRepository.Id);
+
+        Assert.True(asked.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken),
+            "switching to the project did not ask for the working copy's status");
+        Assert.Single(service.GetWorkingCopyChanges(Assert.Single(service.Repositories).Id));
+        Assert.Equal(1, queries);
+    }
+
+    [Fact]
     public async Task LoadingAProject_DoesNotAskAboutAReferenceOnlyRepository()
     {
         // Nothing asks for a reference-only repository's status (B354), so asking ahead is waste.

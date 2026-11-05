@@ -545,12 +545,74 @@ public class ModelChangeClassifierTests : IDisposable
         release.Set();
         Task.WaitAll([older, newer], token);
 
-        Assert.Empty(older.Result);
+        // Overtaken, by reference: not an empty answer the browser would apply over the kinds it has.
+        Assert.Same(IModelChangeClassifier.Overtaken, older.Result);
         Assert.Equal(64, newer.Result.Count);
         // What the older one read was kept for the newer one: nothing was read twice.
         for (var i = 0; i < 64; i++)
             _repositories.Verify(
                 r => r.GetFileContentAtRevision("repo-1", $"R{i}.mo", It.IsAny<string?>()), Times.AtMostOnce());
+    }
+
+    /// <summary>A classification of 64 changed files whose committed-version reads are held.</summary>
+    private (Task<IReadOnlyDictionary<string, ClassChangeKind>> Running, ManualResetEventSlim Release) StartHeldClassification()
+    {
+        var firstRead = new ManualResetEventSlim();
+        var release = new ManualResetEventSlim();
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string, string?>((_, path, _) =>
+            {
+                firstRead.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+                return Committed.Replace("Resistor", Path.GetFileNameWithoutExtension(path));
+            });
+        var changes = ManyChangedFiles(64);
+        var running = Task.Run(() => _classifier.Classify(_repository, changes), TestContext.Current.CancellationToken);
+        Assert.True(firstRead.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        return (running, release);
+    }
+
+    [Fact]
+    public void AProjectSwitchWhileAClassificationRuns_StopsIt()
+    {
+        // Invalidate cleared the request table, and a missing entry read as "not overtaken": the old
+        // project's run carried on to the end, holding the checkout's gate. Worse, a run that had just
+        // stopped for a newer request went back to being current and merged the files it never read.
+        var (running, release) = StartHeldClassification();
+
+        _classifier.Invalidate();
+        release.Set();
+
+        Assert.Same(IModelChangeClassifier.Overtaken, running.Result);
+    }
+
+    [Fact]
+    public void ARequestWithNoChanges_OvertakesTheRunningOne()
+    {
+        // After a commit the status has no changes. The run for the changes there were is now for
+        // nothing, and used to hold the gate to the end because the new request never took a ticket.
+        var (running, release) = StartHeldClassification();
+
+        Assert.Empty(_classifier.Classify(_repository, []));
+        release.Set();
+
+        Assert.Same(IModelChangeClassifier.Overtaken, running.Result);
+    }
+
+    [Fact]
+    public void ARequestOverTheLimit_OvertakesTheRunningOne()
+    {
+        var (running, release) = StartHeldClassification();
+        var classifier = _classifier;
+
+        // Over the default limit by counting: the same classifier, so the same tickets.
+        var tooMany = Enumerable.Range(0, ModelChangeClassifier.DefaultMaxFilesToClassify + 1)
+            .Select(i => Change($"Big{i}.mo")).ToArray();
+        Assert.Empty(classifier.Classify(_repository, tooMany));
+        release.Set();
+
+        Assert.Same(IModelChangeClassifier.Overtaken, running.Result);
     }
 
     // ---------------------------------------------------------------- a failed read
