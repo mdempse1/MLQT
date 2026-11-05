@@ -179,8 +179,8 @@ Unlike Git's lightweight local branches, SVN branches are:
 
 | Field | Description |
 |-------|-------------|
-| **Branch name** | The name for the new branch. A plain name becomes a directory under `branches/` on the server (the second of the repository's [branch directories](#custom-branch-directory-names)); a name that starts with one of those directories, such as `tags/v1.0`, is created there instead. The branch is copied from the URL the working copy is on, with the commit message `Create branch: <name>`. |
-| **Switch to new branch after creation** | Checkbox (default: on). If checked, your working copy switches to the new branch immediately. |
+| **Branch name** | The name for the new branch. A plain name becomes a directory under `branches/` on the server (the second of the repository's [branch directories](#custom-branch-directory-names)); a name that starts with one of those directories, such as `tags/v1.0`, or with any folder the repository already has, such as `branches/my-feature`, is created there instead. The folder the branch goes in must already exist: MLQT never creates it, and if it is missing the dialog says which folder and lists the folders the repository does have. The branch is copied from the URL the working copy is on, at the revision the working copy is at, with the commit message `Create branch: <name>`. |
+| **Switch to new branch after creation** | Checkbox (default: on). If checked, your working copy switches to the new branch immediately. Uncommitted changes are carried over and stay uncommitted, so changes made on trunk that belong on a branch can be moved to one and committed there. |
 
 ---
 
@@ -205,7 +205,7 @@ Configuring custom branch directory names affects how MLQT:
 
 - **Extracts the current branch** from the SVN working copy URL
 - **Lists available branches** in the Switch Branch and Merge Branch dialogs
-- **Creates new branches** by determining where to place the server-side copy
+- **Creates new branches** by determining where to place the server-side copy. The list should name folders the repository really has: a plain branch name goes in the second entry, and if that folder does not exist, creating the branch fails
 
 ### Configuration
 

@@ -312,6 +312,18 @@ use the default layout.
 
 In the MLQT app, `StyleCheckingSettings.SvnBranchDirectories` stores the per-repository configuration, and `RepositoryService` passes it through to all SVN operations automatically.
 
+**The setting can disagree with the repository**, and `CreateBranch` must not trust it over what
+is there. `BranchPathFor` decides where a branch goes: a name starting with a configured container,
+or one whose folder exists in the repository, is used as typed; any other goes in the first
+container. A setting of `trunk, tickets, releases` on a repository with `branches` once turned
+`branches/x` into `tickets/branches/x`, and svn's E160013 ("File not found: transaction ...") named
+neither the missing folder nor why. `CreateBranch` now checks the parent folder first and says which
+one is missing and which the repository has.
+
+**A branch from a modified working copy** is copied server-side from `url@<working copy revision>`,
+then `svn switch` carries the uncommitted changes over. Never `svn copy <WC> <URL>`: that commits
+every local change into the branch, which is not what "create a branch for these changes" means.
+
 ## Implementing Other VCS Systems
 
 To add support for Mercurial or other VCS:

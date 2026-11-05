@@ -998,11 +998,28 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Creates a new branch as a server-side copy of the current working copy URL.
+    /// Creates a new branch as a server-side copy of the working copy's URL at the working copy's
+    /// revision, and optionally switches the working copy to it.
     /// </summary>
     public VcsOperationResult CreateBranch(string repositoryPath, string branchName, bool switchToBranch = true)
         => CreateBranch(repositoryPath, branchName, switchToBranch, branchDirectories: null);
 
+    /// <summary>
+    /// Creates a new branch as a server-side copy of the working copy's URL at the working copy's
+    /// revision, and optionally switches the working copy to it.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Where the branch goes</b> is <see cref="BranchPathFor"/>'s decision: a name whose
+    /// folder already exists in the repository is used as typed, any other is placed in the first
+    /// branch container of <paramref name="branchDirectories"/>.</para>
+    ///
+    /// <para><b>Local modifications are kept, not committed.</b> The copy is taken from the
+    /// repository at the revision the working copy is at, never from the working copy itself
+    /// (<c>svn copy WC URL</c> would commit every local change to the new branch in the same
+    /// commit). <c>svn switch</c> then carries the uncommitted changes across, and since the
+    /// branch has the same content as the working copy's base, nothing in them can conflict. That
+    /// is the case this exists for: changes made on trunk that belong on a branch.</para>
+    /// </remarks>
     public VcsOperationResult CreateBranch(string repositoryPath, string branchName, bool switchToBranch, IReadOnlyList<string>? branchDirectories)
     {
         branchDirectories ??= DefaultBranchDirectories;
@@ -1026,34 +1043,47 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var repoRoot = info.RepositoryRoot.TrimEnd('/');
             var currentUrl = info.Url;
 
-            // If the name already carries a known branch-directory prefix, use it as-is;
-            // otherwise place it under the first branch-like directory (default "branches").
-            var hasPrefix = branchDirectories.Any(d => branchName.StartsWith($"{d}/", OIC));
-            var defaultBranchDir = branchDirectories.Count > 1 ? branchDirectories[1] : "branches";
-            var branchUrl = hasPrefix
-                ? $"{repoRoot}/{branchName}"
-                : $"{repoRoot}/{defaultBranchDir}/{branchName}";
-
-            if (GetInfo(branchUrl) != null)
+            var relative = BranchPathFor(branchName, branchDirectories,
+                folder => GetInfo($"{repoRoot}/{folder}") != null);
+            if (relative == null)
             {
-                result.ErrorMessage = $"Branch '{branchName}' already exists.";
+                result.ErrorMessage = $"'{branchName}' is not a branch name.";
                 return result;
             }
 
-            var copy = SvnCli.Run("copy", currentUrl, branchUrl, "-m", $"Create branch: {branchName}");
+            var branchUrl = $"{repoRoot}/{relative}";
+
+            if (GetInfo(branchUrl) != null)
+            {
+                result.ErrorMessage = $"Branch '{branchName}' already exists at ^/{relative}.";
+                return result;
+            }
+
+            // svn copy's own message for a missing parent is E160013 "File not found: transaction
+            // ..., path ...", which names neither the folder that is missing nor why the branch was
+            // going there.
+            var parent = relative[..relative.LastIndexOf('/')];
+            if (GetInfo($"{repoRoot}/{parent}") == null)
+            {
+                result.ErrorMessage = MissingBranchFolderMessage(branchName, relative, parent, repoRoot, branchDirectories);
+                return result;
+            }
+
+            var source = Pegged(currentUrl, info.Revision.ToString(CultureInfo.InvariantCulture));
+            var copy = SvnCli.Run("copy", source, branchUrl, "-m", $"Create branch: {branchName}");
             if (!copy.Success)
             {
-                result.ErrorMessage = copy.FailureMessage("Failed to create branch.");
+                result.ErrorMessage = $"Could not copy {source} to {branchUrl}: {copy.FailureMessage("svn copy failed.")}";
                 return result;
             }
 
             if (switchToBranch)
             {
-                var rel = branchUrl.Substring(repoRoot.Length).TrimStart('/');
-                var switchResult = SwitchBranch(repositoryPath, rel);
+                var switchResult = SwitchBranch(repositoryPath, relative);
                 if (!switchResult.Success)
                 {
-                    result.ErrorMessage = $"Branch created but failed to switch: {switchResult.ErrorMessage}";
+                    result.ErrorMessage = $"Branch created at ^/{relative}, but switching the working copy to it failed, " +
+                                          $"so the working copy is still on {currentUrl}: {switchResult.ErrorMessage}";
                     return result;
                 }
             }
@@ -1066,6 +1096,75 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The repository-relative path a new branch called <paramref name="branchName"/> is created
+    /// at, or null when the name is empty.
+    /// </summary>
+    /// <remarks>
+    /// <para>A name that already says where it goes is used as typed: one that starts with a
+    /// configured branch container (<c>branches/x</c>), or one whose folder exists in the
+    /// repository (<paramref name="folderExists"/>). Every other name is placed in the first
+    /// container, <paramref name="branchDirectories"/>[1].</para>
+    ///
+    /// <para>The second test is the one that matters when the setting and the repository disagree.
+    /// A repository whose branch directories were set to <c>trunk, tickets, releases</c> but whose
+    /// branches are under <c>branches</c> turned <c>branches/test-7</c> into
+    /// <c>tickets/branches/test-7</c>, and svn refused it with E160013 because <c>tickets</c> does
+    /// not exist. A name under the trunk folder is never taken as typed: a branch is not created
+    /// inside trunk.</para>
+    /// </remarks>
+    internal static string? BranchPathFor(string branchName, IReadOnlyList<string>? branchDirectories, Func<string, bool> folderExists)
+    {
+        var name = branchName.Trim().Trim('/');
+        if (name.Length == 0)
+            return null;
+
+        branchDirectories ??= DefaultBranchDirectories;
+        var trunk = branchDirectories.Count > 0 ? branchDirectories[0] : "trunk";
+        var defaultContainer = branchDirectories.Count > 1 ? branchDirectories[1] : "branches";
+
+        var slash = name.LastIndexOf('/');
+        if (slash > 0)
+        {
+            var first = name[..name.IndexOf('/')];
+            if (!first.Equals(trunk, OIC))
+            {
+                if (branchDirectories.Skip(1).Any(d => d.Trim('/').Equals(first, OIC)))
+                    return name;
+
+                if (folderExists(name[..slash]))
+                    return name;
+            }
+        }
+
+        return $"{defaultContainer.Trim('/')}/{name}";
+    }
+
+    /// <summary>
+    /// What to say when the folder a new branch would go in does not exist: the URL that was
+    /// going to be created, why it was that one, and the folders the repository does have.
+    /// </summary>
+    private static string MissingBranchFolderMessage(string branchName, string relative, string parent, string repoRoot,
+        IReadOnlyList<string> branchDirectories)
+    {
+        var containers = string.Join(", ", branchDirectories.Skip(1));
+        var message = $"Cannot create branch '{branchName}' at ^/{relative}: the folder ^/{parent} does not exist in {repoRoot}. " +
+                      $"A name without an existing folder goes under the first branch directory in this repository's settings ({containers}).";
+
+        var list = SvnCli.Run(["list", repoRoot], stdinText: null, SvnCli.QueryIdleTimeout);
+        if (list.Success)
+        {
+            var folders = list.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(e => e.EndsWith('/'))
+                .Select(e => e.TrimEnd('/'))
+                .ToList();
+            if (folders.Count > 0)
+                message += $" The repository's top-level folders are: {string.Join(", ", folders)}.";
+        }
+
+        return message;
     }
 
     /// <summary>

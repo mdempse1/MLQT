@@ -20,12 +20,12 @@
 
                 <MudTextField @bind-Value="_branchName"
                               Label="Branch Name"
-                              Placeholder="branches/my-new-feature"
-                              Variant="Variant.Outlined"                              
+                              Placeholder="@(_isSvn ? "my-new-feature" : "feature/my-new-feature")"
+                              Variant="Variant.Outlined"
                               Typo="Typo.body1"
                               Required="true"
                               RequiredError="Branch name is required"
-                              HelperText="Enter a name for the new branch"
+                              HelperText="@HelperTextFor(_isSvn, _svnBranchDirectories)"
                               Immediate="true"
                               TextChanged="OnBranchNameChanged" />
 
@@ -37,6 +37,10 @@
                 }
 
                 <MudCheckBox @bind-Value="_switchToBranch" Label="Switch to new branch after creation" Color="Color.Primary" />
+                @if (_switchToBranch && SwitchNoteFor(_isSvn) is { } switchNote)
+                {
+                    <MudText Typo="Typo.caption" Class="switch-note">@switchNote</MudText>
+                }
             }
 
             @if (!string.IsNullOrEmpty(_errorMessage))

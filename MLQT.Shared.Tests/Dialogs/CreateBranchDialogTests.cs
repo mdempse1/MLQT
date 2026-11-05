@@ -81,4 +81,28 @@ public class CreateBranchDialogTests
         // ".lock" is the suffix git reserves; "lock" on its own is just a word.
         Assert.True(CreateBranchDialog.IsValidBranchName("feature/deadlock"));
     }
+
+    [Fact]
+    public void ForSvn_TheHelperTextNamesTheFirstBranchDirectory_AndThatAFolderPrefixIsAccepted()
+    {
+        var text = CreateBranchDialog.HelperTextFor(isSvn: true, ["trunk", "tickets", "releases"]);
+
+        Assert.Contains("^/tickets/", text);
+        Assert.Contains("branches/my-feature", text);
+    }
+
+    [Fact]
+    public void ForSvn_WithNoBranchDirectories_TheHelperTextSaysBranches() =>
+        Assert.Contains("^/branches/", CreateBranchDialog.HelperTextFor(isSvn: true, null));
+
+    [Fact]
+    public void ForGit_TheHelperTextSaysNothingAboutFolders() =>
+        Assert.DoesNotContain("^/", CreateBranchDialog.HelperTextFor(isSvn: false, ["trunk", "branches", "tags"]));
+
+    [Fact]
+    public void OnlySvn_SaysWhatHappensToUncommittedChanges()
+    {
+        Assert.Contains("carried over", CreateBranchDialog.SwitchNoteFor(isSvn: true));
+        Assert.Null(CreateBranchDialog.SwitchNoteFor(isSvn: false));
+    }
 }
