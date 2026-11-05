@@ -1,3 +1,4 @@
 #nullable enable
+static ModelicaParser.Helpers.ModelicaFileEncoding.ForFileText(string! existingText, string! text) -> string!
 ModelicaParser.StyleRules.SuppressionSet.GeneratedImportOf(string! modelId) -> string?
 ModelicaParser.StyleRules.SuppressionSet.HasGeneratedImport.get -> bool

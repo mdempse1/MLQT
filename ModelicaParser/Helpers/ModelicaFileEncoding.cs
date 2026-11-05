@@ -174,6 +174,43 @@ public static class ModelicaFileEncoding
             EnsureFinalNewline(NormalizeToLf(text)),
             ExistingNewline(path) ?? DominantNewline(text));
 
+    /// <summary>
+    /// <see cref="ForFile"/> for a file whose text the caller has already read: the same answer,
+    /// worked out from <paramref name="existingText"/> instead of reading the file again.
+    /// </summary>
+    /// <remarks>
+    /// For the formatter's "is this file already formatted?" question, asked of every changed file at
+    /// every startup - 17,372 of them, 1.7GB - where reading each file a second time, one character at
+    /// a time, was a second pass over the working copy for an answer the text in hand already holds.
+    /// The decoded text has its line breaks where the bytes do, whatever the encoding, so it counts the
+    /// same as the file.
+    /// </remarks>
+    public static string ForFileText(string existingText, string text) =>
+        WithNewline(
+            EnsureFinalNewline(NormalizeToLf(text)),
+            NewlineOf(existingText) ?? DominantNewline(text));
+
+    /// <summary>
+    /// The line ending <paramref name="text"/> mostly uses, by <see cref="ExistingNewline"/>'s rule -
+    /// a tie is CRLF - or null when it has none.
+    /// </summary>
+    private static string? NewlineOf(string text)
+    {
+        var crlf = 0;
+        var lf = 0;
+        for (var i = 0; i < text.Length; i++)
+            if (text[i] == '\n')
+            {
+                if (i > 0 && text[i - 1] == '\r') crlf++;
+                else lf++;
+            }
+
+        if (crlf == 0 && lf == 0)
+            return null;
+
+        return crlf >= lf ? "\r\n" : "\n";
+    }
+
     /// <summary>The line ending <paramref name="path"/> already uses, or null when it has none.</summary>
     /// <remarks>
     /// The majority wins on a mixed file — a merge, or an editor that appended in the other style.

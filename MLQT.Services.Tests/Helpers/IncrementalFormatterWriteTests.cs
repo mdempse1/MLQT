@@ -239,6 +239,24 @@ public class IncrementalFormatterWriteTests : IDisposable
             Assert.Equal(reloaded.GetNode<ModelNode>(id)!.Definition.ModelicaCode, graph.GetNode<ModelNode>(id)!.Definition.ModelicaCode);
     }
 
+    [Fact]
+    public async Task StraightAfterALoad_AFileAlreadyFormatted_IsNotReadBackIntoTheGraph()
+    {
+        // At startup the classes were read from these very files a moment ago, so reading an already
+        // formatted file back into them gives back what they hold - one parse per file, 35 seconds at
+        // a startup with 17,372 of them. The caller says so, and the refresh is skipped. Proved here
+        // with a graph that does NOT match, which only a skipped refresh leaves as it was.
+        var (graph, path) = LoadPackage(PackageWithTwoClasses);
+        await IncrementalFormatter.FormatAndWriteAsync(LoadPackageFrom(path), new[] { path }, Formatting());
+        var before = graph.GetNode<ModelNode>("P.B")!.Definition.ModelicaCode;
+
+        var written = await IncrementalFormatter.FormatAndWriteAsync(
+            graph, new[] { path }, Formatting(), neverWritten: null, classesMatchFiles: true);
+
+        Assert.Empty(written);
+        Assert.Same(before, graph.GetNode<ModelNode>("P.B")!.Definition.ModelicaCode);
+    }
+
     private static DirectedGraph LoadPackageFrom(string path)
     {
         var graph = new DirectedGraph();

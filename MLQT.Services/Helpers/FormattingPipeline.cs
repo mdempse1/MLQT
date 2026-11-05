@@ -128,8 +128,10 @@ public sealed class FormattingPipeline : IFormattingPipeline
                     continue;
 
                 Info(nameof(FormattingPipeline), $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
+                // Straight after a load (IFormattingPipeline): the classes are these files' text.
                 var written = await IncrementalFormatter.FormatAndWriteAsync(
-                    _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten());
+                    _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten(),
+                    classesMatchFiles: true);
                 foreach (var (writtenPath, writtenAt) in written)
                     _writtenFileTimestamps[writtenPath] = writtenAt;
                 totalFormatted += changedFilePaths.Count;

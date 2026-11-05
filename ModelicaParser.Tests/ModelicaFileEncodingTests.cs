@@ -499,6 +499,27 @@ public class ModelicaFileEncodingTests : IDisposable
         Assert.Equal($"package P{given}end P;{given}", rendered);
     }
 
+    /// <summary>
+    /// ForFileText is ForFile without the second read: the formatter asks it of every changed file at
+    /// startup, with the file's text already in hand. It has to give the same answer for every kind of
+    /// file, or "already formatted" would be decided against endings the write would not use.
+    /// </summary>
+    [Theory]
+    [InlineData("package P\r\nend P;\r\n")]                 // CRLF
+    [InlineData("package P\nend P;\n")]                     // LF
+    [InlineData("package P\r\n  x;\nend P;\r\ny;\n")]       // a tie, which is CRLF
+    [InlineData("package P\nx;\r\nend P;\n")]               // mostly LF
+    [InlineData("package P end P;")]                        // no line breaks at all
+    [InlineData("")]
+    public void ForFileText_AgreesWithForFile_ForTheSameFile(string existing)
+    {
+        var path = Write("same.mo", Utf8NoBom(existing));
+        foreach (var rendered in new[] { "package P\nend P;\n", "package P\r\nend P;", "x" })
+            Assert.Equal(
+                ModelicaFileEncoding.ForFile(path, rendered),
+                ModelicaFileEncoding.ForFileText(existing, rendered));
+    }
+
     #endregion
 
     #region Files with nothing in them

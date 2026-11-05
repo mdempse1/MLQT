@@ -121,11 +121,27 @@ public static class IncrementalFormatter
     /// </summary>
     /// <param name="neverWritten">See <see cref="SelectFilesToFormat"/>.</param>
     /// <returns>Each file written, with the write time recorded against it.</returns>
-    public static async Task<IReadOnlyDictionary<string, DateTime>> FormatAndWriteAsync(
+    public static Task<IReadOnlyDictionary<string, DateTime>> FormatAndWriteAsync(
         DirectedGraph graph,
         IEnumerable<string> changedFilePaths,
         StyleCheckingSettings settings,
         Func<string, bool>? neverWritten = null)
+        => FormatAndWriteAsync(graph, changedFilePaths, settings, neverWritten, classesMatchFiles: false);
+
+    /// <param name="classesMatchFiles">
+    /// True when the caller knows the graph's classes were read from these files as they are now - a
+    /// format straight after loading, at startup or on a project switch. A file already formatted then
+    /// needs nothing at all: re-reading its classes from the same text gives back what they hold. That
+    /// re-read parses the file, one file after another, and at a startup with 17,372 changed files
+    /// already formatted it was 35 seconds spent changing nothing. False keeps it, for a caller whose
+    /// graph may lag a file the user has since edited - the format before a commit.
+    /// </param>
+    internal static async Task<IReadOnlyDictionary<string, DateTime>> FormatAndWriteAsync(
+        DirectedGraph graph,
+        IEnumerable<string> changedFilePaths,
+        StyleCheckingSettings settings,
+        Func<string, bool>? neverWritten,
+        bool classesMatchFiles)
     {
         var written = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
@@ -182,7 +198,8 @@ public static class IncrementalFormatter
                 // text is the same file. Every startup formats every changed file, and with 17,372 of
                 // them, already formatted by the last startup, each one was written again: a write
                 // apiece, and a new write time that made every cached change classification stale.
-                var unchanged = ModelicaFileEncoding.ForFile(fileEntry.FilePath, formatted) == fileSource;
+                // From the text already read, not by opening the file again (ForFileText).
+                var unchanged = ModelicaFileEncoding.ForFileText(fileSource, formatted) == fileSource;
                 formattedFiles[fileEntry.FilePath] = (fileEntry, formatted, unchanged);
             }
             catch (Exception ex)
@@ -211,10 +228,12 @@ public static class IncrementalFormatter
 
             if (unchanged)
             {
-                // Nothing to write - but the classes are still brought up to date from the text, as
-                // a write would: the graph may not have caught up with an edit the file already has.
+                // Nothing to write - but unless the caller knows they were read from this very text,
+                // the classes are still brought up to date from it, as a write would: the graph may
+                // not have caught up with an edit the file already has.
                 alreadyFormatted++;
-                RefreshClassesFromWrittenFile(graph, entry, content);
+                if (!classesMatchFiles)
+                    RefreshClassesFromWrittenFile(graph, entry, content);
                 continue;
             }
 

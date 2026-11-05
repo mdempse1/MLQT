@@ -22,9 +22,15 @@ public interface IFormattingPipeline
     /// switched on.
     /// </summary>
     /// <remarks>
-    /// The incremental path, run at startup and after every VCS operation. It is the assumption the
+    /// <para>The incremental path, run at startup and on a project switch. It is the assumption the
     /// whole design rests on: a repository is already formatted, so only what changed needs writing.
-    /// Reference-only repositories are skipped — the settings page promises they are never written.
+    /// Reference-only repositories are skipped — the settings page promises they are never written.</para>
+    ///
+    /// <para><b>Call it straight after the libraries are loaded</b>, which both callers do. It takes
+    /// the classes in the graph to be the files as they are on disk, so a file that is already
+    /// formatted is left alone - neither written nor read back into the graph. A caller whose graph may
+    /// lag the files, such as the format before a commit, uses <see cref="FormatChangedFilesAsync"/>,
+    /// which brings the classes up to date from every file it formats.</para>
     /// </remarks>
     /// <returns>How many files were rewritten.</returns>
     Task<int> FormatModifiedFilesAsync();
