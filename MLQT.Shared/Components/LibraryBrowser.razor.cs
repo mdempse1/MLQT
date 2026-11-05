@@ -1602,18 +1602,43 @@ public partial class LibraryBrowser : IDisposable
 
     private Task ShowCommitChangesDialog() => RunVcsOperationAsync(CommitChangesAsync);
 
+    /// <summary>Whether the commit is being prepared: the changed files formatted, the status read.</summary>
+    private bool _preparingCommit;
+
+    /// <summary>Which step of preparing the commit is running, for the progress dialog.</summary>
+    private string _preparingCommitMessage = "";
+
+    private static readonly DialogOptions PreparingCommitOptions =
+        new() { CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
+
     private async Task CommitChangesAsync()
     {
         if (Repository == null)
             return;
 
-        // Format changed files before opening the commit dialog to ensure
-        // formatting rules are applied to any files modified since last formatting
-        Snackbar.Add("Applying code formatting to changed files...", Severity.Normal);
-        await NavState.FormatChangedFilesForCommitAsync(Repository.Id);
-        // Invalidate cache so commit dialog gets fresh VCS status after formatting
-        RepositoryService.InvalidateWorkingCopyCache(Repository.Id);
-        await CheckForUncommittedChangesAsync();
+        // The changed files are formatted before the dialog opens, so what is committed follows the
+        // rules. On a large working copy that is a status query and a format, each tens of seconds,
+        // and a snackbar was all there was to show for it - in a window the status query froze. A
+        // progress dialog says which step it is on. The format re-reads the status itself when it
+        // wrote anything; otherwise the answer it read is the dialog's too.
+        _preparingCommitMessage = "Reading the working-copy status";
+        _preparingCommit = true;
+        StateHasChanged();
+        try
+        {
+            var progress = new Progress<string>(message => _ = InvokeAsync(() =>
+            {
+                _preparingCommitMessage = message;
+                StateHasChanged();
+            }));
+            await NavState.FormatChangedFilesForCommitAsync(Repository.Id, progress);
+            await CheckForUncommittedChangesAsync();
+        }
+        finally
+        {
+            _preparingCommit = false;
+            StateHasChanged();
+        }
 
         var repository = Repository;
         var outcome = new VcsDialogOutcome();

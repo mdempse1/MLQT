@@ -130,7 +130,8 @@ Reverted files intentionally skip formatting to preserve the exact committed con
 
 When you click the **Commit** button, MLQT formats all modified files before opening the commit dialog. This ensures that committed code always follows the repository's formatting rules.
 
-- Files that were already formatted (and not modified since) are skipped for efficiency
+- Files MLQT has already formatted, or already found formatted at startup or an earlier commit, are skipped as long as they have not been written since. Any edit gives a file a new write time, whether it was made in MLQT, in another editor or by an SVN revert, so an edited file is always formatted again
+- A **Preparing the commit** progress dialog shows which step is running: reading the working-copy status, then applying the formatting rules to the changed files
 - The repository's own formatting settings are used
 - If **Apply formatting rules** is disabled, no formatting occurs and the commit dialog opens immediately
 

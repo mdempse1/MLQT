@@ -1485,7 +1485,16 @@ public partial class MainLayout : IDisposable
     /// Gets the working copy changes, identifies affected .mo files, pauses monitoring,
     /// applies formatting, then restarts monitoring.
     /// </summary>
-    private async Task FormatChangedFilesForCommitAsync(string repositoryId)
+    /// <remarks>
+    /// <para><b>Off the UI thread.</b> The status query and the write-time checks were made on the
+    /// thread that called this, the UI's: on a working copy with 17,491 changed files the window
+    /// froze for the status alone, and the progress meant to explain the wait could not be drawn.</para>
+    ///
+    /// <para><b>The status is read again only when this wrote a file.</b> The commit dialog lists what
+    /// the status says, and a format that wrote nothing changed nothing in it, so the answer this read
+    /// is still the answer. Asking SVN again cost that working copy another 27 seconds per commit.</para>
+    /// </remarks>
+    private async Task FormatChangedFilesForCommitAsync(string repositoryId, IProgress<string>? progress)
     {
         var repository = RepositoryService.GetRepository(repositoryId);
         if (repository == null || SkipReferenceOnly(repository, "formatting")) return;
@@ -1494,14 +1503,13 @@ public partial class MainLayout : IDisposable
         if (!styleSettings.ApplyFormattingRules)
             return;
 
-        var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
+        progress?.Report("Reading the working-copy status");
+        var (changedFilePaths, alreadyFormatted) = await Task.Run(() =>
+        {
+            var changed = GetModifiedFilePathsFromVcs(repository);
+            return (changed, PreCommitFormat.AlreadyFormatted(changed, FormattingPipeline.WrittenFileTimestamps, File.GetLastWriteTimeUtc));
+        });
         if (changedFilePaths.Count == 0) return;
-
-        // Skip files that have already been formatted and not modified since
-        var alreadyFormatted = changedFilePaths
-            .Where(f => FormattingPipeline.WrittenFileTimestamps.TryGetValue(f, out var formattedAt)
-                        && File.GetLastWriteTimeUtc(f) == formattedAt)
-            .ToList();
 
         if (alreadyFormatted.Count > 0)
         {
@@ -1515,7 +1523,9 @@ public partial class MainLayout : IDisposable
             return;
         }
 
+        progress?.Report(PreCommitFormat.FormattingMessage(changedFilePaths.Count));
         LogProcessStart("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
+        var startedAt = DateTime.UtcNow;
         // Every repository in the working copy, not only this one (B416): see ProcessRepositorySettingsAsync.
         var pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
         try
@@ -1527,6 +1537,12 @@ public partial class MainLayout : IDisposable
             FileMonitoringService.ClearPendingChanges(repositoryId);
             pause.Dispose();
         }
+
+        // A file reformatted back to its committed text is no longer modified, so a write is the one
+        // thing here that can change what the status says.
+        if (changedFilePaths.Any(f => FormattingPipeline.WrittenFileTimestamps.TryGetValue(f, out var at) && at >= startedAt))
+            RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+
         LogProcessEnd("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
     }
 
