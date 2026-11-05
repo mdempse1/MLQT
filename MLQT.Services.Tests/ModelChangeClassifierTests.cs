@@ -407,4 +407,121 @@ public class ModelChangeClassifierTests : IDisposable
         _repositories.Verify(
             r => r.GetFileContentAtRevision("repo-1", "Resistor.mo", It.IsAny<string?>()), Times.Exactly(2));
     }
+
+    // ---------------------------------------------------------------- a large change set
+    // 17,372 changed files in an SVN checkout took eighteen minutes to classify, one svn process
+    // after another, while the repository's tree waited for the answer.
+
+    private VcsWorkingCopyFile[] ManyChangedFiles(int count)
+    {
+        var changes = new VcsWorkingCopyFile[count];
+        for (var i = 0; i < count; i++)
+        {
+            Write($"R{i}.mo", Committed.Replace("Resistor", $"R{i}").Replace("R = 100", "R = 220"));
+            changes[i] = Change($"R{i}.mo");
+        }
+        return changes;
+    }
+
+    [Fact]
+    public void MoreChangedFilesThanTheCap_AreNotClassified_AndNothingIsRead()
+    {
+        // Empty is "not asked", so the files are still marked modified, without a kind.
+        var classifier = new ModelChangeClassifier(_repositories.Object, maxFilesToClassify: 2);
+
+        Assert.Empty(classifier.Classify(_repository, ManyChangedFiles(3)));
+        _repositories.Verify(
+            r => r.GetFileContentAtRevision(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    /// <summary>Each file <c>Rn.mo</c> committed holding a class <c>Rn</c>, as ManyChangedFiles writes them.</summary>
+    private void CommitEachFile() =>
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string, string?>((_, path, _) =>
+                Committed.Replace("Resistor", Path.GetFileNameWithoutExtension(path)));
+
+    [Fact]
+    public void AsManyChangedFilesAsTheCap_AreClassified()
+    {
+        CommitEachFile();
+        var classifier = new ModelChangeClassifier(_repositories.Object, maxFilesToClassify: 2);
+
+        var kinds = classifier.Classify(_repository, ManyChangedFiles(2));
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, kinds["MyLib.R0"]);
+        Assert.Equal(ClassChangeKind.AffectsSimulation, kinds["MyLib.R1"]);
+    }
+
+    [Fact]
+    public void OnlyModelicaFiles_CountTowardsTheCap()
+    {
+        var classifier = new ModelChangeClassifier(_repositories.Object, maxFilesToClassify: 2);
+        Write("README.md", "not Modelica");
+
+        var kinds = classifier.Classify(_repository, [.. ManyChangedFiles(2), Change("README.md")]);
+
+        Assert.Contains("MyLib.R0", kinds);
+    }
+
+    [Fact]
+    public void TheCommittedVersions_AreReadSeveralAtOnce()
+    {
+        var inFlight = 0;
+        var mostAtOnce = 0;
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string, string?>((_, path, _) =>
+            {
+                var now = Interlocked.Increment(ref inFlight);
+                InterlockedMax(ref mostAtOnce, now);
+                Thread.Sleep(50);
+                Interlocked.Decrement(ref inFlight);
+                return Committed.Replace("Resistor", Path.GetFileNameWithoutExtension(path));
+            });
+
+        var kinds = Classify(ManyChangedFiles(16));
+
+        Assert.True(mostAtOnce > 1, $"the reads ran one at a time (at most {mostAtOnce} at once)");
+        // And every file's answer is there, whichever read finished first.
+        for (var i = 0; i < 16; i++)
+            Assert.Equal(ClassChangeKind.AffectsSimulation, kinds[$"MyLib.R{i}"]);
+    }
+
+    [Fact]
+    public void TwoCallersAskingAboutOneRepositoryAtOnce_ReadEachFileOnce()
+    {
+        // Every open tree asks after each notification. Each used to read every committed version for
+        // itself, which is why two svn processes were running side by side.
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns<string, string, string?>((_, path, _) =>
+            {
+                Thread.Sleep(50);
+                return Committed.Replace("Resistor", Path.GetFileNameWithoutExtension(path));
+            });
+        var changes = ManyChangedFiles(8);
+
+        using var start = new Barrier(2);
+        var callers = Enumerable.Range(0, 2)
+            .Select(_ => Task.Run(() => { start.SignalAndWait(); return _classifier.Classify(_repository, changes); },
+                TestContext.Current.CancellationToken))
+            .ToArray();
+        Task.WaitAll(callers, TestContext.Current.CancellationToken);
+
+        Assert.Equal(callers[0].Result, callers[1].Result);
+        for (var i = 0; i < 8; i++)
+            _repositories.Verify(
+                r => r.GetFileContentAtRevision("repo-1", $"R{i}.mo", It.IsAny<string?>()), Times.Once);
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int seen;
+        while ((seen = Volatile.Read(ref target)) < value
+               && Interlocked.CompareExchange(ref target, value, seen) != seen)
+        {
+        }
+    }
 }

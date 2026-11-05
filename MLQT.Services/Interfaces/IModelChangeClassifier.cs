@@ -32,7 +32,14 @@ public interface IModelChangeClassifier
     ///
     /// <para>Blocking, and meant to be called from a background thread: it reads from the version
     /// control system and parses. The library browser calls it inside the same
-    /// <c>Task.Run</c> that already fetches the working copy's status.</para>
+    /// <c>Task.Run</c> that already fetches the working copy's status - and draws its tree before
+    /// asking, because this can take a long time.</para>
+    ///
+    /// <para><b>A very large change set is not classified at all</b>: more than two thousand changed
+    /// Modelica files returns an empty answer, which by the rule below means "not asked", so every
+    /// file is still marked modified. Smaller sets have their committed versions read several at a
+    /// time, and two callers asking about one repository at once share one run rather than each
+    /// reading every file.</para>
     /// </remarks>
     /// <param name="repository">The repository the changes belong to.</param>
     /// <param name="changes">The working copy's changed files, relative to the VCS root.</param>

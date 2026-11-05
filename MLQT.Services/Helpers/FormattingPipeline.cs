@@ -107,13 +107,16 @@ public sealed class FormattingPipeline : IFormattingPipeline
                     continue;
                 }
 
-                // Get modified and untracked files from VCS
+                // Get modified and untracked files from VCS. Timed, because it can be most of this
+                // step: asking SVN about a working copy with 17,372 changed files took 80 seconds,
+                // which the log passed over in silence and read as formatting.
+                var statusTimer = System.Diagnostics.Stopwatch.StartNew();
                 var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
+                Info(nameof(FormattingPipeline),
+                    $"Asked {repository.VcsType} which files changed in repository {repository.Name}: "
+                    + $"{changedFilePaths.Count} Modelica file(s), {statusTimer.ElapsedMilliseconds}ms");
                 if (changedFilePaths.Count == 0)
-                {
-                    Debug(nameof(FormattingPipeline), $"No modified files in repository {repository.Name}");
                     continue;
-                }
 
                 Info(nameof(FormattingPipeline), $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
                 var written = await IncrementalFormatter.FormatAndWriteAsync(

@@ -133,6 +133,9 @@ public static class IncrementalFormatter
         if (filesToProcess.Count == 0)
             return written;
 
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var large = filesToProcess.Count >= LargeFormat;
+
         // Captured once: the parallel body below must not read settings that another thread may edit.
         var formatting = settings.ToFormattingOptions();
         var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text)>();
@@ -181,15 +184,25 @@ public static class IncrementalFormatter
             }
         }));
 
+        var renderedMs = stopwatch.ElapsedMilliseconds;
+        if (large)
+            Info(nameof(IncrementalFormatter),
+                $"Rendered {formattedFiles.Count} of {filesToProcess.Count} file(s) in {renderedMs}ms; writing them");
+
         // Written one at a time: these are the user's files, and a partial parallel write is worse
         // than a slow one.
+        //
+        // **No line per file.** There was one, and a startup with 17,372 changed files wrote 17,372
+        // of them - most of the day's log - while saying nothing about how far it had got. Progress
+        // every so many files, and the total, say more.
         foreach (var (filePath, (entry, content)) in formattedFiles)
         {
             try
             {
                 await ModelicaFileEncoding.WriteAllTextAsync(filePath, content);
                 written[filePath] = File.GetLastWriteTimeUtc(filePath);
-                Debug(nameof(IncrementalFormatter), $"Saved formatted file: {filePath}");
+                if (large && written.Count % ProgressEvery == 0)
+                    Info(nameof(IncrementalFormatter), $"Written {written.Count}/{formattedFiles.Count} formatted file(s)");
             }
             catch (Exception ex)
             {
@@ -202,8 +215,22 @@ public static class IncrementalFormatter
             RefreshClassesFromWrittenFile(graph, entry, content);
         }
 
+        var summary = $"Wrote {written.Count} formatted file(s) of {filesToProcess.Count} selected "
+            + $"({filesToProcess.Count - written.Count} not written); rendering {renderedMs}ms, "
+            + $"writing {stopwatch.ElapsedMilliseconds - renderedMs}ms";
+        if (large)
+            Info(nameof(IncrementalFormatter), summary);
+        else
+            Debug(nameof(IncrementalFormatter), summary);
+
         return written;
     }
+
+    /// <summary>A format of at least this many files reports its progress at Info.</summary>
+    internal const int LargeFormat = 100;
+
+    /// <summary>How often a large format reports its progress, in files written.</summary>
+    internal const int ProgressEvery = 1000;
 
     /// <summary>
     /// Brings every class in a file just written up to date with it, the way a fresh load of that

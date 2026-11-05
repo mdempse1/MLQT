@@ -128,8 +128,27 @@ public partial class LibraryBrowser : IDisposable
         _lastRepositoryId = repoId;
         _lastReferenceOnly = Repository?.IsReferenceOnly ?? false;
 
-        await CheckForUncommittedChangesAsync();
+        await RefreshTreeThenChangesAsync();
+    }
+
+    /// <summary>
+    /// Rebuilds the tree and shows it, and only then asks version control what changed and draws
+    /// the change markers.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The tree never waits for the markers.</b> Working out the markers classifies every
+    /// changed file against its committed version, and with 17,372 changed files in an SVN checkout
+    /// that took eighteen minutes, during which the repository's libraries were loaded and logged
+    /// and its tree stayed empty. The markers are read when a row is drawn
+    /// (<see cref="MarkerFor"/>), so drawing again once they arrive is all they need.</para>
+    /// </remarks>
+    private async Task RefreshTreeThenChangesAsync()
+    {
         await RefreshTreeItems();
+        StateHasChanged();
+
+        await CheckForUncommittedChangesAsync();
+        StateHasChanged();
     }
 
     /// <summary>
@@ -560,12 +579,9 @@ public partial class LibraryBrowser : IDisposable
         if (Repository?.Id != repositoryId) return;
         await InvokeAsync(async () =>
         {
-            // Rebuild the VCS status mapping from the current working copy state.
-            // After a successful commit this will be empty, clearing stale annotations.
-            await CheckForUncommittedChangesAsync();
-            // Refresh the top-level tree items, which draw their markers from the updated mapping.
-            await RefreshTreeItems();
-            StateHasChanged();
+            // The tree, then the VCS status mapping from the current working copy state. After a
+            // successful commit that mapping is empty, clearing stale annotations.
+            await RefreshTreeThenChangesAsync();
         });
     }
 
@@ -659,9 +675,7 @@ public partial class LibraryBrowser : IDisposable
         await InvokeAsync(async () =>
         {
             if (_suppressTreeRefresh) return;
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-            StateHasChanged();
+            await RefreshTreeThenChangesAsync();
         });
     }
 
@@ -1081,8 +1095,7 @@ public partial class LibraryBrowser : IDisposable
         foreach (var each in workingCopy)
             await RepositoryService.RefreshRepositoryAsync(each.Id);
         _expandedNodeIds.Clear();
-        await CheckForUncommittedChangesAsync();
-        await RefreshTreeItems();
+        await RefreshTreeThenChangesAsync();
 
         if (!analyse)
             return;
@@ -1112,9 +1125,7 @@ public partial class LibraryBrowser : IDisposable
         if (!outcome.WorkingCopyChanged)
         {
             RepositoryService.InvalidateWorkingCopyCache(repository.Id);
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-            StateHasChanged();
+            await RefreshTreeThenChangesAsync();
             return;
         }
 
@@ -1277,10 +1288,8 @@ public partial class LibraryBrowser : IDisposable
             // no children visible; clicking toggle briefly shows then collapses).
             // Clear the expansion state so the tree starts fresh after a branch switch.
             _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
             Snackbar.Add($"Switched to branch: {result.Data}", Severity.Success);
-            StateHasChanged();
+            await RefreshTreeThenChangesAsync();
 
             // Every repository in the working copy switched, and SwitchBranchAsync reloaded all of
             // them - so all of them are analysed, not only this one (B301).
@@ -1461,9 +1470,7 @@ public partial class LibraryBrowser : IDisposable
                     affectedModelIds.Add(model.Id);
             }
 
-            // Check VCS status first so the markers the refreshed tree draws are current.
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
+            await RefreshTreeThenChangesAsync();
 
             // Invalidate render cache and refresh model viewer with fresh graph content.
             if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))

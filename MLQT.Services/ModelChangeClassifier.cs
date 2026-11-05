@@ -26,9 +26,49 @@ public class ModelChangeClassifier : IModelChangeClassifier
     /// </summary>
     private readonly ConcurrentDictionary<string, CommittedVersion> _committed = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The most changed Modelica files one classification will compare. A larger change set is not
+    /// classified at all: every file is still marked as modified, without saying how.
+    /// </summary>
+    /// <remarks>
+    /// Each file costs a read of its committed version from version control - an <c>svn cat</c>
+    /// process on SVN - and two parses. Unbounded, 17,372 changed files took eighteen minutes, and a
+    /// change set that size is a reformat or a merge that nobody will review class by class. Two
+    /// thousand is about twenty seconds at the rate the parallel reads manage.
+    /// </remarks>
+    internal const int DefaultMaxFilesToClassify = 2000;
+
+    /// <summary>A classification of at least this many files says in the log what it is doing.</summary>
+    private const int LoggedFrom = 100;
+
+    /// <summary>How often a long classification reports its progress, in files.</summary>
+    private const int ProgressEvery = 500;
+
+    private readonly int _maxFilesToClassify;
+
+    /// <summary>
+    /// One classification per repository at a time. Every open tree asks after each notification,
+    /// and two asking at once each read every committed version for themselves; the second now waits
+    /// and finds the first one's answers in the cache.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, object> _repositoryGates = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// How many committed versions are read at once. Each is mostly waiting - for a process to start
+    /// on SVN, for the object store on Git - so more than the cores, but bounded so a large change set
+    /// does not start hundreds of processes together.
+    /// </summary>
+    private static readonly int ReadParallelism = Math.Clamp(Environment.ProcessorCount, 4, 16);
+
     public ModelChangeClassifier(IRepositoryService repositoryService)
+        : this(repositoryService, DefaultMaxFilesToClassify)
+    {
+    }
+
+    internal ModelChangeClassifier(IRepositoryService repositoryService, int maxFilesToClassify)
     {
         _repositoryService = repositoryService;
+        _maxFilesToClassify = maxFilesToClassify;
 
         // Nothing kept for one project is any use to the next, and every path in it is another
         // project's (B350: nothing in production called Invalidate, so the cache grew across switches).
@@ -57,19 +97,58 @@ public class ModelChangeClassifier : IModelChangeClassifier
     public IReadOnlyDictionary<string, ClassChangeKind> Classify(
         Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes)
     {
-        var kinds = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
-        var added = new Dictionary<string, ClassSignature>(StringComparer.Ordinal);
+        var modelicaChanges = changes
+            .Where(change => change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        foreach (var change in changes)
+        // Absence is "not asked" (IModelChangeClassifier), so every file is still marked modified.
+        if (modelicaChanges.Count > _maxFilesToClassify)
         {
-            if (!change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                continue;
+            Info("ModelChangeClassifier",
+                $"Not classifying the {modelicaChanges.Count} changed Modelica file(s) in {repository.Name}: "
+                + $"more than {_maxFilesToClassify}. They are marked as modified without saying how.");
+            return EmptyKinds;
+        }
+
+        lock (_repositoryGates.GetOrAdd(repository.Id, _ => new object()))
+            return ClassifyAll(repository, changes, modelicaChanges);
+    }
+
+    private IReadOnlyDictionary<string, ClassChangeKind> ClassifyAll(
+        Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes, List<VcsWorkingCopyFile> modelicaChanges)
+    {
+        var logged = modelicaChanges.Count >= LoggedFrom;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        if (logged)
+            Info("ModelChangeClassifier",
+                $">>> STARTING: Classifying {modelicaChanges.Count} changed Modelica file(s) in {repository.Name}");
+
+        // Each file on its own, several at once: nearly all of the time is reading committed
+        // versions, one round trip each. The answers are merged afterwards in the order version
+        // control gave them, so the result does not depend on which read finished first.
+        var files = new CachedClassification[modelicaChanges.Count];
+        var done = 0;
+        Parallel.For(0, modelicaChanges.Count, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism }, i =>
+        {
+            var change = modelicaChanges[i];
 
             // change.Path is relative to the VCS root and uses forward slashes on Git.
             var absolutePath = Path.Combine(
                 repository.VcsRootPath, change.Path.Replace('/', Path.DirectorySeparatorChar));
 
-            var file = ClassifyFile(repository, change, absolutePath);
+            files[i] = ClassifyFile(repository, change, absolutePath);
+
+            var count = Interlocked.Increment(ref done);
+            if (logged && count % ProgressEvery == 0)
+                Info("ModelChangeClassifier",
+                    $"Classified {count}/{modelicaChanges.Count} changed file(s) in {repository.Name}");
+        });
+
+        var kinds = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
+        var added = new Dictionary<string, ClassSignature>(StringComparer.Ordinal);
+
+        foreach (var file in files)
+        {
             foreach (var (fullName, kind) in file.Kinds)
             {
                 // A file's classes are its own, so a later file cannot contradict an earlier one.
@@ -85,6 +164,11 @@ public class ModelChangeClassifier : IModelChangeClassifier
 
         if (added.Count > 0)
             FindMovedClasses(repository, changes, kinds, added);
+
+        if (logged)
+            Info("ModelChangeClassifier",
+                $"<<< COMPLETED: Classifying {modelicaChanges.Count} changed Modelica file(s) in {repository.Name} "
+                + $"({stopwatch.ElapsedMilliseconds}ms)");
 
         return kinds;
     }
@@ -110,6 +194,18 @@ public class ModelChangeClassifier : IModelChangeClassifier
         Dictionary<string, ClassChangeKind> kinds,
         Dictionary<string, ClassSignature> added)
     {
+        // Read the committed versions the loop below may want several at once, as Classify does.
+        // Most are cached already - a modified file's was read to classify it - so this is mainly
+        // the deleted files and a renamed file's old path.
+        var candidates = changes
+            .Where(change => change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
+                && change.Status is not (VcsFileStatus.Added or VcsFileStatus.Untracked or VcsFileStatus.Conflicted))
+            .Select(CommittedPath)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        Parallel.ForEach(candidates, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism },
+            path => CommittedSignatures(repository, path));
+
         foreach (var change in changes)
         {
             if (added.Count == 0)

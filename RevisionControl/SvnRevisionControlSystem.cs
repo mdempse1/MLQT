@@ -1098,9 +1098,6 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (!Directory.Exists(repositoryPath))
                 return null;
 
-            if (GetInfo(repositoryPath) == null)
-                return null;
-
             var fullPath = Path.Combine(repositoryPath, filePath);
 
             var useBase = string.IsNullOrEmpty(revision)
@@ -1112,8 +1109,16 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // before any caller can say otherwise (B264).
             // Pegged even here, with nothing to follow: a path containing '@' is otherwise read as
             // one carrying a peg revision, and a file called "a@b.mo" is not found.
+            //
+            // **No `svn info` first.** `cat` at BASE fails by itself outside a working copy, so
+            // asking first only doubled the processes: classifying the changes of a large working
+            // copy reads every changed file's committed version this way, and 17,372 changed files
+            // were 34,744 svn processes.
             if (useBase)
                 return SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", Pegged(fullPath, "BASE")) is { Success: true } b ? b.StdOut : null;
+
+            if (GetInfo(repositoryPath) == null)
+                return null;
 
             if (File.Exists(fullPath))
             {
