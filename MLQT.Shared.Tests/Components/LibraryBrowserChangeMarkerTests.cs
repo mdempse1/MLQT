@@ -254,6 +254,18 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         browser.InvokeAsync(() => { }).GetAwaiter().GetResult();
     }
 
+    /// <summary>
+    /// Clicks the filter chip at <paramref name="index"/> once it is there, finding it and clicking it
+    /// on the renderer's dispatcher so no render can land between the two - which is what bUnit
+    /// recommends, and what a click from the test thread raced under load.
+    /// </summary>
+    private static void ClickFilterChip(IRenderedComponent<LibraryBrowser> browser, int index)
+    {
+        browser.WaitForAssertion(() => Assert.True(FilterChips(browser).Length > index));
+        browser.InvokeAsync(() => browser.FindAll(".mlqt-change-filter .mud-chip")[index].Click())
+            .GetAwaiter().GetResult();
+    }
+
     /// <summary>The filter chips' labels, which carry the count behind each one.</summary>
     private static string[] FilterChips(IRenderedComponent<LibraryBrowser> browser) =>
         browser.FindAll(".mlqt-change-filter .mud-chip").Select(e => e.TextContent.Trim()).ToArray();
@@ -424,7 +436,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             "MyLib.Capacitor", "MyLib.Resistor");
 
         WaitForClassification(browser);
-        browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
+        ClickFilterChip(browser, 3);
 
         browser.WaitForAssertion(() => Assert.Equal(["Capacitor"], Listed(browser)));
     }
@@ -450,10 +462,10 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         WaitForClassification(browser);
         var everything = Listed(browser);
 
-        browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
+        ClickFilterChip(browser, 3);
         browser.WaitForAssertion(() => Assert.Equal(["Capacitor"], Listed(browser)));
 
-        browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
+        ClickFilterChip(browser, 3);
         browser.WaitForAssertion(() =>
         {
             Assert.Equal(everything, Listed(browser));
@@ -473,7 +485,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
 
         WaitForClassification(browser);
-        browser.FindAll(".mlqt-change-filter .mud-chip")[0].Click();
+        ClickFilterChip(browser, 0);
 
         browser.WaitForAssertion(() =>
         {

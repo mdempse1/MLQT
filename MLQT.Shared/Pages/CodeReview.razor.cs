@@ -1119,6 +1119,9 @@ public partial class CodeReview : IAsyncDisposable
 
     private void OnModelSelected() => ShowCurrentModel(keepDiff: false);
 
+    /// <summary>A class that takes this long to appear says why in the log; a quicker one says nothing.</summary>
+    internal const long SlowRenderMs = 500;
+
     /// <summary>
     /// Shows the selected class. <paramref name="keepDiff"/> is for a change that alters only how
     /// the single view is drawn, and leaves a loaded diff where it is; everything else — a new
@@ -1172,8 +1175,6 @@ public partial class CodeReview : IAsyncDisposable
             // by MainLayout/LibraryBrowser re-rendering 27K tree nodes.
             ApplyShown(cachedCode);
 
-            LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
-
             // Update UI synchronously — no await means no sync context queue delay
             OnFindingsScopeChanged(FindingsScopeAllModels);
             StateHasChanged();
@@ -1181,34 +1182,24 @@ public partial class CodeReview : IAsyncDisposable
             // Run VCS check in background — will update UI when done
             _ = Task.Run(() => CheckModelVcsStatus()).ContinueWith(async _ =>
             {
-                LoggingService.Debug("CodeReview",
-                    $"  VCS ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
-
                 if (NavState.ModelID != selectedModelId)
                     return;
 
-                var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
                 await InvokeAsync(async () =>
                 {
-                    LoggingService.Debug("CodeReview",
-                        $"  VCS InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
-
                     if (!_isModelModified)
                         _isDiffMode = false;
                     await SetViewMode(_isDiffMode, _diffViewMode);
                     StateHasChanged();
                 });
-
-                LoggingService.Debug("CodeReview",
-                    $"  VCS (background): Total: {totalSw.ElapsedMilliseconds}ms");
             }, TaskScheduler.Default);
         }
         else
         {
+            // Gathered for the one line a slow render writes (SlowRenderMs); a quick one writes none.
             var codeLength = _currentModelNode.Definition.ModelicaCode?.Length ?? 0;
             var hadParsedCode = _currentModelNode.Definition.ParsedCode != null;
-            LoggingService.Debug("CodeReview",
-                $"Rendering {selectedModelId}: {codeLength} chars, ParsedCode cached={hadParsedCode}, classType={_currentModelNode.ClassType}");
+            var classType = _currentModelNode.ClassType;
 
             BeginLoading();
             StateHasChanged();
@@ -1256,21 +1247,16 @@ public partial class CodeReview : IAsyncDisposable
 
             _ = renderTask.ContinueWith(async _ =>
             {
-                LoggingService.Debug("CodeReview",
-                    $"  ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
+                var renderedMs = totalSw.ElapsedMilliseconds;
 
                 try
                 {
                     var shown = renderTask.Result;
 
-                    LoggingService.Debug("CodeReview",
-                        $"  Lines: {shown.Lines.Count}, hidden ranges: {shown.Elision.Ranges.Count}");
-
                     var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
                     await InvokeAsync(() =>
                     {
-                        LoggingService.Debug("CodeReview",
-                            $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
+                        var waitedMs = invokeAsyncSw.ElapsedMilliseconds;
 
                         // Cached whether or not it is still wanted - it is right for its key - but
                         // shown only if no later render has been asked for since (B345).
@@ -1280,8 +1266,15 @@ public partial class CodeReview : IAsyncDisposable
                         OnFindingsScopeChanged(FindingsScopeAllModels);
                         StateHasChanged();
 
-                        LoggingService.Debug("CodeReview",
-                            $"  Total: {totalSw.ElapsedMilliseconds}ms");
+                        // One line, and only for a render someone would have waited for. This was six
+                        // lines for every class opened, most of a working day's log, and nothing in
+                        // them mattered unless the class had been slow to appear.
+                        if (totalSw.ElapsedMilliseconds >= SlowRenderMs)
+                            LoggingService.Info("CodeReview",
+                                $"Slow to show {selectedModelId} ({classType}, {codeLength} chars, "
+                                + $"{shown.Lines.Count} lines, {shown.Elision.Ranges.Count} hidden range(s), "
+                                + $"parse tree cached={hadParsedCode}): rendered at {renderedMs}ms, "
+                                + $"waited {waitedMs}ms for the UI thread, {totalSw.ElapsedMilliseconds}ms in all");
                     });
                 }
                 catch (Exception ex)

@@ -201,10 +201,11 @@ public partial class LibraryBrowser : IDisposable
 
         if (Repository == null || Repository.VcsType == RepositoryVcsType.Local || Repository.IsReferenceOnly)
         {
+            // Replaced rather than cleared: an earlier refresh may still be reading the old ones.
             _hasUncommittedChanges = false;
-            _modelVcsStatus.Clear();
+            _modelVcsStatus = new Dictionary<string, VcsFileStatus>();
             _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
-            _descendantChangeKinds.Clear();
+            _descendantChangeKinds = new Dictionary<string, ClassChangeKind>();
             _filteredDescendantKinds.Clear();
             _changeFilter = ChangeFilter.None;
             _filteredTreeItems = new List<TreeItemData<ModelNode>>();
@@ -281,10 +282,13 @@ public partial class LibraryBrowser : IDisposable
 
         StateHasChanged();
 
+        // A copy for the background thread. modelStatus is _modelVcsStatus now, and the dispatcher
+        // may clear or replace that - a repository ticked reference only - while this runs.
+        var changedIds = modelStatus.Keys.ToList();
         var (kinds, descendants) = await Task.Run(() =>
         {
             var changeKinds = ModelChangeClassifier.Classify(repository, changes!);
-            return (changeKinds, DescendantKinds(modelStatus.Keys, changeKinds, LibraryDataService.GetModelById));
+            return (changeKinds, DescendantKinds(changedIds, changeKinds, LibraryDataService.GetModelById));
         });
 
         if (generation != _statusGeneration || Repository?.Id != repoId)

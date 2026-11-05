@@ -243,11 +243,17 @@ public partial class CodeViewer
             result.Add(html.ToString());
         }
 
-        MLQT.Services.LoggingService.Debug("CodeViewer",
-            $"ConvertLinesToHtml: {lines.Count} lines in {sw.ElapsedMilliseconds}ms");
+        // Only when it cost something. It runs on the UI thread for every class shown and every
+        // search keystroke, so a line each time buried the log; a slow one is worth a line.
+        if (sw.ElapsedMilliseconds >= SlowConvertMs)
+            MLQT.Services.LoggingService.Info("CodeViewer",
+                $"ConvertLinesToHtml: {lines.Count} lines in {sw.ElapsedMilliseconds}ms");
 
         return result;
     }
+
+    /// <summary>A conversion this slow is logged; a quicker one is not.</summary>
+    internal const long SlowConvertMs = 100;
 
     /// <summary>
     /// Appends <paramref name="text"/> — raw, as the user reads it — HTML-encoded, with each
