@@ -318,6 +318,8 @@ ModelicaGraph.DataTypes.CoverageFacts.Failed.get -> ModelicaGraph.DataTypes.Cove
 ModelicaGraph.DataTypes.CoverageFacts.Failed.init -> void
 ModelicaGraph.DataTypes.CoverageFacts.FormattingPreserved.get -> bool
 ModelicaGraph.DataTypes.CoverageFacts.FormattingPreserved.init -> void
+ModelicaGraph.DataTypes.CoverageFacts.GeneratedImport.get -> bool
+ModelicaGraph.DataTypes.CoverageFacts.GeneratedImport.init -> void
 ModelicaGraph.DataTypes.CoverageFacts.HasDescription.get -> bool
 ModelicaGraph.DataTypes.CoverageFacts.HasDescription.init -> void
 ModelicaGraph.DataTypes.CoverageFacts.HasDocumentationInfo.get -> bool
@@ -345,6 +347,8 @@ ModelicaGraph.DataTypes.FileNode.FileName.get -> string!
 ModelicaGraph.DataTypes.FileNode.FileNode(string! id, string! filePath) -> void
 ModelicaGraph.DataTypes.FileNode.FilePath.get -> string!
 ModelicaGraph.DataTypes.FileNode.FilePath.set -> void
+ModelicaGraph.DataTypes.FileNode.LoadedWriteTimeUtc.get -> System.DateTime?
+ModelicaGraph.DataTypes.FileNode.LoadedWriteTimeUtc.set -> void
 ModelicaGraph.DataTypes.GraphNode
 ModelicaGraph.DataTypes.GraphNode.GraphNode(string! id, ModelicaGraph.DataTypes.NodeType nodeType, string! name) -> void
 ModelicaGraph.DataTypes.GraphNode.Id.get -> string!

@@ -10,6 +10,7 @@ const MLQT.Services.Helpers.ToolTimeLimit.SettingName = "Check time limit" -> st
 const MLQT.Services.Helpers.UnavailableTool.Advice = "Check its path and port in Settings → External Tools." -> string!
 const MLQT.Services.LoggingService.ConsoleLevelVariable = "MLQT_LOG_CONSOLE" -> string!
 const MLQT.Services.MauiPreferencesFile.ApplicationId = "com.mlqtproject.MLQT" -> string!
+const MLQT.Services.ModelChangeClassifier.DefaultMaxFilesToClassify = 2000 -> int
 const MLQT.Services.WindowGeometry.MinimumVisibleHeight = 30 -> int
 const MLQT.Services.WindowGeometry.MinimumVisibleWidth = 120 -> int
 const MLQT.Services.WindowGeometry.PreferredHeight = 900 -> int
@@ -882,6 +883,7 @@ MLQT.Services.Interfaces.ILibraryDataService.UpdateChangedFilesAsync(System.Coll
 MLQT.Services.Interfaces.IModelChangeClassifier
 MLQT.Services.Interfaces.IModelChangeClassifier.Classify(MLQT.Services.DataTypes.Repository! repository, System.Collections.Generic.IReadOnlyList<RevisionControl.VcsWorkingCopyFile!>! changes) -> System.Collections.Generic.IReadOnlyDictionary<string!, ModelicaParser.Comparison.ClassChangeKind>!
 MLQT.Services.Interfaces.IModelChangeClassifier.Invalidate(string? repositoryId = null) -> void
+MLQT.Services.Interfaces.IModelChangeClassifier.Overtaken.get -> System.Collections.Generic.IReadOnlyDictionary<string!, ModelicaParser.Comparison.ClassChangeKind>!
 MLQT.Services.Interfaces.IModelCheckingService
 MLQT.Services.Interfaces.IModelCheckingService.CheckModelAsync(ModelicaGraph.DataTypes.ModelNode! modelNode, ModelicaGraph.DirectedGraph! graph, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<MLQT.Services.DataTypes.ModelCheckResult!>!
 MLQT.Services.Interfaces.IModelCheckingService.CurrentProgress.get -> MLQT.Services.DataTypes.ModelCheckProgress!
