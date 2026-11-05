@@ -367,6 +367,31 @@ internal static class SvnCli
     }
 
     /// <summary>
+    /// <see cref="RunXml(string[])"/> for a command over many targets where some may not exist: svn
+    /// reports each such target with a W155010 warning and ends with E200009 and exit code 1, having
+    /// written the XML for every target it did find. That XML is the answer; any other failure is
+    /// still null.
+    /// </summary>
+    internal static XDocument? RunXmlAllowingMissingTargets(params string[] args)
+    {
+        var withXml = new List<string>(args) { "--xml" };
+        var result = Run(withXml, stdinText: null, IdleTimeout);
+        if (!result.Success && !result.StdErr.Contains("E200009", StringComparison.Ordinal))
+            return null;
+        if (string.IsNullOrWhiteSpace(result.StdOut))
+            return null;
+        try
+        {
+            return XDocument.Parse(result.StdOut);
+        }
+        catch (System.Xml.XmlException ex)
+        {
+            RevisionControlLogger.Error("SvnCli.RunXmlAllowingMissingTargets", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Normalizes a revision identifier for the svn CLI. Empty/whitespace becomes HEAD;
     /// numeric revisions pass through; the SVN keywords (HEAD/BASE/COMMITTED/PREV) are
     /// upper-cased; anything else falls back to HEAD (matching the old SharpSvn behaviour).

@@ -332,7 +332,12 @@ rolled the committed files back (`AMixedRevisionWorkingCopy_KeepsWhatItCommitted
 loop over them half an hour. `RevertFiles` asked `svn status` and ran `svn revert` per file; it now
 runs one status per chunk of paths (`svn status` takes no `--targets`, so `CommandLineChunks` keeps
 each command line inside Windows' limit) and one `svn revert --targets`, which reverts the versioned
-paths and says `Skipped` for the rest. `Commit`'s preparation still asks status per file.
+paths and says `Skipped` for the rest. `Commit`'s preparation is batched the same way: `KindsOf`
+classifies the selected paths and the folders above the new ones before anything changes (status in
+chunks, then one `svn info --targets` for the paths status leaves empty - a file in a new folder -
+read through `SvnCli.RunXmlAllowingMissingTargets`, since svn ends that with E200009), and missing
+files and new ones go to one `svn delete --targets` and one or two `svn add --targets`. New folders
+above a new file are added `--depth empty`, so a folder brings nothing unselected into the commit.
 
 **Whether a switch rewrote anything** is `VcsOperationResult.WorkingCopyChanged`, read from
 `svn switch`'s item lines (`SwitchChangedFiles`). An up-to-date working copy switched to a branch of

@@ -1511,15 +1511,22 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
+            // Full paths throughout, so a path compares equal however the caller spelt it - the
+            // skipped files below are taken out of this list by comparison.
+            var workingCopyRoot = Path.GetFullPath(repositoryPath);
             var pathsToCommit = new List<string>();
             if (filesToCommit != null)
             {
                 foreach (var file in filesToCommit)
-                    pathsToCommit.Add(Path.Combine(repositoryPath, file));
+                {
+                    var fullPath = Path.GetFullPath(Path.Combine(repositoryPath, file));
+                    if (!pathsToCommit.Contains(fullPath, StringComparer.OrdinalIgnoreCase))
+                        pathsToCommit.Add(fullPath);
+                }
             }
             else
             {
-                pathsToCommit.Add(repositoryPath);
+                pathsToCommit.Add(workingCopyRoot);
             }
 
             // If the repository root has uncommitted property changes (e.g. svn:mergeinfo updated
@@ -1529,72 +1536,114 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var rootStatus = GetSingleStatus(repositoryPath);
             var rootPropClean = rootStatus != null && rootStatus.Props is "none" or "normal";
             if (!rootPropClean &&
-                !pathsToCommit.Contains(repositoryPath, StringComparer.OrdinalIgnoreCase))
+                !pathsToCommit.Contains(workingCopyRoot, StringComparer.OrdinalIgnoreCase))
             {
-                pathsToCommit.Add(repositoryPath);
+                pathsToCommit.Add(workingCopyRoot);
             }
 
             // SVN requires files to be explicitly added before they can be committed.
-            var addedParentDirs = new HashSet<string>();
+            var addedParentDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             // Files that cannot be in this commit because their parent directory was Added via merge.
             // SVN forbids adding new files to a merge-committed directory in the same transaction.
             var filesToSkip = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            var pathsList = pathsToCommit.ToList();
-            var totalPaths = pathsList.Count;
-            for (int i = 0; i < pathsList.Count; i++)
-            {
-                var path = pathsList[i];
-                if (i % 100 == 0 || i == totalPaths - 1)
-                    progress?.Report($"Preparing file {i + 1} of {totalPaths}...");
+            // **A handful of svn processes, not several per file.** Each path was asked about on its
+            // own - a status, often an info, a status of its folder, an add - and every one of those
+            // is a process that opens and locks the working copy's database. With 17,000 files the
+            // dialog sat on "Preparing file N of M" for most of an hour. Now the paths and the
+            // folders above the new ones are classified a chunk at a time, before anything is
+            // changed, and the deletes and adds go to svn as one --targets list each.
+            progress?.Report($"Reading the status of {pathsToCommit.Count} selected file(s)...");
 
-                if (!File.Exists(path) && !Directory.Exists(path))
+            var root = Path.GetFullPath(repositoryPath);
+            var selected = pathsToCommit.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var kinds = KindsOf(selected);
+
+            // Missing from disk: scheduled for deletion, so the commit removes it from the
+            // repository. Without this, SVN treats it as "missing" but not "deleted" and the commit
+            // either ignores it or fails.
+            var missing = selected
+                .Where(p => !File.Exists(p) && !Directory.Exists(p) && kinds.GetValueOrDefault(p) == PathKind.Missing)
+                .ToList();
+
+            var newPaths = selected
+                .Where(p => (File.Exists(p) || Directory.Exists(p)) && kinds.GetValueOrDefault(p) == PathKind.Unversioned)
+                .ToList();
+
+            // Every folder above a new path, up to the working copy root, asked about before anything
+            // is added: which are new as well (and so added with the path), and which were added by a
+            // merge.
+            var ancestors = newPaths
+                .SelectMany(p => FoldersBetween(root, p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var ancestorKinds = KindsOf(ancestors);
+
+            var toAdd = new List<string>();
+            foreach (var path in newPaths)
+            {
+                // If the parent directory was itself added via SVN merge, adding a new file to it in
+                // the same commit causes an "out of date" server error. Mark the file for a separate
+                // commit instead. Asked of the folder as it was before this commit added anything, so
+                // a folder this commit adds is never mistaken for one a merge added.
+                var parentDir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(parentDir)
+                    && !parentDir.Equals(root, OIC)
+                    && ancestorKinds.GetValueOrDefault(parentDir) == PathKind.Added)
                 {
-                    // File/directory is missing from disk. Schedule it for deletion so the commit
-                    // removes it from the repository. Without this, SVN treats it as "missing" but
-                    // not "deleted" and the commit either ignores it or fails.
-                    var missingStatus = GetSingleStatus(path);
-                    if (missingStatus?.Item == "missing")
-                        SvnCli.Run("delete", "--force", path);
+                    filesToSkip.Add(path);
                     continue;
                 }
 
-                var status = GetSingleStatus(path);
-                // A brand-new file inside a brand-new (still unversioned) directory makes svn
-                // report its node as "not found" rather than "unversioned", so GetSingleStatus
-                // returns null. Fall back to an explicit version-control check to tell a genuinely
-                // new path apart from a clean, already-versioned one (both yield a null status).
-                var isUnversioned = status?.Item == "unversioned"
-                    || (status == null && !IsVersioned(path));
-                if (isUnversioned)
+                // The path is genuinely new. Its new folders are added with it, and listed in the
+                // commit so they are in it.
+                foreach (var folder in FoldersBetween(root, path))
                 {
-                    var parentDir = Path.GetDirectoryName(path);
+                    if (ancestorKinds.GetValueOrDefault(folder) == PathKind.Unversioned)
+                        addedParentDirs.Add(folder);
+                }
 
-                    // If the parent directory was itself added via SVN merge, adding a new file to
-                    // it in the same commit causes an "out of date" server error. Mark the file for
-                    // a separate commit instead. Skip this check for directories we ourselves added
-                    // during this commit preparation (tracked in addedParentDirs).
-                    if (!string.IsNullOrEmpty(parentDir) &&
-                        !parentDir.Equals(repositoryPath, OIC) &&
-                        !addedParentDirs.Contains(parentDir) &&
-                        IsDirectoryAddedViaMerge(parentDir))
-                    {
-                        filesToSkip.Add(path);
+                toAdd.Add(path);
+            }
+
+            if (missing.Count > 0)
+            {
+                progress?.Report($"Scheduling {missing.Count} missing file(s) for deletion...");
+                var deleted = RunWithTargets(repositoryPath, ["delete", "--force"], missing);
+                if (!deleted.Success)
+                {
+                    result.ErrorMessage = $"Could not schedule {missing.Count} missing file(s) for deletion: {deleted.FailureMessage("svn delete failed.")}";
+                    return result;
+                }
+            }
+
+            if (toAdd.Count > 0)
+            {
+                progress?.Report($"Adding {toAdd.Count} new file(s)...");
+
+                // A new file, and every new folder above one, on its own (--depth empty), so a folder
+                // brings in nothing that was not selected. A new folder that was itself selected is
+                // added with everything in it, as `svn add --parents folder` always added it.
+                var addEmpty = addedParentDirs
+                    .Concat(toAdd.Where(p => !Directory.Exists(p)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(p => p.Length)
+                    .ToList();
+                var addWhole = toAdd.Where(Directory.Exists).Where(p => !addedParentDirs.Contains(p)).ToList();
+
+                foreach (var (args, paths) in new (string[] Args, List<string> Paths)[]
+                         {
+                             (["add", "--parents", "--depth", "empty"], addEmpty),
+                             (["add", "--parents"], addWhole),
+                         })
+                {
+                    if (paths.Count == 0)
                         continue;
-                    }
 
-                    // File is genuinely new. Stage any unversioned parent directories first so they
-                    // appear in pathsToCommit (recorded in addedParentDirs), then add the file.
-                    if (!string.IsNullOrEmpty(parentDir) &&
-                        !parentDir.Equals(repositoryPath, OIC))
-                    {
-                        AddParentDirectories(parentDir, repositoryPath, addedParentDirs);
-                    }
-
-                    var add = SvnCli.Run("add", "--parents", path);
+                    var add = RunWithTargets(repositoryPath, args, paths);
                     if (!add.Success)
                     {
-                        result.ErrorMessage = add.StdErr.Trim();
+                        result.ErrorMessage = add.FailureMessage("svn add failed.");
                         return result;
                     }
                 }
@@ -1606,14 +1655,14 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // reloads for that commit (B478).
             foreach (var skipPath in filesToSkip)
             {
-                pathsToCommit.Remove(skipPath);
+                pathsToCommit.RemoveAll(p => p.Equals(skipPath, OIC));
                 result.SkippedFiles.Add(VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, skipPath)));
             }
 
             // Add any parent directories that were scheduled for add to the commit paths.
             foreach (var dir in addedParentDirs)
             {
-                if (!pathsToCommit.Contains(dir))
+                if (!pathsToCommit.Contains(dir, StringComparer.OrdinalIgnoreCase))
                     pathsToCommit.Add(dir);
             }
 
@@ -1969,16 +2018,62 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// so files rather than one per file. A path svn cannot find comes back as an empty
     /// <c>&lt;target&gt;</c> with a W155010 warning, and the command still succeeds.
     /// </remarks>
-    private static HashSet<string> UnversionedAmong(IReadOnlyList<string> fullPaths)
+    private static HashSet<string> UnversionedAmong(IReadOnlyList<string> fullPaths) =>
+        KindsOf(fullPaths)
+            .Where(kind => kind.Value == PathKind.Unversioned)
+            .Select(kind => kind.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>What a path is to the working copy, as far as a revert or a commit needs to know.</summary>
+    internal enum PathKind
     {
-        var unversioned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Under version control, modified or not.</summary>
+        Versioned,
+
+        /// <summary>Scheduled for addition - by the user, or by a merge.</summary>
+        Added,
+
+        /// <summary>Versioned, and gone from disk without being deleted through svn.</summary>
+        Missing,
+
+        /// <summary>On disk and not under version control, a path inside a new folder included.</summary>
+        Unversioned,
+
+        /// <summary>Neither on disk nor known to svn.</summary>
+        NotFound,
+    }
+
+    /// <summary>
+    /// What each path is to the working copy, asked of all of them in a few svn processes: one
+    /// <c>svn status</c> per chunk of paths, then one <c>svn info</c> for the paths status could not
+    /// place.
+    /// </summary>
+    /// <remarks>
+    /// <para><c>svn status</c> takes no <c>--targets</c> file, so the paths go on the command line in
+    /// chunks kept well inside Windows' 32,767-character limit (<see cref="CommandLineChunks"/>).</para>
+    ///
+    /// <para><b>An empty <c>&lt;target&gt;</c> is two things</b>: a versioned path with nothing to
+    /// report, and a path svn cannot find - a file inside a folder that is itself new, which status
+    /// warns about (W155010) and leaves empty. Those are told apart by one <c>svn info --targets</c>,
+    /// which lists the versioned ones and ends with E200009 for the rest.</para>
+    /// </remarks>
+    private static Dictionary<string, PathKind> KindsOf(IReadOnlyList<string> fullPaths)
+    {
+        var kinds = new Dictionary<string, PathKind>(StringComparer.OrdinalIgnoreCase);
+        var unplaced = new List<string>();
+
         foreach (var chunk in CommandLineChunks(fullPaths))
         {
             var args = new List<string> { "status", "--depth", "empty" };
             args.AddRange(chunk);
             var targets = SvnCli.RunXml(args.ToArray())?.Root?.Elements("target");
             if (targets is null)
+            {
+                // Status itself failed for this chunk: nothing in it is known, so it is asked again
+                // below rather than taken for versioned.
+                unplaced.AddRange(chunk);
                 continue;
+            }
 
             foreach (var target in targets)
             {
@@ -1986,24 +2081,95 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 if (string.IsNullOrEmpty(path))
                     continue;
 
+                path = Path.GetFullPath(path);
                 var item = target.Element("entry")?.Element("wc-status")?.Attribute("item")?.Value;
-                if (item == "unversioned")
+                switch (item)
                 {
-                    unversioned.Add(Path.GetFullPath(path));
-                    continue;
+                    case null:
+                        unplaced.Add(path);
+                        break;
+                    case "unversioned":
+                        kinds[path] = PathKind.Unversioned;
+                        break;
+                    case "added":
+                        kinds[path] = PathKind.Added;
+                        break;
+                    case "missing":
+                        kinds[path] = PathKind.Missing;
+                        break;
+                    default:
+                        kinds[path] = PathKind.Versioned;
+                        break;
                 }
-
-                // An empty target is a clean versioned path or one svn could not find, and only the
-                // second, on disk, is unversioned - asked with a process of its own, which only a
-                // file in a new folder, or one with nothing to revert, ever costs.
-                if (target.Element("entry") is null
-                    && (File.Exists(path) || Directory.Exists(path))
-                    && !IsVersioned(path))
-                    unversioned.Add(Path.GetFullPath(path));
             }
         }
 
-        return unversioned;
+        if (unplaced.Count == 0)
+            return kinds;
+
+        var versioned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var targetsFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllLines(targetsFile, unplaced);
+            var entries = SvnCli.RunXmlAllowingMissingTargets("info", "--targets", targetsFile)?.Root?.Elements("entry");
+            foreach (var entry in entries ?? [])
+            {
+                if (entry.Attribute("path")?.Value is { Length: > 0 } path)
+                    versioned.Add(Path.GetFullPath(path));
+            }
+        }
+        finally
+        {
+            try { File.Delete(targetsFile); } catch { /* best effort */ }
+        }
+
+        foreach (var path in unplaced)
+        {
+            kinds[path] = versioned.Contains(path) ? PathKind.Versioned
+                : File.Exists(path) || Directory.Exists(path) ? PathKind.Unversioned
+                : PathKind.NotFound;
+        }
+
+        return kinds;
+    }
+
+    /// <summary>
+    /// The folders strictly between a working copy root and a path inside it, nearest the root first.
+    /// </summary>
+    internal static IEnumerable<string> FoldersBetween(string root, string path)
+    {
+        var folders = new List<string>();
+        var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var folder = Path.GetDirectoryName(Path.GetFullPath(path));
+        while (!string.IsNullOrEmpty(folder)
+               && folder.Length > normalizedRoot.Length
+               && folder.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, OIC))
+        {
+            folders.Add(folder);
+            folder = Path.GetDirectoryName(folder);
+        }
+
+        folders.Reverse();
+        return folders;
+    }
+
+    /// <summary>
+    /// Runs an svn command on a working copy over a list of paths given as a <c>--targets</c> file,
+    /// which keeps any number of paths, and paths with spaces, out of the command line.
+    /// </summary>
+    private static SvnCli.Result RunWithTargets(string workingCopy, string[] args, IReadOnlyCollection<string> paths)
+    {
+        var targetsFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllLines(targetsFile, paths);
+            return SvnCli.RunOnWorkingCopy(workingCopy, [.. args, "--targets", targetsFile]);
+        }
+        finally
+        {
+            try { File.Delete(targetsFile); } catch { /* best effort */ }
+        }
     }
 
     /// <summary>The paths in groups whose command line stays inside Windows' limit.</summary>
@@ -2045,54 +2211,6 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             wc.Attribute("item")?.Value ?? "",
             wc.Attribute("props")?.Value ?? "",
             wc.Attribute("tree-conflicted")?.Value == "true");
-    }
-
-    /// <summary>
-    /// Returns true if the directory was added to the working copy via an SVN merge (or copy).
-    /// New files cannot be added to such a directory in the same commit transaction. The caller
-    /// already excludes directories it created itself, so any remaining Added directory came
-    /// from a merge/copy and must be committed first.
-    /// </summary>
-    private static bool IsDirectoryAddedViaMerge(string directoryPath)
-        => GetSingleStatus(directoryPath)?.Item == "added";
-
-    /// <summary>
-    /// Returns true if the path is under version control. Uses <c>svn info</c> (exit 0) rather
-    /// than <c>svn status</c> because status cannot locate a node whose parent directory is
-    /// itself still unversioned — it reports "node not found" instead of "unversioned", which
-    /// would otherwise be mistaken for a clean, versioned path. The caller guarantees the path
-    /// exists on disk.
-    /// </summary>
-    private static bool IsVersioned(string path)
-        => SvnCli.Run("info", path).Success;
-
-    /// <summary>
-    /// Stages unversioned ancestor directories (deepest-first via recursion) with
-    /// <c>svn add --depth empty --parents</c>, recording each in <paramref name="addedDirs"/>
-    /// so they can be included in the commit.
-    /// </summary>
-    private void AddParentDirectories(string path, string repositoryRoot, HashSet<string> addedDirs)
-    {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-            return;
-
-        // Don't go above the repository root.
-        if (path.Equals(repositoryRoot, OIC) || !path.StartsWith(repositoryRoot, OIC))
-            return;
-
-        // Already under version control (normal, added, or merge-added) — nothing to stage.
-        // GetSingleStatus returns null both for a clean path and for one whose parent is itself
-        // unversioned, so check version-control membership directly rather than via status.
-        if (IsVersioned(path))
-            return;
-
-        // Ensure ancestors are versioned first.
-        var parentDir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(parentDir))
-            AddParentDirectories(parentDir, repositoryRoot, addedDirs);
-
-        if (SvnCli.Run("add", "--depth", "empty", "--parents", path).Success)
-            addedDirs.Add(path);
     }
 
     /// <summary>Compares two SVN URLs ignoring a trailing slash.</summary>

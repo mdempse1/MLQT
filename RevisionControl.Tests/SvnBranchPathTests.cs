@@ -112,6 +112,29 @@ public class SvnBranchPathTests
     }
 
     [Fact]
+    public void TheFoldersBetween_ARootAndAPath_NearestTheRootFirst()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mlqt-wc");
+        var path = Path.Combine(root, "A", "B", "C.mo");
+
+        Assert.Equal([Path.Combine(root, "A"), Path.Combine(root, "A", "B")],
+            SvnRevisionControlSystem.FoldersBetween(root, path));
+    }
+
+    [Fact]
+    public void AFileAtTheRoot_HasNoFoldersBetween() =>
+        Assert.Empty(SvnRevisionControlSystem.FoldersBetween(
+            Path.Combine(Path.GetTempPath(), "mlqt-wc"), Path.Combine(Path.GetTempPath(), "mlqt-wc", "A.mo")));
+
+    [Fact]
+    public void ASiblingFolderThatSharesThePrefix_IsNotInside()
+    {
+        // "wc-other" starts with "wc" but is not inside it.
+        var root = Path.Combine(Path.GetTempPath(), "mlqt-wc");
+        Assert.Empty(SvnRevisionControlSystem.FoldersBetween(root, Path.Combine(Path.GetTempPath(), "mlqt-wc-other", "A", "B.mo")));
+    }
+
+    [Fact]
     public void NoPaths_NoChunks() =>
         Assert.Empty(SvnRevisionControlSystem.CommandLineChunks([]));
 
