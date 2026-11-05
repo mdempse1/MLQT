@@ -1504,11 +1504,21 @@ public partial class MainLayout : IDisposable
             return;
 
         progress?.Report("Reading the working-copy status");
+        var statusTimer = System.Diagnostics.Stopwatch.StartNew();
         var (changedFilePaths, alreadyFormatted) = await Task.Run(() =>
         {
             var changed = GetModifiedFilePathsFromVcs(repository);
             return (changed, PreCommitFormat.AlreadyFormatted(changed, FormattingPipeline.WrittenFileTimestamps, File.GetLastWriteTimeUtc));
         });
+
+        // Most of the wait before the commit dialog, when the cached status had been dropped - after
+        // a branch switch, say - and nothing else said so.
+        var statusMessage = $"Pre-commit: working-copy status of {repository.Name}, {changedFilePaths.Count} changed Modelica file(s), waited {statusTimer.ElapsedMilliseconds}ms";
+        if (statusTimer.ElapsedMilliseconds >= 1000)
+            Info("MainLayout", statusMessage);
+        else
+            Debug("MainLayout", statusMessage);
+
         if (changedFilePaths.Count == 0) return;
 
         if (alreadyFormatted.Count > 0)

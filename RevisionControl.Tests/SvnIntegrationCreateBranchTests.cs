@@ -124,6 +124,29 @@ public class SvnIntegrationCreateBranchTests : IClassFixture<SvnTestRepository>
         Assert.False(SvnCli.Run("info", _repository.RootUrl + "/branches/" + name + "/Added.mo").Success);
     }
 
+    /// <summary>
+    /// A commit leaves the working copy mixed-revision: the committed file is at the new revision,
+    /// the root at the old one. A branch copied from the root's revision lacks the commit, and the
+    /// switch to it rolled the committed file back to its older text.
+    /// </summary>
+    [Fact]
+    public void AMixedRevisionWorkingCopy_KeepsWhatItCommitted()
+    {
+        var wc = _repository.CheckOut();
+        var readme = Path.Combine(wc, "README.txt");
+        var committed = File.ReadAllText(readme) + "\nCommitted from this working copy\n";
+        File.WriteAllText(readme, committed);
+        SvnCli.Run("commit", readme, "-m", "A commit that leaves the working copy mixed").EnsureSuccess("commit");
+        var name = Unique("mixed-");
+
+        var result = _svn.CreateBranch(wc, name, switchToBranch: true, branchDirectories: null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(committed, File.ReadAllText(readme));
+        Assert.Contains("Committed from this working copy",
+            SvnCli.Run("cat", _repository.RootUrl + "/branches/" + name + "/README.txt").StdOut);
+    }
+
     [Fact]
     public void WithoutSwitching_TheWorkingCopyStaysWhereItWas()
     {

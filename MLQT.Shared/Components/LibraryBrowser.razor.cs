@@ -1559,6 +1559,13 @@ public partial class LibraryBrowser : IDisposable
             // reload every library for it (B296).
             Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
             StateHasChanged();
+
+            // A switch drops every cached working-copy status (OnRepositoriesChanged), and the next
+            // commit had to ask SVN afresh: tens of seconds on a large working copy, all of it after
+            // the user clicked Commit. Asked now instead, in the background, so the commit finds the
+            // answer read or already being read - the query is shared (B293). Not awaited: the
+            // markers it draws are not something the user is waiting for.
+            _ = CheckForUncommittedChangesAsync();
         }
     }
 

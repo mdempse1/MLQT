@@ -320,9 +320,12 @@ container. A setting of `trunk, tickets, releases` on a repository with `branche
 neither the missing folder nor why. `CreateBranch` now checks the parent folder first and says which
 one is missing and which the repository has.
 
-**A branch from a modified working copy** is copied server-side from `url@<working copy revision>`,
-then `svn switch` carries the uncommitted changes over. Never `svn copy <WC> <URL>`: that commits
-every local change into the branch, which is not what "create a branch for these changes" means.
+**A branch from a modified working copy** is copied server-side from `url@HEAD`, then `svn switch`
+carries the uncommitted changes over. Never `svn copy <WC> <URL>`: that commits every local change
+into the branch, which is not what "create a branch for these changes" means. And never from the
+working copy root's revision: after a commit the working copy is mixed-revision (committed files
+newer than the root), and a branch taken at the root's revision lacked the commit, so the switch
+rolled the committed files back (`AMixedRevisionWorkingCopy_KeepsWhatItCommitted`).
 
 ## Implementing Other VCS Systems
 

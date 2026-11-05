@@ -1005,8 +1005,8 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         => CreateBranch(repositoryPath, branchName, switchToBranch, branchDirectories: null);
 
     /// <summary>
-    /// Creates a new branch as a server-side copy of the working copy's URL at the working copy's
-    /// revision, and optionally switches the working copy to it.
+    /// Creates a new branch as a server-side copy of the working copy's URL at HEAD, and optionally
+    /// switches the working copy to it.
     /// </summary>
     /// <remarks>
     /// <para><b>Where the branch goes</b> is <see cref="BranchPathFor"/>'s decision: a name whose
@@ -1014,11 +1014,17 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// branch container of <paramref name="branchDirectories"/>.</para>
     ///
     /// <para><b>Local modifications are kept, not committed.</b> The copy is taken from the
-    /// repository at the revision the working copy is at, never from the working copy itself
-    /// (<c>svn copy WC URL</c> would commit every local change to the new branch in the same
-    /// commit). <c>svn switch</c> then carries the uncommitted changes across, and since the
-    /// branch has the same content as the working copy's base, nothing in them can conflict. That
-    /// is the case this exists for: changes made on trunk that belong on a branch.</para>
+    /// repository, never from the working copy itself (<c>svn copy WC URL</c> would commit every
+    /// local change to the new branch in the same commit). <c>svn switch</c> then carries the
+    /// uncommitted changes across. That is the case this exists for: changes made on trunk that
+    /// belong on a branch.</para>
+    ///
+    /// <para><b>From HEAD, not from the working copy's revision.</b> A commit leaves a working copy
+    /// mixed-revision: the files committed are at the new revision, its root still at the old one.
+    /// A branch copied at the root's revision lacked those commits, and switching to it rolled the
+    /// committed files back to their older text. HEAD holds everything this working copy committed;
+    /// what others committed since its last update arrives with the switch, as an update brings it,
+    /// local changes merged. TortoiseSVN's branch dialog defaults to HEAD for the same reason.</para>
     /// </remarks>
     public VcsOperationResult CreateBranch(string repositoryPath, string branchName, bool switchToBranch, IReadOnlyList<string>? branchDirectories)
     {
@@ -1069,7 +1075,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            var source = Pegged(currentUrl, info.Revision.ToString(CultureInfo.InvariantCulture));
+            var source = Pegged(currentUrl, "HEAD");
             var copy = SvnCli.Run("copy", source, branchUrl, "-m", $"Create branch: {branchName}");
             if (!copy.Success)
             {
