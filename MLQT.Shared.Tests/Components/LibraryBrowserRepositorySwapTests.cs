@@ -62,22 +62,19 @@ public class LibraryBrowserRepositorySwapTests : MlqtComponentTestBase
 
         // repo-a's query is held until repo-b's browser has been shown.
         var release = new ManualResetEventSlim();
+        var answered = new ManualResetEventSlim();
         var repositories = new Mock<IRepositoryService>();
         repositories.Setup(r => r.GetWorkingCopyChanges("repo-a")).Returns(() =>
         {
             release.Wait(TimeSpan.FromSeconds(10));
+            answered.Set();
             return [new VcsWorkingCopyFile { Path = "A.mo", Status = VcsFileStatus.Modified }];
         });
         repositories.Setup(r => r.GetWorkingCopyChanges("repo-b")).Returns(new List<VcsWorkingCopyFile>());
 
-        var classified = new ManualResetEventSlim();
         var classifier = new Mock<IModelChangeClassifier>();
         classifier.Setup(c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()))
-            .Returns(() =>
-            {
-                classified.Set();
-                return new Dictionary<string, ClassChangeKind> { ["A"] = ClassChangeKind.AffectsSimulation };
-            });
+            .Returns(new Dictionary<string, ClassChangeKind> { ["A"] = ClassChangeKind.AffectsSimulation });
 
         Services.AddSingleton(library.Object);
         Services.AddSingleton(repositories.Object);
@@ -94,7 +91,7 @@ public class LibraryBrowserRepositorySwapTests : MlqtComponentTestBase
         browser.WaitForAssertion(() => repositories.Verify(r => r.GetWorkingCopyChanges("repo-b"), Times.Once));
 
         release.Set();
-        Assert.True(classified.Wait(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken), "repo-a's query never came back");
+        Assert.True(answered.Wait(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken), "repo-a's query never came back");
 
         // Let the late answer reach the dispatcher, where it used to be applied.
         Thread.Sleep(200);
@@ -102,6 +99,10 @@ public class LibraryBrowserRepositorySwapTests : MlqtComponentTestBase
 
         Assert.Equal(0, browser.Instance.CountFor(LibraryBrowser.ChangeFilter.Changed));
         Assert.Equal(ChangeMarker.None, browser.Instance.MarkerFor(model));
+
+        // Dropped before its changes were classified: a stale status is not worth the reads.
+        classifier.Verify(c => c.Classify(It.Is<Repository>(r => r.Id == "repo-a"), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()),
+            Times.Never);
     }
 
     /// <summary>

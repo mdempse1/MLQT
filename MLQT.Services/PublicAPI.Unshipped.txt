@@ -1,1 +1,2 @@
 #nullable enable
+const MLQT.Services.ModelChangeClassifier.DefaultMaxFilesToClassify = 2000 -> int

@@ -234,6 +234,26 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             Assert.Single(browser.FindAll(".mlqt-change-filter"));
         });
 
+    /// <summary>
+    /// Waits until the classification has arrived and been drawn, for a test about to click.
+    /// </summary>
+    /// <remarks>
+    /// Until it arrives the chips are drawn from the status alone, and its arrival draws them again,
+    /// so a click before then lands on a handler that is about to be replaced. The first class's
+    /// marker stops being the "not compared" one when the kinds are in; the render that follows is
+    /// already queued by then, and an empty call through the dispatcher waits for it.
+    /// </remarks>
+    private static void WaitForClassification(IRenderedComponent<LibraryBrowser> browser)
+    {
+        browser.WaitForAssertion(() =>
+        {
+            var first = browser.Instance.ActiveTreeItems.FirstOrDefault()?.Value;
+            Assert.NotNull(first);
+            Assert.NotEqual(ChangeMarker.UnknownTooltip, browser.Instance.MarkerFor(first).Tooltip);
+        });
+        browser.InvokeAsync(() => { }).GetAwaiter().GetResult();
+    }
+
     /// <summary>The filter chips' labels, which carry the count behind each one.</summary>
     private static string[] FilterChips(IRenderedComponent<LibraryBrowser> browser) =>
         browser.FindAll(".mlqt-change-filter .mud-chip").Select(e => e.TextContent.Trim()).ToArray();
@@ -267,10 +287,14 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         var browser = RenderBrowser(
             Kinds(("MyLib.Resistor", ClassChangeKind.Unchanged)), "MyLib.Resistor");
 
-        // Waits for the filter control, which appears only once the working copy has been read, so
-        // "no chips" cannot be read off a render that has not got there yet.
-        browser.WaitForAssertion(() => Assert.Single(browser.FindAll(".mlqt-change-filter")));
-        Assert.Empty(Chips(browser));
+        // Both at once. The filter control appears once the working copy's status has been read, so
+        // "no chips" cannot be read off a render that has not got there yet - and the plain M shows
+        // from then until the classification arrives, so the two only hold together after it has.
+        browser.WaitForAssertion(() =>
+        {
+            Assert.Single(browser.FindAll(".mlqt-change-filter"));
+            Assert.Empty(Chips(browser));
+        });
     }
 
     /// <summary>
@@ -399,7 +423,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
                   ("MyLib.Capacitor", ClassChangeKind.Cosmetic)),
             "MyLib.Capacitor", "MyLib.Resistor");
 
-        browser.WaitForAssertion(() => Assert.Equal(4, FilterChips(browser).Length));
+        WaitForClassification(browser);
         browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
 
         browser.WaitForAssertion(() => Assert.Equal(["Capacitor"], Listed(browser)));
@@ -423,7 +447,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
                   ("MyLib.Capacitor", ClassChangeKind.Cosmetic)),
             "MyLib.Capacitor", "MyLib.Resistor");
 
-        browser.WaitForAssertion(() => Assert.Equal(4, FilterChips(browser).Length));
+        WaitForClassification(browser);
         var everything = Listed(browser);
 
         browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
@@ -448,7 +472,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         var browser = RenderBrowser(
             Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
 
-        browser.WaitForAssertion(() => Assert.Equal(4, FilterChips(browser).Length));
+        WaitForClassification(browser);
         browser.FindAll(".mlqt-change-filter .mud-chip")[0].Click();
 
         browser.WaitForAssertion(() =>

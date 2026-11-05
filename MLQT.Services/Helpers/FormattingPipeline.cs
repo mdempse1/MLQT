@@ -87,6 +87,9 @@ public sealed class FormattingPipeline : IFormattingPipeline
             _writtenFileTimestamps[filePath] = writtenAt;
     }
 
+    /// <summary>A working-copy status query this slow is worth a line in a production log on its own.</summary>
+    private const long SlowStatusMs = 1000;
+
     public async Task<int> FormatModifiedFilesAsync()
     {
         LogProcessStart(nameof(FormattingPipeline), "Formatting VCS-modified files");
@@ -112,9 +115,15 @@ public sealed class FormattingPipeline : IFormattingPipeline
                 // which the log passed over in silence and read as formatting.
                 var statusTimer = System.Diagnostics.Stopwatch.StartNew();
                 var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
-                Info(nameof(FormattingPipeline),
-                    $"Asked {repository.VcsType} which files changed in repository {repository.Name}: "
-                    + $"{changedFilePaths.Count} Modelica file(s), {statusTimer.ElapsedMilliseconds}ms");
+                var statusMessage = $"Working-copy status of repository {repository.Name}: "
+                    + $"{changedFilePaths.Count} changed Modelica file(s), read in {statusTimer.ElapsedMilliseconds}ms";
+
+                // Kept out of a production log when there is nothing in it: no changes, read quickly.
+                if (changedFilePaths.Count > 0 || statusTimer.ElapsedMilliseconds >= SlowStatusMs)
+                    Info(nameof(FormattingPipeline), statusMessage);
+                else
+                    Debug(nameof(FormattingPipeline), statusMessage);
+
                 if (changedFilePaths.Count == 0)
                     continue;
 

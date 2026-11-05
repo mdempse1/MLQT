@@ -79,7 +79,7 @@ public class ChangeMarkerTests
 
         Assert.Equal("M", marker.Text);
         Assert.Equal(Color.Warning, marker.Color);
-        Assert.Contains("could not compare", marker.Tooltip);
+        Assert.Contains("not compared", marker.Tooltip);
     }
 
     // ---------------------------------------------------------------- the other statuses

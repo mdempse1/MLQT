@@ -98,16 +98,23 @@ public readonly record struct ChangeMarker(ChangeMarkerShape Shape, string Text,
             ChangeMarkerShape.Chip, "A", MudBlazor.Color.Success,
             "A new class, not in the committed version of this file"),
 
-        // The file changed and MLQT could not say how — the committed version would not parse, or
-        // there is nothing to compare against. The plain modified marker, which is what every
-        // changed class showed before B191.
+        // The file changed and MLQT has not said how — the committed version would not parse, there
+        // is nothing to compare against, too many files changed to compare them, or the comparison
+        // has not finished. The plain modified marker, which is what every changed class showed
+        // before B191. The tooltip names every reason, because the tree cannot tell which it was.
         ClassChangeKind.Unknown => new ChangeMarker(
             ChangeMarkerShape.Chip, "M", MudBlazor.Color.Warning,
-            "Modified — MLQT could not compare it with the committed version"),
+            UnknownTooltip),
 
         // The file changed but this class did not. Whatever is below it may still have.
         _ => None,
     };
+
+    /// <summary>What the plain modified chip says when the kind of change is not known.</summary>
+    internal static readonly string UnknownTooltip =
+        "Modified — not compared with the committed version: the comparison is still running, more "
+        + $"than {MLQT.Services.ModelChangeClassifier.DefaultMaxFilesToClassify.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} "
+        + "files have changed, or the committed version could not be read";
 
     /// <summary>The dot that says the change is further down.</summary>
     private static ChangeMarker ForDescendants(ClassChangeKind descendants) => descendants switch

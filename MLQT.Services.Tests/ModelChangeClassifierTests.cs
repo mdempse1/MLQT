@@ -516,6 +516,54 @@ public class ModelChangeClassifierTests : IDisposable
                 r => r.GetFileContentAtRevision("repo-1", $"R{i}.mo", It.IsAny<string?>()), Times.Once);
     }
 
+    // ---------------------------------------------------------------- two repositories, one checkout
+
+    /// <summary>A second library checked out in the same working copy (B330).</summary>
+    private Repository Sibling() => new()
+    {
+        Id = "repo-2",
+        Name = "Lib2",
+        LocalPath = Path.Combine(_root, "Lib2"),
+        VcsRootPath = _root + Path.DirectorySeparatorChar,   // written differently, the same folder
+        VcsType = RepositoryVcsType.Git,
+        CurrentRevision = "abc123",
+    };
+
+    [Fact]
+    public void TwoRepositoriesInOneCheckout_ReadEachCommittedVersionOnce()
+    {
+        // Each is given the whole working copy's changes, so keyed by repository each read every
+        // committed version for itself.
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(Committed);
+        Write("Resistor.mo", Committed.Replace("R = 100", "R = 220"));
+
+        var first = _classifier.Classify(_repository, [Change("Resistor.mo")]);
+        var second = _classifier.Classify(Sibling(), [Change("Resistor.mo")]);
+
+        Assert.Equal(first, second);
+        _repositories.Verify(
+            r => r.GetFileContentAtRevision(It.IsAny<string>(), "Resistor.mo", It.IsAny<string?>()), Times.Once);
+    }
+
+    [Fact]
+    public void InvalidatingOneRepository_DropsWhatItsCheckoutShares()
+    {
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(Committed);
+        Write("Resistor.mo", Committed);
+        _classifier.Classify(_repository, [Change("Resistor.mo")]);
+
+        // They are the same files, so dropping them for one drops them for the other too.
+        _classifier.Invalidate("repo-1");
+        _classifier.Classify(Sibling(), [Change("Resistor.mo")]);
+
+        _repositories.Verify(
+            r => r.GetFileContentAtRevision(It.IsAny<string>(), "Resistor.mo", It.IsAny<string?>()), Times.Exactly(2));
+    }
+
     private static void InterlockedMax(ref int target, int value)
     {
         int seen;

@@ -85,7 +85,9 @@ So MLQT compares **the class as it is now against the class as it was committed*
 
 **When MLQT cannot tell**, the chip stays a plain orange **M** and its tooltip says so. That happens when the committed version of the file cannot be read or does not parse, when the file is conflicted, and in a repository that is not under version control.
 
-**When more than 2,000 Modelica files have changed**, MLQT does not compare them at all, and every changed class gets the plain orange **M**. Comparing means reading each file's committed version from version control, which for a change set that size takes minutes, and a change set that size is usually a reformat or a merge rather than something to review class by class. Below that, the tree appears first and the chips follow once the comparison has finished.
+**The tree appears before the comparison has finished.** Each changed class first shows the plain orange **M**, or the chip it had before if it was already changed, and takes its **M** or **C** once its file has been compared. After a commit or a revert, the chips on the classes it covered go at once.
+
+**When more than 2,000 Modelica files have changed**, MLQT does not compare them at all, and every class in a changed file keeps the plain orange **M** — including a class inside a large `package.mo` that was not itself touched, so the **Simulation** filter lists them all. Comparing means reading each file's committed version from version control, which for a change set that size takes minutes, and a change set that size is usually a reformat or a merge rather than something to review class by class.
 
 ### Showing Only What Changed
 

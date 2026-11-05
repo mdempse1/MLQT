@@ -85,18 +85,55 @@ public class LibraryBrowserTreeBeforeMarkersTests : MlqtComponentTestBase
             Assert.True(started.Wait(TimeSpan.FromSeconds(10), Xunit.TestContext.Current.CancellationToken),
                 "the changes were never classified");
 
-            // Shown while the classification is still running.
+            // Shown while the classification is still running - and marked modified already, from the
+            // status alone, without saying how.
             browser.WaitForAssertion(() =>
                 Assert.Contains(browser.Instance.ActiveTreeItems, item => item.Value?.Id == "Lib"));
-            Assert.Equal(ChangeMarker.None, browser.Instance.MarkerFor(library));
+            browser.WaitForAssertion(() =>
+                Assert.Equal(ChangeMarker.UnknownTooltip, browser.Instance.MarkerFor(library).Tooltip));
         }
         finally
         {
             release.Set();
         }
 
-        // And the marker follows once it has finished.
-        browser.WaitForAssertion(() => Assert.NotEqual(ChangeMarker.None, browser.Instance.MarkerFor(library)));
+        // And the kind follows once it has finished.
+        browser.WaitForAssertion(() =>
+            Assert.Equal(ChangeMarker.For(VcsFileStatus.Modified, ClassChangeKind.AffectsSimulation, ClassChangeKind.Unchanged),
+                browser.Instance.MarkerFor(library)));
         await browser.InvokeAsync(() => { });
+    }
+
+    [Fact]
+    public void TheUnknownTooltip_NamesTheClassifiersLimit()
+    {
+        Assert.Contains(
+            MLQT.Services.ModelChangeClassifier.DefaultMaxFilesToClassify.ToString("N0", System.Globalization.CultureInfo.InvariantCulture),
+            ChangeMarker.UnknownTooltip);
+    }
+
+    // ---- what a class shows between the status and the classification ------------------------
+
+    [Fact]
+    public void AClassStillChanged_KeepsTheKindItHad()
+    {
+        var kept = LibraryBrowser.KindsStillChanged(
+            new Dictionary<string, ClassChangeKind> { ["A"] = ClassChangeKind.Cosmetic },
+            new Dictionary<string, VcsFileStatus> { ["A"] = VcsFileStatus.Modified });
+
+        Assert.Equal(ClassChangeKind.Cosmetic, kept["A"]);
+    }
+
+    [Fact]
+    public void AClassNoLongerChanged_LosesItsKindAtOnce()
+    {
+        // What a commit or a revert does: the class leaves the status, and its chip has to go with
+        // it rather than wait for the next classification.
+        var kept = LibraryBrowser.KindsStillChanged(
+            new Dictionary<string, ClassChangeKind> { ["A"] = ClassChangeKind.Cosmetic, ["B"] = ClassChangeKind.AffectsSimulation },
+            new Dictionary<string, VcsFileStatus> { ["B"] = VcsFileStatus.Modified });
+
+        Assert.DoesNotContain("A", kept);
+        Assert.Equal(ClassChangeKind.AffectsSimulation, kept["B"]);
     }
 }

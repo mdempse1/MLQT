@@ -128,7 +128,9 @@ public partial class LibraryBrowser : IDisposable
         _lastRepositoryId = repoId;
         _lastReferenceOnly = Repository?.IsReferenceOnly ?? false;
 
-        await RefreshTreeThenChangesAsync();
+        // Blazor renders once this returns, so a render of our own at the end would only draw the
+        // same thing twice - and give anything clicking in between a handler about to be replaced.
+        await RefreshTreeThenChangesAsync(renderWhenDone: false);
     }
 
     /// <summary>
@@ -142,13 +144,16 @@ public partial class LibraryBrowser : IDisposable
     /// and its tree stayed empty. The markers are read when a row is drawn
     /// (<see cref="MarkerFor"/>), so drawing again once they arrive is all they need.</para>
     /// </remarks>
-    private async Task RefreshTreeThenChangesAsync()
+    /// <param name="renderWhenDone">False where the caller is a lifecycle method, which Blazor renders
+    /// after anyway.</param>
+    private async Task RefreshTreeThenChangesAsync(bool renderWhenDone = true)
     {
         await RefreshTreeItems();
         StateHasChanged();
 
         await CheckForUncommittedChangesAsync();
-        StateHasChanged();
+        if (renderWhenDone)
+            StateHasChanged();
     }
 
     /// <summary>
@@ -211,17 +216,21 @@ public partial class LibraryBrowser : IDisposable
         var vcsRootPath = repository.VcsRootPath;
         var graph = LibraryDataService.CombinedGraph;
 
-        // Build VCS status mapping on background thread to avoid blocking UI
-        // when the working copy cache has expired and SVN status must be queried.
-        // Classifying the changes belongs on the same thread for the same reason, and more so: it
-        // reads each changed file's committed version out of the repository and parses it.
-        var (hasChanges, modelStatus, kinds, descendants) = await Task.Run(() =>
+        // Two answers, shown as each arrives. Which files changed is one status query, cached and
+        // shared (B293), and is enough to mark them. What kind of change each class carries reads
+        // every changed file's committed version and parses it, which on a large change set takes
+        // much longer - and drawing the markers only once both were in left the old ones on screen
+        // after a commit, or a revert, until the slow half had finished.
+        //
+        // Both on a background thread: a status query whose cache has expired asks SVN, and the
+        // classification reads from the repository.
+        var (changes, modelStatus) = await Task.Run(() =>
         {
             var changes = RepositoryService.GetWorkingCopyChanges(repoId);
             var status = new Dictionary<string, VcsFileStatus>();
 
             if (changes == null || changes.Count == 0)
-                return (false, status, EmptyKinds, new Dictionary<string, ClassChangeKind>());
+                return (changes, status);
 
             foreach (var change in changes)
             {
@@ -241,18 +250,22 @@ public partial class LibraryBrowser : IDisposable
                 }
             }
 
-            var changeKinds = ModelChangeClassifier.Classify(repository, changes);
-            return (true, status, changeKinds,
-                DescendantKinds(status.Keys, changeKinds, LibraryDataService.GetModelById));
+            return (changes, status);
         });
 
         if (generation != _statusGeneration || Repository?.Id != repoId)
             return;
 
+        var hasChanges = changes is { Count: > 0 };
         _hasUncommittedChanges = hasChanges;
         _modelVcsStatus = modelStatus;
-        _modelChangeKinds = kinds;
-        _descendantChangeKinds = descendants;
+
+        // Until the classification comes back, a class keeps the kind it had if it is still changed,
+        // and a class no longer changed loses its marker now. Committing takes the chips off at
+        // once; an edit that turned a cosmetic change into a simulation one shows the old kind for
+        // as long as the comparison takes, which is the same as it showed before the edit.
+        _modelChangeKinds = KindsStillChanged(_modelChangeKinds, modelStatus);
+        _descendantChangeKinds = DescendantKinds(modelStatus.Keys, _modelChangeKinds, LibraryDataService.GetModelById);
 
         // A filter with nothing left to filter is withdrawn along with its control, or committing
         // while "Affects simulation" is selected leaves the tree hidden behind an empty list and no
@@ -262,6 +275,43 @@ public partial class LibraryBrowser : IDisposable
             _changeFilter = ChangeFilter.None;
 
         RefreshFilteredTree();
+
+        if (!hasChanges)
+            return;
+
+        StateHasChanged();
+
+        var (kinds, descendants) = await Task.Run(() =>
+        {
+            var changeKinds = ModelChangeClassifier.Classify(repository, changes!);
+            return (changeKinds, DescendantKinds(modelStatus.Keys, changeKinds, LibraryDataService.GetModelById));
+        });
+
+        if (generation != _statusGeneration || Repository?.Id != repoId)
+            return;
+
+        _modelChangeKinds = kinds;
+        _descendantChangeKinds = descendants;
+        RefreshFilteredTree();
+    }
+
+    /// <summary>
+    /// The kinds already known for the classes that are still changed, so a status refresh does not
+    /// throw away what the last classification said about them while the next one runs.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, ClassChangeKind> KindsStillChanged(
+        IReadOnlyDictionary<string, ClassChangeKind> previous, IReadOnlyDictionary<string, VcsFileStatus> status)
+    {
+        if (previous.Count == 0 || status.Count == 0)
+            return EmptyKinds;
+
+        var kept = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
+        foreach (var (modelId, kind) in previous)
+        {
+            if (status.ContainsKey(modelId))
+                kept[modelId] = kind;
+        }
+        return kept;
     }
 
     /// <summary>Counts status questions, so only the latest one's answer is applied (B353).</summary>

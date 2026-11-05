@@ -36,7 +36,7 @@ public class ModelChangeClassifier : IModelChangeClassifier
     /// change set that size is a reformat or a merge that nobody will review class by class. Two
     /// thousand is about twenty seconds at the rate the parallel reads manage.
     /// </remarks>
-    internal const int DefaultMaxFilesToClassify = 2000;
+    public const int DefaultMaxFilesToClassify = 2000;
 
     /// <summary>A classification of at least this many files says in the log what it is doing.</summary>
     private const int LoggedFrom = 100;
@@ -47,11 +47,12 @@ public class ModelChangeClassifier : IModelChangeClassifier
     private readonly int _maxFilesToClassify;
 
     /// <summary>
-    /// One classification per repository at a time. Every open tree asks after each notification,
+    /// One classification per working copy at a time. Every open tree asks after each notification,
     /// and two asking at once each read every committed version for themselves; the second now waits
-    /// and finds the first one's answers in the cache.
+    /// and finds the first one's answers in the cache. Per working copy rather than per repository,
+    /// for the reason given at <see cref="CheckoutOf"/>.
     /// </summary>
-    private readonly ConcurrentDictionary<string, object> _repositoryGates = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, object> _checkoutGates = new(StringComparer.Ordinal);
 
     /// <summary>
     /// How many committed versions are read at once. Each is mostly waiting - for a process to start
@@ -110,9 +111,35 @@ public class ModelChangeClassifier : IModelChangeClassifier
             return EmptyKinds;
         }
 
-        lock (_repositoryGates.GetOrAdd(repository.Id, _ => new object()))
+        lock (_checkoutGates.GetOrAdd(CheckoutOf(repository), _ => new object()))
             return ClassifyAll(repository, changes, modelicaChanges);
     }
+
+    /// <summary>
+    /// The working copy a repository is in, as a key: what the gate and both caches are kept by.
+    /// </summary>
+    /// <remarks>
+    /// Not the repository's id. Two libraries checked out in one tree are two repositories with one
+    /// working copy (B330), and each is given the whole working copy's changes - so keyed by id, each
+    /// read every committed version for itself. Remembered against the id so
+    /// <see cref="Invalidate"/>, which is given an id, finds what to drop.
+    /// </remarks>
+    private string CheckoutOf(Repository repository)
+    {
+        var root = string.IsNullOrEmpty(repository.VcsRootPath)
+            ? repository.Id
+            : Path.TrimEndingDirectorySeparator(Path.GetFullPath(repository.VcsRootPath));
+
+        // The same folder whatever the case it was written in, where the file system says so.
+        if (OperatingSystem.IsWindows())
+            root = root.ToUpperInvariant();
+
+        _checkouts[repository.Id] = root;
+        return root;
+    }
+
+    /// <summary>Each repository's checkout key, as <see cref="CheckoutOf"/> last worked it out.</summary>
+    private readonly ConcurrentDictionary<string, string> _checkouts = new(StringComparer.Ordinal);
 
     private IReadOnlyDictionary<string, ClassChangeKind> ClassifyAll(
         Repository repository, IReadOnlyList<VcsWorkingCopyFile> changes, List<VcsWorkingCopyFile> modelicaChanges)
@@ -239,7 +266,7 @@ public class ModelChangeClassifier : IModelChangeClassifier
     /// </summary>
     private ClassSignatures CommittedSignatures(Repository repository, string path)
     {
-        var cacheKey = repository.Id + "" + path;
+        var cacheKey = CheckoutOf(repository) +"" + path;
         if (_committed.TryGetValue(cacheKey, out var cached) && cached.Revision == repository.CurrentRevision)
             return cached.Signatures;
 
@@ -258,7 +285,9 @@ public class ModelChangeClassifier : IModelChangeClassifier
             return;
         }
 
-        var prefix = repositoryId + "";
+        // Everything kept for its checkout, which a repository sharing it was using too: they are
+        // the same files.
+        var prefix = (_checkouts.TryGetValue(repositoryId, out var checkout) ? checkout : repositoryId) +"";
         foreach (var key in _cache.Keys)
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))
@@ -286,7 +315,7 @@ public class ModelChangeClassifier : IModelChangeClassifier
 
         var key = new CacheKey(
             file.Length, file.LastWriteTimeUtc.Ticks, repository.CurrentRevision, change.Status);
-        var cacheKey = repository.Id + "" + change.Path;
+        var cacheKey = CheckoutOf(repository) +"" + change.Path;
 
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.Key == key)
             return cached;
