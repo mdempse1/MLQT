@@ -1161,6 +1161,9 @@ public class RepositoryService : IRepositoryService
             }
         }
 
+        // Started now, while the libraries load, rather than when the formatter asks for it.
+        StartWorkingCopyStatusQueries();
+
         // Load libraries for all repositories in parallel
         var tasks = Repositories.Select(repo =>
             Task.Run(() => LoadLibrariesAsync(repo.Id, null, cancellationToken), cancellationToken)
@@ -1169,6 +1172,54 @@ public class RepositoryService : IRepositoryService
         await Task.WhenAll(tasks);
 
         LogProcessEnd("RepositoryService", "Loading repository settings");
+    }
+
+    /// <summary>
+    /// Asks each working copy for its status on the pool, now, so the answer is on its way while the
+    /// libraries load.
+    /// </summary>
+    /// <remarks>
+    /// <para>The first thing after the load is the formatter, and the first thing it does is ask which
+    /// files changed. From a cold disk that is SVN reading every modified file and its committed copy:
+    /// 86 seconds for a working copy of 17,372 modified files, during which nothing else was
+    /// happening - the load, 23 seconds of it, was already over. Asked here, the two overlap, and the
+    /// load reading the working files warms half of what SVN reads.</para>
+    ///
+    /// <para>Nobody waits for it. The formatter and the library browser join the query in flight
+    /// (<see cref="GetWorkingCopyChanges"/> shares one per working copy), or find its answer cached.
+    /// Nothing between here and the formatter invalidates the cache - the monitor has not started, and
+    /// loading libraries changes no repository - so the answer is used rather than asked for again.</para>
+    ///
+    /// <para>Reference-only repositories are left out: nothing asks for their status (B354).</para>
+    /// </remarks>
+    private void StartWorkingCopyStatusQueries()
+    {
+        var wanted = Repositories
+            .Where(r => !r.IsReferenceOnly && r.VcsType != RepositoryVcsType.Local)
+            .GroupBy(r => WorkingCopyKey(r.Id), StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var repository in wanted)
+        {
+            _ = Task.Run(() =>
+            {
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    var changes = GetWorkingCopyChanges(repository.Id);
+                    Info("RepositoryService",
+                        $"Working-copy status of {repository.Name} read ahead of the formatter: "
+                        + $"{changes.Count} change(s) in {timer.ElapsedMilliseconds}ms");
+                }
+                catch (Exception ex)
+                {
+                    // Whoever asks next asks again, and says what went wrong then.
+                    Warn("RepositoryService",
+                        $"Reading the working-copy status of {repository.Name} ahead of the formatter failed: {ex.Message}");
+                }
+            });
+        }
     }
 
     /// <summary>

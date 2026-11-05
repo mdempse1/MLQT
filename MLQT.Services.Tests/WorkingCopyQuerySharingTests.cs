@@ -65,6 +65,76 @@ public class WorkingCopyQuerySharingTests : IDisposable
         Assert.True(process.ExitCode == 0, $"git {arguments} failed: {stderr.Result}");
     }
 
+    /// <summary>A project holding the one Git repository in <see cref="_directory"/>.</summary>
+    private async Task<RepositoryService> ServiceWithAProjectAsync(bool referenceOnly = false)
+    {
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(Path.Combine(_directory, "package.mo"), "package TestLib\nend TestLib;\n");
+        Git("init");
+
+        var settings = new InMemorySettingsService();
+        var project = new ProjectProfile
+        {
+            Name = "Project",
+            Repositories =
+            [
+                new RepositorySettingsEntry
+                {
+                    Name = "TestLib", LocalPath = _directory, AutoLoad = true, IsReferenceOnly = referenceOnly,
+                },
+            ],
+        };
+        await settings.SetAsync("Repositories",
+            new RepositorySettingsCollection { Projects = [project], ActiveProjectId = project.Id });
+
+        return new RepositoryService(new LibraryDataService(), settings, new FileMonitoringService());
+    }
+
+    [Fact]
+    public async Task LoadingAProject_AsksForTheStatus_AndTheNextCallerHasItsAnswer()
+    {
+        // From a cold disk the status of a large SVN working copy took 86 seconds, all of it after the
+        // libraries had loaded, because nothing asked until the formatter did. The load asks now, so
+        // the two overlap - and the formatter, asking next, is given that answer rather than a second
+        // query.
+        var service = await ServiceWithAProjectAsync();
+        var asked = new ManualResetEventSlim();
+        var queries = 0;
+        service.QueryWorkingCopy = _ =>
+        {
+            Interlocked.Increment(ref queries);
+            asked.Set();
+            return [new VcsWorkingCopyFile { Path = "package.mo", Status = VcsFileStatus.Modified }];
+        };
+
+        await service.LoadRepositorySettingsAsync();
+
+        // Asked by the load itself: nobody else has asked yet.
+        Assert.True(asked.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken),
+            "loading the project did not ask for the working copy's status");
+
+        var repositoryId = Assert.Single(service.Repositories).Id;
+        Assert.Single(service.GetWorkingCopyChanges(repositoryId));
+        Assert.Equal(1, queries);
+    }
+
+    [Fact]
+    public async Task LoadingAProject_DoesNotAskAboutAReferenceOnlyRepository()
+    {
+        // Nothing asks for a reference-only repository's status (B354), so asking ahead is waste.
+        var service = await ServiceWithAProjectAsync(referenceOnly: true);
+        var asked = new ManualResetEventSlim();
+        service.QueryWorkingCopy = _ =>
+        {
+            asked.Set();
+            return [];
+        };
+
+        await service.LoadRepositorySettingsAsync();
+
+        Assert.False(asked.Wait(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task CallersArrivingTogether_ShareOneQuery()
     {
