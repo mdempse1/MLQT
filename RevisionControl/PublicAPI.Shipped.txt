@@ -239,6 +239,8 @@ RevisionControl.VcsOperationResult.ErrorMessage.set -> void
 RevisionControl.VcsOperationResult.Success.get -> bool
 RevisionControl.VcsOperationResult.Success.set -> void
 RevisionControl.VcsOperationResult.VcsOperationResult() -> void
+RevisionControl.VcsOperationResult.WorkingCopyChanged.get -> bool
+RevisionControl.VcsOperationResult.WorkingCopyChanged.set -> void
 RevisionControl.VcsRebaseInProgress
 RevisionControl.VcsRebaseInProgress.<Clone>$() -> RevisionControl.VcsRebaseInProgress!
 RevisionControl.VcsRebaseInProgress.Branch.get -> string?
