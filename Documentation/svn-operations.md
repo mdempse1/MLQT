@@ -125,7 +125,7 @@ If the update introduces conflicts, the commit is aborted and you'll need to res
 
 Opens the **Revert Files** dialog. This is equivalent to `svn revert`.
 
-The revert behavior is identical to Git — see [Git Operations: Reverting Changes](git-operations.md#reverting-changes). Selected files are restored to their last committed state and **this cannot be undone**.
+The revert behavior is the same as Git's — see [Git Operations: Reverting Changes](git-operations.md#reverting-changes). Selected files are restored to their last committed state and **this cannot be undone**. One difference, which is SVN's own: a file scheduled for addition (`svn add`) is unscheduled and left on disk as an unversioned file, where Git deletes it. An unversioned file you select is deleted.
 
 ![Screenshot: The SVN Revert Files dialog showing the warning alert and file list with checkboxes.](Images/svn-operations-2.png)
 
@@ -166,7 +166,7 @@ If you have uncommitted changes, the dialog warns that switching may affect them
 
 Opens the **Create Branch** dialog. In SVN, creating a branch is a server-side copy operation (`svn copy`), which creates a copy of the current working copy's URL at a new branch path.
 
-![Screenshot: The Create Branch dialog for SVN showing the branch name input field and the "Switch to new branch after creation" checkbox.](Images/svn-operations-4.png)
+![Screenshot: The Create Branch dialog for SVN showing the branch name input field with the note under it saying where a branch is created, the "Switch to new branch after creation" checkbox, and the note that uncommitted changes are carried over to the new branch.](Images/svn-operations-4.png)
 
 ### How SVN Branching Works
 

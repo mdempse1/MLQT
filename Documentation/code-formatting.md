@@ -122,7 +122,7 @@ The following VCS operations automatically trigger formatting of changed files:
 | **Revert** | **No** — reverted files preserve their committed content |
 | **Commit** | Yes — before committing all modified files are formatted |
 | **Push** | **No** — pushing does not change local files |
-| **Create branch** | **No** — creating a branch does not change files |
+| **Create branch** | **No** — a new branch starts from the files you already have. Yes, as after an update, when switching to a new SVN branch brought in commits your working copy lacked |
 
 Reverted files intentionally skip formatting to preserve the exact committed content. Reformatting a reverted file would create a dirty diff, defeating the purpose of the revert.
 

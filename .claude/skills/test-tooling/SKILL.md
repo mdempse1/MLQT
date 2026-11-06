@@ -63,10 +63,12 @@ fake handler, socket stubs, spawn environment. Each suite's `ToolTraitTests` fai
 the tool's fixture is not marked; a class that starts the tool some other way (`TimeLimitTests`) has
 to be marked by hand. `LiveToolTestFilterTests` holds the filter strings to the traits.
 
-**A fourth is partly in that position.** `RevisionControl.Tests` has three classes that need an svn
-client — `SvnIntegrationTests`, `SvnIntegrationAdvancedTests` and `SvnMergeCommitTests` — and
+**A fourth is partly in that position.** `RevisionControl.Tests` has six classes that need an svn
+client — `SvnIntegrationTests`, `SvnIntegrationAdvancedTests`, `SvnMergeCommitTests`,
+`SvnIntegrationCreateBranchTests`, `SvnIntegrationRevertTests` and `SvnIntegrationCommitTests` — and
 `MLQT.Services.Tests` has one, `RepositoryServiceSvnIntegrationTests` (B471), so CI runs both suites
-with a filter that excludes exactly those four
+with a filter that excludes exactly those seven. **A new class that needs svn is named
+`SvnIntegration…`** so the filter takes it, and one that needs no client (`SvnBranchPathTests`) is not
 (`FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit`), and this script applies
 it **only when the machine has no svn**. The filter is the same string in four files and a test holds them together
 (`MLQT.Shared.Tests/SvnTestFilterTests.cs`), because it was once the substring `Svn`: that also

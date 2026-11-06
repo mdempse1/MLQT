@@ -84,13 +84,16 @@ Push-Location $repositoryRoot
 # Suites needing something the machine may not have, and the filter that makes the rest of the suite
 # runnable anyway. Anything not named here runs unfiltered.
 #
-# The SVN exclusion names the three classes that cannot run without an svn client, and nothing else.
+# The SVN exclusion names the classes that cannot run without an svn client, and nothing else.
 # It used to be the substring 'Svn', which excluded 281 of the suite's 672 tests - six classes that
 # need no svn at all, including guards written for a defect a user had reported. Measured rather than
 # assumed: with svn taken off PATH, exactly SvnIntegrationTests, SvnIntegrationAdvancedTests and
-# SvnMergeCommitTests fail; every other test passes (B266).
+# SvnMergeCommitTests fail; every other test passes (B266). Classes added since take a name the
+# filter already excludes - SvnIntegrationCreateBranchTests, SvnIntegrationRevertTests and
+# SvnIntegrationCommitTests - and a class that needs no client (SvnBranchPathTests) takes one it does
+# not.
 #
-# On a machine that HAS svn, all three run, each against a repository it builds for itself with
+# On a machine that HAS svn, all of them run, each against a repository it builds for itself with
 # svnadmin (SvnTestRepository, B426) - so two runs at once, from two worktrees, no longer commit
 # into one repository under each other. That is the point of this script - excusing a suite by
 # category is how a real failure hides in it.

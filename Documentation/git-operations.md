@@ -120,8 +120,11 @@ You select which files to revert, in the same file tree (with **Select All** and
 ### After Reverting
 
 - The reverted files are restored to their HEAD content
+- A file you added — untracked, or staged for addition, edited since or not — is deleted, since its last committed state is not existing
 - MLQT re-runs dependency analysis and style checking on affected files
 - VCS status chips are cleared for reverted files
+
+If the revert stops on an error, the dialog stays open and says what went wrong. The files it was asked to revert are still reloaded once you close it, so the library browser shows whatever is on disk, reverted or not.
 
 ---
 

@@ -70,6 +70,7 @@ libraries is owned by the services that manage it, and they publish the changes:
 | `SaveSettings()` | Fires `OnSaveSettings` |
 | `ThemeChanged(UISettings)` | Fires `OnThemeChanged` |
 | `RepositorySettingsApplied(string, bool, bool)` | Fires `OnRepositorySettingsApplied` (formatting and/or style settings changed) |
+| `FormatAllFilesRequested(string)` | Fires `OnFormatAllFilesRequested` (the Format All Files button; no setting changed) |
 | `VcsFilesChanged(string)` | Fires `OnVcsFilesChanged`: re-format and re-analyse after a VCS operation |
 | `VcsModelsChanged(string, IReadOnlyList<string>)` | Fires `OnVcsModelsChanged` |
 | `BeginVcsWork()` | Marks VCS work in progress until disposed (`IsVcsWorkInProgress`, `OnVcsWorkChanged`) |
