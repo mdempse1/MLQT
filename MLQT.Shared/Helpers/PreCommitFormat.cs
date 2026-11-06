@@ -49,6 +49,23 @@ internal static class PreCommitFormat
         return skipped;
     }
 
+    /// <summary>Each file's write time now, to tell afterwards which of them were written.</summary>
+    internal static Dictionary<string, DateTime> WriteTimes(IEnumerable<string> files, Func<string, DateTime> writeTimeOf)
+    {
+        var times = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+            times[file] = writeTimeOf(file);
+        return times;
+    }
+
+    /// <summary>
+    /// Whether any of the files has a different write time from the one taken before: written, or
+    /// deleted, since. Compared with the file's own earlier time and never with a clock, which a
+    /// filesystem's coarse timestamps can trail.
+    /// </summary>
+    internal static bool AnyRewritten(IReadOnlyDictionary<string, DateTime> before, Func<string, DateTime> writeTimeOf) =>
+        before.Any(entry => writeTimeOf(entry.Key) != entry.Value);
+
     /// <summary>What the progress dialog says while the changed files are formatted.</summary>
     internal static string FormattingMessage(int files) =>
         files == 1

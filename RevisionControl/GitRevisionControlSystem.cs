@@ -1289,6 +1289,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             // A file that is new - untracked, or added and perhaps edited since - is deleted, which is
             // what reverting it means; one added to the index is taken out of it as well. Everything
             // else goes back to HEAD, in the index and on disk.
+            var newFiles = new List<string>();
             var newInIndex = new List<string>();
             var toCheckOut = new List<string>();
             foreach (var path in paths)
@@ -1296,9 +1297,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 var state = states.GetValueOrDefault(path, FileStatus.Unaltered);
                 if ((state & (FileStatus.NewInWorkdir | FileStatus.NewInIndex)) != 0)
                 {
-                    var fullPath = Path.Combine(repositoryPath, path);
-                    if (File.Exists(fullPath))
-                        File.Delete(fullPath);
+                    newFiles.Add(path);
                     if ((state & FileStatus.NewInIndex) != 0)
                         newInIndex.Add(path);
                 }
@@ -1308,15 +1307,24 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 }
             }
 
-            if (newInIndex.Count > 0)
-                Commands.Unstage(repo, newInIndex);
-
+            // The checkout first and the deletions last, so a checkout that throws has deleted
+            // nothing: what it did not get to is still on disk as the user left it.
             if (toCheckOut.Count > 0)
             {
                 repo.CheckoutPaths("HEAD", toCheckOut, new CheckoutOptions
                 {
                     CheckoutModifiers = CheckoutModifiers.Force
                 });
+            }
+
+            if (newInIndex.Count > 0)
+                Commands.Unstage(repo, newInIndex);
+
+            foreach (var path in newFiles)
+            {
+                var fullPath = Path.Combine(repositoryPath, path);
+                if (File.Exists(fullPath))
+                    File.Delete(fullPath);
             }
 
             result.Success = true;

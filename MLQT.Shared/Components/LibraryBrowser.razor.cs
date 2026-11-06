@@ -819,11 +819,17 @@ public partial class LibraryBrowser : IDisposable
     {
         if (Repository?.Id != repositoryId) return;
 
+        // Invalidated on every event, throttled only in asking again. Throttling both dropped the
+        // invalidation of every change after the first in a burst, so a file saved a second after
+        // another stayed out of the cached status - and the commit dialog, which reads that cache
+        // rather than asking SVN again, did not list it. Invalidating is a dictionary entry; it is
+        // the query that costs.
+        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+
         var now = Environment.TickCount64;
         if (now - _lastFileActivityTicks < FileActivityDebounceMs) return;
         _lastFileActivityTicks = now;
 
-        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
         await InvokeAsync(async () =>
         {
             await CheckForUncommittedChangesAsync();
@@ -1688,9 +1694,11 @@ public partial class LibraryBrowser : IDisposable
         if (Repository == null)
             return;
 
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<RevertFilesDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, Repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
 
@@ -1711,9 +1719,14 @@ public partial class LibraryBrowser : IDisposable
             _suppressTreeRefresh = false;
         }
 
-        if (result != null && !result.Canceled)
+        // Reloaded however the dialog closed. A revert that failed part way - svn stops at its first
+        // error, having reverted the targets before it - has still changed files, and the dialog
+        // stays open on the error until it is cancelled; reloading only on success left the graph
+        // describing the text from before the revert.
+        var succeeded = result != null && !result.Canceled;
+        if (outcome.FilesTouched.Count > 0)
         {
-            var revertedRelativePaths = result.Data as List<string> ?? new List<string>();
+            var revertedRelativePaths = outcome.FilesTouched;
 
             // Reload only the reverted files in the graph — avoids a full library reload for what may
             // be a single-file revert. One batch, as Refresh and the VCS pipeline reload: the files
@@ -1757,7 +1770,8 @@ public partial class LibraryBrowser : IDisposable
                 NavState.ChangeModelID(NavState.ModelID);
             }
 
-            Snackbar.Add("Files reverted successfully.", Severity.Success);
+            if (succeeded)
+                Snackbar.Add("Files reverted successfully.", Severity.Success);
             StateHasChanged();
 
             if (hasMoChanges)

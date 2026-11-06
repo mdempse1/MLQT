@@ -1536,7 +1536,7 @@ public partial class MainLayout : IDisposable
 
         progress?.Report(PreCommitFormat.FormattingMessage(changedFilePaths.Count));
         LogProcessStart("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
-        var startedAt = DateTime.UtcNow;
+        var writtenBefore = await Task.Run(() => PreCommitFormat.WriteTimes(changedFilePaths, File.GetLastWriteTimeUtc));
         // Every repository in the working copy, not only this one (B416): see ProcessRepositorySettingsAsync.
         var pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
         try
@@ -1550,8 +1550,10 @@ public partial class MainLayout : IDisposable
         }
 
         // A file reformatted back to its committed text is no longer modified, so a write is the one
-        // thing here that can change what the status says.
-        if (changedFilePaths.Any(f => FormattingPipeline.WrittenFileTimestamps.TryGetValue(f, out var at) && at >= startedAt))
+        // thing here that can change what the status says. Asked of the files' own write times,
+        // before and after, not of the clock: a filesystem's clock can trail the system's, and a
+        // write made just after the format began then read as one made before it.
+        if (await Task.Run(() => PreCommitFormat.AnyRewritten(writtenBefore, File.GetLastWriteTimeUtc)))
             RepositoryService.InvalidateWorkingCopyCache(repositoryId);
 
         LogProcessEnd("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");

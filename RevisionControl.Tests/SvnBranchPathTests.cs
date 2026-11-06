@@ -93,13 +93,18 @@ public class SvnBranchPathTests
     [Fact]
     public void Chunks_KeepEveryPathInOrder_AndStayInsideTheLimit()
     {
-        var paths = Enumerable.Range(0, 50).Select(i => $"C:\\wc\\File{i:D2}.mo").ToList();
+        var paths = Enumerable.Range(0, 50)
+            .Select(i => Path.Combine(Path.GetTempPath(), "wc", $"File{i:D2}.mo"))
+            .ToList();
 
-        var chunks = SvnRevisionControlSystem.CommandLineChunks(paths, maxChars: 100).ToList();
+        // Room for three paths a chunk, whatever the temporary folder's path is on this machine.
+        var limit = (paths[0].Length + 3) * 3;
+
+        var chunks = SvnRevisionControlSystem.CommandLineChunks(paths, maxChars: limit).ToList();
 
         Assert.Equal(paths, chunks.SelectMany(c => c));
-        Assert.All(chunks, c => Assert.True(c.Sum(p => p.Length + 3) <= 100));
-        Assert.True(chunks.Count > 1);
+        Assert.All(chunks, c => Assert.True(c.Sum(p => p.Length + 3) <= limit));
+        Assert.Equal(17, chunks.Count);
     }
 
     [Fact]
@@ -137,6 +142,42 @@ public class SvnBranchPathTests
     [Fact]
     public void NoPaths_NoChunks() =>
         Assert.Empty(SvnRevisionControlSystem.CommandLineChunks([]));
+
+    [Fact]
+    public void AFileTheSwitchRestored_ChangedTheWorkingCopy() =>
+        Assert.True(SvnRevisionControlSystem.SwitchChangedFiles(
+            "Updating 'C:\\wc':\r\nRestored 'C:\\wc\\Missing.mo'\r\nAt revision 20.\r\n"));
+
+    // ---- Paths status could not place --------------------------------------------------------
+
+    private static readonly string Wc = Path.Combine(Path.GetTempPath(), "mlqt-wc");
+    private static readonly string Versioned = Path.Combine(Wc, "Versioned.mo");
+    private static readonly string New = Path.Combine(Wc, "NewFolder", "New.mo");
+    private static readonly string Gone = Path.Combine(Wc, "Gone.mo");
+
+    private static Dictionary<string, SvnRevisionControlSystem.PathKind> Classify(System.Xml.Linq.XDocument? info) =>
+        SvnRevisionControlSystem.ClassifyUnplaced([Versioned, New, Gone], info, p => p != Gone)
+            .ToDictionary(k => k.Path, k => k.Kind);
+
+    [Fact]
+    public void WhatSvnInfoLists_IsVersioned_TheRestOnDiskUnversioned()
+    {
+        var info = System.Xml.Linq.XDocument.Parse($"<info><entry path=\"{Versioned}\" /></info>");
+
+        var kinds = Classify(info);
+
+        Assert.Equal(SvnRevisionControlSystem.PathKind.Versioned, kinds[Versioned]);
+        Assert.Equal(SvnRevisionControlSystem.PathKind.Unversioned, kinds[New]);
+        Assert.Equal(SvnRevisionControlSystem.PathKind.NotFound, kinds[Gone]);
+    }
+
+    /// <summary>
+    /// svn info failed as well as status, so nothing is known. Taken for unversioned, a revert
+    /// deleted the user's modified files.
+    /// </summary>
+    [Fact]
+    public void WhenSvnInfoGaveNoAnswer_NothingIsTakenForUnversioned() =>
+        Assert.All(Classify(info: null).Values, kind => Assert.Equal(SvnRevisionControlSystem.PathKind.Versioned, kind));
 
     [Fact]
     public void TheConflictSummary_IsNotAnItemLine() =>

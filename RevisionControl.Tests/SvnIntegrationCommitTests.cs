@@ -78,6 +78,26 @@ public class SvnIntegrationCommitTests : IClassFixture<SvnTestRepository>
         Assert.Contains("NotSelected.mo", status);
     }
 
+    /// <summary>
+    /// A selected new folder that is also above another selected new file is still added whole:
+    /// a file selected only through the folder is committed with it.
+    /// </summary>
+    [Fact]
+    public void ASelectedNewFolder_AboveAnotherSelectedFile_IsCommittedWhole()
+    {
+        var wc = _repository.CheckOut();
+        var branch = Branch(wc);
+        Directory.CreateDirectory(Path.Combine(wc, "Outer", "Sub"));
+        File.WriteAllText(Path.Combine(wc, "Outer", "Sub", "A.mo"), "model A end A;\n");
+        File.WriteAllText(Path.Combine(wc, "Outer", "B.mo"), "model B end B;\n");
+
+        var result = _svn.Commit(wc, "A folder and a file in it", ["Outer/Sub/A.mo", "Outer"]);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(ExistsAtHead(branch, "Outer/Sub/A.mo"));
+        Assert.True(ExistsAtHead(branch, "Outer/B.mo"), "a file in the selected folder was left out");
+    }
+
     [Fact]
     public void ManyNewFiles_AreAllCommitted()
     {

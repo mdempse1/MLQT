@@ -433,17 +433,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (toRevert.Count > 0)
             {
-                var targetsFile = Path.GetTempFileName();
-                SvnCli.Result revert;
-                try
-                {
-                    File.WriteAllLines(targetsFile, toRevert);
-                    revert = SvnCli.RunOnWorkingCopy(repositoryPath, "revert", "--targets", targetsFile);
-                }
-                finally
-                {
-                    try { File.Delete(targetsFile); } catch { /* best effort */ }
-                }
+                var revert = RunWithTargets(repositoryPath, ["revert"], toRevert);
 
                 // Checked, which the per-file revert never was: a locked working copy reverted
                 // nothing and the operation still reported success.
@@ -1201,6 +1191,11 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var props = text[1];
             var locked = text[2];
             var tree = text[3];
+            // A versioned file missing from disk is put back by the switch, and said so on a line of
+            // its own: "Restored 'path'". It is a file the libraries do not hold.
+            if (text.StartsWith("Restored '", StringComparison.Ordinal))
+                return true;
+
             var columnsValid = "ADUCGER ".Contains(item) && "UCG ".Contains(props)
                 && "B ".Contains(locked) && "C ".Contains(tree);
             var anyFlag = item != ' ' || props != ' ' || locked != ' ' || tree != ' ';
@@ -1624,12 +1619,18 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 // A new file, and every new folder above one, on its own (--depth empty), so a folder
                 // brings in nothing that was not selected. A new folder that was itself selected is
                 // added with everything in it, as `svn add --parents folder` always added it.
+                // A selected folder is added whole even when it is also above another selected file;
+                // that file, and anything else inside such a folder, is left to the whole add, which
+                // runs second, after its parents exist.
+                var addWhole = toAdd.Where(Directory.Exists).ToList();
+                bool InsideAWholeFolder(string p) => addWhole.Any(folder =>
+                    p.Equals(folder, OIC) || p.StartsWith(folder + Path.DirectorySeparatorChar, OIC));
                 var addEmpty = addedParentDirs
                     .Concat(toAdd.Where(p => !Directory.Exists(p)))
+                    .Where(p => !InsideAWholeFolder(p))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(p => p.Length)
                     .ToList();
-                var addWhole = toAdd.Where(Directory.Exists).Where(p => !addedParentDirs.Contains(p)).ToList();
 
                 foreach (var (args, paths) in new (string[] Args, List<string> Paths)[]
                          {
@@ -1679,17 +1680,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // Commit via a --targets file so the (potentially large) path list and any paths
             // containing spaces are passed safely.
             progress?.Report($"Committing {pathsToCommit.Count} files to server...");
-            var targetsFile = Path.GetTempFileName();
-            SvnCli.Result commit;
-            try
-            {
-                File.WriteAllLines(targetsFile, pathsToCommit);
-                commit = SvnCli.RunOnWorkingCopy(repositoryPath, "commit", "--targets", targetsFile, "-m", message);
-            }
-            finally
-            {
-                try { File.Delete(targetsFile); } catch { /* best effort */ }
-            }
+            var commit = RunWithTargets(repositoryPath, ["commit", "-m", message], pathsToCommit);
 
             if (!commit.Success)
             {
@@ -2107,31 +2098,61 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         if (unplaced.Count == 0)
             return kinds;
 
+        var info = WithTargetsFile(unplaced, targets => SvnCli.RunXmlAllowingMissingTargets("info", "--targets", targets));
+        foreach (var (path, kind) in ClassifyUnplaced(unplaced, info, p => File.Exists(p) || Directory.Exists(p)))
+            kinds[path] = kind;
+
+        return kinds;
+    }
+
+    /// <summary>
+    /// What the paths status could not place are, from <c>svn info</c>'s answer about them: the ones
+    /// it lists are versioned, and of the rest those on disk are unversioned.
+    /// </summary>
+    /// <remarks>
+    /// <b>No answer is not "unversioned".</b> When <c>svn info</c> itself failed - stopped for going
+    /// silent, a working copy that needs a cleanup - <paramref name="info"/> is null and nothing is
+    /// known, so every path is taken for versioned. Taken for unversioned, a revert deleted them: the
+    /// user's modified files, with no <c>svn revert</c> left to run, and fail, first. Versioned is the
+    /// safe mistake: a revert hands the path to svn, which reverts it or says why not, and a commit
+    /// does not add it.
+    /// </remarks>
+    internal static IEnumerable<(string Path, PathKind Kind)> ClassifyUnplaced(
+        IReadOnlyList<string> unplaced, System.Xml.Linq.XDocument? info, Func<string, bool> existsOnDisk)
+    {
+        if (info is null)
+            return unplaced.Select(path => (path, PathKind.Versioned));
+
         var versioned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in info.Root?.Elements("entry") ?? [])
+        {
+            if (entry.Attribute("path")?.Value is { Length: > 0 } path)
+                versioned.Add(Path.GetFullPath(path));
+        }
+
+        return unplaced.Select(path => (path,
+            versioned.Contains(path) ? PathKind.Versioned
+            : existsOnDisk(path) ? PathKind.Unversioned
+            : PathKind.NotFound));
+    }
+
+    /// <summary>
+    /// Runs <paramref name="run"/> with the paths written to a temporary <c>--targets</c> file, which
+    /// keeps any number of paths, and paths with spaces, out of the command line, and deletes the file
+    /// afterwards.
+    /// </summary>
+    private static T WithTargetsFile<T>(IEnumerable<string> paths, Func<string, T> run)
+    {
         var targetsFile = Path.GetTempFileName();
         try
         {
-            File.WriteAllLines(targetsFile, unplaced);
-            var entries = SvnCli.RunXmlAllowingMissingTargets("info", "--targets", targetsFile)?.Root?.Elements("entry");
-            foreach (var entry in entries ?? [])
-            {
-                if (entry.Attribute("path")?.Value is { Length: > 0 } path)
-                    versioned.Add(Path.GetFullPath(path));
-            }
+            File.WriteAllLines(targetsFile, paths);
+            return run(targetsFile);
         }
         finally
         {
             try { File.Delete(targetsFile); } catch { /* best effort */ }
         }
-
-        foreach (var path in unplaced)
-        {
-            kinds[path] = versioned.Contains(path) ? PathKind.Versioned
-                : File.Exists(path) || Directory.Exists(path) ? PathKind.Unversioned
-                : PathKind.NotFound;
-        }
-
-        return kinds;
     }
 
     /// <summary>
@@ -2158,19 +2179,8 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// Runs an svn command on a working copy over a list of paths given as a <c>--targets</c> file,
     /// which keeps any number of paths, and paths with spaces, out of the command line.
     /// </summary>
-    private static SvnCli.Result RunWithTargets(string workingCopy, string[] args, IReadOnlyCollection<string> paths)
-    {
-        var targetsFile = Path.GetTempFileName();
-        try
-        {
-            File.WriteAllLines(targetsFile, paths);
-            return SvnCli.RunOnWorkingCopy(workingCopy, [.. args, "--targets", targetsFile]);
-        }
-        finally
-        {
-            try { File.Delete(targetsFile); } catch { /* best effort */ }
-        }
-    }
+    private static SvnCli.Result RunWithTargets(string workingCopy, string[] args, IReadOnlyCollection<string> paths) =>
+        WithTargetsFile(paths, targets => SvnCli.RunOnWorkingCopy(workingCopy, [.. args, "--targets", targets]));
 
     /// <summary>The paths in groups whose command line stays inside Windows' limit.</summary>
     internal static IEnumerable<List<string>> CommandLineChunks(IReadOnlyList<string> paths, int maxChars = 24_000)

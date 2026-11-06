@@ -290,12 +290,16 @@ public class VcsDialogMonitorTests : MlqtComponentTestBase
         _repositories.Setup(r => r.RevertFilesAsync("repo", It.IsAny<IEnumerable<string>>()))
             .ReturnsAsync(new VcsOperationResult { ErrorMessage = "Could not revert 1 file(s): locked" });
 
-        var (provider, dialog) = await ShowDialogAsync<RevertFilesDialog>(new DialogParameters { { "RepositoryId", "repo" } });
+        var (provider, dialog) = await ShowDialogAsync<RevertFilesDialog>(Parameters());
         await ClickButton(provider, "Revert (1 files)");
 
         provider.WaitForAssertion(() => Assert.Contains("Could not revert 1 file(s): locked", provider.Markup));
         Assert.False(dialog.Result.IsCompleted);
         _monitor.Verify(m => m.StartMonitoring("repo", Root), Times.Once);
+
+        // A revert that failed part way has still changed files: the caller is told which it was
+        // asked to change, and reloads them however the dialog closes.
+        Assert.Equal(["package.mo"], _outcome.FilesTouched);
     }
 
     private static async Task TypeBranchName(IRenderedComponent<MudDialogProvider> provider, string name)

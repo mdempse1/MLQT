@@ -43,6 +43,24 @@ public class PreCommitFormatTests
         Assert.Equal(["b.mo"], PreCommitFormat.AlreadyFormatted(
             ["a.mo", "b.mo", "c.mo"], Known, f => f == "a.mo" ? Formatted.AddSeconds(5) : Formatted));
 
+    [Fact]
+    public void AFileWrittenSince_IsSeen_WhateverTheClockSays()
+    {
+        // The time a filesystem stamps can be earlier than the system clock read before the write;
+        // comparing with the file's own earlier time is what makes that not matter.
+        var before = PreCommitFormat.WriteTimes(["a.mo", "b.mo"], _ => Formatted);
+
+        Assert.True(PreCommitFormat.AnyRewritten(before, f => f == "b.mo" ? Formatted.AddMilliseconds(-3) : Formatted));
+    }
+
+    [Fact]
+    public void NoFileWrittenSince_NothingRewritten()
+    {
+        var before = PreCommitFormat.WriteTimes(["a.mo", "b.mo"], _ => Formatted);
+
+        Assert.False(PreCommitFormat.AnyRewritten(before, _ => Formatted));
+    }
+
     [Theory]
     [InlineData(1, "Applying the formatting rules to 1 changed file")]
     [InlineData(2, "Applying the formatting rules to 2 changed files")]

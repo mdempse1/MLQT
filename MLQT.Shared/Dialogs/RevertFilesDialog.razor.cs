@@ -13,6 +13,13 @@ public partial class RevertFilesDialog
     [Parameter]
     public string RepositoryId { get; set; } = "";
 
+    /// <summary>
+    /// Told which files a revert was asked to change, before it runs: a revert that fails part way
+    /// has still changed some of them, and the caller reloads them however the dialog closes (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
+
     private Repository? _repository;
     private int _selectedFilesCount = 0;
     public List<VcsWorkingCopyFile> _changedFiles = new ();
@@ -39,6 +46,7 @@ public partial class RevertFilesDialog
         try
         {
             var selectedFiles = _changeReviewComponent!.GetSelectedFiles();
+            Outcome.FilesTouched.AddRange(selectedFiles);
 
             // With the monitor held off for the working copy, as every VCS operation that writes
             // is. Watched, each reverted file was reported as the user's change - 17,000 of them for
