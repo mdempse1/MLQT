@@ -254,7 +254,7 @@ byte[]? headContent = git.GetFileBytesAtRevision(
 | `ConflictResolutionChoice` | Enum for `ResolveConflict`: AcceptIncoming, KeepMine, MarkResolved |
 | `VcsUpdateResult` | Update result (Success, HasChanges, OldRevision, NewRevision) |
 | `VcsMergeResult` | Merge result (Success, HasConflicts, ConflictedFiles, TreeConflictedFiles, ModifiedFiles, HasChanges, SourceBranch, StartRevision, EndRevision). Every path is full and in the platform's form (`VcsRelativePath.ToFullPath`), from Git and SVN alike |
-| `VcsOperationResult` | Generic operation result (Success, ErrorMessage) |
+| `VcsOperationResult` | Generic operation result (Success, ErrorMessage, WorkingCopyChanged — set by an SVN switch, including the one after `CreateBranch`, when it rewrote files: `svn switch` reported an item line or restored a missing file) |
 | `VcsChangeType` | Enum: Added, Deleted, Modified, Renamed, Copied |
 | `RevisionId` | Displaying a revision: `Shorten` abbreviates a Git commit hash to 7 characters and leaves an SVN revision number alone; `IsCommitHash` says which it is |
 | `VcsFileStatus` | Enum: Modified, Added, Deleted, Renamed, Untracked, Conflicted |

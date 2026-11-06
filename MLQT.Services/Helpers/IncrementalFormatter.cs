@@ -136,12 +136,19 @@ public static class IncrementalFormatter
     /// already formatted it was 35 seconds spent changing nothing. False keeps it, for a caller whose
     /// graph may lag a file the user has since edited - the format before a commit.
     /// </param>
+    /// <param name="alreadyFormatted">
+    /// Given each file found already formatted, with its write time from before it was read, so a
+    /// later format can skip it while that time stands. Without it every pass rendered every changed
+    /// file again: a startup found 17,482 changed files already formatted, and the format before the
+    /// commit two minutes later rendered all of them once more, 51 seconds before the dialog opened.
+    /// </param>
     internal static async Task<IReadOnlyDictionary<string, DateTime>> FormatAndWriteAsync(
         DirectedGraph graph,
         IEnumerable<string> changedFilePaths,
         StyleCheckingSettings settings,
         Func<string, bool>? neverWritten,
-        bool classesMatchFiles)
+        bool classesMatchFiles,
+        IDictionary<string, DateTime>? alreadyFormatted = null)
     {
         var written = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
@@ -154,7 +161,7 @@ public static class IncrementalFormatter
 
         // Captured once: the parallel body below must not read settings that another thread may edit.
         var formatting = settings.ToFormattingOptions();
-        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text, bool Unchanged, bool AsLoaded)>();
+        var formattedFiles = new ConcurrentDictionary<string, (FileToFormat Entry, string Text, bool Unchanged, bool AsLoaded, DateTime ReadAt)>();
 
         // The same lookup the checker is given, for the same reason: the order written here and the
         // order MLQT.Style.DeclarationOrder asks for have to be one answer. Built only when the
@@ -172,6 +179,10 @@ public static class IncrementalFormatter
                 // through a full library save carries a within clause while a freshly loaded one does
                 // not. Reassembling from those pieces duplicated the within clause and re-emitted every
                 // nested class as a top-level sibling.
+                //
+                // The write time is taken before the read: an edit landing between the two leaves
+                // the file newer than the time recorded, so it is never taken for formatted.
+                var readAt = File.GetLastWriteTimeUtc(fileEntry.FilePath);
                 var fileSource = ModelicaFileEncoding.ReadAllTextOnly(fileEntry.FilePath);
 
                 // Whether the graph's classes are still this file's text: its write time is the one
@@ -209,7 +220,7 @@ public static class IncrementalFormatter
                 // apiece, and a new write time that made every cached change classification stale.
                 // From the text already read, not by opening the file again (ForFileText).
                 var unchanged = ModelicaFileEncoding.ForFileText(fileSource, formatted) == fileSource;
-                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted, unchanged, asLoaded);
+                formattedFiles[fileEntry.FilePath] = (fileEntry, formatted, unchanged, asLoaded, readAt);
             }
             catch (Exception ex)
             {
@@ -228,9 +239,9 @@ public static class IncrementalFormatter
         // **No line per file.** There was one, and a startup with 17,372 changed files wrote 17,372
         // of them - most of the day's log - while saying nothing about how far it had got. Progress
         // every so many files, and the total, say more.
-        var alreadyFormatted = 0;
+        var alreadyFormattedCount = 0;
         var done = 0;
-        foreach (var (filePath, (entry, content, unchanged, asLoaded)) in formattedFiles)
+        foreach (var (filePath, (entry, content, unchanged, asLoaded, readAt)) in formattedFiles)
         {
             if (large && ++done % ProgressEvery == 0)
                 Info(nameof(IncrementalFormatter), $"Saved {done}/{formattedFiles.Count} formatted file(s)");
@@ -242,9 +253,11 @@ public static class IncrementalFormatter
                 // Otherwise they are brought up to date from it, as a write would: the graph may not
                 // have caught up with an edit the file already has - one made in another editor
                 // during a startup, before the monitor was watching, say.
-                alreadyFormatted++;
+                alreadyFormattedCount++;
                 if (!asLoaded)
                     RefreshClassesFromWrittenFile(graph, entry, content);
+                if (alreadyFormatted is not null)
+                    alreadyFormatted[filePath] = readAt;
                 continue;
             }
 
@@ -269,7 +282,7 @@ public static class IncrementalFormatter
         }
 
         var summary = $"Wrote {written.Count} formatted file(s) of {filesToProcess.Count} selected, "
-            + $"{alreadyFormatted} already formatted ({filesToProcess.Count - written.Count - alreadyFormatted} "
+            + $"{alreadyFormattedCount} already formatted ({filesToProcess.Count - written.Count - alreadyFormattedCount} "
             + $"not formatted); rendering {renderedMs}ms, saving {stopwatch.ElapsedMilliseconds - renderedMs}ms";
         if (large)
             Info(nameof(IncrementalFormatter), summary);

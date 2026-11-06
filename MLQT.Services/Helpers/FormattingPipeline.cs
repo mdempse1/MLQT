@@ -80,11 +80,24 @@ public sealed class FormattingPipeline : IFormattingPipeline
     public async Task FormatChangedFilesAsync(
         IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings)
     {
+        var alreadyFormatted = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         var written = await IncrementalFormatter.FormatAndWriteAsync(
-            _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten());
+            _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten(),
+            classesMatchFiles: false, alreadyFormatted);
 
+        Record(written, alreadyFormatted);
+    }
+
+    /// <summary>
+    /// Remembers every file a format left formatted - written, or found already formatted - against
+    /// its write time, so the next format skips it until it is written again.
+    /// </summary>
+    private void Record(IReadOnlyDictionary<string, DateTime> written, IReadOnlyDictionary<string, DateTime> alreadyFormatted)
+    {
         foreach (var (filePath, writtenAt) in written)
             _writtenFileTimestamps[filePath] = writtenAt;
+        foreach (var (filePath, readAt) in alreadyFormatted)
+            _writtenFileTimestamps[filePath] = readAt;
     }
 
     /// <summary>A working-copy status query this slow is worth a line in a production log on its own.</summary>
@@ -132,11 +145,11 @@ public sealed class FormattingPipeline : IFormattingPipeline
 
                 Info(nameof(FormattingPipeline), $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
                 // Straight after a load (IFormattingPipeline): the classes are these files' text.
+                var alreadyFormatted = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
                 var written = await IncrementalFormatter.FormatAndWriteAsync(
                     _libraryData.CombinedGraph, changedFilePaths, styleSettings, NeverWritten(),
-                    classesMatchFiles: true);
-                foreach (var (writtenPath, writtenAt) in written)
-                    _writtenFileTimestamps[writtenPath] = writtenAt;
+                    classesMatchFiles: true, alreadyFormatted);
+                Record(written, alreadyFormatted);
                 totalFormatted += changedFilePaths.Count;
             }
             catch (Exception ex)

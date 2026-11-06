@@ -125,6 +125,39 @@ public sealed class FormattingPipelineTests : IDisposable
         Assert.Empty(pipeline.WrittenFileTimestamps);
     }
 
+    /// <summary>
+    /// A file found already formatted is remembered too, against the write time it has, though
+    /// nothing wrote it. Without that, the format before a commit rendered again every file the
+    /// startup format had just found formatted: 17,482 files, 51 seconds before the dialog opened.
+    /// </summary>
+    [Fact]
+    public async Task AFileFoundAlreadyFormatted_IsRecordedAgainstItsWriteTime_AndNotWritten()
+    {
+        var path = AddUnformattedFile();
+        await Pipeline().FormatChangedFilesAsync([path], Formatting());
+        var formattedAt = File.GetLastWriteTimeUtc(path);
+        var fresh = Pipeline();
+
+        await fresh.FormatChangedFilesAsync([path], Formatting());
+
+        Assert.Equal(formattedAt, File.GetLastWriteTimeUtc(path));
+        Assert.Equal(formattedAt, fresh.WrittenFileTimestamps[path]);
+    }
+
+    [Fact]
+    public async Task AFileFoundAlreadyFormatted_ThenEdited_NoLongerMatchesWhatWasRecorded()
+    {
+        var path = AddUnformattedFile();
+        await Pipeline().FormatChangedFilesAsync([path], Formatting());
+        var fresh = Pipeline();
+        await fresh.FormatChangedFilesAsync([path], Formatting());
+
+        File.AppendAllText(path, "// edited elsewhere\n");
+        File.SetLastWriteTimeUtc(path, fresh.WrittenFileTimestamps[path].AddSeconds(2));
+
+        Assert.NotEqual(File.GetLastWriteTimeUtc(path), fresh.WrittenFileTimestamps[path]);
+    }
+
     [Fact]
     public async Task WithNoRepositories_FormattingModifiedFilesDoesNothing()
     {

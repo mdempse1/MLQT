@@ -70,9 +70,16 @@ public interface IFormattingPipeline
     Task FormatChangedFilesAsync(IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings);
 
     /// <summary>
-    /// Files this pipeline has written, and when. A change whose timestamp matches one of these is
-    /// MLQT's own write rather than the user's, and must not start another pass.
+    /// Files this pipeline knows to be formatted, and the write time it knows that for: each file it
+    /// has written, and each file an incremental format found already formatted and left alone. A
+    /// file whose write time still matches is formatted under the current rules, and the format
+    /// before a commit skips it.
     /// </summary>
+    /// <remarks>
+    /// The files found already formatted were added once a format before a commit rendered 17,482
+    /// files the startup format had just found already formatted, for nothing (it had remembered only
+    /// the one file it wrote). Cleared when the formatting rules change, since the answer is theirs.
+    /// </remarks>
     IReadOnlyDictionary<string, DateTime> WrittenFileTimestamps { get; }
 
     /// <summary>Forgets the recorded write times, after the file monitor has been restarted.</summary>

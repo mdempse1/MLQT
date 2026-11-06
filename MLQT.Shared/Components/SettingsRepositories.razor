@@ -554,8 +554,10 @@
     <DialogActions>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ConfirmChanges" Class="px-10">Apply</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CancelChanges" Class="px-10">Cancel</MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FormatAllFiles" Class="px-10"
-            Disabled="@(!SelectedSettings.ApplyFormattingRules)">Format All Files</MudButton>
+        <MudTooltip Text="@(FormatAllFilesBlockedReason(SelectedSettings.ApplyFormattingRules, NavState.IsVcsWorkInProgress) ?? "Rewrite every file of the repository under its formatting rules")">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FormatAllFiles" Class="px-10"
+                Disabled="@(!CanFormatAllFiles(SelectedSettings.ApplyFormattingRules, NavState.IsVcsWorkInProgress))">Format All Files</MudButton>
+        </MudTooltip>
         <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="RemoveRepository" Class="px-10">Delete Repository</MudButton>
     </DialogActions>
 </MudDialog>

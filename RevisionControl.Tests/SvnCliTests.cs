@@ -190,6 +190,62 @@ public class SvnCliTests
         Assert.Same(failed, result);
     }
 
+    // ─── XmlOf ───────────────────────────────────────────────────────────────
+    // svn info over many targets where some are gone: W155010 for each, E200009 at the end, exit
+    // code 1 - and the XML for every target it did find, which is the answer.
+
+    private const string InfoXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<info><entry path=\"A.mo\" kind=\"file\"/></info>\n";
+
+    private const string MissingTargets =
+        "svn: warning: W155010: The node 'C:\\wc\\Gone.mo' was not found.\n"
+        + "svn: E200009: Could not display info for all targets because some targets don't exist\n";
+
+    [Fact]
+    public void XmlOf_ASuccess_IsItsXml()
+    {
+        var xml = SvnCli.XmlOf(new SvnCli.Result { ExitCode = 0, StdOut = InfoXml, StdErr = "" }, allowMissingTargets: false);
+
+        Assert.Equal("A.mo", xml?.Root?.Element("entry")?.Attribute("path")?.Value);
+    }
+
+    [Fact]
+    public void XmlOf_MissingTargets_WhenAllowed_IsTheXmlForTheTargetsFound()
+    {
+        var xml = SvnCli.XmlOf(new SvnCli.Result { ExitCode = 1, StdOut = InfoXml, StdErr = MissingTargets }, allowMissingTargets: true);
+
+        Assert.Equal("A.mo", xml?.Root?.Element("entry")?.Attribute("path")?.Value);
+    }
+
+    [Fact]
+    public void XmlOf_MissingTargets_WhenNotAllowed_IsNull()
+    {
+        Assert.Null(SvnCli.XmlOf(new SvnCli.Result { ExitCode = 1, StdOut = InfoXml, StdErr = MissingTargets }, allowMissingTargets: false));
+    }
+
+    [Fact]
+    public void XmlOf_AnyOtherFailure_IsNull_EvenWhenMissingTargetsAreAllowed()
+    {
+        var failed = new SvnCli.Result { ExitCode = 1, StdOut = InfoXml, StdErr = "svn: E170013: Unable to connect" };
+
+        Assert.Null(SvnCli.XmlOf(failed, allowMissingTargets: true));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void XmlOf_NothingWritten_IsNull(bool allowMissingTargets)
+    {
+        Assert.Null(SvnCli.XmlOf(new SvnCli.Result { ExitCode = 0, StdOut = "  \n", StdErr = "" }, allowMissingTargets));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void XmlOf_OutputThatDoesNotParse_IsNull(bool allowMissingTargets)
+    {
+        Assert.Null(SvnCli.XmlOf(new SvnCli.Result { ExitCode = 0, StdOut = "<info><entry", StdErr = "" }, allowMissingTargets));
+    }
+
     // ─── SvnCliException ─────────────────────────────────────────────────────
 
     [Fact]

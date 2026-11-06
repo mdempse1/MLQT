@@ -346,3 +346,15 @@ else if (Repository != null)
         </ChildContent>
     </MudExpansionPanel>
 }
+
+<ProgressDialog Visible="_preparingCommit" Options="PreparingCommitOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Preparing the commit</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4 preparing-commit-step">@_preparingCommitMessage</MudText>
+        </MudStack>
+    </DialogContent>
+</ProgressDialog>

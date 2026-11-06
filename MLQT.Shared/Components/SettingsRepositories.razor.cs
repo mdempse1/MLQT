@@ -74,6 +74,7 @@ public partial class SettingsRepositories : IDisposable
     protected override void OnInitialized()
     {
         NavState.OnSaveSettings += SaveSettings;
+        NavState.OnVcsWorkChanged += OnVcsWorkChanged;
         RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
         DictionaryManagerService.OnDictionariesChanged += OnDictionariesChanged;
         _availableDictionaries = DictionaryManagerService.GetAvailableDictionaries().ToList();
@@ -96,6 +97,7 @@ public partial class SettingsRepositories : IDisposable
     {
         RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
         NavState.OnSaveSettings -= SaveSettings;
+        NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
         DictionaryManagerService.OnDictionariesChanged -= OnDictionariesChanged;
     }
 
@@ -419,13 +421,32 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
+    /// <remarks>
+    /// Says nothing itself about whether the format started: the layout decides that, and shows the
+    /// "Formatting all files" progress when it does and a warning when it does not. This said "Full
+    /// format started" whichever it was, so a refused format read as one that had started.
+    /// </remarks>
     private void FormatAllFiles()
     {
         _editRepository = false;
-        NavState.RepositorySettingsApplied(_selectedItem.Id, formattingChanged: true, styleSettingsChanged: false);
-        Snackbar.Add("Full format started for all files in repository...", Severity.Normal);
+        NavState.FormatAllFilesRequested(_selectedItem.Id);
         StateHasChanged();
     }
+
+    /// <summary>
+    /// Whether Format All Files is offered: formatting is on for the repository, and no VCS
+    /// operation or its analysis is running, which would refuse it (B385).
+    /// </summary>
+    internal static bool CanFormatAllFiles(bool applyFormattingRules, bool vcsWorkInProgress) =>
+        applyFormattingRules && !vcsWorkInProgress;
+
+    /// <summary>Why Format All Files is off, or null when it is on.</summary>
+    internal static string? FormatAllFilesBlockedReason(bool applyFormattingRules, bool vcsWorkInProgress) =>
+        !applyFormattingRules ? "Turn on Apply formatting rules to format the files."
+        : vcsWorkInProgress ? "Available once the version-control operation and its analysis have finished."
+        : null;
+
+    private void OnVcsWorkChanged() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>
     /// What <see cref="CancelChanges"/> puts back, taken before the dialog edits anything. The dialog

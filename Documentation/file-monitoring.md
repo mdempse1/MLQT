@@ -98,7 +98,7 @@ Some VCS operations automatically trigger a full refresh without you needing to 
 | **Checkout revision** | Yes — all files may change |
 | **Commit** | No — committing does not change file content. Yes if the SVN working copy was out of date: MLQT updates it before committing, and that changes files |
 | **Push** | No — pushing does not change local files |
-| **Create branch** | No — creating a branch does not change files |
+| **Create branch** | No — a new branch starts from the files you already have. Yes, for an SVN branch you switch to, when your working copy was behind the latest revision: the switch brings in the commits you lacked, as an update would |
 
 During automatic refreshes, the file monitor is temporarily paused to avoid detecting MLQT's own formatting writes as external changes.
 

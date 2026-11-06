@@ -352,8 +352,33 @@ internal static class SvnCli
     internal static XDocument? RunXml(TimeSpan idleLimit, params string[] args)
     {
         var withXml = new List<string>(args) { "--xml" };
-        var result = Run(withXml, stdinText: null, idleLimit);
-        if (!result.Success || string.IsNullOrWhiteSpace(result.StdOut))
+        return XmlOf(Run(withXml, stdinText: null, idleLimit), allowMissingTargets: false);
+    }
+
+    /// <summary>
+    /// <see cref="RunXml(string[])"/> for a command over many targets where some may not exist: svn
+    /// reports each such target with a W155010 warning and ends with E200009 and exit code 1, having
+    /// written the XML for every target it did find. That XML is the answer; any other failure is
+    /// still null.
+    /// </summary>
+    internal static XDocument? RunXmlAllowingMissingTargets(params string[] args)
+    {
+        var withXml = new List<string>(args) { "--xml" };
+        return XmlOf(Run(withXml, stdinText: null, IdleTimeout), allowMissingTargets: true);
+    }
+
+    /// <summary>
+    /// The XML an svn <c>--xml</c> command wrote, or null when it failed, wrote nothing or wrote
+    /// something that does not parse. With <paramref name="allowMissingTargets"/>, a failure that is
+    /// only svn's E200009 ("some targets do not exist") still answers with the XML for the targets it
+    /// found. Apart from running svn, so it can be tested on a machine without svn.
+    /// </summary>
+    internal static XDocument? XmlOf(Result result, bool allowMissingTargets)
+    {
+        var acceptedFailure = allowMissingTargets && result.StdErr.Contains("E200009", StringComparison.Ordinal);
+        if (!result.Success && !acceptedFailure)
+            return null;
+        if (string.IsNullOrWhiteSpace(result.StdOut))
             return null;
         try
         {
@@ -361,7 +386,7 @@ internal static class SvnCli
         }
         catch (System.Xml.XmlException ex)
         {
-            RevisionControlLogger.Error("SvnCli.RunXml", ex);
+            RevisionControlLogger.Error("SvnCli.XmlOf", ex);
             return null;
         }
     }

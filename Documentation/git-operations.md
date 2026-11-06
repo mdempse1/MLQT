@@ -66,7 +66,7 @@ Pulls the latest changes from the remote repository into your local working copy
 
 Opens the **Commit Changes** dialog where you can review modified files, select which ones to include, and write a commit message.
 
-Before the dialog opens, MLQT formats the repository's changed files ("Applying code formatting to changed files..."), so what you commit already follows the formatting rules.
+Before the dialog opens, MLQT formats the repository's changed files, so what you commit already follows the formatting rules. A **Preparing the commit** progress dialog shows which step is running: reading the working-copy status, then applying the formatting rules to the changed files. Files MLQT has already found formatted, and that have not been written since, are skipped.
 
 ![Screenshot: The Commit Changes dialog - the changed files as a tree with a checkbox each and their status chips, the diff panel beside it, the commit message field below, and the "Commit (2 files)" button at the bottom.](Images/git-operations-1.png)
 
@@ -120,8 +120,11 @@ You select which files to revert, in the same file tree (with **Select All** and
 ### After Reverting
 
 - The reverted files are restored to their HEAD content
+- A file you added — untracked, or staged for addition, edited since or not — is deleted, since its last committed state is not existing
 - MLQT re-runs dependency analysis and style checking on affected files
 - VCS status chips are cleared for reverted files
+
+If the revert stops on an error, the dialog stays open and says what went wrong. The files it was asked to revert are still reloaded once you close it, so the library browser shows whatever is on disk, reverted or not.
 
 ---
 

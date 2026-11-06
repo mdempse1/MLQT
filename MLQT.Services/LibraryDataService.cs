@@ -1110,21 +1110,28 @@ public class LibraryDataService : ILibraryDataService
         lock (_lock)
         {
             // Capture models that will be removed (for library index cleanup)
+            //
+            // Set-based, one pass over each index, as RemoveModelsFromFile is. This removed each class
+            // from every parent's child list in turn - a list search per parent per class - and a
+            // revert of 17,000 files, tens of thousands of classes, made that quadratic.
+            var removing = new HashSet<string>(StringComparer.Ordinal);
             var moFiles = relativeFiles.Where(f => f.EndsWith(".mo", StringComparison.OrdinalIgnoreCase));
             foreach (var relPath in moFiles)
             {
                 var fullPath = Path.Combine(rootPath, relPath.Replace('/', Path.DirectorySeparatorChar));
                 var fileId = GraphBuilder.GenerateFileId(fullPath);
-                var modelsInFile = _combinedGraph.GetModelsInFile(fileId).ToList();
-                foreach (var model in modelsInFile)
+                foreach (var model in _combinedGraph.GetModelsInFile(fileId))
+                    removing.Add(model.Id);
+            }
+
+            if (removing.Count > 0)
+            {
+                foreach (var lib in _libraries)
                 {
-                    foreach (var lib in _libraries)
-                    {
-                        lib.ModelIds.Remove(model.Id);
-                        lib.TopLevelModelIds.Remove(model.Id);
-                        foreach (var children in lib.ChildrenByParent.Values)
-                            children.Remove(model.Id);
-                    }
+                    lib.ModelIds.ExceptWith(removing);
+                    lib.TopLevelModelIds.RemoveAll(removing.Contains);
+                    foreach (var children in lib.ChildrenByParent.Values)
+                        children.RemoveAll(removing.Contains);
                 }
             }
         }

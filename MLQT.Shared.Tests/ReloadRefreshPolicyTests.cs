@@ -6,8 +6,9 @@ namespace MLQT.Shared.Tests;
 /// Every reload the desktop app makes gives the reloaded classes their dependency edges back (B290).
 /// </summary>
 /// <remarks>
-/// <para><c>ILibraryDataService.ReloadFileAsync</c> replaces each class in a file with a new node that
-/// uses nothing, and the graph goes on saying its dependencies are analysed. Correcting a word in
+/// <para><c>ILibraryDataService.ReloadFileAsync</c> - and its batch form, <c>UpdateChangedFilesAsync</c>
+/// - replaces each class in a file with a new node that uses nothing, and the graph goes on saying its
+/// dependencies are analysed. Correcting a word in
 /// MSL's <c>Der</c> from Code Review left it offering no classes to go to, with nothing to say why.
 /// The MCP server refreshed after its edits and the desktop app never had.</para>
 ///
@@ -22,10 +23,22 @@ public class ReloadRefreshPolicyTests
     /// <summary>Reloads that are refreshed some other way, by file name and the text of the call.</summary>
     private static readonly Dictionary<(string File, string Call), string> Ledger = new()
     {
-        [("LibraryBrowser.razor.cs", "await LibraryDataService.ReloadFileAsync(fullPath);")] =
-            "A revert. The loop reloads each reverted file and then fires VcsFilesChanged, whose pipeline " +
-            "re-analyses the changed models' dependencies - once, after every file is back.",
+        [("LibraryBrowser.razor.cs", "reloadedIds = await LibraryDataService.UpdateChangedFilesAsync(reloaded, Repository.VcsRootPath);")] =
+            "A revert. Every reverted file is reloaded in one batch, and then VcsModelsChanged fires, whose " +
+            "pipeline re-analyses the affected models' dependencies - once, after every file is back.",
+        [("MainLayout.razor.cs", "affectedModelIds = await LibraryDataService.UpdateChangedFilesAsync(changedFilePaths, rootPath);")] =
+            "Refresh and the VCS pipeline. The same method goes on to re-analyse the affected models' " +
+            "dependencies once the changed files are formatted.",
+        [("CodeReview.razor.cs", "affected = await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);")] =
+            "Split into files. AnnounceReloadedModels fires VcsModelsChanged with what the reload returned, and " +
+            "that pipeline re-analyses their dependencies.",
     };
+
+    /// <summary>
+    /// The calls that replace a file's classes with new nodes that use nothing: the one-file reload,
+    /// and the batch one Refresh, the VCS pipeline and a revert use.
+    /// </summary>
+    private static readonly string[] ReloadCalls = [".ReloadFileAsync(", ".UpdateChangedFilesAsync("];
 
     private static string SharedDirectory()
     {
@@ -53,7 +66,8 @@ public class ReloadRefreshPolicyTests
             for (var i = 0; i < lines.Length; i++)
             {
                 var trimmed = lines[i].TrimStart();
-                if (trimmed.StartsWith("//", StringComparison.Ordinal) || !lines[i].Contains(".ReloadFileAsync(", StringComparison.Ordinal))
+                if (trimmed.StartsWith("//", StringComparison.Ordinal)
+                    || !ReloadCalls.Any(call => lines[i].Contains(call, StringComparison.Ordinal)))
                     continue;
 
                 // The refresh may wrap the reload, or follow it.

@@ -125,7 +125,7 @@ If the update introduces conflicts, the commit is aborted and you'll need to res
 
 Opens the **Revert Files** dialog. This is equivalent to `svn revert`.
 
-The revert behavior is identical to Git — see [Git Operations: Reverting Changes](git-operations.md#reverting-changes). Selected files are restored to their last committed state and **this cannot be undone**.
+The revert behavior is the same as Git's — see [Git Operations: Reverting Changes](git-operations.md#reverting-changes). Selected files are restored to their last committed state and **this cannot be undone**. One difference, which is SVN's own: a file scheduled for addition (`svn add`) is unscheduled and left on disk as an unversioned file, where Git deletes it. An unversioned file you select is deleted.
 
 ![Screenshot: The SVN Revert Files dialog showing the warning alert and file list with checkboxes.](Images/svn-operations-2.png)
 
@@ -166,7 +166,7 @@ If you have uncommitted changes, the dialog warns that switching may affect them
 
 Opens the **Create Branch** dialog. In SVN, creating a branch is a server-side copy operation (`svn copy`), which creates a copy of the current working copy's URL at a new branch path.
 
-![Screenshot: The Create Branch dialog for SVN showing the branch name input field and the "Switch to new branch after creation" checkbox.](Images/svn-operations-4.png)
+![Screenshot: The Create Branch dialog for SVN showing the branch name input field with the note under it saying where a branch is created, the "Switch to new branch after creation" checkbox, and the note that uncommitted changes are carried over to the new branch.](Images/svn-operations-4.png)
 
 ### How SVN Branching Works
 
@@ -179,8 +179,8 @@ Unlike Git's lightweight local branches, SVN branches are:
 
 | Field | Description |
 |-------|-------------|
-| **Branch name** | The name for the new branch. A plain name becomes a directory under `branches/` on the server (the second of the repository's [branch directories](#custom-branch-directory-names)); a name that starts with one of those directories, such as `tags/v1.0`, is created there instead. The branch is copied from the URL the working copy is on, with the commit message `Create branch: <name>`. |
-| **Switch to new branch after creation** | Checkbox (default: on). If checked, your working copy switches to the new branch immediately. |
+| **Branch name** | The name for the new branch. A plain name becomes a directory under `branches/` on the server (the second of the repository's [branch directories](#custom-branch-directory-names)); a name that starts with one of those directories, such as `tags/v1.0`, or with any folder the repository already has, such as `branches/my-feature`, is created there instead. The folder the branch goes in must already exist: MLQT never creates it, and if it is missing the dialog says which folder and lists the folders the repository does have. The branch is copied from the latest revision (HEAD) of the URL the working copy is on, with the commit message `Create branch: <name>`, so it includes everything committed from this working copy. If others have committed since your last update, switching brings their changes in, as an update would, and MLQT then reloads and re-analyses the libraries; when the switch changes no file, nothing is reloaded. |
+| **Switch to new branch after creation** | Checkbox (default: on). If checked, your working copy switches to the new branch immediately. Uncommitted changes are carried over and stay uncommitted, so changes made on trunk that belong on a branch can be moved to one and committed there. |
 
 ---
 
@@ -205,7 +205,7 @@ Configuring custom branch directory names affects how MLQT:
 
 - **Extracts the current branch** from the SVN working copy URL
 - **Lists available branches** in the Switch Branch and Merge Branch dialogs
-- **Creates new branches** by determining where to place the server-side copy
+- **Creates new branches** by determining where to place the server-side copy. The list should name folders the repository really has: a plain branch name goes in the second entry, and if that folder does not exist, creating the branch fails
 
 ### Configuration
 

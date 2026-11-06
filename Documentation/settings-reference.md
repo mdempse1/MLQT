@@ -102,7 +102,7 @@ have read access to is exactly the case.
 
 Repository settings are edited through **Settings > Manage Repositories** by clicking on a repository row. Each repository has its own independent copy of all style, formatting, and commit settings.
 
-The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules, and is disabled while **Apply formatting rules** is off (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
+The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules, and is disabled while **Apply formatting rules** is off or a version-control operation or its analysis is running (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
 
 Below the repository's **Name**, **VCS Type** and **Library Path** (and, when the library is a subdirectory of a working copy, the read-only **VCS Repository Root**) and the **Reference only** switch, the dialog's sections are, in order: **Commit requirements**, **Formatting rules**, **Spell checking**, **Naming**, **Style guidelines**, **Reference validation**, **Static analysis**, **Excluded libraries** and, for an SVN repository, **SVN branch directories**. A reference-only repository shows none of them. The sections below are grouped by topic rather than in that order.
 

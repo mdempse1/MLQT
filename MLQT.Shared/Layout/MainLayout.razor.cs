@@ -112,6 +112,7 @@ public partial class MainLayout : IDisposable
         ApplyThemeFromSettings(_settings.UI);
 
         NavState.OnRepositorySettingsApplied += OnRepositorySettingsApplied;
+        NavState.OnFormatAllFilesRequested += OnFormatAllFilesRequested;
         _vcsPipelines = new VcsPipelineQueue(NavState);
         NavState.OnVcsFilesChanged += OnVcsFilesChanged;
         NavState.OnVcsModelsChanged += OnVcsModelsChanged;
@@ -1485,7 +1486,16 @@ public partial class MainLayout : IDisposable
     /// Gets the working copy changes, identifies affected .mo files, pauses monitoring,
     /// applies formatting, then restarts monitoring.
     /// </summary>
-    private async Task FormatChangedFilesForCommitAsync(string repositoryId)
+    /// <remarks>
+    /// <para><b>Off the UI thread.</b> The status query and the write-time checks were made on the
+    /// thread that called this, the UI's: on a working copy with 17,491 changed files the window
+    /// froze for the status alone, and the progress meant to explain the wait could not be drawn.</para>
+    ///
+    /// <para><b>The status is read again only when this wrote a file.</b> The commit dialog lists what
+    /// the status says, and a format that wrote nothing changed nothing in it, so the answer this read
+    /// is still the answer. Asking SVN again cost that working copy another 27 seconds per commit.</para>
+    /// </remarks>
+    private async Task FormatChangedFilesForCommitAsync(string repositoryId, IProgress<string>? progress)
     {
         var repository = RepositoryService.GetRepository(repositoryId);
         if (repository == null || SkipReferenceOnly(repository, "formatting")) return;
@@ -1494,14 +1504,23 @@ public partial class MainLayout : IDisposable
         if (!styleSettings.ApplyFormattingRules)
             return;
 
-        var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
-        if (changedFilePaths.Count == 0) return;
+        progress?.Report("Reading the working-copy status");
+        var statusTimer = System.Diagnostics.Stopwatch.StartNew();
+        var (changedFilePaths, alreadyFormatted) = await Task.Run(() =>
+        {
+            var changed = GetModifiedFilePathsFromVcs(repository);
+            return (changed, PreCommitFormat.AlreadyFormatted(changed, FormattingPipeline.WrittenFileTimestamps, File.GetLastWriteTimeUtc));
+        });
 
-        // Skip files that have already been formatted and not modified since
-        var alreadyFormatted = changedFilePaths
-            .Where(f => FormattingPipeline.WrittenFileTimestamps.TryGetValue(f, out var formattedAt)
-                        && File.GetLastWriteTimeUtc(f) == formattedAt)
-            .ToList();
+        // Most of the wait before the commit dialog, when the cached status had been dropped - after
+        // a branch switch, say - and nothing else said so.
+        var statusMessage = $"Pre-commit: working-copy status of {repository.Name}, {changedFilePaths.Count} changed Modelica file(s), waited {statusTimer.ElapsedMilliseconds}ms";
+        if (statusTimer.ElapsedMilliseconds >= 1000)
+            Info("MainLayout", statusMessage);
+        else
+            Debug("MainLayout", statusMessage);
+
+        if (changedFilePaths.Count == 0) return;
 
         if (alreadyFormatted.Count > 0)
         {
@@ -1515,7 +1534,9 @@ public partial class MainLayout : IDisposable
             return;
         }
 
+        progress?.Report(PreCommitFormat.FormattingMessage(changedFilePaths.Count));
         LogProcessStart("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
+        var writtenBefore = await Task.Run(() => PreCommitFormat.WriteTimes(changedFilePaths, File.GetLastWriteTimeUtc));
         // Every repository in the working copy, not only this one (B416): see ProcessRepositorySettingsAsync.
         var pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(repositoryId));
         try
@@ -1527,6 +1548,14 @@ public partial class MainLayout : IDisposable
             FileMonitoringService.ClearPendingChanges(repositoryId);
             pause.Dispose();
         }
+
+        // A file reformatted back to its committed text is no longer modified, so a write is the one
+        // thing here that can change what the status says. Asked of the files' own write times,
+        // before and after, not of the clock: a filesystem's clock can trail the system's, and a
+        // write made just after the format began then read as one made before it.
+        if (await Task.Run(() => PreCommitFormat.AnyRewritten(writtenBefore, File.GetLastWriteTimeUtc)))
+            RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+
         LogProcessEnd("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
     }
 
@@ -1534,6 +1563,7 @@ public partial class MainLayout : IDisposable
     {
         NavState.OnThemeChanged -= OnThemeChangedHandler;
         NavState.OnRepositorySettingsApplied -= OnRepositorySettingsApplied;
+        NavState.OnFormatAllFilesRequested -= OnFormatAllFilesRequested;
         NavState.OnProjectSwitchStarting -= OnProjectSwitchStarting;
         NavState.OnProjectSwitchAbandoned -= OnProjectSwitchAbandoned;
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
@@ -1655,6 +1685,28 @@ public partial class MainLayout : IDisposable
 
         // The findings still follow the new rules; only the rewrite waits for the user.
         _ = Task.Run(() => ProcessRepositorySettingsAsync(repositoryId, false, styleSettingsChanged: true));
+    }
+
+    /// <summary>
+    /// Format All Files: queued as VCS work like a formatting change, or refused, with a message,
+    /// while VCS work runs (B385).
+    /// </summary>
+    /// <remarks>
+    /// Refused, it does nothing else. It used to arrive as a settings change, whose refusal re-checks
+    /// every class against the new rules - but this click changed no rule, so a revert's analysis
+    /// still running turned it into a full re-check that looked like the format getting under way,
+    /// beside a warning that said it had not. The settings panel said "Full format started" either
+    /// way; the layout, which knows, now says which.
+    /// </remarks>
+    private void OnFormatAllFilesRequested(string repositoryId)
+    {
+        if (_vcsPipelines.TryEnqueue(() => ProcessRepositorySettingsAsync(repositoryId, true, false)) is not null)
+            return;
+
+        Warn("MainLayout", "Format All Files refused: a version-control operation or its analysis is running");
+        _ = InvokeAsync(() => Snackbar.Add(
+            "Format All Files did not start: a version-control operation or its analysis is still running. " +
+            "Try again when it has finished.", Severity.Warning));
     }
 
     private async Task ProcessRepositorySettingsAsync(string repositoryId, bool formattingChanged, bool styleSettingsChanged)

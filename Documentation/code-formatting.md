@@ -122,7 +122,7 @@ The following VCS operations automatically trigger formatting of changed files:
 | **Revert** | **No** — reverted files preserve their committed content |
 | **Commit** | Yes — before committing all modified files are formatted |
 | **Push** | **No** — pushing does not change local files |
-| **Create branch** | **No** — creating a branch does not change files |
+| **Create branch** | **No** — a new branch starts from the files you already have. Yes, as after an update, when switching to a new SVN branch brought in commits your working copy lacked |
 
 Reverted files intentionally skip formatting to preserve the exact committed content. Reformatting a reverted file would create a dirty diff, defeating the purpose of the revert.
 
@@ -130,7 +130,8 @@ Reverted files intentionally skip formatting to preserve the exact committed con
 
 When you click the **Commit** button, MLQT formats all modified files before opening the commit dialog. This ensures that committed code always follows the repository's formatting rules.
 
-- Files that were already formatted (and not modified since) are skipped for efficiency
+- Files MLQT has already formatted, or already found formatted at startup or an earlier commit, are skipped as long as they have not been written since. Any edit gives a file a new write time, whether it was made in MLQT, in another editor or by an SVN revert, so an edited file is always formatted again
+- A **Preparing the commit** progress dialog shows which step is running: reading the working-copy status, then applying the formatting rules to the changed files
 - The repository's own formatting settings are used
 - If **Apply formatting rules** is disabled, no formatting occurs and the commit dialog opens immediately
 
@@ -140,7 +141,7 @@ If you change any formatting-related settings in a repository's configuration (s
 
 ### Format All Files Button
 
-The **Format All Files** button in repository settings forces a complete reformat of every file in the repository. It is disabled while **Apply formatting rules** is off. Use this when:
+The **Format All Files** button in repository settings forces a complete reformat of every file in the repository. It is disabled while **Apply formatting rules** is off, and while a version-control operation or the analysis that follows one is running; its tooltip says which. The **Formatting all files** progress dialog shows once it has started. Use this when:
 
 - Setting up MLQT on an existing repository for the first time
 - After changing formatting rules and wanting to ensure complete consistency
@@ -148,7 +149,7 @@ The **Format All Files** button in repository settings forces a complete reforma
 
 This is the most thorough formatting operation, and the one that restructures the repository on disk: it writes every package as a directory with one file per class. See [One File Per Class](#one-file-per-class) — the first run on a single-file library produces a very large commit.
 
-A full reformat and a version-control operation never run at the same time. While a full reformat runs, the Library Browser's version-control actions and the **Refresh** button are disabled, as they are during an update's own analysis. And a full reformat is not started while a version-control operation or its analysis is running: MLQT says so, keeps the new settings and re-checks the findings against them, and you press **Format All Files** again once the operation has finished.
+A full reformat and a version-control operation never run at the same time. While a full reformat runs, the Library Browser's version-control actions and the **Refresh** button are disabled, as they are during an update's own analysis. And a full reformat is not started while a version-control operation or its analysis is running. **Format All Files** is disabled for that time, and if it is pressed just as one starts, MLQT says it did not start and does nothing else. A change to the formatting settings that is applied then is saved, and the findings are re-checked against it, and you press **Format All Files** once the operation has finished.
 
 ### On Manual Refresh
 

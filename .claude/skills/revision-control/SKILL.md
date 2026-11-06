@@ -312,6 +312,49 @@ use the default layout.
 
 In the MLQT app, `StyleCheckingSettings.SvnBranchDirectories` stores the per-repository configuration, and `RepositoryService` passes it through to all SVN operations automatically.
 
+**The setting can disagree with the repository**, and `CreateBranch` must not trust it over what
+is there. `BranchPathFor` decides where a branch goes: a name starting with a configured container,
+or one whose folder exists in the repository, is used as typed; any other goes in the first
+container. A setting of `trunk, tickets, releases` on a repository with `branches` once turned
+`branches/x` into `tickets/branches/x`, and svn's E160013 ("File not found: transaction ...") named
+neither the missing folder nor why. `CreateBranch` now checks the parent folder first and says which
+one is missing and which the repository has.
+
+**A branch from a modified working copy** is copied server-side from `url@HEAD`, then `svn switch`
+carries the uncommitted changes over. Never `svn copy <WC> <URL>`: that commits every local change
+into the branch, which is not what "create a branch for these changes" means. And never from the
+working copy root's revision: after a commit the working copy is mixed-revision (committed files
+newer than the root), and a branch taken at the root's revision lacked the commit, so the switch
+rolled the committed files back (`AMixedRevisionWorkingCopy_KeepsWhatItCommitted`).
+
+**Never one svn process per file.** Each one opens and locks the working copy's database, about
+60 ms on a large one before it does anything, and a working copy with 17,000 changed files makes a
+loop over them half an hour. `RevertFiles` asked `svn status` and ran `svn revert` per file; it now
+runs one status per chunk of paths (`svn status` takes no `--targets`, so `CommandLineChunks` keeps
+each command line inside Windows' limit) and one `svn revert --targets`, which reverts the versioned
+paths and says `Skipped` for the rest. `Commit`'s preparation is batched the same way: `KindsOf`
+classifies the selected paths and the folders above the new ones before anything changes (status in
+chunks, then one `svn info --targets` for the paths status leaves empty - a file in a new folder -
+read through `SvnCli.RunXmlAllowingMissingTargets`, since svn ends that with E200009), and missing
+files and new ones go to one `svn delete --targets` and one or two `svn add --targets`. New folders
+above a new file are added `--depth empty`, so a folder brings nothing unselected into the commit.
+
+**Git has the same rule in another form: never one index call per file.** Every LibGit2Sharp call
+that changes the index - `Commands.Stage`, `Unstage`, `CheckoutPaths`, `Index.Add(path)` - reads it
+and writes the whole of it back, so a loop over files grows faster than they do (4,000 files: revert
+52 s per file, 17 s in one call; staging 23 s per file, 10 s in one call). `RevertFiles` takes one
+whole-repository status and looks paths up in memory (a path spec of thousands is slow too), then
+makes one `Unstage` and one `CheckoutPaths`; `Commit` makes one `Stage`. Adding blobs with
+`Index.Add(blob, path, mode)` is faster again but writes entries with no stat data, and the next
+status then re-hashes every one of those files - do not.
+
+**Whether a switch rewrote anything** is `VcsOperationResult.WorkingCopyChanged`, read from
+`svn switch`'s item lines (`SwitchChangedFiles`). An up-to-date working copy switched to a branch of
+HEAD changes nothing, and is not reloaded; one behind HEAD gets the missing commits and is.
+`CreateBranchDialog` holds a `MonitorPause` over the switch and records the answer in its
+`VcsDialogOutcome`, like the other VCS dialogs: watched, the switch's writes each dropped the cached
+working-copy status, and the commit that usually follows a new branch asked SVN all over again.
+
 ## Implementing Other VCS Systems
 
 To add support for Mercurial or other VCS:

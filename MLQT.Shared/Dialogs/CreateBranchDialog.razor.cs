@@ -5,12 +5,21 @@ namespace MLQT.Shared.Dialogs;
 public partial class CreateBranchDialog
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+    [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
 
     [Parameter]
     public string RepositoryId { get; set; } = "";
+
+    /// <summary>
+    /// Told when switching to the new branch rewrote files, which it does when the working copy was
+    /// behind HEAD (an SVN branch is copied from HEAD). The caller reloads from it once the dialog
+    /// closes, however it closes (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
 
     private string _branchName = "";
     private bool _switchToBranch = true;
@@ -20,6 +29,31 @@ public partial class CreateBranchDialog
     private string? _currentBranch;
     private List<VcsBranchInfo> _existingBranches = new();
     private string? _errorMessage;
+    private bool _isSvn;
+    private IReadOnlyList<string>? _svnBranchDirectories;
+
+    /// <summary>
+    /// What the name field says about the name it wants.
+    /// </summary>
+    /// <remarks>
+    /// An SVN branch is a folder, and where it goes is not obvious: a bare name goes in the
+    /// repository's first branch directory, and a name with a folder of its own is used as typed
+    /// when that folder exists (<c>SvnRevisionControlSystem.BranchPathFor</c>). Saying so before
+    /// the user types is what stops <c>branches/x</c> being a surprise.
+    /// </remarks>
+    internal static string HelperTextFor(bool isSvn, IReadOnlyList<string>? svnBranchDirectories)
+    {
+        if (!isSvn)
+            return "Enter a name for the new branch";
+
+        var container = svnBranchDirectories is { Count: > 1 } ? svnBranchDirectories[1].Trim('/') : "branches";
+        return $"A name such as my-feature is created in ^/{container}/. " +
+               "A name that starts with a folder of the repository, such as branches/my-feature, is created there.";
+    }
+
+    /// <summary>What the switch check box adds, for the version control system in use.</summary>
+    internal static string? SwitchNoteFor(bool isSvn) =>
+        isSvn ? "Uncommitted changes in the working copy are carried over to the new branch, not committed." : null;
 
     private bool CanCreate => !string.IsNullOrWhiteSpace(_branchName) && !_branchExists && IsValidBranchName(_branchName);
 
@@ -39,6 +73,8 @@ public partial class CreateBranchDialog
             {
                 var repository = RepositoryService.GetRepository(RepositoryId);
                 _currentBranch = repository?.CurrentBranch;
+                _isSvn = repository?.VcsType == RepositoryVcsType.SVN;
+                _svnBranchDirectories = repository?.StyleSettings?.SvnBranchDirectories;
                 _existingBranches = RepositoryService.GetBranches(RepositoryId, includeRemote: true);
             });
         }
@@ -101,7 +137,20 @@ public partial class CreateBranchDialog
 
         try
         {
-            var result = await RepositoryService.CreateBranchAsync(RepositoryId, _branchName, _switchToBranch);
+            // The switch, when there is one, runs with the monitor held off for the whole working
+            // copy, as every other switch does. Watched, the files svn touched were each reported as
+            // the user's change, and each batch of them dropped the cached working-copy status, so
+            // the commit that usually follows a new branch had to ask SVN all over again.
+            VcsOperationResult result;
+            using (_switchToBranch
+                       ? MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId))
+                       : null)
+            {
+                result = await RepositoryService.CreateBranchAsync(RepositoryId, _branchName, _switchToBranch);
+            }
+
+            if (result.WorkingCopyChanged)
+                Outcome.WorkingCopyChanged = true;
 
             if (result.Success)
             {

@@ -819,11 +819,17 @@ public partial class LibraryBrowser : IDisposable
     {
         if (Repository?.Id != repositoryId) return;
 
+        // Invalidated on every event, throttled only in asking again. Throttling both dropped the
+        // invalidation of every change after the first in a burst, so a file saved a second after
+        // another stayed out of the cached status - and the commit dialog, which reads that cache
+        // rather than asking SVN again, did not list it. Invalidating is a dictionary entry; it is
+        // the query that costs.
+        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+
         var now = Environment.TickCount64;
         if (now - _lastFileActivityTicks < FileActivityDebounceMs) return;
         _lastFileActivityTicks = now;
 
-        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
         await InvokeAsync(async () =>
         {
             await CheckForUncommittedChangesAsync();
@@ -1544,21 +1550,42 @@ public partial class LibraryBrowser : IDisposable
         if (Repository == null)
             return;
 
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<CreateBranchDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true };
         var dialog = await DialogService.ShowAsync<CreateBranchDialog>("Create Branch", parameters, options);
         var result = await dialog.Result;
 
+        // The switch rewrote files - the working copy was behind HEAD, which the branch is copied
+        // from - so the libraries are reloaded from them and analysed, as after any switch. Asked
+        // whichever way the dialog closed: a switch that failed part way has still written.
+        if (outcome.WorkingCopyChanged)
+        {
+            await AfterVcsDialogAsync(repository, outcome, "branch switch");
+            if (result != null && !result.Canceled)
+                Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
+            return;
+        }
+
         if (result != null && !result.Canceled)
         {
-            // Nothing to reload: a new branch starts where the working copy already is, and
-            // CreateBranchAsync has already read the new branch name. This used to remove and
+            // Nothing to reload: the switch rewrote no file, so the libraries are what is on disk,
+            // and CreateBranchAsync has already read the new branch name. This used to remove and
             // reload every library for it (B296).
             Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
             StateHasChanged();
+
+            // A switch drops every cached working-copy status (OnRepositoriesChanged), and the next
+            // commit had to ask SVN afresh: tens of seconds on a large working copy, all of it after
+            // the user clicked Commit. Asked now instead, in the background, so the commit finds the
+            // answer read or already being read - the query is shared (B293). Not awaited: the
+            // markers it draws are not something the user is waiting for.
+            _ = CheckForUncommittedChangesAsync();
         }
     }
 
@@ -1602,18 +1629,43 @@ public partial class LibraryBrowser : IDisposable
 
     private Task ShowCommitChangesDialog() => RunVcsOperationAsync(CommitChangesAsync);
 
+    /// <summary>Whether the commit is being prepared: the changed files formatted, the status read.</summary>
+    private bool _preparingCommit;
+
+    /// <summary>Which step of preparing the commit is running, for the progress dialog.</summary>
+    private string _preparingCommitMessage = "";
+
+    private static readonly DialogOptions PreparingCommitOptions =
+        new() { CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
+
     private async Task CommitChangesAsync()
     {
         if (Repository == null)
             return;
 
-        // Format changed files before opening the commit dialog to ensure
-        // formatting rules are applied to any files modified since last formatting
-        Snackbar.Add("Applying code formatting to changed files...", Severity.Normal);
-        await NavState.FormatChangedFilesForCommitAsync(Repository.Id);
-        // Invalidate cache so commit dialog gets fresh VCS status after formatting
-        RepositoryService.InvalidateWorkingCopyCache(Repository.Id);
-        await CheckForUncommittedChangesAsync();
+        // The changed files are formatted before the dialog opens, so what is committed follows the
+        // rules. On a large working copy that is a status query and a format, each tens of seconds,
+        // and a snackbar was all there was to show for it - in a window the status query froze. A
+        // progress dialog says which step it is on. The format re-reads the status itself when it
+        // wrote anything; otherwise the answer it read is the dialog's too.
+        _preparingCommitMessage = "Reading the working-copy status";
+        _preparingCommit = true;
+        StateHasChanged();
+        try
+        {
+            var progress = new Progress<string>(message => _ = InvokeAsync(() =>
+            {
+                _preparingCommitMessage = message;
+                StateHasChanged();
+            }));
+            await NavState.FormatChangedFilesForCommitAsync(Repository.Id, progress);
+            await CheckForUncommittedChangesAsync();
+        }
+        finally
+        {
+            _preparingCommit = false;
+            StateHasChanged();
+        }
 
         var repository = Repository;
         var outcome = new VcsDialogOutcome();
@@ -1642,9 +1694,11 @@ public partial class LibraryBrowser : IDisposable
         if (Repository == null)
             return;
 
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<RevertFilesDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, Repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
 
@@ -1665,48 +1719,46 @@ public partial class LibraryBrowser : IDisposable
             _suppressTreeRefresh = false;
         }
 
-        if (result != null && !result.Canceled)
+        // Reloaded however the dialog closed. A revert that failed part way - svn stops at its first
+        // error, having reverted the targets before it - has still changed files, and the dialog
+        // stays open on the error until it is cancelled; reloading only on success left the graph
+        // describing the text from before the revert.
+        var succeeded = result != null && !result.Canceled;
+        if (outcome.FilesTouched.Count > 0)
         {
-            var revertedRelativePaths = result.Data as List<string> ?? new List<string>();
+            var revertedRelativePaths = outcome.FilesTouched;
 
-            // Reload only the reverted .mo files in the graph — avoids a full library reload
-            // for what may be a single-file revert. ReloadFileAsync handles both modified files
-            // (re-parses from disk) and formerly-added files deleted by the revert (removes
-            // their models from the graph).
-            bool hasMoChanges = false;
+            // Reload only the reverted files in the graph — avoids a full library reload for what may
+            // be a single-file revert. One batch, as Refresh and the VCS pipeline reload: the files
+            // are parsed in parallel, and a formerly-added file the revert deleted has its classes
+            // removed. A file at a time, reverting 17,000 files parsed them one after another.
+            var reloaded = RevertedFiles.ToReload(revertedRelativePaths, Repository.VcsRootPath);
+            var hasMoChanges = reloaded.Count > 0;
+
+            // Collect affected model IDs from the now-updated graph for model viewer refresh, and
+            // for the analysis below: the classes now in the files, and the classes in other files
+            // that a reverted package's imports or classes reach (B347, B387), which the reload
+            // reports and the per-file loop threw away.
+            var affectedModelIds = new HashSet<string>();
 
             // One tree announcement for the whole revert, not one per file (B293). Each announcement
             // costs every open tree a working-copy status query and a rebuild, and reverting a
             // reformatted library is thousands of files.
-            using (LibraryDataService.SuppressTreeDataChanged())
+            if (hasMoChanges)
             {
-                foreach (var relativePath in revertedRelativePaths)
-                {
-                    if (relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                    {
-                        hasMoChanges = true;
-                        var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
-                        await LibraryDataService.ReloadFileAsync(fullPath);
-                    }
-                    else if (Path.GetFileName(relativePath).Equals("package.order", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // package.order affects library structure — needs full pipeline but not a full
-                        // library reload; flag so VcsFilesChanged is fired below.
-                        hasMoChanges = true;
-                    }
-                }
-            }
+                HashSet<string> reloadedIds;
+                using (LibraryDataService.SuppressTreeDataChanged())
+                    reloadedIds = await LibraryDataService.UpdateChangedFilesAsync(reloaded, Repository.VcsRootPath);
 
-            // Collect affected model IDs from the now-updated graph for model viewer refresh.
-            var affectedModelIds = new HashSet<string>();
-            foreach (var relativePath in revertedRelativePaths)
-            {
-                if (!relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
-                var fileId = GraphBuilder.GenerateFileId(fullPath);
-                foreach (var model in LibraryDataService.CombinedGraph.GetModelsInFile(fileId))
-                    affectedModelIds.Add(model.Id);
+                // Only the ids still in the graph: a class the revert removed has nothing to analyse.
+                affectedModelIds.UnionWith(reloadedIds.Where(id => LibraryDataService.CombinedGraph.GetNode<ModelNode>(id) is not null));
+
+                foreach (var fullPath in reloaded.Where(p => p.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var fileId = GraphBuilder.GenerateFileId(fullPath);
+                    foreach (var model in LibraryDataService.CombinedGraph.GetModelsInFile(fileId))
+                        affectedModelIds.Add(model.Id);
+                }
             }
 
             await RefreshTreeThenChangesAsync();
@@ -1718,7 +1770,8 @@ public partial class LibraryBrowser : IDisposable
                 NavState.ChangeModelID(NavState.ModelID);
             }
 
-            Snackbar.Add("Files reverted successfully.", Severity.Success);
+            if (succeeded)
+                Snackbar.Add("Files reverted successfully.", Severity.Success);
             StateHasChanged();
 
             if (hasMoChanges)

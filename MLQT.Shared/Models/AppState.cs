@@ -244,6 +244,25 @@ public class AppState
         OnRepositorySettingsApplied?.Invoke(repositoryId, formattingChanged, styleSettingsChanged);
     }
 
+    /// <summary>
+    /// Event fired when the user asks for every file of a repository to be formatted again - the
+    /// Format All Files button, with no setting changed. Parameter: repositoryId.
+    /// </summary>
+    /// <remarks>
+    /// Apart from <see cref="OnRepositorySettingsApplied"/>, because the two are refused differently.
+    /// A settings change refused while VCS work runs still re-checks the classes against the new
+    /// rules. A Format All Files click changed no rule, so refused there is nothing to re-check, and
+    /// it used to re-check every class anyway, which looked like the format it had just refused
+    /// getting under way.
+    /// </remarks>
+    public event Action<string>? OnFormatAllFilesRequested;
+
+    /// <summary>Asks for every file of a repository to be formatted again.</summary>
+    public void FormatAllFilesRequested(string repositoryId)
+    {
+        OnFormatAllFilesRequested?.Invoke(repositoryId);
+    }
+
     // ========== VCS Operations ==========
 
     /// <summary>
@@ -462,9 +481,11 @@ public class AppState
 
     /// <summary>
     /// Async event: format changed files before commit in deferred mode.
-    /// Parameter: repositoryId.
+    /// Parameters: repositoryId, and where to say which step it is on (null for nowhere): reading the
+    /// working-copy status and formatting are each tens of seconds on a large working copy, with
+    /// nothing on screen to show for it.
     /// </summary>
-    public event Func<string, Task>? OnFormatChangedFilesForCommit;
+    public event Func<string, IProgress<string>?, Task>? OnFormatChangedFilesForCommit;
 
     /// <summary>Event fired when a deferred analysis step completes.</summary>
     public event Action? OnDeferredAnalysisCompleted;
@@ -546,10 +567,10 @@ public class AppState
     }
 
     /// <summary>Formats changed files in a repository before commit (deferred mode).</summary>
-    public async Task FormatChangedFilesForCommitAsync(string repositoryId)
+    public async Task FormatChangedFilesForCommitAsync(string repositoryId, IProgress<string>? progress = null)
     {
         if (OnFormatChangedFilesForCommit != null)
-            await OnFormatChangedFilesForCommit.Invoke(repositoryId);
+            await OnFormatChangedFilesForCommit.Invoke(repositoryId, progress);
     }
 
     /// <summary>Resets all deferred state (e.g., when switching projects).</summary>

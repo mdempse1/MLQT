@@ -25,4 +25,13 @@ public sealed class VcsDialogOutcome
     /// not be run over it: a file with conflict markers in it is not Modelica.
     /// </summary>
     public bool LeftInProgress { get; set; }
+
+    /// <summary>
+    /// Files the dialog may have rewritten, relative to the working copy root, for a caller that
+    /// reloads only those rather than everything - a revert. Recorded before the operation runs, so
+    /// one that fails part way, having reverted some files and not others, still has them reloaded:
+    /// reloading a file that did not change costs a parse, and not reloading one that did leaves the
+    /// graph describing text that is no longer on disk.
+    /// </summary>
+    public List<string> FilesTouched { get; } = new();
 }

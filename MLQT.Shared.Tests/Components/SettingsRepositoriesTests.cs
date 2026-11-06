@@ -24,6 +24,31 @@ public class SettingsRepositoriesTests
         RuleSeverities = { [RuleIds.OneOfEachSection] = RuleSeverity.Warning },
     };
 
+    // ---- Format All Files: offered only when it would run ------------------------------------
+
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, true, false)]
+    public void FormatAllFiles_IsOffered_OnlyWithFormattingOn_AndNoVcsWorkRunning(
+        bool applyFormattingRules, bool vcsWorkInProgress, bool offered) =>
+        Assert.Equal(offered, SettingsRepositories.CanFormatAllFiles(applyFormattingRules, vcsWorkInProgress));
+
+    [Fact]
+    public void FormatAllFiles_WhileVcsWorkRuns_SaysWhy() =>
+        Assert.Contains("version-control operation",
+            SettingsRepositories.FormatAllFilesBlockedReason(applyFormattingRules: true, vcsWorkInProgress: true));
+
+    [Fact]
+    public void FormatAllFiles_WithFormattingOff_SaysThatFirst() =>
+        Assert.Contains("Apply formatting rules",
+            SettingsRepositories.FormatAllFilesBlockedReason(applyFormattingRules: false, vcsWorkInProgress: true));
+
+    [Fact]
+    public void FormatAllFiles_WhenOffered_HasNoReasonAgainst() =>
+        Assert.Null(SettingsRepositories.FormatAllFilesBlockedReason(applyFormattingRules: true, vcsWorkInProgress: false));
+
     [Fact]
     public void EffectOfEdit_WithNoChange_RequiresNothing()
     {
