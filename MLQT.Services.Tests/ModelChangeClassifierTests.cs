@@ -538,9 +538,16 @@ public class ModelChangeClassifierTests : IDisposable
 
         var older = Task.Run(() => _classifier.Classify(_repository, changes), token);
         Assert.True(firstRead.Wait(TimeSpan.FromSeconds(10), token));
-        var newer = Task.Run(() => _classifier.Classify(_repository, changes), token);
 
-        // Give the newer one time to take its ticket before the older one's reads come back.
+        // On a thread of its own, never the pool's: the older run's held reads fill the pool (four
+        // and the run itself on a four-core runner), and a pool task queued behind them waited longer
+        // than the sleep below for a thread - so it took its ticket after the release, the older run
+        // finished in full, and the test failed on CI.
+        var newer = Task.Factory.StartNew(() => _classifier.Classify(_repository, changes),
+            token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+        // Give the newer one time to take its ticket - its first statement - before the older one's
+        // reads come back.
         Thread.Sleep(200);
         release.Set();
         Task.WaitAll([older, newer], token);
