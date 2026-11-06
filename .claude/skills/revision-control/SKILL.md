@@ -339,6 +339,15 @@ read through `SvnCli.RunXmlAllowingMissingTargets`, since svn ends that with E20
 files and new ones go to one `svn delete --targets` and one or two `svn add --targets`. New folders
 above a new file are added `--depth empty`, so a folder brings nothing unselected into the commit.
 
+**Git has the same rule in another form: never one index call per file.** Every LibGit2Sharp call
+that changes the index - `Commands.Stage`, `Unstage`, `CheckoutPaths`, `Index.Add(path)` - reads it
+and writes the whole of it back, so a loop over files grows faster than they do (4,000 files: revert
+52 s per file, 17 s in one call; staging 23 s per file, 10 s in one call). `RevertFiles` takes one
+whole-repository status and looks paths up in memory (a path spec of thousands is slow too), then
+makes one `Unstage` and one `CheckoutPaths`; `Commit` makes one `Stage`. Adding blobs with
+`Index.Add(blob, path, mode)` is faster again but writes entries with no stat data, and the next
+status then re-hashes every one of those files - do not.
+
 **Whether a switch rewrote anything** is `VcsOperationResult.WorkingCopyChanged`, read from
 `svn switch`'s item lines (`SwitchChangedFiles`). An up-to-date working copy switched to a branch of
 HEAD changes nothing, and is not reloaded; one behind HEAD gets the missing commits and is.
