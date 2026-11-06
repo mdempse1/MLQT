@@ -302,6 +302,52 @@ public class VcsDialogMonitorTests : MlqtComponentTestBase
         Assert.Equal(["package.mo"], _outcome.FilesTouched);
     }
 
+    [Fact]
+    public async Task ARevertThatThrows_StartsTheMonitorAgain_AndShowsWhy()
+    {
+        _repositories.Setup(r => r.GetWorkingCopyChanges("repo"))
+            .Returns([new VcsWorkingCopyFile { Path = "package.mo", Status = VcsFileStatus.Modified }]);
+        _repositories.Setup(r => r.RevertFilesAsync("repo", It.IsAny<IEnumerable<string>>()))
+            .ThrowsAsync(new InvalidOperationException("svn is not installed"));
+
+        var (provider, dialog) = await ShowDialogAsync<RevertFilesDialog>(Parameters());
+        await ClickButton(provider, "Revert (1 files)");
+
+        provider.WaitForAssertion(() => Assert.Contains("svn is not installed", provider.Markup));
+        Assert.False(dialog.Result.IsCompleted);
+        _monitor.Verify(m => m.StartMonitoring("repo", Root), Times.Once);
+    }
+
+    [Fact]
+    public async Task ARevertRefusedWithoutAReason_SaysItFailed()
+    {
+        _repositories.Setup(r => r.GetWorkingCopyChanges("repo"))
+            .Returns([new VcsWorkingCopyFile { Path = "package.mo", Status = VcsFileStatus.Modified }]);
+        _repositories.Setup(r => r.RevertFilesAsync("repo", It.IsAny<IEnumerable<string>>()))
+            .ReturnsAsync(new VcsOperationResult());
+
+        var (provider, _) = await ShowDialogAsync<RevertFilesDialog>(Parameters());
+        await ClickButton(provider, "Revert (1 files)");
+
+        provider.WaitForAssertion(() => Assert.Contains("Revert failed.", provider.Markup));
+    }
+
+    [Fact]
+    public async Task CancellingARevert_RevertsNothing_AndLeavesTheMonitorAlone()
+    {
+        _repositories.Setup(r => r.GetWorkingCopyChanges("repo"))
+            .Returns([new VcsWorkingCopyFile { Path = "package.mo", Status = VcsFileStatus.Modified }]);
+
+        var (provider, dialog) = await ShowDialogAsync<RevertFilesDialog>(Parameters());
+        await ClickButton(provider, "Cancel");
+        var result = await dialog.Result.WaitAsync(DialogCloses, Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(result!.Canceled);
+        _repositories.Verify(r => r.RevertFilesAsync(It.IsAny<string>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+        _monitor.Verify(m => m.StopMonitoring(It.IsAny<string>()), Times.Never);
+        Assert.Empty(_outcome.FilesTouched);
+    }
+
     private static async Task TypeBranchName(IRenderedComponent<MudDialogProvider> provider, string name)
     {
         provider.WaitForAssertion(() => Assert.NotEmpty(provider.FindAll("input:not([type=checkbox])")));
