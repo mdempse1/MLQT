@@ -175,12 +175,16 @@ jobs:
       - name: Validate SARIF output
         run: pwsh -File build/validate-sarif.ps1
 
+      # Only on failure, and kept for a week. Every artifact in this workflow was uploaded on every
+      # push to every branch and kept the default 90 days, which filled the account's Actions storage
+      # (2 GB by 2026-11-08): a green run's trx is never opened, and the run's log says what passed.
       - name: Upload test results
         uses: actions/upload-artifact@v6
-        if: always()
+        if: failure()
         with:
           name: test-results
           path: ${{ github.workspace }}/TestResults/*.trx
+          retention-days: 7
 
   linux-tests:
     # The Windows suites, run again on Linux. Everything in build-libraries runs on windows-latest and
@@ -323,12 +327,14 @@ jobs:
           ./publish/mlqt-linux-x64/mlqt check TestFixtures/SarifSmoke/Libraries/Smoke --format json --out smoke.json || true
           test -s smoke.json
 
+      # On failure only, kept a week - see the Windows job's upload step for why.
       - name: Upload test results
         uses: actions/upload-artifact@v6
-        if: always()
+        if: failure()
         with:
           name: test-results-linux
           path: ${{ github.workspace }}/TestResults/*.trx
+          retention-days: 7
 
   ui-journeys:
     # The browser journeys, on both platforms. They were Linux-only, which left the only end-to-end
@@ -396,13 +402,15 @@ jobs:
           name: journey-traces-${{ matrix.label }}
           path: ${{ github.workspace }}/TestResults/traces
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload journey results
         uses: actions/upload-artifact@v6
-        if: always()
+        if: failure()
         with:
           name: journey-results-${{ matrix.label }}
           path: ${{ github.workspace }}/TestResults/*.trx
+          retention-days: 7
 
   desktop-selftest:
     # The per-platform `/selftest` job - an outstanding 7a item that could not exist until there was a
@@ -543,6 +551,7 @@ jobs:
           path: |
             ${{ github.workspace }}/MLQT.Shared.Tests/TestFiles/${{ matrix.capture }}
             ${{ github.workspace }}/TestResults/*.trx
+          retention-days: 7
 
   code-coverage:
     name: Code Coverage
@@ -610,12 +619,15 @@ jobs:
       - name: Run tests with coverage and gate on it
         run: pwsh -File build/check-coverage.ps1
 
+      # Always, since a green run's report is still worth reading, but kept a week: the newest run
+      # always has one, and the ratchet's baseline is the record, not these.
       - name: Upload coverage report
         uses: actions/upload-artifact@v6
         if: always()
         with:
           name: coverage-report
           path: CoverageReport/
+          retention-days: 7
 
   # The release ships a self-contained linux-x64 `mlqt`, and the tool package it also ships is
   # framework-dependent, so both run on Linux. Nothing here ever tested that: every other job is

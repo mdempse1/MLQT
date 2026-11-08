@@ -70,10 +70,14 @@ jobs:
           name: journey-traces-webkit
           path: ${{ github.workspace }}/TestResults/traces
           if-no-files-found: ignore
+          retention-days: 7
 
+      # Always, being 20 KB and the only per-test record of a nightly run, but kept two weeks rather
+      # than the default 90.
       - name: Upload journey results
         uses: actions/upload-artifact@v6
         if: always()
         with:
           name: journey-results-webkit
           path: ${{ github.workspace }}/TestResults/*.trx
+          retention-days: 14

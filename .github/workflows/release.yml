@@ -248,11 +248,15 @@ jobs:
           Start-Sleep -Seconds 5
           if (Test-Path $dir) { throw 'uninstalling left the install directory behind' }
 
+      # Kept five days, not the default 90. On a tag the installer is attached to the release below,
+      # which is where it lives; on a dispatched run this is the only copy, and five days is time to
+      # download it. Release artifacts were 58% of the account's Actions storage when it filled.
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
           name: MLQT-${{ needs.version.outputs.version }}-win-x64-setup
           path: artifacts/MLQT-${{ needs.version.outputs.version }}-win-x64-setup.exe
+          retention-days: 5
 
       # Any tag, not only 'v'-prefixed ones - see the trigger above for why that mattered.
       #
@@ -382,6 +386,7 @@ jobs:
         with:
           name: MLQT-${{ needs.version.outputs.version }}-linux-x64-deb
           path: artifacts/mlqt_${{ needs.version.outputs.deb }}_amd64.deb
+          retention-days: 5 # as the installer's, above
 
       - name: Add the .deb to the release
         if: startsWith(github.ref, 'refs/tags/')

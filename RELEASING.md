@@ -76,8 +76,8 @@ The workflow also takes a manual `workflow_dispatch` with a version input, from 
 gh workflow run release.yml -f version=2026.4.0 --ref main
 ```
 
-That builds, installs and exercises both installers and uploads them as *workflow artifacts*, but
-does **not** create a release — the release steps run only for a tag. It is the way to prove a
+That builds, installs and exercises both installers and uploads them as *workflow artifacts*, kept
+for five days, but does **not** create a release — the release steps run only for a tag. It is the way to prove a
 release will build without committing to one.
 
 ## Before you tag
