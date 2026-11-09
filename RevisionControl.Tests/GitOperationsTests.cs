@@ -277,12 +277,6 @@ public class GitOperationsTests : IDisposable
         Assert.Equal("main", opts.Branch);
     }
 
-    [Fact]
-    public void VcsLogEntry_CommitterDateNotSet_IsTheDate()
-    {
-        Assert.Equal(Rebased, new VcsLogEntry { Date = Rebased }.CommitterDate);
-    }
-
     #endregion
 
     #region GetLogEntries Tests
@@ -367,6 +361,12 @@ public class GitOperationsTests : IDisposable
 
         Assert.Equal((Authored, Rebased), (walked.Date, walked.CommitterDate));
         Assert.Equal((Authored, Rebased), (lookedUp.Date, lookedUp.CommitterDate));
+    }
+
+    [Fact]
+    public void VcsLogEntry_CommitterDateNotSet_IsTheDate()
+    {
+        Assert.Equal(Rebased, new VcsLogEntry { Date = Rebased }.CommitterDate);
     }
 
     [Fact]
