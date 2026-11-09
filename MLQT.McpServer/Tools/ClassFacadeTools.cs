@@ -110,17 +110,22 @@ public sealed class ClassFacadeTools
     }
 
     [McpServerTool(Name = "mlqt_refactor_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-    [Description("Rename, move or delete a Modelica class. action 'rename' takes newName (the new short name) " +
-                 "and 'move' takes newParentId (the package it goes into); both rewrite every reference to it " +
-                 "across the loaded libraries, and refuse a change that would make a reference mean something " +
-                 "else. 'delete' removes the class and its storage, and lists the classes still referring to it " +
-                 "once dependencies are analysed - those references are not rewritten. Every file is " +
-                 "parse-checked before it is written; preview=true returns what would change without writing.")]
+    [Description("Rename, move or delete a Modelica class, or rename one of its components. action 'rename' takes " +
+                 "newName (the new short name) and 'move' takes newParentId (the package it goes into); both rewrite " +
+                 "every reference to it across the loaded libraries, and refuse a change that would make a reference " +
+                 "mean something else. 'rename_component' takes component (a parameter, constant, variable or " +
+                 "connector declared in the class) and newName, and rewrites its declaration and every place that " +
+                 "names it - references here, in derived classes and through components, modifications, named " +
+                 "arguments - refusing a name already declared there. 'delete' removes the class and its storage, " +
+                 "and lists the classes still referring to it once dependencies are analysed - those references are " +
+                 "not rewritten. Every file is parse-checked before it is written; preview=true returns what would " +
+                 "change without writing.")]
     public async Task<object> RefactorClass(
         [Description("Fully-qualified id of the class.")] string classId,
-        [Description("'rename', 'move' or 'delete'.")] string action,
-        [Description("For 'rename': the new short name, not a full id.")] string? newName = null,
+        [Description("'rename', 'move', 'delete' or 'rename_component'.")] string action,
+        [Description("For 'rename' and 'rename_component': the new short name, not a full id.")] string? newName = null,
         [Description("For 'move': the full id of the package to move it into.")] string? newParentId = null,
+        [Description("For 'rename_component': the component's current name, as declared in the class.")] string? component = null,
         [Description("Return what would change without writing. Default false.")] bool preview = false)
     {
         // First, as every editing tool does: a read-only class is refused whatever was asked of it.
@@ -129,7 +134,7 @@ public sealed class ClassFacadeTools
 
         // Each finds the classes to rewrite, or to report, from the dependency graph; the consolidated set
         // has no tool to build it, so this does (B503).
-        if (action?.Trim().ToLowerInvariant() is "rename" or "move" or "delete" && await AnalyseFirstAsync() is { } notAnalysed)
+        if (action?.Trim().ToLowerInvariant() is "rename" or "move" or "delete" or "rename_component" && await AnalyseFirstAsync() is { } notAnalysed)
             return notAnalysed;
 
         switch (action?.Trim().ToLowerInvariant())
@@ -138,6 +143,10 @@ public sealed class ClassFacadeTools
                 return string.IsNullOrWhiteSpace(newName)
                     ? new ToolError("'rename' needs newName: the class's new short name.")
                     : await _edit.RenameClass(classId, newName, preview);
+            case "rename_component":
+                return string.IsNullOrWhiteSpace(component) ? new ToolError("'rename_component' needs component: the name it has now.")
+                    : string.IsNullOrWhiteSpace(newName) ? new ToolError("'rename_component' needs newName: the name to give it.")
+                    : await _edit.RenameComponent(classId, component, newName, preview);
             case "move":
                 return string.IsNullOrWhiteSpace(newParentId)
                     ? new ToolError("'move' needs newParentId: the full id of the package to move the class into.")
@@ -145,7 +154,7 @@ public sealed class ClassFacadeTools
             case "delete":
                 return await _edit.DeleteClass(classId, preview);
             default:
-                return new ToolError($"action must be 'rename', 'move' or 'delete', not '{action}'.");
+                return new ToolError($"action must be 'rename', 'move', 'delete' or 'rename_component', not '{action}'.");
         }
     }
 

@@ -380,6 +380,18 @@ public sealed record RenameFileChange(
     int Replacements,
     string? NewContent);
 
+/// <summary>What mlqt_refactor_class's rename_component changed, or would change.</summary>
+public sealed record RenameComponentResult(
+    string ClassId,
+    string OldName,
+    string NewName,
+    bool PreviewOnly,
+    bool Changed,
+    int FilesChanged,
+    int TotalReplacements,
+    IReadOnlyList<RenameFileChange> Changes,
+    string Note);
+
 public sealed record RenameClassResult(
     string OldClassId,
     string NewClassId,

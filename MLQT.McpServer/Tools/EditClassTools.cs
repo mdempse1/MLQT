@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using ModelicaParser.Helpers;
 using MLQT.McpServer.Dtos;
@@ -50,7 +51,7 @@ public sealed class EditClassTools
     /// <summary>Each operation and the fields it must be given; the error for a missing one lists them.</summary>
     internal static readonly IReadOnlyDictionary<string, string[]> Operations = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
-        ["replace"] = ["old", "new", "all?"],
+        ["replace"] = ["old", "new", "all?", "wholeWord?"],
         ["add_component"] = ["type", "name"],
         ["remove_component"] = ["name"],
         ["set_component_modifier"] = ["name", "modifier"],
@@ -71,7 +72,9 @@ public sealed class EditClassTools
                  "The usual one is replace: {\"op\":\"replace\",\"old\":\"y = k*u;\",\"new\":\"y = k*u + offset;\"} " +
                  "swaps text that must occur exactly once in the class, as written in its file - copy it from " +
                  "mlqt_get_class's source view with includeAnnotations=true; with \"all\":true it swaps every " +
-                 "occurrence (a name used throughout the class), and says how many. An extends clause, an import or " +
+                 "occurrence, and says how many; \"wholeWord\":true matches only where old is not part of a longer " +
+                 "name (Ti, not the Ti in TipIn). To rename a component and every reference to it, in other classes " +
+                 "too, use mlqt_refactor_class's rename_component instead. An extends clause, an import or " +
                  "an algorithm statement is a replace. The others: add_component{type,name,modifier?,description?," +
                  "visibility?,prefix?,condition?,constrainedBy?,comment?} (prefix: parameter, input, flow...; " +
                  "condition: the if-expression of a conditional component), remove_component{name} (takes its " +
@@ -180,7 +183,7 @@ public sealed class EditClassTools
 
     private Task<object> Dispatch(string classId, ClassEditOperation o) => OpName(o.Op) switch
     {
-        "replace" => Replace(classId, o.Old!, o.New!, o.All == true),
+        "replace" => Replace(classId, o.Old!, o.New!, o.All == true, o.WholeWord == true),
         "add_component" => _structure.AddComponent(classId, o.Type!, o.Name!, o.Modifier, o.Description, o.Comment,
             o.Visibility ?? "public", o.Prefix, o.ConstrainedBy, o.Condition),
         "remove_component" => _structure.RemoveComponent(classId, o.Name!),
@@ -208,7 +211,9 @@ public sealed class EditClassTools
     /// file may have carriage returns too. Nothing else is loose: indentation and spacing must match, so a
     /// near miss is an error naming what to do rather than a guess about which text was meant.
     /// </summary>
-    private async Task<object> Replace(string classId, string oldText, string newText, bool all)
+    /// <param name="wholeWord">Match <paramref name="oldText"/> only where it is not part of a longer name:
+    /// a replace-all of <c>Ti</c> was refused because it would also have renamed the class <c>TipIn</c>.</param>
+    private async Task<object> Replace(string classId, string oldText, string newText, bool all, bool wholeWord = false)
     {
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
@@ -221,25 +226,29 @@ public sealed class EditClassTools
         if (find == with)
             return new ToolError("old and new are the same, so there is nothing to change.");
 
-        var count = Occurrences(code, find);
+        // One matcher either way: the text as written, or - whole words - not where the character before
+        // or after it would make it part of a longer name. Only an end that is itself part of a name is
+        // bounded, so old text that starts or ends with punctuation still matches beside a name.
+        var pattern = Regex.Escape(find);
+        if (wholeWord && find.Length > 0 && IsNameChar(find[0]))
+            pattern = $"(?<![A-Za-z0-9_]){pattern}";
+        if (wholeWord && find.Length > 0 && IsNameChar(find[^1]))
+            pattern = $"{pattern}(?![A-Za-z0-9_])";
+        var matcher = new Regex(pattern, RegexOptions.CultureInvariant);
+
+        var count = matcher.Matches(code).Count;
         if (count == 0)
             return new ToolError(
-                $"The text to replace is not in '{classId}'. It must match the class's source exactly, indentation " +
-                "and spacing included. Copy it from mlqt_get_class's source view with includeAnnotations=true: by default " +
-                "that hides annotations, so its text is not all of the class.");
+                $"The text to replace is not in '{classId}'{(wholeWord ? " as a whole word" : "")}. It must match the " +
+                "class's source exactly, indentation and spacing included. Copy it from mlqt_get_class's source view with " +
+                "includeAnnotations=true: by default that hides annotations, so its text is not all of the class.");
         if (count > 1 && !all)
             return new ToolError(
-                $"The text to replace occurs {count} times in '{classId}'. Include more of the text around it, so " +
-                "that it occurs once, or pass all=true to replace every occurrence.");
+                $"The text to replace occurs {count} times in '{classId}'{(wholeWord ? " as a whole word" : "")}. Include " +
+                "more of the text around it, so that it occurs once, or pass all=true to replace every occurrence." +
+                (wholeWord ? "" : " wholeWord=true leaves it alone where it is part of a longer name."));
 
-        string newCode;
-        if (all)
-            newCode = code.Replace(find, with, StringComparison.Ordinal);
-        else
-        {
-            var at = code.IndexOf(find, StringComparison.Ordinal);
-            newCode = code[..at] + with + code[(at + find.Length)..];
-        }
+        var newCode = matcher.Replace(code, with.Replace("$", "$$", StringComparison.Ordinal), all ? -1 : 1);
 
         // A changed name would leave the graph holding a class that is no longer in the file, and miss
         // every reference to it; that is what mlqt_refactor_class's rename is for.
@@ -261,14 +270,5 @@ public sealed class EditClassTools
     private static string Normalise(string text, string eol) =>
         text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\n", eol, StringComparison.Ordinal);
 
-    private static int Occurrences(string haystack, string needle)
-    {
-        int count = 0, i = 0;
-        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            i += needle.Length;
-        }
-        return count;
-    }
+    private static bool IsNameChar(char c) => char.IsAsciiLetterOrDigit(c) || c == '_';
 }

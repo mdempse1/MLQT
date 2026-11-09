@@ -290,15 +290,20 @@ public sealed class GuidanceTools
               siblings are reported, not auto-fixed, and if a full name would not mean the class where it is
               written (a nearer element of the top-level name, or an encapsulated class) the move is refused
               and nothing changes; 'delete' removes a class (or a whole directory package) and lists what
-              still refers to it.
+              still refers to it; 'rename_component' (component, newName) renames a parameter, constant,
+              variable or connector declared in the class with every place that names it - here, in derived
+              classes, through components (wheel.Fz), modifications (wheel(Fz=1), extends W(Fz=1)) and
+              named arguments - and nothing merely spelled the same. A name already declared there, or one a
+              for iterator would take over, is refused. Use it, not replace, to rename a component.
 
             Change part of a class - the usual edit:
             - mlqt_edit_class(classId, operations[]): one class, a list of operations applied in order and
               all or none. replace {old, new} swaps text that occurs exactly once in the class - use it
               instead of your own file edit or a script, then there is nothing to reload. With all=true it
               swaps every occurrence - a name used throughout the class - instead of a sed, and says how
-              many. Copy the old text from mlqt_get_class's source view with includeAnnotations=true,
-              indentation included.
+              many; wholeWord=true leaves it alone where it is part of a longer name. Copy the old text from
+              mlqt_get_class's source view with includeAnnotations=true, indentation included. An edit that
+              would declare a name twice, or again where a base already declares it, is refused.
             - The element operations, each with its fields:
               add_component{type, name, modifier?, description?, visibility?, prefix?, constrainedBy?,
               condition?} covers the full declaration: visibility 'protected' (a protected section is created

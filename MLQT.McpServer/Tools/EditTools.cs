@@ -76,6 +76,9 @@ public sealed class EditTools
         if (ctx is null)
             return new ToolError($"Could not locate the source file for '{classId}'.");
 
+        if (DuplicateDeclarations.Introduced(_libraries, classId, node.Definition.ModelicaCode ?? string.Empty, newSource) is { } twice)
+            return new ToolError($"new_source is refused: {twice}. Nothing was changed.");
+
         var owner = ctx.FileOwner;
         var ownerCode = owner.Definition.ModelicaCode ?? string.Empty;
 
@@ -1245,6 +1248,163 @@ public sealed class EditTools
         var changes = planned.Select(p => new RenameFileChange(WrittenTo(p.path), p.count, null)).ToList();
         return new RenameClassResult(classId, newId, PreviewOnly: false, Changed: true,
             planned.Count, total, changes, note);
+    }
+
+    /// <summary>
+    /// Rename a component - a parameter, constant, variable or connector - declared in
+    /// <paramref name="classId"/>, and every place that names it: references in that class, in the
+    /// classes derived from it and in every class reaching it through a component, modifications that
+    /// set it, and named arguments that pass it. Text is rewritten only where the name resolves to this
+    /// element (<see cref="ElementReferenceLocator"/>), so another element, a class or an iterator that
+    /// happens to share the name is left alone.
+    /// </summary>
+    /// <remarks>
+    /// <para>Renaming a parameter to satisfy a naming rule took a replace in each class and in every
+    /// caller by hand; a replace-all on <c>Ti</c> could not be done for the class <c>TipIn</c> it would
+    /// also have hit, and a hand rename that chose a name already declared (<c>rearLoad</c>) surfaced
+    /// only when the model failed to build.</para>
+    ///
+    /// <para><b>Refused</b>, with nothing written: a new name already declared in the class or in any
+    /// class derived from it (where the two would be one name declared twice), a reference that a
+    /// <c>for</c> iterator of the new name would take over, a file in a read-only library, and a result
+    /// that does not parse.</para>
+    /// </remarks>
+    internal async Task<object> RenameComponent(
+        string classId,
+        string component,
+        string newName,
+        bool preview = false)
+    {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "rename a component of this class") is { } readOnlyClass)
+            return readOnlyClass;
+
+        var node = _libraries.GetModelById(classId);
+        if (node is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (node.IsParseFailurePlaceholder)
+            return new ToolError($"Class '{classId}' failed to parse, so its components cannot be renamed.");
+        component = component.Trim();
+        newName = newName.Trim();
+        if (!IdentifierRegex.IsMatch(newName))
+            return new ToolError($"newName '{newName}' is not a valid Modelica identifier (letters/digits/_, not starting with a digit).");
+        if (string.Equals(newName, component, StringComparison.Ordinal))
+            return new ToolError("newName is the same as the current name.");
+
+        var graph = _libraries.CombinedGraph;
+        var members = ClassElementResolver.Collect(graph, node, includeProtected: true, includeInherited: true);
+        var element = members.FirstOrDefault(m => m.Element.Kind != ClassElementKind.Extends
+                                                  && m.Element.Kind != ClassElementKind.Import
+                                                  && m.Element.Name == component);
+        if (element is null)
+            return new ToolError($"'{classId}' has no component named '{component}'.");
+        if (element.Element.Kind == ClassElementKind.Class)
+            return new ToolError($"'{component}' is a class. Rename it with mlqt_refactor_class's 'rename' on '{classId}.{component}'.");
+        if (element.OwnerId != classId)
+            return new ToolError($"'{component}' is inherited: it is declared in '{element.OwnerId}'. Rename it there, " +
+                                 "which renames it in every class that inherits it too.");
+
+        if (!_session.DependenciesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "renaming a component (the classes using it are found from the dependency graph)");
+
+        // A name already declared where the renamed one is seen: in the class itself, or in a class derived
+        // from it, the two would be one name declared twice - the `rearLoad` a hand rename found only when
+        // the model would not build.
+        var reach = UsersReaching(graph, [classId]);
+        foreach (var id in graph.ModelNodes.Where(m => ModelicaName.IsInSubtree(m.Id, classId)).Select(m => m.Id))
+            reach.Add(id);
+        var taken = new List<string>();
+        if (members.Any(m => m.Element.Name == newName && m.Element.Kind is not (ClassElementKind.Extends or ClassElementKind.Import)))
+            taken.Add(classId);
+        foreach (var id in reach.Where(id => id != classId))
+        {
+            if (graph.GetNode<ModelNode>(id) is not { } derived
+                || !ClassElementResolver.BaseClasses(graph, derived).Any(b => b.Id == classId))
+                continue;
+            if (ClassElementResolver.Collect(graph, derived, includeProtected: true, includeInherited: true)
+                .Any(m => m.Element.Name == newName && m.OwnerId != classId
+                          && m.Element.Kind is not (ClassElementKind.Extends or ClassElementKind.Import)))
+                taken.Add(id);
+        }
+        if (taken.Count > 0)
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: '{newName}' is already declared " +
+                                 $"in {string.Join(", ", taken.Take(10).Select(t => $"'{t}'"))}" +
+                                 (taken.Count > 10 ? ", ..." : "") + ", where the renamed component is seen too. " +
+                                 "Nothing was changed. Choose another name.");
+
+        // Only the files that could name it: those holding a class that reaches it, and that spell the name.
+        var word = new Regex($@"(?<![A-Za-z0-9_']){Regex.Escape(component)}(?![A-Za-z0-9_'])", RegexOptions.CultureInvariant);
+        var paths = reach
+            .Select(id => graph.GetNode<ModelNode>(id)?.ContainingFileId)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Select(id => graph.GetNode<FileNode>(id)?.FilePath)
+            .Where(p => !string.IsNullOrEmpty(p) && File.Exists(p))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var planned = new List<(string Path, string NewContent, int Count)>();
+        var captured = new List<string>();
+        var readOnlyFiles = new List<string>();
+        var shared = new ReferenceLocator.Shared();
+        foreach (var path in paths)
+        {
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
+            if (!word.IsMatch(text))
+                continue;
+            var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
+            var sites = ElementReferenceLocator.Locate(graph, tree, classId, component, shared);
+            if (sites.Count == 0)
+                continue;
+
+            foreach (var site in sites.Where(s => s.Iterators.Contains(newName)))
+                captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}");
+            if (sites.Any(s => _libraries.GetModelById(s.ScopeId) is { } scope && _libraries.GetOwningLibrary(scope.Id)?.IsReadOnly == true))
+                readOnlyFiles.Add(path);
+
+            var spans = sites.Select(s => (s.Name.StartIndex, s.Name.StopIndex)).Distinct().ToList();
+            var newContent = ApplySpans(text, spans, newName);
+            var (_, errors) = ModelicaParserHelper.ParseWithErrors(newContent);
+            if (errors.Count > 0)
+                return new ToolError($"Renaming would leave '{path}' unparseable ({DescribeErrors(errors)}). No files were changed.");
+            planned.Add((path, newContent, spans.Count));
+        }
+
+        if (captured.Count > 0)
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: a 'for' iterator called '{newName}' " +
+                                 $"would take over the renamed reference at {string.Join("; ", captured.Take(10))}. " +
+                                 "Nothing was changed. Choose another name.");
+        if (readOnlyFiles.Count > 0)
+            return new ToolError($"Renaming '{component}' would change read-only libraries' files: " +
+                                 $"{string.Join(", ", readOnlyFiles.Take(10))}. Nothing was changed.");
+        if (planned.Count == 0)
+            return new ToolError($"'{component}' was not found written in '{classId}'s file. (Has the file changed since it was loaded? mlqt_session's reload re-reads it.)");
+
+        var total = planned.Sum(p => p.Count);
+        const string note =
+            "Every place that names the component is rewritten: its declaration, references to it in this class, " +
+            "in classes derived from it and through components of it, modifications that set it, and named " +
+            "arguments that pass it. Text in strings - an icon label's %name, documentation - is not; review those, " +
+            "and verify with a model checker.";
+
+        if (preview)
+            return new RenameComponentResult(classId, component, newName, PreviewOnly: true, Changed: false,
+                planned.Count, total, [.. planned.Select(p => new RenameFileChange(p.Path, p.Count, p.NewContent))], note);
+
+        if (FileWritability.PreflightWritable(planned.Select(p => p.Path), $"rename '{classId}.{component}'") is { } notWritable)
+            return notWritable;
+
+        var affected = new List<string>();
+        foreach (var (path, newContent, _) in planned)
+        {
+            // In place, as a class rename is: only the identifiers change, so nothing is reformatted.
+            await ModelicaFileEncoding.WriteAllTextAsync(path, newContent);
+            affected.AddRange(await _libraries.ReloadFileAsync(path));
+        }
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+
+        return new RenameComponentResult(classId, component, newName, PreviewOnly: false, Changed: true,
+            planned.Count, total, [.. planned.Select(p => new RenameFileChange(p.Path, p.Count, null))], note);
     }
 
     /// <summary>

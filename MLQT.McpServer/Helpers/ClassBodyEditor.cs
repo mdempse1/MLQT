@@ -80,6 +80,11 @@ internal static class ClassBodyEditor
         ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
         ClassEditContext ctx, string newClassCode, bool preview, string operation)
     {
+        // A second declaration of one name parses, so nothing below would see it.
+        if (DuplicateDeclarations.Introduced(libraries, ctx.Node.Id, ctx.ClassCode, newClassCode) is { } twice)
+            return new ToolError($"The edit is refused: {twice}. Nothing was changed. Choose another name, or rename " +
+                                 "the existing one with mlqt_refactor_class's rename_component.");
+
         string newOwnerCode;
         if (ctx.Node.Id == ctx.FileOwner.Id)
         {
