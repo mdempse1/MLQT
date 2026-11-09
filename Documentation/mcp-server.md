@@ -291,7 +291,9 @@ is broken. Type references in code are `checkUndeclaredNames`'s
 
 ## Automatic diagram connections
 
-When you position components on the diagram with `mlqt_edit_class`'s set_component_placement, the server automatically draws the connection lines: any `connect(...)` whose two components are both placed gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. It is enough to position the components — no separate call is needed, and moving a component re-routes the lines that touch it.
+When you position components on the diagram with `mlqt_edit_class`'s set_component_placement, the server automatically draws the connection lines: a `connect(...)` ending on the component you placed, whose other end is placed too, gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. add_connection draws the line of the connection it adds in the same way. It is enough to position the components — no separate call is needed.
+
+**Only what an edit touches is re-routed.** add_connection draws only the connection it adds; set_component_placement re-routes only the connections ending on the component it moves; remove_connection removes its own and nothing else. Every other line is left exactly as written, so a library's hand-drawn lines, and lines you have improved from the default route with a `replace`, survive later edits. Re-routing a line that already exists replaces only its `points`: its colour, thickness and anything else it says are kept.
 
 This applies to a `connect(...)` written directly in an equation section. One inside a `for`, `if` or `when` equation is left exactly as you wrote it: one line in a loop body cannot stand for every index's wiring, and one in an `if` branch would be drawn whether or not the branch applies. If such a connect carries a `Line` of its own, `mlqt_get_diagram_image` still draws it. `mlqt_get_class`'s connections, behavior and layout views all report nested connects, each with `within` naming the branches it is in (for example `["for i in 1:n"]`).
 

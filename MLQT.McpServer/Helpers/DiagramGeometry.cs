@@ -57,7 +57,7 @@ internal static class DiagramGeometry
     /// <para>Locating an endpoint means building its component as the image draws it - the type's
     /// icon down its extends chain, its connectors, its parameter values - and collecting the class's
     /// placements and members first. Done per connection, a component with six wires was built
-    /// twelve times over, and <c>ConnectionLineAnnotator</c> routes every connection in the class on
+    /// twelve times over, and <c>ConnectionLineAnnotator</c> can route several connections in the class on
     /// each <c>mlqt_edit_class's add_connection</c> and <c>mlqt_edit_class's set_component_placement</c>. Nothing here changes while a
     /// class is being routed, so one router serves every connection in it and then is dropped.</para>
     /// </summary>
