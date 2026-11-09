@@ -78,4 +78,43 @@ public class NestedConnectTests
         Assert.Contains("<polyline", svg);
         Assert.Contains("#008000", svg);
     }
+
+    [Fact]
+    public void TheImage_DrawsTheLineAConnectInAForLoopCarries()
+    {
+        // MSL writes a loop's wiring as one annotated connect over the indexed component
+        // (Machines.Losses.InductionMachines.Brush): the line is drawn from its annotation, though
+        // brush[j] names no single element the router could route to.
+        const string package = """
+            within;
+            package Lib "l"
+              connector Pin "pin"
+                Real v;
+              end Pin;
+
+              model Loop "pins in a loop"
+                parameter Integer n = 3;
+                Pin a[n] annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
+                Pin b annotation (Placement(transformation(extent={{40,-10},{60,10}})));
+              equation
+                for j in 1:n loop
+                  connect(a[j], b) annotation (Line(points={{-40,0},{0,0},{0,-30},{40,0}}, color={191,0,0}));
+                end for;
+              end Loop;
+            end Lib;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = package,
+            ["package.order"] = "Pin\nLoop\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var svg = DiagramImage.RenderSvg(host.Libraries, host.Libraries.GetModelById("Lib.Loop")!, 800);
+
+        Assert.NotNull(svg);
+        Assert.Contains("<polyline", svg);
+        Assert.Contains("#BF0000", svg, StringComparison.OrdinalIgnoreCase);
+    }
 }
