@@ -16,7 +16,7 @@ public class ConnectionLineOwnershipTests
     // thickness. Every component is placed, so the router could route any connect in the class.
     private const string HandDrawn =
         "connect(source1.y, sink2.u) annotation (Line(\n" +
-        "        points={{10,0},{20,0},{20,-40},{40,-40}},\n" +
+        "        points={{10,0},{20.5,0},{20.5,-40},{40,-40}},\n" +
         "        color={10,20,30},\n" +
         "        thickness=0.5));";
 
@@ -98,19 +98,52 @@ public class ConnectionLineOwnershipTests
     }
 
     [Fact]
-    public async Task MovingAComponent_ReRoutesItsOwnConnects_KeepingTheirColourAndThickness()
+    public async Task MovingAComponent_MovesOnlyTheEndOfItsLines_KeepingTheRouteColourAndThickness()
     {
+        // sink2 moves 40 down. Its input goes with it, the bend before it follows, and the rest of the
+        // hand-drawn route - its 20.5 included, which the router would have rounded - stays.
         using var host = new TestHost();
         var (_, diagram) = Load(host);
 
         ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "sink2", 40, -90, 60, -70));
 
         var src = Source(host);
-        Assert.DoesNotContain("{20,-40},{40,-40}", src);  // the route follows sink2
-        Assert.Contains("{40,-80}}", src);                 // ...to its input, on its left edge
-        Assert.Contains("color={10,20,30}", src);          // the author's colour
-        Assert.Contains("thickness=0.5", src);             // and thickness, kept
+        Assert.Contains("points={{10,0},{20.5,0},{20.5,-80},{40,-80}}", src);
+        Assert.Contains("color={10,20,30}", src);
+        Assert.Contains("thickness=0.5", src);
         Assert.Contains("connect(source1.y, sink3.u);", src);
+    }
+
+    [Fact]
+    public async Task MovingAComponent_MovesItsLines_EvenWhereItsConnectorCannotBeLocated()
+    {
+        // The type is not loaded, so the router cannot place the connector, and nothing used to move
+        // the line - an agent deleted the connection and added it again. A pure move carries the
+        // connector by the component's displacement, which needs no type.
+        const string pkg = """
+            within;
+            package U "u"
+              connector RealOutput = output Real;
+              block Source "src"
+                RealOutput y;
+              end Source;
+              model Sys
+                Source source1 annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
+                Missing.Sink sink1 annotation (Placement(transformation(extent={{40,-10},{60,10}})));
+              equation
+                connect(source1.y, sink1.u) annotation (Line(points={{10,0},{40,0}}, color={0,0,127}));
+              end Sys;
+            end U;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("U.Sys", "sink1", 40, 10, 60, 30));
+
+        Assert.Contains("points={{10,0},{25,0},{25,20},{40,20}}, color={0,0,127}",
+            host.Libraries.GetModelById("U.Sys")!.Definition.ModelicaCode!);
     }
 
     [Fact]

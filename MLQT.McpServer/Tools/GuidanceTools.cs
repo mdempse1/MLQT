@@ -224,8 +224,8 @@ public sealed class GuidanceTools
               'integrator1.u') [refuses incompatible connectors], set_component_modifier for parameters,
               add_equation / add_statement for behaviour, and set_component_placement for each component —
               all in one call, applied in order and all or none, so later operations see earlier ones. Once
-              both ends of a connection are placed its diagram line is drawn, and refreshed when a component
-              it ends on moves; no other line is changed, so a route you improve with replace stays.
+              both ends of a connection are placed its diagram line is drawn; moving a component it ends on
+              moves that end and keeps the route; no other line is changed, so a route you improve stays.
               mlqt_get_class with the connections and layout views reviews it, and
               mlqt_get_diagram_image shows it. Document as you go: description strings in the source or
               add_component's description, set_class_description / set_component_description, and
@@ -382,9 +382,10 @@ public sealed class GuidanceTools
 
             Connections. mlqt_edit_class's add_connection and set_component_placement route the line for
             you, orthogonally, from the real connector positions — so position the components first and the
-            wiring follows. add_connection routes only the connection it adds, and set_component_placement
-            only those ending on the component it moves, replacing just their points; every other Line is
-            left as written, so a route you adjust stays until a component it ends on moves.
+            wiring follows. add_connection routes only the connection it adds. set_component_placement
+            brings the lines ending on the moved component with it, keeping their route: only the end on
+            it moves, plus as few bends as keep the line orthogonal. Every other Line is left as written,
+            so a route you adjust stays. No need to remove and re-add a connection after a move.
             A connect inside a for/if/when equation is left as you wrote it, Line or no Line.
             Modelica diagrams use horizontal and vertical segments, not diagonals; if a route looks wrong in
             the image, the fix is almost always to move a component rather than to hand-write points.

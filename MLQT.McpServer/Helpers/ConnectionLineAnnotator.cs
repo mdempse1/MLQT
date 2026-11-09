@@ -12,8 +12,10 @@ namespace MLQT.McpServer.Helpers;
 /// Adds and refreshes the graphical <c>Line</c> annotation on <c>connect(a, b)</c> equations so a model
 /// whose components have been positioned actually shows its connections on the diagram layer. The line is
 /// routed orthogonally between the two connectors' positions (see <see cref="DiagramGeometry"/>).
-/// <para><b>Only the connects an edit touches are routed</b>: the one add_connection adds, and those
-/// ending on the component set_component_placement moves. Every other line is left exactly as written
+/// <para><b>Only the connects an edit touches are changed</b>: the one add_connection adds, and those
+/// ending on the component set_component_placement moves - whose lines keep their route and have only
+/// their end moved (<see cref="FollowMove(ILibraryDataService, string, string, string, string)"/>).
+/// Every other line is left exactly as written
 /// - a hand-drawn library's, or one an agent has already adjusted from the default route - because
 /// re-routing the whole class on each edit threw that work away, colours and thickness included.
 /// Re-routing a line that has one replaces only its <c>points</c>; its colour, thickness and anything
@@ -40,6 +42,140 @@ internal static class ConnectionLineAnnotator
                               ?? ConnectorColor.Resolve(libraries, classId, portB),
             touches);
     }
+
+    /// <summary>
+    /// Bring the lines of <paramref name="componentName"/>'s connects to where it now is, after
+    /// set_component_placement moved it from where <paramref name="oldCode"/> had it: each line that has
+    /// points keeps its route and has only its end on the component moved (<see cref="LineReshaper"/>);
+    /// one with none is routed. Every other line is left as written.
+    /// </summary>
+    public static string FollowMove(
+        ILibraryDataService libraries, string classId, string oldCode, string newCode, string componentName)
+    {
+        var router = new DiagramGeometry.Router(libraries, classId, newCode);
+        return FollowMove(
+            oldCode, newCode, componentName,
+            router.Route,
+            (portA, portB) => ConnectorColor.Resolve(libraries, classId, portA)
+                              ?? ConnectorColor.Resolve(libraries, classId, portB));
+    }
+
+    /// <summary>
+    /// Core of <see cref="FollowMove(ILibraryDataService, string, string, string, string)"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>A <b>pure move</b> - same size, same turn - carries each connector by exactly the
+    /// component's displacement, so a line's end goes to its old point plus that: no router, so it
+    /// keeps the point the author put on the connector, and works for a connector the router cannot
+    /// place (it put some of VehicleInterfaces' at the component's centre). A resize or a rotation
+    /// moves connectors relative to the component, so there the router says where the end goes, and a
+    /// line it cannot place is left alone rather than guessed. A line with both ends on the component
+    /// moves whole.</para>
+    /// </remarks>
+    public static string FollowMove(
+        string oldCode, string newCode, string componentName,
+        Func<string, string, IReadOnlyList<Pt>?> routeFor,
+        Func<string, string, string?> colorFor)
+    {
+        var before = DiagramGeometry.Placements(oldCode).GetValueOrDefault(componentName);
+        var after = DiagramGeometry.Placements(newCode).GetValueOrDefault(componentName);
+        var shift = LineReshaper.Translation(before, after);
+
+        var composition = ModelicaParserHelper.Parse(newCode)?.class_definition()?.FirstOrDefault()
+            ?.class_specifier()?.long_class_specifier()?.composition();
+        var edits = new List<(int Start, int Length, string Text)>();
+
+        foreach (var (equation, clause) in ConnectClauses.WithEquations(composition))
+        {
+            if (clause.IsNested)
+                continue;
+            var onA = IsOn(clause.PortA, componentName);
+            var onB = IsOn(clause.PortB, componentName);
+            if (!onA && !onB)
+                continue;
+
+            var existing = equation.comment()?.annotation() is { } annotation ? FindLineArgument(annotation) : null;
+            if (existing is null || PointsOf(newCode, existing) is not { Count: >= 2 } points)
+            {
+                // Nothing drawn to keep: route it, as a connect of a newly placed component is.
+                if (routeFor(clause.PortA, clause.PortB) is { Count: >= 2 } route
+                    && PlanEdit(newCode, equation, route, () => colorFor(clause.PortA, clause.PortB)) is { } routed)
+                    edits.Add(routed);
+                continue;
+            }
+
+            IReadOnlyList<Pt>? reshaped;
+            if (onA && onB)
+            {
+                reshaped = shift is { } both ? LineReshaper.Translate(points, both)
+                    : routeFor(clause.PortA, clause.PortB) is { Count: >= 2 } whole ? whole : null;
+            }
+            else
+            {
+                // Which end of the line is the moved component's: the one nearer where it was. A Line
+                // need not run from the connect's first port to its second; where the box cannot say,
+                // the connect's order does.
+                var atStart = onA;
+                if (before is not null)
+                {
+                    var (start, end) = (LineReshaper.DistanceTo(points[0], before), LineReshaper.DistanceTo(points[^1], before));
+                    if (start != end)
+                        atStart = start < end;
+                }
+
+                var from = atStart ? points[0] : points[^1];
+                Pt? to = shift is { } by
+                    ? new Pt(from.X + by.X, from.Y + by.Y)
+                    : routeFor(clause.PortA, clause.PortB) is { Count: >= 2 } route ? (onA ? route[0] : route[^1]) : null;
+                reshaped = to is { } target ? LineReshaper.MoveEnd(points, atStart, target) : null;
+            }
+
+            if (reshaped is not null && PlanPoints(newCode, existing, KeptPoints(reshaped)) is { } edit)
+                edits.Add(edit);
+        }
+
+        foreach (var (start, length, text) in edits.OrderByDescending(e => e.Start))
+            newCode = newCode[..start] + text + newCode[(start + length)..];
+        return newCode;
+    }
+
+    /// <summary>The literal points of a Line, or null when they are not literal numbers.</summary>
+    private static List<Pt>? PointsOf(string code, modelicaParser.ArgumentContext line)
+    {
+        var lineMod = line.element_modification_or_replaceable()?.element_modification()
+            ?.modification()?.class_modification();
+        foreach (var arg in lineMod?.argument_list()?.argument() ?? [])
+        {
+            var mod = arg.element_modification_or_replaceable()?.element_modification();
+            if (!string.Equals(mod?.name()?.GetText(), "points", StringComparison.Ordinal) || mod!.modification() is not { } value)
+                continue;
+            var text = code[value.Start.StartIndex..(value.Stop.StopIndex + 1)];
+            var pairs = PointPair.Matches(text);
+            // Every number in the expression must be in a pair: anything else is not a literal list.
+            if (pairs.Count == 0 || pairs.Count * 2 != NumberToken.Matches(text).Count)
+                return null;
+            return [.. pairs.Select(m => new Pt(
+                double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+                double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)))];
+        }
+        return null;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex PointPair = new(
+        @"\{\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\}",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex NumberToken = new(
+        @"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// A reshaped line's points, written as exactly as they were read: a hand-drawn <c>53.125</c>
+    /// stays <c>53.125</c>, where the router's own routes are written in whole units.
+    /// </summary>
+    private static string KeptPoints(IReadOnlyList<Pt> route) =>
+        $"points={{{string.Join(",", route.Select(p => $"{{{K(p.X)},{K(p.Y)}}}"))}}}";
+
+    private static string K(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
 
     /// <summary>The connect joining <paramref name="portA"/> and <paramref name="portB"/>, either way round.</summary>
     public static Func<ConnectClause, bool> Joining(string portA, string portB) =>

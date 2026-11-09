@@ -696,10 +696,10 @@ public class StructureEditToolsTests
     }
 
     [Fact]
-    public async Task Connection_RegeneratesLineToCurrentRoute_OnMove()
+    public async Task Connection_FollowsAMove_KeepingTheRouteTheAuthorDrew()
     {
-        // Lines are tool-managed: moving a component re-routes its connection (the connector positions
-        // change), replacing whatever was there. The route is orthogonal and ends at the connectors.
+        // Moving a component brings the end of its line with it and keeps the rest: this line's
+        // diagonal is the author's, so it is not replaced by the router's default route.
         const string pkg = """
             within;
             package C "c"
@@ -721,12 +721,8 @@ public class StructureEditToolsTests
         var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
 
         await diagram.SetComponentPlacement("C.Sys", "source1", -10, -110, 10, -90);
-        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.DoesNotContain("{25,20}", src); // the stale hand-drawn midpoint is gone
-        var pts = LinePoints(src);
-        Assert.Equal((10, -100), pts[0]);
-        Assert.Equal((40, 0), pts[^1]);
-        AssertOrthogonal(pts);
+        Assert.Contains("Line(points={{10,-100},{25,20},{40,0}}, color={0,0,127})",
+            host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
     }
 
     [Fact]

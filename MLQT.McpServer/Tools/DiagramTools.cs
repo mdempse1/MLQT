@@ -149,10 +149,10 @@ public sealed class DiagramTools
         if (newClassCode is null)
             return new ToolError($"'{classId}' has no component named '{componentName}'.");
 
-        // Now that this component is positioned, add/refresh the diagram lines of its own connections so
-        // it appears wired up without a further call. Only its own: every other line is left as written.
-        newClassCode = ConnectionLineAnnotator.Annotate(
-            _libraries, classId, newClassCode, ConnectionLineAnnotator.EndingOn(componentName));
+        // Now that this component is positioned, bring the lines of its own connections with it so it
+        // appears wired up without a further call: a line it has keeps its route, with only the end on
+        // this component moved; one it has not is routed. Every other line is left as written.
+        newClassCode = ConnectionLineAnnotator.FollowMove(_libraries, classId, ctx.ClassCode, newClassCode, componentName);
 
         var result = await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"set placement in '{classId}'");
