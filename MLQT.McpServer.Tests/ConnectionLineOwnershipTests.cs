@@ -288,6 +288,60 @@ public class ConnectionLineOwnershipTests
     }
 
     [Fact]
+    public async Task MovingAComponent_PutsADoglegIntoAStraightLine_BetweenThePointsItKeeps()
+    {
+        // The far end did not move, so the straight line gets a dogleg at its middle, written in
+        // between the points as the line separates them.
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(points={{11,-40},{39,-40}}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -90, 60, -70));
+
+        Assert.Contains("points={{11,-40},{25,-40},{25,-80},{39,-80}}", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task MovingAComponent_GivesPointsToALineThatHasNone_KeepingWhatItSays()
+    {
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(color={10,20,30}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -90, 60, -70));
+
+        Assert.Contains("annotation (Line(points={{", SmallSource(host));
+        Assert.Contains("color={10,20,30}", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task TurningAComponent_PutsTheEndWhereTheRouterFindsTheConnector()
+    {
+        // A turn moves the connector relative to the component, so the move's displacement cannot say
+        // where it went: the router does. sink2 turned half round has its input on its right edge.
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(points={{11,0},{20,0},{20,-40},{39,-40}}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -50, 60, -30, rotation: 180));
+
+        Assert.Contains("{61,-40}}", SmallSource(host));
+        Assert.Contains("{11,0},{20,0}", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task MovingAComponent_MovesALineWithBothEndsOnIt_Whole()
+    {
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(sinks[1].u, sinks[2].u) annotation (Line(points={{39,40},{30,40},{30,45},{39,45}}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sinks", 40, 60, 60, 80));
+
+        Assert.Contains("points={{39,70},{30,70},{30,75},{39,75}}", SmallSource(host));
+    }
+
+    [Fact]
     public async Task RemovingAConnection_LeavesEveryOtherConnectAsWritten()
     {
         using var host = new TestHost();
