@@ -204,6 +204,13 @@ public sealed class GuidanceTools
               own directory package (folder + package.mo). Classes that cannot be standalone (a
               replaceable/redeclare/inner/outer prefix) are nested.
 
+            Bring in classes a script generated (a data generator writing .mo files):
+              mlqt_write_class(importFrom: the file or folder, importInto: the package) - each class gets a
+              file of its own in the package, its within clause, the repository's formatting and a line in
+              package.order, and is loaded; files the script wrote straight into the package's folder are
+              adopted there. Do not write package.order yourself or reload by hand. Re-run it after the script
+              regenerates its output; replace=true replaces classes imported from elsewhere earlier.
+
             Author a new class in your library:
               mlqt_get_class with the interface view on the classes you'll reference (learn their API) ->
               mlqt_write_class -> mlqt_check with style, spelling and references.

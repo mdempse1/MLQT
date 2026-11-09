@@ -39,15 +39,31 @@ public sealed class WriteFormatTools
                  "in order, so a later one can go in a package an earlier one created; if one fails, the ones " +
                  "before it stay written and none after it is tried. To change part of a class, use " +
                  "mlqt_edit_class instead. preview=true returns each file without writing (each class is then " +
-                 "previewed on its own).")]
+                 "previewed on its own). Instead of classes, importFrom (a .mo file or a folder of them, written by " +
+                 "a script or a data generator) and importInto (a package stored as a folder) bring generated " +
+                 "classes in without passing their text: each gets a file of its own in the package, the package's " +
+                 "within clause, the repository's formatting and a place in package.order, then everything is " +
+                 "reloaded - a file the script wrote straight into the package's folder is adopted where it is. All " +
+                 "or none: a file that cannot be imported refuses the import and says why.")]
     public async Task<object> WriteClass(
-        [Description("The classes, in order. Each: {parentId: the package to put it in, source: the whole class, standalone?: own file or not}.")]
-        IReadOnlyList<ClassToWrite> classes,
+        [Description("The classes, in order. Each: {parentId: the package to put it in, source: the whole class, standalone?: own file or not}. Omit when importing.")]
+        IReadOnlyList<ClassToWrite>? classes = null,
         [Description("Replace a class that already exists. Default false.")] bool replace = false,
-        [Description("Return the files without writing. Default false.")] bool preview = false)
+        [Description("Return the files without writing. Default false.")] bool preview = false,
+        [Description("Instead of classes: a .mo file, or a folder of .mo files, written outside MLQT to import.")] string? importFrom = null,
+        [Description("With importFrom: the full id of the package (stored as a folder) to import into.")] string? importInto = null)
     {
+        if (!string.IsNullOrWhiteSpace(importFrom) || !string.IsNullOrWhiteSpace(importInto))
+        {
+            if (classes is { Count: > 0 })
+                return new ToolError("Give classes or importFrom/importInto, not both.");
+            if (string.IsNullOrWhiteSpace(importFrom) || string.IsNullOrWhiteSpace(importInto))
+                return new ToolError("Importing needs both importFrom (a .mo file or folder) and importInto (the package's full id).");
+            return await _edit.ImportClasses(importInto.Trim(), importFrom.Trim(), replace, preview);
+        }
+
         if (classes is null || classes.Count == 0)
-            return new ToolError("classes must hold at least one {parentId, source}.");
+            return new ToolError("classes must hold at least one {parentId, source}, or give importFrom and importInto.");
 
         var written = new List<WrittenClassItem>();
         for (var i = 0; i < classes.Count; i++)

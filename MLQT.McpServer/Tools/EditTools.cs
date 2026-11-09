@@ -1557,6 +1557,130 @@ public sealed class EditTools
     private static string IndentBlock(string code, string indent)
         => string.Join("\n", code.Replace("\r\n", "\n").Split('\n').Select(l => l.Length == 0 ? l : indent + l));
 
+    /// <summary>
+    /// Bring classes a script wrote - a <c>.mo</c> file, or a folder of them - into a package as
+    /// <c>mlqt_write_class</c> would have written them: each in a file of its own named for it, with the
+    /// package's within clause, formatted with the repository's rules, and listed in package.order. A
+    /// file the script wrote straight into the package's folder is adopted where it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>A data generator writes <c>.mo</c> files directly, and they then sat outside MLQT: package.order
+    /// written by hand, the library reloaded, the files formatted, each a step of its own. Passing their
+    /// text through <c>mlqt_write_class</c> instead carries every generated file through the agent.</para>
+    ///
+    /// <para><b>All or none</b>: a file that does not parse, holds more than one class, cannot stand in a
+    /// file of its own, or would overwrite a class without <paramref name="replace"/> refuses the whole
+    /// import, listing every such file - half a generated data set is worse than none. Everything written
+    /// is reloaded once, at the end.</para>
+    /// </remarks>
+    internal async Task<object> ImportClasses(string parentId, string path, bool replace = false, bool preview = false)
+    {
+        if (ReadOnlyClassGuard.Refuse(_libraries, parentId, "import classes into this package") is { } readOnlyParent)
+            return readOnlyParent;
+        if (_libraries.GetModelById(parentId) is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, parentId);
+
+        var ctx = ModelFilePersistence.ResolveFileOwner(_libraries, parentId);
+        if (ctx is null || ctx.FileOwner.Id != parentId
+            || !string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
+            return new ToolError($"'{parentId}' is not a package stored as a directory (a folder with a package.mo), " +
+                                 "so it cannot hold classes in files of their own. Import into one that is, or write the " +
+                                 "classes into it with mlqt_write_class.");
+        var directory = Path.GetDirectoryName(ctx.FilePath)!;
+
+        List<string> files;
+        if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+            files = [Path.GetFullPath(path)];
+        else if (Directory.Exists(path))
+            files = [.. Directory.GetFiles(path, "*.mo")
+                .Where(f => !string.Equals(Path.GetFileName(f), "package.mo", StringComparison.OrdinalIgnoreCase))
+                .Select(Path.GetFullPath)
+                .Order(StringComparer.Ordinal)];
+        else
+            return new ToolError($"'{path}' is neither a .mo file nor a folder.");
+        if (files.Count == 0)
+            return new ToolError($"'{path}' holds no .mo files to import (package.mo is not one: a sub-package is not imported).");
+
+        var graph = _libraries.CombinedGraph;
+        var planned = new List<(string Name, string Id, string Target, string Content, string Action)>();
+        var problems = new List<string>();
+        foreach (var file in files)
+        {
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(file));
+            var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(text);
+            var top = models.Where(m => !m.IsNested).ToList();
+            if (errors.Count > 0)
+            {
+                problems.Add($"{Path.GetFileName(file)}: {DescribeErrors(errors)}");
+                continue;
+            }
+            if (top.Count != 1)
+            {
+                problems.Add($"{Path.GetFileName(file)} holds {top.Count} classes; a file of its own holds one");
+                continue;
+            }
+
+            var name = top[0].Name;
+            var id = $"{parentId}.{name}";
+            var target = Path.GetFullPath(Path.Combine(directory, name + ".mo"));
+            var inPlace = string.Equals(file, target, StringComparison.OrdinalIgnoreCase);
+            var body = WithinClause.Strip(text);
+            if (StartsWithElementPrefix(body))
+            {
+                problems.Add($"{Path.GetFileName(file)}: '{name}' is replaceable, redeclared, inner or outer, so it cannot be stored in a file of its own");
+                continue;
+            }
+            if (string.Equals(Path.GetDirectoryName(file), directory, StringComparison.OrdinalIgnoreCase) && !inPlace)
+            {
+                problems.Add($"{Path.GetFileName(file)} holds '{name}', so in '{parentId}' it has to be called {name}.mo");
+                continue;
+            }
+
+            var existing = _libraries.GetModelById(id);
+            var existingFile = existing?.ContainingFileId is { } fileId ? graph.GetNode<FileNode>(fileId)?.FilePath : null;
+            if (existing is not null && !string.Equals(existingFile, target, StringComparison.OrdinalIgnoreCase))
+            {
+                problems.Add($"'{id}' already exists, stored in '{existingFile}'; replace it with mlqt_write_class");
+                continue;
+            }
+            if (existing is not null && !inPlace && !replace)
+            {
+                problems.Add($"'{id}' already exists; pass replace=true to replace it");
+                continue;
+            }
+
+            var content = EditFormatting.Apply(_libraries, _session, parentId, id, existing?.ContainingFileId,
+                WithinClause.Set(body.TrimEnd(), parentId) + "\n", parentId);
+            planned.Add((name, id, target, content, existing is null ? "created" : inPlace ? "adopted" : "replaced"));
+        }
+
+        var duplicates = planned.GroupBy(p => p.Name, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        foreach (var name in duplicates)
+            problems.Add($"more than one file holds '{name}'");
+        if (problems.Count > 0)
+            return new ToolError($"Nothing was imported into '{parentId}': {string.Join("; ", problems)}.");
+
+        if (preview)
+            return new WriteClassResult(true, [.. planned.Select(p => new WrittenClassItem(p.Id, p.Action, p.Target, p.Content))]);
+
+        if (FileWritability.PreflightWritable(planned.Select(p => p.Target).Append(ctx.FilePath), $"import classes into '{parentId}'") is { } notWritable)
+            return notWritable;
+
+        var written = new List<WrittenClassItem>();
+        foreach (var p in planned)
+        {
+            await ModelicaFileEncoding.WriteAllTextAsync(p.Target, p.Content);
+            written.Add(new WrittenClassItem(p.Id, p.Action, p.Target, null, AppendToPackageOrder(directory, p.Name)));
+        }
+
+        // Once, after every file is in place and listed: a reload reads the package.order beside the file.
+        var affected = new List<string>();
+        foreach (var p in planned)
+            affected.AddRange(await _libraries.ReloadFileAsync(p.Target));
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+        return new WriteClassResult(false, written);
+    }
+
     // Keep a directory package's package.order in sync when a child is added. No-op if there is no
     // package.order (the loader includes every .mo file anyway). Returns the package.order that lists the
     // class, so a caller can say so: an agent told nothing added the class to it a second time.
