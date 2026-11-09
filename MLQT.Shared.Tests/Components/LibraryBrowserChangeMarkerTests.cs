@@ -1,4 +1,5 @@
 using Bunit;
+using Bunit.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
@@ -259,11 +260,34 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
     /// on the renderer's dispatcher so no render can land between the two - which is what bUnit
     /// recommends, and what a click from the test thread raced under load.
     /// </summary>
+    /// <remarks>
+    /// <para>And clicks it again if bUnit says its handler has gone. Finding inside the dispatcher was
+    /// not enough: <c>ClickingTheSelectedChipAgainGoesBackToAll</c> still failed on the Windows runner
+    /// (2026-11-09) with <c>UnknownEventHandlerIdException</c> on its first click. The classification
+    /// arriving starts a filtered-tree rebuild whose render comes later still, and the DOM bUnit hands
+    /// back inside the dispatcher can carry the handler ids of the render before it.</para>
+    ///
+    /// <para>A retry cannot click twice: bUnit throws before dispatching, when it finds no handler,
+    /// so a failed attempt has done nothing. Each attempt finds the chip afresh.</para>
+    /// </remarks>
     private static void ClickFilterChip(IRenderedComponent<LibraryBrowser> browser, int index)
     {
-        browser.WaitForAssertion(() => Assert.True(FilterChips(browser).Length > index));
-        browser.InvokeAsync(() => browser.FindAll(".mlqt-change-filter .mud-chip")[index].Click())
-            .GetAwaiter().GetResult();
+        const int attempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            browser.WaitForAssertion(() => Assert.True(FilterChips(browser).Length > index));
+            try
+            {
+                browser.InvokeAsync(() => browser.FindAll(".mlqt-change-filter .mud-chip")[index].Click())
+                    .GetAwaiter().GetResult();
+                return;
+            }
+            catch (UnknownEventHandlerIdException) when (attempt < attempts)
+            {
+                // A render landed after the DOM was read; let it finish, then find the chip again.
+                browser.InvokeAsync(() => { }).GetAwaiter().GetResult();
+            }
+        }
     }
 
     /// <summary>The filter chips' labels, which carry the count behind each one.</summary>
