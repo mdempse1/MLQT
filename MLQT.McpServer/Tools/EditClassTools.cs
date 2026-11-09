@@ -70,9 +70,10 @@ public sealed class EditClassTools
     [McpServerTool(Name = "mlqt_edit_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Change part of one Modelica class with a list of operations, applied in order and all or none. " +
                  "The usual one is replace: {\"op\":\"replace\",\"old\":\"y = k*u;\",\"new\":\"y = k*u + offset;\"} " +
-                 "swaps text that must occur exactly once in the class - copy it from mlqt_get_class's source view " +
-                 "with includeAnnotations=true; text whose spacing or line breaks differ from the file (a formatter " +
-                 "reflowed it) is found too, and the answer says so; with \"all\":true it swaps every " +
+                 "swaps text that must occur exactly once in the class - copy it from mlqt_get_class's source view; " +
+                 "text whose spacing or line breaks differ from the file (a formatter reflowed it) is found too, and " +
+                 "so is text copied with the view's annotations hidden, whose annotations are kept where they were - " +
+                 "the answer says when either happened; with \"all\":true it swaps every " +
                  "occurrence, and says how many; \"wholeWord\":true matches only where old is not part of a longer " +
                  "name (Ti, not the Ti in TipIn). To rename a component and every reference to it, in other classes " +
                  "too, use mlqt_refactor_class's rename_component instead. An extends clause, an import or " +
@@ -242,6 +243,39 @@ public sealed class EditClassTools
             loose = count > 0;
         }
 
+        // Last, text copied from the source view, which hides annotations by default: the same tokens
+        // with any annotation(...) the file has between them stepped over, and each one put back into the
+        // new text where it was - `parameter Real k = 1 "gain";` from the view is the file's
+        // `parameter Real k = 1 "gain" annotation(Dialog(...));`, and replacing it keeps the Dialog.
+        if (count == 0 && AnnotationTolerant(find) is var (annotationPattern, oldTokens))
+        {
+            var withAnnotations = Matcher(annotationPattern, find, wholeWord);
+            var found = withAnnotations.Matches(code);
+            if (found.Count > 0)
+            {
+                if (found.Count > 1 && !all)
+                    return new ToolError(
+                        $"The text to replace occurs {found.Count} times in '{classId}' once the annotations the source view " +
+                        "hides are allowed for. Include more of the text around it, or pass all=true.");
+                string? unplaceable = null;
+                var replaced = withAnnotations.Replace(code, m =>
+                {
+                    if (WithAnnotationsPutBack(with, oldTokens, m) is { } placed)
+                        return placed;
+                    unplaceable ??= m.Value;
+                    return m.Value;
+                }, all ? -1 : 1);
+                if (unplaceable is not null)
+                    return new ToolError(
+                        $"old matched '{classId}' only with the annotations the source view hides, and new changes the text on " +
+                        "both sides of where one of them is written, so there is no saying where it goes. Copy the text with " +
+                        $"mlqt_get_class's source view and includeAnnotations=true, and include the annotation in new. The file has: {unplaceable}");
+                return await ApplyReplacement(classId, ctx, replaced, found.Count, all,
+                    "old matched once the annotations mlqt_get_class's source view hides were allowed for; they were kept in " +
+                    "place. To change an annotation, read the source with includeAnnotations=true.");
+            }
+        }
+
         if (count == 0)
             return new ToolError(
                 $"The text to replace is not in '{classId}'{(wholeWord ? " as a whole word" : "")}, even ignoring " +
@@ -256,7 +290,17 @@ public sealed class EditClassTools
                 (wholeWord ? "" : " wholeWord=true leaves it alone where it is part of a longer name."));
 
         var newCode = matcher.Replace(code, with.Replace("$", "$$", StringComparison.Ordinal), all ? -1 : 1);
+        return await ApplyReplacement(classId, ctx, newCode, count, all,
+            loose
+                ? "old matched only when differences in white space and line breaks were ignored - the class's layout has " +
+                  "changed since it was read (formatting reflows it); read it again before quoting more of it."
+                : null);
+    }
 
+    /// <summary>Writes a replace's result, with the notes the answer carries.</summary>
+    private async Task<object> ApplyReplacement(
+        string classId, ClassEditContext ctx, string newCode, int count, bool all, string? matchNote)
+    {
         // A changed name would leave the graph holding a class that is no longer in the file, and miss
         // every reference to it; that is what mlqt_refactor_class's rename is for.
         var oldName = ModelicaName.LeafOf(classId);
@@ -268,17 +312,93 @@ public sealed class EditClassTools
 
         var applied = await ClassBodyEditor.ApplyAsync(_libraries, _resources, _session, ctx, newCode, preview: false, "edit the class");
         // How many, as a note on the answer: replacing more than the caller meant is the risk of all=true.
-        // And whether white space was ignored to find it, so the agent knows its copy of the class is stale.
+        // And how old was found when it was not as written, so the agent knows what its copy lacks.
         var notes = new List<string>();
         if (all)
             notes.Add($"Replaced {count} occurrence{(count == 1 ? "" : "s")}.");
-        if (loose)
-            notes.Add("old matched only when differences in white space and line breaks were ignored - the class's " +
-                      "layout has changed since it was read (formatting reflows it); read it again before quoting more of it.");
+        if (matchNote is not null)
+            notes.Add(matchNote);
         return notes.Count > 0 && applied is ClassEditResult result
             ? new StructureEditResult(classId, result.FilePath, result.PreviewOnly, Changed: true, result.AffectedCount,
                 result.NewFileContent, string.Join(" ", notes))
             : applied;
+    }
+
+    // An annotation as written: the keyword and its parenthesised content, brackets balanced, strings and
+    // quoted names (which may hold brackets) matched whole.
+    // A class's own annotation owns the `;` after it, which the source view hides with it; a declaration's
+    // annotation does not, and backtracking leaves that `;` to the declaration.
+    private const string AnnotationConstruct =
+        """annotation\s*\((?>[^()"']+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?<depth>)|\)(?<-depth>))*(?(depth)(?!))\)(?:\s*;)?""";
+
+    /// <summary>
+    /// A pattern for <paramref name="find"/>'s tokens, any white space between them, and between each two
+    /// an optional annotation the file may have there - captured as <c>a1</c>, <c>a2</c>... by the token it
+    /// comes before - with the tokens themselves. Null when there is nothing to step over: one token, or
+    /// text that writes annotations itself, which the source view did not hide.
+    /// </summary>
+    private static (string Pattern, IReadOnlyList<string> Tokens)? AnnotationTolerant(string find)
+    {
+        var tokens = Token.Matches(find).Select(m => m.Value).ToList();
+        if (tokens.Count < 2 || tokens.Contains("annotation"))
+            return null;
+
+        var pattern = new System.Text.StringBuilder(Regex.Escape(tokens[0]));
+        for (var i = 1; i < tokens.Count; i++)
+        {
+            var together = IsNameChar(tokens[i - 1][^1]) && IsNameChar(tokens[i][0]);
+            pattern.Append($@"(?:\s*(?<a{i}>{AnnotationConstruct}))?")
+                .Append(together ? @"\s+" : @"\s*")
+                .Append(Regex.Escape(tokens[i]));
+        }
+        return (pattern.ToString(), tokens);
+    }
+
+    /// <summary>
+    /// <paramref name="newText"/> with each annotation <paramref name="match"/> stepped over put back:
+    /// before the same tokens that followed it in old, where new ends with them (an annotation sits before
+    /// the <c>;</c> it belongs to), else after the same tokens that went before it. Null when new changed
+    /// both, and there is no saying where it goes.
+    /// </summary>
+    private static string? WithAnnotationsPutBack(string newText, IReadOnlyList<string> oldTokens, Match match)
+    {
+        var newTokens = Token.Matches(newText).ToList();
+        var inserts = new List<(int At, string Text)>();
+        for (var i = 1; i < oldTokens.Count; i++)
+        {
+            if (match.Groups[$"a{i}"] is not { Success: true } annotation)
+                continue;
+
+            var after = oldTokens.Count - i;   // the old tokens from the one the annotation came before
+            var before = i;                    // the old tokens up to it
+            if (newTokens.Count >= after
+                && newTokens.Skip(newTokens.Count - after).Select(t => t.Value).SequenceEqual(oldTokens.Skip(i)))
+            {
+                // Before a token that starts its line - `end M;` after a class annotation - on a line of its
+                // own at that indentation; otherwise beside the text before it.
+                var next = newTokens[newTokens.Count - after];
+                var lineStart = newText.LastIndexOf('\n', Math.Max(next.Index - 1, 0)) + 1;
+                var indent = newText[lineStart..next.Index];
+                inserts.Add(lineStart > 0 && indent.All(c => c is ' ' or '\t')
+                    ? (next.Index, annotation.Value + "\n" + indent)
+                    : (next.Index, " " + annotation.Value));
+            }
+            else if (newTokens.Count >= before
+                     && newTokens.Take(before).Select(t => t.Value).SequenceEqual(oldTokens.Take(i)))
+            {
+                var previous = newTokens[before - 1];
+                inserts.Add((previous.Index + previous.Length, " " + annotation.Value));
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        var result = newText;
+        foreach (var (at, text) in inserts.OrderByDescending(x => x.At))
+            result = result.Insert(at, text);
+        return result;
     }
 
     // A matcher for `pattern`, which matches `find`: with wholeWord, not where the character before or after

@@ -171,6 +171,7 @@ public sealed class ObfuscationReadinessTests
         ("ConnectionLineAnnotator.cs", "v.ToString(\"0.######\", CultureInfo.InvariantCulture)", "a coordinate kept as drawn"),
         ("Prose.cs", "return result.ToString();", "a StringBuilder"),
         ("EditClassTools.cs", "return pattern.ToString();", "a StringBuilder"),
+        ("EditClassTools.cs", "return (pattern.ToString(), tokens);", "a StringBuilder"),
         ("WireNames.cs", "Convert.ToInt64(value", "the number of an unnamed enum value, deliberately"),
         ("ToolUsageLogger.cs", "DateTime.UtcNow.ToString(\"o\")", "a timestamp"),
         ("SessionTools.cs", "_session.LoadedAt(l.Id).ToString(", "a timestamp, in a fixed invariant format"),
