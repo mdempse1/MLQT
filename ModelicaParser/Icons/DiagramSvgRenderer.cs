@@ -32,7 +32,18 @@ namespace ModelicaParser.Icons;
 public sealed record DiagramComponent(
     string Name, double[] Extent, double Rotation, IconData? Icon, string? TypeName = null,
     double[]? RotationCentre = null, IReadOnlyList<DiagramComponent>? Children = null,
-    Func<string, string?>? ValueOf = null, Func<string, bool>? NamesAConstant = null);
+    Func<string, string?>? ValueOf = null, Func<string, bool>? NamesAConstant = null)
+{
+    /// <summary>
+    /// The connectors this instance has switched off - declared <c>if &lt;expr&gt;</c> where the
+    /// expression is false - placed as <see cref="Children"/> are but never drawn, since the instance
+    /// has no such port. A connection to one still ends where it would be: Modelica allows connecting
+    /// a disabled conditional connector (the connection is dropped), and a tool draws the line to the
+    /// connector's place. Without them <see cref="DiagramSvgRenderer.PortOf"/> knew no such port and a
+    /// line was routed to the component's centre.
+    /// </summary>
+    public IReadOnlyList<DiagramComponent>? SwitchedOff { get; init; }
+}
 
 /// <summary>One connection line, as the poly-line the diagram draws for it.</summary>
 /// <param name="Points">At least two points, in the parent's diagram coordinates.</param>
@@ -270,11 +281,15 @@ public static class DiagramSvgRenderer
     /// component are its type's icon-layer placements, in its icon's coordinate system, turned about
     /// the placement's origin - and a line routed by any other reading of the same declaration ends
     /// where nothing is drawn.</para>
+    ///
+    /// <para>A connector the instance has switched off is found too (<see cref="DiagramComponent.SwitchedOff"/>):
+    /// it is not drawn, but a line to it ends at its place, as in Dymola.</para>
     /// </summary>
     public static DiagramPort? PortOf(DiagramComponent component, string connectorName)
     {
         ArgumentNullException.ThrowIfNull(component);
-        var child = component.Children?.FirstOrDefault(c => string.Equals(c.Name, connectorName, StringComparison.Ordinal));
+        var child = component.Children?.FirstOrDefault(c => string.Equals(c.Name, connectorName, StringComparison.Ordinal))
+                    ?? component.SwitchedOff?.FirstOrDefault(c => string.Equals(c.Name, connectorName, StringComparison.Ordinal));
         if (child is null || FrameOf(component) is not { } frame)
             return null;
 

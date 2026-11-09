@@ -164,4 +164,48 @@ public class DiagramRoutingTests
         Assert.Equal(0, router.ComponentsBuilt);
         Assert.Equal(DiagramGeometry.RouteConnection(host.Libraries, "R.Fan", code, "src.y", "f2.u"), route);
     }
+
+    [Fact]
+    public void AnLWhoseCornerIsInFrontOfBothConnectors_IsTheRoute_WithNoLeadThatDoublesBack()
+    {
+        // A connector on one component's bottom edge to one a few units lower on another's left edge:
+        // the router added a 15-unit lead out of each first, so the line went down past the turn, back
+        // up and across, over itself. Dymola draws the plain L (VehicleInterfaces' engine mount to its
+        // chassis frame, which is this geometry).
+        const string pkg = """
+            within;
+            package L "l"
+              connector Frame "acausal"
+                Real s;
+                flow Real f;
+              end Frame;
+              model Mounted "a frame on its bottom edge"
+                Frame mount annotation (Placement(transformation(extent={{-10,-110},{10,-90}})));
+                annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+              end Mounted;
+              model Chassis "a frame on its left edge"
+                Frame frame annotation (Placement(transformation(extent={{-110,-10},{-90,10}})));
+                annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+              end Chassis;
+              model Sys
+                Mounted engine annotation (Placement(transformation(extent={{-110,-30},{-80,0}})));
+                Chassis chassis annotation (Placement(transformation(extent={{40,-54},{80,-14}})));
+              equation
+                connect(engine.mount, chassis.frame);
+              end Sys;
+            end L;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = pkg.ReplaceLineEndings("\n"),
+            ["package.order"] = "Frame\nMounted\nChassis\nSys\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var code = host.Libraries.GetModelById("L.Sys")!.Definition.ModelicaCode!;
+
+        var route = DiagramGeometry.RouteConnection(host.Libraries, "L.Sys", code, "engine.mount", "chassis.frame");
+
+        Assert.Equal([new(-95, -30), new(-95, -34), new(40, -34)], route);
+    }
 }

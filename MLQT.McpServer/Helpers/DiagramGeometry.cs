@@ -201,6 +201,19 @@ internal static class DiagramGeometry
     {
         var da = Resolve(fa, a, b);
         var db = Resolve(fb, b, a);
+
+        // One end leaves horizontally and the other vertically, and the corner where they meet is in
+        // front of both: that L is the route, as a person draws it. The stubs below were added anyway,
+        // so a line from a component's bottom edge to a connector a few units lower on another's left
+        // edge went 15 down, back up, then across - over itself (VehicleInterfaces' engine mount to its
+        // chassis frame, where Dymola draws the plain L).
+        if ((da.Dy == 0) != (db.Dy == 0))
+        {
+            var corner = da.Dy == 0 ? new Pt(b.X, a.Y) : new Pt(a.X, b.Y);
+            if (Ahead(a, da, corner) && Ahead(b, db, corner))
+                return Clean([a, corner, b]);
+        }
+
         var stub = Math.Clamp(Distance(a, b) * 0.2, 3, 15);
         var sa = new Pt(a.X + da.Dx * stub, a.Y + da.Dy * stub);
         var sb = new Pt(b.X + db.Dx * stub, b.Y + db.Dy * stub);
@@ -232,6 +245,10 @@ internal static class DiagramGeometry
         pts.Add(b);
         return Clean(pts);
     }
+
+    // Whether a point is at, or out in front of, a connector facing that way.
+    private static bool Ahead(Pt from, Facing facing, Pt point)
+        => (point.X - from.X) * facing.Dx + (point.Y - from.Y) * facing.Dy >= 0;
 
     // A None facing points along the dominant axis toward the other endpoint.
     private static Facing Resolve(Facing f, Pt from, Pt to)
