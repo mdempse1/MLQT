@@ -67,6 +67,7 @@
                     <RowTemplate>
                         @{
                             var isCurrentRevision = IsCurrentRevision(context);
+                            var dateTooltip = DateTooltipFor(context);
                         }
                         @if (_graphWidth > 0)
                         {
@@ -92,7 +93,9 @@
                             </MudTooltip>
                         </MudTd>
                         <MudTd DataLabel="Date" Style="@(isCurrentRevision ? "font-weight: bold;min-width: 150px;" : "min-width: 150px;")" Class="body1-table">
-                            @context.Date.ToString("dd-MMM-yyyy HH:mm")
+                            <MudTooltip Text="@dateTooltip" Disabled="@string.IsNullOrEmpty(dateTooltip)">
+                                @context.Date.ToString(DateFormat)
+                            </MudTooltip>
                         </MudTd>
                         <MudTd DataLabel="Message" Style="@(isCurrentRevision ? "font-weight: bold; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" : "max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;")" Class="body1-table">
                             <MudTooltip Text="@(context.Message == context.MessageShort ? context.MessageShort : context.Message)">

@@ -430,14 +430,14 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         Assert.True(allEntries.Count >= 2, $"Expected at least 2 log entries, got {allEntries.Count}");
 
         // Use a date that's between some commits
-        var midDate = allEntries[allEntries.Count / 2].Date;
+        var midDate = allEntries[allEntries.Count / 2].CommitterDate;
         var options = new VcsLogOptions { Since = midDate, MaxEntries = 100 };
 
         // Act
         var filteredEntries = _git.GetLogEntries(_clonePath, options);
 
         // Assert - all entries should be on or after the since date
-        Assert.All(filteredEntries, e => Assert.True(e.Date >= midDate.AddMinutes(-1))); // Allow 1 minute tolerance
+        Assert.All(filteredEntries, e => Assert.True(e.CommitterDate >= midDate.AddMinutes(-1))); // Allow 1 minute tolerance
     }
 
     [Fact]
@@ -448,14 +448,14 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         Assert.True(allEntries.Count >= 2, $"Expected at least 2 log entries, got {allEntries.Count}");
 
         // Use a date that's between some commits
-        var midDate = allEntries[allEntries.Count / 2].Date;
+        var midDate = allEntries[allEntries.Count / 2].CommitterDate;
         var options = new VcsLogOptions { Until = midDate, MaxEntries = 100 };
 
         // Act
         var filteredEntries = _git.GetLogEntries(_clonePath, options);
 
         // Assert - all entries should be on or before the until date
-        Assert.All(filteredEntries, e => Assert.True(e.Date <= midDate.AddMinutes(1))); // Allow 1 minute tolerance
+        Assert.All(filteredEntries, e => Assert.True(e.CommitterDate <= midDate.AddMinutes(1))); // Allow 1 minute tolerance
     }
 
     [Fact]
@@ -1550,8 +1550,8 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         Assert.True(allEntries.Count >= 3, $"Expected at least 3 log entries, got {allEntries.Count}");
 
         // Set date range to exclude first and last commits
-        var oldest = allEntries.Last().Date;
-        var newest = allEntries.First().Date;
+        var oldest = allEntries.Last().CommitterDate;
+        var newest = allEntries.First().CommitterDate;
         var options = new VcsLogOptions
         {
             Since = oldest.AddMinutes(1),
@@ -1565,6 +1565,7 @@ public class GitIntegrationAdvancedTests : IClassFixture<GitTestRepositoryFixtur
         // Assert - should have fewer entries (possibly excluding oldest and/or newest)
         // Note: depends on actual commit timestamps in the test repo
         Assert.NotNull(filteredEntries);
+        Assert.All(filteredEntries, e => Assert.True(e.CommitterDate <= options.Until));
     }
 
     // ============================================================================
