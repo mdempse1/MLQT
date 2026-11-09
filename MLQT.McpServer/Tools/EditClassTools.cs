@@ -70,8 +70,9 @@ public sealed class EditClassTools
     [McpServerTool(Name = "mlqt_edit_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Change part of one Modelica class with a list of operations, applied in order and all or none. " +
                  "The usual one is replace: {\"op\":\"replace\",\"old\":\"y = k*u;\",\"new\":\"y = k*u + offset;\"} " +
-                 "swaps text that must occur exactly once in the class, as written in its file - copy it from " +
-                 "mlqt_get_class's source view with includeAnnotations=true; with \"all\":true it swaps every " +
+                 "swaps text that must occur exactly once in the class - copy it from mlqt_get_class's source view " +
+                 "with includeAnnotations=true; text whose spacing or line breaks differ from the file (a formatter " +
+                 "reflowed it) is found too, and the answer says so; with \"all\":true it swaps every " +
                  "occurrence, and says how many; \"wholeWord\":true matches only where old is not part of a longer " +
                  "name (Ti, not the Ti in TipIn). To rename a component and every reference to it, in other classes " +
                  "too, use mlqt_refactor_class's rename_component instead. An extends clause, an import or " +
@@ -226,22 +227,27 @@ public sealed class EditClassTools
         if (find == with)
             return new ToolError("old and new are the same, so there is nothing to change.");
 
-        // One matcher either way: the text as written, or - whole words - not where the character before
-        // or after it would make it part of a longer name. Only an end that is itself part of a name is
-        // bounded, so old text that starts or ends with punctuation still matches beside a name.
-        var pattern = Regex.Escape(find);
-        if (wholeWord && find.Length > 0 && IsNameChar(find[0]))
-            pattern = $"(?<![A-Za-z0-9_]){pattern}";
-        if (wholeWord && find.Length > 0 && IsNameChar(find[^1]))
-            pattern = $"{pattern}(?![A-Za-z0-9_])";
-        var matcher = new Regex(pattern, RegexOptions.CultureInvariant);
-
+        // The text as written first. Only where that is nowhere, the same Modelica tokens with any white
+        // space between them: formatting reflows lines and spaces operators, so text copied from a view
+        // taken before a format - `x=1;`, one long declaration - was "not in the class" afterwards, and
+        // the agent had to search the raw file and try again.
+        var matcher = Matcher(Regex.Escape(find), find, wholeWord);
         var count = matcher.Matches(code).Count;
+        var loose = false;
+        if (count == 0 && WhiteSpaceTolerant(find) is { } tolerant)
+        {
+            matcher = Matcher(tolerant, find, wholeWord);
+            count = matcher.Matches(code).Count;
+            loose = count > 0;
+        }
+
         if (count == 0)
             return new ToolError(
-                $"The text to replace is not in '{classId}'{(wholeWord ? " as a whole word" : "")}. It must match the " +
-                "class's source exactly, indentation and spacing included. Copy it from mlqt_get_class's source view with " +
-                "includeAnnotations=true: by default that hides annotations, so its text is not all of the class.");
+                $"The text to replace is not in '{classId}'{(wholeWord ? " as a whole word" : "")}, even ignoring " +
+                "differences in white space and line breaks. Copy it from mlqt_get_class's source view with " +
+                "includeAnnotations=true: by default that hides annotations, so its text is not all of the class. To " +
+                "change a declaration, set_component_modifier, set_component_description or mlqt_refactor_class's " +
+                "rename_component name it instead of quoting it.");
         if (count > 1 && !all)
             return new ToolError(
                 $"The text to replace occurs {count} times in '{classId}'{(wholeWord ? " as a whole word" : "")}. Include " +
@@ -261,10 +267,57 @@ public sealed class EditClassTools
 
         var applied = await ClassBodyEditor.ApplyAsync(_libraries, _resources, _session, ctx, newCode, preview: false, "edit the class");
         // How many, as a note on the answer: replacing more than the caller meant is the risk of all=true.
-        return all && applied is ClassEditResult result
+        // And whether white space was ignored to find it, so the agent knows its copy of the class is stale.
+        var notes = new List<string>();
+        if (all)
+            notes.Add($"Replaced {count} occurrence{(count == 1 ? "" : "s")}.");
+        if (loose)
+            notes.Add("old matched only when differences in white space and line breaks were ignored - the class's " +
+                      "layout has changed since it was read (formatting reflows it); read it again before quoting more of it.");
+        return notes.Count > 0 && applied is ClassEditResult result
             ? new StructureEditResult(classId, result.FilePath, result.PreviewOnly, Changed: true, result.AffectedCount,
-                result.NewFileContent, $"Replaced {count} occurrence{(count == 1 ? "" : "s")}.")
+                result.NewFileContent, string.Join(" ", notes))
             : applied;
+    }
+
+    // A matcher for `pattern`, which matches `find`: with wholeWord, not where the character before or after
+    // would make it part of a longer name. Only an end that is itself part of a name is bounded, so old
+    // text that starts or ends with punctuation still matches beside a name.
+    private static Regex Matcher(string pattern, string find, bool wholeWord)
+    {
+        if (wholeWord && find.Length > 0 && IsNameChar(find[0]))
+            pattern = $"(?<![A-Za-z0-9_]){pattern}";
+        if (wholeWord && find.Length > 0 && IsNameChar(find[^1]))
+            pattern = $"{pattern}(?![A-Za-z0-9_])";
+        return new Regex(pattern, RegexOptions.CultureInvariant);
+    }
+
+    // Modelica's tokens, as far as white space is concerned: a string or quoted name (matched exactly, its
+    // spaces being its content), a name, a number, or one other character.
+    private static readonly Regex Token = new(
+        """
+        "(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_][A-Za-z0-9_]*|(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|\S
+        """,
+        RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A pattern for <paramref name="find"/>'s tokens with any white space between them - at least some
+    /// between two names or numbers, which would otherwise run together - or null when it is one token,
+    /// which the exact match already looked for.
+    /// </summary>
+    private static string? WhiteSpaceTolerant(string find)
+    {
+        var tokens = Token.Matches(find).Select(m => m.Value).ToList();
+        if (tokens.Count < 2)
+            return null;
+
+        var pattern = new System.Text.StringBuilder(Regex.Escape(tokens[0]));
+        for (var i = 1; i < tokens.Count; i++)
+        {
+            var together = IsNameChar(tokens[i - 1][^1]) && IsNameChar(tokens[i][0]);
+            pattern.Append(together ? @"\s+" : @"\s*").Append(Regex.Escape(tokens[i]));
+        }
+        return pattern.ToString();
     }
 
     private static string Normalise(string text, string eol) =>

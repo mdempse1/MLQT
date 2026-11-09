@@ -94,7 +94,8 @@ public class EditClassToolsTests
     {
         using var host = new TestHost();
         var before = FileText2(host);
-        var err = Assert.IsType<ToolError>(await Tools(host).EditClass("P.Lag", [Replace("T*der(y)=u-y;", "x")]));
+        // Not there even ignoring white space - the class says `u - y`, which spacing alone once made a miss.
+        var err = Assert.IsType<ToolError>(await Tools(host).EditClass("P.Lag", [Replace("T*der(y)=u+y;", "x")]));
 
         Assert.Contains("not in 'P.Lag'", err.Error);
         Assert.Contains("includeAnnotations=true", err.Error);

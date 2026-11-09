@@ -302,7 +302,10 @@ public sealed class GuidanceTools
               instead of your own file edit or a script, then there is nothing to reload. With all=true it
               swaps every occurrence - a name used throughout the class - instead of a sed, and says how
               many; wholeWord=true leaves it alone where it is part of a longer name. Copy the old text from
-              mlqt_get_class's source view with includeAnnotations=true, indentation included. An edit that
+              mlqt_get_class's source view with includeAnnotations=true. If it is not found as written, it is
+              looked for again ignoring white space and line breaks (a format reflows a class) - strings
+              excepted - and the answer notes it; then read the class again before quoting more. To change
+              a declaration, name it (set_component_modifier, rename_component) rather than quote it. An edit that
               would declare a name twice, or again where a base already declares it, is refused.
             - The element operations, each with its fields:
               add_component{type, name, modifier?, description?, visibility?, prefix?, constrainedBy?,
