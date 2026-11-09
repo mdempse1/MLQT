@@ -1646,6 +1646,8 @@ public class LibraryDataService : ILibraryDataService
             return;
         }
 
+        // In this order: IconRendered is a volatile write, which publishes the two before it to any
+        // thread that reads it as set (the check above reads it first).
         model.IconSvg = iconSvg;
         definition.IconGeneration = generation;
         definition.IconRendered = true;

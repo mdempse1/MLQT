@@ -274,4 +274,72 @@ public class ParseTreeBorrowingTests
 
         Assert.Equal(0, nulls);
     }
+
+    // ---- the thread-safety promise on ModelDefinition ------------------------------------------
+
+    [Fact]
+    public void Borrow_LeavesATreeAnotherReaderCachedWhileItWasBorrowing()
+    {
+        // The borrow parsed the tree, so it owns it. While the borrow is still running, something
+        // releases that tree and another reader, one that keeps what it parses, caches a new one.
+        // The borrow used to null ParsedCode on the way out whatever it held, which threw away that
+        // reader's tree and cost it the re-parse it was keeping the tree to avoid.
+        var definition = new ModelDefinition("M", "model M Real x; end M;");
+        object? kept = null;
+
+        definition.Borrow(tree =>
+        {
+            definition.ParsedCode = null;
+            kept = definition.EnsureParsed();
+            Assert.NotSame(tree, kept);
+        });
+
+        Assert.NotNull(kept);
+        Assert.Same(kept, definition.ParsedCode);
+    }
+
+    [Fact]
+    public void EnsureParsed_CallersThatRaceGetOneTree()
+    {
+        // Two threads that find no tree both parse, and only the first to publish is kept. Every
+        // caller gets that tree back, not a private copy nobody else can see.
+        const int threads = 16;
+        for (var round = 0; round < 20; round++)
+        {
+            var definition = new ModelDefinition("M", "model M Real x; Real y; end M;");
+            using var start = new System.Threading.Barrier(threads);
+            var trees = new object?[threads];
+
+            System.Threading.Tasks.Parallel.For(0, threads,
+                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = threads },
+                i =>
+                {
+                    start.SignalAndWait();
+                    trees[i] = definition.EnsureParsed();
+                });
+
+            Assert.All(trees, tree => Assert.Same(definition.ParsedCode, tree));
+        }
+    }
+
+    [Fact]
+    public void Borrow_ConcurrentBorrowersAlwaysGetATree_AndLeaveNoneCached()
+    {
+        // Several borrowers on one class with no long-lived reader: each must get a tree, and once
+        // all of them are done nothing may still be cached. Before the ownership was decided by the
+        // publish itself, a borrower that saw a tree, lost it to another borrower's release, and then
+        // parsed again thought it owned nothing and left its tree cached for good.
+        var definition = new ModelDefinition("M", "model M Real x; end M;");
+        var missing = 0;
+
+        System.Threading.Tasks.Parallel.For(0, 20_000, _ =>
+        {
+            var gotTree = definition.Borrow(tree => tree.ChildCount > 0, ifUnparseable: false);
+            if (!gotTree)
+                System.Threading.Interlocked.Increment(ref missing);
+        });
+
+        Assert.Equal(0, missing);
+        Assert.Null(definition.ParsedCode);
+    }
 }
