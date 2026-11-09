@@ -225,17 +225,43 @@ internal static class DiagramGeometry
         var pts = new List<Pt> { a, sa };
         var aHorizontal = da.Dy == 0;
         var bHorizontal = db.Dy == 0;
+
+        // Both ends leave along the same axis. Turning half way between the leads is right only when the
+        // connectors face each other with room between them; facing apart - an output whose target is
+        // behind it, two shafts back to back - the half-way turn lies behind a lead, and the line ran
+        // out, back over itself and on (a speed sensor's output to a bus on the class's left edge:
+        // {41,40},{56,40},{-14,40},...). Then it goes round instead: out of each lead and across
+        // between them, at the height (or width) half way between the two ends, or clear of them both
+        // where they are level.
         if (aHorizontal && bHorizontal)
         {
-            var mx = (sa.X + sb.X) / 2;
-            pts.Add(new Pt(mx, sa.Y));
-            pts.Add(new Pt(mx, sb.Y));
+            if ((sb.X - sa.X) * da.Dx >= 0 && (sa.X - sb.X) * db.Dx >= 0)
+            {
+                var mx = (sa.X + sb.X) / 2;
+                pts.Add(new Pt(mx, sa.Y));
+                pts.Add(new Pt(mx, sb.Y));
+            }
+            else
+            {
+                var my = Crossing(sa.Y, sb.Y, stub);
+                pts.Add(new Pt(sa.X, my));
+                pts.Add(new Pt(sb.X, my));
+            }
         }
         else if (!aHorizontal && !bHorizontal)
         {
-            var my = (sa.Y + sb.Y) / 2;
-            pts.Add(new Pt(sa.X, my));
-            pts.Add(new Pt(sb.X, my));
+            if ((sb.Y - sa.Y) * da.Dy >= 0 && (sa.Y - sb.Y) * db.Dy >= 0)
+            {
+                var my = (sa.Y + sb.Y) / 2;
+                pts.Add(new Pt(sa.X, my));
+                pts.Add(new Pt(sb.X, my));
+            }
+            else
+            {
+                var mx = Crossing(sa.X, sb.X, stub);
+                pts.Add(new Pt(mx, sa.Y));
+                pts.Add(new Pt(mx, sb.Y));
+            }
         }
         else if (aHorizontal)
         {
@@ -249,6 +275,11 @@ internal static class DiagramGeometry
         pts.Add(b);
         return Clean(pts);
     }
+
+    // Where a line going round crosses between two leads: half way between them, or - where they are
+    // level, and half way is on both of them - clear of them by twice the lead.
+    private static double Crossing(double a, double b, double stub)
+        => Math.Abs(a - b) >= 1 ? (a + b) / 2 : a + 2 * stub;
 
     // Whether a point is out in front of a connector facing that way - strictly, so each leg of the L
     // has length: a corner on a connector itself would make the line leave or enter it sideways,

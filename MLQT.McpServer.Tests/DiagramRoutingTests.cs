@@ -221,6 +221,61 @@ public class DiagramRoutingTests
         Assert.True(route[^2].Y > route[^1].Y);
     }
 
+    /// <summary>Whether a poly-line ever turns straight back on itself.</summary>
+    private static bool DoublesBack(IReadOnlyList<DiagramGeometry.Pt> route)
+    {
+        for (var i = 2; i < route.Count; i++)
+        {
+            var (ax, ay) = (route[i - 1].X - route[i - 2].X, route[i - 1].Y - route[i - 2].Y);
+            var (bx, by) = (route[i].X - route[i - 1].X, route[i].Y - route[i - 1].Y);
+            if (ax * bx + ay * by < 0 && ax * by - ay * bx == 0)
+                return true;
+        }
+        return false;
+    }
+
+    [Fact]
+    public void ConnectorsFacingApart_AreJoinedRoundTheEnds_NotBackOverTheLine()
+    {
+        // A flange on one component's left edge to a flange on another's right edge, further left and
+        // lower: turning half way between the leads zigzagged {20,40},{12,40},{15,40},{15,0},{18,0},{10,0}.
+        var route = DiagramGeometry.Route(new(20, 40), new(-1, 0), new(10, 0), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        Assert.Equal(new DiagramGeometry.Pt(20, 40), route[0]);
+        Assert.Equal(new DiagramGeometry.Pt(10, 0), route[^1]);
+        Assert.True(route[1].X < 20);   // leaves to the left, as the first flange faces
+        Assert.True(route[^2].X > 10);  // and comes into the second from its right
+    }
+
+    [Fact]
+    public void AnOutputWhoseTargetIsBehindIt_GoesRound_NotBackOverItself()
+    {
+        // A sensor's output on its right edge to a bus far to its left: the line went 15 right and then
+        // back left along the same row.
+        var route = DiagramGeometry.Route(new(41, 40), new(1, 0), new(-100, 60), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        Assert.True(route[1].X > 41);
+    }
+
+    [Fact]
+    public void LevelConnectorsBackToBack_GoRoundClearOfBothRows()
+    {
+        var route = DiagramGeometry.Route(new(0, 0), new(-1, 0), new(40, 0), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        Assert.Contains(route, p => p.Y != 0);
+    }
+
+    [Fact]
+    public void VerticalConnectorsFacingApart_GoRound_Too()
+    {
+        var route = DiagramGeometry.Route(new(0, 20), new(0, -1), new(30, 50), new(0, 1));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+    }
+
     private const string Arrays = """
         within;
         package Q "q"

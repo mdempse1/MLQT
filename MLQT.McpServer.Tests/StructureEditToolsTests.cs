@@ -589,6 +589,19 @@ public class StructureEditToolsTests
             Engine engine;
             Shaft shaft;
           end EngineSys;
+          model OwnSubsystem "its own shafts and bus, as a new subsystem declares them"
+            FlangeWithBearing engineFlange;
+            ControlBus controlBus;
+            Shaft shaft;
+            Source source1;
+          end OwnSubsystem;
+          partial model DrivelineBase "a subsystem interface"
+            FlangeWithBearing wheelHub_1;
+          end DrivelineBase;
+          model Driveline "inherits its shafts, as every VehicleInterfaces subsystem does"
+            extends DrivelineBase;
+            Shaft shaft;
+          end Driveline;
         end C;
         """;
 
@@ -818,6 +831,20 @@ public class StructureEditToolsTests
             await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "shaft.flange_a"));
         Assert.True(res.Changed);
         Assert.Null(res.Note);
+    }
+
+    [Theory]
+    [InlineData("C.OwnSubsystem", "shaft.flange_a", "engineFlange.flange")]   // the class's own shaft
+    [InlineData("C.Driveline", "shaft.flange_a", "wheelHub_1.flange")]        // an inherited one
+    [InlineData("C.OwnSubsystem", "source1.y", "controlBus.engineBus.speed")] // a signal on its own bus
+    public async Task AddConnection_ToTheClassesOwnNestedConnectors_IsAccepted(string classId, string portA, string portB)
+    {
+        // A subsystem wires its inside to its own shafts and bus this way - VehicleInterfaces' every
+        // one does - and a test reported these refused, so each was written by hand.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(await LoadConn(host).AddConnection(classId, portA, portB));
+        Assert.True(res.Changed);
+        Assert.Contains($"connect({portA}, {portB});", host.Libraries.GetModelById(classId)!.Definition.ModelicaCode!);
     }
 
     [Fact]
