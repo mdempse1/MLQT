@@ -623,14 +623,17 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         var (browser, repositories, classifier) = RenderBrowserWithMocks(
             Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
 
-        browser.WaitForAssertion(() => Assert.Single(browser.FindAll(".mlqt-change-filter")));
-        Assert.Equal(["M"], Chips(browser));
-        repositories.Verify(r => r.GetWorkingCopyChanges("repo-1"), Times.AtLeastOnce);
-        // Waited for, not asserted at once: the chip comes from the status alone, and the classifier
-        // runs after it in the background (fbb96235), so on a fast runner it had not been called yet
-        // when the chip was there - this failed on Linux CI and passed on Windows in the same run.
-        browser.WaitForAssertion(() => classifier.Verify(
-            c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.AtLeastOnce));
+        // All in the wait. The filter and the plain M are drawn from the working-copy status, before
+        // the classification is even started on its own thread, so a Verify after the wait could run
+        // before Classify had been called - which a slow runner (the coverage job) caught.
+        browser.WaitForAssertion(() =>
+        {
+            Assert.Single(browser.FindAll(".mlqt-change-filter"));
+            Assert.Equal(["M"], Chips(browser));
+            repositories.Verify(r => r.GetWorkingCopyChanges("repo-1"), Times.AtLeastOnce);
+            classifier.Verify(
+                c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.AtLeastOnce);
+        });
     }
     /// <summary>
     /// A filter is a question, not a rearrangement: the pruned tree opens where the user had the

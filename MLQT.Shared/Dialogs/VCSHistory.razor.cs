@@ -318,6 +318,19 @@ public partial class VCSHistory
                 entry.Revision.StartsWith(_repository.CurrentRevision);
     }
 
+    internal const string DateFormat = "dd-MMM-yyyy HH:mm";
+
+    /// <summary>
+    /// The Date cell's tooltip: the committer date, when a rebase, cherry-pick or amend has moved it
+    /// away from the author date the cell shows. The date filter matches the committer date, so this
+    /// is what explains a commit the filter kept although its Date is outside the range. Empty, which
+    /// disables the tooltip, when the two agree to the minute.
+    /// </summary>
+    internal static string DateTooltipFor(VcsLogEntry entry) =>
+        Math.Abs((entry.CommitterDate - entry.Date).TotalMinutes) < 1
+            ? ""
+            : $"Committed {entry.CommitterDate.ToString(DateFormat)} - the date the filter uses";
+
     private string GetRevisionTooltip(VcsLogEntry entry)
     {
         var tooltip = entry.Revision;

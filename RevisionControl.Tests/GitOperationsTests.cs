@@ -88,6 +88,25 @@ public class GitOperationsTests : IDisposable
         repo.Commit(message, sig, sig);
     }
 
+    private static readonly DateTimeOffset LongBefore = new(2026, 9, 1, 9, 0, 0, TimeSpan.FromHours(2));
+    private static readonly DateTimeOffset Authored = new(2026, 9, 30, 11, 14, 18, TimeSpan.FromHours(2));
+    private static readonly DateTimeOffset BeforeRebase = new(2026, 10, 15, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Rebased = new(2026, 11, 2, 13, 6, 4, TimeSpan.FromHours(1));
+
+    /// <summary>Creates a temp repo of empty commits, oldest first, each with its own author and committer date.</summary>
+    private string CreateRepoWithDatedCommits(params (string Message, DateTimeOffset Authored, DateTimeOffset Committed)[] commits)
+    {
+        var repoPath = NewTempPath();
+        Repository.Init(repoPath);
+        using var repo = new Repository(repoPath);
+        foreach (var (message, authored, committed) in commits)
+            repo.Commit(message,
+                new Signature("Test User", "test@example.com", authored),
+                new Signature("Test User", "test@example.com", committed),
+                new CommitOptions { AllowEmptyCommit = true });
+        return repoPath;
+    }
+
     #region GetChangedFilePathsSince Tests
 
     [Fact]
@@ -330,6 +349,46 @@ public class GitOperationsTests : IDisposable
         var entries = _git.GetLogEntries(repoPath, new VcsLogOptions { Until = pastTime });
 
         Assert.Empty(entries);
+    }
+
+    [Fact]
+    public void GetLogEntries_RebasedCommit_HasAuthorDateAndCommitterDate()
+    {
+        var repoPath = CreateRepoWithDatedCommits(("rebased", Authored, Rebased));
+
+        var walked = Assert.Single(_git.GetLogEntries(repoPath));
+        var lookedUp = Assert.Single(_git.GetLogEntries(repoPath, new VcsLogOptions { Revision = walked.Revision }));
+
+        Assert.Equal((Authored, Rebased), (walked.Date, walked.CommitterDate));
+        Assert.Equal((Authored, Rebased), (lookedUp.Date, lookedUp.CommitterDate));
+    }
+
+    [Fact]
+    public void VcsLogEntry_CommitterDateNotSet_IsTheDate()
+    {
+        Assert.Equal(Rebased, new VcsLogEntry { Date = Rebased }.CommitterDate);
+    }
+
+    [Fact]
+    public void GetLogEntries_WithSinceFilter_KeepsCommitsRebasedSinceThoughAuthoredBefore()
+    {
+        var rebased = Enumerable.Range(1, 11).Select(i => ($"rebased {i}", Authored.AddMinutes(i), Rebased.AddMinutes(i)));
+        var repoPath = CreateRepoWithDatedCommits([("old", LongBefore, LongBefore), .. rebased]);
+
+        var entries = _git.GetLogEntries(repoPath, new VcsLogOptions { Since = BeforeRebase });
+
+        Assert.Equal(11, entries.Count);
+        Assert.DoesNotContain(entries, e => e.MessageShort == "old");
+    }
+
+    [Fact]
+    public void GetLogEntries_WithUntilFilter_ExcludesCommitsRebasedAfterThoughAuthoredBefore()
+    {
+        var repoPath = CreateRepoWithDatedCommits(("old", LongBefore, LongBefore), ("rebased", Authored, Rebased));
+
+        var entries = _git.GetLogEntries(repoPath, new VcsLogOptions { Until = BeforeRebase });
+
+        Assert.Equal("old", Assert.Single(entries).MessageShort);
     }
 
     [Fact]

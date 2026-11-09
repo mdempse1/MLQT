@@ -244,8 +244,8 @@ byte[]? headContent = git.GetFileBytesAtRevision(
 
 | Type | Purpose |
 |------|---------|
-| `VcsLogEntry` | Commit history entry (Revision, ShortRevision, Author, AuthorEmail, Date, Message, MessageShort, Branch, ParentRevisions) |
-| `VcsLogOptions` | Options for filtering log queries (MaxEntries, Since, Until, Branch, Revision; `DefaultPastWeek`) |
+| `VcsLogEntry` | Commit history entry (Revision, ShortRevision, Author, AuthorEmail, Date, CommitterDate, Message, MessageShort, Branch, ParentRevisions). For Git, `Date` is the author date and `CommitterDate` the date the commit was made on its branch, which a rebase, cherry-pick or amend moves; for SVN they are the same |
+| `VcsLogOptions` | Options for filtering log queries (MaxEntries, Since, Until, Branch, Revision; `DefaultPastWeek`). Git matches Since and Until against the committer date, as `git log` does |
 | `VcsChangedFile` | File changed in a commit (Path, ChangeType, OldPath) |
 | `VcsWorkingCopyFile` | Uncommitted file change (Path, Status, OldPath, IsStaged) |
 | `VcsBranchInfo` | Branch metadata (Name, IsCurrent, IsRemote, IsTag, LastCommit) |
