@@ -84,7 +84,8 @@ public sealed class EditClassTools
                  "remove_connection{portA,portB}, " +
                  "set_component_placement{name,x1,y1,x2,y2,rotation?}, set_class_description{description}, " +
                  "set_component_description{name,description}, set_class_documentation{info?,revisions?}, " +
-                 "suppress_rule{ruleId,component?,reason?}, accept_spelling{word,reason?}, " +
+                 "suppress_rule{ruleId,component?,reason?}, accept_spelling{word,reason?} (accepts it in this class " +
+                 "and those nested in it; for every class of the repository, mlqt_style_settings' acceptSpellings), " +
                  "correct_spelling{word,newWord}. Each result is parse-checked before it is written; if any " +
                  "operation fails, nothing is changed. preview=true returns the file without keeping it.")]
     public async Task<object> EditClass(

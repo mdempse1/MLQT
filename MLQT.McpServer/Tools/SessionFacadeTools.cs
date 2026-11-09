@@ -76,17 +76,24 @@ public sealed class SessionFacadeTools
         => _classes.GetPackageTree(root, depth, maxNodes);
 
     [McpServerTool(Name = "mlqt_style_settings", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("A repository's Modelica style-checking rules and spell-check languages, from its .mlqt/settings.json. " +
-                 "With no settings, returns them. With settings, merges them in and writes the file - pass only " +
-                 "the rules you are changing; the rest are kept. With one repository loaded, repositoryId is " +
-                 "optional. A library loaded with no repository reports the built-in defaults, and has no file " +
-                 "to write.")]
+    [Description("A repository's Modelica style-checking rules, spell-check languages and accepted spellings (its " +
+                 ".mlqt/settings.json and .mlqt/dictionary.txt). With nothing to change, returns them. With settings, " +
+                 "merges them in and writes the file - pass only the rules you are changing; the rest are kept. " +
+                 "acceptSpellings adds words the spell check accepts in every class of the repository - names, " +
+                 "symbols, file extensions, domain terms used throughout - and removeSpellings takes them out; " +
+                 "for a word right in one class only, use mlqt_edit_class's accept_spelling. With one repository " +
+                 "loaded, repositoryId is optional. A library loaded with no repository reports the built-in " +
+                 "defaults, and has no files to write.")]
     public async Task<object> StyleSettings(
         [Description("Optional: the rules to change, and spellCheckLanguages. Omit to read the settings.")]
         StyleSettingsInput? settings = null,
         [Description("Optional repository id or name. Omit when a single repository is loaded.")]
-        string? repositoryId = null)
-        => settings is null
+        string? repositoryId = null,
+        [Description("Optional: words to accept in every class of the repository, one word each.")]
+        IReadOnlyList<string>? acceptSpellings = null,
+        [Description("Optional: words to stop accepting.")]
+        IReadOnlyList<string>? removeSpellings = null)
+        => settings is null && (acceptSpellings?.Count ?? 0) == 0 && (removeSpellings?.Count ?? 0) == 0
             ? _style.GetStyleSettings(repositoryId)
-            : await _style.SetStyleSettings(settings, repositoryId);
+            : await _style.SetStyleSettings(settings, repositoryId, acceptSpellings, removeSpellings);
 }

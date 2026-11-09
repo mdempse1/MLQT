@@ -474,11 +474,17 @@ public sealed class GuidanceTools
               for each word, from the configured language(s) plus your custom dictionary.
             - mlqt_edit_class with correct_spelling{word, newWord}: whole-word, case-sensitive replacement
               across the file's prose (HTML tags, hrefs and code/pre blocks are preserved).
-            - When the word is right and the checker is wrong, pick the narrowest waiver: mlqt_edit_class
-              with accept_spelling{word} writes __MLQT(spelling="word") and accepts it in that class and the
-              classes nested in it; the repository's .mlqt/dictionary.txt accepts it everywhere in the
-              repository; suppress_rule with MLQT.Spelling.Description / MLQT.Spelling.Documentation waives
-              spell checking for a whole class, which silences its other misspellings too.
+            - When the word is right and the checker is wrong, accept it where it belongs:
+              - One class: mlqt_edit_class with accept_spelling{word} writes __MLQT(spelling="word") and
+                accepts it in that class and the classes nested in it.
+              - The whole repository - a term, symbol, file extension or author's name used across its
+                libraries: mlqt_style_settings(acceptSpellings: [...]) adds the words to the repository's
+                committed .mlqt/dictionary.txt, which the desktop app and mlqt check read too, so they are
+                accepted in every class of every library in it. Do this rather than accepting one word
+                class by class, or library by library. mlqt_style_settings with no arguments lists them;
+                removeSpellings takes words out.
+              - suppress_rule with MLQT.Spelling.Description / MLQT.Spelling.Documentation waives spell
+                checking for a whole class, which silences its other misspellings too - for generated text.
             """,
 
         ["formatting"] = """

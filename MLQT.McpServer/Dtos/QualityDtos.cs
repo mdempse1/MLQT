@@ -216,19 +216,26 @@ public sealed class StyleSettingsInput
     }
 }
 
+/// <param name="AcceptedSpellings">The words the repository's spell check accepts everywhere in it, from
+/// its <c>.mlqt/dictionary.txt</c> - empty with no repository, which has no such list.</param>
 public sealed record StyleSettingsResult(
     string? RepositoryId,
     string? Repository,
     string Source,
-    StyleSettingsInput Settings);
+    StyleSettingsInput Settings,
+    IReadOnlyList<string> AcceptedSpellings);
 
+/// <param name="AcceptedSpellings">The repository's accepted words once the change is made.</param>
+/// <param name="DictionaryPath">Where they are kept: the committed <c>.mlqt/dictionary.txt</c>.</param>
 public sealed record SetStyleSettingsResult(
     string RepositoryId,
     string Repository,
     bool Persisted,
     string? Path,
     string? Note,
-    StyleSettingsInput Settings);
+    StyleSettingsInput Settings,
+    IReadOnlyList<string> AcceptedSpellings,
+    string DictionaryPath);
 
 /// <summary>
 /// One finding of a check. <see cref="Status"/> is where it stands against the repository's committed

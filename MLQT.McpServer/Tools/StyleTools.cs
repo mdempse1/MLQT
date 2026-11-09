@@ -77,31 +77,81 @@ public sealed class StyleTools
 
         var settings = repo?.StyleSettings ?? new StyleCheckingSettings();
         var source = repo is not null ? "repository .mlqt/settings.json" : "built-in defaults (no repository loaded)";
-        return new StyleSettingsResult(repo?.Id, repo?.Name, source, StyleSettingsInput.From(settings));
+        return new StyleSettingsResult(repo?.Id, repo?.Name, source, StyleSettingsInput.From(settings),
+            AcceptedSpellings(repo?.LocalPath));
     }
 
+    /// <summary>
+    /// Change a repository's settings, its accepted spellings, or both. A word accepted here is accepted
+    /// in every class of the repository - the desktop app and <c>mlqt check</c> read the same committed
+    /// <c>.mlqt/dictionary.txt</c> - where <c>accept_spelling</c> accepts it in one class and those nested
+    /// in it. Without this an agent could only accept a word class by class, so words accepted for one
+    /// library (driveability, halfshaft) had to be accepted again for the next, and generated documentation
+    /// full of file extensions, symbols and authors' names gave 189 findings.
+    /// </summary>
     internal async Task<object> SetStyleSettings(
-        StyleSettingsInput settings,
-        string? repositoryId = null)
+        StyleSettingsInput? settings,
+        string? repositoryId = null,
+        IReadOnlyList<string>? acceptSpellings = null,
+        IReadOnlyList<string>? removeSpellings = null)
     {
-        if (settings is null)
-            return new ToolError("Provide a 'settings' object. Call mlqt_style_settings to see the current shape.");
+        acceptSpellings ??= [];
+        removeSpellings ??= [];
+        if (settings is null && acceptSpellings.Count == 0 && removeSpellings.Count == 0)
+            return new ToolError("Provide a 'settings' object, acceptSpellings or removeSpellings. Call mlqt_style_settings " +
+                                 "with none of them to see the current settings and accepted words.");
+
+        // One word each: the list is a dictionary, and a phrase in it would accept nothing.
+        var notWords = acceptSpellings.Concat(removeSpellings)
+            .Where(w => string.IsNullOrWhiteSpace(w) || w.Trim().Any(char.IsWhiteSpace))
+            .ToList();
+        if (notWords.Count > 0)
+            return new ToolError("Each accepted spelling is one word, with no spaces: " +
+                                 string.Join(", ", notWords.Select(w => $"'{w}'")) + ". Nothing was changed.");
 
         var (repo, error) = ResolveRepo(repositoryId, requireRepo: true);
         if (error is not null)
             return error;
 
         repo!.StyleSettings ??= new StyleCheckingSettings();
-        settings.ApplyTo(repo.StyleSettings);
-        await _repositories.ApplyRepositorySettingsAsync(repo.Id);
+        var notes = new List<string>();
+        if (settings is not null)
+        {
+            settings.ApplyTo(repo.StyleSettings);
+            await _repositories.ApplyRepositorySettingsAsync(repo.Id);
+            if (repo.IsSettingsReadOnly)
+                notes.Add("Could not write .mlqt/settings.json (read-only); the change applies to this session only.");
+        }
+
+        if (acceptSpellings.Count > 0 || removeSpellings.Count > 0)
+        {
+            try
+            {
+                foreach (var word in acceptSpellings)
+                    await _customDictionary.AddWordAsync(repo.LocalPath, word.Trim());
+                foreach (var word in removeSpellings)
+                    await _customDictionary.RemoveWordAsync(repo.LocalPath, word.Trim());
+                notes.Add("Spelling findings already listed come from earlier checks: run mlqt_check with spelling " +
+                          "again to see them cleared.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return new ToolError($"Could not write '{_customDictionary.PathFor(repo.LocalPath)}': {ex.Message}");
+            }
+        }
 
         var persisted = !repo.IsSettingsReadOnly;
         return new SetStyleSettingsResult(
             repo.Id, repo.Name, persisted,
             persisted ? System.IO.Path.Combine(repo.LocalPath, ".mlqt", "settings.json") : null,
-            persisted ? null : "Could not write .mlqt/settings.json (read-only); the change applies to this session only.",
-            StyleSettingsInput.From(repo.StyleSettings));
+            notes.Count > 0 ? string.Join(" ", notes) : null,
+            StyleSettingsInput.From(repo.StyleSettings),
+            AcceptedSpellings(repo.LocalPath),
+            _customDictionary.PathFor(repo.LocalPath));
     }
+
+    private IReadOnlyList<string> AcceptedSpellings(string? repositoryRoot) =>
+        [.. _customDictionary.WordsFor(repositoryRoot).Order(StringComparer.OrdinalIgnoreCase)];
 
     internal object CheckStyle(
         string source,
