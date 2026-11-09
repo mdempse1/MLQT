@@ -9,6 +9,8 @@ ModelicaGraph.ElementSite.<Clone>$() -> ModelicaGraph.ElementSite!
 ModelicaGraph.ElementSite.Deconstruct(out ModelicaGraph.ElementSiteKind Kind, out ModelicaGraph.NameSegment! Name, out string! ScopeId, out int Line, out System.Collections.Generic.IReadOnlyList<string!>! Iterators) -> void
 ModelicaGraph.ElementSite.ElementSite(ModelicaGraph.ElementSiteKind Kind, ModelicaGraph.NameSegment! Name, string! ScopeId, int Line, System.Collections.Generic.IReadOnlyList<string!>! Iterators) -> void
 ModelicaGraph.ElementSite.Equals(ModelicaGraph.ElementSite? other) -> bool
+ModelicaGraph.ElementSite.FirstSegment.get -> bool
+ModelicaGraph.ElementSite.FirstSegment.init -> void
 ModelicaGraph.ElementSite.Iterators.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ModelicaGraph.ElementSite.Iterators.init -> void
 ModelicaGraph.ElementSite.Kind.get -> ModelicaGraph.ElementSiteKind
@@ -34,5 +36,6 @@ override ModelicaGraph.ElementSite.Equals(object? obj) -> bool
 override ModelicaGraph.ElementSite.GetHashCode() -> int
 override ModelicaGraph.ElementSite.ToString() -> string!
 static ModelicaGraph.ElementReferenceLocator.Locate(ModelicaGraph.DirectedGraph! graph, modelicaParser.Stored_definitionContext! tree, string! declaringClassId, string! name, ModelicaGraph.ReferenceLocator.Shared? shared = null) -> System.Collections.Generic.IReadOnlyList<ModelicaGraph.ElementSite!>!
+static ModelicaGraph.ElementReferenceLocator.UsesOfName(string! classCode, string! name) -> System.Collections.Generic.IReadOnlyList<int>!
 static ModelicaGraph.ElementSite.operator !=(ModelicaGraph.ElementSite? left, ModelicaGraph.ElementSite? right) -> bool
 static ModelicaGraph.ElementSite.operator ==(ModelicaGraph.ElementSite? left, ModelicaGraph.ElementSite? right) -> bool

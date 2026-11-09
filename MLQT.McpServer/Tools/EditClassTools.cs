@@ -369,24 +369,35 @@ public sealed class EditClassTools
             if (match.Groups[$"a{i}"] is not { Success: true } annotation)
                 continue;
 
-            var after = oldTokens.Count - i;   // the old tokens from the one the annotation came before
-            var before = i;                    // the old tokens up to it
-            if (newTokens.Count >= after
-                && newTokens.Skip(newTokens.Count - after).Select(t => t.Value).SequenceEqual(oldTokens.Skip(i)))
+            // As far as new agrees with old from the start, and then before the first place the tokens that
+            // followed the annotation in old come next. Anchored to new's end instead, a declaration's
+            // annotation went before whatever `;` new ended with - `k ... "gain";` followed by a new
+            // `k2 ...;` put k's Dialog on k2 - and anchored to the agreeing start alone, before a
+            // modification new added (`Real x(start = 1)`), where an annotation cannot go.
+            var agreed = 0;
+            while (agreed < i && agreed < newTokens.Count && newTokens[agreed].Value == oldTokens[agreed])
+                agreed++;
+            var following = oldTokens.Skip(i).ToList();
+            var at = -1;
+            for (var j = agreed; j + following.Count <= newTokens.Count && at < 0; j++)
+                if (newTokens.Skip(j).Take(following.Count).Select(t => t.Value).SequenceEqual(following))
+                    at = j;
+
+            if (at >= 0)
             {
                 // Before a token that starts its line - `end M;` after a class annotation - on a line of its
                 // own at that indentation; otherwise beside the text before it.
-                var next = newTokens[newTokens.Count - after];
+                var next = newTokens[at];
                 var lineStart = newText.LastIndexOf('\n', Math.Max(next.Index - 1, 0)) + 1;
                 var indent = newText[lineStart..next.Index];
                 inserts.Add(lineStart > 0 && indent.All(c => c is ' ' or '\t')
                     ? (next.Index, annotation.Value + "\n" + indent)
                     : (next.Index, " " + annotation.Value));
             }
-            else if (newTokens.Count >= before
-                     && newTokens.Take(before).Select(t => t.Value).SequenceEqual(oldTokens.Take(i)))
+            else if (agreed == i)
             {
-                var previous = newTokens[before - 1];
+                // Everything before it is as it was, and what followed it is gone: after what went before.
+                var previous = newTokens[i - 1];
                 inserts.Add((previous.Index + previous.Length, " " + annotation.Value));
             }
             else

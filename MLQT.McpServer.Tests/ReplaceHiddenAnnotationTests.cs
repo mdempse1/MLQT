@@ -89,6 +89,22 @@ public class ReplaceHiddenAnnotationTests
     }
 
     [Fact]
+    public async Task ADeclarationAddedAfterTheMatch_DoesNotTakeTheAnnotation()
+    {
+        // Both anchors fit - new still ends with `;` - and the declaration before the annotation is the
+        // longer, so k keeps its Dialog rather than k2 getting it.
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        ToolAssert.Ok<EditClassResult>(await tools.EditClass("H.M",
+            [Replace("parameter Real k = 1 \"gain\";", "parameter Real k = 1 \"gain\";\n  parameter Real k2 = 2;")]));
+
+        var source = Source(host);
+        Assert.Contains("parameter Real k = 1 \"gain\" annotation (Dialog(group = \"Main\"));", source);
+        Assert.Contains("parameter Real k2 = 2;", source);
+    }
+
+    [Fact]
     public async Task ANewTextThatChangesBothSidesOfAnAnnotation_IsRefused_RatherThanGuessed()
     {
         using var host = new TestHost();

@@ -31,7 +31,15 @@ public sealed record ElementSite(
     NameSegment Name,
     string ScopeId,
     int Line,
-    IReadOnlyList<string> Iterators);
+    IReadOnlyList<string> Iterators)
+{
+    /// <summary>
+    /// True for a reference whose first segment names the element - <c>Fz</c>, not <c>wheel.Fz</c>.
+    /// Only such a name is looked up where it is written, so only it can be taken over by an iterator or
+    /// anything else of the new name there; a later segment is a member of the segment before.
+    /// </summary>
+    public bool FirstSegment { get; init; }
+}
 
 /// <summary>
 /// Locates every place in a parsed file that names one element - a component, parameter or constant,
@@ -117,13 +125,53 @@ public sealed class ElementReferenceLocator : modelicaBaseVisitor<object?>
         return null;
     }
 
-    /// <summary>The element's own declaration, in the class declaring it - not a redeclaration written in a modification.</summary>
+    /// <summary>
+    /// The element's declaration in the class declaring it, and every redeclaration of it: one written in
+    /// a modification (<c>wheel(redeclare Real Fz = 1)</c>) on the declaring class or a class derived from
+    /// it, and one a derived class writes in its own body (<c>redeclare Real Fz = 2;</c>) - left as they
+    /// were, they redeclared an element that no longer existed.
+    /// </summary>
     public override object? VisitDeclaration(modelicaParser.DeclarationContext context)
     {
-        if (_scopes.Count > 0 && _scopes.Peek().ClassId == DeclaringClassId
-            && context.IDENT() is { } ident && ident.GetText() == Name && !InsideModification(context))
-            Add(ElementSiteKind.Declaration, ident, context);
+        if (_scopes.Count > 0 && context.IDENT() is { } ident && ident.GetText() == Name)
+        {
+            var scope = _scopes.Peek().ClassId;
+            if (context.Parent?.Parent is modelicaParser.Component_clause1Context { Parent: modelicaParser.Element_redeclarationContext } clause1
+                && ModifiedClass(clause1.Parent) is { } modified && IsOrDerives(modified))
+                Add(ElementSiteKind.Modification, ident, context);
+            else if (!InsideModification(context)
+                     && (scope == DeclaringClassId
+                         || (IsRedeclaredElement(context) && _graph.GetNode<ModelNode>(scope) is { } derived && IsOrDerives(derived))))
+                Add(ElementSiteKind.Declaration, ident, context);
+        }
         return base.VisitDeclaration(context);
+    }
+
+    /// <summary>Whether a declaration's element is written with <c>redeclare</c> in a class body.</summary>
+    private static bool IsRedeclaredElement(IParseTree declaration)
+    {
+        for (var at = declaration.Parent; at is not null && at is not modelicaParser.Class_definitionContext; at = at.Parent)
+            if (at is modelicaParser.ElementContext element)
+                return element.ChildCount > 0 && element.GetChild(0).GetText() == "redeclare";
+        return false;
+    }
+
+    /// <summary>
+    /// The lines of a class's own source where <paramref name="name"/> is used as the first segment of a
+    /// name it looks up - a value, a call, a type or a base - not a modification's target, which is a
+    /// member of the modified class, and not an iterator's own name inside its loop. A rename to that name
+    /// would take each of them over: a component of the name, declared or inherited, is found first.
+    /// </summary>
+    public static IReadOnlyList<int> UsesOfName(string classCode, string name)
+    {
+        if (string.IsNullOrWhiteSpace(classCode) || !classCode.Contains(name, StringComparison.Ordinal))
+            return [];
+        var tree = ModelicaParser.Helpers.ModelicaParserHelper.Parse(classCode);
+        return [.. ParserVisitors.NameUseCollector.Collect(tree)
+            .Where(u => u.Kind is not (ParserVisitors.NameUseKind.Modifier or ParserVisitors.NameUseKind.Import)
+                        && ModelicaParser.Helpers.ModelicaName.Segments(u.Text).FirstOrDefault() == name)
+            .Select(u => u.Line)
+            .Distinct()];
     }
 
     public override object? VisitComponent_reference(modelicaParser.Component_referenceContext context)
@@ -139,7 +187,7 @@ public sealed class ElementReferenceLocator : modelicaBaseVisitor<object?>
                 {
                     var at = resolved.QualifierSegments + i;
                     if (at < idents.Length && IsTarget(resolved.Path[i]))
-                        Add(ElementSiteKind.Reference, idents[at], context);
+                        Add(ElementSiteKind.Reference, idents[at], context, firstSegment: at == 0);
                 }
             }
         }
@@ -148,7 +196,7 @@ public sealed class ElementReferenceLocator : modelicaBaseVisitor<object?>
 
     public override object? VisitElement_modification(modelicaParser.Element_modificationContext context)
     {
-        if (_scopes.Count > 0 && context.name() is { } name && ModifiedClass(context) is { } modified
+        if (_scopes.Count > 0 && context.name() is { } name && ModifiedClass(context.Parent) is { } modified
             && References(modified.Id) is { } references
             && references.Resolve(string.Join(".", name.IDENT().Select(t => t.GetText()))) is { } resolved)
         {
@@ -168,14 +216,18 @@ public sealed class ElementReferenceLocator : modelicaBaseVisitor<object?>
         return base.VisitNamed_argument(context);
     }
 
-    private void Add(ElementSiteKind kind, ITerminalNode ident, IParseTree at) =>
+    private void Add(ElementSiteKind kind, ITerminalNode ident, IParseTree at, bool firstSegment = false) =>
         _sites.Add(new ElementSite(
             kind, new NameSegment(ident.GetText(), ident.Symbol.StartIndex, ident.Symbol.StopIndex),
-            _scopes.Peek().ClassId, ident.Symbol.Line, Iterators(at)));
+            _scopes.Peek().ClassId, ident.Symbol.Line, Iterators(at)) { FirstSegment = firstSegment });
 
+    // The element, or a derived class's redeclaration of it, which is the element there.
     private bool IsTarget(ResolvedElement element) =>
         element.Element.Kind == ModelicaParser.DataTypes.ClassElementKind.Component
-        && element.Element.Name == Name && element.OwnerId == DeclaringClassId;
+        && element.Element.Name == Name
+        && (element.OwnerId == DeclaringClassId
+            || (element.Element.Prefixes.Contains("redeclare") && _graph.GetNode<ModelNode>(element.OwnerId) is { } owner
+                && IsOrDerives(owner)));
 
     private ComponentReferences? References(string classId)
     {
@@ -199,15 +251,16 @@ public sealed class ElementReferenceLocator : modelicaBaseVisitor<object?>
     }
 
     /// <summary>
-    /// The class a modification is written on: the type of the component, the base of the extends clause
-    /// or short class it belongs to, followed down the modifications it is nested in. Null for one inside
-    /// an annotation, which is annotation grammar, and for one a class extends is written on.
+    /// The class a modification - or a redeclaration in one - is written on, walking out from
+    /// <paramref name="start"/>: the type of the component, the base of the extends clause, short class
+    /// or constraining clause it belongs to, followed down the modifications it is nested in. Null for one
+    /// inside an annotation, which is annotation grammar, and for one a class extends is written on.
     /// </summary>
-    private ModelNode? ModifiedClass(modelicaParser.Element_modificationContext modification)
+    private ModelNode? ModifiedClass(IParseTree? start)
     {
         var nested = new List<string>();
         modelicaParser.Type_specifierContext? typeSpecifier = null;
-        for (var node = modification.Parent; node is not null && typeSpecifier is null; node = node.Parent)
+        for (var node = start; node is not null && typeSpecifier is null; node = node.Parent)
         {
             switch (node)
             {
@@ -217,6 +270,11 @@ public sealed class ElementReferenceLocator : modelicaBaseVisitor<object?>
                     return null;
                 case modelicaParser.Element_modificationContext outer:
                     nested.Insert(0, string.Join(".", outer.name().IDENT().Select(t => t.GetText())));
+                    break;
+                // `replaceable Wheel w(Fz = 1) constrainedby Wheel(Fz = 2)`: the second is on the
+                // constraining class, and was left as it was.
+                case modelicaParser.Constraining_clauseContext constraint:
+                    typeSpecifier = constraint.type_specifier();
                     break;
                 case modelicaParser.Extends_clauseContext extendsClause:
                     typeSpecifier = extendsClause.type_specifier();

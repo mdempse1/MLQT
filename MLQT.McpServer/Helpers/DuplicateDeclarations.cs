@@ -23,8 +23,11 @@ internal static class DuplicateDeclarations
     /// as a sentence for the refusal, or null when it declares nothing twice.</summary>
     public static string? Introduced(ILibraryDataService libraries, string classId, string before, string after)
     {
-        var old = Declared(before);
-        var now = Declared(after);
+        // Each text parsed once: this runs on every class edit.
+        var oldElements = Elements(before);
+        var newElements = Elements(after);
+        var old = Declared(oldElements);
+        var now = Declared(newElements);
 
         var twice = now.GroupBy(d => d.Name, StringComparer.Ordinal)
             .Where(g => g.Count() > 1 && g.Count() > old.Count(d => d.Name == g.Key))
@@ -33,31 +36,53 @@ internal static class DuplicateDeclarations
         if (twice.Count > 0)
             return $"'{classId}' would declare {Names(twice)} twice";
 
-        var added = now.Where(d => !d.Redeclare && !old.Any(o => o.Name == d.Name)).Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
-        if (added.Count == 0 || libraries.GetModelById(classId) is not { } node)
-            return null;
-
-        var inherited = ClassElementResolver.Collect(libraries.CombinedGraph, node, includeProtected: true, includeInherited: true)
-            .Where(m => m.OwnerId != classId && added.Contains(m.Element.Name)
-                        && m.Element.Kind is ClassElementKind.Component or ClassElementKind.Class)
-            .Select(m => $"'{m.Element.Name}' (declared in '{m.OwnerId}')")
-            .Distinct()
+        // Against the bases each text extends, not the class's as loaded: replacing `extends Base;` with a
+        // declaration Base had was refused as "already inherits", and an added extends clause bringing a
+        // name the class declares was not seen at all.
+        var wasInherited = Clashes(libraries, classId, old, Bases(oldElements));
+        var clashes = Clashes(libraries, classId, now, Bases(newElements))
+            .Where(c => !wasInherited.Contains(c))
             .ToList();
-        return inherited.Count > 0
-            ? $"'{classId}' would declare {string.Join(", ", inherited)} again, though it already inherits it"
+        return clashes.Count > 0
+            ? $"'{classId}' would declare {string.Join(", ", clashes)}, which it also inherits"
             : null;
     }
 
-    private static List<(string Name, bool Redeclare)> Declared(string code)
+    /// <summary>Each name declared (without redeclare) that one of <paramref name="bases"/> also gives the class.</summary>
+    private static HashSet<string> Clashes(
+        ILibraryDataService libraries, string classId, List<(string Name, bool Redeclare)> declared, List<string> bases)
+    {
+        var names = declared.Where(d => !d.Redeclare).Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        if (names.Count == 0)
+            return found;
+        var graph = libraries.CombinedGraph;
+        foreach (var baseName in bases)
+        {
+            if (TypeResolver.Resolve(graph, classId, baseName, null) is not { } baseNode)
+                continue;
+            foreach (var m in ClassElementResolver.Collect(graph, baseNode, includeProtected: true, includeInherited: true))
+                if (names.Contains(m.Element.Name) && m.Element.Kind is ClassElementKind.Component or ClassElementKind.Class)
+                    found.Add($"'{m.Element.Name}' (declared in '{m.OwnerId}')");
+        }
+        return found;
+    }
+
+    private static List<(string Name, bool Redeclare)> Declared(IReadOnlyList<ClassElement> elements) =>
+        [.. elements.Where(e => e.Kind is ClassElementKind.Component or ClassElementKind.Class)
+            .Select(e => (e.Name, e.Prefixes.Contains("redeclare")))];
+
+    private static List<string> Bases(IReadOnlyList<ClassElement> elements) =>
+        [.. elements.Where(e => e.Kind == ClassElementKind.Extends).Select(e => e.Name)];
+
+    private static IReadOnlyList<ClassElement> Elements(string code)
     {
         if (string.IsNullOrWhiteSpace(code))
             return [];
         var (tree, errors) = ModelicaParserHelper.ParseWithErrors(code);
-        if (errors.Count > 0)
-            return []; // the parse check that follows refuses it, with a better account of why
-        return [.. ClassInterfaceExtractor.Extract(tree).Elements
-            .Where(e => e.Kind is ClassElementKind.Component or ClassElementKind.Class)
-            .Select(e => (e.Name, e.Prefixes.Contains("redeclare")))];
+        return errors.Count > 0
+            ? [] // the parse check that follows refuses it, with a better account of why
+            : ClassInterfaceExtractor.Extract(tree).Elements;
     }
 
     private static string Names(IReadOnlyList<string> names) => string.Join(", ", names.Select(n => $"'{n}'"));

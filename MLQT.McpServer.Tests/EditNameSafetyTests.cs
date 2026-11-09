@@ -131,6 +131,29 @@ public class EditNameSafetyTests
     }
 
     [Fact]
+    public async Task ReplacingABaseWithTheDeclarationsItGave_IsNotADuplicate()
+    {
+        // The bases are the edited text's: without the extends clause, k is the class's own.
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        ToolAssert.Ok<EditClassResult>(await tools.EditClass("S.Derived", [Replace("extends Base;", "parameter Real k = 1;")]));
+
+        Assert.Contains("parameter Real k = 1;", Source(host, "S.Derived"));
+    }
+
+    [Fact]
+    public async Task AddingABaseThatGivesANameTheClassDeclares_IsRefused()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        var err = ToolAssert.Error(await tools.EditClass("S.M", [Replace("Real frontLoad;", "Real frontLoad;\n  Real k;\n  extends Base;")]));
+
+        Assert.Contains("'k' (declared in 'S.Base')", err.Error);
+    }
+
+    [Fact]
     public async Task ARedeclaration_OfAnInheritedName_IsNotASecondDeclaration()
     {
         using var host = new TestHost();

@@ -1302,6 +1302,13 @@ public sealed class EditTools
         if (element.OwnerId != classId)
             return new ToolError($"'{component}' is inherited: it is declared in '{element.OwnerId}'. Rename it there, " +
                                  "which renames it in every class that inherits it too.");
+        // An inner and its outers are matched by name when a model is instantiated, never by a reference
+        // this could follow: renaming one would leave the others looking for a name nothing declares.
+        if (element.Element.Prefixes.Any(p => p is "inner" or "outer"))
+            return new ToolError($"'{component}' is declared {string.Join(" ", element.Element.Prefixes.Where(p => p is "inner" or "outer"))}, " +
+                                 "and an inner and its outers find each other by name when the model is built, not through a " +
+                                 "reference a rename can follow. Rename it with mlqt_edit_class's replace in each class that " +
+                                 "declares it inner or outer, together.");
 
         if (!_session.DependenciesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries, "renaming a component (the classes using it are found from the dependency graph)");
@@ -1315,11 +1322,13 @@ public sealed class EditTools
         var taken = new List<string>();
         if (members.Any(m => m.Element.Name == newName && m.Element.Kind is not (ClassElementKind.Extends or ClassElementKind.Import)))
             taken.Add(classId);
+        var derivedClasses = new List<ModelNode>();
         foreach (var id in reach.Where(id => id != classId))
         {
             if (graph.GetNode<ModelNode>(id) is not { } derived
                 || !ClassElementResolver.BaseClasses(graph, derived).Any(b => b.Id == classId))
                 continue;
+            derivedClasses.Add(derived);
             if (ClassElementResolver.Collect(graph, derived, includeProtected: true, includeInherited: true)
                 .Any(m => m.Element.Name == newName && m.OwnerId != classId
                           && m.Element.Kind is not (ClassElementKind.Extends or ClassElementKind.Import)))
@@ -1329,6 +1338,25 @@ public sealed class EditTools
             return new ToolError($"Renaming '{component}' to '{newName}' is refused: '{newName}' is already declared " +
                                  $"in {string.Join(", ", taken.Take(10).Select(t => $"'{t}'"))}" +
                                  (taken.Count > 10 ? ", ..." : "") + ", where the renamed component is seen too. " +
+                                 "Nothing was changed. Choose another name.");
+
+        // A name the classes that see the component already use for something else - a package's constant,
+        // an import alias, a class - would mean the component once it is called that: an element of the
+        // class is found before anything further out. `Real y = g` reading P's g read the renamed component.
+        // A constant is seen by the classes nested in these too, as the ones further out are.
+        var roots = new List<ModelNode> { node };
+        roots.AddRange(derivedClasses);
+        var seeing = new List<ModelNode>(roots);
+        if (element.Element.Variability == "constant")
+            seeing.AddRange(graph.ModelNodes.Where(m => roots.Any(r => m.Id != r.Id && ModelicaName.IsInSubtree(m.Id, r.Id))).ToList());
+        var takenOver = seeing
+            .Select(c => (c.Id, Lines: ElementReferenceLocator.UsesOfName(c.Definition.ModelicaCode ?? string.Empty, newName)))
+            .Where(c => c.Lines.Count > 0)
+            .Select(c => $"{c.Id} (line {string.Join(", ", c.Lines.Take(5))})")
+            .ToList();
+        if (takenOver.Count > 0)
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: '{newName}' already means something else " +
+                                 $"where the component is seen, and would mean the component instead, in {string.Join("; ", takenOver.Take(10))}. " +
                                  "Nothing was changed. Choose another name.");
 
         // Only the files that could name it: those holding a class that reaches it, and that spell the name.
@@ -1357,8 +1385,19 @@ public sealed class EditTools
             if (sites.Count == 0)
                 continue;
 
-            foreach (var site in sites.Where(s => s.Iterators.Contains(newName)))
-                captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}");
+            // Only a reference's first segment is looked up where it is written, so only it can be taken
+            // over: by an iterator of the new name, or - written in a class that is neither the declaring
+            // one nor derived from it, a nested function say - by anything that name already means there.
+            foreach (var site in sites.Where(s => s.FirstSegment))
+            {
+                if (site.Iterators.Contains(newName))
+                    captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId} (a 'for' iterator)");
+                else if (site.ScopeId != classId && !derivedClasses.Any(d => d.Id == site.ScopeId)
+                         && graph.GetNode<ModelNode>(site.ScopeId) is { } scope
+                         && (ClassElementResolver.ReferencesIn(graph, scope).Resolve(newName) is not null
+                             || TypeResolver.Resolve(graph, scope.Id, newName, null) is not null))
+                    captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}, where '{newName}' is declared already");
+            }
             if (sites.Any(s => _libraries.GetModelById(s.ScopeId) is { } scope && _libraries.GetOwningLibrary(scope.Id)?.IsReadOnly == true))
                 readOnlyFiles.Add(path);
 
@@ -1371,7 +1410,7 @@ public sealed class EditTools
         }
 
         if (captured.Count > 0)
-            return new ToolError($"Renaming '{component}' to '{newName}' is refused: a 'for' iterator called '{newName}' " +
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: something already called '{newName}' " +
                                  $"would take over the renamed reference at {string.Join("; ", captured.Take(10))}. " +
                                  "Nothing was changed. Choose another name.");
         if (readOnlyFiles.Count > 0)
