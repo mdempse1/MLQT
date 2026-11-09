@@ -182,15 +182,19 @@ internal static class DiagramImage
         // conditional connector on that icon is there at all (B277).
         var valueOf = ComponentValues.For(
             libraries.CombinedGraph, type, member.Element.Modifications);
+        var (shown, switchedOff) = type is null ? (null, null) : ConnectorsOn(libraries, type, valueOf);
 
         return new DiagramComponent(
             member.Element.Name, placement.Extent, placement.Rotation,
             IconOf(libraries, member.OwnerId, member.Element.Type, scope),
             member.Element.Type,
             placement.RotationCentre,
-            type is null ? null : ConnectorsOn(libraries, type, valueOf),
+            shown,
             valueOf,
-            NamesAConstant(libraries, member.OwnerId, scope, type));
+            NamesAConstant(libraries, member.OwnerId, scope, type))
+        {
+            SwitchedOff = switchedOff,
+        };
     }
 
     /// <summary>
@@ -258,20 +262,26 @@ internal static class DiagramImage
     /// enclosing class's icon; where it does not — which is most of the Modelica Standard Library —
     /// the <c>transformation</c> serves for both. And it is the connector's ICON layer that is drawn
     /// here, not its diagram layer: this is an icon.</para>
+    ///
+    /// <para>The second list is the connectors this instance has switched off, which are not drawn
+    /// but are where a connection to one ends (<see cref="DiagramComponent.SwitchedOff"/>).
+    /// VehicleInterfaces connects its engines' optional accelerator pedal, off by default, in every
+    /// example, and the line was routed to the engine's centre.</para>
     /// </summary>
-    private static List<DiagramComponent>? ConnectorsOn(
+    private static (List<DiagramComponent>? Shown, List<DiagramComponent>? SwitchedOff) ConnectorsOn(
         ILibraryDataService libraries, ModelNode type, Func<string, string?> valueOf)
     {
         var code = type.Definition.ModelicaCode;
         if (string.IsNullOrEmpty(code))
-            return null;
+            return (null, null);
 
         var placements = DiagramGeometry.Placements(
             libraries, type.Id, code, DiagramGeometry.Layer.Icon);
         if (placements.Count == 0)
-            return null;
+            return (null, null);
 
         var connectors = new List<DiagramComponent>();
+        var switchedOff = new List<DiagramComponent>();
 
         foreach (var member in ClassElementResolver
                      .Collect(libraries.CombinedGraph, type, includeProtected: false, includeInherited: true)
@@ -284,9 +294,9 @@ internal static class DiagramImage
             // instance that never enabled it has no such port: MSL's Integrator, Torque and
             // SpringDamper each carry one that is off by default, and drawing them put three ports
             // on a diagram that Dymola leaves bare (B277). Undecidable answers are drawn — showing a
-            // port that is switched off is a smaller lie than hiding one that is switched on.
-            if (ModelicaCondition.Evaluate(member.Element.Condition, valueOf) == false)
-                continue;
+            // port that is switched off is a smaller lie than hiding one that is switched on. One
+            // that is off is still kept, undrawn, for a connection that ends on it.
+            var off = ModelicaCondition.Evaluate(member.Element.Condition, valueOf) == false;
 
             var memberType = TypeResolver.Resolve(
                 libraries.CombinedGraph, member.OwnerId, member.Element.Type, member.OwnerImports);
@@ -296,14 +306,14 @@ internal static class DiagramImage
             if (memberType is null || !string.Equals(memberType.ClassType, "connector", StringComparison.Ordinal))
                 continue;
 
-            connectors.Add(new DiagramComponent(
+            (off ? switchedOff : connectors).Add(new DiagramComponent(
                 member.Element.Name, placement.Extent, placement.Rotation,
-                IconWithInheritance(libraries, memberType),
+                off ? null : IconWithInheritance(libraries, memberType),
                 member.Element.Type,
                 placement.RotationCentre));
         }
 
-        return connectors.Count > 0 ? connectors : null;
+        return (connectors.Count > 0 ? connectors : null, switchedOff.Count > 0 ? switchedOff : null);
     }
 
     private static IconData? IconWithInheritance(ILibraryDataService libraries, ModelNode type)

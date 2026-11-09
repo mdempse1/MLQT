@@ -70,17 +70,19 @@ internal static class ConnectorCompatibility
             if (owner is null)
                 return new PortResolution(null, null, $"could not resolve '{portRef}' (class '{currentId}' not loaded)");
 
-            // A signal on an expandable bus is declared by connecting it, which is what this edit is
-            // doing - so MLQT.Connection.Incompatible accepts it, and refusing it here broke this
-            // tool's promise to refuse only what the rule reports.
-            if (i > 0 && signatures.IsExpandable(owner))
-                return new PortResolution(null, null,
-                    $"'{segments[i - 1]}' is an expandable connector ('{currentId}'), so '{segments[i]}' is declared by connecting it");
-
             var member = ClassElementResolver
                 .Collect(libraries.CombinedGraph, owner, includeProtected: true, includeInherited: true)
                 .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
                                      string.Equals(m.Element.Name, segments[i], StringComparison.Ordinal));
+
+            // A signal on an expandable bus is declared by connecting it, which is what this edit is
+            // doing - so MLQT.Connection.Incompatible accepts it, and refusing it here broke this
+            // tool's promise to refuse only what the rule reports. Only a member the bus does not
+            // declare: a declared sub-bus (VehicleInterfaces' controlBus.engineBus) is walked into, so
+            // the note names the signal that is new rather than the sub-bus that is not.
+            if (member is null && i > 0 && signatures.IsExpandable(owner))
+                return new PortResolution(null, null,
+                    $"'{segments[i - 1]}' is an expandable connector ('{currentId}'), so '{segments[i]}' is declared by connecting it");
             if (member is null)
                 return new PortResolution(null, $"'{segments[i]}' is not a component of '{currentId}'.", null);
 

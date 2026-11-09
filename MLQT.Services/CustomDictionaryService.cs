@@ -222,21 +222,33 @@ public class CustomDictionaryService : ICustomDictionaryService
 
     private async Task SaveAsync(string repositoryRoot)
     {
-        List<string> sorted;
+        HashSet<string> words;
         lock (_lock)
         {
-            sorted = _wordsByRoot.TryGetValue(repositoryRoot, out var entry)
-                ? entry.Words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList()
-                : [];
+            words = _wordsByRoot.TryGetValue(repositoryRoot, out var entry)
+                ? new HashSet<string>(entry.Words, StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         var path = PathFor(repositoryRoot);
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
+        try
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
 
-        // Written back in the encoding it was read in — see ReadFile.
-        await ModelicaFileEncoding.WriteAllLinesAsync(path, sorted);
+            var existing = File.Exists(path) ? ModelicaFileEncoding.ReadAllLinesOnly(path) : [];
+            // Written back in the encoding it was read in — see ReadFile.
+            await ModelicaFileEncoding.WriteAllLinesAsync(path, Merge(existing, words));
+        }
+        catch
+        {
+            // What is in memory was never written: forget it, so the next read takes the file as it is
+            // rather than reporting words accepted that a fresh session would not accept.
+            lock (_lock)
+                _wordsByRoot.Remove(repositoryRoot);
+            throw;
+        }
 
         // Record what we just wrote, so the next read does not mistake our own write for an outside
         // change and announce it.
@@ -245,5 +257,41 @@ public class CustomDictionaryService : ICustomDictionaryService
             if (_wordsByRoot.TryGetValue(repositoryRoot, out var entry))
                 _wordsByRoot[repositoryRoot] = entry with { Stamp = StampOf(path) };
         }
+    }
+
+    /// <summary>
+    /// The file's lines with <paramref name="words"/> as its word list: comments and blank lines stay
+    /// where they are, a word no longer accepted goes, and a new one goes in alphabetical place among
+    /// the words. Rewritten as a sorted list, a team's <c>#</c> notes on why a word is accepted were
+    /// lost the first time anyone accepted another.
+    /// </summary>
+    internal static List<string> Merge(IReadOnlyList<string> existingLines, HashSet<string> words)
+    {
+        var lines = new List<string>();
+        var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in existingLines)
+        {
+            var word = line.Trim();
+            if (word.Length == 0 || word.StartsWith('#'))
+                lines.Add(line);
+            else if (words.Contains(word) && kept.Add(word))
+                lines.Add(line);
+        }
+
+        foreach (var word in words.Where(w => !kept.Contains(w)).OrderBy(w => w, StringComparer.OrdinalIgnoreCase))
+        {
+            var before = lines.FindIndex(l => IsWord(l) && StringComparer.OrdinalIgnoreCase.Compare(l.Trim(), word) > 0);
+            if (before < 0)
+                lines.Add(word);
+            else
+                lines.Insert(before, word);
+        }
+        return lines;
+    }
+
+    private static bool IsWord(string line)
+    {
+        var trimmed = line.Trim();
+        return trimmed.Length > 0 && !trimmed.StartsWith('#');
     }
 }

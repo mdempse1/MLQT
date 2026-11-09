@@ -295,20 +295,14 @@ public class RepositoryService : IRepositoryService
             }
 
             // Load settings if they exist, create a new settings class if they don't
-            var settingsPath = Path.Combine(repository.LocalPath, ".mlqt", "settings.json");
+            var settingsPath = SettingsPathOf(repository);
             if (File.Exists(settingsPath))
             {
-                try
-                {
-                    var settings = StyleCheckingSettings.FromJson(File.ReadAllText(settingsPath));
-                    repository.StyleSettings = settings;
-                }
-                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or JsonException)
-                {
-                    repository.StyleSettings = new StyleCheckingSettings();
+                var (settings, readError) = ReadSettingsFile(settingsPath);
+                repository.StyleSettings = settings ?? new StyleCheckingSettings();
+                if (readError is not null)
                     Warn("RepositoryService",
-                        $"Could not read .mlqt/settings.json for '{repository.Name}': {ex.Message}. Using defaults.");
-                }
+                        $"Could not read .mlqt/settings.json for '{repository.Name}': {readError}. Using defaults.");
 
                 // What is on disk now, so the saves that follow a load write nothing unless something
                 // changes. For a file that did not parse this is the defaults being used in its place:
@@ -844,6 +838,74 @@ public class RepositoryService : IRepositoryService
     /// <summary>The settings as they are compared against <see cref="Repository.SettingsOnDisk"/>.</summary>
     private static string SerializeSettings(StyleCheckingSettings? settings)
         => settings?.ToJson() ?? "null";
+
+    private static string SettingsPathOf(Repository repository)
+        => Path.Combine(repository.LocalPath, ".mlqt", "settings.json");
+
+    /// <summary>A settings file's settings, or null and why it could not be read.</summary>
+    private static (StyleCheckingSettings? Settings, string? Error) ReadSettingsFile(string settingsPath)
+    {
+        try
+        {
+            return (StyleCheckingSettings.FromJson(File.ReadAllText(settingsPath)), null);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or JsonException)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    /// <inheritdoc/>
+    public SettingsReloadOutcome ReloadRepositorySettings(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository is null)
+            return SettingsReloadOutcome.NotFound;
+
+        var settingsPath = SettingsPathOf(repository);
+        if (!File.Exists(settingsPath))
+        {
+            // Gone since it was read (a branch without one, say): the defaults a first load would
+            // have used. Never there: nothing has changed.
+            if (repository.SettingsOnDisk is null)
+                return SettingsReloadOutcome.Unchanged;
+            lock (_lock)
+            {
+                repository.StyleSettings = new StyleCheckingSettings();
+                repository.SettingsOnDisk = null;
+                repository.IsSettingsReadOnly = false;
+            }
+            Info("RepositoryService", $"'{repository.Name}' no longer has a .mlqt/settings.json - using defaults");
+            return SettingsReloadOutcome.Changed;
+        }
+
+        var (settings, error) = ReadSettingsFile(settingsPath);
+        if (settings is null)
+        {
+            // Unlike a first load, the settings in use are kept: a file caught half-written, or broken
+            // by a merge, is not a request to fall back to the defaults.
+            Warn("RepositoryService",
+                $"Could not re-read .mlqt/settings.json for '{repository.Name}': {error}. Keeping the settings in use.");
+            return SettingsReloadOutcome.Unreadable;
+        }
+
+        // Compared with the file as last read or written, not with the settings in memory: a change
+        // made this session that could not be saved (a read-only file) is not undone by a file that
+        // has not itself changed.
+        var json = SerializeSettings(settings);
+        if (json == repository.SettingsOnDisk)
+            return SettingsReloadOutcome.Unchanged;
+
+        var readOnly = !repository.IsReferenceOnly && !CanWriteSettingsFile(settingsPath, repository.Name);
+        lock (_lock)
+        {
+            repository.StyleSettings = settings;
+            repository.SettingsOnDisk = json;
+            repository.IsSettingsReadOnly = readOnly;
+        }
+        Info("RepositoryService", $"Re-read .mlqt/settings.json for '{repository.Name}': its settings changed on disk");
+        return SettingsReloadOutcome.Changed;
+    }
 
     /// <summary>
     /// Whether the existing settings file at <paramref name="settingsPath"/> can be written, found

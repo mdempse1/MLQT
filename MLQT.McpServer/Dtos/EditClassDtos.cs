@@ -12,6 +12,7 @@ public sealed class ClassEditOperation
     public string? Old { get; set; }
     public string? New { get; set; }
     public bool? All { get; set; }
+    public bool? WholeWord { get; set; }
 
     // The element operations.
     public string? Type { get; set; }

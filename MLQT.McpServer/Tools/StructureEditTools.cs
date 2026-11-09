@@ -330,8 +330,13 @@ public sealed class StructureEditTools
 
         var line = WithComment($"connect({a}, {b});", comment, ctx!.Layout.Indent);
         var newClassCode = InsertIntoSection(ctx.ClassCode, ctx.Layout.EquationAppendOffset, "equation", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
-        // If both connected components are already positioned, draw the connection on the diagram layer.
-        newClassCode = ConnectionLineAnnotator.Annotate(_libraries, classId, newClassCode);
+        // If both connected components are already positioned, draw this connection on the diagram
+        // layer - this one alone: every other line is left as written. It is the last connect joining
+        // these ports, since it was appended, so a duplicate already there keeps its own line.
+        if (ClassBodyLocator.Analyze(newClassCode).Connections.LastOrDefault(ConnectionLineAnnotator.Joining(a, b))
+            is { } added)
+            newClassCode = ConnectionLineAnnotator.Annotate(
+                _libraries, classId, newClassCode, c => c.Start == added.Start);
         var note = notes.Count > 0 ? string.Join(" ", notes) : null;
         return ToResult(classId, note, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add connection to '{classId}'"));

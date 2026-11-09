@@ -216,19 +216,29 @@ public sealed class StyleSettingsInput
     }
 }
 
+/// <param name="AcceptedSpellings">The words the repository's spell check accepts everywhere in it, from
+/// its <c>.mlqt/dictionary.txt</c> - empty with no repository, which has no such list.</param>
 public sealed record StyleSettingsResult(
     string? RepositoryId,
     string? Repository,
     string Source,
-    StyleSettingsInput Settings);
+    StyleSettingsInput Settings,
+    IReadOnlyList<string> AcceptedSpellings);
 
+/// <param name="Persisted">Whether the settings were written to <c>.mlqt/settings.json</c>; null when the
+/// call changed only spellings, and wrote no settings.</param>
+/// <param name="Path">The settings file written, or null when none was.</param>
+/// <param name="AcceptedSpellings">The repository's accepted words once the change is made.</param>
+/// <param name="DictionaryPath">Where they are kept: the committed <c>.mlqt/dictionary.txt</c>.</param>
 public sealed record SetStyleSettingsResult(
     string RepositoryId,
     string Repository,
-    bool Persisted,
+    bool? Persisted,
     string? Path,
     string? Note,
-    StyleSettingsInput Settings);
+    StyleSettingsInput Settings,
+    IReadOnlyList<string> AcceptedSpellings,
+    string DictionaryPath);
 
 /// <summary>
 /// One finding of a check. <see cref="Status"/> is where it stands against the repository's committed
@@ -379,6 +389,18 @@ public sealed record RenameFileChange(
     string FilePath,
     int Replacements,
     string? NewContent);
+
+/// <summary>What mlqt_refactor_class's rename_component changed, or would change.</summary>
+public sealed record RenameComponentResult(
+    string ClassId,
+    string OldName,
+    string NewName,
+    bool PreviewOnly,
+    bool Changed,
+    int FilesChanged,
+    int TotalReplacements,
+    IReadOnlyList<RenameFileChange> Changes,
+    string Note);
 
 public sealed record RenameClassResult(
     string OldClassId,

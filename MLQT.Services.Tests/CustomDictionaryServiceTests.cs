@@ -93,6 +93,64 @@ public class CustomDictionaryServiceTests : IDisposable
         Assert.Equal(["enthalpy", "SOC"], words);
     }
 
+    [Fact]
+    public async Task AcceptingAWord_KeepsAHandWrittenListsCommentsAndLayout()
+    {
+        // Rewritten as a sorted list, a team's notes on why a word is accepted went the first time anyone
+        // accepted another.
+        var path = Path.Combine(_alpha, ".mlqt", "dictionary.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllLines(path, ["# battery terms", "enthalpy", "SOC", "", "# people", "Krueger"]);
+        var service = NewService();
+
+        await service.AddWordAsync(_alpha, "halfshaft");
+        await service.AddWordAsync(_alpha, "zygote");
+        await service.RemoveWordAsync(_alpha, "SOC");
+
+        Assert.Equal(["# battery terms", "enthalpy", "halfshaft", "", "# people", "Krueger", "zygote"],
+            await File.ReadAllLinesAsync(path));
+    }
+
+    [Fact]
+    public async Task AWordGoesFirst_WhenItSortsBeforeEveryOther()
+    {
+        var path = Path.Combine(_alpha, ".mlqt", "dictionary.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllLines(path, ["# header", "mu"]);
+        var service = NewService();
+
+        await service.AddWordAsync(_alpha, "alpha");
+
+        Assert.Equal(["# header", "alpha", "mu"], await File.ReadAllLinesAsync(path));
+    }
+
+    [Fact]
+    public async Task AWordWrittenTwiceByHand_IsKeptOnce_AfterASave()
+    {
+        var path = Path.Combine(_alpha, ".mlqt", "dictionary.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllLines(path, ["mu", "Mu", "nu"]);
+        var service = NewService();
+
+        await service.AddWordAsync(_alpha, "xi");
+
+        Assert.Equal(["mu", "nu", "xi"], await File.ReadAllLinesAsync(path));
+    }
+
+    [Fact]
+    public async Task ASaveThatFails_LeavesTheWordUnaccepted()
+    {
+        // In memory but never written, it would be accepted for this session and not the next.
+        var service = NewService();
+        Assert.Empty(service.WordsFor(_alpha));
+        // A folder where the file goes: the write fails.
+        Directory.CreateDirectory(Path.Combine(_alpha, ".mlqt", "dictionary.txt"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => service.AddWordAsync(_alpha, "enthalpy"));
+
+        Assert.DoesNotContain("enthalpy", service.WordsFor(_alpha));
+    }
+
     #endregion
 
     #region Separation between repositories

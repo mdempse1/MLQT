@@ -393,6 +393,25 @@ public class DiagramSvgRendererTests
     }
 
     [Fact]
+    public void ASwitchedOffConnectorHasAPort_WhereItWouldBeDrawn_ButIsNotDrawn()
+    {
+        // A connection to a conditional connector the instance switched off ends where it would be,
+        // as in Dymola; the picture still leaves it out (B277).
+        var top = new DiagramComponent("c", [-10, 80, 10, 100], 0, Box());
+        var component = Framed([-10, -10, 10, 10]) with { SwitchedOff = [top] };
+
+        var port = DiagramSvgRenderer.PortOf(component, "c");
+        var svg = DiagramSvgRenderer.Render(null, [component], []);
+
+        Assert.NotNull(port);
+        Assert.Equal(0, port!.Value.X, 9);
+        Assert.Equal(9, port.Value.Y, 9);
+        Assert.Equal((0d, 1d), (port.Value.FacingX, port.Value.FacingY));
+        Assert.Equal(svg, DiagramSvgRenderer.Render(null, [component with { SwitchedOff = null }], []));
+        Assert.Null(DiagramSvgRenderer.PortOf(component, "other"));
+    }
+
+    [Fact]
     public void APortTurnsWithItsComponent_AndWithItsOwnPlacement()
     {
         // A connector placed with its own origin, off its extent's centre, and turned: it lands

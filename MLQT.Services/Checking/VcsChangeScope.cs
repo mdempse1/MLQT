@@ -37,6 +37,41 @@ public enum VcsChangeSource
     WholeRepository,
 }
 
+/// <summary>What re-reading a repository's settings after a VCS operation found.</summary>
+/// <param name="Outcome">What <see cref="Interfaces.IRepositoryService.ReloadRepositorySettings"/> said.</param>
+/// <param name="ChecksChanged">Whether the settings the operation brought would check a class
+/// differently, so that every class in the repository has to be checked again.</param>
+public sealed record VcsSettingsReload(SettingsReloadOutcome Outcome, bool ChecksChanged);
+
+/// <summary>
+/// Re-reads a repository's committed settings after a VCS operation (B525).
+/// </summary>
+/// <remarks>
+/// The desktop app read <c>.mlqt/settings.json</c> when it loaded the project and never again, so a
+/// pull that brought the team's new rules left it checking and formatting with the old ones until
+/// the project was reloaded. The analysis pipeline after each operation asks this first, so the
+/// files it formats get the new rules and a change of rules re-checks every class.
+///
+/// <para>A change to the formatting rules alone does not reformat the repository: whoever changed
+/// them committed files already laid out under them, and rewriting a working copy on the strength of
+/// a pull is what the pipeline exists not to do (see <see cref="VcsChangeResolver"/>). The files the
+/// operation changed are formatted with the new rules, as every changed file is.</para>
+/// </remarks>
+public static class VcsSettingsReloader
+{
+    /// <summary>Re-reads <paramref name="repositoryId"/>'s settings and says what changed.</summary>
+    public static VcsSettingsReload Reload(Interfaces.IRepositoryService repositories, string repositoryId)
+    {
+        var before = repositories.GetRepository(repositoryId)?.StyleSettings ?? new StyleCheckingSettings();
+        var outcome = repositories.ReloadRepositorySettings(repositoryId);
+        if (outcome != SettingsReloadOutcome.Changed)
+            return new VcsSettingsReload(outcome, false);
+
+        var after = repositories.GetRepository(repositoryId)?.StyleSettings ?? new StyleCheckingSettings();
+        return new VcsSettingsReload(outcome, after.ChecksDifferFrom(before));
+    }
+}
+
 /// <summary>
 /// The fallback chain that decides what a VCS operation affected.
 /// </summary>

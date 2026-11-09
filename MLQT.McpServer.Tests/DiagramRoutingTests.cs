@@ -164,4 +164,168 @@ public class DiagramRoutingTests
         Assert.Equal(0, router.ComponentsBuilt);
         Assert.Equal(DiagramGeometry.RouteConnection(host.Libraries, "R.Fan", code, "src.y", "f2.u"), route);
     }
+
+    [Fact]
+    public void AnLWhoseCornerIsInFrontOfBothConnectors_IsTheRoute_WithNoLeadThatDoublesBack()
+    {
+        // A connector on one component's bottom edge to one a few units lower on another's left edge:
+        // the router added a 15-unit lead out of each first, so the line went down past the turn, back
+        // up and across, over itself. Dymola draws the plain L (VehicleInterfaces' engine mount to its
+        // chassis frame, which is this geometry).
+        const string pkg = """
+            within;
+            package L "l"
+              connector Frame "acausal"
+                Real s;
+                flow Real f;
+              end Frame;
+              model Mounted "a frame on its bottom edge"
+                Frame mount annotation (Placement(transformation(extent={{-10,-110},{10,-90}})));
+                annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+              end Mounted;
+              model Chassis "a frame on its left edge"
+                Frame frame annotation (Placement(transformation(extent={{-110,-10},{-90,10}})));
+                annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+              end Chassis;
+              model Sys
+                Mounted engine annotation (Placement(transformation(extent={{-110,-30},{-80,0}})));
+                Chassis chassis annotation (Placement(transformation(extent={{40,-54},{80,-14}})));
+              equation
+                connect(engine.mount, chassis.frame);
+              end Sys;
+            end L;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = pkg.ReplaceLineEndings("\n"),
+            ["package.order"] = "Frame\nMounted\nChassis\nSys\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var code = host.Libraries.GetModelById("L.Sys")!.Definition.ModelicaCode!;
+
+        var route = DiagramGeometry.RouteConnection(host.Libraries, "L.Sys", code, "engine.mount", "chassis.frame");
+
+        Assert.Equal([new(-95, -30), new(-95, -34), new(40, -34)], route);
+    }
+
+    [Fact]
+    public void AnLWhoseCornerIsOnAConnector_IsNotTaken_SoNoLineRunsAlongAnEdge()
+    {
+        // b's corner is b itself: the L would be one segment entering b from the side, along the top
+        // edge of b's component. The routed line enters b from above, as b faces.
+        var route = DiagramGeometry.Route(new(0, 0), new(1, 0), new(20, 0), new(0, 1));
+
+        Assert.True(route.Count > 2);
+        Assert.Equal(route[^2].X, route[^1].X); // the last segment is vertical: into b from above
+        Assert.True(route[^2].Y > route[^1].Y);
+    }
+
+    /// <summary>Whether a poly-line ever turns straight back on itself.</summary>
+    private static bool DoublesBack(IReadOnlyList<DiagramGeometry.Pt> route)
+    {
+        for (var i = 2; i < route.Count; i++)
+        {
+            var (ax, ay) = (route[i - 1].X - route[i - 2].X, route[i - 1].Y - route[i - 2].Y);
+            var (bx, by) = (route[i].X - route[i - 1].X, route[i].Y - route[i - 1].Y);
+            if (ax * bx + ay * by < 0 && ax * by - ay * bx == 0)
+                return true;
+        }
+        return false;
+    }
+
+    [Fact]
+    public void ConnectorsFacingApart_AreJoinedRoundTheEnds_NotBackOverTheLine()
+    {
+        // A flange on one component's left edge to a flange on another's right edge, further left and
+        // lower: turning half way between the leads zigzagged {20,40},{12,40},{15,40},{15,0},{18,0},{10,0}.
+        var route = DiagramGeometry.Route(new(20, 40), new(-1, 0), new(10, 0), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        Assert.Equal(new DiagramGeometry.Pt(20, 40), route[0]);
+        Assert.Equal(new DiagramGeometry.Pt(10, 0), route[^1]);
+        Assert.True(route[1].X < 20);   // leaves to the left, as the first flange faces
+        Assert.True(route[^2].X > 10);  // and comes into the second from its right
+    }
+
+    [Fact]
+    public void AnOutputWhoseTargetIsBehindIt_GoesRound_NotBackOverItself()
+    {
+        // A sensor's output on its right edge to a bus far to its left: the line went 15 right and then
+        // back left along the same row.
+        var route = DiagramGeometry.Route(new(41, 40), new(1, 0), new(-100, 60), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        Assert.True(route[1].X > 41);
+    }
+
+    [Fact]
+    public void LevelConnectorsBackToBack_GoRoundClearOfBothRows()
+    {
+        var route = DiagramGeometry.Route(new(0, 0), new(-1, 0), new(40, 0), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        Assert.Contains(route, p => p.Y != 0);
+    }
+
+    [Fact]
+    public void NearlyLevelConnectorsBackToBack_GoRoundClearOfBoth()
+    {
+        // Half way between ends 4 apart is 2 from each: the line crossed through the components.
+        var route = DiagramGeometry.Route(new(-30, 0), new(-1, 0), new(30, 4), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        var crossing = route.Where(p => p.X < -30 || p.X > 30).Select(p => p.Y).Where(y => y != 0 && y != 4).Distinct();
+        Assert.All(crossing, y => Assert.True(Math.Min(Math.Abs(y), Math.Abs(y - 4)) >= 15, string.Join(" ", route)));
+        Assert.Contains(route, p => Math.Abs(p.Y) >= 15);
+    }
+
+    [Fact]
+    public void VerticalConnectorsFacingApart_GoRound_Too()
+    {
+        var route = DiagramGeometry.Route(new(0, 20), new(0, -1), new(30, 50), new(0, 1));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+    }
+
+    private const string Arrays = """
+        within;
+        package Q "q"
+          connector RealInput = input Real;
+          connector RealOutput = output Real;
+          block Table "two outputs on its right edge"
+            RealOutput y[2] annotation (Placement(transformation(extent={{100,-10},{120,10}})));
+            annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+          end Table;
+          block Sink "an input on its left edge"
+            RealInput u annotation (Placement(transformation(extent={{-120,-10},{-100,10}})));
+            annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+          end Sink;
+          model Sys
+            Table table annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
+            Sink sink1 annotation (Placement(transformation(extent={{40,-10},{60,10}})));
+            Sink sinks[2] annotation (Placement(transformation(extent={{40,30},{60,50}})));
+          end Sys;
+        end Q;
+        """;
+
+    [Fact]
+    public void AnArraysElements_EndWhereTheArrayIsDrawn()
+    {
+        // An array of connectors, or of components, is drawn once, and each element's line ends there.
+        // Read with its subscript, y[1] was no connector (a line from the table's centre) and sinks[1]
+        // no component (no line at all).
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Arrays.ReplaceLineEndings("\n") });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var code = host.Libraries.GetModelById("Q.Sys")!.Definition.ModelicaCode!;
+
+        var element = DiagramGeometry.RouteConnection(host.Libraries, "Q.Sys", code, "table.y[1]", "sink1.u");
+        var whole = DiagramGeometry.RouteConnection(host.Libraries, "Q.Sys", code, "table.y", "sink1.u");
+        var intoArray = DiagramGeometry.RouteConnection(host.Libraries, "Q.Sys", code, "table.y[2]", "sinks[2].u");
+
+        Assert.Equal(whole, element);
+        Assert.NotNull(intoArray);
+        Assert.Equal(new DiagramGeometry.Pt(39, 40), intoArray![^1]); // sinks' input, on its left edge
+    }
 }

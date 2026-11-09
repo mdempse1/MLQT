@@ -6,6 +6,13 @@ namespace MLQT.McpServer.Services;
 /// </summary>
 public sealed class SessionState
 {
+    /// <summary>
+    /// The repositories a loaded class may belong to, for the formatting rules an edit is written
+    /// with (<see cref="Helpers.EditFormatting"/>). Here rather than on each edit tool because every
+    /// write path is already handed the session; null leaves edits written as composed.
+    /// </summary>
+    internal MLQT.Services.Interfaces.IRepositoryService? Repositories { get; init; }
+
     public bool DependenciesAnalyzed { get; set; }
     public bool ResourcesAnalyzed { get; set; }
 

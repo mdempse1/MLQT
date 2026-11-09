@@ -707,7 +707,7 @@ This also includes the project/repository configuration (which projects exist, w
 
 ### Repository-Level Settings (`.mlqt/settings.json`)
 
-Style checking, formatting, commit, and spell checking settings for each repository are stored in a file called `settings.json` inside a `.mlqt` directory at the root of the repository. The repository's accepted spellings sit beside it in `dictionary.txt` — a plain list, one word per line, sorted, with `#` comment lines allowed:
+Style checking, formatting, commit, and spell checking settings for each repository are stored in a file called `settings.json` inside a `.mlqt` directory at the root of the repository. The repository's accepted spellings sit beside it in `dictionary.txt` — a plain list, one word per line, with `#` comment lines allowed. A word MLQT adds goes in alphabetical place among the words, and the comments and blank lines stay where they are:
 
 ```
 your-repository/
@@ -791,6 +791,7 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 - **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used — every rule off — and a new file is written with them. **An existing file is never rewritten by loading**, switching project or reordering repositories — so opening MLQT never leaves a modified settings file in a commit dialog.
 - **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application settings. The file keeps its own line endings, and if nothing in it would change it is not touched.
+- **After a version-control operation:** after an update, pull, merge, branch switch, checkout of a revision or revert made in MLQT, the repository's `.mlqt/settings.json` is read again before the changed files are formatted and checked (a revert's files are not formatted), so settings a colleague committed take effect with the update. If they check classes differently, every class in the repository is checked again under them; the files the operation changed are formatted with them, and no others. A file a merge left unreadable is reported, and the settings in use are kept.
 - **After a settings change:** Style checking is re-run for that repository alone. Findings for the project's other repositories are left as they are — their rules have not changed, so there is nothing to re-check.
 - **The `.mlqt` directory is created automatically** if it does not exist when settings are first saved.
 

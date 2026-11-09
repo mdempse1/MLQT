@@ -39,15 +39,31 @@ public sealed class WriteFormatTools
                  "in order, so a later one can go in a package an earlier one created; if one fails, the ones " +
                  "before it stay written and none after it is tried. To change part of a class, use " +
                  "mlqt_edit_class instead. preview=true returns each file without writing (each class is then " +
-                 "previewed on its own).")]
+                 "previewed on its own). Instead of classes, importFrom (a .mo file or a folder of them, written by " +
+                 "a script or a data generator) and importInto (a package stored as a folder) bring generated " +
+                 "classes in without passing their text: each gets a file of its own in the package, the package's " +
+                 "within clause, the repository's formatting and a place in package.order, then everything is " +
+                 "reloaded - a file the script wrote straight into the package's folder is adopted where it is. All " +
+                 "or none: a file that cannot be imported refuses the import and says why.")]
     public async Task<object> WriteClass(
-        [Description("The classes, in order. Each: {parentId: the package to put it in, source: the whole class, standalone?: own file or not}.")]
-        IReadOnlyList<ClassToWrite> classes,
+        [Description("The classes, in order. Each: {parentId: the package to put it in, source: the whole class, standalone?: own file or not}. Omit when importing.")]
+        IReadOnlyList<ClassToWrite>? classes = null,
         [Description("Replace a class that already exists. Default false.")] bool replace = false,
-        [Description("Return the files without writing. Default false.")] bool preview = false)
+        [Description("Return the files without writing. Default false.")] bool preview = false,
+        [Description("Instead of classes: a .mo file, or a folder of .mo files, written outside MLQT to import.")] string? importFrom = null,
+        [Description("With importFrom: the full id of the package (stored as a folder) to import into.")] string? importInto = null)
     {
+        if (!string.IsNullOrWhiteSpace(importFrom) || !string.IsNullOrWhiteSpace(importInto))
+        {
+            if (classes is { Count: > 0 })
+                return new ToolError("Give classes or importFrom/importInto, not both.");
+            if (string.IsNullOrWhiteSpace(importFrom) || string.IsNullOrWhiteSpace(importInto))
+                return new ToolError("Importing needs both importFrom (a .mo file or folder) and importInto (the package's full id).");
+            return await _edit.ImportClasses(importInto.Trim(), importFrom.Trim(), replace, preview);
+        }
+
         if (classes is null || classes.Count == 0)
-            return new ToolError("classes must hold at least one {parentId, source}.");
+            return new ToolError("classes must hold at least one {parentId, source}, or give importFrom and importInto.");
 
         var written = new List<WrittenClassItem>();
         for (var i = 0; i < classes.Count; i++)
@@ -97,17 +113,18 @@ public sealed class WriteFormatTools
     [McpServerTool(Name = "mlqt_format", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Format Modelica code with MLQT's formatter. Give exactly one of: classId (the file holding " +
                  "that class), library (every file of a loaded library, by name or id) or source (text, returned " +
-                 "formatted; nothing is written). A file " +
-                 "with syntax errors, or with a class excluded from formatting, is left as it is and reported. " +
-                 "preview=true formats without writing.")]
+                 "formatted; nothing is written). A class or library from a repository is formatted with that " +
+                 "repository's layout settings, the ones mlqt_check judges it by; pass an option only to override " +
+                 "one. A file with syntax errors, or with a class excluded from formatting, is left as it is and " +
+                 "reported. preview=true formats without writing.")]
     public async Task<object> Format(
         [Description("A class: its whole file is formatted.")] string? classId = null,
         [Description("A loaded library, by name or id: every file of it is formatted.")] string? library = null,
         [Description("Modelica text to format and return. Nothing is written.")] string? source = null,
-        [Description("Emit at most one of each section; default false.")] bool oneOfEachSection = false,
-        [Description("Move import statements to the top; default false.")] bool importStatementsFirst = false,
-        [Description("Order component declarations before nested class definitions; default false.")] bool componentsBeforeClasses = false,
-        [Description(FormattingTools.DeclarationOrderDescription)] bool declarationOrder = false,
+        [Description("Emit at most one of each section. Default: the repository's setting, else false.")] bool? oneOfEachSection = null,
+        [Description("Move import statements to the top. Default: the repository's setting, else false.")] bool? importStatementsFirst = null,
+        [Description("Order component declarations before nested class definitions. Default: the repository's setting, else false.")] bool? componentsBeforeClasses = null,
+        [Description(FormattingTools.DeclarationOrderDescription)] bool? declarationOrder = null,
         [Description("Format without writing; default false.")] bool preview = false)
     {
         var given = new[] { classId, library, source }.Count(x => !string.IsNullOrWhiteSpace(x));

@@ -185,8 +185,8 @@ public sealed class GuidanceTools
 
             Edit a class and re-check it:
               mlqt_get_class (source, includeAnnotations=true) -> mlqt_edit_class (replace, or the element
-              operations) -> optionally mlqt_format -> mlqt_check(classId, checks ['style', 'spelling',
-              'references']).
+              operations) -> mlqt_check(classId, checks ['style', 'spelling', 'references']). In a
+              repository that applies its formatting rules the edit is written formatted; no mlqt_format.
 
             Rename a class (updates references too):
               mlqt_refactor_class(classId, 'rename', newName) [preview first] -> the declaration and every
@@ -204,9 +204,17 @@ public sealed class GuidanceTools
               own directory package (folder + package.mo). Classes that cannot be standalone (a
               replaceable/redeclare/inner/outer prefix) are nested.
 
+            Bring in classes a script generated (a data generator writing .mo files):
+              mlqt_write_class(importFrom: the full path of the file or folder, importInto: the package) - each
+              class gets a file of its own in the package, its within clause, a line in package.order and the
+              repository's formatting (where its settings apply formatting rules), and is loaded; files the
+              script wrote straight into the package's folder are adopted there, and one already as it would
+              be written is left alone. Do not write package.order yourself or reload by hand. Re-run it after
+              the script regenerates its output; replace=true replaces classes imported from elsewhere earlier.
+
             Author a new class in your library:
               mlqt_get_class with the interface view on the classes you'll reference (learn their API) ->
-              mlqt_write_class -> mlqt_check with style, spelling and references -> mlqt_format.
+              mlqt_write_class -> mlqt_check with style, spelling and references.
 
             Study the library's idioms BEFORE assembling a model. Incrementally wiring up primitives is
             easy but often the wrong altitude: a good library usually provides higher-level, aggregate
@@ -224,8 +232,9 @@ public sealed class GuidanceTools
               'integrator1.u') [refuses incompatible connectors], set_component_modifier for parameters,
               add_equation / add_statement for behaviour, and set_component_placement for each component —
               all in one call, applied in order and all or none, so later operations see earlier ones. Once
-              both ends of a connection are placed its diagram line is drawn, and refreshed when a component
-              moves. mlqt_get_class with the connections and layout views reviews it, and
+              both ends of a connection are placed its diagram line is drawn; moving a component it ends on
+              moves that end and keeps the route; no other line is changed, so a route you improve stays.
+              mlqt_get_class with the connections and layout views reviews it, and
               mlqt_get_diagram_image shows it. Document as you go: description strings in the source or
               add_component's description, set_class_description / set_component_description, and
               set_class_documentation for the HTML help.
@@ -289,15 +298,25 @@ public sealed class GuidanceTools
               siblings are reported, not auto-fixed, and if a full name would not mean the class where it is
               written (a nearer element of the top-level name, or an encapsulated class) the move is refused
               and nothing changes; 'delete' removes a class (or a whole directory package) and lists what
-              still refers to it.
+              still refers to it; 'rename_component' (component, newName) renames a parameter, constant,
+              variable or connector declared in the class with every place that names it - here, in derived
+              classes, through components (wheel.Fz), modifications (wheel(Fz=1), extends W(Fz=1)) and
+              named arguments - and nothing merely spelled the same. A name already declared there, or one a
+              for iterator would take over, is refused. Use it, not replace, to rename a component.
 
             Change part of a class - the usual edit:
             - mlqt_edit_class(classId, operations[]): one class, a list of operations applied in order and
               all or none. replace {old, new} swaps text that occurs exactly once in the class - use it
               instead of your own file edit or a script, then there is nothing to reload. With all=true it
               swaps every occurrence - a name used throughout the class - instead of a sed, and says how
-              many. Copy the old text from mlqt_get_class's source view with includeAnnotations=true,
-              indentation included.
+              many; wholeWord=true leaves it alone where it is part of a longer name. Copy the old text from
+              mlqt_get_class's source view. If it is not found as written, it is looked for again ignoring
+              white space and line breaks (a format reflows a class) - strings excepted - and then allowing
+              for the annotations the source view hides by default: `Real x;` from the view finds the file's
+              `Real x annotation (Placement(...));`, and the annotation is kept where it was. The answer notes
+              either. To change an annotation itself, read with includeAnnotations=true and quote it. To change
+              a declaration, name it (set_component_modifier, rename_component) rather than quote it. An edit that
+              would declare a name twice, or again where a base already declares it, is refused.
             - The element operations, each with its fields:
               add_component{type, name, modifier?, description?, visibility?, prefix?, constrainedBy?,
               condition?} covers the full declaration: visibility 'protected' (a protected section is created
@@ -381,7 +400,11 @@ public sealed class GuidanceTools
 
             Connections. mlqt_edit_class's add_connection and set_component_placement route the line for
             you, orthogonally, from the real connector positions — so position the components first and the
-            wiring follows. A connect inside a for/if/when equation is left as you wrote it, Line or no Line.
+            wiring follows. add_connection routes only the connection it adds. set_component_placement
+            brings the lines ending on the moved component with it, keeping their route: only the end on
+            it moves, plus as few bends as keep the line orthogonal. Every other Line is left as written,
+            so a route you adjust stays. No need to remove and re-add a connection after a move.
+            A connect inside a for/if/when equation is left as you wrote it, Line or no Line.
             Modelica diagrams use horizontal and vertical segments, not diagonals; if a route looks wrong in
             the image, the fix is almost always to move a component rather than to hand-write points.
 
@@ -406,9 +429,12 @@ public sealed class GuidanceTools
         ["style"] = """
             Style / quality checking. Rules are PER-REPOSITORY:
             - Settings live in each repository's .mlqt/settings.json (the same file MLQT uses), read when
-              mlqt_load loads a working copy. mlqt_style_settings(repositoryId?) reads them; with settings it
+              mlqt_load loads a working copy, and read again by mlqt_session's reload, which takes up a
+              change made outside this server (the desktop app, a hand edit, a pull) and says so; a file
+              that no longer parses keeps the settings in use. mlqt_style_settings(repositoryId?) reads them; with settings it
               merges the rule toggles and spell languages you pass and writes them back. repositoryId is
-              optional when one repo is loaded.
+              optional when one repo is loaded. Its acceptSpellings adds words the spell check accepts in
+              every class of the repository (see the spelling topic).
             - mlqt_check(classId | libraryId | source, settings?): by default uses the repository's settings;
               pass settings to override for one run. Results of a class or library check are stored and
               appear in mlqt_list_findings. A check of source text is stateless; reference and icon rules
@@ -459,15 +485,25 @@ public sealed class GuidanceTools
               for each word, from the configured language(s) plus your custom dictionary.
             - mlqt_edit_class with correct_spelling{word, newWord}: whole-word, case-sensitive replacement
               across the file's prose (HTML tags, hrefs and code/pre blocks are preserved).
-            - When the word is right and the checker is wrong, pick the narrowest waiver: mlqt_edit_class
-              with accept_spelling{word} writes __MLQT(spelling="word") and accepts it in that class and the
-              classes nested in it; the repository's .mlqt/dictionary.txt accepts it everywhere in the
-              repository; suppress_rule with MLQT.Spelling.Description / MLQT.Spelling.Documentation waives
-              spell checking for a whole class, which silences its other misspellings too.
+            - When the word is right and the checker is wrong, accept it where it belongs:
+              - One class: mlqt_edit_class with accept_spelling{word} writes __MLQT(spelling="word") and
+                accepts it in that class and the classes nested in it.
+              - The whole repository - a term, symbol, file extension or author's name used across its
+                libraries: mlqt_style_settings(acceptSpellings: [...]) adds the words to the repository's
+                committed .mlqt/dictionary.txt, which the desktop app and mlqt check read too, so they are
+                accepted in every class of every library in it. Do this rather than accepting one word
+                class by class, or library by library. mlqt_style_settings with no arguments lists them;
+                removeSpellings takes words out.
+              - suppress_rule with MLQT.Spelling.Description / MLQT.Spelling.Documentation waives spell
+                checking for a whole class, which silences its other misspellings too - for generated text.
             """,
 
         ["formatting"] = """
             Formatting. MLQT only formats COMPLETE class definitions, never loose fragments:
+            - Edits format themselves: in a repository whose settings apply its formatting rules,
+              mlqt_edit_class, mlqt_write_class and a move write the changed file formatted with those
+              rules (a preview shows it so). A library from no repository, or one that does not apply its
+              rules, is written as composed. So call mlqt_format only to format code nothing has edited.
             - mlqt_format(classId | library | source): one tool for all three.
               - classId formats the .mo file that holds the class and, unless preview=true, writes it and
                 refreshes the graph. It reformats the whole containing file (all classes stored in it),
@@ -478,7 +514,10 @@ public sealed class GuidanceTools
                 equation, a single declaration or an expression — wrap the fragment in a class first.
             - A file with syntax errors, or holding a class excluded from formatting, is left alone and
               listed, never written in part.
-            - Ordering options: oneOfEachSection, importStatementsFirst, componentsBeforeClasses.
+            - Layout: a class or library from a repository is laid out as that repository's settings say
+              (one of each section, imports first, components before classes, declaration order) - the
+              layout mlqt_check judges it by - so do not pass them. Pass one only to override it; text
+              given as source has no repository, and takes only the options passed.
             """,
 
         ["vcs"] = """

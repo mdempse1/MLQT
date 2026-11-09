@@ -554,6 +554,54 @@ public class StructureEditToolsTests
             Bus bus;
             Source source1;
           end BusSys;
+          expandable connector SubBus
+          end SubBus;
+          expandable connector ControlBus
+            SubBus engineBus;
+          end ControlBus;
+          model SubBusSys
+            ControlBus controlBus;
+            Source source1;
+          end SubBusSys;
+          block Table
+            parameter Integer n = 2;
+            RealOutput y[n];
+          end Table;
+          model TableSys
+            Table table;
+            Sink sink1;
+          end TableSys;
+          connector Flange
+            Real phi;
+            flow Real tau;
+          end Flange;
+          connector FlangeWithBearing
+            parameter Boolean includeBearingConnector = false;
+            Flange flange;
+          end FlangeWithBearing;
+          model Engine
+            FlangeWithBearing transmissionFlange;
+          end Engine;
+          model Shaft
+            Flange flange_a;
+          end Shaft;
+          model EngineSys
+            Engine engine;
+            Shaft shaft;
+          end EngineSys;
+          model OwnSubsystem "its own shafts and bus, as a new subsystem declares them"
+            FlangeWithBearing engineFlange;
+            ControlBus controlBus;
+            Shaft shaft;
+            Source source1;
+          end OwnSubsystem;
+          partial model DrivelineBase "a subsystem interface"
+            FlangeWithBearing wheelHub_1;
+          end DrivelineBase;
+          model Driveline "inherits its shafts, as every VehicleInterfaces subsystem does"
+            extends DrivelineBase;
+            Shaft shaft;
+          end Driveline;
         end C;
         """;
 
@@ -661,10 +709,10 @@ public class StructureEditToolsTests
     }
 
     [Fact]
-    public async Task Connection_RegeneratesLineToCurrentRoute_OnMove()
+    public async Task Connection_FollowsAMove_KeepingTheRouteTheAuthorDrew()
     {
-        // Lines are tool-managed: moving a component re-routes its connection (the connector positions
-        // change), replacing whatever was there. The route is orthogonal and ends at the connectors.
+        // Moving a component brings the end of its line with it and keeps the rest: this line's
+        // diagonal is the author's, so it is not replaced by the router's default route.
         const string pkg = """
             within;
             package C "c"
@@ -686,12 +734,8 @@ public class StructureEditToolsTests
         var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
 
         await diagram.SetComponentPlacement("C.Sys", "source1", -10, -110, 10, -90);
-        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.DoesNotContain("{25,20}", src); // the stale hand-drawn midpoint is gone
-        var pts = LinePoints(src);
-        Assert.Equal((10, -100), pts[0]);
-        Assert.Equal((40, 0), pts[^1]);
-        AssertOrthogonal(pts);
+        Assert.Contains("Line(points={{10,-100},{25,20},{40,0}}, color={0,0,127})",
+            host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
     }
 
     [Fact]
@@ -749,6 +793,68 @@ public class StructureEditToolsTests
             await LoadConn(host).AddConnection("C.BusSys", "bus.speed", "source1.y"));
         Assert.True(res.Changed);
         Assert.Contains("expandable", res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_ASignalOnASubBusOfAnExpandableBus_IsAccepted()
+    {
+        // controlBus.engineBus.speed, as VehicleInterfaces wires it: the sub-bus is declared, and is
+        // itself expandable, so connecting is what declares 'speed' - and the note says so, rather
+        // than that the declared 'engineBus' is the one being declared.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.SubBusSys", "controlBus.engineBus.speed", "source1.y"));
+        Assert.True(res.Changed);
+        Assert.Contains("'engineBus' is an expandable connector ('C.SubBus'), so 'speed' is declared", res.Note);
+        Assert.Contains("connect(controlBus.engineBus.speed, source1.y);",
+            host.Libraries.GetModelById("C.SubBusSys")!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task AddConnection_AnElementOfAnArrayConnector_IsResolved_AndAccepted()
+    {
+        // table.y[1]: the subscript is on the connector rather than the component (g[1].p).
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.TableSys", "table.y[1]", "sink1.u"));
+        Assert.True(res.Changed);
+        Assert.Null(res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_AConnectorInsideAConnector_IsResolved_AndAccepted()
+    {
+        // engine.transmissionFlange.flange, MultiBody's FlangeWithBearing: the port is a connector
+        // declared inside the component's connector.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "shaft.flange_a"));
+        Assert.True(res.Changed);
+        Assert.Null(res.Note);
+    }
+
+    [Theory]
+    [InlineData("C.OwnSubsystem", "shaft.flange_a", "engineFlange.flange")]   // the class's own shaft
+    [InlineData("C.Driveline", "shaft.flange_a", "wheelHub_1.flange")]        // an inherited one
+    [InlineData("C.OwnSubsystem", "source1.y", "controlBus.engineBus.speed")] // a signal on its own bus
+    public async Task AddConnection_ToTheClassesOwnNestedConnectors_IsAccepted(string classId, string portA, string portB)
+    {
+        // A subsystem wires its inside to its own shafts and bus this way - VehicleInterfaces' every
+        // one does - and a test reported these refused, so each was written by hand.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(await LoadConn(host).AddConnection(classId, portA, portB));
+        Assert.True(res.Changed);
+        Assert.Contains($"connect({portA}, {portB});", host.Libraries.GetModelById(classId)!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task AddConnection_AConnectorInsideAConnector_ToTheWrongKind_IsRefused()
+    {
+        // Resolving the nested port is what lets a wrong one be refused, rather than waved through.
+        using var host = new TestHost();
+        var err = ToolAssert.Error(
+            await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "engine.transmissionFlange"));
+        Assert.Contains("Incompatible connectors", err.Error);
     }
 
     [Fact]

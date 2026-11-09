@@ -73,8 +73,9 @@ public static class MlqtMcpServerExtensions
         services.TryAddSingleton<IImpactAnalysisService, ImpactAnalysisService>();
         services.TryAddSingleton<IExternalResourceService, ExternalResourceService>();
 
-        // Tracks whether the opt-in analysis passes have run this session (see DependencyTools).
-        services.TryAddSingleton<SessionState>();
+        // Tracks whether the opt-in analysis passes have run this session (see DependencyTools), and
+        // carries the repositories whose formatting rules an edit is written with (EditFormatting).
+        services.TryAddSingleton(sp => new SessionState { Repositories = sp.GetService<IRepositoryService>() });
 
         // A build whose tool parameters were renamed would bind no client's arguments, silently; fail
         // here instead, saying why (B502).

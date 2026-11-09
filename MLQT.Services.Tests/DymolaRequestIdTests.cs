@@ -22,15 +22,22 @@ public sealed class DymolaRequestIdTests
         const int perThread = 50_000;
         var taken = new int[threads][];
 
+        // A thread of its own for each caller, never Parallel.For around a barrier: it promises no
+        // number of threads, and one running two callers in turn waits in the barrier for itself.
         using var start = new Barrier(threads);
-        Parallel.For(0, threads, new ParallelOptions { MaxDegreeOfParallelism = threads }, t =>
+        var allArrived = true;
+        var workers = Enumerable.Range(0, threads).Select(t => new Thread(() =>
         {
             var mine = new int[perThread];
-            start.SignalAndWait();
+            if (!start.SignalAndWait(TimeSpan.FromSeconds(30)))
+                allArrived = false;
             for (var i = 0; i < perThread; i++)
                 mine[i] = dymola.NextRequestId();
             taken[t] = mine;
-        });
+        })).ToList();
+        workers.ForEach(w => w.Start());
+        workers.ForEach(w => w.Join());
+        Assert.True(allArrived, "Not every caller reached the barrier within 30 s");
 
         var all = taken.SelectMany(ids => ids).ToList();
         Assert.Equal(all.Count, all.Distinct().Count());

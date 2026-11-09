@@ -57,7 +57,7 @@ internal static class DiagramGeometry
     /// <para>Locating an endpoint means building its component as the image draws it - the type's
     /// icon down its extends chain, its connectors, its parameter values - and collecting the class's
     /// placements and members first. Done per connection, a component with six wires was built
-    /// twelve times over, and <c>ConnectionLineAnnotator</c> routes every connection in the class on
+    /// twelve times over, and <c>ConnectionLineAnnotator</c> can route several connections in the class on
     /// each <c>mlqt_edit_class's add_connection</c> and <c>mlqt_edit_class's set_component_placement</c>. Nothing here changes while a
     /// class is being routed, so one router serves every connection in it and then is dropped.</para>
     /// </summary>
@@ -117,7 +117,7 @@ internal static class DiagramGeometry
 
         /// <inheritdoc cref="DiagramGeometry.Locate"/>
         private (Pt Point, Facing Facing)? Locate(string portRef)
-            => DiagramGeometry.Locate(_libraries, _classId, _classCode, Component(Segment(portRef, 0)), portRef);
+            => DiagramGeometry.Locate(_libraries, _classId, _classCode, Component(Bare(Segment(portRef, 0))), portRef);
     }
 
     // --- Endpoint location -------------------------------------------------------------------------
@@ -136,15 +136,19 @@ internal static class DiagramGeometry
         ILibraryDataService libraries, string classId, string classCode,
         DiagramComponent? component, string portRef)
     {
-        var root = Segment(portRef, 0);
+        // Subscripts name an element, and an array - of components or of connectors - is drawn once, so
+        // every element's line ends where that one is: sinks[1].u on sinks, table.y[1] on y. Read with
+        // them, sinks[1] was no component (no line at all) and y[1] no connector (a line to the centre).
+        var root = Bare(Segment(portRef, 0));
         if (component is not { } comp)
             return null; // component not positioned — cannot route to it
 
         var segments = ModelicaName.Segments(portRef);
-        var port = segments.Count < 2
+        var connector = segments.Count < 2 ? null : Bare(segments[1]);
+        var port = connector is null
             ? DiagramSvgRenderer.PortOnEdge(comp, 0, 0) // the port is the component itself (unusual for connect)
-            : DiagramSvgRenderer.PortOf(comp, segments[1])
-              ?? GuessedPort(libraries, classId, classCode, comp, root, segments[1]);
+            : DiagramSvgRenderer.PortOf(comp, connector)
+              ?? GuessedPort(libraries, classId, classCode, comp, root, connector);
 
         return (new Pt(port.X, port.Y), new Facing(port.FacingX, port.FacingY));
     }
@@ -197,10 +201,23 @@ internal static class DiagramGeometry
 
     // --- Orthogonal routing ------------------------------------------------------------------------
 
-    private static IReadOnlyList<Pt> Route(Pt a, Facing fa, Pt b, Facing fb)
+    internal static IReadOnlyList<Pt> Route(Pt a, Facing fa, Pt b, Facing fb)
     {
         var da = Resolve(fa, a, b);
         var db = Resolve(fb, b, a);
+
+        // One end leaves horizontally and the other vertically, and the corner where they meet is in
+        // front of both: that L is the route, as a person draws it. The stubs below were added anyway,
+        // so a line from a component's bottom edge to a connector a few units lower on another's left
+        // edge went 15 down, back up, then across - over itself (VehicleInterfaces' engine mount to its
+        // chassis frame, where Dymola draws the plain L).
+        if ((da.Dy == 0) != (db.Dy == 0))
+        {
+            var corner = da.Dy == 0 ? new Pt(b.X, a.Y) : new Pt(a.X, b.Y);
+            if (Ahead(a, da, corner) && Ahead(b, db, corner))
+                return Clean([a, corner, b]);
+        }
+
         var stub = Math.Clamp(Distance(a, b) * 0.2, 3, 15);
         var sa = new Pt(a.X + da.Dx * stub, a.Y + da.Dy * stub);
         var sb = new Pt(b.X + db.Dx * stub, b.Y + db.Dy * stub);
@@ -208,17 +225,43 @@ internal static class DiagramGeometry
         var pts = new List<Pt> { a, sa };
         var aHorizontal = da.Dy == 0;
         var bHorizontal = db.Dy == 0;
+
+        // Both ends leave along the same axis. Turning half way between the leads is right only when the
+        // connectors face each other with room between them; facing apart - an output whose target is
+        // behind it, two shafts back to back - the half-way turn lies behind a lead, and the line ran
+        // out, back over itself and on (a speed sensor's output to a bus on the class's left edge:
+        // {41,40},{56,40},{-14,40},...). Then it goes round instead: out of each lead and across
+        // between them, at the height (or width) half way between the two ends, or clear of them both
+        // where they are level.
         if (aHorizontal && bHorizontal)
         {
-            var mx = (sa.X + sb.X) / 2;
-            pts.Add(new Pt(mx, sa.Y));
-            pts.Add(new Pt(mx, sb.Y));
+            if ((sb.X - sa.X) * da.Dx >= 0 && (sa.X - sb.X) * db.Dx >= 0)
+            {
+                var mx = (sa.X + sb.X) / 2;
+                pts.Add(new Pt(mx, sa.Y));
+                pts.Add(new Pt(mx, sb.Y));
+            }
+            else
+            {
+                var my = Crossing(sa.Y, sb.Y, stub);
+                pts.Add(new Pt(sa.X, my));
+                pts.Add(new Pt(sb.X, my));
+            }
         }
         else if (!aHorizontal && !bHorizontal)
         {
-            var my = (sa.Y + sb.Y) / 2;
-            pts.Add(new Pt(sa.X, my));
-            pts.Add(new Pt(sb.X, my));
+            if ((sb.Y - sa.Y) * da.Dy >= 0 && (sa.Y - sb.Y) * db.Dy >= 0)
+            {
+                var my = (sa.Y + sb.Y) / 2;
+                pts.Add(new Pt(sa.X, my));
+                pts.Add(new Pt(sb.X, my));
+            }
+            else
+            {
+                var mx = Crossing(sa.X, sb.X, stub);
+                pts.Add(new Pt(mx, sa.Y));
+                pts.Add(new Pt(mx, sb.Y));
+            }
         }
         else if (aHorizontal)
         {
@@ -232,6 +275,21 @@ internal static class DiagramGeometry
         pts.Add(b);
         return Clean(pts);
     }
+
+    // Where a line going round crosses between two leads: half way between them where they are far
+    // enough apart for that to clear both, or else clear of them both. Only exactly level ends went
+    // round before: ends 4 apart crossed 2 from each, through the components between them.
+    private static double Crossing(double a, double b, double stub)
+    {
+        var clear = Math.Max(2 * stub, 15);
+        return Math.Abs(a - b) >= 2 * clear ? (a + b) / 2 : Math.Max(a, b) + clear;
+    }
+
+    // Whether a point is out in front of a connector facing that way - strictly, so each leg of the L
+    // has length: a corner on a connector itself would make the line leave or enter it sideways,
+    // along its component's edge (a=(0,0) facing right, b=(20,0) facing up gave the one segment a->b).
+    private static bool Ahead(Pt from, Facing facing, Pt point)
+        => (point.X - from.X) * facing.Dx + (point.Y - from.Y) * facing.Dy > 0;
 
     // A None facing points along the dominant axis toward the other endpoint.
     private static Facing Resolve(Facing f, Pt from, Pt to)
@@ -516,6 +574,10 @@ internal static class DiagramGeometry
     // --- Small maths -------------------------------------------------------------------------------
 
     private static string Segment(string portRef, int i) => ModelicaName.Segments(portRef)[i];
+
+    // A name segment without its subscripts: `sinks[1]` is `sinks`. A quoted name keeps everything.
+    private static string Bare(string segment) =>
+        segment.IndexOf('[') is var at and >= 0 && !segment.StartsWith('\'') ? segment[..at].Trim() : segment.Trim();
     private static double Distance(Pt a, Pt b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
     private static double Num(string s) => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture);
     private static bool Between(double a, double m, double b) => m >= Math.Min(a, b) && m <= Math.Max(a, b);

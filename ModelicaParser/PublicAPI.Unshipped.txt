@@ -1,1 +1,3 @@
 #nullable enable
+ModelicaParser.Icons.DiagramComponent.SwitchedOff.get -> System.Collections.Generic.IReadOnlyList<ModelicaParser.Icons.DiagramComponent!>?
+ModelicaParser.Icons.DiagramComponent.SwitchedOff.init -> void

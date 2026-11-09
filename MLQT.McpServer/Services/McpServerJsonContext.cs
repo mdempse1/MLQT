@@ -81,6 +81,7 @@ namespace MLQT.McpServer.Services;
 [JsonSerializable(typeof(ScriptLoadItem))]
 [JsonSerializable(typeof(ScriptReadingResult))]
 [JsonSerializable(typeof(RenameClassResult))]
+[JsonSerializable(typeof(RenameComponentResult))]
 [JsonSerializable(typeof(RenameFileChange))]
 [JsonSerializable(typeof(RepositorySummary))]
 [JsonSerializable(typeof(IReadOnlyList<RepositorySummary>))]

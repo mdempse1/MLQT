@@ -6,6 +6,23 @@ namespace ModelicaGraph.DataTypes;
 /// <summary>
 /// Represents a Modelica model definition.
 /// </summary>
+/// <remarks>
+/// <para><b>Threads.</b> While nothing replaces <see cref="ModelicaCode"/>, several threads may use
+/// the same instance at once to:</para>
+/// <list type="bullet">
+/// <item>read <see cref="ModelicaCode"/></item>
+/// <item>call <see cref="EnsureParsed"/> and <see cref="Borrow{T}"/>, and release the tree by
+/// setting <see cref="ParsedCode"/> to null</item>
+/// <item>render the icon and publish it in <see cref="IconSvg"/>, <see cref="IconGeneration"/>
+/// and, last, <see cref="IconRendered"/></item>
+/// </list>
+/// <para>Replacing <see cref="ModelicaCode"/> is the one thing that has to run with no other
+/// thread using the instance. A host gets that by not editing or reloading while it reads.</para>
+/// <para>The cached readers (<c>ClassSuppressions</c>, <c>ClassImports</c>) take the instance's own
+/// lock. The other derived state, such as <see cref="Coverage"/> and
+/// <see cref="StyleRuleFindings"/>, belongs to the pass that computes it, and is not covered by
+/// this promise.</para>
+/// </remarks>
 public class ModelDefinition
 {
     /// <summary>
@@ -132,8 +149,20 @@ public class ModelDefinition
     /// </summary>
     public string? IconSvg { get; set; }
 
+    private bool _iconRendered;
+
     /// <inheritdoc cref="IconSvg"/>
-    public bool IconRendered { get; set; }
+    /// <remarks>
+    /// <b>Set last, and read first.</b> Reads and writes of this flag are volatile, so a renderer
+    /// that sets <see cref="IconSvg"/> and <see cref="IconGeneration"/> and then this flag publishes
+    /// all three together. A thread that reads the flag as set, and then reads the other two, sees
+    /// what that renderer wrote. x64 keeps stores in order anyway; ARM64 does not.
+    /// </remarks>
+    public bool IconRendered
+    {
+        get => Volatile.Read(ref _iconRendered);
+        set => Volatile.Write(ref _iconRendered, value);
+    }
 
     /// <summary>
     /// Which generation of the loaded libraries <see cref="IconSvg"/> was rendered against (B349).
@@ -146,22 +175,23 @@ public class ModelDefinition
     /// </remarks>
     public int IconGeneration { get; set; }
 
+    private modelicaParser.Stored_definitionContext? _parsedCode;
+
     /// <summary>
     /// Antlr4 code context for the class definition.
     /// Lazily parsed on first access via <see cref="EnsureParsed"/>.
     /// </summary>
-    public modelicaParser.Stored_definitionContext? ParsedCode { get; set; }
-
-    /// <summary>
-    /// Ensures that ParsedCode is populated, parsing ModelicaCode if needed.
-    /// Returns the parse tree (never null unless ModelicaCode is empty).
-    /// </summary>
     /// <remarks>
-    /// Reads <see cref="ParsedCode"/> once, and returns the tree it parsed rather than reading the
-    /// property back. Another reader can release the tree at any moment, and reading it twice
-    /// returned null for a class with source whenever that happened in between — which dependency
-    /// analysis took as nothing to analyse, leaving the class with no edges and no message (B291).
+    /// Setting it to null <em>releases</em> the tree: it drops the cached reference and nothing else.
+    /// A reader already holding the tree keeps a valid tree, because nothing changes a tree once it
+    /// is built.
     /// </remarks>
+    public modelicaParser.Stored_definitionContext? ParsedCode
+    {
+        get => Volatile.Read(ref _parsedCode);
+        set => Volatile.Write(ref _parsedCode, value);
+    }
+
     /// <summary>
     /// How many times this class has been parsed. For tests: a cache that several threads fill at
     /// once is right when this is one, and every other way of telling needs a stopwatch.
@@ -169,17 +199,46 @@ public class ModelDefinition
     internal int TimesParsed => Volatile.Read(ref _timesParsed);
     private int _timesParsed;
 
-    public modelicaParser.Stored_definitionContext? EnsureParsed()
+    /// <summary>
+    /// Ensures that ParsedCode is populated, parsing ModelicaCode if needed.
+    /// Returns the parse tree (never null unless ModelicaCode is empty).
+    /// </summary>
+    /// <remarks>
+    /// <para>Reads <see cref="ParsedCode"/> once, and returns the tree it parsed rather than reading the
+    /// property back. Another reader can release the tree at any moment, and reading it twice
+    /// returned null for a class with source whenever that happened in between — which dependency
+    /// analysis took as nothing to analyse, leaving the class with no edges and no message (B291).</para>
+    ///
+    /// <para><b>Safe from several threads at once</b>, while nothing replaces
+    /// <see cref="ModelicaCode"/>. Two threads that find no tree both parse, but only the first to
+    /// finish publishes its tree and records its errors. The other returns the published tree, so
+    /// every caller gets the same tree and the errors are recorded once.</para>
+    /// </remarks>
+    public modelicaParser.Stored_definitionContext? EnsureParsed() => EnsureParsed(out _);
+
+    /// <param name="parsedHere">True when this call is what put the tree in
+    /// <see cref="ParsedCode"/>, so the call owns it and may release it. That is decided by the
+    /// publish itself, not by an earlier look at <see cref="ParsedCode"/>: looking first and parsing
+    /// afterwards let a tree released in between be parsed again by a caller that thought it owned
+    /// nothing, and the tree then stayed cached.</param>
+    private modelicaParser.Stored_definitionContext? EnsureParsed(out bool parsedHere)
     {
+        parsedHere = false;
         if (ParsedCode is { } existing)
             return existing;
 
-        if (string.IsNullOrWhiteSpace(ModelicaCode))
+        var code = ModelicaCode;
+        if (string.IsNullOrWhiteSpace(code))
             return null;
 
-        var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(ModelicaCode);
-        ParsedCode = parseTree;
+        var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(code);
         Interlocked.Increment(ref _timesParsed);
+
+        // Only into an empty slot: a tree another thread published meanwhile is the one everybody
+        // else has, and this one's errors are a copy of the ones it recorded.
+        if (Interlocked.CompareExchange(ref _parsedCode, parseTree, null) is { } published)
+            return published;
+        parsedHere = true;
 
         // Keep whatever the load path already recorded. Those errors came from parsing the whole
         // file, so they carry real file line numbers and the lexer's diagnosis (e.g. "unterminated
@@ -224,6 +283,11 @@ public class ModelDefinition
     /// assumed for a while, and it is the reasoning to repeat before any new "deliberate" exception:
     /// cache what was worked out, not what it was worked out from.</para>
     ///
+    /// <para><b>Safe from several threads on the same class</b>, while nothing replaces
+    /// <see cref="ModelicaCode"/>. A borrower never gets a null tree for a class whose source parses.
+    /// A tree released while a borrower is still using it stays valid. A borrower releases only the
+    /// tree its own call published, and only while that tree is still the cached one.</para>
+    ///
     /// <para><b>Not</b> for the bulk load pass. <c>GraphBuilder</c> parses every class in the library
     /// in turn and clears <see cref="ParsedCode"/> unconditionally afterwards, which is right there
     /// and would be wrong here: it <em>is</em> the outermost reader, nothing upstream is holding
@@ -238,8 +302,7 @@ public class ModelDefinition
     /// <inheritdoc cref="Borrow{T}"/>
     public T Borrow<T>(Func<modelicaParser.Stored_definitionContext, T> use, T ifUnparseable = default!)
     {
-        var owned = ParsedCode is null;
-        var tree = EnsureParsed();
+        var tree = EnsureParsed(out var owned);
         if (tree is null)
             return ifUnparseable;
 
@@ -249,8 +312,10 @@ public class ModelDefinition
         }
         finally
         {
+            // Releases only the tree this call published. If something released it and another
+            // reader cached a tree of its own meanwhile, that tree belongs to that reader.
             if (owned)
-                ParsedCode = null;
+                Interlocked.CompareExchange(ref _parsedCode, null, tree);
         }
     }
 

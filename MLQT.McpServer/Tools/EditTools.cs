@@ -76,6 +76,9 @@ public sealed class EditTools
         if (ctx is null)
             return new ToolError($"Could not locate the source file for '{classId}'.");
 
+        if (DuplicateDeclarations.Introduced(_libraries, classId, node.Definition.ModelicaCode ?? string.Empty, newSource) is { } twice)
+            return new ToolError($"new_source is refused: {twice}. Nothing was changed.");
+
         var owner = ctx.FileOwner;
         var ownerCode = owner.Definition.ModelicaCode ?? string.Empty;
 
@@ -94,7 +97,8 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, oldClassCode, newSource);
         }
 
-        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText);
+        var fileContent = EditFormatting.Apply(_libraries, _session, owner.Id, owner.Id, owner.ContainingFileId,
+            WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText), owner.ParentModelName);
 
         if (preview)
             return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: false, 0, fileContent);
@@ -191,7 +195,8 @@ public sealed class EditTools
 
         // newId decides where the class lands, so the file's clause names its parent — replacing any
         // the caller sent with the source rather than adding a second one beside it.
-        var content = WithinClause.Set(source.TrimEnd(), parentId) + "\n";
+        var content = EditFormatting.Apply(_libraries, _session, parentId, newId, existingFileId: null,
+            WithinClause.Set(source.TrimEnd(), parentId) + "\n", parentId);
 
         if (isPackage)
             return await CreateStandalonePackageAsync(newId, className, content, dir, packageMoPath, packageMembers, preview);
@@ -269,6 +274,9 @@ public sealed class EditTools
         var (_, errs) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errs.Count > 0)
             return new ToolError($"Inserting the class would make '{ctx.FilePath}' unparseable ({DescribeErrors(errs)}). Nothing was written.");
+
+        fileContent = EditFormatting.Apply(_libraries, _session, ctx.FileOwner.Id, ctx.FileOwner.Id,
+            ctx.FileOwner.ContainingFileId, fileContent, ctx.FileOwner.ParentModelName);
 
         if (preview)
             return new CreateClassResult(newId, ctx.FilePath, "nested", PreviewOnly: true, Created: false, fileContent);
@@ -486,7 +494,7 @@ public sealed class EditTools
         touched.AddRange((List<string>)removeResult);
 
         var tgtCtx2 = ModelFilePersistence.ResolveFileOwner(_libraries, newParentId) ?? tgtCtx;
-        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2, fileText);
+        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2, fileText, descendants);
         if (addResult is ToolError addErr)
             return addErr;
         touched.AddRange((List<string>)addResult);
@@ -940,9 +948,11 @@ public sealed class EditTools
 
     // Places 'classCode' under newParentId (standalone file if the parent is a directory package and the
     // class allows it, else nested in the parent's package.mo). Returns affected model ids or a ToolError.
+    /// <param name="movedIds">The class's and its nested classes' ids before the move, for the
+    /// repository's excluded-from-formatting list, which names them by those.</param>
     private async Task<object> AddClassStorageAsync(
         string newParentId, string leaf, string classCode, ModelFilePersistence.FileOwnerContext tgtCtx,
-        FileLevelText? fileText = null)
+        FileLevelText? fileText = null, IReadOnlyList<string>? movedIds = null)
     {
         var parentIsDirectoryPackage = tgtCtx.FileOwner.Id == newParentId &&
             string.Equals(Path.GetFileName(tgtCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase);
@@ -954,7 +964,9 @@ public sealed class EditTools
             var newFilePath = Path.Combine(dir, leaf + ".mo");
             // The move destination decides the clause, so replace whatever the class arrived with.
             await ModelicaFileEncoding.WriteAllTextAsync(
-                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n");
+                newFilePath, EditFormatting.Apply(_libraries, _session, newParentId, $"{newParentId}.{leaf}",
+                    existingFileId: null, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n", newParentId,
+                    movedIds));
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
@@ -979,7 +991,10 @@ public sealed class EditTools
                 return new ToolError("Could not uniquely locate the destination within its file.");
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
-        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText));
+        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, EditFormatting.Apply(
+            _libraries, _session, tgtCtx.FileOwner.Id, tgtCtx.FileOwner.Id, tgtCtx.FileOwner.ContainingFileId,
+            WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText),
+            tgtCtx.FileOwner.ParentModelName, movedIds));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);
@@ -1236,6 +1251,202 @@ public sealed class EditTools
     }
 
     /// <summary>
+    /// Rename a component - a parameter, constant, variable or connector - declared in
+    /// <paramref name="classId"/>, and every place that names it: references in that class, in the
+    /// classes derived from it and in every class reaching it through a component, modifications that
+    /// set it, and named arguments that pass it. Text is rewritten only where the name resolves to this
+    /// element (<see cref="ElementReferenceLocator"/>), so another element, a class or an iterator that
+    /// happens to share the name is left alone.
+    /// </summary>
+    /// <remarks>
+    /// <para>Renaming a parameter to satisfy a naming rule took a replace in each class and in every
+    /// caller by hand; a replace-all on <c>Ti</c> could not be done for the class <c>TipIn</c> it would
+    /// also have hit, and a hand rename that chose a name already declared (<c>rearLoad</c>) surfaced
+    /// only when the model failed to build.</para>
+    ///
+    /// <para><b>Refused</b>, with nothing written: a new name already declared in the class or in any
+    /// class derived from it (where the two would be one name declared twice), a reference that a
+    /// <c>for</c> iterator of the new name would take over, a file in a read-only library, and a result
+    /// that does not parse.</para>
+    /// </remarks>
+    internal async Task<object> RenameComponent(
+        string classId,
+        string component,
+        string newName,
+        bool preview = false)
+    {
+        if (ReadOnlyClassGuard.Refuse(_libraries, classId, "rename a component of this class") is { } readOnlyClass)
+            return readOnlyClass;
+
+        var node = _libraries.GetModelById(classId);
+        if (node is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (node.IsParseFailurePlaceholder)
+            return new ToolError($"Class '{classId}' failed to parse, so its components cannot be renamed.");
+        component = component.Trim();
+        newName = newName.Trim();
+        if (!IdentifierRegex.IsMatch(newName))
+            return new ToolError($"newName '{newName}' is not a valid Modelica identifier (letters/digits/_, not starting with a digit).");
+        if (string.Equals(newName, component, StringComparison.Ordinal))
+            return new ToolError("newName is the same as the current name.");
+
+        var graph = _libraries.CombinedGraph;
+        var members = ClassElementResolver.Collect(graph, node, includeProtected: true, includeInherited: true);
+        var element = members.FirstOrDefault(m => m.Element.Kind != ClassElementKind.Extends
+                                                  && m.Element.Kind != ClassElementKind.Import
+                                                  && m.Element.Name == component);
+        if (element is null)
+            return new ToolError($"'{classId}' has no component named '{component}'.");
+        if (element.Element.Kind == ClassElementKind.Class)
+            return new ToolError($"'{component}' is a class. Rename it with mlqt_refactor_class's 'rename' on '{classId}.{component}'.");
+        if (element.OwnerId != classId)
+            return new ToolError($"'{component}' is inherited: it is declared in '{element.OwnerId}'. Rename it there, " +
+                                 "which renames it in every class that inherits it too.");
+        // An inner and its outers are matched by name when a model is instantiated, never by a reference
+        // this could follow: renaming one would leave the others looking for a name nothing declares.
+        if (element.Element.Prefixes.Any(p => p is "inner" or "outer"))
+            return new ToolError($"'{component}' is declared {string.Join(" ", element.Element.Prefixes.Where(p => p is "inner" or "outer"))}, " +
+                                 "and an inner and its outers find each other by name when the model is built, not through a " +
+                                 "reference a rename can follow. Rename it with mlqt_edit_class's replace in each class that " +
+                                 "declares it inner or outer, together.");
+
+        if (!_session.DependenciesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "renaming a component (the classes using it are found from the dependency graph)");
+
+        // A name already declared where the renamed one is seen: in the class itself, or in a class derived
+        // from it, the two would be one name declared twice - the `rearLoad` a hand rename found only when
+        // the model would not build.
+        var reach = UsersReaching(graph, [classId]);
+        foreach (var id in graph.ModelNodes.Where(m => ModelicaName.IsInSubtree(m.Id, classId)).Select(m => m.Id))
+            reach.Add(id);
+        var taken = new List<string>();
+        if (members.Any(m => m.Element.Name == newName && m.Element.Kind is not (ClassElementKind.Extends or ClassElementKind.Import)))
+            taken.Add(classId);
+        var derivedClasses = new List<ModelNode>();
+        foreach (var id in reach.Where(id => id != classId))
+        {
+            if (graph.GetNode<ModelNode>(id) is not { } derived
+                || !ClassElementResolver.BaseClasses(graph, derived).Any(b => b.Id == classId))
+                continue;
+            derivedClasses.Add(derived);
+            if (ClassElementResolver.Collect(graph, derived, includeProtected: true, includeInherited: true)
+                .Any(m => m.Element.Name == newName && m.OwnerId != classId
+                          && m.Element.Kind is not (ClassElementKind.Extends or ClassElementKind.Import)))
+                taken.Add(id);
+        }
+        if (taken.Count > 0)
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: '{newName}' is already declared " +
+                                 $"in {string.Join(", ", taken.Take(10).Select(t => $"'{t}'"))}" +
+                                 (taken.Count > 10 ? ", ..." : "") + ", where the renamed component is seen too. " +
+                                 "Nothing was changed. Choose another name.");
+
+        // A name the classes that see the component already use for something else - a package's constant,
+        // an import alias, a class - would mean the component once it is called that: an element of the
+        // class is found before anything further out. `Real y = g` reading P's g read the renamed component.
+        // A constant is seen by the classes nested in these too, as the ones further out are.
+        var roots = new List<ModelNode> { node };
+        roots.AddRange(derivedClasses);
+        var seeing = new List<ModelNode>(roots);
+        if (element.Element.Variability == "constant")
+            seeing.AddRange(graph.ModelNodes.Where(m => roots.Any(r => m.Id != r.Id && ModelicaName.IsInSubtree(m.Id, r.Id))).ToList());
+        var takenOver = seeing
+            .Select(c => (c.Id, Lines: ElementReferenceLocator.UsesOfName(c.Definition.ModelicaCode ?? string.Empty, newName)))
+            .Where(c => c.Lines.Count > 0)
+            .Select(c => $"{c.Id} (line {string.Join(", ", c.Lines.Take(5))})")
+            .ToList();
+        if (takenOver.Count > 0)
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: '{newName}' already means something else " +
+                                 $"where the component is seen, and would mean the component instead, in {string.Join("; ", takenOver.Take(10))}. " +
+                                 "Nothing was changed. Choose another name.");
+
+        // Only the files that could name it: those holding a class that reaches it, and that spell the name.
+        var word = new Regex($@"(?<![A-Za-z0-9_']){Regex.Escape(component)}(?![A-Za-z0-9_'])", RegexOptions.CultureInvariant);
+        var paths = reach
+            .Select(id => graph.GetNode<ModelNode>(id)?.ContainingFileId)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Select(id => graph.GetNode<FileNode>(id)?.FilePath)
+            .Where(p => !string.IsNullOrEmpty(p) && File.Exists(p))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var planned = new List<(string Path, string NewContent, int Count)>();
+        var captured = new List<string>();
+        var readOnlyFiles = new List<string>();
+        var shared = new ReferenceLocator.Shared();
+        foreach (var path in paths)
+        {
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
+            if (!word.IsMatch(text))
+                continue;
+            var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
+            var sites = ElementReferenceLocator.Locate(graph, tree, classId, component, shared);
+            if (sites.Count == 0)
+                continue;
+
+            // Only a reference's first segment is looked up where it is written, so only it can be taken
+            // over: by an iterator of the new name, or - written in a class that is neither the declaring
+            // one nor derived from it, a nested function say - by anything that name already means there.
+            foreach (var site in sites.Where(s => s.FirstSegment))
+            {
+                if (site.Iterators.Contains(newName))
+                    captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId} (a 'for' iterator)");
+                else if (site.ScopeId != classId && !derivedClasses.Any(d => d.Id == site.ScopeId)
+                         && graph.GetNode<ModelNode>(site.ScopeId) is { } scope
+                         && (ClassElementResolver.ReferencesIn(graph, scope).Resolve(newName) is not null
+                             || TypeResolver.Resolve(graph, scope.Id, newName, null) is not null))
+                    captured.Add($"line {site.Line} of {Path.GetFileName(path)}, in {site.ScopeId}, where '{newName}' is declared already");
+            }
+            if (sites.Any(s => _libraries.GetModelById(s.ScopeId) is { } scope && _libraries.GetOwningLibrary(scope.Id)?.IsReadOnly == true))
+                readOnlyFiles.Add(path);
+
+            var spans = sites.Select(s => (s.Name.StartIndex, s.Name.StopIndex)).Distinct().ToList();
+            var newContent = ApplySpans(text, spans, newName);
+            var (_, errors) = ModelicaParserHelper.ParseWithErrors(newContent);
+            if (errors.Count > 0)
+                return new ToolError($"Renaming would leave '{path}' unparseable ({DescribeErrors(errors)}). No files were changed.");
+            planned.Add((path, newContent, spans.Count));
+        }
+
+        if (captured.Count > 0)
+            return new ToolError($"Renaming '{component}' to '{newName}' is refused: something already called '{newName}' " +
+                                 $"would take over the renamed reference at {string.Join("; ", captured.Take(10))}. " +
+                                 "Nothing was changed. Choose another name.");
+        if (readOnlyFiles.Count > 0)
+            return new ToolError($"Renaming '{component}' would change read-only libraries' files: " +
+                                 $"{string.Join(", ", readOnlyFiles.Take(10))}. Nothing was changed.");
+        if (planned.Count == 0)
+            return new ToolError($"'{component}' was not found written in '{classId}'s file. (Has the file changed since it was loaded? mlqt_session's reload re-reads it.)");
+
+        var total = planned.Sum(p => p.Count);
+        const string note =
+            "Every place that names the component is rewritten: its declaration, references to it in this class, " +
+            "in classes derived from it and through components of it, modifications that set it, and named " +
+            "arguments that pass it. Text in strings - an icon label's %name, documentation - is not; review those, " +
+            "and verify with a model checker.";
+
+        if (preview)
+            return new RenameComponentResult(classId, component, newName, PreviewOnly: true, Changed: false,
+                planned.Count, total, [.. planned.Select(p => new RenameFileChange(p.Path, p.Count, p.NewContent))], note);
+
+        if (FileWritability.PreflightWritable(planned.Select(p => p.Path), $"rename '{classId}.{component}'") is { } notWritable)
+            return notWritable;
+
+        var affected = new List<string>();
+        foreach (var (path, newContent, _) in planned)
+        {
+            // In place, as a class rename is: only the identifiers change, so nothing is reformatted.
+            await ModelicaFileEncoding.WriteAllTextAsync(path, newContent);
+            affected.AddRange(await _libraries.ReloadFileAsync(path));
+        }
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+
+        return new RenameComponentResult(classId, component, newName, PreviewOnly: false, Changed: true,
+            planned.Count, total, [.. planned.Select(p => new RenameFileChange(p.Path, p.Count, null))], note);
+    }
+
+    /// <summary>
     /// The segment of <paramref name="site"/> that names one of the <paramref name="renamed"/> classes -
     /// its position and which one - or null when the reference does not spell it.
     /// </summary>
@@ -1384,6 +1595,194 @@ public sealed class EditTools
 
     private static string IndentBlock(string code, string indent)
         => string.Join("\n", code.Replace("\r\n", "\n").Split('\n').Select(l => l.Length == 0 ? l : indent + l));
+
+    /// <summary>
+    /// Bring classes a script wrote - a <c>.mo</c> file, or a folder of them - into a package as
+    /// <c>mlqt_write_class</c> would have written them: each in a file of its own named for it, with the
+    /// package's within clause, formatted with the repository's rules, and listed in package.order. A
+    /// file the script wrote straight into the package's folder is adopted where it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>A data generator writes <c>.mo</c> files directly, and they then sat outside MLQT: package.order
+    /// written by hand, the library reloaded, the files formatted, each a step of its own. Passing their
+    /// text through <c>mlqt_write_class</c> instead carries every generated file through the agent.</para>
+    ///
+    /// <para><b>All or none</b>: a file that does not parse, holds more than one class, or would overwrite
+    /// a class without <paramref name="replace"/> refuses the whole import, listing every such file - half
+    /// a generated data set is worse than none. A write that fails partway puts back every file already
+    /// written, package.order included. A file already as it would be written is not rewritten. Everything
+    /// written is reloaded once, at the end.</para>
+    /// </remarks>
+    internal async Task<object> ImportClasses(string parentId, string path, bool replace = false, bool preview = false)
+    {
+        if (ReadOnlyClassGuard.Refuse(_libraries, parentId, "import classes into this package") is { } readOnlyParent)
+            return readOnlyParent;
+        if (_libraries.GetModelById(parentId) is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, parentId);
+
+        var ctx = ModelFilePersistence.ResolveFileOwner(_libraries, parentId);
+        if (ctx is null || ctx.FileOwner.Id != parentId
+            || !string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
+            return new ToolError($"'{parentId}' is not a package stored as a directory (a folder with a package.mo), " +
+                                 "so it cannot hold classes in files of their own. Import into one that is, or write the " +
+                                 "classes into it with mlqt_write_class.");
+        var directory = Path.GetDirectoryName(ctx.FilePath)!;
+
+        // A relative path is relative to the server's working directory, which the agent cannot see.
+        if (!Path.IsPathFullyQualified(path))
+            return new ToolError($"'{path}' is a relative path; give importFrom as a full path.");
+
+        List<string> files;
+        if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+            files = [Path.GetFullPath(path)];
+        else if (Directory.Exists(path))
+            files = [.. Directory.GetFiles(path, "*.mo")
+                .Where(f => !string.Equals(Path.GetFileName(f), "package.mo", StringComparison.OrdinalIgnoreCase))
+                .Select(Path.GetFullPath)
+                .Order(StringComparer.Ordinal)];
+        else
+            return new ToolError($"'{path}' is neither a .mo file nor a folder.");
+        if (files.Count == 0)
+            return new ToolError($"'{path}' holds no .mo files to import (package.mo is not one: a sub-package is not imported).");
+
+        var graph = _libraries.CombinedGraph;
+        var planned = new List<(string Name, string Id, string Target, string Content, string Action)>();
+        var problems = new List<string>();
+        foreach (var file in files)
+        {
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(file));
+            var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(text);
+            var top = models.Where(m => !m.IsNested).ToList();
+            if (errors.Count > 0)
+            {
+                problems.Add($"{Path.GetFileName(file)}: {DescribeErrors(errors)}");
+                continue;
+            }
+            if (top.Count != 1)
+            {
+                problems.Add($"{Path.GetFileName(file)} holds {top.Count} classes; a file of its own holds one");
+                continue;
+            }
+
+            var name = top[0].Name;
+            var id = $"{parentId}.{name}";
+            var target = Path.GetFullPath(Path.Combine(directory, name + ".mo"));
+            var inPlace = string.Equals(file, target, PathComparison);
+            // No check for replaceable, redeclare, inner or outer: a file's grammar has no place for them,
+            // so a file whose class carries one has already been refused as not parsing.
+            if (string.Equals(Path.GetDirectoryName(file), directory, PathComparison) && !inPlace)
+            {
+                problems.Add($"{Path.GetFileName(file)} holds '{name}', so in '{parentId}' it has to be called {name}.mo");
+                continue;
+            }
+
+            var existing = _libraries.GetModelById(id);
+            var existingFile = existing?.ContainingFileId is { } fileId ? graph.GetNode<FileNode>(fileId)?.FilePath : null;
+            if (existing is not null && !string.Equals(existingFile, target, PathComparison))
+            {
+                problems.Add($"'{id}' already exists, stored in '{existingFile}'; replace it with mlqt_write_class");
+                continue;
+            }
+            if (existing is not null && !inPlace && !replace)
+            {
+                problems.Add($"'{id}' already exists; pass replace=true to replace it");
+                continue;
+            }
+
+            // The file's own text outside the class - a licence header - goes with it, above the within
+            // clause as it was; set from the stripped body, it came out below the clause.
+            var fileText = FileLevelText.Read(text, top[0].StartIndex, top[0].StopIndex);
+            var content = EditFormatting.Apply(_libraries, _session, parentId, id, existing?.ContainingFileId,
+                WithinClause.Set(top[0].SourceCode.TrimEnd(), parentId, fileText) + "\n", parentId);
+
+            // A file already as it would be written is left alone: importing a package's own folder after
+            // a generator rewrote some of it rewrote every file in it.
+            var original = File.Exists(target) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(target) : null;
+            var unchanged = original is not null && ModelicaFileEncoding.ForFileText(original, content) == original;
+            planned.Add((name, id, target, content,
+                unchanged ? "unchanged" : existing is null ? "created" : inPlace ? "adopted" : "replaced"));
+        }
+
+        // On Windows two names differing only in case are one file.
+        var duplicates = planned.GroupBy(p => p.Name, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        foreach (var name in duplicates)
+            problems.Add($"more than one file holds '{name}'");
+        if (problems.Count > 0)
+            return new ToolError($"Nothing was imported into '{parentId}': {string.Join("; ", problems)}.");
+
+        if (preview)
+            return new WriteClassResult(true, [.. planned.Select(p => new WrittenClassItem(p.Id, p.Action, p.Target, p.Content))]);
+
+        // The files written are the classes' and package.order - not package.mo, which nothing here writes.
+        var orderPath = Path.Combine(directory, "package.order");
+        var toWrite = planned.Where(p => p.Action != "unchanged").ToList();
+        if (FileWritability.PreflightWritable(
+                toWrite.Select(p => p.Target).Concat(File.Exists(orderPath) ? [orderPath] : []),
+                $"import classes into '{parentId}'") is { } notWritable)
+            return notWritable;
+
+        // All or none once writing starts, too: what each file held, to put back if one write fails.
+        var before = new Dictionary<string, string?>(PathComparer);
+        foreach (var p in toWrite)
+            before[p.Target] = File.Exists(p.Target) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(p.Target) : null;
+        var orderBefore = File.Exists(orderPath) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(orderPath) : null;
+
+        var written = new List<WrittenClassItem>();
+        try
+        {
+            foreach (var p in planned)
+            {
+                if (p.Action != "unchanged")
+                    await ModelicaFileEncoding.WriteAllTextAsync(p.Target, p.Content);
+                written.Add(new WrittenClassItem(p.Id, p.Action, p.Target, null, AppendToPackageOrder(directory, p.Name)));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Every file is put back that can be, and any that could not is named.
+            var stuck = new List<string>();
+            var undo = before.Select(b => (b.Key, b.Value));
+            if (orderBefore is not null)
+                undo = undo.Append((orderPath, orderBefore));
+            foreach (var (target, text) in undo)
+            {
+                try
+                {
+                    if (text is null)
+                    {
+                        if (File.Exists(target))
+                            File.Delete(target);
+                    }
+                    else
+                        await ModelicaFileEncoding.WriteAllTextAsync(target, text);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    stuck.Add($"'{target}' ({e.Message})");
+                }
+            }
+            return stuck.Count == 0
+                ? new ToolError($"Nothing was imported into '{parentId}': a write failed ({ex.Message}), and every file " +
+                                "already written was put back.")
+                : new ToolError($"Importing into '{parentId}' failed ({ex.Message}), and {string.Join(", ", stuck)} could not " +
+                                "be put back. Check the package's folder before going on.");
+        }
+
+        // Once, after every file is in place and listed: a reload reads the package.order beside the file.
+        var affected = new List<string>();
+        foreach (var p in planned)
+            affected.AddRange(await _libraries.ReloadFileAsync(p.Target));
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+        return new WriteClassResult(false, written);
+    }
+
+    // How the file system compares paths: without case on Windows, with it elsewhere.
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     // Keep a directory package's package.order in sync when a child is added. No-op if there is no
     // package.order (the loader includes every .mo file anyway). Returns the package.order that lists the

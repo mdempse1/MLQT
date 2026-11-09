@@ -8,6 +8,25 @@ namespace MLQT.Services.Interfaces;
 /// Service for managing loaded Modelica libraries and providing tree data on-demand.
 /// Supports lazy loading of tree nodes for efficient handling of large libraries.
 /// </summary>
+/// <remarks>
+/// <para><b>Threads.</b> Once the libraries are loaded, and while no load, reload, refresh or edit
+/// is running, any number of threads may at once:</para>
+/// <list type="bullet">
+/// <item>call <see cref="GetModelById"/>, <see cref="GetChildModelsAsync"/>,
+/// <see cref="ModelHasChildren"/>, <see cref="GetOwningLibrary"/> and <see cref="GetAllModels"/></item>
+/// <item>read a returned node's <c>Definition.ModelicaCode</c>, and parse it through
+/// <c>ModelDefinition.EnsureParsed</c> or <c>Borrow</c></item>
+/// <item>let <see cref="GetChildModelsAsync"/> render icons for classes that other threads are
+/// reading and parsing</item>
+/// </list>
+/// <para>A host needs no lock of its own for these. <see cref="GetChildModelsAsync"/> renders icons
+/// outside the service's lock on purpose, and a host lock around it puts every read behind icon
+/// rendering. The thread-safety rules for one class are on <c>ModelDefinition</c>.
+/// <c>LibraryDataServiceConcurrencyTests</c> holds this promise.</para>
+/// <para>A host must still keep its reads apart from anything that changes the graph or a class's
+/// source, such as a load, <see cref="ReloadFileAsync"/> or an edit. This interface does not
+/// promise that reads may overlap with those.</para>
+/// </remarks>
 public interface ILibraryDataService
 {
     /// <summary>

@@ -16,6 +16,12 @@ stdio; reuses the service layer with no UI at all.
   is the whole server bar the process - `Program.cs` is it plus stdio; every service is `TryAdd`ed,
   so a host's own registration wins, and the coercion filter reads each tool's schema, so a host's
   tools are coerced too
+- **Every write formats through `EditFormatting.Apply`** (`Helpers/`), with the repository's rules and
+  only where its settings have `ApplyFormattingRules` on - never a tool's own call to the renderer, or
+  one path formats and its sibling does not. A tool that applies several operations wraps them in
+  `EditFormatting.Defer()`, so the file is formatted once at the end and a later operation can name
+  text an earlier one wrote as it was written. The settings are the repository's as last read: at
+  load, and again by `mlqt_session`'s reload
 - **The promised surface** is that method, its options (and the `ToolUsageLogger` they name) and the
   tool names (`MlqtMcpServerSurfaceTests`, `ToolNamingTests`), not the assembly's other public types
 

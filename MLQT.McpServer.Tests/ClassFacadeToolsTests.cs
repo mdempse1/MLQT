@@ -161,7 +161,7 @@ public class ClassFacadeToolsTests
     [Theory]
     [InlineData("rename", "needs newName")]
     [InlineData("move", "needs newParentId")]
-    [InlineData("copy", "'rename', 'move' or 'delete'")]
+    [InlineData("copy", "'rename', 'move', 'delete' or 'rename_component'")]
     public async Task AMissingArgument_OrAnUnknownAction_IsRefused(string action, string expected)
     {
         using var host = new TestHost();

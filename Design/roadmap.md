@@ -285,6 +285,18 @@ a computed offset instead: `spellCheck.scrollLineIntoView`, `scrollWordIntoView`
 match offsets and the spelling underline. Browser find (Ctrl+F) and select-all only reach rendered
 lines, which is acceptable because the page has its own search. Size M. Then remove the cap.
 
+**B526 — `rename_component` leaves the component's name in text.** It rewrites every reference
+that names the component. It does not rewrite a `%name`-style label that shows the old name
+through a parameter of another class, or a description or documentation string that mentions it.
+Those are prose, and a match there may not mean the component. Offer them as a list the agent
+confirms, with `correct_spelling`'s whole-word matching, if an agent's report shows the stale text
+mattering. Size S.
+
+**B527 — importing a generated sub-package.** `importFrom` imports classes, a file each. It skips
+`package.mo`, so a generator that writes a sub-package as a folder has it refused or half-imported.
+A folder with its own `package.mo` could be imported as a directory package, recursively, under the
+same all-or-none and put-back rules. Do it when a generator that writes one is reported. Size S–M.
+
 ---
 
 ## Decided against, for now
@@ -332,7 +344,6 @@ B520 is a small defect found tokenising the theme (2026-10-29) and left as it wa
 was not to alter how anything looks. B523 is a pair of intermittent failures seen on one day and not
 reproduced; like B492 and B496, find the cause from its evidence if it recurs. B524 is a limitation
 of resource tracking found reviewing phase 2 (2026-10-30), not a failure anyone has seen.
-
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
 | B492 | `CodeSearchJourney.TheMatchCountSaysHowManyLinesMatched` timed out waiting for its findings row. It happened in one local full run, before the `ProgressDialog` fix, and did not reproduce in 24 runs, 3 of them under full CPU load. Instrumenting it showed that only a journey's own `ClearLogMessages` removes the injected finding, and that the `tbody tr` locator always meets a real row | Keep the run's trace (`MLQT_JOURNEY_TRACE`) and host log (`MLQT_LOG_CONSOLE=Info`) |
@@ -354,7 +365,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B525**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B528**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
