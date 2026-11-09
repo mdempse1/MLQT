@@ -77,15 +77,29 @@ public sealed class SessionEndTests : IDisposable
             CreateNoWindow = true,
         }) ?? throw new InvalidOperationException("the fake omc did not start");
 
+        // Read once it can be: the file is there as soon as Move-Item has renamed it, but on Windows the
+        // move - or a scanner looking at the new file - can still hold it open for a moment, and reading
+        // it then threw "being used by another process" (a coverage run, 2026-11-09, passing on re-run).
         var waited = Stopwatch.StartNew();
-        while (!File.Exists(_pidFile))
+        string? text = null;
+        while (text is null)
         {
             Assert.False(_omc.HasExited, "the fake omc ended before its child was up");
             Assert.True(waited.Elapsed < NeverThisLong, "the fake omc's child never started");
-            await Task.Delay(100, TestContext.Current.CancellationToken);
+            try
+            {
+                if (File.Exists(_pidFile))
+                    text = File.ReadAllText(_pidFile);
+            }
+            catch (IOException)
+            {
+                // Still held by whoever wrote or is scanning it: wait and try again.
+            }
+            if (text is null)
+                await Task.Delay(100, TestContext.Current.CancellationToken);
         }
 
-        _childPid = int.Parse(File.ReadAllText(_pidFile).Trim());
+        _childPid = int.Parse(text.Trim());
         var child = Process.GetProcessById(_childPid.Value);
         Assert.False(child.HasExited);
         return child;
