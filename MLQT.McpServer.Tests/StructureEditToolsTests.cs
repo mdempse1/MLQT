@@ -554,6 +554,41 @@ public class StructureEditToolsTests
             Bus bus;
             Source source1;
           end BusSys;
+          expandable connector SubBus
+          end SubBus;
+          expandable connector ControlBus
+            SubBus engineBus;
+          end ControlBus;
+          model SubBusSys
+            ControlBus controlBus;
+            Source source1;
+          end SubBusSys;
+          block Table
+            parameter Integer n = 2;
+            RealOutput y[n];
+          end Table;
+          model TableSys
+            Table table;
+            Sink sink1;
+          end TableSys;
+          connector Flange
+            Real phi;
+            flow Real tau;
+          end Flange;
+          connector FlangeWithBearing
+            parameter Boolean includeBearingConnector = false;
+            Flange flange;
+          end FlangeWithBearing;
+          model Engine
+            FlangeWithBearing transmissionFlange;
+          end Engine;
+          model Shaft
+            Flange flange_a;
+          end Shaft;
+          model EngineSys
+            Engine engine;
+            Shaft shaft;
+          end EngineSys;
         end C;
         """;
 
@@ -749,6 +784,54 @@ public class StructureEditToolsTests
             await LoadConn(host).AddConnection("C.BusSys", "bus.speed", "source1.y"));
         Assert.True(res.Changed);
         Assert.Contains("expandable", res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_ASignalOnASubBusOfAnExpandableBus_IsAccepted()
+    {
+        // controlBus.engineBus.speed, as VehicleInterfaces wires it: the sub-bus is declared, and is
+        // itself expandable, so connecting is what declares 'speed' - and the note says so, rather
+        // than that the declared 'engineBus' is the one being declared.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.SubBusSys", "controlBus.engineBus.speed", "source1.y"));
+        Assert.True(res.Changed);
+        Assert.Contains("'engineBus' is an expandable connector ('C.SubBus'), so 'speed' is declared", res.Note);
+        Assert.Contains("connect(controlBus.engineBus.speed, source1.y);",
+            host.Libraries.GetModelById("C.SubBusSys")!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task AddConnection_AnElementOfAnArrayConnector_IsResolved_AndAccepted()
+    {
+        // table.y[1]: the subscript is on the connector rather than the component (g[1].p).
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.TableSys", "table.y[1]", "sink1.u"));
+        Assert.True(res.Changed);
+        Assert.Null(res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_AConnectorInsideAConnector_IsResolved_AndAccepted()
+    {
+        // engine.transmissionFlange.flange, MultiBody's FlangeWithBearing: the port is a connector
+        // declared inside the component's connector.
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "shaft.flange_a"));
+        Assert.True(res.Changed);
+        Assert.Null(res.Note);
+    }
+
+    [Fact]
+    public async Task AddConnection_AConnectorInsideAConnector_ToTheWrongKind_IsRefused()
+    {
+        // Resolving the nested port is what lets a wrong one be refused, rather than waved through.
+        using var host = new TestHost();
+        var err = ToolAssert.Error(
+            await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "engine.transmissionFlange"));
+        Assert.Contains("Incompatible connectors", err.Error);
     }
 
     [Fact]
