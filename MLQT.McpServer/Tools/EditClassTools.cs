@@ -113,16 +113,28 @@ public sealed class EditClassTools
         await EditRollback.SnapshotAsync(snapshots, ctx!.FilePath);
 
         var notes = new List<string>();
-        for (var i = 0; i < operations.Count; i++)
+        // Formatted once, after the last operation, not after each: each operation re-opens the class
+        // from the file, and one whose text an earlier operation's format had changed - a `replace` of
+        // `k=2` written as `k = 2` - would not find it (EditFormatting.Defer).
+        using (EditFormatting.Defer())
         {
-            var result = await Dispatch(classId, operations[i]);
-            if (result is ToolError te)
+            for (var i = 0; i < operations.Count; i++)
             {
-                await EditRollback.RestoreAsync(snapshots, _libraries, _resources, _session);
-                return new ToolError($"Operation {i} ({OpName(operations[i].Op)}) failed: {te.Error} Nothing was changed.");
+                var result = await Dispatch(classId, operations[i]);
+                if (result is ToolError te)
+                {
+                    await EditRollback.RestoreAsync(snapshots, _libraries, _resources, _session);
+                    return new ToolError($"Operation {i} ({OpName(operations[i].Op)}) failed: {te.Error} Nothing was changed.");
+                }
+                if (result is StructureEditResult { Note: { Length: > 0 } note })
+                    notes.Add($"Operation {i}: {note}");
             }
-            if (result is StructureEditResult { Note: { Length: > 0 } note })
-                notes.Add($"Operation {i}: {note}");
+        }
+
+        if (await EditFormatting.FormatFileNowAsync(_libraries, _resources, _session, classId) is ToolError formatError)
+        {
+            await EditRollback.RestoreAsync(snapshots, _libraries, _resources, _session);
+            return new ToolError($"{formatError.Error} Nothing was changed.");
         }
 
         string? content = null;

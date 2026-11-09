@@ -159,6 +159,134 @@ public class ConnectionLineOwnershipTests
         Assert.Contains(HandDrawn, src);
     }
 
+    // A source, one sink and an array of sinks, all placed; HAND_DRAWN is the connect under test.
+    private const string Small = """
+        within;
+        package D "d"
+          connector RealInput = input Real;
+          connector RealOutput = output Real;
+          block Source "src"
+            RealOutput y annotation (Placement(transformation(extent={{100,-10},{120,10}})));
+            annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+          end Source;
+          block Sink "snk"
+            RealInput u annotation (Placement(transformation(extent={{-120,-10},{-100,10}})));
+            annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+          end Sink;
+          model Sys
+            parameter Integer n = 2;
+            Source source1 annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
+            Sink sink2 annotation (Placement(transformation(extent={{40,-50},{60,-30}})));
+            Sink sinks[n] annotation (Placement(transformation(extent={{40,30},{60,50}})));
+          equation
+            HAND_DRAWN
+          end Sys;
+        end D;
+        """;
+
+    private static (StructureEditTools Edit, DiagramTools Diagram) LoadSmall(TestHost host, string connect)
+    {
+        var package = Small.ReplaceLineEndings("\n").Replace("HAND_DRAWN", connect);
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = package });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        return (new StructureEditTools(host.Libraries, host.Resources, host.Session),
+                new DiagramTools(host.Libraries, host.Resources, host.Session));
+    }
+
+    private static string SmallSource(TestHost host) => host.Libraries.GetModelById("D.Sys")!.Definition.ModelicaCode!;
+
+    [Fact]
+    public async Task AddingAConnection_WithSpacesInAPort_StillDrawsIt()
+    {
+        // The clause's ports are read without white space, so `sinks[1 + 1].u` as written was not found
+        // among them and the new connect got no line.
+        using var host = new TestHost();
+        var (edit, _) = LoadSmall(host, "");
+
+        ToolAssert.Ok<StructureEditResult>(await edit.AddConnection("D.Sys", "source1.y", "sinks[1 + 1].u"));
+
+        Assert.Contains("connect(source1.y, sinks[1 + 1].u) annotation (Line(points=", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task MovingAComponent_KeepsTheTextOfEveryNumberItDidNotChange()
+    {
+        // Written with .0 and spaces: the two points that do not move stay exactly as written, and of
+        // the two that do, the coordinate that does not change keeps its text.
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(points={{11.0, 0.0}, {20.0, 0.0}, {20.0, -40.0}, {39.0, -40.0}}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -90, 60, -70));
+
+        Assert.Contains("points={{11.0, 0.0}, {20.0, 0.0}, {20.0,-80}, {39.0,-80}}", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task PlacingAComponentWhereItAlreadyIs_ChangesNoLine()
+    {
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(points = {{11.0, 0.0}, {39.0, -40.0}}));");
+        var before = SmallSource(host);
+
+        await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -50, 60, -30);
+
+        Assert.Contains("Line(points = {{11.0, 0.0}, {39.0, -40.0}})", SmallSource(host));
+        Assert.Equal(before.Length, SmallSource(host).Length);
+    }
+
+    [Fact]
+    public async Task MovingAComponent_LeavesALineWhosePointsAreNotLiteral_AsWritten()
+    {
+        // The author's expression is not a route to replace with the router's default.
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(points={{x0,0},{39,-40}}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -90, 60, -70));
+
+        Assert.Contains("Line(points={{x0,0},{39,-40}})", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task MovingAComponent_ReadsEveryModelicaNumberForm()
+    {
+        // `11.` and `.5e1` are numbers: the line is literal, and its end follows the move.
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "connect(source1.y, sink2.u) annotation (Line(points={{11.,0},{.5e1,0},{5,-40},{39,-40}}));");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sink2", 40, -90, 60, -70));
+
+        Assert.Contains("points={{11.,0},{.5e1,0},{5,-80},{39,-80}}", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task MovingAComponent_BringsTheLinesOfItsLoopConnects()
+    {
+        // A loop's connect carries one line for every index, drawn by the author; a pure move carries its
+        // end with the component. It was skipped, and left behind.
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host,
+            "for i in 1:n loop\n      connect(source1.y, sinks[i].u) annotation (Line(points={{11,0},{20,0},{20,40},{39,40}}));\n    end for;");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sinks", 40, 60, 60, 80));
+
+        Assert.Contains("points={{11,0},{20,0},{20,70},{39,70}}", SmallSource(host));
+    }
+
+    [Fact]
+    public async Task MovingAComponent_StillAddsNoLineToALoopConnectThatHasNone()
+    {
+        using var host = new TestHost();
+        var (_, diagram) = LoadSmall(host, "for i in 1:n loop\n      connect(source1.y, sinks[i].u);\n    end for;");
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("D.Sys", "sinks", 40, 60, 60, 80));
+
+        Assert.Contains("connect(source1.y, sinks[i].u);", SmallSource(host));
+    }
+
     [Fact]
     public async Task RemovingAConnection_LeavesEveryOtherConnectAsWritten()
     {

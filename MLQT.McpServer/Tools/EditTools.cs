@@ -491,7 +491,7 @@ public sealed class EditTools
         touched.AddRange((List<string>)removeResult);
 
         var tgtCtx2 = ModelFilePersistence.ResolveFileOwner(_libraries, newParentId) ?? tgtCtx;
-        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2, fileText);
+        var addResult = await AddClassStorageAsync(newParentId, oldLeaf, classCode, tgtCtx2, fileText, descendants);
         if (addResult is ToolError addErr)
             return addErr;
         touched.AddRange((List<string>)addResult);
@@ -945,9 +945,11 @@ public sealed class EditTools
 
     // Places 'classCode' under newParentId (standalone file if the parent is a directory package and the
     // class allows it, else nested in the parent's package.mo). Returns affected model ids or a ToolError.
+    /// <param name="movedIds">The class's and its nested classes' ids before the move, for the
+    /// repository's excluded-from-formatting list, which names them by those.</param>
     private async Task<object> AddClassStorageAsync(
         string newParentId, string leaf, string classCode, ModelFilePersistence.FileOwnerContext tgtCtx,
-        FileLevelText? fileText = null)
+        FileLevelText? fileText = null, IReadOnlyList<string>? movedIds = null)
     {
         var parentIsDirectoryPackage = tgtCtx.FileOwner.Id == newParentId &&
             string.Equals(Path.GetFileName(tgtCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase);
@@ -960,7 +962,8 @@ public sealed class EditTools
             // The move destination decides the clause, so replace whatever the class arrived with.
             await ModelicaFileEncoding.WriteAllTextAsync(
                 newFilePath, EditFormatting.Apply(_libraries, _session, newParentId, $"{newParentId}.{leaf}",
-                    existingFileId: null, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n", newParentId));
+                    existingFileId: null, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n", newParentId,
+                    movedIds));
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
@@ -988,7 +991,7 @@ public sealed class EditTools
         await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, EditFormatting.Apply(
             _libraries, _session, tgtCtx.FileOwner.Id, tgtCtx.FileOwner.Id, tgtCtx.FileOwner.ContainingFileId,
             WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText),
-            tgtCtx.FileOwner.ParentModelName));
+            tgtCtx.FileOwner.ParentModelName, movedIds));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);

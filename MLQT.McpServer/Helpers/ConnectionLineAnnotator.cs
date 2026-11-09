@@ -87,23 +87,38 @@ internal static class ConnectionLineAnnotator
 
         foreach (var (equation, clause) in ConnectClauses.WithEquations(composition))
         {
-            if (clause.IsNested)
-                continue;
             var onA = IsOn(clause.PortA, componentName);
             var onB = IsOn(clause.PortB, componentName);
             if (!onA && !onB)
                 continue;
 
             var existing = equation.comment()?.annotation() is { } annotation ? FindLineArgument(annotation) : null;
-            if (existing is null || PointsOf(newCode, existing) is not { Count: >= 2 } points)
+            var (kind, drawn) = existing is null ? (PointsKind.None, null) : PointsOf(newCode, existing);
+
+            // A line written some way other than literal numbers - points=pts, an expression - is the
+            // author's to change: it is left as it is, never replaced by a default route.
+            if (kind == PointsKind.Other)
+                continue;
+
+            if (drawn is not { Points.Count: >= 2 })
             {
-                // Nothing drawn to keep: route it, as a connect of a newly placed component is.
-                if (routeFor(clause.PortA, clause.PortB) is { Count: >= 2 } route
+                // Nothing drawn to keep: route it, as a connect of a newly placed component is - except
+                // in a for, if or when, where one route cannot be every index's or branch's line and the
+                // tool never adds one (ConnectClause.IsNested).
+                if (!clause.IsNested
+                    && routeFor(clause.PortA, clause.PortB) is { Count: >= 2 } route
                     && PlanEdit(newCode, equation, route, () => colorFor(clause.PortA, clause.PortB)) is { } routed)
                     edits.Add(routed);
                 continue;
             }
 
+            // A nested connect's line is the author's, drawn for every index or branch at once; a pure
+            // move carries its end by exactly the move, which is right for all of them, so it follows.
+            // Anything needing the router is left alone, as such a line is never routed.
+            if (clause.IsNested && shift is null)
+                continue;
+
+            var points = drawn.Points;
             IReadOnlyList<Pt>? reshaped;
             if (onA && onB)
             {
@@ -125,13 +140,13 @@ internal static class ConnectionLineAnnotator
 
                 var from = atStart ? points[0] : points[^1];
                 Pt? to = shift is { } by
-                    ? new Pt(from.X + by.X, from.Y + by.Y)
+                    ? LineReshaper.Translate([from], by)[0]
                     : routeFor(clause.PortA, clause.PortB) is { Count: >= 2 } route ? (onA ? route[0] : route[^1]) : null;
                 reshaped = to is { } target ? LineReshaper.MoveEnd(points, atStart, target) : null;
             }
 
-            if (reshaped is not null && PlanPoints(newCode, existing, KeptPoints(reshaped)) is { } edit)
-                edits.Add(edit);
+            if (reshaped is not null)
+                edits.AddRange(PointEdits(newCode, drawn, reshaped));
         }
 
         foreach (var (start, length, text) in edits.OrderByDescending(e => e.Start))
@@ -139,47 +154,148 @@ internal static class ConnectionLineAnnotator
         return newCode;
     }
 
-    /// <summary>The literal points of a Line, or null when they are not literal numbers.</summary>
-    private static List<Pt>? PointsOf(string code, modelicaParser.ArgumentContext line)
+    private enum PointsKind
+    {
+        /// <summary>The Line has no <c>points</c>: there is nothing drawn to keep.</summary>
+        None,
+
+        /// <summary>Literal number pairs, read into <see cref="DrawnPoints"/>.</summary>
+        Literal,
+
+        /// <summary>Anything else - <c>points=pts</c>, an expression - which is the author's and left alone.</summary>
+        Other,
+    }
+
+    /// <summary>One point of a Line as written: its value, where its <c>{x,y}</c> is, and its two numbers' text.</summary>
+    private sealed record DrawnPoint(Pt Value, int Start, int Stop, string X, string Y);
+
+    /// <summary>A Line's literal points, and the text between its first two, which is how it separates them.</summary>
+    private sealed record DrawnPoints(IReadOnlyList<DrawnPoint> Drawn, string Separator)
+    {
+        public IReadOnlyList<Pt> Points { get; } = [.. Drawn.Select(d => d.Value)];
+    }
+
+    /// <summary>A Line's points, if they are literal numbers.</summary>
+    private static (PointsKind Kind, DrawnPoints? Drawn) PointsOf(string code, modelicaParser.ArgumentContext line)
     {
         var lineMod = line.element_modification_or_replaceable()?.element_modification()
             ?.modification()?.class_modification();
-        foreach (var arg in lineMod?.argument_list()?.argument() ?? [])
+        if (lineMod is null)
+            return (PointsKind.Other, null); // `Line` written as something other than Line(...)
+
+        foreach (var arg in lineMod.argument_list()?.argument() ?? [])
         {
             var mod = arg.element_modification_or_replaceable()?.element_modification();
-            if (!string.Equals(mod?.name()?.GetText(), "points", StringComparison.Ordinal) || mod!.modification() is not { } value)
+            if (!string.Equals(mod?.name()?.GetText(), "points", StringComparison.Ordinal))
                 continue;
-            var text = code[value.Start.StartIndex..(value.Stop.StopIndex + 1)];
+            if (mod!.modification() is not { } value)
+                return (PointsKind.Other, null);
+
+            var start = value.Start.StartIndex;
+            var text = code[start..(value.Stop.StopIndex + 1)];
             var pairs = PointPair.Matches(text);
-            // Every number in the expression must be in a pair: anything else is not a literal list.
-            if (pairs.Count == 0 || pairs.Count * 2 != NumberToken.Matches(text).Count)
-                return null;
-            return [.. pairs.Select(m => new Pt(
-                double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
-                double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)))];
+
+            // Literal only when the expression is pairs of numbers and nothing else: what is left once
+            // the pairs are taken out must be the braces and commas around them.
+            if (pairs.Count == 0 || !OnlyPunctuation.IsMatch(PointPair.Replace(text, string.Empty)))
+                return (PointsKind.Other, null);
+
+            var drawn = pairs.Select(m => new DrawnPoint(
+                new Pt(double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+                       double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)),
+                start + m.Index, start + m.Index + m.Length, m.Groups[1].Value, m.Groups[2].Value)).ToList();
+            var separator = drawn.Count >= 2 ? code[drawn[0].Stop..drawn[1].Start] : ",";
+            return (PointsKind.Literal, new DrawnPoints(drawn, separator));
         }
-        return null;
+
+        return (PointsKind.None, null);
     }
 
-    private static readonly System.Text.RegularExpressions.Regex PointPair = new(
-        @"\{\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\}",
-        System.Text.RegularExpressions.RegexOptions.Compiled);
+    // A Modelica number: 10, 10., .5, 1.5e-3, signed or not.
+    private const string Number = @"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?";
 
-    private static readonly System.Text.RegularExpressions.Regex NumberToken = new(
-        @"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex PointPair = new(
+        $@"\{{\s*({Number})\s*,\s*({Number})\s*\}}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex OnlyPunctuation = new(
+        @"^\s*=?[\s{},]*$", System.Text.RegularExpressions.RegexOptions.Compiled); // the modification starts at its `=`
 
     /// <summary>
-    /// A reshaped line's points, written as exactly as they were read: a hand-drawn <c>53.125</c>
-    /// stays <c>53.125</c>, where the router's own routes are written in whole units.
+    /// The edits that turn a Line's points into <paramref name="reshaped"/>, touching only what changed:
+    /// a point that did not move keeps its text exactly (<c>-40.0</c> stays <c>-40.0</c>), a moved
+    /// point keeps the text of a coordinate that did not change, and points a dogleg adds go in between
+    /// the ones around them, written with the line's own separator. Nothing changed, no edit.
     /// </summary>
-    private static string KeptPoints(IReadOnlyList<Pt> route) =>
-        $"points={{{string.Join(",", route.Select(p => $"{{{K(p.X)},{K(p.Y)}}}"))}}}";
+    private static IEnumerable<(int Start, int Length, string Text)> PointEdits(
+        string code, DrawnPoints line, IReadOnlyList<Pt> reshaped)
+    {
+        var drawn = line.Drawn;
+        var old = line.Points;
+
+        // The runs at each end that did not change; what lies between them is what is rewritten.
+        var front = 0;
+        while (front < old.Count && front < reshaped.Count && old[front] == reshaped[front])
+            front++;
+        var back = 0;
+        while (back < old.Count - front && back < reshaped.Count - front
+               && old[old.Count - 1 - back] == reshaped[reshaped.Count - 1 - back])
+            back++;
+
+        if (front == old.Count && old.Count == reshaped.Count)
+            yield break; // the same line
+
+        // As many points as before: each changed one is replaced where it stands.
+        if (old.Count == reshaped.Count)
+        {
+            for (var i = front; i < old.Count - back; i++)
+                if (old[i] != reshaped[i])
+                    yield return (drawn[i].Start, drawn[i].Stop - drawn[i].Start, Write(reshaped[i], drawn[i]));
+            yield break;
+        }
+
+        // A different number: the changed middle is written again, between the runs that were kept.
+        var middle = Enumerable.Range(front, reshaped.Count - back - front)
+            .Select(i => Write(reshaped[i], i < old.Count ? drawn[i] : null));
+        var text = string.Join(line.Separator, middle);
+
+        if (old.Count - back > front)
+        {
+            // Some old points in the middle: replace them, first to last.
+            var (first, last) = (drawn[front], drawn[old.Count - back - 1]);
+            yield return (first.Start, last.Stop - first.Start, text);
+        }
+        else if (text.Length > 0)
+        {
+            // Only new points: after the last of the front run, or before the first point if none is.
+            yield return front > 0
+                ? (drawn[front - 1].Stop, 0, line.Separator + text)
+                : (drawn[0].Start, 0, text + line.Separator);
+        }
+    }
+
+    // A point as written: a coordinate equal to the one it replaces keeps that one's text.
+    private static string Write(Pt p, DrawnPoint? was) =>
+        $"{{{(was is not null && was.Value.X == p.X ? was.X : K(p.X))},{(was is not null && was.Value.Y == p.Y ? was.Y : K(p.Y))}}}";
 
     private static string K(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
 
-    /// <summary>The connect joining <paramref name="portA"/> and <paramref name="portB"/>, either way round.</summary>
-    public static Func<ConnectClause, bool> Joining(string portA, string portB) =>
-        c => (c.PortA == portA && c.PortB == portB) || (c.PortA == portB && c.PortB == portA);
+    /// <summary>
+    /// The connect joining <paramref name="portA"/> and <paramref name="portB"/>, either way round. White
+    /// space is not compared: a clause's ports are read with <c>GetText()</c>, which drops it, so
+    /// <c>g[1, 2].p</c> as the caller wrote it is <c>g[1,2].p</c> in the clause, and the connect just
+    /// added was not found and got no line.
+    /// </summary>
+    public static Func<ConnectClause, bool> Joining(string portA, string portB)
+    {
+        var (a, b) = (Compact(portA), Compact(portB));
+        return c =>
+        {
+            var (ca, cb) = (Compact(c.PortA), Compact(c.PortB));
+            return (ca == a && cb == b) || (ca == b && cb == a);
+        };
+    }
+
+    private static string Compact(string port) => string.Concat(port.Where(ch => !char.IsWhiteSpace(ch)));
 
     /// <summary>Every connect with an end on <paramref name="componentName"/>: one of its connectors,
     /// an element of it (<c>g[1].p</c>), or the component itself when it is a connector.</summary>

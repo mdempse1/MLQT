@@ -117,7 +117,7 @@ internal static class DiagramGeometry
 
         /// <inheritdoc cref="DiagramGeometry.Locate"/>
         private (Pt Point, Facing Facing)? Locate(string portRef)
-            => DiagramGeometry.Locate(_libraries, _classId, _classCode, Component(Segment(portRef, 0)), portRef);
+            => DiagramGeometry.Locate(_libraries, _classId, _classCode, Component(Bare(Segment(portRef, 0))), portRef);
     }
 
     // --- Endpoint location -------------------------------------------------------------------------
@@ -136,15 +136,19 @@ internal static class DiagramGeometry
         ILibraryDataService libraries, string classId, string classCode,
         DiagramComponent? component, string portRef)
     {
-        var root = Segment(portRef, 0);
+        // Subscripts name an element, and an array - of components or of connectors - is drawn once, so
+        // every element's line ends where that one is: sinks[1].u on sinks, table.y[1] on y. Read with
+        // them, sinks[1] was no component (no line at all) and y[1] no connector (a line to the centre).
+        var root = Bare(Segment(portRef, 0));
         if (component is not { } comp)
             return null; // component not positioned — cannot route to it
 
         var segments = ModelicaName.Segments(portRef);
-        var port = segments.Count < 2
+        var connector = segments.Count < 2 ? null : Bare(segments[1]);
+        var port = connector is null
             ? DiagramSvgRenderer.PortOnEdge(comp, 0, 0) // the port is the component itself (unusual for connect)
-            : DiagramSvgRenderer.PortOf(comp, segments[1])
-              ?? GuessedPort(libraries, classId, classCode, comp, root, segments[1]);
+            : DiagramSvgRenderer.PortOf(comp, connector)
+              ?? GuessedPort(libraries, classId, classCode, comp, root, connector);
 
         return (new Pt(port.X, port.Y), new Facing(port.FacingX, port.FacingY));
     }
@@ -197,7 +201,7 @@ internal static class DiagramGeometry
 
     // --- Orthogonal routing ------------------------------------------------------------------------
 
-    private static IReadOnlyList<Pt> Route(Pt a, Facing fa, Pt b, Facing fb)
+    internal static IReadOnlyList<Pt> Route(Pt a, Facing fa, Pt b, Facing fb)
     {
         var da = Resolve(fa, a, b);
         var db = Resolve(fb, b, a);
@@ -246,9 +250,11 @@ internal static class DiagramGeometry
         return Clean(pts);
     }
 
-    // Whether a point is at, or out in front of, a connector facing that way.
+    // Whether a point is out in front of a connector facing that way - strictly, so each leg of the L
+    // has length: a corner on a connector itself would make the line leave or enter it sideways,
+    // along its component's edge (a=(0,0) facing right, b=(20,0) facing up gave the one segment a->b).
     private static bool Ahead(Pt from, Facing facing, Pt point)
-        => (point.X - from.X) * facing.Dx + (point.Y - from.Y) * facing.Dy >= 0;
+        => (point.X - from.X) * facing.Dx + (point.Y - from.Y) * facing.Dy > 0;
 
     // A None facing points along the dominant axis toward the other endpoint.
     private static Facing Resolve(Facing f, Pt from, Pt to)
@@ -533,6 +539,10 @@ internal static class DiagramGeometry
     // --- Small maths -------------------------------------------------------------------------------
 
     private static string Segment(string portRef, int i) => ModelicaName.Segments(portRef)[i];
+
+    // A name segment without its subscripts: `sinks[1]` is `sinks`. A quoted name keeps everything.
+    private static string Bare(string segment) =>
+        segment.IndexOf('[') is var at and >= 0 && !segment.StartsWith('\'') ? segment[..at].Trim() : segment.Trim();
     private static double Distance(Pt a, Pt b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
     private static double Num(string s) => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture);
     private static bool Between(double a, double m, double b) => m >= Math.Min(a, b) && m <= Math.Max(a, b);

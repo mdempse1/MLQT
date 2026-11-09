@@ -1,4 +1,5 @@
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Tools;
 using MLQT.Services.Helpers;
 
@@ -78,6 +79,60 @@ public class EditFormattingTests
             "P.M", "model M \"m\"\nReal x;Real y;\nequation\nx=1;y=x;\nend M;"));
 
         AssertFormatted(file);
+    }
+
+    private static EditClassTools Batch(TestHost host) =>
+        new(host.Libraries, host.Repositories, host.CustomDictionary, host.DictionaryManager, host.Resources, host.Session);
+
+    [Fact]
+    public async Task ABatch_CanReplaceTextAnEarlierOperationWrote_AndIsFormattedOnceAtTheEnd()
+    {
+        // Each operation re-opens the class from the file. Formatted after every one, the first
+        // operation's `x=1` was `x = 1` by the time the second looked for it, and the batch rolled back.
+        using var host = new TestHost();
+        var file = FromRepository(host, applyFormattingRules: true);
+
+        ToolAssert.Ok<EditClassResult>(await Batch(host).EditClass("P.M",
+        [
+            new() { Op = "add_equation", Equation = "x=1" },
+            new() { Op = "replace", Old = "x=1;", New = "x=2;" },
+        ]));
+
+        Assert.Contains("x = 2;", File.ReadAllText(file));
+        AssertFormatted(file);
+    }
+
+    [Fact]
+    public async Task ABatchPreview_ShowsTheFileFormatted_AndLeavesItAlone()
+    {
+        using var host = new TestHost();
+        var file = FromRepository(host, applyFormattingRules: true);
+        var before = File.ReadAllText(file);
+
+        var res = ToolAssert.Ok<EditClassResult>(await Batch(host).EditClass("P.M",
+            [new() { Op = "add_equation", Equation = "x=1" }], preview: true));
+
+        Assert.Contains("x = 1;", res.NewFileContent);
+        Assert.Equal(before, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void AClassMovedIn_ThatTheRepositoryExcludesByItsOldId_IsNotFormatted()
+    {
+        // The excluded list names a class by id, and a move gives it a new one, so the list is asked
+        // under the ids the class came in with.
+        using var host = new TestHost();
+        FromRepository(host, applyFormattingRules: true);
+        host.Repositories.GetRepository(host.Libraries.GetOwningLibrary("P.M")!.RepositoryId!)!
+            .StyleSettings!.FormattingExcludedModels.Add("Elsewhere.Moved");
+        const string composed = "within P;\nmodel M \"m\"\nReal x;\nequation\nx=1;\nend M;\n";
+
+        var kept = EditFormatting.Apply(host.Libraries, host.Session, "P.M", "P.M", null, composed, "P",
+            incomingIds: ["Elsewhere.Moved"]);
+        var formatted = EditFormatting.Apply(host.Libraries, host.Session, "P.M", "P.M", null, composed, "P");
+
+        Assert.Equal(composed, kept);
+        Assert.NotEqual(composed, formatted);
     }
 
     [Fact]

@@ -79,4 +79,14 @@ public class LineReshaperTests
         Assert.Null(LineReshaper.Translation(before, new([20, 0, 0, 20], 0, [10, 10])));   // flipped
         Assert.Null(LineReshaper.Translation(null, before));                                // never placed
     }
+
+    [Fact]
+    public void ATranslation_IsFoundThroughFloatingPointNoise()
+    {
+        // 0.1 -> 0.3 and 20.1 -> 20.3 differ by 0.19999999999999998 and 0.1999999999999993: the same move.
+        var before = new DiagramGeometry.Placement([0.1, 0, 20.1, 20], 0, [10.1, 10]);
+        var after = new DiagramGeometry.Placement([0.3, 0, 20.3, 20], 0, [10.3, 10]);
+
+        Assert.Equal(new Pt(0.2, 0), LineReshaper.Translation(before, after));
+    }
 }

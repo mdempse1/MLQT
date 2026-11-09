@@ -90,7 +90,9 @@ builder.Services
   formats for its users sets its culture explicitly where it does.
 - **Every service is `TryAdd`ed**, so one a host registers first is kept. `HeadlessSettingsService`
   creates and writes `%LocalAppData%/MLQT/mcp-settings.json`; a host that must write nothing there
-  registers its own `ISettingsService`.
+  registers its own `ISettingsService`. **Leave `SessionState` to it**: the one it registers carries
+  the `IRepositoryService` edits are formatted with (each repository's formatting rules), and a
+  `SessionState` the host registers itself has none, so its edits are written unformatted.
 - **The coercion filter is the first call filter, so the outermost**: a filter the host adds after
   sees the arguments already coerced, and the host's own tools are coerced too, from their schemas.
 - **It does not** choose a transport, add a logger, start the NLog file log, or construct a

@@ -80,7 +80,7 @@ internal static class LineReshaper
 
     /// <summary>Every point moved by the same amount: a line whose two ends moved together.</summary>
     public static IReadOnlyList<Pt> Translate(IReadOnlyList<Pt> points, Pt by)
-        => [.. points.Select(p => new Pt(p.X + by.X, p.Y + by.Y))];
+        => [.. points.Select(p => new Pt(Tidy(p.X + by.X), Tidy(p.Y + by.Y)))];
 
     /// <summary>
     /// How far a component moved, when the move kept its size and turn - so each of its connectors
@@ -88,14 +88,23 @@ internal static class LineReshaper
     /// </summary>
     public static Pt? Translation(DiagramGeometry.Placement? before, DiagramGeometry.Placement? after)
     {
-        if (before is null || after is null || before.Rotation != after.Rotation)
+        if (before is null || after is null || !Same(before.Rotation, after.Rotation))
             return null;
         var dx = after.Extent[0] - before.Extent[0];
         var dy = after.Extent[1] - before.Extent[1];
-        return after.Extent[2] - before.Extent[2] == dx && after.Extent[3] - before.Extent[3] == dy
-            ? new Pt(dx, dy)
+        // Compared within a tolerance, and the move rounded to it: 0.1 to 0.3 and 20.1 to 20.3 are the
+        // same move, but not to the last bit, and taken for a resize the line went to the router's point.
+        return Same(after.Extent[2] - before.Extent[2], dx) && Same(after.Extent[3] - before.Extent[3], dy)
+            ? new Pt(Tidy(dx), Tidy(dy))
             : null;
     }
+
+    private const double Tolerance = 1e-6;
+
+    private static bool Same(double a, double b) => Math.Abs(a - b) < Tolerance;
+
+    // A displacement to the precision a diagram is drawn at, so 0.19999999999999998 is written 0.2.
+    private static double Tidy(double v) => Math.Round(v, 6);
 
     /// <summary>
     /// How far a point is from a component's box: zero inside it or on its edge. Which end of a line
