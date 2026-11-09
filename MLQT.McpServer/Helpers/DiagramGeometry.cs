@@ -276,10 +276,14 @@ internal static class DiagramGeometry
         return Clean(pts);
     }
 
-    // Where a line going round crosses between two leads: half way between them, or - where they are
-    // level, and half way is on both of them - clear of them by twice the lead.
+    // Where a line going round crosses between two leads: half way between them where they are far
+    // enough apart for that to clear both, or else clear of them both. Only exactly level ends went
+    // round before: ends 4 apart crossed 2 from each, through the components between them.
     private static double Crossing(double a, double b, double stub)
-        => Math.Abs(a - b) >= 1 ? (a + b) / 2 : a + 2 * stub;
+    {
+        var clear = Math.Max(2 * stub, 15);
+        return Math.Abs(a - b) >= 2 * clear ? (a + b) / 2 : Math.Max(a, b) + clear;
+    }
 
     // Whether a point is out in front of a connector facing that way - strictly, so each leg of the L
     // has length: a corner on a connector itself would make the line leave or enter it sideways,

@@ -205,11 +205,12 @@ public sealed class GuidanceTools
               replaceable/redeclare/inner/outer prefix) are nested.
 
             Bring in classes a script generated (a data generator writing .mo files):
-              mlqt_write_class(importFrom: the file or folder, importInto: the package) - each class gets a
-              file of its own in the package, its within clause, the repository's formatting and a line in
-              package.order, and is loaded; files the script wrote straight into the package's folder are
-              adopted there. Do not write package.order yourself or reload by hand. Re-run it after the script
-              regenerates its output; replace=true replaces classes imported from elsewhere earlier.
+              mlqt_write_class(importFrom: the full path of the file or folder, importInto: the package) - each
+              class gets a file of its own in the package, its within clause, a line in package.order and the
+              repository's formatting (where its settings apply formatting rules), and is loaded; files the
+              script wrote straight into the package's folder are adopted there, and one already as it would
+              be written is left alone. Do not write package.order yourself or reload by hand. Re-run it after
+              the script regenerates its output; replace=true replaces classes imported from elsewhere earlier.
 
             Author a new class in your library:
               mlqt_get_class with the interface view on the classes you'll reference (learn their API) ->
@@ -432,7 +433,8 @@ public sealed class GuidanceTools
               change made outside this server (the desktop app, a hand edit, a pull) and says so; a file
               that no longer parses keeps the settings in use. mlqt_style_settings(repositoryId?) reads them; with settings it
               merges the rule toggles and spell languages you pass and writes them back. repositoryId is
-              optional when one repo is loaded.
+              optional when one repo is loaded. Its acceptSpellings adds words the spell check accepts in
+              every class of the repository (see the spelling topic).
             - mlqt_check(classId | libraryId | source, settings?): by default uses the repository's settings;
               pass settings to override for one run. Results of a class or library check are stored and
               appear in mlqt_list_findings. A check of source text is stateless; reference and icon rules

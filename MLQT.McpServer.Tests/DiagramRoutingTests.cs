@@ -269,6 +269,18 @@ public class DiagramRoutingTests
     }
 
     [Fact]
+    public void NearlyLevelConnectorsBackToBack_GoRoundClearOfBoth()
+    {
+        // Half way between ends 4 apart is 2 from each: the line crossed through the components.
+        var route = DiagramGeometry.Route(new(-30, 0), new(-1, 0), new(30, 4), new(1, 0));
+
+        Assert.False(DoublesBack(route), string.Join(" ", route));
+        var crossing = route.Where(p => p.X < -30 || p.X > 30).Select(p => p.Y).Where(y => y != 0 && y != 4).Distinct();
+        Assert.All(crossing, y => Assert.True(Math.Min(Math.Abs(y), Math.Abs(y - 4)) >= 15, string.Join(" ", route)));
+        Assert.Contains(route, p => Math.Abs(p.Y) >= 15);
+    }
+
+    [Fact]
     public void VerticalConnectorsFacingApart_GoRound_Too()
     {
         var route = DiagramGeometry.Route(new(0, 20), new(0, -1), new(30, 50), new(0, 1));

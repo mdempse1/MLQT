@@ -136,14 +136,21 @@ public sealed class StyleTools
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return new ToolError($"Could not write '{_customDictionary.PathFor(repo.LocalPath)}': {ex.Message}");
+                // Say what did happen: the settings may already be written, and the agent should not set
+                // them again thinking the whole call failed.
+                var settingsDone = settings is null ? ""
+                    : repo.IsSettingsReadOnly ? " The settings were changed for this session only (settings.json is read-only)."
+                    : " The settings were changed and written to .mlqt/settings.json.";
+                return new ToolError($"Could not write '{_customDictionary.PathFor(repo.LocalPath)}': {ex.Message}. " +
+                                     "Words listed before the one that failed were saved; it and those after it were not. " +
+                                     $"Read the list back with mlqt_style_settings.{settingsDone}");
             }
         }
 
-        var persisted = !repo.IsSettingsReadOnly;
+        bool? persisted = settings is null ? null : !repo.IsSettingsReadOnly;
         return new SetStyleSettingsResult(
             repo.Id, repo.Name, persisted,
-            persisted ? System.IO.Path.Combine(repo.LocalPath, ".mlqt", "settings.json") : null,
+            persisted == true ? System.IO.Path.Combine(repo.LocalPath, ".mlqt", "settings.json") : null,
             notes.Count > 0 ? string.Join(" ", notes) : null,
             StyleSettingsInput.From(repo.StyleSettings),
             AcceptedSpellings(repo.LocalPath),

@@ -1607,10 +1607,11 @@ public sealed class EditTools
     /// written by hand, the library reloaded, the files formatted, each a step of its own. Passing their
     /// text through <c>mlqt_write_class</c> instead carries every generated file through the agent.</para>
     ///
-    /// <para><b>All or none</b>: a file that does not parse, holds more than one class, cannot stand in a
-    /// file of its own, or would overwrite a class without <paramref name="replace"/> refuses the whole
-    /// import, listing every such file - half a generated data set is worse than none. Everything written
-    /// is reloaded once, at the end.</para>
+    /// <para><b>All or none</b>: a file that does not parse, holds more than one class, or would overwrite
+    /// a class without <paramref name="replace"/> refuses the whole import, listing every such file - half
+    /// a generated data set is worse than none. A write that fails partway puts back every file already
+    /// written, package.order included. A file already as it would be written is not rewritten. Everything
+    /// written is reloaded once, at the end.</para>
     /// </remarks>
     internal async Task<object> ImportClasses(string parentId, string path, bool replace = false, bool preview = false)
     {
@@ -1626,6 +1627,10 @@ public sealed class EditTools
                                  "so it cannot hold classes in files of their own. Import into one that is, or write the " +
                                  "classes into it with mlqt_write_class.");
         var directory = Path.GetDirectoryName(ctx.FilePath)!;
+
+        // A relative path is relative to the server's working directory, which the agent cannot see.
+        if (!Path.IsPathFullyQualified(path))
+            return new ToolError($"'{path}' is a relative path; give importFrom as a full path.");
 
         List<string> files;
         if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
@@ -1662,14 +1667,10 @@ public sealed class EditTools
             var name = top[0].Name;
             var id = $"{parentId}.{name}";
             var target = Path.GetFullPath(Path.Combine(directory, name + ".mo"));
-            var inPlace = string.Equals(file, target, StringComparison.OrdinalIgnoreCase);
-            var body = WithinClause.Strip(text);
-            if (StartsWithElementPrefix(body))
-            {
-                problems.Add($"{Path.GetFileName(file)}: '{name}' is replaceable, redeclared, inner or outer, so it cannot be stored in a file of its own");
-                continue;
-            }
-            if (string.Equals(Path.GetDirectoryName(file), directory, StringComparison.OrdinalIgnoreCase) && !inPlace)
+            var inPlace = string.Equals(file, target, PathComparison);
+            // No check for replaceable, redeclare, inner or outer: a file's grammar has no place for them,
+            // so a file whose class carries one has already been refused as not parsing.
+            if (string.Equals(Path.GetDirectoryName(file), directory, PathComparison) && !inPlace)
             {
                 problems.Add($"{Path.GetFileName(file)} holds '{name}', so in '{parentId}' it has to be called {name}.mo");
                 continue;
@@ -1677,7 +1678,7 @@ public sealed class EditTools
 
             var existing = _libraries.GetModelById(id);
             var existingFile = existing?.ContainingFileId is { } fileId ? graph.GetNode<FileNode>(fileId)?.FilePath : null;
-            if (existing is not null && !string.Equals(existingFile, target, StringComparison.OrdinalIgnoreCase))
+            if (existing is not null && !string.Equals(existingFile, target, PathComparison))
             {
                 problems.Add($"'{id}' already exists, stored in '{existingFile}'; replace it with mlqt_write_class");
                 continue;
@@ -1688,12 +1689,23 @@ public sealed class EditTools
                 continue;
             }
 
+            // The file's own text outside the class - a licence header - goes with it, above the within
+            // clause as it was; set from the stripped body, it came out below the clause.
+            var fileText = FileLevelText.Read(text, top[0].StartIndex, top[0].StopIndex);
             var content = EditFormatting.Apply(_libraries, _session, parentId, id, existing?.ContainingFileId,
-                WithinClause.Set(body.TrimEnd(), parentId) + "\n", parentId);
-            planned.Add((name, id, target, content, existing is null ? "created" : inPlace ? "adopted" : "replaced"));
+                WithinClause.Set(top[0].SourceCode.TrimEnd(), parentId, fileText) + "\n", parentId);
+
+            // A file already as it would be written is left alone: importing a package's own folder after
+            // a generator rewrote some of it rewrote every file in it.
+            var original = File.Exists(target) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(target) : null;
+            var unchanged = original is not null && ModelicaFileEncoding.ForFileText(original, content) == original;
+            planned.Add((name, id, target, content,
+                unchanged ? "unchanged" : existing is null ? "created" : inPlace ? "adopted" : "replaced"));
         }
 
-        var duplicates = planned.GroupBy(p => p.Name, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        // On Windows two names differing only in case are one file.
+        var duplicates = planned.GroupBy(p => p.Name, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .Where(g => g.Count() > 1).Select(g => g.Key).ToList();
         foreach (var name in duplicates)
             problems.Add($"more than one file holds '{name}'");
         if (problems.Count > 0)
@@ -1702,14 +1714,59 @@ public sealed class EditTools
         if (preview)
             return new WriteClassResult(true, [.. planned.Select(p => new WrittenClassItem(p.Id, p.Action, p.Target, p.Content))]);
 
-        if (FileWritability.PreflightWritable(planned.Select(p => p.Target).Append(ctx.FilePath), $"import classes into '{parentId}'") is { } notWritable)
+        // The files written are the classes' and package.order - not package.mo, which nothing here writes.
+        var orderPath = Path.Combine(directory, "package.order");
+        var toWrite = planned.Where(p => p.Action != "unchanged").ToList();
+        if (FileWritability.PreflightWritable(
+                toWrite.Select(p => p.Target).Concat(File.Exists(orderPath) ? [orderPath] : []),
+                $"import classes into '{parentId}'") is { } notWritable)
             return notWritable;
 
+        // All or none once writing starts, too: what each file held, to put back if one write fails.
+        var before = new Dictionary<string, string?>(PathComparer);
+        foreach (var p in toWrite)
+            before[p.Target] = File.Exists(p.Target) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(p.Target) : null;
+        var orderBefore = File.Exists(orderPath) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(orderPath) : null;
+
         var written = new List<WrittenClassItem>();
-        foreach (var p in planned)
+        try
         {
-            await ModelicaFileEncoding.WriteAllTextAsync(p.Target, p.Content);
-            written.Add(new WrittenClassItem(p.Id, p.Action, p.Target, null, AppendToPackageOrder(directory, p.Name)));
+            foreach (var p in planned)
+            {
+                if (p.Action != "unchanged")
+                    await ModelicaFileEncoding.WriteAllTextAsync(p.Target, p.Content);
+                written.Add(new WrittenClassItem(p.Id, p.Action, p.Target, null, AppendToPackageOrder(directory, p.Name)));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Every file is put back that can be, and any that could not is named.
+            var stuck = new List<string>();
+            var undo = before.Select(b => (b.Key, b.Value));
+            if (orderBefore is not null)
+                undo = undo.Append((orderPath, orderBefore));
+            foreach (var (target, text) in undo)
+            {
+                try
+                {
+                    if (text is null)
+                    {
+                        if (File.Exists(target))
+                            File.Delete(target);
+                    }
+                    else
+                        await ModelicaFileEncoding.WriteAllTextAsync(target, text);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    stuck.Add($"'{target}' ({e.Message})");
+                }
+            }
+            return stuck.Count == 0
+                ? new ToolError($"Nothing was imported into '{parentId}': a write failed ({ex.Message}), and every file " +
+                                "already written was put back.")
+                : new ToolError($"Importing into '{parentId}' failed ({ex.Message}), and {string.Join(", ", stuck)} could not " +
+                                "be put back. Check the package's folder before going on.");
         }
 
         // Once, after every file is in place and listed: a reload reads the package.order beside the file.
@@ -1719,6 +1776,13 @@ public sealed class EditTools
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
         return new WriteClassResult(false, written);
     }
+
+    // How the file system compares paths: without case on Windows, with it elsewhere.
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     // Keep a directory package's package.order in sync when a child is added. No-op if there is no
     // package.order (the loader includes every .mo file anyway). Returns the package.order that lists the

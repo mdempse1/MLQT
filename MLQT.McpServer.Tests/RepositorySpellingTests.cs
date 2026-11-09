@@ -46,6 +46,8 @@ public class RepositorySpellingTests
         Assert.Contains("halfshaft", res.AcceptedSpellings);
         Assert.Contains("halfshaft", File.ReadAllText(Path.Combine(root, ".mlqt", "dictionary.txt")));
         Assert.Contains("mlqt_check", res.Note);
+        Assert.Null(res.Persisted);   // no settings were passed, so none were written
+        Assert.Null(res.Path);
         Assert.False(await Reports(style, "Powertrain", "halfshaft"));
         Assert.False(await Reports(style, "Vehicle", "halfshaft"));
     }
@@ -84,6 +86,22 @@ public class RepositorySpellingTests
         var err = ToolAssert.Error(await style.SetStyleSettings(null, acceptSpellings: ["rear halfshaft"]));
 
         Assert.Contains("one word", err.Error);
+        Assert.Empty(ToolAssert.Ok<StyleSettingsResult>(style.GetStyleSettings()).AcceptedSpellings);
+    }
+
+    [Fact]
+    public async Task ADictionaryThatCannotBeWritten_SaysTheSettingsWereStillWritten()
+    {
+        // The agent should not set them again thinking the whole call failed.
+        using var host = new TestHost();
+        var (style, root) = await Load(host);
+        Directory.CreateDirectory(Path.Combine(root, ".mlqt", "dictionary.txt"));   // a folder: the write fails
+
+        var err = ToolAssert.Error(await style.SetStyleSettings(new StyleSettingsInput { SpellCheckDocumentation = true },
+            acceptSpellings: ["halfshaft"]));
+
+        Assert.Contains("written to .mlqt/settings.json", err.Error);
+        Assert.True(File.Exists(Path.Combine(root, ".mlqt", "settings.json")));
         Assert.Empty(ToolAssert.Ok<StyleSettingsResult>(style.GetStyleSettings()).AcceptedSpellings);
     }
 

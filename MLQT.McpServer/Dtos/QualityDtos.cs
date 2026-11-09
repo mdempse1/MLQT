@@ -225,12 +225,15 @@ public sealed record StyleSettingsResult(
     StyleSettingsInput Settings,
     IReadOnlyList<string> AcceptedSpellings);
 
+/// <param name="Persisted">Whether the settings were written to <c>.mlqt/settings.json</c>; null when the
+/// call changed only spellings, and wrote no settings.</param>
+/// <param name="Path">The settings file written, or null when none was.</param>
 /// <param name="AcceptedSpellings">The repository's accepted words once the change is made.</param>
 /// <param name="DictionaryPath">Where they are kept: the committed <c>.mlqt/dictionary.txt</c>.</param>
 public sealed record SetStyleSettingsResult(
     string RepositoryId,
     string Repository,
-    bool Persisted,
+    bool? Persisted,
     string? Path,
     string? Note,
     StyleSettingsInput Settings,

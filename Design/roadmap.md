@@ -285,6 +285,18 @@ a computed offset instead: `spellCheck.scrollLineIntoView`, `scrollWordIntoView`
 match offsets and the spelling underline. Browser find (Ctrl+F) and select-all only reach rendered
 lines, which is acceptable because the page has its own search. Size M. Then remove the cap.
 
+**B526 — `rename_component` leaves the component's name in text.** It rewrites every reference
+that names the component. It does not rewrite a `%name`-style label that shows the old name
+through a parameter of another class, or a description or documentation string that mentions it.
+Those are prose, and a match there may not mean the component. Offer them as a list the agent
+confirms, with `correct_spelling`'s whole-word matching, if an agent's report shows the stale text
+mattering. Size S.
+
+**B527 — importing a generated sub-package.** `importFrom` imports classes, a file each. It skips
+`package.mo`, so a generator that writes a sub-package as a folder has it refused or half-imported.
+A folder with its own `package.mo` could be imported as a directory package, recursively, under the
+same all-or-none and put-back rules. Do it when a generator that writes one is reported. Size S–M.
+
 ---
 
 ## Decided against, for now
@@ -331,7 +343,8 @@ change of design is in place, and the rest is a design item.
 B520 is a small defect found tokenising the theme (2026-10-29) and left as it was, because that change
 was not to alter how anything looks. B523 is a pair of intermittent failures seen on one day and not
 reproduced; like B492 and B496, find the cause from its evidence if it recurs. B524 is a limitation
-of resource tracking found reviewing phase 2 (2026-10-30), not a failure anyone has seen.
+of resource tracking found reviewing phase 2 (2026-10-30), not a failure anyone has seen. B525 is a
+limitation of the desktop app found while making the MCP server re-read settings (2026-11-09).
 
 | # | Issue | What to do if it recurs |
 |---|-------|-------------------------|
@@ -342,6 +355,7 @@ of resource tracking found reviewing phase 2 (2026-10-30), not a failure anyone 
 | B520 | The find-in-code match wash (`--mlqt-highlight-match`) dims for a dark theme under `@media (prefers-color-scheme: dark)`, which is the operating system's setting, not MLQT's. MLQT's Dark theme is chosen in its own settings and set through `MudThemeProvider.IsDarkMode`. So MLQT in Dark on a light desktop draws the bright wash the comment says glares on near-black, and MLQT in Light on a dark desktop draws the dim one on white. Not reported; found by reading | Key the dark value off MLQT's mode instead: a class on the layout root from `_isDarkMode`, or a MudBlazor palette variable that already differs between the two palettes. Then check `code-review` screenshots in both themes |
 | B523 | On 2026-10-29, while phase 2 was being built on the developer's machine: `build/check-coverage.ps1` stopped at `RevisionControl.Tests` as "did not pass" while every test in it reported passing, so the process exited non-zero after its results; and one run of `MLQT.Cli.Tests` failed 18 tests across `MultipleReportTests`, `ChangedFromChecksLessTests`, `CheckCommandTests`, `ReviewCommandTests` and three more, all of which drive the CLI over a git working copy in a temp folder. Neither reproduced: the gate passed when run again, and the CLI suite passed four times after, alone and after the MCP suite as before. The machine was slow that day (a journey run of 10+ minutes against the usual 2.5). The failures' messages were not kept - the output had been filtered. A third, later that day: in the coverage gate's run of `MLQT.Shared.Tests`, `ReferenceOnlyToggleTests.UntickingReferenceOnly_ShowsTheRepositorysChanges` timed out in a bUnit `WaitForAssertion` (line 80, waiting for one changed file after `OnRepositoriesChanged`), having passed in the ordinary run minutes before; the gate passed when run again. Its services are mocks, so it is timing under coverage instrumentation, not behaviour. **Recurred 2026-11-04**, in a full run before the release: `MLQT.Shared.Tests` reported three "failed (canceled)" at 20-25 s each - `ReferenceOnlyToggleTests.UntickingReferenceOnly_ShowsTheRepositorysChanges` again, plus `LibraryBrowserChangeMarkerTests.AChangeThatAffectsSimulationIsMarkedDifferentlyFromACosmeticOne` and `DiffViewerRowLimitTests.AWholeFileAgainstAFewLinesSaysSoInsteadOfRenderingEveryRow(SideBySideFull)` - and the suite took 47 s against 9 s run alone, where all 1,087 pass; it passed again under coverage instrumentation in the gate. In the same run `DymolaInterface.Tests.DymolaInterfaceTests.DymolaVersion_WhenConnected_ReturnsVersionString` failed after 1 m 34 s and passes alone in 31 s, which may be the same contention or may be its own thing. **Nothing was learnt from either day, because `run-all-tests.ps1` printed only the "failed <name>" lines and dropped the run it had captured** - fixed on 2026-11-04: a failing suite's whole output is now kept at `AllTestResults/failures/<Suite>.log` and named on screen (`TestRunnerScriptTests.AFailingSuitesWholeOutputIsKept`) | Read `AllTestResults/failures/<Suite>.log` from the run that failed - it is written now, and a run that passes is no evidence. For the CLI suite keep the output whole as well: `dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli.trx`, and the coverage gate's full log. Look first at what the CLI tests share - the git temp folders and their clean-up - at a test host exiting non-zero after its last test, and at what else was on the machine: every instance so far is a bUnit `WaitForAssertion` or a live-tool connection timing out, never an assertion about behaviour |
 | B524 | Whether a resolved resource is a file or a directory is decided when the graph is built, from what is on disk then. A `loadResource` naming a directory that was missing at load becomes a file node, and once the directory is restored the file test stays false, so `MLQT.Resource.Missing` and the tab keep reporting it; and an `IncludeDirectory` restored after load is reported present but its files are not listed, since its contents were scanned only at load. The Refresh re-check reads existence again and nothing else. Both are put right by reloading the project | Re-resolve a re-checked class's resource references (`AnalyzeDependenciesForModelsAsync` for it) instead of re-reading existence alone, so the node is rebuilt from what is on disk now |
+| B525 | The desktop app reads a repository's `.mlqt/settings.json` when it loads the project and not again. A pull or update that changes the committed settings leaves the app checking and formatting with the old ones until the project is reloaded. `IRepositoryService.ReloadRepositorySettings` re-reads one repository's settings and says whether they changed, but only the MCP server's `mlqt_session` reload calls it | Call it from the `VcsFilesChanged` pipeline, for each repository the operation reached, before the format and re-check, and re-check everything when the rules changed |
 
 ---
 
@@ -354,7 +368,7 @@ deleted. **The ids are cited throughout the code, tests, scripts and workflows**
 their meaning: `git log --diff-filter=D -- Design/backlog.md` finds the commit that deleted it, and
 its parent has the full record, including each item's closing note.
 
-**An id is never reused.** A new item that needs one continues from **B525**. It goes under *Known
+**An id is never reused.** A new item that needs one continues from **B528**. It goes under *Known
 open issues* if it is a defect, and among the candidates if it is work. `MLQT.Cli.Tests/MarkdownTableTests.cs`
 reads the next id from the sentence above. It checks that every item id in this file's tables is
 unique and below that number. When you add an item, move the number up with it. A closed item's row
