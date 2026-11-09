@@ -303,21 +303,29 @@ public class ParseTreeBorrowingTests
     {
         // Two threads that find no tree both parse, and only the first to publish is kept. Every
         // caller gets that tree back, not a private copy nobody else can see.
+        //
+        // A thread of its own for each caller, never Parallel.For: it promises no number of threads,
+        // and one that ran two callers in turn waited in the barrier for its own next caller. That
+        // hung the Windows CI runner's ModelicaGraph step for an hour. The wait is bounded too, so
+        // anything else that keeps a caller away fails here rather than hanging the run.
         const int threads = 16;
         for (var round = 0; round < 20; round++)
         {
             var definition = new ModelDefinition("M", "model M Real x; Real y; end M;");
             using var start = new System.Threading.Barrier(threads);
             var trees = new object?[threads];
+            var allArrived = true;
 
-            System.Threading.Tasks.Parallel.For(0, threads,
-                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = threads },
-                i =>
-                {
-                    start.SignalAndWait();
-                    trees[i] = definition.EnsureParsed();
-                });
+            var workers = Enumerable.Range(0, threads).Select(i => new System.Threading.Thread(() =>
+            {
+                if (!start.SignalAndWait(TimeSpan.FromSeconds(30)))
+                    allArrived = false;
+                trees[i] = definition.EnsureParsed();
+            })).ToList();
+            workers.ForEach(w => w.Start());
+            workers.ForEach(w => w.Join());
 
+            Assert.True(allArrived, "Not every caller reached the barrier within 30 s");
             Assert.All(trees, tree => Assert.Same(definition.ParsedCode, tree));
         }
     }
