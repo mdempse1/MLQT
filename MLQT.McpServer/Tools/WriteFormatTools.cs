@@ -97,17 +97,18 @@ public sealed class WriteFormatTools
     [McpServerTool(Name = "mlqt_format", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Format Modelica code with MLQT's formatter. Give exactly one of: classId (the file holding " +
                  "that class), library (every file of a loaded library, by name or id) or source (text, returned " +
-                 "formatted; nothing is written). A file " +
-                 "with syntax errors, or with a class excluded from formatting, is left as it is and reported. " +
-                 "preview=true formats without writing.")]
+                 "formatted; nothing is written). A class or library from a repository is formatted with that " +
+                 "repository's layout settings, the ones mlqt_check judges it by; pass an option only to override " +
+                 "one. A file with syntax errors, or with a class excluded from formatting, is left as it is and " +
+                 "reported. preview=true formats without writing.")]
     public async Task<object> Format(
         [Description("A class: its whole file is formatted.")] string? classId = null,
         [Description("A loaded library, by name or id: every file of it is formatted.")] string? library = null,
         [Description("Modelica text to format and return. Nothing is written.")] string? source = null,
-        [Description("Emit at most one of each section; default false.")] bool oneOfEachSection = false,
-        [Description("Move import statements to the top; default false.")] bool importStatementsFirst = false,
-        [Description("Order component declarations before nested class definitions; default false.")] bool componentsBeforeClasses = false,
-        [Description(FormattingTools.DeclarationOrderDescription)] bool declarationOrder = false,
+        [Description("Emit at most one of each section. Default: the repository's setting, else false.")] bool? oneOfEachSection = null,
+        [Description("Move import statements to the top. Default: the repository's setting, else false.")] bool? importStatementsFirst = null,
+        [Description("Order component declarations before nested class definitions. Default: the repository's setting, else false.")] bool? componentsBeforeClasses = null,
+        [Description(FormattingTools.DeclarationOrderDescription)] bool? declarationOrder = null,
         [Description("Format without writing; default false.")] bool preview = false)
     {
         var given = new[] { classId, library, source }.Count(x => !string.IsNullOrWhiteSpace(x));

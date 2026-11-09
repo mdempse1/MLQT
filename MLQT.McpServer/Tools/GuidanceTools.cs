@@ -487,7 +487,10 @@ public sealed class GuidanceTools
                 equation, a single declaration or an expression — wrap the fragment in a class first.
             - A file with syntax errors, or holding a class excluded from formatting, is left alone and
               listed, never written in part.
-            - Ordering options: oneOfEachSection, importStatementsFirst, componentsBeforeClasses.
+            - Layout: a class or library from a repository is laid out as that repository's settings say
+              (one of each section, imports first, components before classes, declaration order) - the
+              layout mlqt_check judges it by - so do not pass them. Pass one only to override it; text
+              given as source has no repository, and takes only the options passed.
             """,
 
         ["vcs"] = """

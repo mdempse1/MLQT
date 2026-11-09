@@ -35,14 +35,37 @@ public sealed class FormattingTools
         _session = session;
     }
 
+    /// <summary>
+    /// The layout to format with: the repository's, for a class from one (<see cref="StyleCheckingSettings.ToFormattingOptions"/>,
+    /// which the desktop app and the edit tools write with), with whichever option the caller gave in
+    /// its place. The options used to default to off, so in a repository that orders its imports and
+    /// declarations every call had to name four options, and a class formatted without them failed
+    /// mlqt_check's layout rules straight after. Text with no class, or a class from no repository,
+    /// has no rules to start from: only what the caller gives.
+    /// </summary>
+    internal FormattingOptions LayoutFor(
+        string? classId, bool? oneOfEachSection, bool? importStatementsFirst, bool? componentsBeforeClasses, bool? declarationOrder)
+    {
+        var repository = classId is null ? null : RepositorySettings.ForClass(_libraries, _repositories, classId)?.ToFormattingOptions();
+        var layout = repository ?? FormattingOptions.None;
+        return layout with
+        {
+            OneOfEachSection = oneOfEachSection ?? layout.OneOfEachSection,
+            ImportsFirst = importStatementsFirst ?? layout.ImportsFirst,
+            ComponentsBeforeClasses = componentsBeforeClasses ?? layout.ComponentsBeforeClasses,
+            DeclarationOrder = declarationOrder ?? layout.DeclarationOrder,
+        };
+    }
+
     internal object FormatCode(
         string source,
-        bool oneOfEachSection = false,
-        bool importStatementsFirst = false,
-        bool componentsBeforeClasses = false,
-        bool declarationOrder = false,
+        bool? oneOfEachSection = null,
+        bool? importStatementsFirst = null,
+        bool? componentsBeforeClasses = null,
+        bool? declarationOrder = null,
         int maxLineLength = 100)
     {
+        var layout = LayoutFor(null, oneOfEachSection, importStatementsFirst, componentsBeforeClasses, declarationOrder);
         if (string.IsNullOrWhiteSpace(source))
             return new ToolError("source must be non-empty Modelica code.");
 
@@ -65,11 +88,7 @@ public sealed class FormattingTools
                 tokenStream: tokenStream,
                 classNamesToExclude: null,
                 maxLineLength: maxLineLength,
-                formatting: new FormattingOptions(
-                    OneOfEachSection: oneOfEachSection,
-                    ImportsFirst: importStatementsFirst,
-                    ComponentsBeforeClasses: componentsBeforeClasses,
-                    DeclarationOrder: declarationOrder));
+                formatting: layout);
             renderer.VisitStored_definition(parseTree);
             var formatted = string.Join("\n", renderer.Code);
 
@@ -93,10 +112,10 @@ public sealed class FormattingTools
 
     internal async Task<object> FormatClass(
         string classId,
-        bool oneOfEachSection = false,
-        bool importStatementsFirst = false,
-        bool componentsBeforeClasses = false,
-        bool declarationOrder = false,
+        bool? oneOfEachSection = null,
+        bool? importStatementsFirst = null,
+        bool? componentsBeforeClasses = null,
+        bool? declarationOrder = null,
         bool preview = false)
     {
         if (ReadOnlyClassGuard.Refuse(_libraries, classId, "format this class") is { } readOnlyClass)
@@ -155,14 +174,11 @@ public sealed class FormattingTools
         {
             // The same lookup mlqt_check gives MLQT.Style.DeclarationOrder, keyed by the same class,
             // so the order written here is the order the rule asks for.
+            var layout = LayoutFor(classId, oneOfEachSection, importStatementsFirst, componentsBeforeClasses, declarationOrder);
             rendered = ModelicaPackageSaver.RenderFileOwnerModel(
                 owner,
-                new FormattingOptions(
-                    OneOfEachSection: oneOfEachSection,
-                    ImportsFirst: importStatementsFirst,
-                    ComponentsBeforeClasses: componentsBeforeClasses,
-                    DeclarationOrder: declarationOrder),
-                isSimpleType: declarationOrder ? StyleChecking.CreateSimpleTypeLookup(_libraries.CombinedGraph) : null);
+                layout,
+                isSimpleType: layout.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(_libraries.CombinedGraph) : null);
         }
         catch (Exception ex)
         {
@@ -206,7 +222,7 @@ public sealed class FormattingTools
         "Write declarations in the order inputs and outputs, constants, parameters, variables, " +
         "components (MLQT.Style.DeclarationOrder); only takes effect with oneOfEachSection, " +
         "importStatementsFirst and componentsBeforeClasses all on. A record keeps its fields in source order, since that is its constructor's " +
-        "signature. Default false.";
+        "signature. Default: the repository's setting, else false.";
 
     private static string DescribeErrors(IReadOnlyList<ParserError> errors)
     {
