@@ -230,7 +230,7 @@ Yes. A project can contain any mix of Git, SVN, and local repositories. Each rep
 
 ### What happens if I change settings while others are using the same repository?
 
-Repository settings are stored in `.mlqt/settings.json` inside the repository (see [Settings Reference: Where Settings Are Stored](settings-reference.md#where-settings-are-stored)). If you change settings and commit the file, other team members will get the updated settings when they pull/update. If they have MLQT open, they'll need to reload the repository to pick up the new settings.
+Repository settings are stored in `.mlqt/settings.json` inside the repository (see [Settings Reference: Where Settings Are Stored](settings-reference.md#where-settings-are-stored)). If you change settings and commit the file, other team members will get the updated settings when they pull/update. If they update through MLQT, it reads the new settings as part of the update and checks the repository again under them. If they update with another tool while MLQT is open, they need to reload the project to pick up the new settings.
 
 ### Can I use MLQT with libraries that aren't in version control?
 

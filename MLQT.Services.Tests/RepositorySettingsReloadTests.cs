@@ -1,3 +1,4 @@
+using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using Xunit;
 
@@ -116,6 +117,55 @@ public class RepositorySettingsReloadTests : IDisposable
         File.WriteAllText(path, Committed);
 
         Assert.Equal(SettingsReloadOutcome.Changed, service.ReloadRepositorySettings(repository.Id));
+        Assert.True(repository.StyleSettings!.ClassHasDescription);
+    }
+
+    // B525: after a VCS operation, the desktop app's pipeline asks VcsSettingsReloader first.
+
+    [Fact]
+    public async Task AfterAPull_NewRules_AreTakenUp_AndSayEveryClassNeedsCheckingAgain()
+    {
+        var (service, repository, path) = await Load(Committed);
+
+        File.WriteAllText(path, "{\n  \"ClassHasDescription\": false\n}\n");   // as a pull would bring it
+
+        var reload = VcsSettingsReloader.Reload(service, repository.Id);
+
+        Assert.Equal(new VcsSettingsReload(SettingsReloadOutcome.Changed, ChecksChanged: true), reload);
+        Assert.False(repository.StyleSettings!.ClassHasDescription);
+    }
+
+    [Fact]
+    public async Task AfterAPull_ASettingNoRuleReads_ChangesTheSettings_ButNotTheChecks()
+    {
+        var (service, repository, path) = await Load(Committed);
+
+        File.WriteAllText(path, "{\n  \"ClassHasDescription\": true,\n  \"SvnBranchDirectories\": [\"main\"]\n}\n");
+
+        var reload = VcsSettingsReloader.Reload(service, repository.Id);
+
+        Assert.Equal(new VcsSettingsReload(SettingsReloadOutcome.Changed, ChecksChanged: false), reload);
+        Assert.Equal(["main"], repository.StyleSettings!.SvnBranchDirectories);
+    }
+
+    [Fact]
+    public async Task AfterAPullThatLeftTheSettingsAlone_NothingIsRechecked()
+    {
+        var (service, repository, _) = await Load(Committed);
+
+        Assert.Equal(new VcsSettingsReload(SettingsReloadOutcome.Unchanged, false),
+            VcsSettingsReloader.Reload(service, repository.Id));
+    }
+
+    [Fact]
+    public async Task AfterAPullThatBrokeTheFile_TheSettingsInUseAreKept()
+    {
+        var (service, repository, path) = await Load(Committed);
+
+        File.WriteAllText(path, "<<<<<<< HEAD\n{ }");   // a conflicted merge
+
+        Assert.Equal(new VcsSettingsReload(SettingsReloadOutcome.Unreadable, false),
+            VcsSettingsReloader.Reload(service, repository.Id));
         Assert.True(repository.StyleSettings!.ClassHasDescription);
     }
 

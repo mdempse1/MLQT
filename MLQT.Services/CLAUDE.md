@@ -60,7 +60,7 @@ the **same findings with the same line numbers**. Change the primitive, never on
 | **ClassLocation** | Where a class starts in its file. Findings carry class-relative lines; every report maps them through this |
 | **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` (in `VcsStamp.cs`) owns which system a path belongs to |
 | **ModelScope** | Which repository each loaded class belongs to, so which settings it is checked against, and whether any repository needs the dependency edges |
-| **VcsChangeScope** | What a VCS operation affected — monitor's pending changes, else VCS status, else the whole repository (re-analysed, not formatted) |
+| **VcsChangeScope** | What a VCS operation affected — monitor's pending changes, else VCS status, else the whole repository (re-analysed, not formatted). `VcsSettingsReloader` re-reads the repository's committed settings first, so an update that brings new rules formats and checks with them, and re-checks every class when they check differently - never reformats the repository (B525) |
 | **ReferenceOnlyScope** | The classes of reference-only libraries: loaded so references resolve, never checked or written |
 | **SuppressionScope** / **SpellingAcceptance** | What a "suppress this rule" or "accept this spelling" action covers, and which findings it clears |
 | **SpellCheckerFactory** / **DictionaryAvailability** / **DictionaryScope** | The spell checker for a run, which requested dictionaries this machine lacks, and which repository's accepted words apply to a class |

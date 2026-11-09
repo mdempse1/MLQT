@@ -1839,6 +1839,18 @@ public partial class MainLayout : IDisposable
             await InvokeAsync(() => Snackbar.Add("Processing VCS file changes...", Severity.Normal));
             LogProcessStart("MainLayout", $"Processing VCS changes for repository {repository.Name}");
 
+            // First, the settings: the operation may have brought the team's new ones (B525), and the
+            // files formatted below and the classes checked must follow them.
+            var settingsReload = VcsSettingsReloader.Reload(RepositoryService, repositoryId);
+            if (settingsReload.Outcome == SettingsReloadOutcome.Changed)
+                await InvokeAsync(() => Snackbar.Add(
+                    settingsReload.ChecksChanged
+                        ? $"{repository.Name}'s settings changed: every class will be checked against the new rules."
+                        : $"{repository.Name}'s settings changed.", Severity.Info));
+            else if (settingsReload.Outcome == SettingsReloadOutcome.Unreadable)
+                await InvokeAsync(() => Snackbar.Add(
+                    $"{repository.Name}'s .mlqt/settings.json could not be read; the settings in use are kept.", Severity.Warning));
+
             var graph = LibraryDataService.CombinedGraph;
 
             // The fallback chain lives in VcsChangeResolver: pending monitor changes, then VCS
@@ -1868,6 +1880,13 @@ public partial class MainLayout : IDisposable
             var affectedModelIds = changes.Source is VcsChangeSource.PendingChanges or VcsChangeSource.VcsStatus
                 ? changes.AffectedModelIds.Union(changedByReload, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal)
                 : changes.AffectedModelIds;
+            // New rules reach every class, not only those the operation changed. Re-analysed, not
+            // formatted: the formatter still has only the files that changed.
+            if (settingsReload.ChecksChanged)
+                affectedModelIds = affectedModelIds
+                    .Union(LibraryDataService.Libraries.Where(l => l.RepositoryId == repositoryId).SelectMany(l => l.ModelIds),
+                        StringComparer.Ordinal)
+                    .ToHashSet(StringComparer.Ordinal);
             var changedFilePaths = changes.ChangedFilePaths;
 
             if (affectedModelIds.Count == 0)
@@ -1980,6 +1999,11 @@ public partial class MainLayout : IDisposable
                 FileMonitoringService.ClearPendingChanges(repositoryId);
 
                 var affectedModelIds = new HashSet<string>(modelIds);
+                // A revert can put back the committed settings too (B525): new rules reach every class.
+                var settingsReload = VcsSettingsReloader.Reload(RepositoryService, repositoryId);
+                if (settingsReload.ChecksChanged)
+                    affectedModelIds.UnionWith(LibraryDataService.Libraries
+                        .Where(l => l.RepositoryId == repositoryId).SelectMany(l => l.ModelIds));
                 if (affectedModelIds.Count == 0) return;
 
                 // Re-analyse whenever the graph has edges to maintain (see RefreshLibrariesAsync).
