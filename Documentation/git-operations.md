@@ -394,12 +394,14 @@ For Git repositories, the history view includes a visual **commit graph** on the
 | **Revision** | The commit hash (shortened). The current HEAD commit is shown in **bold**. |
 | **Branch** | The branch name for this commit. |
 | **Author** | The commit author's name (hover for email). |
-| **Date** | The commit date in `dd-MMM-yyyy HH:mm` format. |
+| **Date** | The commit's author date in `dd-MMM-yyyy HH:mm` format. A rebased, cherry-picked or amended commit keeps the date it was first written. |
 | **Message** | The short commit message (hover for the full message). |
 
 ### Filtering by Date
 
 Use the **From** and **To** date pickers at the top to filter the history to a specific date range. Click **Apply** to filter or **Reset** to clear the filter.
+
+The range is matched against the committer date, the date each commit was made on its branch, as `git log --since` and `--until` do. A rebased commit is therefore found by when it was rebased, although its **Date** column shows when it was first written.
 
 ### Loading More History
 
