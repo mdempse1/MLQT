@@ -86,7 +86,7 @@ public sealed class SuppressionTools
             note = $"Note: '{ruleId}' is not a known built-in rule id — check the id from the finding if you did not intend a custom rule.";
 
         var outcome = await ClassBodyEditor.PersistFileContentAsync(
-            _libraries, _resources, _session, owner!.FilePath, newFileContent, preview,
+            _libraries, _resources, _session, owner!.FileOwner, owner.FilePath, newFileContent, preview,
             component is null ? $"suppress '{ruleId}' on '{classId}'" : $"suppress '{ruleId}' on '{classId}.{component}'");
 
         if (outcome is ToolError)
@@ -134,7 +134,7 @@ public sealed class SuppressionTools
             return new ToolError(writeError ?? "Could not add the spelling annotation.");
 
         var outcome = await ClassBodyEditor.PersistFileContentAsync(
-            _libraries, _resources, _session, owner.FilePath, newFileContent, preview,
+            _libraries, _resources, _session, owner.FileOwner, owner.FilePath, newFileContent, preview,
             $"accept the spelling '{word}' in '{classId}'");
 
         if (outcome is ToolError)

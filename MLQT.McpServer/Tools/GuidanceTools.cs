@@ -185,8 +185,8 @@ public sealed class GuidanceTools
 
             Edit a class and re-check it:
               mlqt_get_class (source, includeAnnotations=true) -> mlqt_edit_class (replace, or the element
-              operations) -> optionally mlqt_format -> mlqt_check(classId, checks ['style', 'spelling',
-              'references']).
+              operations) -> mlqt_check(classId, checks ['style', 'spelling', 'references']). In a
+              repository that applies its formatting rules the edit is written formatted; no mlqt_format.
 
             Rename a class (updates references too):
               mlqt_refactor_class(classId, 'rename', newName) [preview first] -> the declaration and every
@@ -206,7 +206,7 @@ public sealed class GuidanceTools
 
             Author a new class in your library:
               mlqt_get_class with the interface view on the classes you'll reference (learn their API) ->
-              mlqt_write_class -> mlqt_check with style, spelling and references -> mlqt_format.
+              mlqt_write_class -> mlqt_check with style, spelling and references.
 
             Study the library's idioms BEFORE assembling a model. Incrementally wiring up primitives is
             easy but often the wrong altitude: a good library usually provides higher-level, aggregate
@@ -472,6 +472,10 @@ public sealed class GuidanceTools
 
         ["formatting"] = """
             Formatting. MLQT only formats COMPLETE class definitions, never loose fragments:
+            - Edits format themselves: in a repository whose settings apply its formatting rules,
+              mlqt_edit_class, mlqt_write_class and a move write the changed file formatted with those
+              rules (a preview shows it so). A library from no repository, or one that does not apply its
+              rules, is written as composed. So call mlqt_format only to format code nothing has edited.
             - mlqt_format(classId | library | source): one tool for all three.
               - classId formats the .mo file that holds the class and, unless preview=true, writes it and
                 refreshes the graph. It reformats the whole containing file (all classes stored in it),

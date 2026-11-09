@@ -111,6 +111,10 @@ internal static class ClassBodyEditor
         if (errors.Count > 0)
             return new ToolError($"The edit would make '{filePath}' unparseable ({DescribeErrors(errors)}). Nothing was changed.");
 
+        // Written as the repository formats it, preview included, so what the agent sees is what lands.
+        fileContent = EditFormatting.Apply(libraries, session, fileOwner.Id, fileOwner.Id,
+            fileOwner.ContainingFileId, fileContent, fileOwner.ParentModelName);
+
         if (preview)
             return new ClassEditResult(filePath, PreviewOnly: true, AffectedCount: 0, fileContent);
 
@@ -130,13 +134,18 @@ internal static class ClassBodyEditor
     /// nested structure, whereas a package node's stored <c>ModelicaCode</c> can be a formatting "shell"
     /// that omits nested standalone classes.
     /// </summary>
+    /// <param name="fileOwner">The class heading the file, whose repository's formatting rules the
+    /// content is written with.</param>
     public static async Task<object> PersistFileContentAsync(
         ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
-        string filePath, string newFileContent, bool preview, string operation)
+        ModelNode fileOwner, string filePath, string newFileContent, bool preview, string operation)
     {
         var (_, errors) = ModelicaParserHelper.ParseWithErrors(newFileContent);
         if (errors.Count > 0)
             return new ToolError($"The edit would make '{filePath}' unparseable ({DescribeErrors(errors)}). Nothing was changed.");
+
+        newFileContent = EditFormatting.Apply(libraries, session, fileOwner.Id, fileOwner.Id,
+            fileOwner.ContainingFileId, newFileContent, fileOwner.ParentModelName);
 
         if (preview)
             return new ClassEditResult(filePath, PreviewOnly: true, AffectedCount: 0, newFileContent);

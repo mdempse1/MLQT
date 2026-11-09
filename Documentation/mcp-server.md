@@ -289,6 +289,12 @@ is broken. Type references in code are `checkUndeclaredNames`'s
 (`MLQT.Reference.Undeclared`). The setting keeps its name because it is what each repository's
 `.mlqt/settings.json` stores; its description in the tool schema says what it does.
 
+## Edits are written formatted
+
+In a repository whose settings apply its formatting rules (**Apply formatting rules** in the repository's settings), `mlqt_edit_class`, `mlqt_write_class` and a move with `mlqt_refactor_class` write the changed file already formatted with that repository's rules — the same rules, and the same whole-file formatting, the desktop app applies to a file that has changed. A `preview` shows the file formatted, as it would be written. There is no need to call `mlqt_format` after an edit.
+
+The file is written as composed instead — compact, as the operation built it — when the library came from no repository (there are no rules to apply), when the repository does not apply its formatting rules, and when a class in the file is excluded from formatting (`__MLQT(format=false)`, `preserveOrder=true`, or the repository's excluded list). A rename, a delete and a spelling correction change names and text in place, and are not reformatted.
+
 ## Automatic diagram connections
 
 When you position components on the diagram with `mlqt_edit_class`'s set_component_placement, the server automatically draws the connection lines: a `connect(...)` ending on the component you placed, whose other end is placed too, gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. add_connection draws the line of the connection it adds in the same way. It is enough to position the components — no separate call is needed.

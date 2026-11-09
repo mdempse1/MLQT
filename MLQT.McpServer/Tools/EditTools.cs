@@ -94,7 +94,8 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, oldClassCode, newSource);
         }
 
-        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText);
+        var fileContent = EditFormatting.Apply(_libraries, _session, owner.Id, owner.Id, owner.ContainingFileId,
+            WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText), owner.ParentModelName);
 
         if (preview)
             return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: false, 0, fileContent);
@@ -191,7 +192,8 @@ public sealed class EditTools
 
         // newId decides where the class lands, so the file's clause names its parent — replacing any
         // the caller sent with the source rather than adding a second one beside it.
-        var content = WithinClause.Set(source.TrimEnd(), parentId) + "\n";
+        var content = EditFormatting.Apply(_libraries, _session, parentId, newId, existingFileId: null,
+            WithinClause.Set(source.TrimEnd(), parentId) + "\n", parentId);
 
         if (isPackage)
             return await CreateStandalonePackageAsync(newId, className, content, dir, packageMoPath, packageMembers, preview);
@@ -269,6 +271,9 @@ public sealed class EditTools
         var (_, errs) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errs.Count > 0)
             return new ToolError($"Inserting the class would make '{ctx.FilePath}' unparseable ({DescribeErrors(errs)}). Nothing was written.");
+
+        fileContent = EditFormatting.Apply(_libraries, _session, ctx.FileOwner.Id, ctx.FileOwner.Id,
+            ctx.FileOwner.ContainingFileId, fileContent, ctx.FileOwner.ParentModelName);
 
         if (preview)
             return new CreateClassResult(newId, ctx.FilePath, "nested", PreviewOnly: true, Created: false, fileContent);
@@ -954,7 +959,8 @@ public sealed class EditTools
             var newFilePath = Path.Combine(dir, leaf + ".mo");
             // The move destination decides the clause, so replace whatever the class arrived with.
             await ModelicaFileEncoding.WriteAllTextAsync(
-                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n");
+                newFilePath, EditFormatting.Apply(_libraries, _session, newParentId, $"{newParentId}.{leaf}",
+                    existingFileId: null, WithinClause.Set(classCode.TrimEnd(), newParentId, fileText) + "\n", newParentId));
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
@@ -979,7 +985,10 @@ public sealed class EditTools
                 return new ToolError("Could not uniquely locate the destination within its file.");
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
-        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText));
+        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, EditFormatting.Apply(
+            _libraries, _session, tgtCtx.FileOwner.Id, tgtCtx.FileOwner.Id, tgtCtx.FileOwner.ContainingFileId,
+            WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName, tgtCtx.FileOwner.FileText),
+            tgtCtx.FileOwner.ParentModelName));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);

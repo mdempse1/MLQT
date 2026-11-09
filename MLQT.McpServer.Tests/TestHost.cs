@@ -41,7 +41,7 @@ public sealed class TestHost : IDisposable
             CodeReview);
         Impact = new ImpactAnalysisService();
         Resources = new ExternalResourceService();
-        Session = new SessionState();
+        Session = new SessionState { Repositories = Repositories };
     }
 
     /// <summary>Writes a single .mo file to a fresh temp directory and returns its full path.</summary>
