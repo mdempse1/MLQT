@@ -1,1 +1,8 @@
 #nullable enable
+MLQT.Services.DataTypes.SettingsReloadOutcome
+MLQT.Services.DataTypes.SettingsReloadOutcome.Changed = 2 -> MLQT.Services.DataTypes.SettingsReloadOutcome
+MLQT.Services.DataTypes.SettingsReloadOutcome.NotFound = 0 -> MLQT.Services.DataTypes.SettingsReloadOutcome
+MLQT.Services.DataTypes.SettingsReloadOutcome.Unchanged = 1 -> MLQT.Services.DataTypes.SettingsReloadOutcome
+MLQT.Services.DataTypes.SettingsReloadOutcome.Unreadable = 3 -> MLQT.Services.DataTypes.SettingsReloadOutcome
+MLQT.Services.Interfaces.IRepositoryService.ReloadRepositorySettings(string! repositoryId) -> MLQT.Services.DataTypes.SettingsReloadOutcome
+MLQT.Services.RepositoryService.ReloadRepositorySettings(string! repositoryId) -> MLQT.Services.DataTypes.SettingsReloadOutcome

@@ -411,7 +411,9 @@ public sealed class GuidanceTools
         ["style"] = """
             Style / quality checking. Rules are PER-REPOSITORY:
             - Settings live in each repository's .mlqt/settings.json (the same file MLQT uses), read when
-              mlqt_load loads a working copy. mlqt_style_settings(repositoryId?) reads them; with settings it
+              mlqt_load loads a working copy, and read again by mlqt_session's reload, which takes up a
+              change made outside this server (the desktop app, a hand edit, a pull) and says so; a file
+              that no longer parses keeps the settings in use. mlqt_style_settings(repositoryId?) reads them; with settings it
               merges the rule toggles and spell languages you pass and writes them back. repositoryId is
               optional when one repo is loaded.
             - mlqt_check(classId | libraryId | source, settings?): by default uses the repository's settings;

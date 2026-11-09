@@ -115,6 +115,18 @@ public interface IRepositoryService
     Task RefreshRepositoryAsync(string repositoryId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads <paramref name="repositoryId"/>'s <c>.mlqt/settings.json</c> again, taking its settings
+    /// only where the file has changed since it was last read or written - edited by hand, saved by
+    /// another MLQT, or brought by a pull or a branch switch. A file that no longer parses leaves the
+    /// settings in use as they are, and one that has gone puts the defaults back, as a first load would.
+    /// </summary>
+    /// <remarks>
+    /// Settings were read only when a repository was added, so a process that outlives a change to the
+    /// file - the MCP server, across a session - went on checking and formatting with the old ones.
+    /// </remarks>
+    SettingsReloadOutcome ReloadRepositorySettings(string repositoryId);
+
+    /// <summary>
     /// The classes <see cref="RefreshRepositoryAsync"/> found changed since the reload before it, and
     /// forgets them: those whose source is new or different, and those below a class whose
     /// class-level <c>__MLQT</c> waivers or imports now reach them differently (B499). Every reload

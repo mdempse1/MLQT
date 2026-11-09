@@ -95,6 +95,26 @@ public class FormatDefaultsTests
     }
 
     [Fact]
+    public async Task AReload_TakesUpSettingsChangedOnDisk_AndFormattingThenUsesThem()
+    {
+        // Settings were read once, when the repository was loaded: changed in the desktop app, by hand
+        // or by a pull, they went on being ignored by every check and format until a reset.
+        using var host = new TestHost();
+        var file = Load(host, repositoryLayout: false);
+        var root = Path.GetDirectoryName(Path.GetDirectoryName(file))!;
+        Directory.CreateDirectory(Path.Combine(root, ".mlqt"));
+        File.WriteAllText(Path.Combine(root, ".mlqt", "settings.json"),
+            "{\n  \"OneOfEachSection\": true,\n  \"ImportStatementsFirst\": true,\n  \"ComponentsBeforeClasses\": true,\n  \"DeclarationOrder\": true\n}\n");
+
+        var reload = ToolAssert.Ok<ReloadResult>(
+            await new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session).Reload());
+        ToolAssert.Ok<FormatClassResult>(await Tools(host).Format(classId: "P.Foo"));
+
+        Assert.Contains("Style settings re-read", reload.Note);
+        AssertRepositoryLayout(File.ReadAllText(file));
+    }
+
+    [Fact]
     public async Task TextWithNoRepository_TakesOnlyTheOptionsGiven()
     {
         using var host = new TestHost();

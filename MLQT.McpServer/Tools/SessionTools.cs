@@ -253,9 +253,10 @@ public sealed class SessionTools
             if (repo is not null)
             {
                 await _repositories.RefreshRepositoryAsync(repo.Id);
+                var settings = ReloadSettings([repo.Id]);
                 ResetAnalysis();
                 var libs = _libraries.Libraries.Where(l => l.RepositoryId == repo.Id).Select(l => l.Name).ToList();
-                return new ReloadResult("repository", libs, 0, AnalysisResetNote);
+                return new ReloadResult("repository", libs, 0, AnalysisResetNote + settings);
             }
 
             var (lib, _) = EntityResolver.ResolveLibrary(_libraries, target);
@@ -267,8 +268,9 @@ public sealed class SessionTools
                         "it is still loaded, unchanged. Only the host that supplied it can replace it.");
 
                 await ReloadLibraryAsync(lib);
+                var settings = lib.RepositoryId is { } ownRepo ? ReloadSettings([ownRepo]) : string.Empty;
                 ResetAnalysis();
-                return new ReloadResult("library", new[] { lib.Name }, 0, AnalysisResetNote);
+                return new ReloadResult("library", new[] { lib.Name }, 0, AnalysisResetNote + settings);
             }
 
             return new ToolError(
@@ -280,11 +282,13 @@ public sealed class SessionTools
         // left as it is - see IsSupplied - and named in the result rather than passed over in silence.
         var reloaded = new List<string>();
         var notReloaded = new List<string>();
-        foreach (var repoId in _repositories.Repositories.Select(r => r.Id).ToList())
+        var repositoryIds = _repositories.Repositories.Select(r => r.Id).ToList();
+        foreach (var repoId in repositoryIds)
         {
             await _repositories.RefreshRepositoryAsync(repoId);
             reloaded.AddRange(_libraries.Libraries.Where(l => l.RepositoryId == repoId).Select(l => l.Name));
         }
+        var settingsNote = ReloadSettings(repositoryIds);
         foreach (var lib in _libraries.Libraries.Where(l => l.RepositoryId is null).ToList())
         {
             if (IsSupplied(lib))
@@ -300,7 +304,39 @@ public sealed class SessionTools
             ? AnalysisResetNote
             : AnalysisResetNote + " Not reloaded, because the host supplied them from memory and there is nothing on " +
               $"disk to re-read: {string.Join(", ", notReloaded)}. They are still loaded, unchanged.";
-        return new ReloadResult("all", reloaded.Distinct().ToList(), 0, note, notReloaded);
+        return new ReloadResult("all", reloaded.Distinct().ToList(), 0, note + settingsNote, notReloaded);
+    }
+
+    /// <summary>
+    /// Reads each repository's <c>.mlqt/settings.json</c> again (<see cref="IRepositoryService.ReloadRepositorySettings"/>)
+    /// and says, for the answer, whose settings changed and whose file could not be read. A reload
+    /// re-read every library and none of the settings, so a change made outside the server - the desktop
+    /// app, a hand edit, a pull - went on being ignored by every check and format until a reset.
+    /// </summary>
+    private string ReloadSettings(IEnumerable<string> repositoryIds)
+    {
+        var changed = new List<string>();
+        var unreadable = new List<string>();
+        foreach (var id in repositoryIds)
+        {
+            var name = _repositories.GetRepository(id)?.Name ?? id;
+            switch (_repositories.ReloadRepositorySettings(id))
+            {
+                case SettingsReloadOutcome.Changed:
+                    changed.Add(name);
+                    break;
+                case SettingsReloadOutcome.Unreadable:
+                    unreadable.Add(name);
+                    break;
+            }
+        }
+
+        var note = string.Empty;
+        if (changed.Count > 0)
+            note += $" Style settings re-read from .mlqt/settings.json, which had changed: {string.Join(", ", changed)}.";
+        if (unreadable.Count > 0)
+            note += $" Could not read .mlqt/settings.json, so the settings in use were kept: {string.Join(", ", unreadable)}.";
+        return note;
     }
 
     /// <summary>
