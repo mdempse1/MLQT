@@ -394,6 +394,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                         Author = commit.Author.Name,
                         AuthorEmail = commit.Author.Email,
                         Date = commit.Author.When,
+                        CommitterDate = commit.Committer.When,
                         Message = commit.Message.Trim(),
                         MessageShort = commit.MessageShort.Trim(),
                         Branch = currentBranch
@@ -424,8 +425,8 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 
             foreach (var commit in commits)
             {
-                // Apply date filters
-                if (options.Since.HasValue && commit.Author.When < options.Since.Value)
+                // By committer date, like git log --since/--until: the walk is ordered by it, which the break relies on
+                if (options.Since.HasValue && commit.Committer.When < options.Since.Value)
                 {
                     // If we have a Since filter but haven't hit minimum entries, keep going
                     if (count >= minEntriesFromSinceFilter)
@@ -434,7 +435,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                     }
                 }
 
-                if (options.Until.HasValue && commit.Author.When > options.Until.Value)
+                if (options.Until.HasValue && commit.Committer.When > options.Until.Value)
                 {
                     continue;
                 }
@@ -452,6 +453,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                     Author = commit.Author.Name,
                     AuthorEmail = commit.Author.Email,
                     Date = commit.Author.When,
+                    CommitterDate = commit.Committer.When,
                     Message = commit.Message?.Trim() ?? "",
                     MessageShort = commit.MessageShort?.Trim() ?? "",
                     Branch = currentBranch,

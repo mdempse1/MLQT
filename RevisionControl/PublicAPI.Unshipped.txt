@@ -1,1 +1,3 @@
 #nullable enable
+RevisionControl.VcsLogEntry.CommitterDate.get -> System.DateTimeOffset
+RevisionControl.VcsLogEntry.CommitterDate.set -> void
