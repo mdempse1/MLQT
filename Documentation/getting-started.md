@@ -220,7 +220,9 @@ A tool's library folder usually ships its own copy of the Modelica Standard Libr
 - A copy in your own repositories is used over one in a repository marked **Reference only**, and over one from **Reference Libraries**
 - Between two repositories otherwise alike, the one higher in the project's repository list is used
 
-The repository list's order is what decides, so moving a repository up or down takes effect the next time the project is loaded.
+The repository whose copy is not used shows no entry for that library in the library browser — the tool's library folder appears without `Modelica` — which is how you can tell which copy is in use.
+
+The repository list's order is what decides, so moving a repository up or down, or switching **Reference only** on or off, takes effect the next time the project is loaded. Removing the repository or reference folder whose copy was in use loads the other copy straight away.
 
 Reference library paths are deliberately machine-level rather than committed alongside a repository, because an install location is a property of your machine — a colleague's checkout or a CI runner will not share it. In CI, pass the equivalent with the `mlqt` CLI's `--dependency` option instead (see [cli.md](cli.md)).
 

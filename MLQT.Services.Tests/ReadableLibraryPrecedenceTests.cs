@@ -207,6 +207,93 @@ public class ReadableLibraryPrecedenceTests : IDisposable
         Assert.Null(libraries.GetModelById("Lib.OnlyInTheSingleFileCopy"));
     }
 
+    [Theory]
+    [InlineData(true)]    // the loaded copy's repository moved below the other
+    [InlineData(false)]   // the loaded copy's repository switched to reference only
+    public async Task RefreshingTheLoadedCopy_AfterItsRankChanged_KeepsTheLibraryLoaded(bool byMoving)
+    {
+        // Rank is decided at load, and neither change reloads anything. Ranked against every copy
+        // discovered, a refresh of the repository whose copy is loaded - which a VCS update does -
+        // skipped it in favour of the other repository's, which nobody would load: the library left
+        // the graph until the project was loaded again.
+        var (repositories, libraries, first, second) = await AddBothAsync(
+            WriteRepository("first", classPerFile: true), false,
+            WriteRepository("second", classPerFile: false), false);
+        await Task.WhenAll(
+            Task.Run(() => repositories.LoadLibrariesAsync(first.Id)),
+            Task.Run(() => repositories.LoadLibrariesAsync(second.Id)));
+        AssertOnlyCopyIs(libraries, first, second);
+
+        if (byMoving)
+            Assert.True(repositories.MoveRepository(first.Id, 1));
+        else
+            repositories.SetReferenceOnly(first.Id, true);
+
+        await repositories.RefreshRepositoryAsync(first.Id);
+
+        AssertOnlyCopyIs(libraries, first, second);
+    }
+
+    [Fact]
+    public async Task RemovingTheRepositoryWhoseCopyWon_LoadsTheOtherCopy()
+    {
+        // The copy that lost was never loaded, so removing the winner left the library out of the
+        // graph altogether until the project was loaded again.
+        var (repositories, libraries, first, second) = await AddBothAsync(
+            WriteRepository("first", classPerFile: true), false,
+            WriteRepository("second", classPerFile: false), false);
+        await Task.WhenAll(
+            Task.Run(() => repositories.LoadLibrariesAsync(first.Id)),
+            Task.Run(() => repositories.LoadLibrariesAsync(second.Id)));
+
+        repositories.RemoveRepository(first.Id);
+        Assert.DoesNotContain(libraries.Libraries, l => l.Name == "Lib");
+
+        Assert.Equal(1, await repositories.LoadLibrariesNoLongerProvidedAsync());
+
+        var lib = Assert.Single(libraries.Libraries, l => l.Name == "Lib");
+        Assert.Equal(second.Id, lib.RepositoryId);
+        Assert.Contains(lib.Id, second.LibraryIds);
+        Assert.NotNull(libraries.GetModelById("Lib.OnlyInTheSingleFileCopy"));
+        Assert.Equal(0, await repositories.LoadLibrariesNoLongerProvidedAsync());
+    }
+
+    [Fact]
+    public async Task AProjectLoad_RanksAgainstEveryRepositoryInIt()
+    {
+        // The other half of the rule above: a load of the whole project ranks against every
+        // repository's copy, loaded yet or not, so the order decides and not which load ran first.
+        var settings = new InMemorySettingsService();
+        var setup = new RepositoryService(new LibraryDataService(), settings, new FileMonitoringService());
+        var top = await setup.AddRepositoryAsync(
+            WriteRepository("top", classPerFile: true), null, "top", startMonitoring: false, isReferenceOnly: false);
+        await setup.AddRepositoryAsync(
+            WriteRepository("below", classPerFile: false), null, "below", startMonitoring: false, isReferenceOnly: false);
+        var projectId = setup.GetActiveProject()?.Id;
+
+        // A restart: the same saved project, loaded by services that have loaded nothing yet.
+        var libraries = new LibraryDataService();
+        var repositories = new RepositoryService(libraries, settings, new FileMonitoringService());
+        await repositories.LoadRepositorySettingsAsync(projectId);
+
+        var lib = Assert.Single(libraries.Libraries, l => l.Name == "Lib");
+        Assert.StartsWith(top.Repository!.LocalPath, lib.SourcePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TwoReadableCopiesFromDifferentPlaces_AreTwins_AndOneCopyOrAReadOnlyOneIsNot()
+    {
+        var libraries = new LibraryDataService();
+        var a = await libraries.AddLibraryFromPathAsync(Path.Combine(WriteRepository("a", true), "Lib"));
+        var b = await libraries.AddLibraryFromPathAsync(Path.Combine(WriteRepository("b", false), "Lib"));
+
+        Assert.Same(a, LibraryDataService.ReadableTwinOf(b, [a]));
+        Assert.Null(LibraryDataService.ReadableTwinOf(a, [a]));
+        Assert.Null(LibraryDataService.ReadableTwinOf(b, [new LoadedLibrary { Name = "Lib", SourcePath = b.SourcePath }]));
+        Assert.Null(LibraryDataService.ReadableTwinOf(b,
+            [new LoadedLibrary { Name = "Lib", SourcePath = "x", SourceType = LibrarySourceType.EncryptedDirectory }]));
+    }
+
     [Fact]
     public async Task ACopyAlreadyLoaded_IsUnloaded_WhenOneThatOutranksItArrives()
     {

@@ -44,12 +44,16 @@ public class ReferenceLibraryLoaderTests : IDisposable
         return Path.Combine(_root, name);
     }
 
-    /// <summary>The user's library, whose description names the reference class.</summary>
+    /// <summary>
+    /// The user's library, whose description names the reference class. It declares it uses RefLib:
+    /// only a declared library's class names count as words (KnownClassNames).
+    /// </summary>
     private string WriteUserLibrary()
     {
         var lib = Path.Combine(_root, "mine", "MyLib");
         Directory.CreateDirectory(lib);
-        File.WriteAllText(Path.Combine(lib, "package.mo"), "package MyLib \"Built on Zorblat\"\nend MyLib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.mo"),
+            "package MyLib \"Built on Zorblat\"\n  annotation (uses(RefLib(version=\"1.0\")));\nend MyLib;\n");
         return lib;
     }
 

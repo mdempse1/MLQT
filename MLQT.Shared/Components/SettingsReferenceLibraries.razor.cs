@@ -7,6 +7,32 @@ public partial class SettingsReferenceLibraries : IDisposable
     [Inject] private AppState NavState { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
     [Inject] private IReferenceLibraryLoader ReferenceLibraryLoader { get; set; } = null!;
+    [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
+    [Inject] private IStyleCheckingService StyleCheckingService { get; set; } = null!;
+    [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+
+    /// <summary>
+    /// What is using the graph now, or null when nothing is. Adding or removing a folder loads or
+    /// unloads its libraries at once, which must not happen under a load, a check, an analysis or a VCS
+    /// operation reading the same classes - so the edit is refused, and the user told why, until it
+    /// finishes.
+    /// </summary>
+    internal string? BusyWith() =>
+        NavState.StartupStep is not null ? "the project is loading"
+        : NavState.IsVcsWorkInProgress ? "a version control operation is running"
+        : StyleCheckingService.IsRunning ? "a style check is running"
+        : LibraryDataService.IsDependencyAnalysisRunning ? "dependency analysis is running"
+        : null;
+
+    private bool RefusedWhileBusy()
+    {
+        if (BusyWith() is not { } reason)
+            return false;
+
+        Snackbar.Add($"The reference libraries cannot be changed while {reason}. Try again when it has finished.",
+            Severity.Warning);
+        return true;
+    }
 
     private ReferenceLibrarySettings _settings = new();
 
@@ -55,8 +81,11 @@ public partial class SettingsReferenceLibraries : IDisposable
 
     private async Task AddPath()
     {
+        if (RefusedWhileBusy())
+            return;
+
         var folder = await FilePickerService.PickFolderAsync("Select a folder containing Modelica libraries");
-        if (string.IsNullOrEmpty(folder))
+        if (string.IsNullOrEmpty(folder) || RefusedWhileBusy())
             return;
 
         if (_settings.Paths.Contains(folder, StringComparer.OrdinalIgnoreCase))
@@ -80,6 +109,9 @@ public partial class SettingsReferenceLibraries : IDisposable
 
     private async Task RemovePath(string path)
     {
+        if (RefusedWhileBusy())
+            return;
+
         _settings.Paths.Remove(path);
         await SaveAsync();
 
@@ -88,7 +120,12 @@ public partial class SettingsReferenceLibraries : IDisposable
         // what it had with the folder - and a restart reported something else. The folders that remain
         // are then loaded again, which brings in any library this folder had been standing in for
         // (one skipped elsewhere as a second copy of it), and nothing they had loaded already.
+        //
+        // Repositories first: a copy in one outranks a reference folder's, so the encrypted build or
+        // other copy a repository holds of a library this folder was providing is loaded before the
+        // remaining folders are asked, and they then skip it.
         var unloaded = ReferenceLibraryLoader.UnloadFolder(path);
+        await RepositoryService.LoadLibrariesNoLongerProvidedAsync();
         await ReferenceLibraryLoader.LoadAsync(_settings.Paths, _settings.UseEncryptedLibraryDocumentation);
 
         if (unloaded > 0)

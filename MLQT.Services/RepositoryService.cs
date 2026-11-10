@@ -27,6 +27,16 @@ public class RepositoryService : IRepositoryService
     private string? _activeProjectId;
     private readonly object _lock = new();
 
+    // The repositories whose libraries are being loaded, or are about to be - marked for all of them
+    // before a project load starts its parallel loads, so each one ranks a copy of a library against
+    // every copy that will be in the graph and not only those that happen to be there already. Under
+    // _lock. See ReadableLibrariesInProject.
+    private readonly HashSet<string> _libraryLoadsPending = new(StringComparer.Ordinal);
+
+    // One readable load of a library name at a time - see LoadLibrariesCoreAsync.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _readableLoadGates =
+        new(StringComparer.Ordinal);
+
     // One save at a time, each taking its contents once it is its turn, so the save that lands last
     // is always the newest (B447). See SaveRepositorySettingsAsync. Every write of the settings key
     // takes it - CreateAndSelectProjectAsync and the legacy migration in LoadRepositorySettingsAsync
@@ -435,6 +445,35 @@ public class RepositoryService : IRepositoryService
         return libraries;
     }
 
+    /// <summary>
+    /// Loads every repository's libraries in parallel, as a project load does. Every repository is
+    /// marked pending first, so the copy of a library each load chooses is chosen against all of
+    /// them - whichever starts first.
+    /// </summary>
+    private async Task LoadAllLibrariesAsync(CancellationToken cancellationToken)
+    {
+        var repositories = Repositories.ToList();
+        lock (_lock)
+        {
+            foreach (var repository in repositories)
+                _libraryLoadsPending.Add(repository.Id);
+        }
+
+        try
+        {
+            await Task.WhenAll(repositories.Select(repo =>
+                Task.Run(() => LoadLibrariesAsync(repo.Id, null, cancellationToken), cancellationToken)));
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                foreach (var repository in repositories)
+                    _libraryLoadsPending.Remove(repository.Id);
+            }
+        }
+    }
+
     public async Task LoadLibrariesAsync(
         string repositoryId,
         IEnumerable<string>? libraryPaths = null,
@@ -443,6 +482,33 @@ public class RepositoryService : IRepositoryService
         var repository = GetRepository(repositoryId);
         if (repository == null)
             return;
+
+        bool markedPending;
+        lock (_lock)
+        {
+            markedPending = _libraryLoadsPending.Add(repositoryId);
+        }
+
+        try
+        {
+            await LoadLibrariesCoreAsync(repository, libraryPaths, cancellationToken);
+        }
+        finally
+        {
+            if (markedPending)
+            {
+                lock (_lock)
+                    _libraryLoadsPending.Remove(repositoryId);
+            }
+        }
+    }
+
+    private async Task LoadLibrariesCoreAsync(
+        Repository repository,
+        IEnumerable<string>? libraryPaths,
+        CancellationToken cancellationToken)
+    {
+        var repositoryId = repository.Id;
 
         LogProcessStart("RepositoryService", $"Loading libraries from repository: {repository.Name}");
         OnRepositoryLoadStateChanged?.Invoke(repositoryId, true);
@@ -480,11 +546,10 @@ public class RepositoryService : IRepositoryService
                 _ => LibrarySourceType.Directory
             };
 
-            // Asked once, before anything in this repository loads: every other repository in the
-            // project has been discovered by now, so this is the whole project's answer and not a
-            // race between parallel loads (B268).
-            var readable = ReadableLibrariesInProject();
-            var readableLocations = readable.Select(c => (c.Name, c.Location)).ToList();
+            // Asked once, before anything in this repository loads: every repository of a project
+            // load is pending by now, so this is the whole project's answer and not a race between
+            // parallel loads (B268).
+            var readableLocations = ReadableLibrariesInProject().Select(c => (c.Name, c.Location)).ToList();
             var order = PlaceInProject(repository);
 
             // Load all libraries in parallel for much faster repository loading
@@ -512,22 +577,49 @@ public class RepositoryService : IRepositoryService
 
                     // Nor a readable copy of a library another repository also has, when that one
                     // outranks it: both would load into one graph under the same class ids, the
-                    // browser would show one copy and the checker read the other. Decided here, from
-                    // discovery, so the answer does not depend on which parallel load finished first.
+                    // browser would show one copy and the checker read the other.
+                    //
+                    // One library name at a time, from the choice to the copy being recorded on its
+                    // repository, and asked again inside: a load that ran first is then seen loaded,
+                    // and whichever order two loads of one library run in, the copy that outranks ends
+                    // up the one in the graph. Copies that are only about to load are seen too - every
+                    // repository of a project load is pending (ReadableLibrariesInProject) - so the
+                    // losing copy of a project load is not read at all.
                     if (!isEncrypted && name is not null)
                     {
-                        var copy = (name, fullPath, repository.IsReferenceOnly, order);
-                        if (LibraryPrecedence.ReadableCopyOutranking(copy, readable) is { } winner)
+                        var gate = _readableLoadGates.GetOrAdd(name, _ => new SemaphoreSlim(1, 1));
+                        await gate.WaitAsync(cancellationToken);
+                        try
                         {
-                            Info("RepositoryService",
-                                $"Not loading library '{name}' at {fullPath}: the copy at {winner} is used " +
-                                "(a repository that is not reference-only, or higher in the project's list, wins)");
-                            return;
+                            var copy = (name, fullPath, repository.IsReferenceOnly, order);
+                            if (LibraryPrecedence.ReadableCopyOutranking(copy, ReadableLibrariesInProject()) is { } winner)
+                            {
+                                Info("RepositoryService",
+                                    $"Not loading library '{name}' at {fullPath}: the copy at {winner} is used " +
+                                    "(a repository that is not reference-only, or higher in the project's list, wins)");
+                                return;
+                            }
+
+                            RetireLoadedCopiesOutrankedBy(copy);
+                            await LoadAndRecordAsync();
+                        }
+                        finally
+                        {
+                            gate.Release();
                         }
 
-                        RetireLoadedCopiesOutrankedBy(copy);
+                        return;
                     }
 
+                    await LoadAndRecordAsync();
+                }
+                catch (Exception ex)
+                {
+                    Error("RepositoryService", $"Failed to load library from {fullPath}", ex);
+                }
+
+                async Task LoadAndRecordAsync()
+                {
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
 
                     // A repository can contain an encrypted library alongside the source that uses
@@ -556,10 +648,6 @@ public class RepositoryService : IRepositoryService
                     }
                     Debug("RepositoryService", $"Successfully loaded library: {library.Name}");
                 }
-                catch (Exception ex)
-                {
-                    Error("RepositoryService", $"Failed to load library from {fullPath}", ex);
-                }
             }, cancellationToken)).ToList();
 
             await Task.WhenAll(tasks);
@@ -578,30 +666,98 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Removing a repository or a reference folder took its libraries out of the graph and left the
+    /// copies it had been standing in for unloaded - another repository's copy of the same library,
+    /// or the encrypted build a readable copy had replaced - until the whole project was loaded again.
+    /// </remarks>
+    public async Task<int> LoadLibrariesNoLongerProvidedAsync(CancellationToken cancellationToken = default)
+    {
+        var loadedNames = _libraryDataService.Libraries.Select(l => l.Name).ToHashSet(StringComparer.Ordinal);
+
+        List<(Repository Repository, List<string> Paths)> missing;
+        lock (_lock)
+        {
+            missing = _repositories
+                .Select(r => (Repository: r, Paths: r.DiscoveredLibraries
+                    .Where(d => !loadedNames.Contains(d.Value))
+                    .Select(d => d.Key)
+                    .ToList()))
+                .Where(m => m.Paths.Count > 0)
+                .ToList();
+        }
+
+        if (missing.Count == 0)
+            return 0;
+
+        var before = _libraryDataService.Libraries.Count;
+        foreach (var (repository, paths) in missing)
+        {
+            Info("RepositoryService",
+                $"Loading {paths.Count} librar{(paths.Count == 1 ? "y" : "ies")} of '{repository.Name}' that no " +
+                $"other copy provides any longer: {string.Join(", ", paths.Select(p => repository.DiscoveredLibraries[p]))}");
+        }
+
+        // All of them pending at once, as a project load is, so each is ranked against the others.
+        lock (_lock)
+        {
+            foreach (var (repository, _) in missing)
+                _libraryLoadsPending.Add(repository.Id);
+        }
+
+        try
+        {
+            await Task.WhenAll(missing.Select(m => LoadLibrariesAsync(m.Repository.Id, m.Paths, cancellationToken)));
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                foreach (var (repository, _) in missing)
+                    _libraryLoadsPending.Remove(repository.Id);
+            }
+        }
+
+        return Math.Max(0, _libraryDataService.Libraries.Count - before);
+    }
+
     private static string LibraryPath(Repository repository, string relativePath) =>
         string.IsNullOrEmpty(relativePath)
             ? repository.LocalPath
             : Path.Combine(repository.LocalPath, relativePath);
 
     /// <summary>
-    /// Every readable library the project knows of, with what ranks two copies of one
-    /// (<see cref="LibraryPrecedence.ReadableCopyOutranking"/>): each repository's discovered
-    /// libraries that are not encrypted, ranked by the repository; and every readable library already
-    /// loaded, which covers the ones that arrived by the reference-library setting and have no
-    /// repository - reference-only, and below every repository.
+    /// Every readable library that is in the graph or is about to be, with what ranks two copies of
+    /// one (<see cref="LibraryPrecedence.ReadableCopyOutranking"/>): the discovered libraries, not
+    /// encrypted, of each repository whose libraries are loading now, ranked by the repository; and
+    /// every readable library already loaded, which covers the ones that arrived by the
+    /// reference-library setting and have no repository.
     /// </summary>
+    /// <remarks>
+    /// <b>Only copies that are or will be loaded.</b> A repository merely discovered is not one: a
+    /// copy that lost at the last project load was never loaded, and ranking against it after a
+    /// repository was moved or switched to reference-only made a refresh of the other repository -
+    /// which a VCS update does - skip its copy in favour of one nobody would load, leaving the library
+    /// out of the graph until the project was loaded again.
+    /// </remarks>
     private List<(string Name, string Location, bool IsReferenceOnly, int Order)> ReadableLibrariesInProject()
     {
         List<Repository> repositories;
+        HashSet<string> pending;
         lock (_lock)
         {
             repositories = _repositories.ToList();
+            pending = _libraryLoadsPending.ToHashSet(StringComparer.Ordinal);
         }
 
         var readable = new List<(string Name, string Location, bool IsReferenceOnly, int Order)>();
         for (var order = 0; order < repositories.Count; order++)
         {
             var repository = repositories[order];
+            if (!pending.Contains(repository.Id))
+                continue;
+
             foreach (var (relativePath, name) in repository.DiscoveredLibraries.ToList())
             {
                 var fullPath = LibraryPath(repository, relativePath);
@@ -631,15 +787,15 @@ public class RepositoryService : IRepositoryService
 
     /// <summary>
     /// A loaded readable library as <see cref="LibraryPrecedence.ReadableCopyOutranking"/> ranks it:
-    /// by its repository, or - with none, as a library from the reference-library setting has - as
-    /// reference-only and below every repository.
+    /// by its repository, or - with none - by its own <see cref="LoadedLibrary.IsReferenceOnly"/>
+    /// (true for the reference-library setting's) and below every repository.
     /// </summary>
     private static (string Name, string Location, bool IsReferenceOnly, int Order) ReadableCopyOf(
         LoadedLibrary library, List<Repository> repositories)
     {
         var index = library.RepositoryId is null ? -1 : repositories.FindIndex(r => r.Id == library.RepositoryId);
         return index < 0
-            ? (library.Name, library.SourcePath, true, int.MaxValue)
+            ? (library.Name, library.SourcePath, library.IsReferenceOnly, int.MaxValue)
             : (library.Name, library.SourcePath, repositories[index].IsReferenceOnly, index);
     }
 
@@ -1309,12 +1465,7 @@ public class RepositoryService : IRepositoryService
         // Started now, while the libraries load, rather than when the formatter asks for it.
         StartWorkingCopyStatusQueries(cancellationToken);
 
-        // Load libraries for all repositories in parallel
-        var tasks = Repositories.Select(repo =>
-            Task.Run(() => LoadLibrariesAsync(repo.Id, null, cancellationToken), cancellationToken)
-        ).ToList();
-
-        await Task.WhenAll(tasks);
+        await LoadAllLibrariesAsync(cancellationToken);
 
         LogProcessEnd("RepositoryService", "Loading repository settings");
     }
@@ -1724,12 +1875,7 @@ public class RepositoryService : IRepositoryService
         // As at startup: the formatter runs once the switch has loaded, and asks first thing.
         StartWorkingCopyStatusQueries(cancellationToken);
 
-        // Load libraries for all repositories in parallel
-        var tasks = Repositories.Select(repo =>
-            Task.Run(() => LoadLibrariesAsync(repo.Id, null, cancellationToken), cancellationToken)
-        ).ToList();
-
-        await Task.WhenAll(tasks);
+        await LoadAllLibrariesAsync(cancellationToken);
 
         // Save with new active project
         await SaveRepositorySettingsAsync();

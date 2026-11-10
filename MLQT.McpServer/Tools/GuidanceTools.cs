@@ -483,6 +483,9 @@ public sealed class GuidanceTools
             - mlqt_check(classId | source, checks ['spelling']): the misspelled words with line numbers, in
               class and component descriptions and Documentation info/revisions, and the ranked suggestions
               for each word, from the configured language(s) plus your custom dictionary.
+            - A class name counts as a word only from the checked library and the libraries its
+              uses(...) annotation declares; loading other libraries, such as a tool's whole library
+              folder, does not change what is reported.
             - mlqt_edit_class with correct_spelling{word, newWord}: whole-word, case-sensitive replacement
               across the file's prose (HTML tags, hrefs and code/pre blocks are preserved).
             - When the word is right and the checker is wrong, accept it where it belongs:

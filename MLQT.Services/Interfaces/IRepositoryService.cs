@@ -72,6 +72,17 @@ public interface IRepositoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads every library a repository in the project holds whose name is no longer loaded at all -
+    /// a copy that was not loaded because another copy outranked it, once that copy has gone with its
+    /// repository or reference folder. Precedence still applies, so of several such copies only the
+    /// one that outranks the rest is loaded.
+    /// </summary>
+    /// <returns>How many libraries were loaded.</returns>
+    /// <remarks>Implemented here as loading nothing so an existing implementation keeps building.</remarks>
+    Task<int> LoadLibrariesNoLongerProvidedAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(0);
+
+    /// <summary>
     /// Moves a repository within the project's ordering, by <paramref name="delta"/> places.
     /// </summary>
     /// <remarks>

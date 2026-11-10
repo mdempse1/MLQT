@@ -35,7 +35,8 @@ public static class StyleCheckRunner
             return [];
 
         var findings = OnlyAbout(node, context, StyleChecking.RunStyleCheckingFindings(
-            node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
+            node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker,
+            context.KnownModelNamesFor?.Invoke(node.Id),
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
             baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions,
             namingConfig: context.NamingConfig, inheritedElementNames: context.InheritedElementNames,

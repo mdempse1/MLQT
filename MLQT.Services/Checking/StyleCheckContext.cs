@@ -30,7 +30,24 @@ public sealed class StyleCheckContext
     /// its parent's walk is all there is. See <see cref="StyleCheckRunner"/>.
     /// </summary>
     public IReadOnlySet<string>? ClassesCheckedSeparately { get; private init; }
-    public IReadOnlySet<string>? KnownModelNames { get; private init; }
+
+    /// <summary>
+    /// The leaf name of every class in the graph. No longer what the spell checkers use, which is
+    /// <see cref="KnownModelNamesFor"/>; built only if something still asks for it.
+    /// </summary>
+    [Obsolete("Spelling no longer accepts the name of every class loaded: use KnownModelNamesFor, " +
+              "which gives a class the names of its own library and the libraries it declares in uses(...).")]
+    public IReadOnlySet<string>? KnownModelNames => _allModelNames?.Value;
+
+    private Lazy<IReadOnlySet<string>>? _allModelNames;
+
+    /// <summary>
+    /// The class names a class's descriptions and documentation may use as words, by the class's full
+    /// id: its own library's and those of the libraries it declares in <c>uses(...)</c>
+    /// (see <see cref="KnownClassNames"/>). Null when nothing is spell checked or there is no graph.
+    /// </summary>
+    public Func<string, IReadOnlySet<string>>? KnownModelNamesFor { get; private init; }
+
     public SpellChecker? SpellChecker { get; private init; }
     public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
 
@@ -140,11 +157,7 @@ public sealed class StyleCheckContext
             ? StyleChecking.CreateUnitLookup(graph)
             : null;
 
-        IReadOnlySet<string>? knownModelNames = null;
-        if ((settings.SpellCheckDescription || settings.SpellCheckDocumentation) && spellChecker != null)
-            knownModelNames = graph.ModelNodes
-                .Select(n => ModelicaName.LeafOf(n.Id))
-                .ToHashSet(StringComparer.Ordinal);   // Modelica is case sensitive
+        var spelling = (settings.SpellCheckDescription || settings.SpellCheckDocumentation) && spellChecker != null;
 
         return new StyleCheckContext
         {
@@ -154,7 +167,12 @@ public sealed class StyleCheckContext
             KnownModelIds = knownModelIds,
             ClassReferenceTarget = settings.ValidateModelReferences ? StyleChecking.CreateClassReferenceLookup(graph) : null,
             ClassesCheckedSeparately = classIds,
-            KnownModelNames = knownModelNames,
+            KnownModelNamesFor = spelling ? KnownClassNames.For(graph) : null,
+            _allModelNames = spelling
+                ? new Lazy<IReadOnlySet<string>>(() => graph.ModelNodes
+                    .Select(n => ModelicaName.LeafOf(n.Id))
+                    .ToHashSet(StringComparer.Ordinal))
+                : null,
             SpellChecker = spellChecker,
             BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,
             // Descriptions and documentation name inherited members as freely as declared ones, so

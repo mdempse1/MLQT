@@ -102,6 +102,14 @@ public interface ILibraryDataService
     Task EnsureDependenciesAnalyzedAsync(Action<string>? progressLog = null);
 
     /// <summary>
+    /// Whether a run <see cref="EnsureDependenciesAnalyzedAsync"/> started is still going - for a
+    /// caller about to add or remove libraries, which must not change the graph under it.
+    /// </summary>
+    /// <remarks>Implemented here as false so an existing implementation keeps building; one that can
+    /// run the analysis should say when it is.</remarks>
+    bool IsDependencyAnalysisRunning => false;
+
+    /// <summary>
     /// Adds a library from a file path.
     /// </summary>
     /// <param name="filePath">Path to the .mo file.</param>

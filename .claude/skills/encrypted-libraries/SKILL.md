@@ -204,8 +204,18 @@ the lower order (the repository's place in the project's list, top first; for th
 library, then dependencies in the order given), then location. `RepositoryService.LoadLibrariesAsync`
 skips an outranked copy, and unloads a loaded one the arriving copy outranks before it loads;
 `CheckPipeline` skips a `--dependency` copy. A route that decides nothing - two readable copies
-registered anyway - is warned about in `Register`. Reordering repositories does not reload anything:
-the new order decides at the next load or refresh.
+registered anyway - is warned about in `Register`.
+
+**Ranked only against copies that are, or are about to be, in the graph.** A repository merely
+discovered is not one: ranked against every discovered copy, a refresh of the repository whose copy
+was loaded - after it was moved down or made reference-only, and a VCS update refreshes - skipped it
+for a copy nobody would load, and the library left the graph. So a project load marks every
+repository pending before its parallel loads start (`_libraryLoadsPending`), and each readable load
+runs one library name at a time from the choice to the copy being recorded (`_readableLoadGates`), so
+a load that ran first is seen. Reordering repositories reloads nothing: the new order decides at the
+next project load. And when the copy that won goes - its repository removed, its reference folder
+removed - `LoadLibrariesNoLongerProvidedAsync` loads whichever remaining copy now outranks, which the
+settings tabs call after the removal.
 
 `SuppliedLibraryToolTests` (MLQT.McpServer.Tests) calls **every** MCP tool that names a class, by
 reflection, on a supplied class, and accepts exactly two outcomes: an answer, or `ReadOnlyClassGuard`'s

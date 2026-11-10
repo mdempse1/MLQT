@@ -280,8 +280,10 @@ public partial class SettingsRepositories : IDisposable
     /// <summary>
     /// Whether to offer <b>Load project</b> for the project that is already active: only once a
     /// repository has been removed from it. Removing one can leave a library unloaded that it was
-    /// standing in for — an encrypted build whose source it held (B268) — and loading the project
-    /// again is the existing path that puts that right.
+    /// standing in for — an encrypted build whose source it held (B268), or another repository's
+    /// readable copy that its own outranked. <see cref="RemoveRepository"/> now loads those at once
+    /// (<c>LoadLibrariesNoLongerProvidedAsync</c>); loading the project again remains the way to put
+    /// right anything else a removal leaves behind.
     /// </summary>
     internal bool CanReloadActiveProject => RepositoryService.RepositoryRemovedSinceProjectLoad;
 
@@ -495,12 +497,19 @@ public partial class SettingsRepositories : IDisposable
             .ThenBy(r => r.Title, StringComparer.Ordinal)
             .ToList();
 
-    private void RemoveRepository()
+    private async Task RemoveRepository()
     {
         _editRepository = false;
         if (_selectedItem == null)
             return;
         RepositoryService.RemoveRepository(_selectedItem.Id, true);
+
+        // A library the removed repository provided may be held by another one too, whose copy was not
+        // loaded because this one's outranked it - or as an encrypted build a readable copy here had
+        // replaced. Loaded now, so the library does not vanish until the project is loaded again.
+        if (await RepositoryService.LoadLibrariesNoLongerProvidedAsync() > 0)
+            Snackbar.Add("Libraries the removed repository had provided were loaded from another repository. " +
+                         "Run the checks again to update the findings.", Severity.Info);
     }
 
     // Whether MLQT.Reference.Undeclared accepts this tool's built-ins. Tool names compare ignoring

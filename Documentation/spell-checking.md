@@ -90,7 +90,7 @@ The spell checker is designed to minimize false positives. The following are aut
 | **HTML entities** | `&Delta;`, `&zeta;`, `&rho;` and their decoded Unicode characters |
 | **Component and variable names in scope** | If a model declares `Real rflx`, the word "rflx" is valid within that model's descriptions, wherever in the class it is declared |
 | **Names inherited from base classes** | Everything the model inherits through `extends`, at any depth, counts too — so a description referring to a port or parameter that a base class declares is not flagged |
-| **Model names from loaded libraries** | Any model name from any loaded library (e.g., "Step", "Integrator", "PID") is treated as a valid word |
+| **Class names from your library and the libraries it uses** | The name of any class in the library being checked, or in a library its `uses(...)` annotation declares (e.g., "Step", "Integrator", "PID" for a library that uses `Modelica`), is treated as a valid word. Other loaded libraries do not count — a tool's library folder loaded for reference does not change what is reported, so the desktop app, `mlqt check` and the MCP server agree whatever else each has loaded |
 | **Modelica and engineering terms** | A built-in list covers the vocabulary no English dictionary has: the language and its tools ("Modelica", "Dymola", "FMUs", "redeclaration"), and engineering, thermodynamic, electrical and mathematical terms ("revolute", "enthalpy", "isentropic", "thyristor", "airgap", "quaternions", "Hessenberg"). Terms whose British and American spellings differ are only accepted in the [language you selected](#language-dictionaries) — a `en_US` repository accepts "linearization" and still reports "linearisation" |
 
 ## Enabling Spell Checking

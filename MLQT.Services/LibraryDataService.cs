@@ -124,6 +124,16 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public bool IsDependencyAnalysisRunning
+    {
+        get
+        {
+            lock (_dependencyAnalysisGate)
+                return _dependencyAnalysisTask is { IsCompleted: false };
+        }
+    }
+
+    /// <inheritdoc/>
     public Task EnsureDependenciesAnalyzedAsync(Action<string>? progressLog = null)
     {
         if (_combinedGraph.DependenciesAnalyzed)
@@ -715,11 +725,7 @@ public class LibraryDataService : ILibraryDataService
             registered = !retired.Any(r => ReferenceEquals(r.Library, library));
             if (registered)
             {
-                twin = library.IsReadOnly
-                    ? null
-                    : _libraries.FirstOrDefault(l => !l.IsReadOnly
-                                                     && LibraryPrecedence.SameLibrary(l.Name, library.Name)
-                                                     && !SameSource(l.SourcePath, library.SourcePath));
+                twin = ReadableTwinOf(library, _libraries);
                 _libraries.Add(library);
             }
         }
@@ -740,6 +746,19 @@ public class LibraryDataService : ILibraryDataService
 
         return registered;
     }
+
+    /// <summary>
+    /// Another readable copy of <paramref name="library"/>'s library among <paramref name="loaded"/>,
+    /// from a different place, or null. Two readable copies rank equally, so <see cref="Register"/>
+    /// retires neither; this is what it warns about.
+    /// </summary>
+    internal static LoadedLibrary? ReadableTwinOf(LoadedLibrary library, IEnumerable<LoadedLibrary> loaded) =>
+        library.IsReadOnly
+            ? null
+            : loaded.FirstOrDefault(l => !ReferenceEquals(l, library)
+                                         && !l.IsReadOnly
+                                         && LibraryPrecedence.SameLibrary(l.Name, library.Name)
+                                         && !SameSource(l.SourcePath, library.SourcePath));
 
     /// <summary>
     /// Retires, before <paramref name="arriving"/> is loaded, the copies of its library it wins

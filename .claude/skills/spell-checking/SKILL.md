@@ -37,7 +37,7 @@ ModelicaGraph (orchestration)
 MLQT.Services (lifecycle, persistence)
   StyleCheckingService.cs    - Spell checker lifecycle, lazy init, language invalidation
   Helpers/StyleCheckingWorker.cs - Passes spell checker to StyleCheckContext.Build / StyleCheckRunner
-  Checking/StyleCheckContext.cs  - Builds knownModelNames and the inherited-names callback per run
+  Checking/StyleCheckContext.cs  - Builds the per-library class names (KnownClassNames.cs) and the inherited-names callback per run
   Checking/SpellCheckerFactory.cs - Builds a SpellChecker for the CLI and MCP server
   Checking/DictionaryAvailability.cs - Warns when a chosen language has no dictionary here
   CustomDictionaryService.cs - Per-repo accepted words at <repo>/.mlqt/dictionary.txt
@@ -129,7 +129,7 @@ Owns the names that count as valid words inside the class being checked, and the
 - **Collected up front.** On entering a class the base scans the class body's element lists for component names and nested class names, so the class's own description string and `Documentation` annotation — both written before the declarations are reached — see every name. Names are pushed/popped per class scope via `OnClassEntered`/`OnClassExited`; `AddNameToScope` still catches declarations the scan does not reach.
 - **Inherited names.** The optional `inheritedElementNames` callback, `Func<string modelId, IReadOnlySet<string>>`, supplies the names a class inherits through `extends`. Resolving a base class needs the dependency graph, so the callback comes from `ModelicaGraph.StyleChecking.CreateInheritedElementNamesCallback(graph)` (which uses `ClassElementResolver`, including protected members and the whole chain, cached per class). With no callback only the class's own declarations are known.
 - **`OnClassScopeReady(context)`** — hook called once the scope is populated and before the class body is walked; `SpellCheckDescriptions` checks the class description there.
-- **Known model names are not merged into the scope.** They are passed straight to `IsCorrect(word, knownModelNames)`; merging built a fresh copy of a set holding every class in the graph for every description string checked.
+- **Known model names are not merged into the scope.** They are passed straight to `IsCorrect(word, knownModelNames)`; merging built a fresh copy of a set holding thousands of class names for every description string checked.
 
 ### SpellCheckDescriptions
 
@@ -219,15 +219,18 @@ public SpellChecker? GetSpellCheckerIfNeeded(Repository repository)
 
 `StyleCheckingWorker` (`MLQT.Services/Helpers/`) receives an optional `SpellChecker` and hands it to
 `StyleCheckContext.Build`, which the CLI and MCP server use too. When a spelling rule is on and a
-checker is given, the context builds the `knownModelNames` set from `DirectedGraph.ModelNodes`:
+checker is given, the context's `KnownModelNamesFor(modelId)` (built by `Checking/KnownClassNames.cs`)
+gives each class the leaf names of the classes of **its own library and of the libraries its
+library's top-level `uses(...)` declares** - "Step" in a library that uses `Modelica` - answered once
+per library and shared. `StyleCheckRunner` passes that class's set to the visitors.
 
-```csharp
-knownModelNames = graph.ModelNodes
-    .Select(n => ModelicaName.LeafOf(n.Id))
-    .ToHashSet(StringComparer.Ordinal);   // Modelica is case sensitive
-```
-
-This ensures any loaded model name (e.g., "Step" from "Modelica.Blocks.Sources.Step") is treated as a valid word.
+**Never every class loaded.** It was, and then what was flagged depended on what else happened to be
+loaded: with a tool's library folder loaded for reference (about 43,000 classes), `Kv`, `MPa`, `rgb`
+and `Aluminium` were accepted in MSL because a vendor library had classes of those names, and the
+desktop app, the CLI and the MCP server disagreed by 64 findings on MSL depending on which had the
+folder (2026-11-10). With the rule, MSL reports the same with the folder or without it. Direct `uses`
+only, not transitive. `StyleCheckContext.KnownModelNames`, the old whole-graph set, is obsolete and
+built only if something asks for it.
 
 ## Custom Dictionary Service
 
@@ -420,7 +423,7 @@ so the GUI, the CLI and MCP all honour it, and `mlqt check --no-suppress` audits
 ## Key Design Decisions
 
 1. **No `Suggest()` during background checking** — only called on-demand from the right-click correction menu to avoid performance overhead
-2. **Context words are per-call, not shared** — element names are scoped to the class being checked (its own plus everything up its `extends` chain), model names are shared across all checks in a run
+2. **Context words are per-call, not shared** — element names are scoped to the class being checked (its own plus everything up its `extends` chain), class names are shared by every class of one library in a run (its own library's and its declared `uses`)
 3. **Spell checker is cached and invalidated** — recreated only when languages or dictionaries change, not per-model
 4. **Accepted words are separate from language dictionaries** — a repository's words are always included regardless of language selection
 5. **HTML entity handling** — decoded entities with non-ASCII characters (e.g., `\u0394` from `&Delta;`) are skipped entirely via `ShouldSkipWord`
