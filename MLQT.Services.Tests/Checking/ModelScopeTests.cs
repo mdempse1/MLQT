@@ -151,6 +151,52 @@ public class ModelScopeTests
         Assert.Same(lenient, map["B.One"]);
     }
 
+    [Fact]
+    public void ModelToStyleSettings_LeavesOutAReferenceOnlyRepository_WhateverItsOwnSettingsEnable()
+    {
+        // The combined startup pass reads this map. A vendor's checkout with its own
+        // .mlqt/settings.json was checked against those rules, and its findings listed as the user's.
+        var vendorRules = new StyleCheckingSettings();
+        vendorRules.RuleSeverities[RuleIds.OneOfEachSection] = RuleSeverity.Error;
+        var vendor = Repo("vendor", vendorRules);
+        vendor.IsReferenceOnly = true;
+
+        var map = ModelScope.ModelToStyleSettings(
+        [
+            Library("Mine", "mine", "Mine.A"),
+            Library("Vendor", "vendor", "Vendor.A"),
+        ],
+            id => id == "vendor" ? vendor : Repo("mine", new StyleCheckingSettings()));
+
+        Assert.True(map.ContainsKey("Mine.A"));
+        Assert.False(map.ContainsKey("Vendor.A"));
+    }
+
+    [Fact]
+    public void ModelToStyleSettings_LeavesOutALibraryFromTheReferenceLibrariesSetting()
+    {
+        var reference = Library("Ref", null, "Ref.A");
+        reference.IsReferenceOnly = true;
+
+        var map = ModelScope.ModelToStyleSettings([reference], _ => null);
+
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void ModelToStyleSettings_AClassTheUserAlsoHas_KeepsTheirLibrarysSettings()
+    {
+        var mine = new StyleCheckingSettings();
+        var reference = Library("Shared", null, "Shared.A");
+        reference.IsReferenceOnly = true;
+
+        var map = ModelScope.ModelToStyleSettings(
+            [Library("Shared", "mine", "Shared.A"), reference],
+            _ => Repo("mine", mine));
+
+        Assert.Same(mine, map["Shared.A"]);
+    }
+
     // ---- RequiresDependencyAnalysis -----------------------------------------------------------
 
     [Fact]
@@ -172,6 +218,17 @@ public class ModelScopeTests
             Repo("repo-1", new StyleCheckingSettings()),
             Repo("repo-2", needsEdges),
         ]));
+    }
+
+    [Fact]
+    public void RequiresDependencyAnalysis_IgnoresAReferenceOnlyRepositorysRules()
+    {
+        var needsEdges = new StyleCheckingSettings();
+        needsEdges.RuleSeverities[RuleIds.UnusedClass] = RuleSeverity.Warning;
+        var vendor = Repo("vendor", needsEdges);
+        vendor.IsReferenceOnly = true;
+
+        Assert.False(ModelScope.RequiresDependencyAnalysis([vendor]));
     }
 
     [Fact]
