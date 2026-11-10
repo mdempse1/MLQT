@@ -63,6 +63,7 @@ public static class MlqtServiceCollectionExtensions
         services.AddSingleton<ILibraryDataService, LibraryDataService>();
         services.AddSingleton<IFileMonitoringService, FileMonitoringService>();
         services.AddSingleton<IRepositoryService, RepositoryService>();
+        services.AddSingleton<IReferenceLibraryLoader, ReferenceLibraryLoader>();
         services.AddSingleton<IFormattingPipeline, FormattingPipeline>();
         services.AddSingleton<ICodeReviewService, CodeReviewService>();
         services.AddSingleton<IBaselineStatusService, BaselineStatusService>();

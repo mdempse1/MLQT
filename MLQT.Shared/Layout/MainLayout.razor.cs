@@ -16,6 +16,7 @@ public partial class MainLayout : IDisposable
 {
     [Inject] private AppState NavState { get; set; } = null!;
     [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
+    [Inject] private IReferenceLibraryLoader ReferenceLibraryLoader { get; set; } = null!;
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private IFormattingPipeline FormattingPipeline { get; set; } = null!;
     [Inject] private IFilePickerService FilePickerService { get; set; } = null!;
@@ -834,84 +835,13 @@ public partial class MainLayout : IDisposable
     private async Task LoadReferenceLibrariesAsync()
     {
         var settings = await SettingsService.GetAsync("ReferenceLibraries", new ReferenceLibrarySettings());
-        if (settings.Paths.Count == 0)
-            return;
+        var summary = await ReferenceLibraryLoader.LoadAsync(settings.Paths, settings.UseEncryptedLibraryDocumentation);
 
-        LogProcessStart("MainLayout", "Loading reference libraries");
-        var loaded = 0;
-        var classes = 0;
-        var skipped = 0;
-
-        foreach (var configuredPath in settings.Paths)
+        foreach (var missing in summary.MissingFolders)
         {
-            if (string.IsNullOrWhiteSpace(configuredPath) || !Directory.Exists(configuredPath))
-            {
-                Warn("MainLayout", $"Reference library path not found: {configuredPath}");
-                await InvokeAsync(() => Snackbar.Add(
-                    $"Reference library path not found: {configuredPath}", Severity.Warning));
-                continue;
-            }
-
-            foreach (var libraryPath in LibraryDiscovery.DiscoverLibraryPaths(configuredPath))
-            {
-                try
-                {
-                    // Every reason not to load this one, in one place - see ReferenceLibraryRules.
-                    // The check that used to be here covered only an encrypted library whose name
-                    // matched one loaded from source, and missed the case that actually happens: the
-                    // same directory reached twice, because a reference-only repository and a
-                    // reference-library path can name the same folder and a real configuration did
-                    // that three times over.
-                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath);
-
-                    // The name is read from the library, not taken from its path - see
-                    // ReferenceLibraryRules.CandidateName, which is also where the reason it has to
-                    // be is written down.
-                    var skip = ReferenceLibraryRules.ReasonToSkip(
-                        libraryPath,
-                        isEncrypted,
-                        ReferenceLibraryRules.CandidateName(libraryPath, isEncrypted),
-                        LibraryDataService.Libraries,
-                        settings.UseEncryptedLibraryDocumentation);
-
-                    if (skip is not null)
-                    {
-                        Info("MainLayout", $"Skipping reference library at {libraryPath}: {skip}");
-                        skipped++;
-                        continue;
-                    }
-
-                    var library = await LibraryDataService.AddLibraryFromPathAsync(libraryPath);
-
-                    // The one place that knows this library is reference material. It has no
-                    // repository to carry the fact and — if it is readable rather than encrypted —
-                    // no stub nodes either, so without recording it here every consumer had to
-                    // re-derive it and the Metrics tab could not.
-                    library.IsReferenceOnly = true;
-
-                    if (library.ModelIds.Count == 0)
-                    {
-                        // An encrypted library with no documentation contributes nothing. Removing it
-                        // keeps it out of the tree rather than showing an empty node that suggests the
-                        // library is loaded and simply has no classes.
-                        LibraryDataService.RemoveLibrary(library.Id);
-                        continue;
-                    }
-
-                    loaded++;
-                    classes += library.ModelIds.Count;
-                }
-                catch (Exception ex)
-                {
-                    Warn("MainLayout", $"Failed to load reference library '{libraryPath}': {ex.Message}");
-                }
-            }
+            await InvokeAsync(() => Snackbar.Add(
+                $"Reference library path not found: {missing}", Severity.Warning));
         }
-
-        Info("MainLayout",
-            $"Loaded {loaded} reference libraries ({classes} classes) for reference resolution" +
-            (skipped > 0 ? $"; skipped {skipped} already loaded" : ""));
-        LogProcessEnd("MainLayout", "Loading reference libraries");
     }
 
     /// <summary>

@@ -6,6 +6,7 @@ public partial class SettingsReferenceLibraries : IDisposable
     [Inject] private IFilePickerService FilePickerService { get; set; } = null!;
     [Inject] private AppState NavState { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
+    [Inject] private IReferenceLibraryLoader ReferenceLibraryLoader { get; set; } = null!;
 
     private ReferenceLibrarySettings _settings = new();
 
@@ -66,12 +67,34 @@ public partial class SettingsReferenceLibraries : IDisposable
 
         _settings.Paths.Add(folder);
         await SaveAsync();
+
+        // Loaded now rather than at the next project load: until then the folder was listed here and
+        // resolved nothing. The folders already loaded are skipped, so only the new one's libraries
+        // arrive.
+        var summary = await ReferenceLibraryLoader.LoadAsync(_settings.Paths, _settings.UseEncryptedLibraryDocumentation);
+        if (summary.Loaded > 0)
+            Snackbar.Add(
+                $"Loaded {summary.Loaded} reference librar{(summary.Loaded == 1 ? "y" : "ies")}. " +
+                "Run the checks again to update the findings.", Severity.Success);
     }
 
     private async Task RemovePath(string path)
     {
         _settings.Paths.Remove(path);
         await SaveAsync();
+
+        // Unloaded now: left in the graph until the next project load, the folder's classes went on
+        // resolving references and counting as known words, so checking every class again reported
+        // what it had with the folder - and a restart reported something else. The folders that remain
+        // are then loaded again, which brings in any library this folder had been standing in for
+        // (one skipped elsewhere as a second copy of it), and nothing they had loaded already.
+        var unloaded = ReferenceLibraryLoader.UnloadFolder(path);
+        await ReferenceLibraryLoader.LoadAsync(_settings.Paths, _settings.UseEncryptedLibraryDocumentation);
+
+        if (unloaded > 0)
+            Snackbar.Add(
+                $"Unloaded {unloaded} reference librar{(unloaded == 1 ? "y" : "ies")}. " +
+                "Run the checks again to update the findings.", Severity.Info);
     }
 
     /// <summary>Persists the settings. Called by the Settings page's Save button.</summary>

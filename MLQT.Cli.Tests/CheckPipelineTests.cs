@@ -212,6 +212,32 @@ public class CheckPipelineTests : IDisposable
         Assert.Contains("loaded DepLib for reference resolution", stderr);
     }
 
+    [Fact]
+    public void ADependencyHoldingAnotherCopyOfTheCheckedLibrary_IsNotLoaded_AndTheCheckoutIsChecked()
+    {
+        // A tool's library folder ships its own MSL, and pointing --dependency at the folder loaded
+        // that copy into the same graph as the checkout, under the same class ids - so the copy
+        // loaded last, the tool's, was the one checked, and every finding named a file under the
+        // tool's install. Here the two copies differ in the one thing the rule looks at: only the
+        // checkout's M lacks a description.
+        var lib = NewDirectory("TestLib");
+        Write(lib, ".mlqt/settings.json", """{ "ClassHasDescription": true }""");
+        Write(lib, "package.mo", "package TestLib \"A test library\"\nend TestLib;\n");
+        Write(lib, "package.order", "M\n");
+        Write(lib, "M.mo", "within TestLib;\nmodel M\n  Real x;\nend M;\n");
+
+        var tool = NewDirectory("ToolLibraries");
+        Write(tool, "TestLib/package.mo",
+            "package TestLib \"A test library\"\n  model M \"Described in the tool's copy\"\n  end M;\nend TestLib;\n");
+
+        var (_, stdout, stderr) = Run("check", lib, "--dependency", tool, "--format", "json");
+
+        Assert.Contains("not loading dependency 'TestLib'", stderr);
+        Assert.Contains("\"Model\": \"TestLib.M\"", stdout);
+        Assert.Contains("MLQT.Doc.ClassDescription", stdout);
+        Assert.DoesNotContain("ToolLibraries", stdout);
+    }
+
     // ── encrypted libraries, which can only be loaded for reference ──
 
     private string EncryptedLibrary(string name, string version, bool withHelp)

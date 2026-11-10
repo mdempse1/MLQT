@@ -22,3 +22,21 @@ override MLQT.Services.Checking.VcsSettingsReload.ToString() -> string!
 static MLQT.Services.Checking.VcsSettingsReload.operator !=(MLQT.Services.Checking.VcsSettingsReload? left, MLQT.Services.Checking.VcsSettingsReload? right) -> bool
 static MLQT.Services.Checking.VcsSettingsReload.operator ==(MLQT.Services.Checking.VcsSettingsReload? left, MLQT.Services.Checking.VcsSettingsReload? right) -> bool
 static MLQT.Services.Checking.VcsSettingsReloader.Reload(MLQT.Services.Interfaces.IRepositoryService! repositories, string! repositoryId) -> MLQT.Services.Checking.VcsSettingsReload!
+MLQT.Services.Interfaces.IReferenceLibraryLoader
+MLQT.Services.Interfaces.IReferenceLibraryLoader.LoadAsync(System.Collections.Generic.IReadOnlyList<string!>! folders, bool useEncryptedDocumentation) -> System.Threading.Tasks.Task<MLQT.Services.Interfaces.ReferenceLibraryLoadSummary!>!
+MLQT.Services.Interfaces.IReferenceLibraryLoader.UnloadFolder(string! folder) -> int
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.Classes.get -> int
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.Classes.init -> void
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.Loaded.get -> int
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.Loaded.init -> void
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.MissingFolders.get -> System.Collections.Generic.IReadOnlyList<string!>!
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.MissingFolders.init -> void
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.ReferenceLibraryLoadSummary() -> void
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.Skipped.get -> int
+MLQT.Services.Interfaces.ReferenceLibraryLoadSummary.Skipped.init -> void
+MLQT.Services.ReferenceLibraryLoader
+MLQT.Services.ReferenceLibraryLoader.LoadAsync(System.Collections.Generic.IReadOnlyList<string!>! folders, bool useEncryptedDocumentation) -> System.Threading.Tasks.Task<MLQT.Services.Interfaces.ReferenceLibraryLoadSummary!>!
+MLQT.Services.ReferenceLibraryLoader.ReferenceLibraryLoader(MLQT.Services.Interfaces.ILibraryDataService! libraries) -> void
+MLQT.Services.ReferenceLibraryLoader.UnloadFolder(string! folder) -> int
+static MLQT.Services.LibraryPrecedence.ReadableCopyOutranking((string! Name, string! Location, bool IsReferenceOnly, int Order) copy, System.Collections.Generic.IEnumerable<(string! Name, string! Location, bool IsReferenceOnly, int Order)>! copies) -> string?

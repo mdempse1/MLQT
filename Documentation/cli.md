@@ -137,6 +137,16 @@ note: loaded Modelica, ModelicaReference, ModelicaServices, ModelicaTest, … fo
 On ExternData this removes 96 findings — 91 inherited icons and all 5 `modelica://` references — which
 is the same effect as adding MSL to the project in the desktop app.
 
+A dependency is never another copy of a library being checked. A simulation tool's library folder
+usually ships its own MSL, so pointing `--dependency` at that folder while checking an MSL checkout
+finds a second `Modelica`; it is not loaded, and the run says which copy is used:
+
+```
+note: not loading dependency 'Modelica' at C:\...\Library\Modelica 4.1.0: the copy at C:\...\MSL\Modelica is used
+```
+
+Of two dependencies that are copies of one library, the one named first is used.
+
 ### Encrypted libraries
 
 `--dependency` also accepts a commercial library that ships **encrypted** — a directory holding a

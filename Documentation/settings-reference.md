@@ -54,7 +54,7 @@ Found under **Settings > Reference Libraries**. These are libraries MLQT loads *
 | **Library folders** | Directories to scan. Each may hold a single library or many; MLQT finds every library beneath. |
 | **Recover encrypted libraries from their documentation** | On by default. Reconstructs the classes of encrypted (`package.moe`) libraries from the vendor's shipped HTML documentation. Turn it off to leave those namespaces opaque. |
 
-The table shows how many libraries each folder contributes and how many are encrypted, so a mistyped or moved path shows up immediately rather than later as unresolved references. Changes take effect the next time the project is loaded.
+The table shows how many libraries each folder contributes and how many are encrypted, so a mistyped or moved path shows up immediately rather than later as unresolved references. Adding or removing a folder loads or unloads its libraries at once; run the checks again to update the findings. Changing the switch takes effect the next time the project is loaded.
 
 Reference libraries are never checked, formatted, committed or written to. They appear in the library browser for reading only.
 

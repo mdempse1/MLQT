@@ -10,10 +10,11 @@ namespace MLQT.Services.Helpers;
 /// <para><b>Two libraries claiming one class was ordinary until B268.</b> A tool's library folder
 /// ships the encrypted build of a library the user also has checked out as source, both were loaded,
 /// and the losing entry went on listing ids whose node was now the source's. An encrypted build is
-/// no longer loaded beside its source (<c>LibraryPrecedence</c>), so that case has gone. Two
-/// claimants still arise from two readable checkouts of one library in different repositories, and
-/// from an encrypted library whose folder is not named after the package it documents — which the
-/// name rule cannot see.</para>
+/// no longer loaded beside its source (<c>LibraryPrecedence</c>), so that case has gone, and since
+/// <c>LibraryPrecedence.ReadableCopyOutranking</c> neither is a second readable copy of a library in
+/// another repository. Two claimants still arise from a route that loads a readable copy without
+/// asking it, and from an encrypted library whose folder is not named after the package it
+/// documents — which the name rule cannot see.</para>
 ///
 /// <para><b>So the answer comes from the graph, not from the list.</b> Whichever way the collision
 /// was resolved, the owner is the library that could have supplied the node that is actually there:

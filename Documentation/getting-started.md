@@ -192,7 +192,7 @@ Without them, a reference into a library you have not loaded is reported as brok
 
 ![Screenshot: The Reference Libraries tab, showing the "Recover encrypted libraries from their documentation" switch above a "Library folders" table with one folder configured and the number of libraries it contributes beside it.](Images/getting-started-10.png)
 
-The table shows how many libraries each folder contributes and how many of them are encrypted, so a mistyped or moved path shows up immediately rather than later as unresolved references. Changes take effect the next time the project is loaded.
+The table shows how many libraries each folder contributes and how many of them are encrypted, so a mistyped or moved path shows up immediately rather than later as unresolved references. Adding or removing a folder loads or unloads its libraries at once; run the checks again to update the findings. Changing the switch takes effect the next time the project is loaded.
 
 Reference libraries are never checked, formatted, committed or written to. They appear in the library browser for reading only.
 
@@ -212,6 +212,15 @@ Both make a library readable without letting it into your quality figures — no
 | **Stored in** | Application settings on this machine | The project |
 
 As a rule: if you would want the library loaded whichever project you opened, put it in **Reference Libraries** and forget about it. If it belongs to one line of work, add it to that project and tick **Reference only**.
+
+### When two places hold the same library
+
+A tool's library folder usually ships its own copy of the Modelica Standard Library, so a project holding an MSL checkout and that folder has two `Modelica` libraries. Only one is loaded, and it is the one the library browser shows and the one that is checked:
+
+- A copy in your own repositories is used over one in a repository marked **Reference only**, and over one from **Reference Libraries**
+- Between two repositories otherwise alike, the one higher in the project's repository list is used
+
+The repository list's order is what decides, so moving a repository up or down takes effect the next time the project is loaded.
 
 Reference library paths are deliberately machine-level rather than committed alongside a repository, because an install location is a property of your machine — a colleague's checkout or a CI runner will not share it. In CI, pass the equivalent with the `mlqt` CLI's `--dependency` option instead (see [cli.md](cli.md)).
 

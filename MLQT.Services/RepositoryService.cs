@@ -484,6 +484,8 @@ public class RepositoryService : IRepositoryService
             // project has been discovered by now, so this is the whole project's answer and not a
             // race between parallel loads (B268).
             var readable = ReadableLibrariesInProject();
+            var readableLocations = readable.Select(c => (c.Name, c.Location)).ToList();
+            var order = PlaceInProject(repository);
 
             // Load all libraries in parallel for much faster repository loading
             var tasks = pathsToLoad.Select(relativePath => Task.Run(async () =>
@@ -497,14 +499,33 @@ public class RepositoryService : IRepositoryService
                     // An encrypted build of a library the project also has as source is not read at
                     // all. LibraryDataService would retire it on arrival anyway; this saves reading
                     // its documentation to find that out. See LibraryPrecedence.
-                    if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath)
-                        && LibraryPrecedence.ReadableSourceFor(
-                            repository.DiscoveredLibraries.GetValueOrDefault(relativePath), readable) is { } source)
+                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath);
+                    var name = repository.DiscoveredLibraries.GetValueOrDefault(relativePath);
+                    if (isEncrypted
+                        && LibraryPrecedence.ReadableSourceFor(name, readableLocations) is { } source)
                     {
                         Info("RepositoryService",
-                            $"Not loading encrypted library '{repository.DiscoveredLibraries[relativePath]}' at " +
+                            $"Not loading encrypted library '{name}' at " +
                             $"{fullPath}: readable source for it is in the project at {source}");
                         return;
+                    }
+
+                    // Nor a readable copy of a library another repository also has, when that one
+                    // outranks it: both would load into one graph under the same class ids, the
+                    // browser would show one copy and the checker read the other. Decided here, from
+                    // discovery, so the answer does not depend on which parallel load finished first.
+                    if (!isEncrypted && name is not null)
+                    {
+                        var copy = (name, fullPath, repository.IsReferenceOnly, order);
+                        if (LibraryPrecedence.ReadableCopyOutranking(copy, readable) is { } winner)
+                        {
+                            Info("RepositoryService",
+                                $"Not loading library '{name}' at {fullPath}: the copy at {winner} is used " +
+                                "(a repository that is not reference-only, or higher in the project's list, wins)");
+                            return;
+                        }
+
+                        RetireLoadedCopiesOutrankedBy(copy);
                     }
 
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
@@ -563,11 +584,13 @@ public class RepositoryService : IRepositoryService
             : Path.Combine(repository.LocalPath, relativePath);
 
     /// <summary>
-    /// Every readable library the project knows of, by name and location: each repository's
-    /// discovered libraries that are not encrypted, and every readable library already loaded — which
-    /// covers the ones that arrived by the reference-library setting and have no repository.
+    /// Every readable library the project knows of, with what ranks two copies of one
+    /// (<see cref="LibraryPrecedence.ReadableCopyOutranking"/>): each repository's discovered
+    /// libraries that are not encrypted, ranked by the repository; and every readable library already
+    /// loaded, which covers the ones that arrived by the reference-library setting and have no
+    /// repository - reference-only, and below every repository.
     /// </summary>
-    private List<(string Name, string Location)> ReadableLibrariesInProject()
+    private List<(string Name, string Location, bool IsReferenceOnly, int Order)> ReadableLibrariesInProject()
     {
         List<Repository> repositories;
         lock (_lock)
@@ -575,24 +598,84 @@ public class RepositoryService : IRepositoryService
             repositories = _repositories.ToList();
         }
 
-        var readable = new List<(string Name, string Location)>();
-        foreach (var repository in repositories)
+        var readable = new List<(string Name, string Location, bool IsReferenceOnly, int Order)>();
+        for (var order = 0; order < repositories.Count; order++)
         {
+            var repository = repositories[order];
             foreach (var (relativePath, name) in repository.DiscoveredLibraries.ToList())
             {
                 var fullPath = LibraryPath(repository, relativePath);
                 if (!EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath))
-                    readable.Add((name, fullPath));
+                    readable.Add((name, fullPath, repository.IsReferenceOnly, order));
             }
         }
 
         foreach (var library in _libraryDataService.Libraries)
         {
             if (!library.IsReadOnly)
-                readable.Add((library.Name, library.SourcePath));
+                readable.Add(ReadableCopyOf(library, repositories));
         }
 
         return readable;
+    }
+
+    /// <summary>Where <paramref name="repository"/> stands in the project's list, top first.</summary>
+    private int PlaceInProject(Repository repository)
+    {
+        lock (_lock)
+        {
+            var index = _repositories.IndexOf(repository);
+            return index < 0 ? int.MaxValue : index;
+        }
+    }
+
+    /// <summary>
+    /// A loaded readable library as <see cref="LibraryPrecedence.ReadableCopyOutranking"/> ranks it:
+    /// by its repository, or - with none, as a library from the reference-library setting has - as
+    /// reference-only and below every repository.
+    /// </summary>
+    private static (string Name, string Location, bool IsReferenceOnly, int Order) ReadableCopyOf(
+        LoadedLibrary library, List<Repository> repositories)
+    {
+        var index = library.RepositoryId is null ? -1 : repositories.FindIndex(r => r.Id == library.RepositoryId);
+        return index < 0
+            ? (library.Name, library.SourcePath, true, int.MaxValue)
+            : (library.Name, library.SourcePath, repositories[index].IsReferenceOnly, index);
+    }
+
+    /// <summary>
+    /// Takes out every loaded readable copy of <paramref name="arriving"/>'s library that it outranks,
+    /// before it loads: a repository added above one already loaded, or a project repository arriving
+    /// after the reference-library setting loaded the same library. Taken out first, because both
+    /// copies' classes share ids - removed afterwards, the loser would take the winner's nodes with it.
+    /// </summary>
+    private void RetireLoadedCopiesOutrankedBy((string Name, string Location, bool IsReferenceOnly, int Order) arriving)
+    {
+        List<Repository> repositories;
+        lock (_lock)
+        {
+            repositories = _repositories.ToList();
+        }
+
+        foreach (var loaded in _libraryDataService.Libraries
+                     .Where(l => !l.IsReadOnly && LibraryPrecedence.SameLibrary(l.Name, arriving.Name))
+                     .ToList())
+        {
+            if (LibraryPrecedence.ReadableCopyOutranking(ReadableCopyOf(loaded, repositories), [arriving]) is null)
+                continue;
+
+            Info("RepositoryService",
+                $"Unloading library '{loaded.Name}' at {loaded.SourcePath}: the copy at {arriving.Location} " +
+                "outranks it (a repository that is not reference-only, or higher in the project's list, wins)");
+
+            _libraryDataService.RemoveLibrary(loaded.Id);
+            loaded.SupersededBy = arriving.Location;
+            lock (_lock)
+            {
+                foreach (var repository in _repositories)
+                    repository.LibraryIds.Remove(loaded.Id);
+            }
+        }
     }
 
     /// <inheritdoc />

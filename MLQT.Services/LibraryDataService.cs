@@ -705,6 +705,7 @@ public class LibraryDataService : ILibraryDataService
     {
         List<(LoadedLibrary Library, LoadedLibrary Winner, int Removed)> retired = [];
         bool registered;
+        LoadedLibrary? twin = null;
 
         lock (_lock)
         {
@@ -713,10 +714,30 @@ public class LibraryDataService : ILibraryDataService
 
             registered = !retired.Any(r => ReferenceEquals(r.Library, library));
             if (registered)
+            {
+                twin = library.IsReadOnly
+                    ? null
+                    : _libraries.FirstOrDefault(l => !l.IsReadOnly
+                                                     && LibraryPrecedence.SameLibrary(l.Name, library.Name)
+                                                     && !SameSource(l.SourcePath, library.SourcePath));
                 _libraries.Add(library);
+            }
         }
 
         LogRetired(retired);
+
+        // Two readable copies rank equally here, so nothing above retires either. The callers that
+        // know which should win - RepositoryService from the project's order, the CLI from what it
+        // was asked to check - decide before either is read (LibraryPrecedence.ReadableCopyOutranking);
+        // reaching here means a route that did not, and the graph now holds whichever copy's classes
+        // loaded last while the browser shows the first. Said, because nothing else would say it.
+        if (twin is not null)
+        {
+            Warn("LibraryDataService",
+                $"Two readable copies of library '{library.Name}' are loaded, from {twin.SourcePath} and " +
+                $"{library.SourcePath}; their classes share ids, so which copy is checked is not defined");
+        }
+
         return registered;
     }
 
@@ -824,6 +845,24 @@ public class LibraryDataService : ILibraryDataService
             var root = library.SourcePath + "/";
             foreach (var file in _combinedGraph.FileNodes
                          .Where(f => f.FilePath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                         .ToList())
+                _combinedGraph.RemoveNode(file.Id);
+        }
+        else if (!library.IsReadOnly && !string.IsNullOrEmpty(library.SourcePath))
+        {
+            // A readable library's files go too, once no class in the graph is in them. They were
+            // left behind, holding ids whose classes had gone, which was harmless while removing a
+            // library meant removing its repository; since a readable copy can be unloaded for one
+            // that outranks it (LibraryPrecedence.ReadableCopyOutranking), the outranked copy's files
+            // would stay in the graph beside the winner's - files of a library nobody can see.
+            var root = Path.TrimEndingDirectorySeparator(library.SourcePath);
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            foreach (var file in _combinedGraph.FileNodes
+                         .Where(f => string.Equals(f.FilePath, root, comparison)
+                                     || f.FilePath.StartsWith(root + Path.DirectorySeparatorChar, comparison)
+                                     || f.FilePath.StartsWith(root + Path.AltDirectorySeparatorChar, comparison))
+                         .Where(f => !f.ContainedModelIds.Any(id =>
+                             _combinedGraph.GetNode<ModelNode>(id)?.ContainingFileId == f.Id))
                          .ToList())
                 _combinedGraph.RemoveNode(file.Id);
         }

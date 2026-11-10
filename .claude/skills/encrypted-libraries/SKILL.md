@@ -194,6 +194,19 @@ agrees and retirement waits for `Register`. **And two supplied copies**, which r
 first stays and the second is not read, since both would put their files under the same in-memory
 root.
 
+**Two readable copies also rank equally, and `Register` cannot settle them**: both load into one
+graph under the same class ids, in parallel, so the graph holds whichever copy wrote each class last
+while the browser lists the library under whichever registered first. A checkout of MSL beside a
+tool's library folder showed MSL under the checkout and checked the tool's copy. So the callers that
+know which should win decide *before* either is read, through
+`LibraryPrecedence.ReadableCopyOutranking`: a copy that is not reference-only beats one that is, then
+the lower order (the repository's place in the project's list, top first; for the CLI, the checked
+library, then dependencies in the order given), then location. `RepositoryService.LoadLibrariesAsync`
+skips an outranked copy, and unloads a loaded one the arriving copy outranks before it loads;
+`CheckPipeline` skips a `--dependency` copy. A route that decides nothing - two readable copies
+registered anyway - is warned about in `Register`. Reordering repositories does not reload anything:
+the new order decides at the next load or refresh.
+
 `SuppliedLibraryToolTests` (MLQT.McpServer.Tests) calls **every** MCP tool that names a class, by
 reflection, on a supplied class, and accepts exactly two outcomes: an answer, or `ReadOnlyClassGuard`'s
 refusal. Any other error fails it, naming the tool, as does any change to the class or the user's

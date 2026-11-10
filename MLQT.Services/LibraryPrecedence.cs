@@ -33,6 +33,10 @@ namespace MLQT.Services;
 /// <c>TotalModelCount</c>, <c>DictionaryScope</c> and <c>LibraryOwnership</c> each had to be taught
 /// to read around.</para>
 ///
+/// <para><b>Two readable copies</b> rank equally by kind, and are decided by
+/// <see cref="ReadableCopyOutranking"/> before either is read: reference-only loses, then the
+/// repository lower in the project's list, never whichever load finished first.</para>
+///
 /// <para><b>Two places apply it, deliberately.</b> <c>RepositoryService.LoadLibrariesAsync</c> asks
 /// <see cref="ReadableSourceFor"/> before loading, from the names discovery already has, so the
 /// encrypted build is never read at all — that is the ordinary case and the one worth being cheap.
@@ -67,6 +71,81 @@ public static class LibraryPrecedence
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Where a readable copy of <paramref name="copy"/>'s library that outranks it is, or null when
+    /// none does - <paramref name="copy"/> is the one to load.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Two readable copies rank equally by kind</b>, so <see cref="Retires"/> keeps both, and
+    /// both then load into one graph under the same class ids. Which copy's class a node ends up being
+    /// is whichever load wrote it last - and the loads run in parallel - while the library browser
+    /// shows the class under whichever library registered first. A project holding a checkout of MSL
+    /// and a tool's library folder showed MSL under the checkout and checked the tool's copy, and
+    /// <c>mlqt check --dependency</c> on that folder checked the tool's copy instead of the library it
+    /// was pointed at. So the answer is decided <b>before</b> either copy is read, from what each
+    /// caller knows about where they come from, and the losing copy is never loaded.</para>
+    ///
+    /// <para><b>The rank:</b> a copy that is not reference-only beats one that is - the user's own
+    /// code over a tool's folder, the library being checked over a <c>--dependency</c>; then the lower
+    /// <c>Order</c>, which in a project is the repository's place in the list, top first. Never load
+    /// order, which is a race between parallel loads. Two copies equal on both are ordered by location,
+    /// ordinally, so even that gives one answer every time.</para>
+    ///
+    /// <para>A copy at the same location as <paramref name="copy"/> is the same copy and never
+    /// outranks it.</para>
+    /// </remarks>
+    /// <param name="copy">The copy about to be loaded.</param>
+    /// <param name="copies">Every readable copy known to the caller, <paramref name="copy"/> included
+    /// or not: a project's discovered and loaded libraries, or the CLI's checked and dependency ones.</param>
+    public static string? ReadableCopyOutranking(
+        (string Name, string Location, bool IsReferenceOnly, int Order) copy,
+        IEnumerable<(string Name, string Location, bool IsReferenceOnly, int Order)> copies)
+    {
+        (string Name, string Location, bool IsReferenceOnly, int Order)? best = null;
+        foreach (var other in copies)
+        {
+            if (!SameLibrary(other.Name, copy.Name) || SameLocation(other.Location, copy.Location))
+                continue;
+
+            if (ReadableRank(other, copy) < 0 && (best is null || ReadableRank(other, best.Value) < 0))
+                best = other;
+        }
+
+        return best?.Location;
+    }
+
+    /// <summary>Negative when <paramref name="a"/> outranks <paramref name="b"/>.</summary>
+    private static int ReadableRank(
+        (string Name, string Location, bool IsReferenceOnly, int Order) a,
+        (string Name, string Location, bool IsReferenceOnly, int Order) b)
+    {
+        if (a.IsReferenceOnly != b.IsReferenceOnly)
+            return a.IsReferenceOnly ? 1 : -1;
+
+        if (a.Order != b.Order)
+            return a.Order.CompareTo(b.Order);
+
+        return string.CompareOrdinal(NormalizedLocation(a.Location), NormalizedLocation(b.Location));
+    }
+
+    private static bool SameLocation(string a, string b) =>
+        string.Equals(NormalizedLocation(a), NormalizedLocation(b),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static string NormalizedLocation(string location)
+    {
+        try
+        {
+            var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(location));
+            return OperatingSystem.IsWindows() ? full.ToUpperInvariant() : full;
+        }
+        catch (Exception)
+        {
+            // Not a path on disk - a supplied library's in-memory root.
+            return location;
+        }
     }
 
     /// <summary>

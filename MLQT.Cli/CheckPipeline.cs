@@ -271,6 +271,17 @@ internal static class CheckPipeline
         // Dependencies are loaded into the SAME graph so references resolve — an inherited icon from
         // Modelica.Icons.*, a modelica:// link into MSL, a type the code extends — but they are kept
         // out of `models`, which is the reported set. Their own findings are not the user's problem.
+        //
+        // A dependency that is another readable copy of a library being checked is not loaded at all,
+        // nor a second copy of one dependency: both copies would share class ids in the one graph, and
+        // the copy loaded last would be the one checked - which made `--dependency` on a tool's library
+        // folder check the tool's MSL instead of the checkout it was pointed at. The library being
+        // checked outranks every dependency, and an earlier dependency a later one
+        // (LibraryPrecedence.ReadableCopyOutranking).
+        var readableCopies = libraryData.Libraries
+            .Where(l => !l.IsReadOnly)
+            .Select(l => (l.Name, l.SourcePath, IsReferenceOnly: false, Order: 0))
+            .ToList();
         var dependencyLibraries = new List<string>();
         foreach (var dependency in dependencyPaths ?? [])
         {
@@ -282,6 +293,19 @@ internal static class CheckPipeline
 
             foreach (var path in LibraryDiscovery.DiscoverLibraryPaths(dependency))
             {
+                if (!EncryptedLibraryDetector.IsEncryptedLibraryRoot(path)
+                    && LibraryDiscovery.ReadLibraryName(path) is { } name)
+                {
+                    var copy = (name, path, IsReferenceOnly: true, Order: readableCopies.Count);
+                    if (LibraryPrecedence.ReadableCopyOutranking(copy, readableCopies) is { } winner)
+                    {
+                        stderr.WriteLine($"note: not loading dependency '{name}' at {path}: the copy at {winner} is used");
+                        continue;
+                    }
+
+                    readableCopies.Add(copy);
+                }
+
                 try
                 {
                     var library = await libraryData.AddLibraryFromPathAsync(path);
