@@ -318,6 +318,31 @@ public static class IncrementalFormatter
     /// </remarks>
     private static void RefreshClassesFromWrittenFile(DirectedGraph graph, FileToFormat entry, string content)
     {
+        var retrim = new HashSet<string>(StringComparer.Ordinal);
+        RefreshClassesFromFileText(entry.FilePath, entry.Models, content, retrim.Add);
+
+        if (retrim.Count > 0)
+            PackageCodeTrimmer.TrimStandaloneChildren(graph, retrim);
+    }
+
+    /// <summary>
+    /// The classes of a file just written, taken from its text: each one's stored source becomes its
+    /// verbatim slice of <paramref name="content"/>, and its lines and offsets where that text has
+    /// them, so <c>ClassLocation</c> maps a finding to the line it is on. Shared by both formatters -
+    /// Format All stored the rendered text and gave up the mapping instead, so every finding after it
+    /// was reported at its class's first line until the project was reloaded.
+    /// </summary>
+    /// <param name="filePath">The file, for the log.</param>
+    /// <param name="models">Every class the graph stores in the file.</param>
+    /// <param name="content">The file's text as written.</param>
+    /// <param name="retrim">
+    /// Given each package that had been trimmed, for the caller to trim again from its new source once
+    /// every file is done (<see cref="PackageCodeTrimmer"/>). Touches only <paramref name="models"/>,
+    /// so files can be refreshed in parallel.
+    /// </param>
+    internal static void RefreshClassesFromFileText(
+        string filePath, IEnumerable<ModelNode> models, string content, Func<string, bool> retrim)
+    {
         List<ModelInfo> extracted;
         try
         {
@@ -326,7 +351,7 @@ public static class IncrementalFormatter
         }
         catch (Exception ex)
         {
-            Warn(nameof(IncrementalFormatter), $"Could not re-read the classes of {entry.FilePath}: {ex.Message}");
+            Warn(nameof(IncrementalFormatter), $"Could not re-read the classes of {filePath}: {ex.Message}");
             extracted = new();
         }
 
@@ -334,20 +359,19 @@ public static class IncrementalFormatter
         foreach (var info in extracted)
             byId.TryAdd(GraphBuilder.GenerateModelId(info.ParentModelName, info.Name), info);
 
-        var retrim = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var model in entry.Models)
+        foreach (var model in models)
         {
             if (!byId.TryGetValue(model.Id, out var info))
             {
                 // Not expected - the file was rendered from a parse that found it - but if the text
                 // no longer has the class where the load did, no line in it can be trusted to map.
-                Warn(nameof(IncrementalFormatter), $"{model.Id} not found in the formatted {entry.FilePath}");
+                Warn(nameof(IncrementalFormatter), $"{model.Id} not found in the formatted {filePath}");
                 model.SourceMatchesFile = false;
                 continue;
             }
 
             if (model.ChildrenTrimmed)
-                retrim.Add(model.Id);
+                retrim(model.Id);
 
             model.Definition.ModelicaCode = info.SourceCode;
             model.StartLine = info.StartLine;
@@ -358,8 +382,5 @@ public static class IncrementalFormatter
             model.ChildrenTrimmed = false;
             model.SourceMatchesFile = true;
         }
-
-        if (retrim.Count > 0)
-            PackageCodeTrimmer.TrimStandaloneChildren(graph, retrim);
     }
 }

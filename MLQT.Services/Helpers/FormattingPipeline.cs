@@ -224,6 +224,10 @@ public sealed class FormattingPipeline : IFormattingPipeline
         var allCreatedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var modelIdToFilePath = new Dictionary<string, string>();
 
+        // The files the saver itself wrote - not those kept as written to save them from the orphan
+        // sweep - whose classes are read back from them once the graph knows which file holds which.
+        var savedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         // Libraries whose files are not the save's to delete: one it skipped or could not finish.
         // An original file is an orphan only when everything it held was written somewhere else,
         // and a library with a failed write cannot say that of any of its files - so a single-file
@@ -360,6 +364,8 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         foreach (var file in saveResult.WrittenFiles)
                         {
                             allWrittenFiles.Add(file);
+                            if (file.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                                savedFiles.Add(file);
                         }
                         foreach (var dir in saveResult.CreatedDirectories)
                         {
@@ -499,6 +505,8 @@ public sealed class FormattingPipeline : IFormattingPipeline
         // Update FileNodes in the graph with new file paths
         FileNodeReconciler.ReassignModels(_libraryData.CombinedGraph, modelIdToFilePath);
 
+        await Task.Run(() => RefreshClassesFromSavedFiles(_libraryData.CombinedGraph, savedFiles));
+
         // An expanded library's classes are in the directory now, and the file it was loaded from
         // is gone. Left naming that file, the library placed no class from the new files: a Refresh,
         // a Code Review reload or a VCS update of any of them added its classes to no library until
@@ -508,6 +516,56 @@ public sealed class FormattingPipeline : IFormattingPipeline
 
         LogProcessEnd(nameof(FormattingPipeline), "Saving all libraries with formatting");
         return skippedFiles;
+    }
+
+    /// <summary>
+    /// Reads each class back from the file Format All wrote it to, so the graph holds the file's text,
+    /// lines and offsets, as a reload would.
+    /// </summary>
+    /// <remarks>
+    /// The saver stores the rendered text on each class and marks it as no longer the file's
+    /// (<see cref="ModelNode.SourceMatchesFile"/>), because it does not know where in the written file
+    /// the class landed. Left there, <c>ClassLocation</c> reported every finding at its class's first
+    /// line until the project was reloaded: in the Code Review list, and in the export, whose file lines
+    /// then matched the CLI's for almost nothing (2026-11-10, 68,125 of 70,841 findings at line 2).
+    /// The incremental formatter has always read its classes back from the file it wrote
+    /// (<see cref="IncrementalFormatter.RefreshClassesFromFileText"/>); this is the same, for every
+    /// file the save wrote. A file the save left alone - syntax errors, or formatting off - keeps the
+    /// classes it was loaded with, which still match it.
+    /// </remarks>
+    internal static void RefreshClassesFromSavedFiles(DirectedGraph graph, IEnumerable<string> savedFiles)
+    {
+        var retrim = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+
+        // In parallel: Format All writes every file of every library, and each refresh is a parse. A
+        // file's classes are its own, so no two files touch the same node.
+        Parallel.ForEach(savedFiles, filePath =>
+        {
+            var fileId = GraphBuilder.GenerateFileId(filePath);
+            if (graph.GetNode<FileNode>(fileId) is not { } fileNode)
+                return;
+
+            try
+            {
+                var readAt = File.GetLastWriteTimeUtc(filePath);
+                var content = ModelicaFileEncoding.ReadAllTextOnly(filePath);
+                IncrementalFormatter.RefreshClassesFromFileText(
+                    filePath, graph.GetModelsInFile(fileId).ToList(), content, id => retrim.TryAdd(id, 0));
+
+                // The classes are now the file as it stands, which is what the time stands for: the
+                // next startup's format can take them as loaded.
+                fileNode.LoadedWriteTimeUtc = readAt;
+            }
+            catch (Exception ex)
+            {
+                // The classes keep the rendered text and say so; a finding in them is reported at the
+                // class, which is never wrong about which class is meant.
+                Warn(nameof(FormattingPipeline), $"Could not read back the classes of {filePath}: {ex.Message}");
+            }
+        });
+
+        if (!retrim.IsEmpty)
+            PackageCodeTrimmer.TrimStandaloneChildren(graph, retrim.Keys.ToHashSet(StringComparer.Ordinal));
     }
 
     /// <summary>

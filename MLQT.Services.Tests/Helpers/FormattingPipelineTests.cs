@@ -445,6 +445,38 @@ public sealed class FormattingPipelineTests : IDisposable
         Assert.True(File.Exists(extraFile));
     }
 
+    [Fact]
+    public async Task AfterFormatAll_EveryLineOfAClassMapsToTheSameTextInItsFile()
+    {
+        // Format All stored the rendered text and gave up the line mapping, so every finding after it
+        // was reported at its class's first line - in Code Review and in the export, which then
+        // matched the CLI's file lines for almost nothing - until the project was reloaded.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(lib);
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "A\n");
+        File.WriteAllText(Path.Combine(lib, "A.mo"),
+            "within Lib;\nmodel A\nrecord R\nReal y;\nend R;\nReal x;\nequation\nx=1;\nend A;\n");
+        var (service, pipeline) = await RepositoryWith(lib);
+        var before = File.ReadAllText(Path.Combine(lib, "A.mo"));
+
+        await pipeline.SaveAllLibrariesWithFormattingAsync("repo");
+
+        Assert.NotEqual(before, File.ReadAllText(Path.Combine(lib, "A.mo")));   // it was formatted
+        var locations = MLQT.Services.Checking.ClassLocation.ForGraph(service.CombinedGraph);
+        foreach (var id in new[] { "Lib", "Lib.A", "Lib.A.R" })
+        {
+            var model = service.GetModelById(id)!;
+            Assert.True(model.SourceMatchesFile, id);
+            var location = locations[id];
+            var fileLines = File.ReadAllText(location.FilePath).ReplaceLineEndings("\n").Split('\n');
+            var classLines = model.Definition.ModelicaCode.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
+            // Trimmed: a nested class's source starts at its keyword, without the indentation before it.
+            for (var i = 1; i <= classLines.Length; i++)
+                Assert.Equal(classLines[i - 1].Trim(), fileLines[location.FileLine(i) - 1].Trim());
+        }
+    }
+
     // ============================================================================
     // Format All leaves a file with syntax errors as it is, and says so (B414)
     // ============================================================================
