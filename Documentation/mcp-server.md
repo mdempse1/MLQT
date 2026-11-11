@@ -201,6 +201,8 @@ An MCP server runs as long as its client keeps it. Claude Code keeps its servers
 - **A second copy of a library is refused, and the refusal says why.** MLQT holds one copy of each library, and a class id does not say whose. The refusal says when the loaded copy came in, that it may be another task's or an earlier conversation's, and that replacing it moves every later edit to that library's classes - the other work's included - onto the new copy. Pass `replace: true` only when the conversation loaded the other copy itself, or the user says so. This holds whatever the copy's folder is called: a clone in `MyLib-copy` is recognised as `MyLib` once loaded.
 - **A reset goes back to empty**: `mlqt_session` with action `reset`. Every library and repository is unloaded and the findings and analysis are forgotten. A library a host supplied from memory is kept, since only the host can supply it again.
 
+**Calls sent together are taken in the order they were sent.** An agent sends the tool calls of one message at once, and the calls that only read - reading a class, drawing a diagram, finding, browsing, listing findings, the session's status - run side by side. Every other call (a load, a reload, an edit, a check) waits for the calls before it and runs alone, and a call sent after it waits for it. So a diagram sent in the same message as a reload shows what the reload read. Before this, it could be drawn while the reload had the library's classes out, and their components came out as dashed boxes, as though their types were not loaded.
+
 **Tasks that edit their own copies of one library at the same time each need a server of their own** - a separate `claude` process for each. Sharing one server, they share one copy (B505).
 
 ## Working beside a simulator

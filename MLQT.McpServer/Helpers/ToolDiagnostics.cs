@@ -152,7 +152,10 @@ internal static class ToolDiagnostics
 
         foreach (var model in libraries.GetAllModels())
         {
-            if (string.Equals(model.Id, classId, StringComparison.OrdinalIgnoreCase))
+            // Never the id itself: one that was missing for the lookup and is there now - a reload that
+            // finished in between - was suggested as its own correction.
+            if (string.Equals(model.Id, classId, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(model.Id, classId, StringComparison.Ordinal))
                 otherCase = model.Id;
             else if (string.Equals(ModelicaName.LeafOf(model.Id), leaf, StringComparison.Ordinal))
                 sameLeaf.Add(model.Id);

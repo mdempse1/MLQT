@@ -42,6 +42,9 @@ public static class MlqtMcpServerExtensions
     /// <para>The coercion filter is added first, which makes it the outermost: a call filter the host
     /// adds afterwards sees the arguments already coerced. It works from each tool's input schema, so it
     /// covers the host's tools as well as MLQT's.</para>
+    /// <para>The same filter lets a call through only when nothing it could disturb is running: the
+    /// calls that only read run together, every other call - a host's own tools included - runs alone,
+    /// and they are admitted in the order they arrived. A host's own filters run inside that turn.</para>
     /// </remarks>
     public static IMcpServerBuilder AddMlqtMcpServer(this IServiceCollection services, MlqtMcpServerOptions? options = null)
     {
@@ -84,6 +87,9 @@ public static class MlqtMcpServerExtensions
         var toolUsageLogger = options?.ToolUsageLogger;
         var configureServer = options?.ConfigureServer;
 
+        // One per server: every call of this server's session goes through it.
+        var gate = new ToolCallGate();
+
         // An answer can load libraries as well as a load, so each call is noted after it as well as before.
         CallToolResult Noted(CallToolResult result, IServiceProvider? provider)
         {
@@ -119,6 +125,12 @@ public static class MlqtMcpServerExtensions
                     tools.TryGetPrimitive(name, out var tool) &&
                     ToolArgumentCoercion.For(tool) is { IsEmpty: false } scalars)
                     context.Params.Arguments = ToolArgumentCoercion.Coerce(args, scalars);
+
+                // A call that changes the session runs alone, and the reads run together, in the order
+                // they arrived: a client sends one message's calls at once, and a diagram drawn while a
+                // reload had the classes out of the graph showed them as not loaded (see ToolCallGate).
+                using var turn = await gate.EnterAsync(
+                    ToolCallGate.IsShared(context.Params?.Name, context.Params?.Arguments), cancellationToken);
 
                 // When each library came in, timed by the call that loaded it, whatever loaded it (B505).
                 Note(context.Services);

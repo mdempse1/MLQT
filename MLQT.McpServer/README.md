@@ -95,6 +95,12 @@ builder.Services
   `SessionState` the host registers itself has none, so its edits are written unformatted.
 - **The coercion filter is the first call filter, so the outermost**: a filter the host adds after
   sees the arguments already coerced, and the host's own tools are coerced too, from their schemas.
+- **The same filter lets one call that changes the session run at a time** (`Services/ToolCallGate.cs`).
+  A client sends one message's tool calls together, and the SDK runs them as they arrive. So
+  the calls that only read (`mlqt_get_class`, `mlqt_get_diagram_image`, `mlqt_get_guidance`,
+  `mlqt_find`, `mlqt_browse`, `mlqt_list_findings`, `mlqt_session`'s `status`) run together, and every
+  other call runs alone, in the order they arrived. **A host's own tools run alone**, since the gate
+  cannot tell what they touch, and a host's filters run inside the call's turn.
 - **It does not** choose a transport, add a logger, start the NLog file log, or construct a
   `ToolUsageLogger` (which reads its marker file from MLQT's folder) unless the options pass one.
 - **Set `<ServerGarbageCollection>true</ServerGarbageCollection>` in the host's project**, as every
@@ -182,6 +188,7 @@ A style finding carries the severity the repository configured for its rule, as 
 - `Services/McpServerJson.cs` / `McpServerJsonContext.cs` — the options every tool is registered with, and the compiled JSON contracts of every record in `Dtos/`, so a client reads the same field names from an obfuscated build (B502). A new result or argument record is listed in the context; `ObfuscationReadinessTests` fails until it is.
 - `Services/ToolParameterCheck.cs` — refuses to start a server whose tool parameters have been renamed, which would otherwise bind no client's arguments.
 - `Services/ToolArgumentCoercion.cs` — turns a quoted boolean or number into the scalar a tool's input schema asks for, and one string into a list of strings.
+- `Services/ToolCallGate.cs` — the reads run together, every other call alone, in the order they arrived.
 - `Services/ServerInstructions.cs`, `ToolUsageLogger.cs`, `McpHostSettings.cs` — the connect-time instructions, the opt-in usage log, and the generic host's settings.
 - `Helpers/WireNames.cs` — the text each enum in a result is sent as, spelled rather than taken from `ToString()`.
 - `dev/smoke.sh` — an `initialize` handshake over stdio. Calling tools by hand is what McpTester is for, and `InProcessServer` in the tests.

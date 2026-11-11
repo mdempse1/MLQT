@@ -78,6 +78,41 @@ public sealed class MlqtMcpServerExtensionsTests
         Assert.Equal(JsonValueKind.True, seen);
     }
 
+    /// <summary>
+    /// A read sent while a call that may change the session is running waits for it, over the protocol:
+    /// the SDK runs requests as they arrive, and a client sends one message's calls together. A host's
+    /// tool stands in for the reload, since the gate cannot tell what a host's tool touches.
+    /// </summary>
+    [Fact]
+    public async Task AReadSentDuringAChangeWaitsForIt()
+    {
+        var hold = new HoldGate();
+        await using var server = await InProcessServer.StartAsync(after: b =>
+        {
+            b.Services.AddSingleton(hold);
+            b.WithTools<HoldingTools>();
+        });
+
+        var change = server.CallAsync("host_hold", []);
+        try
+        {
+            await hold.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            var read = server.CallAsync("mlqt_session", []);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+            Assert.False(read.IsCompleted, "a status read ran while a change was still running");
+
+            hold.Release.TrySetResult();
+            Assert.NotEqual(true, (await read.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)).IsError);
+        }
+        finally
+        {
+            // Let go whatever happened, or the held call keeps the server from stopping.
+            hold.Release.TrySetResult();
+        }
+        Assert.Equal("held", Text(await change.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)));
+    }
+
     [Fact]
     public async Task SendsMlqtsInstructions()
     {
@@ -188,6 +223,26 @@ public sealed class HostTools
 {
     [McpServerTool(Name = "host_echo"), Description("Echoes its arguments.")]
     public static string Echo(bool flag, int count, string label) => $"{flag}:{count}:{label}";
+}
+
+/// <summary>Where a <see cref="HoldingTools"/> call says it has started, and waits to be let go.</summary>
+public sealed class HoldGate
+{
+    public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+}
+
+/// <summary>A host's tool that runs until the test lets it go.</summary>
+[McpServerToolType]
+public sealed class HoldingTools
+{
+    [McpServerTool(Name = "host_hold"), Description("Runs until released.")]
+    public static async Task<string> Hold(HoldGate gate)
+    {
+        gate.Entered.TrySetResult();
+        await gate.Release.Task;
+        return "held";
+    }
 }
 
 /// <summary>

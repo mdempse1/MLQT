@@ -16,6 +16,14 @@ stdio; reuses the service layer with no UI at all.
   is the whole server bar the process - `Program.cs` is it plus stdio; every service is `TryAdd`ed,
   so a host's own registration wins, and the coercion filter reads each tool's schema, so a host's
   tools are coerced too
+- **Tool calls run concurrently unless the gate stops them** (`Services/ToolCallGate.cs`). Claude Code
+  sends one message's calls together and the SDK runs them as they arrive, while `ILibraryDataService`
+  is safe to read only while nothing loads, reloads or edits. A diagram drawn beside a reload showed
+  the components as dashed "not loaded" boxes. So the reading calls share and every other call runs
+  alone, in arrival order. **A new tool runs alone until it is put on `ToolCallGate.IsShared`'s list**,
+  and only a tool that changes nothing in the session may go there - not even recorded findings or the
+  dependency flag, which is why `mlqt_check` is not on it. The tools' `ReadOnly` annotations do not
+  answer this: they are about the user's files, and `mlqt_load` is `ReadOnly`
 - **Every write formats through `EditFormatting.Apply`** (`Helpers/`), with the repository's rules and
   only where its settings have `ApplyFormattingRules` on - never a tool's own call to the renderer, or
   one path formats and its sibling does not. A tool that applies several operations wraps them in
