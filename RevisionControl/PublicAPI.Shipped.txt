@@ -282,3 +282,5 @@ static RevisionControl.VcsRebaseInProgress.operator !=(RevisionControl.VcsRebase
 static RevisionControl.VcsRebaseInProgress.operator ==(RevisionControl.VcsRebaseInProgress? left, RevisionControl.VcsRebaseInProgress? right) -> bool
 static RevisionControl.VcsRelativePath.Canonical(string! path) -> string!
 static RevisionControl.VcsRelativePath.ToFullPath(string! workingCopy, string! relativePath) -> string!
+RevisionControl.VcsLogEntry.CommitterDate.get -> System.DateTimeOffset
+RevisionControl.VcsLogEntry.CommitterDate.set -> void

@@ -3391,3 +3391,5 @@ static ModelicaParser.Visitors.ExternalResourceExtractor.IsLoadResourceCall(mode
 static ModelicaParser.Helpers.ModelicaFileEncoding.ForFileText(string! existingText, string! text) -> string!
 ModelicaParser.StyleRules.SuppressionSet.GeneratedImportOf(string! modelId) -> string?
 ModelicaParser.StyleRules.SuppressionSet.HasGeneratedImport.get -> bool
+ModelicaParser.Icons.DiagramComponent.SwitchedOff.get -> System.Collections.Generic.IReadOnlyList<ModelicaParser.Icons.DiagramComponent!>?
+ModelicaParser.Icons.DiagramComponent.SwitchedOff.init -> void
