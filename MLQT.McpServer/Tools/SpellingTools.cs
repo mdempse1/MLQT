@@ -47,9 +47,14 @@ public sealed class SpellingTools
         _session = session;
     }
 
+    /// <param name="languages">The languages to check against for this call, in place of the
+    /// repository's; null or empty for the repository's. mlqt_check's <c>settings</c> carries them, and
+    /// they were dropped on the way here, so a check asked for en_GB alone also accepted "color" (B529).
+    /// The accepted words are still the repository's.</param>
     internal object SpellCheck(
         string? classId = null,
-        string? source = null)
+        string? source = null,
+        IReadOnlyList<string>? languages = null)
     {
         if (!string.IsNullOrWhiteSpace(classId))
         {
@@ -60,7 +65,7 @@ public sealed class SpellingTools
                 return new ToolError($"Class '{classId}' failed to parse and cannot be spell-checked.");
 
             var repository = RepositoryForClass(classId);
-            var settings = SpellSettings(LanguagesOf(repository));
+            var settings = SpellSettings(Chosen(languages, repository));
             var context = StyleCheckContext.Build(
                 settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
                 repository?.LocalPath);
@@ -75,7 +80,7 @@ public sealed class SpellingTools
             // and then it is that repository's accepted words as well as its languages. Taking the
             // languages and not the words reported a term the team had accepted as a misspelling.
             var repository = SingleRepository();
-            var settings = SpellSettings(LanguagesOf(repository));
+            var settings = SpellSettings(Chosen(languages, repository));
             var context = StyleCheckContext.BuildStateless(
                 settings, _customDictionary, _dictionaryManager, repository?.LocalPath);
             return new SpellCheckResult(
@@ -86,9 +91,12 @@ public sealed class SpellingTools
         return new ToolError("Provide either class_id or source.");
     }
 
+    /// <param name="languages">As <see cref="SpellCheck"/>'s: the languages a check was run with, so a
+    /// word is judged and corrected against the dictionaries that flagged it.</param>
     internal object SpellingSuggestions(
         string word,
-        string? repositoryId = null)
+        string? repositoryId = null,
+        IReadOnlyList<string>? languages = null)
     {
         if (string.IsNullOrWhiteSpace(word))
             return new ToolError("word must be a non-empty string.");
@@ -106,12 +114,12 @@ public sealed class SpellingTools
             repository = SingleRepository();
         }
 
+        var chosen = Chosen(languages, repository);
         var checker = SpellCheckerFactory.Build(
-            LanguagesOf(repository), _customDictionary.WordsFor(repository?.LocalPath), _dictionaryManager);
+            chosen, _customDictionary.WordsFor(repository?.LocalPath), _dictionaryManager);
         var isCorrect = checker.IsCorrect(word);
         var suggestions = isCorrect ? Array.Empty<string>() : checker.Suggest(word).ToArray();
-        return new SpellSuggestionsResult(
-            word, isCorrect, suggestions, MissingDictionaryNote(LanguagesOf(repository)));
+        return new SpellSuggestionsResult(word, isCorrect, suggestions, MissingDictionaryNote(chosen));
     }
 
     internal async Task<object> CorrectSpelling(
@@ -206,6 +214,10 @@ public sealed class SpellingTools
 
     private static IReadOnlyList<string>? LanguagesOf(Repository? repository) =>
         repository?.StyleSettings?.SpellCheckLanguages;
+
+    /// <summary>The call's languages where it names any, else the repository's.</summary>
+    private static IReadOnlyList<string>? Chosen(IReadOnlyList<string>? languages, Repository? repository) =>
+        languages is { Count: > 0 } ? languages : LanguagesOf(repository);
 
     /// <summary>
     /// Says so when this machine has no dictionary for a language the settings ask for. The languages

@@ -61,6 +61,29 @@ public class SpellChecker
     public static IReadOnlyList<string> BundledLanguageCodes => ["en_US", "en_GB"];
 
     /// <summary>
+    /// A language as it was asked for, written the way a dictionary is named: trimmed, <c>-</c> read
+    /// as <c>_</c>, and a bundled language in its own spelling whatever the case. <c>en_UK</c>, which
+    /// is not a locale but is what people write for British English, is <c>en_GB</c>. Anything else
+    /// comes back otherwise as given, for an imported dictionary to match.
+    /// </summary>
+    /// <remarks>
+    /// A language is named in a committed settings file, by a person or an agent, and they write
+    /// <c>en-GB</c> - the browser's form - as often as <c>en_GB</c>, Hunspell's. Taken literally that
+    /// loaded no dictionary at all, so every word of every description was reported misspelled, and
+    /// the warning that said no dictionary was installed for <c>en-GB</c> read as an installer that
+    /// had left one out (B529).
+    /// </remarks>
+    public static string NormaliseLanguageCode(string code)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        var written = code.Trim().Replace('-', '_');
+        if (string.Equals(written, "en_UK", StringComparison.OrdinalIgnoreCase))
+            return "en_GB";
+        return BundledLanguageCodes.FirstOrDefault(b => string.Equals(b, written, StringComparison.OrdinalIgnoreCase))
+               ?? written;
+    }
+
+    /// <summary>
     /// Creates a SpellChecker with the specified language dictionaries and custom words.
     /// Dictionaries are loaded from embedded resources and/or file paths.
     /// </summary>
@@ -95,7 +118,12 @@ public class SpellChecker
         IEnumerable<DictionarySource>? additionalDictionaries)
     {
         var codes = languageCodes?.ToList() ?? ["en_US", "en_GB"];
-        var bundled = codes.Where(BundledLanguageCodes.Contains).ToList();
+        var bundled = codes
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(NormaliseLanguageCode)
+            .Where(BundledLanguageCodes.Contains)
+            .Distinct()
+            .ToList();
         var dictionaries = new List<WordList>();
 
         foreach (var code in bundled)

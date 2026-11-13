@@ -1,3 +1,4 @@
+using ModelicaParser.SpellChecking;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
@@ -14,6 +15,26 @@ namespace MLQT.Services.Checking;
 /// </summary>
 public static class DictionaryAvailability
 {
+    /// <summary>
+    /// The code of the dictionary here that <paramref name="requested"/> names, or null when there is
+    /// none. <c>en-GB</c>, <c>en_gb</c> and <c>en_UK</c> all name the bundled <c>en_GB</c>
+    /// (<see cref="SpellChecker.NormaliseLanguageCode"/>), and an imported dictionary is matched
+    /// whatever the case. The one answer to "which dictionary is this?": the warning and the checker
+    /// both ask it, so a language the warning lets through is one the checker loads (B529).
+    /// </summary>
+    public static string? Resolve(string requested, IDictionaryManagerService dictionaryManager)
+    {
+        ArgumentNullException.ThrowIfNull(requested);
+        ArgumentNullException.ThrowIfNull(dictionaryManager);
+        if (string.IsNullOrWhiteSpace(requested))
+            return null;
+
+        var code = SpellChecker.NormaliseLanguageCode(requested);
+        return dictionaryManager.GetAvailableDictionaries()
+            .Select(d => d.LanguageCode)
+            .FirstOrDefault(available => string.Equals(available, code, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>The requested languages this machine has no dictionary for, in the order asked for.</summary>
     public static IReadOnlyList<string> MissingLanguages(
         IEnumerable<string>? requested, IDictionaryManagerService dictionaryManager)
@@ -22,17 +43,15 @@ public static class DictionaryAvailability
         if (wanted is null || wanted.Count == 0)
             return [];   // no choice made means the bundled dictionaries, which are always present
 
-        var available = dictionaryManager.GetAvailableDictionaries()
-            .Select(d => d.LanguageCode)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return wanted.Where(code => !available.Contains(code)).ToList();
+        return wanted.Where(code => Resolve(code, dictionaryManager) is null).ToList();
     }
 
     /// <summary>
     /// A sentence naming what is missing and what it costs, or null when nothing is. Says which way
     /// the results are wrong rather than only that something is absent: with one language gone the
-    /// remaining ones judge its words, and with all of them gone every word is a misspelling.
+    /// remaining ones judge its words, and with all of them gone every word is a misspelling. Lists
+    /// the dictionaries there are, because a name that matches none is far more often a misspelt
+    /// code than a dictionary the machine lacks.
     /// </summary>
     public static string? WarningFor(
         IEnumerable<string>? requested, IDictionaryManagerService dictionaryManager)
@@ -43,11 +62,21 @@ public static class DictionaryAvailability
 
         var names = string.Join(", ", missing);
         var wanted = requested!.Where(c => !string.IsNullOrWhiteSpace(c)).Count();
+        var here = $"the dictionaries here are {AvailableCodes(dictionaryManager)}";
 
         return missing.Count == wanted
-            ? $"no spell-check dictionary is installed for {names}, which is every language the " +
-              "settings ask for; with none loaded every word is reported as misspelled"
-            : $"no spell-check dictionary is installed for {names}; those words are checked against " +
-              "the remaining languages, so the spelling findings will not match a machine that has them";
+            ? $"no spell-check dictionary matches {names}, which is every language the settings ask " +
+              $"for, so with none loaded every word is reported as misspelled; {here}"
+            : $"no spell-check dictionary matches {names}; those words are checked against the " +
+              $"remaining languages, so the spelling findings will not match a machine that has them; {here}";
+    }
+
+    /// <summary>The codes of the dictionaries this machine has, as a settings file names them.</summary>
+    public static string AvailableCodes(IDictionaryManagerService dictionaryManager)
+    {
+        ArgumentNullException.ThrowIfNull(dictionaryManager);
+        return string.Join(", ", dictionaryManager.GetAvailableDictionaries()
+            .Select(d => d.LanguageCode)
+            .Order(StringComparer.Ordinal));
     }
 }

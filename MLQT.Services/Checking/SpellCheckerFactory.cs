@@ -27,7 +27,10 @@ public static class SpellCheckerFactory
 
         var bundled = new List<string>();
         var imported = new List<DictionarySource>();
-        foreach (var code in codes)
+        // Each language as the dictionary here that it names - en-GB is en_GB - so what is loaded is
+        // what DictionaryAvailability says is there. One that names none loads nothing, and the
+        // warning says so (B529).
+        foreach (var code in codes.Select(c => DictionaryAvailability.Resolve(c, dictionaryManager) ?? c).Distinct())
         {
             var source = dictionaryManager.GetImportedDictionaryPaths(code);
             if (source is not null)

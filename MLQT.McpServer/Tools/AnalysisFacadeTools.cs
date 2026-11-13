@@ -89,11 +89,13 @@ public sealed class AnalysisFacadeTools
                 : await _style.CheckLibrary(libraryId, settings, baseline);
         if (wanted.Contains("spelling"))
         {
+            // The call's languages reach the spelling check as they reach the style rules (B529).
+            var languages = settings?.SpellCheckLanguages;
             spelling = hasClass || hasSource
-                ? _spelling.SpellCheck(classId, source)
+                ? _spelling.SpellCheck(classId, source, languages)
                 : new ToolError("Spelling checks one class or source text; give classId or source.");
             if (spelling is SpellCheckResult spelt)
-                suggestions = Suggest(spelt);
+                suggestions = Suggest(spelt, languages);
         }
         if (wanted.Contains("references"))
             references = hasSource
@@ -106,13 +108,13 @@ public sealed class AnalysisFacadeTools
     }
 
     // Suggestions for each word flagged, so fixing one needs no call per word.
-    private IReadOnlyList<SpellSuggestionsResult> Suggest(SpellCheckResult result) =>
+    private IReadOnlyList<SpellSuggestionsResult> Suggest(SpellCheckResult result, IReadOnlyList<string>? languages) =>
         result.Findings
             .Select(f => SpellingMessage.WordFrom(f.Summary))
             .OfType<string>()
             .Distinct(StringComparer.Ordinal)
             .Take(MaxSuggestedWords)
-            .Select(word => _spelling.SpellingSuggestions(word))
+            .Select(word => _spelling.SpellingSuggestions(word, languages: languages))
             .OfType<SpellSuggestionsResult>()
             .ToList();
 

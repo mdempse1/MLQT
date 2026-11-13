@@ -481,8 +481,10 @@ public sealed class GuidanceTools
         ["spelling"] = """
             Spell checking of description and Documentation prose:
             - The dictionary language(s) come from the repository's settings (SpellCheckLanguages, default
-              en_US/en_GB). Change them with mlqt_style_settings; non-bundled languages must be imported as
-              Hunspell dictionaries.
+              en_US/en_GB). Change them with mlqt_style_settings: en_GB is British English, en_US
+              American (en-GB and en_UK are read as en_GB). A code that matches no dictionary is refused;
+              other languages must be imported as Hunspell dictionaries in the desktop app first. For one
+              call only, pass mlqt_check settings with spellCheckLanguages.
             - mlqt_check(classId | source, checks ['spelling']): the misspelled words with line numbers, in
               class and component descriptions and Documentation info/revisions, and the ranked suggestions
               for each word, from the configured language(s) plus your custom dictionary.

@@ -109,6 +109,21 @@ public sealed class StyleTools
             return new ToolError("Each accepted spelling is one word, with no spaces: " +
                                  string.Join(", ", notWords.Select(w => $"'{w}'")) + ". Nothing was changed.");
 
+        // Each language as the code of the dictionary it names, or a refusal before anything is
+        // written. Saved as given, en-GB and en_UK loaded no dictionary and every word of every
+        // description was reported, while the only clue said no dictionary was installed (B529).
+        if (settings?.SpellCheckLanguages is { Count: > 0 } languages)
+        {
+            var resolved = languages.Select(l => (Asked: l, Code: DictionaryAvailability.Resolve(l ?? "", _dictionaryManager))).ToList();
+            var unknown = resolved.Where(r => r.Code is null).Select(r => $"'{r.Asked}'").ToList();
+            if (unknown.Count > 0)
+                return new ToolError($"No spell-check dictionary matches {string.Join(", ", unknown)}. The dictionaries " +
+                                     $"here are {DictionaryAvailability.AvailableCodes(_dictionaryManager)}: en_GB is British " +
+                                     "English, en_US American. Another language must be imported as a Hunspell dictionary " +
+                                     "in the desktop app first. Nothing was changed.");
+            settings.SpellCheckLanguages = resolved.Select(r => r.Code!).Distinct().ToList();
+        }
+
         var (repo, error) = ResolveRepo(repositoryId, requireRepo: true);
         if (error is not null)
             return error;

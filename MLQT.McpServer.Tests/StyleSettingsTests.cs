@@ -53,6 +53,41 @@ public class StyleSettingsTests
         Assert.Contains("en_GB", got.Settings.SpellCheckLanguages!);
     }
 
+    /// <summary>
+    /// A language is saved as the code of the dictionary it names (B529). Sessions wrote en-GB and
+    /// en_UK, which were saved as given, loaded no dictionary, and reported every word misspelled.
+    /// </summary>
+    [Fact]
+    public async Task SetStyleSettings_SavesALanguageAsItsDictionarysCode()
+    {
+        using var host = new TestHost();
+        var (style, _, localPath) = await LoadRepo(host);
+
+        var set = ToolAssert.Ok<SetStyleSettingsResult>(await style.SetStyleSettings(
+            new StyleSettingsInput { SpellCheckLanguages = ["en-GB", "en_UK", "EN_us"] }));
+
+        Assert.Equal(["en_GB", "en_US"], set.Settings.SpellCheckLanguages);
+        var written = File.ReadAllText(Path.Combine(localPath, ".mlqt", "settings.json"));
+        Assert.DoesNotContain("en-GB", written);
+        Assert.DoesNotContain("en_UK", written);
+    }
+
+    [Fact]
+    public async Task SetStyleSettings_RefusesALanguageWithNoDictionary_AndChangesNothing()
+    {
+        using var host = new TestHost();
+        var (style, _, _) = await LoadRepo(host);
+
+        var error = ToolAssert.Error(await style.SetStyleSettings(
+            new StyleSettingsInput { ClassHasDocumentationInfo = true, SpellCheckLanguages = ["en_GB", "British"] }));
+
+        Assert.Contains("'British'", error.Error);
+        Assert.Contains("en_GB, en_US", error.Error);   // what there is to choose from
+        var got = ToolAssert.Ok<StyleSettingsResult>(style.GetStyleSettings());
+        Assert.False(got.Settings.ClassHasDocumentationInfo);   // the rest of the call was not applied
+        Assert.Equal(["en_US", "en_GB"], got.Settings.SpellCheckLanguages);
+    }
+
     [Fact]
     public async Task CheckClass_DefaultsToRepoSettings()
     {

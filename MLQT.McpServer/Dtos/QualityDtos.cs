@@ -96,6 +96,9 @@ public sealed class StyleSettingsInput
     /// <summary>Spell-check dictionary language codes, e.g. ["en_US", "en_GB"]. Bundled codes are
     /// en_US and en_GB; other codes must have been imported as Hunspell dictionaries. When null or
     /// empty on save, the existing languages are kept.</summary>
+    [Description("Spell-check dictionaries by code: \"en_GB\" (British English), \"en_US\" (American), or " +
+                 "both, the default. Another language must have been imported as a Hunspell dictionary. A code " +
+                 "that matches no dictionary is refused rather than saved.")]
     public IReadOnlyList<string>? SpellCheckLanguages { get; set; }
 
     /// <summary>

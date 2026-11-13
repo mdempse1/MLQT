@@ -337,11 +337,14 @@ build agent has no dictionary installed for, the words are checked against the r
 `mlqt` writes a warning to stderr, because the run will then disagree with a machine that has it:
 
 ```
-warning: no spell-check dictionary installed for de_DE; those words are checked against the
-remaining languages, so the spelling findings will not match a machine that has them
+warning: no spell-check dictionary matches de_DE; those words are checked against the remaining
+languages, so the spelling findings will not match a machine that has them; the dictionaries here
+are en_GB, en_US
 ```
 
-en_US and en_GB ship with the tool. Other languages need their Hunspell `.aff`/`.dic` pair installed
+en_US and en_GB ship with the tool. A language is matched however it is written: `en-GB`, `en_gb`
+and `en_UK` are all en_GB. A name that matches no dictionary gets the same warning, which lists the
+dictionaries there are. Other languages need their Hunspell `.aff`/`.dic` pair installed
 on the agent, under `%LocalAppData%/MLQT/Dictionaries/` (`~/.local/share/MLQT/Dictionaries/` on
 Linux).
 

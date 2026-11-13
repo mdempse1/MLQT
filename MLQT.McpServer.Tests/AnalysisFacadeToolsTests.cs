@@ -189,4 +189,40 @@ public class AnalysisFacadeToolsTests
 
         Assert.Contains("transitive is for 'used_by'", err.Error);
     }
+
+    private const string Dialects = "model D \"the colour and the color\"\n  Real x;\nequation\n  x = 1;\nend D;";
+
+    private static IReadOnlyList<string> Flagged(object result) =>
+        [.. Assert.IsType<SpellCheckResult>(Assert.IsType<CheckFacadeResult>(result).Spelling).Findings
+            .Select(f => f.Summary)];
+
+    /// <summary>
+    /// The call's spellCheckLanguages reach the spelling check (B529). They were dropped on the way, so
+    /// a check asked for en_GB alone ran with both dictionaries and accepted "color".
+    /// </summary>
+    [Theory]
+    [InlineData("en_GB", "'color'", "'colour'")]
+    [InlineData("en-GB", "'color'", "'colour'")]
+    [InlineData("en_US", "'colour'", "'color'")]
+    public async Task ASpellingCheck_UsesTheLanguagesTheCallAsksFor(string language, string flagged, string accepted)
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        var result = await tools.Check(source: Dialects, checks: ["spelling"],
+            settings: new StyleSettingsInput { SpellCheckLanguages = [language] });
+
+        var summaries = Flagged(result);
+        Assert.Contains(summaries, s => s.Contains(flagged));
+        Assert.DoesNotContain(summaries, s => s.Contains(accepted));
+    }
+
+    [Fact]
+    public async Task ASpellingCheck_WithNoLanguagesGiven_UsesBoth()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        Assert.Empty(Flagged(await tools.Check(source: Dialects, checks: ["spelling"])));
+    }
 }

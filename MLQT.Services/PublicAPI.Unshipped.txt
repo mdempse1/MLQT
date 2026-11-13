@@ -1,1 +1,3 @@
 #nullable enable
+static MLQT.Services.Checking.DictionaryAvailability.AvailableCodes(MLQT.Services.Interfaces.IDictionaryManagerService! dictionaryManager) -> string!
+static MLQT.Services.Checking.DictionaryAvailability.Resolve(string! requested, MLQT.Services.Interfaces.IDictionaryManagerService! dictionaryManager) -> string?

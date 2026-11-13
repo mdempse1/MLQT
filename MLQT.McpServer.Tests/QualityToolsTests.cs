@@ -340,6 +340,33 @@ public class QualityToolsTests
         Assert.Contains("de_DE", result.Note);
     }
 
+    /// <summary>
+    /// A repository whose settings already say en-GB - written before codes were checked - is checked
+    /// against en_GB (B529). It loaded no dictionary, so every word was a finding, and the note said
+    /// no dictionary was installed, which read as an installer that had left it out.
+    /// </summary>
+    [Theory]
+    [InlineData("en-GB")]
+    [InlineData("en_gb")]
+    [InlineData("en_UK")]
+    public async Task SpellCheck_ReadsASavedLanguageAsTheDictionaryItNames(string saved)
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["P.mo"] = "model P \"The behaviour of the postion\"\n  Real q;\nequation\n q=1;\nend P;",
+        });
+        var added = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new ModelicaGraph.StyleCheckingSettings { SpellCheckLanguages = [saved] };
+
+        var result = Assert.IsType<SpellCheckResult>(Spelling(host).SpellCheck(classId: "P"));
+
+        Assert.Null(result.Note);
+        Assert.Single(result.Findings);
+        Assert.Contains("postion", result.Findings[0].Summary);
+    }
+
     [Fact]
     public async Task CheckLibrary_HonoursTheRepositorysAcceptedSpellings()
     {

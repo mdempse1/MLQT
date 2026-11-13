@@ -99,6 +99,51 @@ public class SpellCheckerTests
         Assert.False(british.IsCorrect("linearization"));
     }
 
+    [Theory]
+    [InlineData("en_GB", "en_GB")]
+    [InlineData("en-GB", "en_GB")]
+    [InlineData("EN_gb", "en_GB")]
+    [InlineData(" en_GB ", "en_GB")]
+    [InlineData("en_UK", "en_GB")]
+    [InlineData("en-uk", "en_GB")]
+    [InlineData("en-us", "en_US")]
+    [InlineData("de-DE", "de_DE")]      // not bundled: left for an imported dictionary to match
+    [InlineData("British", "British")]
+    public void ALanguageCode_IsReadAsTheDictionaryName_ItIsWrittenFor(string asked, string code)
+    {
+        Assert.Equal(code, SpellChecker.NormaliseLanguageCode(asked));
+    }
+
+    /// <summary>
+    /// A bundled language however it is written loads its dictionary (B529). The loader compared codes
+    /// exactly, so en-GB or en_gb loaded nothing at all and every word was reported misspelled.
+    /// </summary>
+    [Theory]
+    [InlineData("en-GB")]
+    [InlineData("en_gb")]
+    [InlineData("en_UK")]
+    public void ABundledLanguage_LoadsItsDictionary_HoweverItIsWritten(string asked)
+    {
+        var checker = SpellChecker.Create([asked]);
+
+        Assert.True(checker.IsCorrect("behaviour"));
+        Assert.True(checker.IsCorrect("linearisation"));   // and its dialect's term list
+        Assert.False(checker.IsCorrect("linearization"));
+    }
+
+    [Fact]
+    public void NoLanguageThatIsBundled_LoadsNoDictionary()
+    {
+        // Still true of a name that matches nothing: the caller is told (DictionaryAvailability).
+        Assert.False(SpellChecker.Create(["British"]).IsCorrect("behaviour"));
+    }
+
+    [Fact]
+    public void ANullLanguageCode_IsRefused()
+    {
+        Assert.Throws<ArgumentNullException>(() => SpellChecker.NormaliseLanguageCode(null!));
+    }
+
     [Fact]
     public void BuiltInTerms_DialectNeutralOnesApplyToEveryLanguage()
     {
