@@ -394,8 +394,10 @@ public sealed class GuidanceTools
               existing model in the same library shows how that library arranges them.
             - Rotation turns the connectors with the component. rotation=90 puts a left-edge input at the
               bottom; rotation=180 mirrors a component end for end, which is how a two-port component is
-              turned round in a loop. set_component_placement's box is where the component ends up, turned
-              or not. Writing a turned placement by hand, give it an origin: a rotation turns about origin,
+              turned round in a loop. set_component_placement's box is the component before it is turned,
+              and it is turned about the box's centre, so the centre is where it ends up; a quarter turn
+              swaps its width and height (a 40x20 box at rotation=90 covers 20x40), and a square box is
+              where it ends up. Writing a turned placement by hand, give it an origin: a rotation turns about origin,
               {0,0} when it is missing, so extent={{-10,-40},{10,-20}}, rotation=90 with no origin is not
               in that box. Write extent={{-10,-10},{10,10}}, rotation=90, origin={0,-30}.
             - Ground, references and anything that terminates a physical branch go BELOW the branch, because

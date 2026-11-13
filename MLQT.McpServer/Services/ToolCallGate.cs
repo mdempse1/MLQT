@@ -26,7 +26,8 @@ namespace MLQT.McpServer.Services;
 internal sealed class ToolCallGate
 {
     // The calls that only read the loaded libraries and the findings already recorded. mlqt_check is not
-    // one: a check records findings and can run the dependency analysis, as mlqt_dependencies does.
+    // one: a check records findings and can run the dependency analysis, as mlqt_dependencies does - and
+    // so can mlqt_get_class's resources view, which IsShared asks about separately.
     private static readonly HashSet<string> ReadingTools = new(StringComparer.Ordinal)
     {
         "mlqt_get_class",
@@ -50,6 +51,8 @@ internal sealed class ToolCallGate
     {
         if (tool is null)
             return false;
+        if (string.Equals(tool, "mlqt_get_class", StringComparison.Ordinal))
+            return !AsksForResources(arguments);
         if (ReadingTools.Contains(tool))
             return true;
         if (!string.Equals(tool, "mlqt_session", StringComparison.Ordinal))
@@ -62,6 +65,19 @@ internal sealed class ToolCallGate
             && action.GetString()?.Trim() is { } text
             && (text.Length == 0 || string.Equals(text, "status", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Whether an <c>mlqt_get_class</c> call asks for its <c>resources</c> view, which runs the
+    /// dependency and resource analysis when the session has not - writing edges and resource nodes
+    /// into the graph, as <c>mlqt_check</c> and <c>mlqt_dependencies</c> do - so it runs alone.
+    /// Read from the raw JSON, whether the views came as an array or as one string: taking a read
+    /// for a change only costs it its turn, the reverse is the race this gate is for.
+    /// </summary>
+    private static bool AsksForResources(IDictionary<string, JsonElement>? arguments) =>
+        arguments is not null
+        && arguments.TryGetValue("views", out var views)
+        && views.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+        && views.GetRawText().Contains("resources", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Waits for this call's turn and returns what ends it. A call cancelled while it waits leaves the

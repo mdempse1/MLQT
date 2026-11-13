@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="MLQT.Services.Tests" />
+    <!-- For DictionaryManagerService's folder constructor: the MCP tests' host must not read the
+         dictionaries imported on the machine running them, or what they see depends on it. -->
+    <InternalsVisibleTo Include="MLQT.McpServer.Tests" />
   </ItemGroup>
 
   <ItemGroup>

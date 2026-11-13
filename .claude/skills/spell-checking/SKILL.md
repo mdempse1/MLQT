@@ -38,8 +38,9 @@ MLQT.Services (lifecycle, persistence)
   StyleCheckingService.cs    - Spell checker lifecycle, lazy init, language invalidation
   Helpers/StyleCheckingWorker.cs - Passes spell checker to StyleCheckContext.Build / StyleCheckRunner
   Checking/StyleCheckContext.cs  - Builds the per-library class names (KnownClassNames.cs) and the inherited-names callback per run
-  Checking/SpellCheckerFactory.cs - Builds a SpellChecker for the CLI and MCP server
-  Checking/DictionaryAvailability.cs - Warns when a chosen language has no dictionary here
+  Checking/SpellCheckerFactory.cs - Builds a SpellChecker for the app, the CLI and the MCP server
+  Checking/DictionaryAvailability.cs - Resolve (which dictionary a language names), and the warning
+                                       when one names none
   CustomDictionaryService.cs - Per-repo accepted words at <repo>/.mlqt/dictionary.txt
   Checking/DictionaryScope.cs - Which repo's word list applies to a class/library
   DictionaryManagerService.cs - Imported dictionaries at %LocalAppData%/MLQT/Dictionaries/
@@ -189,6 +190,29 @@ Spell check visitors are instantiated at the end of the method when the correspo
 
 These are per-repository settings (`Repository.StyleSettings`). The two booleans are facades over
 the `RuleSeverities` map (`MLQT.Spelling.Description`, `MLQT.Spelling.Documentation`).
+
+## Language Codes: One Answer to "Which Dictionary?"
+
+A language is named in a committed `.mlqt/settings.json`, by a person or an agent, and they write
+`en-GB` (the browser's form) as often as `en_GB` (Hunspell's), and `en_UK` for British English. Taken
+literally, every one of those loaded **no dictionary at all**: every word of every description was a
+finding, and the warning said no dictionary was installed, which read as a broken installer (B529).
+
+- **`SpellChecker.NormaliseLanguageCode`** (ModelicaParser): trims, reads `-` as `_`, maps `en_UK` to
+  `en_GB`, and gives a bundled language its own spelling whatever the case. The loader in
+  `SpellChecker.Create` uses it, so a bundled language loads however it is written.
+- **`DictionaryAvailability.Resolve(code, manager)`** (MLQT.Services): the code of the dictionary here
+  that a request names, or null. It normalises **both sides**, because an imported dictionary is named
+  after its file and Hunspell's own names carry hyphens (`en_GB-ise`), and it returns the dictionary's
+  own code, which is what its files are found by.
+- **The warning and the checker ask the same question.** `MissingLanguages`/`WarningFor` and
+  `SpellCheckerFactory.Build` all go through `Resolve`; the settings panel's picker shows saved codes
+  through it too (`SettingsRepositories.LanguageCodesShown`). A language the warning lets through is
+  one the checker loads, and a new caller that compares codes itself reopens the gap.
+- **`mlqt_style_settings` refuses a code that resolves to nothing**, listing the dictionaries there
+  are, and saves the others as their dictionary's code. A repository saved before that keeps working:
+  every reader resolves the saved codes, and nothing rewrites the file until someone changes it.
+- `mlqt_check`'s per-call `settings.spellCheckLanguages` reach the spelling check and its suggestions.
 
 ## Spell Checker Lifecycle (Service Layer)
 

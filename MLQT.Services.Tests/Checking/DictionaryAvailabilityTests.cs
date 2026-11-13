@@ -18,6 +18,9 @@ public class DictionaryAvailabilityTests : IDisposable
         Directory.CreateDirectory(_dir);
         File.WriteAllText(Path.Combine(_dir, "de_DE.aff"), "SET UTF-8");
         File.WriteAllText(Path.Combine(_dir, "de_DE.dic"), "1\nHaus");
+        // Hunspell's own name for a British variant: a hyphen, kept in the code the file gives it.
+        File.WriteAllText(Path.Combine(_dir, "en_GB-ise.aff"), "SET UTF-8");
+        File.WriteAllText(Path.Combine(_dir, "en_GB-ise.dic"), "1\nrecognise");
         _manager = new DictionaryManagerService(_dir);
     }
 
@@ -33,6 +36,9 @@ public class DictionaryAvailabilityTests : IDisposable
     [InlineData("en_UK", "en_GB")]
     [InlineData("EN-US", "en_US")]
     [InlineData("de-de", "de_DE")]   // an imported dictionary, matched whatever the case
+    [InlineData("en_GB-ise", "en_GB-ise")]   // an imported name with a hyphen, as it was imported
+    [InlineData("en_GB_ise", "en_GB-ise")]
+    [InlineData("EN-GB-ISE", "en_GB-ise")]
     public void ALanguage_ResolvesToTheDictionaryItNames(string asked, string code)
     {
         Assert.Equal(code, DictionaryAvailability.Resolve(asked, _manager));
@@ -65,7 +71,7 @@ public class DictionaryAvailabilityTests : IDisposable
         Assert.NotNull(warning);
         Assert.Contains("no spell-check dictionary matches British", warning);
         Assert.Contains("every word is reported as misspelled", warning);
-        Assert.Contains("the dictionaries here are de_DE, en_GB, en_US", warning);
+        Assert.Contains("the dictionaries here are de_DE, en_GB, en_GB-ise, en_US", warning);
     }
 
     [Fact]
@@ -92,5 +98,17 @@ public class DictionaryAvailabilityTests : IDisposable
         var checker = SpellCheckerFactory.Build(["de-de"], [], _manager);
 
         Assert.True(checker.IsCorrect("Haus"));
+    }
+
+    /// <summary>
+    /// An imported dictionary whose name has a hyphen is one the warning finds, as the checker does.
+    /// With only the request normalised, en_GB-ise was reported missing - and refused by
+    /// mlqt_style_settings - while the checker, falling back to the raw name, loaded it.
+    /// </summary>
+    [Fact]
+    public void AnImportedNameWithAHyphen_IsNotMissing_AndIsLoaded()
+    {
+        Assert.Null(DictionaryAvailability.WarningFor(["en_GB-ise"], _manager));
+        Assert.True(SpellCheckerFactory.Build(["en_GB-ise"], [], _manager).IsCorrect("recognise"));
     }
 }

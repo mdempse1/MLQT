@@ -2,6 +2,8 @@ using MLQT.Shared.Components;
 using ModelicaGraph;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
+using MLQT.Services.Interfaces;
+using Moq;
 using Xunit;
 
 namespace MLQT.Shared.Tests.Components;
@@ -203,5 +205,39 @@ public class SettingsRepositoriesTests
         var backup = SettingsRepositories.BackupOf(new MLQT.Services.DataTypes.Repository());
 
         Assert.Null(backup.StyleSettings);
+    }
+
+    // ---- The language picker shows the dictionaries the checker loads (B529) -------------------
+
+    private static IDictionaryManagerService Dictionaries(params string[] imported)
+    {
+        var manager = new Mock<IDictionaryManagerService>();
+        manager.Setup(m => m.GetAvailableDictionaries()).Returns(
+            [new DictionaryInfo("en_GB", "English (UK)", true), new DictionaryInfo("en_US", "English (US)", true),
+             .. imported.Select(c => new DictionaryInfo(c, c, false))]);
+        return manager.Object;
+    }
+
+    [Fact]
+    public void ASavedLanguage_IsShownAsTheDictionaryItNames()
+    {
+        // Saved as en-GB by an agent: English (UK) is ticked, not an "en-GB (not installed)" item,
+        // because en_GB is what the check loads for it.
+        Assert.Equal(["en_GB", "en_US"],
+            SettingsRepositories.LanguageCodesShown(["en-GB", "en_UK", "EN_us"], Dictionaries()));
+    }
+
+    [Fact]
+    public void ASavedLanguageWithNoDictionary_IsShownAsWritten_SoItCanBeRemoved()
+    {
+        Assert.Equal(["en_GB", "fr_FR"],
+            SettingsRepositories.LanguageCodesShown(["en_GB", "fr_FR", " "], Dictionaries()));
+    }
+
+    [Fact]
+    public void AnImportedLanguage_IsShownByItsOwnCode()
+    {
+        Assert.Equal(["en_GB-ise"],
+            SettingsRepositories.LanguageCodesShown(["en-gb-ise"], Dictionaries("en_GB-ise")));
     }
 }

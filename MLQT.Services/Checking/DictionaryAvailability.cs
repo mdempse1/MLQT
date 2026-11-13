@@ -29,10 +29,14 @@ public static class DictionaryAvailability
         if (string.IsNullOrWhiteSpace(requested))
             return null;
 
+        // Both sides normalised: an imported dictionary is named after its file, and Hunspell's own
+        // names carry hyphens - en_GB-ise - which a request normalised alone (en_GB_ise) never matched.
+        // The code returned is the dictionary's own, which is what its files are found by.
         var code = SpellChecker.NormaliseLanguageCode(requested);
-        return dictionaryManager.GetAvailableDictionaries()
-            .Select(d => d.LanguageCode)
-            .FirstOrDefault(available => string.Equals(available, code, StringComparison.OrdinalIgnoreCase));
+        var available = dictionaryManager.GetAvailableDictionaries().Select(d => d.LanguageCode).ToList();
+        return available.FirstOrDefault(a => string.Equals(a, requested.Trim(), StringComparison.OrdinalIgnoreCase))
+               ?? available.FirstOrDefault(a =>
+                   string.Equals(SpellChecker.NormaliseLanguageCode(a), code, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>The requested languages this machine has no dictionary for, in the order asked for.</summary>

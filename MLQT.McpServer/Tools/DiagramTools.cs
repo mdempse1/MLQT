@@ -206,8 +206,9 @@ public sealed class DiagramTools
     }
 
     /// <summary>
-    /// The <c>transformation(...)</c> that puts a component in the box (x1,y1)-(x2,y2), turned by
-    /// <paramref name="rotation"/>.
+    /// The <c>transformation(...)</c> that puts a component in the box (x1,y1)-(x2,y2) and then turns it
+    /// by <paramref name="rotation"/> about the box's centre. The box is the component before it is
+    /// turned, so a quarter turn swaps its width and height.
     ///
     /// <para><b>A turned component is written with its <c>origin</c></b> (B528): the extent centred
     /// on {0,0} and the box's centre as the origin, which is how Dymola and OMEdit write one. A

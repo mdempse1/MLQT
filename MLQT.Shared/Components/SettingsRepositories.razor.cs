@@ -563,7 +563,7 @@ public partial class SettingsRepositories : IDisposable
                 .ToList();
 
             var known = options.Select(o => o.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var code in SelectedSettings.SpellCheckLanguages)
+            foreach (var code in SelectedLanguageCodes)
             {
                 if (!string.IsNullOrWhiteSpace(code) && known.Add(code))
                     options.Add((code, $"{code} (not installed)"));
@@ -572,6 +572,25 @@ public partial class SettingsRepositories : IDisposable
             return options;
         }
     }
+
+    /// <summary>
+    /// The saved languages as the dictionaries they name, which is what the checker loads: a
+    /// repository saved as <c>en-GB</c> shows English (UK) ticked, where it showed an "en-GB (not
+    /// installed)" item ticked and English (UK) not, while the check used en_GB and the warning said
+    /// nothing (B529). One that names no dictionary is kept as written, to be listed and removed.
+    /// The settings file is rewritten only when the selection is changed.
+    /// </summary>
+    private IReadOnlyList<string> SelectedLanguageCodes =>
+        LanguageCodesShown(SelectedSettings.SpellCheckLanguages, DictionaryManagerService);
+
+    /// <summary>The picker's selection for a repository's saved languages (<see cref="SelectedLanguageCodes"/>).</summary>
+    internal static IReadOnlyList<string> LanguageCodesShown(
+        IEnumerable<string> saved, IDictionaryManagerService dictionaryManager) =>
+        saved
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => DictionaryAvailability.Resolve(c, dictionaryManager) ?? c)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     /// <summary>What an empty selection means, so nobody reads it as "no spell checking".</summary>
     private string LanguageHelperText =>

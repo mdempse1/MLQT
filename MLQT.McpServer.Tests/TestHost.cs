@@ -33,7 +33,9 @@ public sealed class TestHost : IDisposable
         Repositories = new RepositoryService(Libraries, Settings, FileMonitoring);
         CodeReview = new CodeReviewService();
         CustomDictionary = new CustomDictionaryService();
-        DictionaryManager = new DictionaryManagerService();
+        // A folder of its own, empty: the default is %LocalAppData%/MLQT/Dictionaries, and a dictionary
+        // imported on the machine running the tests changed which languages they saw.
+        DictionaryManager = new DictionaryManagerService(NewTempDir());
         StyleChecking = new StyleCheckingService(Libraries,
             Repositories,
             CustomDictionary,

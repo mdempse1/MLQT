@@ -186,6 +186,27 @@ public sealed class ToolCallGateTests
     }
 
     /// <summary>
+    /// mlqt_get_class shares unless it asks for its resources view, which runs the dependency and
+    /// resource analysis when the session has not and writes into the graph while other reads run.
+    /// </summary>
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("null", true)]
+    [InlineData("[\"info\", \"source\"]", true)]
+    [InlineData("[\"layout\"]", true)]
+    [InlineData("[\"resources\"]", false)]
+    [InlineData("[\"source\", \"Resources\"]", false)]
+    [InlineData("\"[\\\"resources\\\"]\"", false)]   // views sent as one string
+    public void GetClassSharesUnlessItAsksForResources(string? views, bool shared)
+    {
+        var arguments = new Dictionary<string, JsonElement>();
+        if (views is not null)
+            arguments["views"] = JsonDocument.Parse(views).RootElement.Clone();
+
+        Assert.Equal(shared, ToolCallGate.IsShared("mlqt_get_class", arguments));
+    }
+
+    /// <summary>
     /// Every tool the server serves is decided on purpose: a new reading tool left off the list runs
     /// alone, which is safe and slower, so this names the ones that are expected to share.
     /// </summary>

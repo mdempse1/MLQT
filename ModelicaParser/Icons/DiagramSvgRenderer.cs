@@ -7,13 +7,16 @@ namespace ModelicaParser.Icons;
 /// <param name="Name">The component's declared name, substituted for <c>%name</c> in its icon text.</param>
 /// <param name="Extent">Its Placement extent as [x1,y1,x2,y2] in the parent's diagram coordinates.
 /// A reversed pair mirrors the icon, which is what Modelica means by it.</param>
-/// <param name="Rotation">Placement rotation in degrees, counter-clockwise, about the extent's centre.</param>
+/// <param name="Rotation">Placement rotation in degrees, counter-clockwise, about
+/// <paramref name="RotationCentre"/>.</param>
 /// <param name="Icon">The component type's icon, merged down its extends chain, or null when the type
 /// could not be resolved or draws nothing — in which case an outline is drawn in its place.</param>
 /// <param name="TypeName">The declared type, shown in the placeholder when there is no icon.</param>
 /// <param name="RotationCentre">
-/// The point <paramref name="Rotation"/> turns about, as [x,y]. Null means the extent's own centre,
-/// which is what a transformation with no <c>origin</c> amounts to.
+/// The point <paramref name="Rotation"/> turns about, as [x,y]: the transformation's <c>origin</c>,
+/// which is <c>{0,0}</c> where none is written (MLS §18.6.1.1) - not the extent's centre, which differs
+/// from it for any extent not symmetric about the origin (B528). Null turns it about the extent's own
+/// centre, which is right only for such a symmetric extent; a caller reading a Placement passes the origin.
 /// </param>
 /// <param name="Children">
 /// What is drawn <em>inside</em> this component's icon, in the icon's own coordinates: its
