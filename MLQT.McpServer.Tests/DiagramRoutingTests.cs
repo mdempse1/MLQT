@@ -54,6 +54,13 @@ public class DiagramRoutingTests
             connect(src.y, f.u);
           end Turned;
 
+          model Unoriginated "Turned with no origin written: the same placement"
+            Src src annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
+            Framed f annotation (Placement(transformation(extent={{0,-10},{20,10}}, rotation=90)));
+          equation
+            connect(src.y, f.u);
+          end Unoriginated;
+
           model Fan "one source, two sinks: four endpoints on three components"
             Src src annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
             Framed f1 annotation (Placement(transformation(extent={{-10,20},{10,40}})));
@@ -71,7 +78,7 @@ public class DiagramRoutingTests
         var dir = host.WriteLibraryDir(new Dictionary<string, string>
         {
             ["package.mo"] = Package,
-            ["package.order"] = "RealInput\nRealOutput\nSrc\nFramed\nSys\nTurned\nFan\n",
+            ["package.order"] = "RealInput\nRealOutput\nSrc\nFramed\nSys\nTurned\nUnoriginated\nFan\n",
         });
         host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
         return host;
@@ -109,6 +116,40 @@ public class DiagramRoutingTests
         // origin; turned 90 degrees about the origin that is (-8,12). Turning about the extent's
         // centre instead put it at (2,10).
         Assert.Equal(new DiagramGeometry.Pt(-8, 12), route[^1]);
+    }
+
+    /// <summary>
+    /// A rotation with no <c>origin</c> written turns about {0,0}, the origin's default (MLS
+    /// §18.6.1.1), so it is the same placement as <c>R.Turned</c>'s and its line ends in the same place
+    /// (B528). It was turned about the extent's centre, which no other tool does.
+    /// </summary>
+    [Fact]
+    public void ARotationWithNoOrigin_TurnsAboutZero()
+    {
+        using var host = Load();
+
+        Assert.Equal(Route(host, "R.Turned"), Route(host, "R.Unoriginated"));
+    }
+
+    /// <summary>
+    /// The bug report's reproduction (B528): a component placed in a box, turned. It must be written
+    /// so that every tool puts it in that box - centred extent, rotation, the box's centre as origin -
+    /// and its line must end on it there.
+    /// </summary>
+    [Fact]
+    public async Task ATurnedPlacement_IsWrittenWithItsOrigin_AndItsLineEndsOnItThere()
+    {
+        using var host = Load();
+        var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("R.Sys", "f", -10, -40, 10, -20, rotation: 90));
+
+        var code = host.Libraries.GetModelById("R.Sys")!.Definition.ModelicaCode!;
+        Assert.Contains("transformation(extent={{-10,-10},{10,10}}, rotation=90, origin={0,-30})", code);
+
+        // u is (2,8) from f's centre unturned; turned 90 degrees about the centre (0,-30), (-8,-28).
+        Assert.Equal(new DiagramGeometry.Pt(-8, -28), Route(host, "R.Sys")[^1]);
+        Assert.Matches(@"connect\(src\.y, f\.u\) annotation \(Line\(points=\{\{-39,0\},.*\{-8,-28\}\}", code);
     }
 
     [Fact]

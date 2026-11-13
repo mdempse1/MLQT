@@ -112,7 +112,8 @@ public class DiagramPlacementTests
 
         Assert.Equal([-140d, -20d, -100d, 20d], u.Extent);
         Assert.Equal(0, u.Rotation);
-        Assert.Equal([-120d, 0d], u.RotationCentre);
+        // The origin it would turn about is the default one, {0,0}, not the extent's centre (B528).
+        Assert.Equal([0d, 0d], u.RotationCentre);
     }
 
     [Fact]

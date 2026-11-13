@@ -169,6 +169,7 @@ public sealed class ObfuscationReadinessTests
     [
         ("ConnectionLineAnnotator.cs", "Math.Round(v).ToString(CultureInfo.InvariantCulture)", "a coordinate"),
         ("ConnectionLineAnnotator.cs", "v.ToString(\"0.######\", CultureInfo.InvariantCulture)", "a coordinate kept as drawn"),
+        ("DiagramTools.cs", "(value == 0 ? 0 : value).ToString(System.Globalization.CultureInfo.InvariantCulture)", "a placement coordinate"),
         ("Prose.cs", "return result.ToString();", "a StringBuilder"),
         ("EditClassTools.cs", "return pattern.ToString();", "a StringBuilder"),
         ("EditClassTools.cs", "return (pattern.ToString(), tokens);", "a StringBuilder"),

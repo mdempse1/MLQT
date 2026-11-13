@@ -85,8 +85,21 @@ public class DiagramToolsTests
 
         ToolAssert.Ok<StructureEditResult>(await tools.SetComponentPlacement("D.M", "placed", 0, 0, 40, 40, rotation: 90));
         var src = Source(host);
-        Assert.Contains("extent={{0,0},{40,40}}, rotation=90", src);
+        // Turned, it is written with its origin, or every other tool turns it about {0,0} (B528).
+        Assert.Contains("Placement(transformation(extent={{-20,-20},{20,20}}, rotation=90, origin={20,20})", src);
         Assert.DoesNotContain("{-10,-10}", src); // old extent gone
+    }
+
+    [Theory]
+    [InlineData(0, 0, 5, 10, 90, "transformation(extent={{-2.5,-5},{2.5,5}}, rotation=90, origin={2.5,5})")]
+    [InlineData(10, -10, -10, 10, 180, "transformation(extent={{10,-10},{-10,10}}, rotation=180, origin={0,0})")]
+    [InlineData(-60, -10, -40, 10, 0, "transformation(extent={{-60,-10},{-40,10}})")]
+    public void ATransformation_PutsTheComponentInTheBox_TurnedOrNot(
+        int x1, int y1, int x2, int y2, int rotation, string expected)
+    {
+        // A box with odd sides keeps its halves rather than being rounded somewhere else; a reversed
+        // pair, Modelica's mirror, stays reversed; an unturned box is written as it is.
+        Assert.Equal(expected, DiagramTools.Transformation(x1, y1, x2, y2, rotation));
     }
 
     /// <summary>

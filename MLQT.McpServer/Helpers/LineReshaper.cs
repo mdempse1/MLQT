@@ -90,11 +90,21 @@ internal static class LineReshaper
     {
         if (before is null || after is null || !Same(before.Rotation, after.Rotation))
             return null;
-        var dx = after.Extent[0] - before.Extent[0];
-        var dy = after.Extent[1] - before.Extent[1];
+        // Same size and same way round: the extent moved without resizing or flipping.
+        if (!Same(after.Extent[2] - after.Extent[0], before.Extent[2] - before.Extent[0])
+            || !Same(after.Extent[3] - after.Extent[1], before.Extent[3] - before.Extent[1]))
+            return null;
+
+        // Then the component as drawn moved as a whole, but not necessarily by as much as its extent
+        // did: it is turned about its origin, which need not have moved with the extent - from the
+        // origin-less form to the canonical one it moves from {0,0} to the box's centre (B528). So
+        // the move is read off the drawn box.
+        var (b, a) = (before.Box, after.Box);
+        var dx = a[0] - b[0];
+        var dy = a[1] - b[1];
         // Compared within a tolerance, and the move rounded to it: 0.1 to 0.3 and 20.1 to 20.3 are the
         // same move, but not to the last bit, and taken for a resize the line went to the router's point.
-        return Same(after.Extent[2] - before.Extent[2], dx) && Same(after.Extent[3] - before.Extent[3], dy)
+        return Same(a[2] - b[2], dx) && Same(a[3] - b[3], dy)
             ? new Pt(Tidy(dx), Tidy(dy))
             : null;
     }
@@ -113,9 +123,9 @@ internal static class LineReshaper
     /// </summary>
     public static double DistanceTo(Pt p, DiagramGeometry.Placement placement)
     {
-        var e = placement.Extent;
-        var (x1, x2) = (Math.Min(e[0], e[2]), Math.Max(e[0], e[2]));
-        var (y1, y2) = (Math.Min(e[1], e[3]), Math.Max(e[1], e[3]));
+        // The box as drawn, turned about its origin, not the extent as written (B528).
+        var box = placement.Box;
+        var (x1, y1, x2, y2) = (box[0], box[1], box[2], box[3]);
         var dx = Math.Max(Math.Max(x1 - p.X, 0), p.X - x2);
         var dy = Math.Max(Math.Max(y1 - p.Y, 0), p.Y - y2);
         return Math.Sqrt(dx * dx + dy * dy);

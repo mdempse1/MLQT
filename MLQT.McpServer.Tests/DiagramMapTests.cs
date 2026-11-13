@@ -152,7 +152,8 @@ public class DiagramMapTests
         var port = Placements(host, "M.Flipped", DiagramGeometry.Layer.Icon)["pBottom"];
 
         Assert.Equal([-60, 660, 60, 540], port.Extent);
-        Assert.Equal([0, 600], port.RotationCentre);
+        // pBottom states no origin, so it would turn about the base's {0,0}, mapped as a point (B528).
+        Assert.Equal([0, 0], port.RotationCentre);
     }
 
     [Fact]

@@ -89,4 +89,31 @@ public class LineReshaperTests
 
         Assert.Equal(new Pt(0.2, 0), LineReshaper.Translation(before, after));
     }
+
+    /// <summary>
+    /// A turned component is where its extent turned about its origin puts it, and that is what
+    /// moved (B528). The origin-less form turns about {0,0}; re-placing it in the canonical form,
+    /// with the same extent written and the origin at the box's centre, moves it 30 left and 30 down
+    /// though its extent did not move at all - read off the extent, the lines stayed where they were.
+    /// </summary>
+    [Fact]
+    public void ATurnedComponent_MovesWhereItIsDrawn_NotWhereItsExtentIsWritten()
+    {
+        var unoriginated = new DiagramGeometry.Placement([-10, -40, 10, -20], 90, [0, 0]);
+        var canonical = new DiagramGeometry.Placement([-10, -40, 10, -20], 90, [0, -30]);
+
+        Assert.Equal([20, -10, 40, 10], unoriginated.Box);
+        Assert.Equal([-10, -40, 10, -20], canonical.Box);
+        Assert.Equal(new Pt(-30, -30), LineReshaper.Translation(unoriginated, canonical));
+
+        // And a line's end is matched to the box it is drawn in.
+        Assert.Equal(0, LineReshaper.DistanceTo(new Pt(30, 0), unoriginated));
+        Assert.True(LineReshaper.DistanceTo(new Pt(0, -30), unoriginated) > 20); // inside the extent as written
+    }
+
+    [Fact]
+    public void AnUnturnedComponentsBox_IsItsExtent_Sorted()
+    {
+        Assert.Equal([0, 0, 20, 20], new DiagramGeometry.Placement([20, 20, 0, 0], 0, [0, 0]).Box);
+    }
 }

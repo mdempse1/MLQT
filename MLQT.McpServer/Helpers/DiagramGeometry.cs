@@ -30,9 +30,46 @@ internal static class DiagramGeometry
     /// <c>origin</c> already added in — a Modelica extent is stated relative to it.</param>
     /// <param name="Rotation">Degrees counter-clockwise.</param>
     /// <param name="RotationCentre">The point the rotation turns about: the transformation's
-    /// <c>origin</c> where it has one, and the extent's own centre where it does not. The two differ
-    /// only for an extent that is not symmetric about its origin, which is legal and rare.</param>
-    public sealed record Placement(double[] Extent, double Rotation, double[] RotationCentre);
+    /// <c>origin</c>, which is <c>{0,0}</c> where none is written - never the extent's own centre,
+    /// which differs from it for any extent not symmetric about the origin (B528).</param>
+    public sealed record Placement(double[] Extent, double Rotation, double[] RotationCentre)
+    {
+        /// <summary>
+        /// [x1,y1,x2,y2], the smallest box holding the component as it is drawn: <see cref="Extent"/>
+        /// turned about <see cref="RotationCentre"/>. The same as the extent, sorted, when nothing is
+        /// turned. Where a component is, rather than where its extent is written, which a rotation
+        /// about an origin off the extent's centre moves (B528).
+        /// </summary>
+        public double[] Box
+        {
+            get
+            {
+                var e = Extent;
+                if (Rotation == 0 || RotationCentre is not { Length: >= 2 })
+                    return [Math.Min(e[0], e[2]), Math.Min(e[1], e[3]), Math.Max(e[0], e[2]), Math.Max(e[1], e[3])];
+
+                var turned = new[] { (e[0], e[1]), (e[2], e[1]), (e[2], e[3]), (e[0], e[3]) }
+                    .Select(p => Turn(p.Item1, p.Item2, RotationCentre[0], RotationCentre[1], Rotation))
+                    .ToList();
+                return
+                [
+                    Tidy(turned.Min(p => p.X)), Tidy(turned.Min(p => p.Y)),
+                    Tidy(turned.Max(p => p.X)), Tidy(turned.Max(p => p.Y)),
+                ];
+            }
+        }
+
+        private static (double X, double Y) Turn(double x, double y, double cx, double cy, double degrees)
+        {
+            var r = degrees * Math.PI / 180;
+            var (c, s) = (Math.Cos(r), Math.Sin(r));
+            var (dx, dy) = (x - cx, y - cy);
+            return (cx + c * dx - s * dy, cy + s * dx + c * dy);
+        }
+
+        // cos(90°) is 6e-17, not 0: rounded so a quarter turn gives the integers it should.
+        private static double Tidy(double v) => Math.Round(v, 9);
+    }
 
     private static readonly Regex ExtentRegex = new(
         @"extent\s*=\s*\{\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*,\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}",
@@ -499,6 +536,12 @@ internal static class DiagramGeometry
     /// one in the middle of the diagram: MSL writes an optional connector as
     /// <c>extent={{-20,-20},{20,20}}, rotation=90, origin={60,-120}</c>, and without the origin that
     /// is a 40x40 box at the centre rather than a connector on the bottom edge.</para>
+    ///
+    /// <para><b>The rotation turns about <c>origin</c> too, and so about <c>{0,0}</c> when none is
+    /// written</b> (MLS §18.6.1.1). <c>extent={{-10,-40},{10,-20}}, rotation=90</c> is the box
+    /// <c>(20..40, -10..10)</c> in every other tool. This once turned such a placement about its
+    /// extent's centre instead, and <c>set_component_placement</c> wrote exactly that form, so MLQT
+    /// drew and routed lines to a place no other tool put the component (B528).</para>
     /// </summary>
     private static Placement? ParsePlacement(string declaration, Layer layer)
     {
@@ -524,9 +567,10 @@ internal static class DiagramGeometry
             : (0d, 0d);
 
         double[] absolute = [extent[0] + ox, extent[1] + oy, extent[2] + ox, extent[3] + oy];
-        double[] centre = origin.Success ? [ox, oy] : [(absolute[0] + absolute[2]) / 2, (absolute[1] + absolute[3]) / 2];
 
-        return new Placement(absolute, rotation.Success ? Num(rotation.Groups[1].Value) : 0, centre);
+        // The rotation turns about origin, written or not: {0,0} when it is absent, never the
+        // extent's own centre (B528).
+        return new Placement(absolute, rotation.Success ? Num(rotation.Groups[1].Value) : 0, [ox, oy]);
     }
 
     /// <summary>

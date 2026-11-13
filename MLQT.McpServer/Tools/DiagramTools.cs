@@ -180,9 +180,7 @@ public sealed class DiagramTools
         if (decl is null)
             return null;
 
-        var extent = "{{" + x1 + "," + y1 + "},{" + x2 + "," + y2 + "}}";
-        var rot = rotation != 0 ? ", rotation=" + rotation : string.Empty;
-        var transformation = "transformation(extent=" + extent + rot + ")";
+        var transformation = Transformation(x1, y1, x2, y2, rotation);
         var placement = "Placement(" + transformation + ")";
 
         var annotation = ComponentComment.Annotation(decl);
@@ -206,6 +204,33 @@ public sealed class DiagramTools
         var end = ComponentComment.AnnotationInsertOffset(decl);
         return classCode[..end] + " annotation (" + placement + ")" + classCode[end..];
     }
+
+    /// <summary>
+    /// The <c>transformation(...)</c> that puts a component in the box (x1,y1)-(x2,y2), turned by
+    /// <paramref name="rotation"/>.
+    ///
+    /// <para><b>A turned component is written with its <c>origin</c></b> (B528): the extent centred
+    /// on {0,0} and the box's centre as the origin, which is how Dymola and OMEdit write one. A
+    /// Modelica rotation turns about <c>origin</c>, {0,0} when none is written, so the absolute extent
+    /// with only a rotation beside it - which this used to write - turned the component about the
+    /// middle of the diagram in every other tool. An unturned one keeps the absolute extent, which
+    /// every tool reads alike. A reversed pair stays reversed either way, since that is how a
+    /// placement mirrors.</para>
+    /// </summary>
+    internal static string Transformation(int x1, int y1, int x2, int y2, int rotation)
+    {
+        if (rotation == 0)
+            return "transformation(extent={{" + x1 + "," + y1 + "},{" + x2 + "," + y2 + "}})";
+
+        // Integer halves where the box allows them, decimals where it does not: the box is the
+        // caller's, and rounding it would move the component.
+        var (cx, cy) = ((x1 + x2) / 2.0, (y1 + y2) / 2.0);
+        return "transformation(extent={{" + N(x1 - cx) + "," + N(y1 - cy) + "},{" + N(x2 - cx) + "," + N(y2 - cy)
+               + "}}, rotation=" + rotation + ", origin={" + N(cx) + "," + N(cy) + "})";
+    }
+
+    private static string N(double value)
+        => (value == 0 ? 0 : value).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static modelicaParser.ArgumentContext? FindPlacementArgument(modelicaParser.AnnotationContext annotation)
         => FindArgument(annotation.class_modification(), "Placement");
@@ -233,8 +258,8 @@ public sealed class DiagramTools
     /// <c>iconTransformation</c>, where the component sits on the enclosing class's <i>icon</i>,
     /// and <c>visible</c>. Overwriting the whole Placement deleted both, so moving a class's own
     /// connector on its diagram moved it on the class's icon too, in every diagram that uses the
-    /// class. The old transformation's <c>origin</c> and <c>rotation</c> do go: the extent this
-    /// writes is absolute.</para>
+    /// class. The old transformation's <c>origin</c> and <c>rotation</c> do go: the new one states
+    /// its own (<see cref="Transformation"/>).</para>
     /// </summary>
     private static string? ReplaceTransformation(
         string classCode, modelicaParser.ArgumentContext placement, string transformation)
