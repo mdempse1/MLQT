@@ -19,7 +19,7 @@ public class VCSHistoryDateTooltipTests
     {
         var tooltip = VCSHistory.DateTooltipFor(new VcsLogEntry { Date = Authored, CommitterDate = Rebased });
 
-        Assert.Equal($"Committed {Rebased.ToString(VCSHistory.DateFormat)} - the date the filter uses", tooltip);
+        Assert.Equal($"Committed {Rebased.ToLocalTime().ToString(VCSHistory.DateFormat)} - the date the filter uses", tooltip);
     }
 
     [Fact]
@@ -27,8 +27,45 @@ public class VCSHistoryDateTooltipTests
     {
         var amended = Authored.AddMinutes(1);
 
-        Assert.Contains(amended.ToString(VCSHistory.DateFormat),
+        Assert.Contains(VCSHistory.ShownDate(amended),
             VCSHistory.DateTooltipFor(new VcsLogEntry { Date = Authored, CommitterDate = amended }));
+    }
+
+    /// <summary>
+    /// A date is shown in this machine's zone, whatever zone it was recorded in: the same moment
+    /// recorded at +01:00 and at UTC reads the same.
+    /// </summary>
+    [Fact]
+    public void AMoment_IsShownTheSame_WhicheverZoneItWasRecordedIn()
+    {
+        var recorded = new DateTimeOffset(2026, 11, 2, 0, 30, 0, TimeSpan.FromHours(1));
+
+        Assert.Equal(VCSHistory.ShownDate(recorded.ToUniversalTime()), VCSHistory.ShownDate(recorded));
+        Assert.Equal(TimeZoneInfo.ConvertTime(recorded, TimeZoneInfo.Local).ToString(VCSHistory.DateFormat),
+            VCSHistory.ShownDate(recorded));
+    }
+
+    /// <summary>
+    /// The day a commit is shown on is a day the filter keeps it for, and the day before is not. Shown
+    /// in the zone it was recorded in, 00:30 +01:00 on 2 November read as the 2nd, while to a user on
+    /// UTC a filter ending the 1st kept it and one starting the 2nd did not.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(9)]
+    public void TheDayACommitIsShownOn_IsTheDayTheFilterKeepsItFor(int offsetHours)
+    {
+        var committed = new DateTimeOffset(2026, 11, 2, 0, 30, 0, TimeSpan.FromHours(offsetHours));
+        var shownDay = DateTime.ParseExact(VCSHistory.ShownDate(committed), VCSHistory.DateFormat,
+            System.Globalization.CultureInfo.CurrentCulture).Date;
+
+        var (since, until) = VCSHistory.FilterRange(shownDay, shownDay);
+        Assert.InRange(committed, since!.Value, until!.Value);
+
+        var (_, untilTheDayBefore) = VCSHistory.FilterRange(null, shownDay.AddDays(-1));
+        Assert.True(committed > untilTheDayBefore!.Value);
     }
 
     [Fact]

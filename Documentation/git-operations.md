@@ -401,7 +401,7 @@ For Git repositories, the history view includes a visual **commit graph** on the
 
 Use the **From** and **To** date pickers at the top to filter the history to a specific date range. Click **Apply** to filter or **Reset** to clear the filter.
 
-The range is matched against the committer date, the date each commit was made on its branch, as `git log --since` and `--until` do. A rebased commit is therefore found by when it was rebased, although its **Date** column shows when it was first written. Hovering over that date shows the committer date whenever the two differ.
+The range is matched against the committer date, the date each commit was made on its branch, as `git log --since` and `--until` do. A rebased commit is therefore found by when it was rebased, although its **Date** column shows when it was first written. Hovering over that date shows the committer date whenever the two differ. Both are shown in your computer's time zone, which is the zone the range's days are in, so a commit made just after midnight somewhere ahead of you appears on the day the filter counts it in.
 
 ### Loading More History
 

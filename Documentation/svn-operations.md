@@ -300,7 +300,7 @@ The SVN history view works similarly to the Git version but with some difference
 | **Revision** | The SVN revision number. The current working copy revision is shown in **bold**. |
 | **Branch** | The branch this revision belongs to. |
 | **Author** | The commit author. |
-| **Date** | The commit date. |
+| **Date** | The commit date, in your computer's time zone. |
 | **Message** | The commit message (hover for full text). |
 
 ![Screenshot: The SVN VCS History dialog showing the revision log table with integer revision numbers, no commit graph, and the date range filter at top.](Images/svn-operations-6.png)

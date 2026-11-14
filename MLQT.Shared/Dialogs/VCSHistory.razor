@@ -94,7 +94,7 @@
                         </MudTd>
                         <MudTd DataLabel="Date" Style="@(isCurrentRevision ? "font-weight: bold;min-width: 150px;" : "min-width: 150px;")" Class="body1-table">
                             <MudTooltip Text="@dateTooltip" Disabled="@string.IsNullOrEmpty(dateTooltip)">
-                                @context.Date.ToString(DateFormat)
+                                @ShownDate(context.Date)
                             </MudTooltip>
                         </MudTd>
                         <MudTd DataLabel="Message" Style="@(isCurrentRevision ? "font-weight: bold; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" : "max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;")" Class="body1-table">

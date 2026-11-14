@@ -265,9 +265,9 @@ public partial class VCSHistory
 
         if (_repository != null && _repository.VcsType != RepositoryVcsType.Local)
         {
-            // Initialize date picker with default values
-            _fromDate = _currentOptions.Since?.DateTime;
-            _toDate = _currentOptions.Until?.DateTime;
+            // Initialize date picker with default values, in local time as the dates are shown
+            _fromDate = _currentOptions.Since?.LocalDateTime;
+            _toDate = _currentOptions.Until?.LocalDateTime;
 
             await LoadLogEntriesAsync();
         }
@@ -321,6 +321,14 @@ public partial class VCSHistory
     internal const string DateFormat = "dd-MMM-yyyy HH:mm";
 
     /// <summary>
+    /// A commit's date as the history shows it: in this machine's time zone, which is the zone the
+    /// date filter's days are in. Formatted in the zone it was recorded in, a commit made at 00:30
+    /// +01:00 on 2 November showed as 02-Nov 00:30 to a user on UTC, and a filter ending 1 November -
+    /// that user's midnight - kept it, since it was 23:30 on the 1st where they are.
+    /// </summary>
+    internal static string ShownDate(DateTimeOffset date) => date.ToLocalTime().ToString(DateFormat);
+
+    /// <summary>
     /// The Date cell's tooltip: the committer date, when a rebase, cherry-pick or amend has moved it
     /// away from the author date the cell shows. The date filter matches the committer date, so this
     /// is what explains a commit the filter kept although its Date is outside the range. Empty, which
@@ -329,7 +337,7 @@ public partial class VCSHistory
     internal static string DateTooltipFor(VcsLogEntry entry) =>
         Math.Abs((entry.CommitterDate - entry.Date).TotalMinutes) < 1
             ? ""
-            : $"Committed {entry.CommitterDate.ToString(DateFormat)} - the date the filter uses";
+            : $"Committed {ShownDate(entry.CommitterDate)} - the date the filter uses";
 
     private string GetRevisionTooltip(VcsLogEntry entry)
     {
@@ -399,20 +407,22 @@ public partial class VCSHistory
 
     private async Task ApplyDateFilter()
     {
-        _currentOptions.Since = _fromDate.HasValue
-            ? new DateTimeOffset(_fromDate.Value)
-            : null;
-        _currentOptions.Until = _toDate.HasValue
-            ? new DateTimeOffset(_toDate.Value.AddDays(1).AddSeconds(-1)) // End of day
-            : null;
-
+        (_currentOptions.Since, _currentOptions.Until) = FilterRange(_fromDate, _toDate);
         await LoadLogEntriesAsync();
     }
+
+    /// <summary>
+    /// The instants the date filter keeps for the days picked: from this machine's midnight at the
+    /// start of the first to the end of the last - the days <see cref="ShownDate"/> puts commits in.
+    /// </summary>
+    internal static (DateTimeOffset? Since, DateTimeOffset? Until) FilterRange(DateTime? from, DateTime? to) =>
+        (from.HasValue ? new DateTimeOffset(from.Value.Date) : null,
+         to.HasValue ? new DateTimeOffset(to.Value.Date.AddDays(1).AddSeconds(-1)) : null); // End of day
 
     private async Task ResetDateFilter()
     {
         _currentOptions = VcsLogOptions.DefaultPastWeek();
-        _fromDate = _currentOptions.Since?.DateTime;
+        _fromDate = _currentOptions.Since?.LocalDateTime;
         _toDate = null;
 
         await LoadLogEntriesAsync();
