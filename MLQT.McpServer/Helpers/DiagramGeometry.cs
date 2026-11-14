@@ -259,9 +259,28 @@ internal static class DiagramGeometry
         var sa = new Pt(a.X + da.Dx * stub, a.Y + da.Dy * stub);
         var sb = new Pt(b.X + db.Dx * stub, b.Y + db.Dy * stub);
 
-        var pts = new List<Pt> { a, sa };
         var aHorizontal = da.Dy == 0;
         var bHorizontal = db.Dy == 0;
+
+        // Facing each other along one axis, closer than the two leads: the leads cross, and going
+        // round them drew a closed loop ({-20,-72},{-20,-75},{-5,-75},{-5,-71},{-20,-71},{-20,-74}).
+        // Without leads it is one turn half way between the ends, or a straight line where they line
+        // up (B530).
+        if (aHorizontal == bHorizontal && Ahead(a, da, b) && Ahead(b, db, a))
+        {
+            if (aHorizontal && (sb.X - sa.X) * da.Dx < 0)
+            {
+                var mx = (a.X + b.X) / 2;
+                return Clean([a, new Pt(mx, a.Y), new Pt(mx, b.Y), b]);
+            }
+            if (!aHorizontal && (sb.Y - sa.Y) * da.Dy < 0)
+            {
+                var my = (a.Y + b.Y) / 2;
+                return Clean([a, new Pt(a.X, my), new Pt(b.X, my), b]);
+            }
+        }
+
+        var pts = new List<Pt> { a, sa };
 
         // Both ends leave along the same axis. Turning half way between the leads is right only when the
         // connectors face each other with room between them; facing apart - an output whose target is
@@ -300,13 +319,17 @@ internal static class DiagramGeometry
                 pts.Add(new Pt(mx, sb.Y));
             }
         }
-        else if (aHorizontal)
-        {
-            pts.Add(new Pt(sb.X, sa.Y)); // horizontal then vertical
-        }
         else
         {
-            pts.Add(new Pt(sa.X, sb.Y)); // vertical then horizontal
+            // One lead horizontal, one vertical: a single corner joins them. Turning on from the first
+            // lead is how a person draws it, unless that runs back along a lead - the corner level
+            // with a connector that faces up or down, or behind one that faces sideways - when the
+            // line went out and back over itself ({0,-100},{95,-100},{95,-115},{95,-100}). The other
+            // corner never does: both of its legs cross the leads they meet (B530).
+            var (along, across) = aHorizontal
+                ? (new Pt(sb.X, sa.Y), new Pt(sa.X, sb.Y))
+                : (new Pt(sa.X, sb.Y), new Pt(sb.X, sa.Y));
+            pts.Add(DoublesBack(sa, da, along, sb, db) ? across : along);
         }
         pts.Add(sb);
         pts.Add(b);
@@ -327,6 +350,12 @@ internal static class DiagramGeometry
     // along its component's edge (a=(0,0) facing right, b=(20,0) facing up gave the one segment a->b).
     private static bool Ahead(Pt from, Facing facing, Pt point)
         => (point.X - from.X) * facing.Dx + (point.Y - from.Y) * facing.Dy > 0;
+
+    // Whether going lead sa -> corner -> lead sb runs back along a lead: back past sa toward its
+    // connector, or on past sb and then back to its connector b (which lies at sb - db * stub).
+    private static bool DoublesBack(Pt sa, Facing da, Pt corner, Pt sb, Facing db)
+        => (corner.X - sa.X) * da.Dx + (corner.Y - sa.Y) * da.Dy < 0
+           || (sb.X - corner.X) * db.Dx + (sb.Y - corner.Y) * db.Dy > 0;
 
     // A None facing points along the dominant axis toward the other endpoint.
     private static Facing Resolve(Facing f, Pt from, Pt to)

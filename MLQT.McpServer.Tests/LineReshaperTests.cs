@@ -68,6 +68,43 @@ public class LineReshaperTests
         Assert.Equal([new(0, 0), new(40, 0)], moved);
     }
 
+    /// <summary>
+    /// A zero-length stub at the fixed end was kept by the walk and joined to the moved point, which
+    /// wrote <c>{70,-90},{90,-90},{90,-90},{90,-90}</c> into a file (B530).
+    /// </summary>
+    [Fact]
+    public void AMove_LeavesNoPointRepeated()
+    {
+        var moved = LineReshaper.MoveEnd([new(70, -80), new(90, -80), new(90, -90), new(90, -90)], atStart: true, new Pt(70, -90));
+
+        Assert.Equal([new(70, -90), new(90, -90)], moved);
+    }
+
+    private static readonly (Pt[] Line, Pt[] Expected)[] Tangles =
+    [
+        // Out 15 and straight back.
+        ([new(0, -100), new(95, -100), new(95, -115), new(95, -100)], [new(0, -100), new(95, -100)]),
+        // Back over the start after 3.
+        ([new(-20, -40), new(-17, -40), new(-20, -40), new(-20, -52)], [new(-20, -40), new(-20, -52)]),
+        // A point repeated: the point the author put on the run stays.
+        ([new(-70, -84), new(-70, -87), new(-70, -87), new(-70, -90)], [new(-70, -84), new(-70, -87), new(-70, -90)]),
+        // Three identical points.
+        ([new(70, -90), new(90, -90), new(90, -90), new(90, -90)], [new(70, -90), new(90, -90)]),
+        // A spur off a corner, which leaves the corner.
+        ([new(0, 0), new(10, 0), new(10, 10), new(10, 5), new(20, 5)], [new(0, 0), new(10, 0), new(10, 5), new(20, 5)]),
+        // Nothing to take out: corners and a point on a straight run are the author's.
+        ([new(0, 0), new(5, 0), new(10, 0), new(10, 10)], [new(0, 0), new(5, 0), new(10, 0), new(10, 10)]),
+        // Both ends on one point.
+        ([new(3, 3), new(3, 3)], [new(3, 3), new(3, 3)]),
+    ];
+
+    [Fact]
+    public void Untangling_TakesOutRepeatsAndSpurs_AndNothingElse()
+    {
+        foreach (var (line, expected) in Tangles)
+            Assert.Equal(expected, LineReshaper.Untangle(line));
+    }
+
     [Fact]
     public void ATranslation_IsAMoveThatKeepsSizeAndTurn()
     {

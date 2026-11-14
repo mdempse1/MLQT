@@ -409,7 +409,9 @@ public sealed class GuidanceTools
             brings the lines ending on the moved component with it, keeping their route: only the end on
             it moves, plus as few bends as keep the line orthogonal. Every other Line is left as written,
             so a route you adjust stays. No need to remove and re-add a connection after a move.
-            A connect inside a for/if/when equation is left as you wrote it, Line or no Line.
+            Because the move rewrites those Lines, a replace of one of them later in the same mlqt_edit_class
+            call no longer finds its text and the call fails whole: put that replace first, or in a call of
+            its own after the move. A connect inside a for/if/when equation is left as you wrote it, Line or no Line.
             Modelica diagrams use horizontal and vertical segments, not diagonals; if a route looks wrong in
             the image, the fix is almost always to move a component rather than to hand-write points.
 

@@ -95,6 +95,16 @@ internal static class ConnectorCompatibility
             if (i == segments.Length - 1)
                 break;
 
+            // A replaceable component is whatever its redeclaration makes it, and that can be written
+            // where this walk does not look - `extends Base(redeclare Stepped driver)`, or a modifier of
+            // the instance holding it - so its declared class is not where its members are. The rule
+            // never judges a member reached this way; refusing `driver.stepped` because the default
+            // driver has none broke the promise to refuse only what it reports (B531).
+            if (member.Element.Prefixes.Contains("replaceable") || member.Element.Prefixes.Contains("redeclare")
+                || typeNode.ElementPrefix?.Contains("replaceable", StringComparison.Ordinal) == true)
+                return new PortResolution(null, null,
+                    $"'{segments[i]}' is replaceable, so a redeclaration decides whether it has '{segments[i + 1]}'");
+
             currentId = typeNode.Id; // descend into the component's class
         }
 

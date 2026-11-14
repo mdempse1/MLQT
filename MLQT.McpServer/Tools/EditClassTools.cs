@@ -130,7 +130,8 @@ public sealed class EditClassTools
                 if (result is ToolError te)
                 {
                     await EditRollback.RestoreAsync(snapshots, _libraries, _resources, _session);
-                    return new ToolError($"Operation {i} ({OpName(operations[i].Op)}) failed: {te.Error} Nothing was changed.");
+                    return new ToolError($"Operation {i} ({OpName(operations[i].Op)}) failed: {te.Error}" +
+                                         RewrittenEarlier(i, operations, ctx.ClassCode, te.Error) + " Nothing was changed.");
                 }
                 if (result is StructureEditResult { Note: { Length: > 0 } note })
                     notes.Add($"Operation {i}: {note}");
@@ -151,6 +152,33 @@ public sealed class EditClassTools
         }
         return new EditClassResult(classId, ctx.FilePath, preview, operations.Count, content, notes);
     }
+
+    /// <summary>
+    /// When a replace fails on text the class held before this call, an operation before it changed
+    /// that text - most often set_component_placement, which re-routes the lines of the component it
+    /// moves, so a replace of one of those Lines later in the same call no longer finds it. The call is
+    /// all or none, so it failed whole and the error did not say why (B533).
+    /// </summary>
+    internal static string RewrittenEarlier(
+        int failed, IReadOnlyList<ClassEditOperation> operations, string originalClassCode, string error)
+    {
+        // Only for "not found": text occurring twice, or a replace that would rename the class, is not
+        // what an earlier operation did.
+        if (failed == 0 || OpName(operations[failed].Op) != "replace" || operations[failed].Old is not { Length: > 0 } old
+            || !error.Contains("The text to replace is not in", StringComparison.Ordinal)
+            || !Squeezed(originalClassCode).Contains(Squeezed(old), StringComparison.Ordinal))
+            return string.Empty;
+
+        var earlier = operations.Take(failed).Select(o => OpName(o.Op)).Distinct(StringComparer.Ordinal).ToList();
+        var moved = earlier.Contains("set_component_placement")
+            ? " set_component_placement re-routes the connection lines of the component it moves."
+            : string.Empty;
+        return $" The class held that text before this call, so an earlier operation ({string.Join(", ", earlier)}) changed it.{moved}" +
+               " Put the replace before it, or make it a call of its own.";
+    }
+
+    // The text with every run of whitespace as one space: the replace finds text a formatter reflowed.
+    private static string Squeezed(string text) => System.Text.RegularExpressions.Regex.Replace(text.Trim(), @"\s+", " ");
 
     // The ops were tools of their own until the 16-tool set (B503), and an agent that has seen one may
     // still write its name, so an mlqt_ prefix is dropped, and accept_spelling_in_class is accept_spelling.

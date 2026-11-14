@@ -329,6 +329,40 @@ public class DiagramRoutingTests
         Assert.False(DoublesBack(route), string.Join(" ", route));
     }
 
+    /// <summary>
+    /// Three routes a session reported, each exactly as the router wrote it (B530): out to a corner
+    /// level with a connector facing down and straight back up into it, back over a connector facing
+    /// sideways, and round the ends of two connectors facing each other closer than their leads.
+    /// </summary>
+    [Theory]
+    [InlineData(0, -100, 1, 0, 95, -100, 0, -1)]   // was {0,-100},{95,-100},{95,-115},{95,-100}
+    [InlineData(-20, -40, 1, 0, -20, -52, 0, 1)]   // was {-20,-40},{-17,-40},{-20,-40},{-20,-52}
+    [InlineData(-20, -72, 0, -1, -20, -74, 0, 1)]  // was a closed loop through {-5,-75} and {-5,-71}
+    public void ARoute_NeverRunsBackOverItself(int ax, int ay, int fax, int fay, int bx, int by, int fbx, int fby)
+    {
+        var (a, b) = (new DiagramGeometry.Pt(ax, ay), new DiagramGeometry.Pt(bx, by));
+        var route = DiagramGeometry.Route(a, new(fax, fay), b, new(fbx, fby));
+        var shown = string.Join(" ", route);
+
+        Assert.False(DoublesBack(route), shown);
+        Assert.Equal(route.Count, route.Distinct().Count()); // no point twice: no repeat, no loop
+        Assert.Equal(a, route[0]);
+        Assert.Equal(b, route[^1]);
+        // Each end is left and entered from the side its connector faces.
+        Assert.True((route[1].X - a.X) * fax + (route[1].Y - a.Y) * fay > 0, shown);
+        Assert.True((route[^2].X - b.X) * fbx + (route[^2].Y - b.Y) * fby > 0, shown);
+    }
+
+    [Fact]
+    public void ConnectorsFacingEachOther_CloserThanTheirLeads_AreJoinedStraight()
+    {
+        Assert.Equal([new(-20, -72), new(-20, -74)],
+            DiagramGeometry.Route(new(-20, -72), new(0, -1), new(-20, -74), new(0, 1)));
+        // Not lined up: one turn half way between them.
+        Assert.Equal([new(0, 0), new(1, 0), new(1, 2), new(2, 2)],
+            DiagramGeometry.Route(new(0, 0), new(1, 0), new(2, 2), new(-1, 0)));
+    }
+
     private const string Arrays = """
         within;
         package Q "q"

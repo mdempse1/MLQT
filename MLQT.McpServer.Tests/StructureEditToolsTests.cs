@@ -782,6 +782,67 @@ public class StructureEditToolsTests
         Assert.Contains("replaceable", res.Note);
     }
 
+    private const string Redeclared = """
+        within;
+        package R "r"
+          connector Port "port"
+            Real v;
+          end Port;
+          partial model DriverBase "driver"
+            Port out "out";
+          end DriverBase;
+          model MinimalDriver "no step"
+            extends DriverBase;
+          end MinimalDriver;
+          model SteppedDriver "step"
+            extends DriverBase;
+            Port stepped "step";
+          end SteppedDriver;
+          model Sink "sink"
+            Port inp "in";
+          end Sink;
+          model Experiment "base"
+            replaceable MinimalDriver driver constrainedby DriverBase "driver";
+            Sink sink "sink";
+          end Experiment;
+          model ViaExtends "redeclared in the extends clause"
+            extends Experiment(redeclare SteppedDriver driver);
+          end ViaExtends;
+          model Holder "redeclared in an instance modifier"
+            Experiment own(redeclare SteppedDriver driver) "held";
+          end Holder;
+          model Plain "nothing replaceable"
+            MinimalDriver driver "driver";
+            Sink sink "sink";
+          end Plain;
+        end R;
+        """;
+
+    /// <summary>
+    /// A member of a replaceable component's redeclaration is not refused because the default lacks
+    /// it (B531): the redeclaration can be written in an extends clause or an instance modifier, where
+    /// the walk does not look, and MLQT.Connection.Incompatible leaves such a port alone.
+    /// </summary>
+    [Theory]
+    [InlineData("R.ViaExtends", "driver.stepped", "sink.inp")]
+    [InlineData("R.Holder", "own.driver.stepped", "own.sink.inp")]
+    public async Task AddConnection_AMemberOfARedeclaredComponent_IsLeftToTheRedeclaration(string classId, string portA, string portB)
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Redeclared });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+
+        var res = ToolAssert.Ok<StructureEditResult>(await tools.AddConnection(classId, portA, portB));
+        Assert.True(res.Changed);
+        Assert.Contains("'driver' is replaceable", res.Note);
+        Assert.Contains($"connect({portA}, {portB});", Source(host, classId));
+
+        // Where nothing is replaceable, a member the class does not have is still refused.
+        var plain = ToolAssert.Error(await tools.AddConnection("R.Plain", "driver.stepped", "sink.inp"));
+        Assert.Contains("'stepped' is not a component of 'R.MinimalDriver'", plain.Error);
+    }
+
     [Fact]
     public async Task AddConnection_ASignalAnExpandableBusDoesNotYetDeclare_IsAccepted()
     {

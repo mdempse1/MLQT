@@ -114,6 +114,49 @@ public class EditClassToolsTests
         Assert.Contains("all=true", err.Error);
     }
 
+    /// <summary>
+    /// A replace of text an earlier operation in the same call changed says so (B533). The call is all
+    /// or none, and set_component_placement rewrites the Lines of the component it moves, so a replace of
+    /// one of them later in the call failed with only "not in the class" - text the agent could see there.
+    /// </summary>
+    [Fact]
+    public async Task AReplace_OfTextAnEarlierOperationChanged_SaysWhichOne()
+    {
+        using var host = new TestHost();
+        var err = Assert.IsType<ToolError>(await Load(host).EditClass("P.Lag",
+            [Replace("u - y;", "u - 2*y;"), Replace("T*der(y) = u - y;", "T*der(y) = u;")]));
+
+        Assert.Contains("Operation 1 (replace) failed", err.Error);
+        Assert.Contains("an earlier operation (replace) changed it", err.Error);
+        Assert.Contains("Put the replace before it", err.Error);
+        Assert.Contains("Nothing was changed", err.Error);
+
+        // Text that was never there gets no such guess; nor does a first operation.
+        var never = Assert.IsType<ToolError>(await Tools(host).EditClass("P.Lag",
+            [Replace("u - y;", "u - 2*y;"), Replace("y = 3*u;", "y = u;")]));
+        Assert.DoesNotContain("earlier operation", never.Error);
+        Assert.DoesNotContain("earlier operation", Assert.IsType<ToolError>(
+            await Tools(host).EditClass("P.Lag", [Replace("T*der(y)=u+y;", "x")])).Error);
+    }
+
+    [Fact]
+    public void AReplaceAfterAPlacement_IsToldThePlacementReroutesItsLines()
+    {
+        var ops = new List<ClassEditOperation>
+        {
+            new() { Op = "set_component_placement", Name = "gain" },
+            Replace("Line(points={{0,0},{10,0}})", "Line(points={{0,0},{20,0}})"),
+        };
+        const string error = "The text to replace is not in 'P.M', even ignoring differences in white space.";
+
+        var hint = EditClassTools.RewrittenEarlier(1, ops, "connect(a.y, b.u) annotation (Line(points={{0,0},{10,0}}));", error);
+
+        Assert.Contains("(set_component_placement)", hint);
+        Assert.Contains("re-routes the connection lines of the component it moves", hint);
+        // Occurring twice is not something an earlier operation did.
+        Assert.Empty(EditClassTools.RewrittenEarlier(1, ops, "Line(points={{0,0},{10,0}})", "The text to replace occurs 2 times"));
+    }
+
     // ---- all=true: every occurrence ------------------------------------------------------------
     //
     // A name used throughout a class was renamed with a shell sed in the Dymola scenario, because

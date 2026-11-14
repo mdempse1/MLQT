@@ -75,6 +75,31 @@ public class AnalysisFacadeToolsTests
         Assert.Contains("block", blok.Suggestions);
     }
 
+    /// <summary>
+    /// Spelling of a library is every class's spell check (B532). It was refused, in the spelling slot
+    /// of an answer whose style check had run, so the call looked like a success that found nothing.
+    /// </summary>
+    [Fact]
+    public async Task Spelling_OfALibrary_IsEachClassesSpellCheck()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var spelling = Spelling(host);
+        var perClass = new[] { "P", "P.A", "P.B" }
+            .SelectMany(id => Assert.IsType<SpellCheckResult>(spelling.SpellCheck(id)).Findings)
+            .ToList();
+
+        foreach (var res in new[] { await tools.Check(checks: ["style", "spelling"]), await tools.Check(libraryId: "P", checks: ["spelling"]) })
+        {
+            var check = Assert.IsType<CheckFacadeResult>(res);
+            var spelt = Assert.IsType<SpellCheckResult>(check.Spelling);
+            Assert.Equal(perClass.Select(Json).Order(StringComparer.Ordinal),
+                spelt.Findings.Select(Json).Order(StringComparer.Ordinal));
+            Assert.Contains(spelt.Findings, f => f.ModelName == "P.A" && f.Summary.Contains("blok", StringComparison.Ordinal));
+            Assert.Contains(check.SpellingSuggestions!, s => s.Word == "blok");
+        }
+    }
+
     [Fact]
     public async Task References_AreTheReferenceCheck()
     {
@@ -105,9 +130,6 @@ public class AnalysisFacadeToolsTests
     {
         using var host = new TestHost();
         var tools = Load(host);
-
-        var forLibrary = Assert.IsType<CheckFacadeResult>(await tools.Check(checks: ["spelling"]));
-        Assert.Contains("one class or source", Assert.IsType<ToolError>(forLibrary.Spelling).Error);
 
         var forSource = Assert.IsType<CheckFacadeResult>(await tools.Check(source: "model X end X;", checks: ["references"]));
         Assert.Contains("not in source text", Assert.IsType<ToolError>(forSource.References).Error);

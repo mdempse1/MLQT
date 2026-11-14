@@ -75,7 +75,43 @@ internal static class LineReshaper
 
         if (!atStart)
             moved.Reverse();
-        return moved;
+        return Untangle(moved);
+    }
+
+    /// <summary>
+    /// <paramref name="points"/> without what no one would draw: a point repeated where it stands, and
+    /// a point a line goes out to and straight back from along the same line.
+    /// </summary>
+    /// <remarks>
+    /// The walk keeps two points on top of each other so, and moves a point along its segment without
+    /// asking whether that takes it past the next one: a move wrote <c>{70,-90},{90,-90},{90,-90},{90,-90}</c>
+    /// and lines that doubled back on themselves (B530). Every other point - a corner, or one the
+    /// author put on a straight run - is the author's and stays.
+    /// </remarks>
+    internal static IReadOnlyList<Pt> Untangle(IReadOnlyList<Pt> points)
+    {
+        var result = new List<Pt>();
+        foreach (var p in points)
+        {
+            // A reversal at the last point kept: going prev -> last -> p along one line, with last beyond
+            // both, is a spur. Drop it and look again, since the point before may now be one too.
+            while (result.Count >= 2 && IsSpur(result[^2], result[^1], p))
+                result.RemoveAt(result.Count - 1);
+            if (result.Count == 0 || result[^1] != p)
+                result.Add(p);
+        }
+        // Both ends on one point: the line is that point twice, as it was given.
+        return result.Count >= 2 || points.Count < 2 ? result : [points[0], points[^1]];
+    }
+
+    // cur lies on the line through prev and next but not between them: the line runs out to it and back.
+    private static bool IsSpur(Pt prev, Pt cur, Pt next)
+    {
+        if (prev.X == cur.X && cur.X == next.X)
+            return (cur.Y - prev.Y) * (next.Y - cur.Y) < 0;
+        if (prev.Y == cur.Y && cur.Y == next.Y)
+            return (cur.X - prev.X) * (next.X - cur.X) < 0;
+        return false;
     }
 
     /// <summary>Every point moved by the same amount: a line whose two ends moved together.</summary>

@@ -93,7 +93,7 @@ public sealed class AnalysisFacadeTools
             var languages = settings?.SpellCheckLanguages;
             spelling = hasClass || hasSource
                 ? _spelling.SpellCheck(classId, source, languages)
-                : new ToolError("Spelling checks one class or source text; give classId or source.");
+                : _spelling.SpellCheckLibrary(libraryId, languages);
             if (spelling is SpellCheckResult spelt)
                 suggestions = Suggest(spelt, languages);
         }

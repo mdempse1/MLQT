@@ -91,6 +91,60 @@ public sealed class SpellingTools
         return new ToolError("Provide either class_id or source.");
     }
 
+    /// <summary>
+    /// Every class of a library spell-checked as <see cref="SpellCheck"/> checks one: with the library's
+    /// repository's languages (or the call's) and accepted words, each class's findings at lines in
+    /// that class. Null <paramref name="libraryId"/> is every library loaded.
+    /// </summary>
+    /// <remarks>
+    /// mlqt_check refused spelling for a library while running its style check, and put the refusal
+    /// in the spelling slot of an answer that otherwise looked like a success, so a caller read
+    /// "no misspellings" from a check that never ran (B532). Classes the repository's ExcludedLibraries
+    /// takes out of scope are not checked, as the style check leaves them. Nothing is recorded as a
+    /// finding: the style check, which may run in the same call, records its own.
+    /// </remarks>
+    internal object SpellCheckLibrary(string? libraryId = null, IReadOnlyList<string>? languages = null)
+    {
+        if (ToolDiagnostics.RequireLibrary(_libraries, "spell-checking a library") is { } noLib)
+            return noLib;
+
+        List<LoadedLibrary> targets;
+        if (libraryId is not null)
+        {
+            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId);
+            if (error is not null)
+                return error;
+            targets = [library!];
+        }
+        else
+        {
+            targets = _libraries.Libraries.ToList();
+        }
+
+        var findings = new List<StyleFindingDto>();
+        var asked = new List<string>();
+        foreach (var library in targets)
+        {
+            var repositorySettings = RepositorySettings.ForLibrary(_repositories, library);
+            var chosen = languages is { Count: > 0 } ? languages : repositorySettings?.SpellCheckLanguages;
+            var settings = SpellSettings(chosen);
+            asked.AddRange(settings.SpellCheckLanguages);
+            var context = StyleCheckContext.Build(
+                settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
+                DictionaryScope.RootForLibrary(_repositories, library));
+
+            foreach (var id in library.ModelIds)
+            {
+                if (_libraries.GetModelById(id) is not { IsParseFailurePlaceholder: false } node
+                    || repositorySettings?.IsLibraryExcluded(id) == true)
+                    continue;
+                findings.AddRange(ToFindingList(StyleCheckRunner.Run(node, settings, context)));
+            }
+        }
+
+        return new SpellCheckResult(findings, MissingDictionaryNote(asked.Distinct(StringComparer.Ordinal)));
+    }
+
     /// <param name="languages">As <see cref="SpellCheck"/>'s: the languages a check was run with, so a
     /// word is judged and corrected against the dictionaries that flagged it.</param>
     internal object SpellingSuggestions(
