@@ -193,7 +193,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return null;
             }
 
-            return $"{commit.MessageShort} (by {commit.Author.Name} on {commit.Author.When:yyyy-MM-dd})";
+            return RevisionDescription.Of(commit.MessageShort, commit.Author.Name, commit.Author.When);
         }
         catch (Exception ex)
         {

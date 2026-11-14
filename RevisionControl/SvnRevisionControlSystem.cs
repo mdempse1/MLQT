@@ -136,7 +136,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var message = logEntry.Element("msg")?.Value ?? "";
             var author = logEntry.Element("author")?.Value ?? "";
             var date = ParseSvnDateUtc(logEntry.Element("date")?.Value);
-            return $"{message} (by {author} on {date:yyyy-MM-dd})";
+            return RevisionDescription.Of(message, author, new DateTimeOffset(date, TimeSpan.Zero));
         }
         catch (Exception ex)
         {

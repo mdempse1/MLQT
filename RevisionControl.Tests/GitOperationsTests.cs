@@ -2301,6 +2301,43 @@ public class GitOperationsTests : IDisposable
 
     #region ResolveToCommit / GetRevisionDescription Tests
 
+    /// <summary>
+    /// The description's day is this machine's, as the History dialog shows it. It was the day in the
+    /// zone the author recorded, so a commit at 00:30 +01:00 on 2 November read "on 2026-11-02" to a
+    /// user on UTC, whose History dialog puts it on the 1st.
+    /// </summary>
+    [Fact]
+    public void GetRevisionDescription_GivesTheDayInLocalTime_NotTheAuthorsZone()
+    {
+        var authored = new DateTimeOffset(2026, 11, 2, 0, 30, 0, TimeSpan.FromHours(1));
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "v1" });
+        using (repo)
+        {
+            File.WriteAllText(Path.Combine(repoPath, "f.mo"), "v2");
+            Commands.Stage(repo, "f.mo");
+            var sig = new Signature("Test User", "test@example.com", authored);
+            repo.Commit("late commit", sig, sig);
+        }
+
+        var desc = _git.GetRevisionDescription(repoPath, "HEAD");
+
+        Assert.Equal($"late commit (by Test User on {authored.ToLocalTime():yyyy-MM-dd})", desc);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    [InlineData(-8)]
+    public void ARevisionDescription_IsTheSameDay_WhicheverZoneTheDateWasRecordedIn(int offsetHours)
+    {
+        var moment = new DateTimeOffset(2026, 11, 2, 0, 30, 0, TimeSpan.FromHours(1));
+        var recorded = moment.ToOffset(TimeSpan.FromHours(offsetHours));
+
+        Assert.Equal(RevisionDescription.Of("m", "a", moment), RevisionDescription.Of("m", "a", recorded));
+        Assert.EndsWith($"on {TimeZoneInfo.ConvertTime(moment, TimeZoneInfo.Local):yyyy-MM-dd})",
+            RevisionDescription.Of("m", "a", recorded));
+    }
+
     [Fact]
     public void GetRevisionDescription_WithBranchName_ReturnsDescription()
     {
