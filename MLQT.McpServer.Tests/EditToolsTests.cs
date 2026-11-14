@@ -231,6 +231,7 @@ public class EditToolsTests
 
         var res = ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("P.Base", "NewBase", preview: true));
         Assert.True(res.PreviewOnly);
+        Assert.True(res.Changed);
         Assert.True(res.Changes.Count >= 1);
         Assert.All(res.Changes, c => Assert.NotNull(c.NewContent));
         Assert.NotNull(host.Libraries.GetModelById("P.Base")); // not renamed on disk/graph
@@ -336,9 +337,26 @@ public class EditToolsTests
             "Foo", "model Foo \"preview only\"\n  Real x;\nequation\n  x = 1;\nend Foo;", preview: true));
 
         Assert.True(res.PreviewOnly);
+        Assert.True(res.Changed);   // what the update would do, though nothing was written
         Assert.NotNull(res.NewFileContent);
         Assert.Contains("preview only", res.NewFileContent!);
         Assert.Equal(before, File.ReadAllText(path)); // unchanged on disk
+    }
+
+    /// <summary>
+    /// The class as the file already holds it changes nothing, previewed or written: a preview said
+    /// false whatever it would do, and a write said true whatever it had done.
+    /// </summary>
+    [Fact]
+    public async Task UpdateClassSource_WithTheSourceItHas_SaysNothingChanged()
+    {
+        using var host = new TestHost();
+        const string source = "model Foo\n  Real x;\nequation\n  x = 1;\nend Foo;";
+        var path = host.WriteMoFile("Foo.mo", "within;\n" + source + "\n");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+
+        Assert.False(ToolAssert.Ok<UpdateClassSourceResult>(await Edit(host).UpdateClassSource("Foo", source, preview: true)).Changed);
+        Assert.False(ToolAssert.Ok<UpdateClassSourceResult>(await Edit(host).UpdateClassSource("Foo", source)).Changed);
     }
 
     [Fact]

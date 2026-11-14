@@ -100,8 +100,14 @@ public sealed class EditTools
         var fileContent = EditFormatting.Apply(_libraries, _session, owner.Id, owner.Id, owner.ContainingFileId,
             WithinClause.Ensure(newOwnerCode, owner.ParentModelName, owner.FileText), owner.ParentModelName);
 
+        // Whether the file would come out different, as it would be written. A preview said false
+        // whatever it held, and a write said true though the text was what the file already held - so
+        // neither told a caller whether the class had changed.
+        var onDisk = File.Exists(ctx.FilePath) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath) : null;
+        var changed = onDisk is null || ModelicaFileEncoding.ForFileText(onDisk, fileContent) != onDisk;
+
         if (preview)
-            return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: false, 0, fileContent);
+            return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: changed, 0, fileContent);
 
         if (FileWritability.RequireWritable(ctx.FilePath, "update this class") is { } readOnly)
             return readOnly;
@@ -110,7 +116,7 @@ public sealed class EditTools
         var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
 
-        return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: false, Changed: true, affected.Count, null);
+        return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: false, Changed: changed, affected.Count, null);
     }
 
     internal async Task<object> CreateClass(
@@ -697,7 +703,8 @@ public sealed class EditTools
         if (preview)
         {
             var previews = changed.Select(kv => new RenameFileChange(kv.Key, 0, kv.Value)).ToList();
-            return new RenameClassResult(classId, newId, PreviewOnly: true, Changed: false, changed.Count, requalCount, previews, note);
+            // Changed says what the rename would do, as every preview's does: the directory always moves.
+            return new RenameClassResult(classId, newId, PreviewOnly: true, Changed: true, changed.Count, requalCount, previews, note);
         }
 
         if (FileWritability.PreflightWritable(changed.Keys, $"rename package '{classId}'") is { } readOnly)
@@ -1217,7 +1224,8 @@ public sealed class EditTools
         if (preview)
         {
             var previewChanges = planned.Select(p => new RenameFileChange(p.path, p.count, p.newContent)).ToList();
-            return new RenameClassResult(classId, newId, PreviewOnly: true, Changed: false,
+            // A rename with nothing to rewrite was refused above, so a preview always would change files.
+            return new RenameClassResult(classId, newId, PreviewOnly: true, Changed: true,
                 planned.Count, total, previewChanges, note);
         }
 
@@ -1427,7 +1435,7 @@ public sealed class EditTools
             "and verify with a model checker.";
 
         if (preview)
-            return new RenameComponentResult(classId, component, newName, PreviewOnly: true, Changed: false,
+            return new RenameComponentResult(classId, component, newName, PreviewOnly: true, Changed: true,
                 planned.Count, total, [.. planned.Select(p => new RenameFileChange(p.Path, p.Count, p.NewContent))], note);
 
         if (FileWritability.PreflightWritable(planned.Select(p => p.Path), $"rename '{classId}.{component}'") is { } notWritable)

@@ -100,6 +100,69 @@ public class AnalysisFacadeToolsTests
         }
     }
 
+    /// <summary>
+    /// A library's spelling shows at most what a style check shows, and says how many there were. Every
+    /// finding came back, and with no library named the check covers every library loaded, the
+    /// dependencies too - and spelling is not recorded, so nothing could page it.
+    /// </summary>
+    [Fact]
+    public async Task Spelling_OfALibrary_ShowsAtMostTheStyleChecksLimit_AndHowManyThereWere()
+    {
+        using var host = new TestHost();
+        var many = Enumerable.Range(0, StyleTools.MaxReturnedFindings + 10).Select(i => $"  Real x{i} \"a blok\";");
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = $"within;\npackage Q \"q\"\n  model M \"m\"\n{string.Join("\n", many)}\n  end M;\nend Q;\n",
+        });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new AnalysisFacadeTools(host.Libraries, host.Repositories, host.Resources, host.CodeReview,
+            host.CustomDictionary, host.DictionaryManager, host.Impact, host.Session);
+
+        var spelt = Assert.IsType<SpellCheckResult>(
+            Assert.IsType<CheckFacadeResult>(await tools.Check(libraryId: "Q", checks: ["spelling"])).Spelling);
+
+        Assert.Equal(StyleTools.MaxReturnedFindings + 10, spelt.FindingCount);
+        Assert.Equal(StyleTools.MaxReturnedFindings, spelt.Findings.Count);
+        Assert.True(spelt.Truncated);
+
+        // A class's own check counts the same way, and is not cut short when it fits.
+        var one = Assert.IsType<SpellCheckResult>(Spelling(host).SpellCheck("Q"));
+        Assert.Equal(one.Findings.Count, one.FindingCount);
+        Assert.False(one.Truncated);
+    }
+
+    /// <summary>
+    /// With two repositories loaded, a word's suggestions are judged with the languages of the class that
+    /// flagged it. They were judged with the built-in ones, which take "color" as correct, so a word en_GB
+    /// flagged came back correct with nothing to suggest.
+    /// </summary>
+    [Fact]
+    public async Task SpellingSuggestions_AreJudgedByTheRepositoryOfTheClassThatFlaggedTheWord()
+    {
+        using var host = new TestHost();
+        async Task<MLQT.Services.DataTypes.Repository> Repository(string name, string description, string language)
+        {
+            var dir = host.WriteLibraryDir(new Dictionary<string, string>
+            {
+                ["package.mo"] = $"within;\npackage {name} \"{description}\"\nend {name};\n",
+            });
+            var added = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
+            await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+            added.Repository.StyleSettings = new ModelicaGraph.StyleCheckingSettings { SpellCheckLanguages = [language] };
+            return added.Repository;
+        }
+        await Repository("British", "the color", "en_GB");
+        await Repository("American", "the colour", "en_US");
+        var tools = new AnalysisFacadeTools(host.Libraries, host.Repositories, host.Resources, host.CodeReview,
+            host.CustomDictionary, host.DictionaryManager, host.Impact, host.Session);
+
+        var check = Assert.IsType<CheckFacadeResult>(await tools.Check(libraryId: "British", checks: ["spelling"]));
+
+        var color = Assert.Single(check.SpellingSuggestions!, s => s.Word == "color");
+        Assert.False(color.IsCorrect);
+        Assert.Contains("colour", color.Suggestions);
+    }
+
     [Fact]
     public async Task References_AreTheReferenceCheck()
     {

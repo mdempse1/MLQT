@@ -336,10 +336,15 @@ public sealed record SpellSuggestionsResult(
 /// The misspellings found, plus a note when this machine has no dictionary for a language the
 /// settings ask for — in which case the results are not the ones the settings describe. The CLI
 /// warns about the same gap on stderr; an agent gets it here.
+/// <para><see cref="Findings"/> holds at most as many as a style check shows; <see cref="FindingCount"/>
+/// is how many there were, and <see cref="Truncated"/> says some were left out. A library's spelling
+/// is not recorded, so mlqt_list_findings cannot page it: check one class for the rest.</para>
 /// </summary>
 public sealed record SpellCheckResult(
     IReadOnlyList<StyleFindingDto> Findings,
-    string? Note = null);
+    string? Note = null,
+    int FindingCount = 0,
+    bool Truncated = false);
 
 public sealed record UpdateClassSourceResult(
     string ClassId,

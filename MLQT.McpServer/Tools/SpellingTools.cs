@@ -69,7 +69,7 @@ public sealed class SpellingTools
             var context = StyleCheckContext.Build(
                 settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
                 repository?.LocalPath);
-            return new SpellCheckResult(
+            return Result(
                 ToFindingList(StyleCheckRunner.Run(node, settings, context)),
                 MissingDictionaryNote(settings.SpellCheckLanguages));
         }
@@ -83,7 +83,7 @@ public sealed class SpellingTools
             var settings = SpellSettings(Chosen(languages, repository));
             var context = StyleCheckContext.BuildStateless(
                 settings, _customDictionary, _dictionaryManager, repository?.LocalPath);
-            return new SpellCheckResult(
+            return Result(
                 ToFindingList(StyleCheckRunner.RunStateless(source, settings, context)),
                 MissingDictionaryNote(settings.SpellCheckLanguages));
         }
@@ -142,8 +142,17 @@ public sealed class SpellingTools
             }
         }
 
-        return new SpellCheckResult(findings, MissingDictionaryNote(asked.Distinct(StringComparer.Ordinal)));
+        return Result(findings, MissingDictionaryNote(asked.Distinct(StringComparer.Ordinal)));
     }
+
+    /// <summary>
+    /// The findings as a result, cut to the number a style check shows. Every one was returned, and a
+    /// library check with nothing named covers every library loaded - the dependencies included - so
+    /// one call could hand an agent thousands of findings, none of them recorded for paging.
+    /// </summary>
+    private static SpellCheckResult Result(IReadOnlyList<StyleFindingDto> findings, string? note) =>
+        new([.. findings.Take(StyleTools.MaxReturnedFindings)], note, findings.Count,
+            findings.Count > StyleTools.MaxReturnedFindings);
 
     /// <param name="languages">As <see cref="SpellCheck"/>'s: the languages a check was run with, so a
     /// word is judged and corrected against the dictionaries that flagged it.</param>
@@ -168,6 +177,23 @@ public sealed class SpellingTools
             repository = SingleRepository();
         }
 
+        return Suggestions(word, repository, languages);
+    }
+
+    /// <summary>
+    /// Suggestions for a word a check flagged in <paramref name="classId"/>, judged with that class's
+    /// repository's languages and accepted words - the ones that flagged it. Asked through the single
+    /// loaded repository, a word flagged in one of several came back "correct" by the built-in
+    /// languages, with nothing to suggest. Text that is no loaded class falls back to that one.
+    /// </summary>
+    internal SpellSuggestionsResult SuggestionsForFinding(string word, string? classId, IReadOnlyList<string>? languages)
+    {
+        var repository = (classId is null ? null : RepositoryForClass(classId)) ?? SingleRepository();
+        return Suggestions(word, repository, languages);
+    }
+
+    private SpellSuggestionsResult Suggestions(string word, Repository? repository, IReadOnlyList<string>? languages)
+    {
         var chosen = Chosen(languages, repository);
         var checker = SpellCheckerFactory.Build(
             chosen, _customDictionary.WordsFor(repository?.LocalPath), _dictionaryManager);
@@ -233,7 +259,7 @@ public sealed class SpellingTools
             ctx.FilePath, SpellingCorrector.MatchFileEnding(fileText, corrected));
 
         if (preview)
-            return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: false, PreviewOnly: true, corrected);
+            return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: true, PreviewOnly: true, corrected);
 
         if (FileWritability.RequireWritable(ctx.FilePath, "correct spelling in this file") is { } readOnly)
             return readOnly;

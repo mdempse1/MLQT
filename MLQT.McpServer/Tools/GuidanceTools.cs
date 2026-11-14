@@ -491,9 +491,11 @@ public sealed class GuidanceTools
               American (en-GB and en_UK are read as en_GB). A code that matches no dictionary is refused;
               other languages must be imported as Hunspell dictionaries in the desktop app first. For one
               call only, pass mlqt_check settings with spellCheckLanguages.
-            - mlqt_check(classId | source, checks ['spelling']): the misspelled words with line numbers, in
-              class and component descriptions and Documentation info/revisions, and the ranked suggestions
-              for each word, from the configured language(s) plus your custom dictionary.
+            - mlqt_check(classId | libraryId | source, checks ['spelling']): the misspelled words with line
+              numbers, in class and component descriptions and Documentation info/revisions, and the ranked
+              suggestions for each word, from the configured language(s) plus your custom dictionary. At
+              most 200 findings come back, with findingCount and truncated; spelling is not recorded for
+              mlqt_list_findings, so check the rest of a library a class at a time.
             - A class name counts as a word only from the checked library and the libraries its
               uses(...) annotation declares; loading other libraries, such as a tool's whole library
               folder, does not change what is reported.

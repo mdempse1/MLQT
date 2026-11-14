@@ -208,6 +208,7 @@ public class RenameComponentTests
         var res = ToolAssert.Ok<RenameComponentResult>(await edit.RenameComponent("R.Wheel", "Fz", "load", preview: true));
 
         Assert.True(res.PreviewOnly);
+        Assert.True(res.Changed);
         Assert.Contains("wheel.load + big.load", res.Changes.Single().NewContent);
         // Wheel 3 (declaration, Dialog, equation), BigWheel 2, Axle 4, Car 2, Looped 1.
         Assert.Equal(12, res.TotalReplacements);

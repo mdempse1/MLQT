@@ -107,15 +107,15 @@ public sealed class AnalysisFacadeTools
         return new CheckFacadeResult(style, spelling, suggestions, references, resources);
     }
 
-    // Suggestions for each word flagged, so fixing one needs no call per word.
+    // Suggestions for each word flagged, so fixing one needs no call per word - judged with the
+    // repository of the first class that flagged it, whose languages and accepted words flagged it.
     private IReadOnlyList<SpellSuggestionsResult> Suggest(SpellCheckResult result, IReadOnlyList<string>? languages) =>
         result.Findings
-            .Select(f => SpellingMessage.WordFrom(f.Summary))
-            .OfType<string>()
-            .Distinct(StringComparer.Ordinal)
+            .Select(f => (Word: SpellingMessage.WordFrom(f.Summary), ClassId: f.ModelName))
+            .Where(f => f.Word is not null)
+            .DistinctBy(f => f.Word, StringComparer.Ordinal)
             .Take(MaxSuggestedWords)
-            .Select(word => _spelling.SpellingSuggestions(word, languages: languages))
-            .OfType<SpellSuggestionsResult>()
+            .Select(f => _spelling.SuggestionsForFinding(f.Word!, f.ClassId, languages))
             .ToList();
 
     [McpServerTool(Name = "mlqt_dependencies", ReadOnly = true, OpenWorld = false)]

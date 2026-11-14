@@ -447,6 +447,7 @@ public class QualityToolsTests
             spelling.CorrectSpelling("Foo", "postion", "position", preview: true).GetAwaiter().GetResult());
         Assert.True(preview.Replacements >= 1);
         Assert.True(preview.PreviewOnly);
+        Assert.True(preview.Changed);   // what the correction would do, as every preview says
         Assert.DoesNotContain("position", File.ReadAllText(path)); // unchanged on disk
 
         // write
