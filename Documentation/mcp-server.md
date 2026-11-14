@@ -297,6 +297,8 @@ In a repository whose settings apply its formatting rules (**Apply formatting ru
 
 The file is written as composed instead — compact, as the operation built it — when the library came from no repository (there are no rules to apply), when the repository does not apply its formatting rules, and when a class in the file is excluded from formatting (`__MLQT(format=false)`, `preserveOrder=true`, or the repository's excluded list). A rename, a delete and a spelling correction change names and text in place, and are not reformatted.
 
+**A library made with `mlqt_create_library` is in no repository**, so everything written into it is written as composed. `mlqt_format` formats it all the same, with its default layout: run it on the library once its classes are written. `mlqt_format` with `preview` writes nothing and says which files a format would change.
+
 ## Automatic diagram connections
 
 When you position components on the diagram with `mlqt_edit_class`'s set_component_placement, the server automatically draws the connection lines: a `connect(...)` ending on the component you placed, whose other end is placed too, gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. add_connection draws the line of the connection it adds in the same way. It is enough to position the components — no separate call is needed.

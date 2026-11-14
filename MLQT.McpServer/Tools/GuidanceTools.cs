@@ -200,6 +200,8 @@ public sealed class GuidanceTools
               package.order) and loads it. A name already loaded is refused, as a simulator would refuse it:
               pick another, or unload the loaded library first -> add classes, and packages of classes, with mlqt_write_class:
               several in one call, in order, so a later one can go in a package an earlier one created.
+              A library made this way is in no repository, so it has no formatting rules and every class is
+              written as you composed it: call mlqt_format(library) once, when the classes are written.
               Storage defaults to one class per file: a class becomes its own .mo file and a sub-package its
               own directory package (folder + package.mo). Classes that cannot be standalone (a
               replaceable/redeclare/inner/outer prefix) are nested.
@@ -514,13 +516,16 @@ public sealed class GuidanceTools
             Formatting. MLQT only formats COMPLETE class definitions, never loose fragments:
             - Edits format themselves: in a repository whose settings apply its formatting rules,
               mlqt_edit_class, mlqt_write_class and a move write the changed file formatted with those
-              rules (a preview shows it so). A library from no repository, or one that does not apply its
-              rules, is written as composed. So call mlqt_format only to format code nothing has edited.
+              rules (a preview shows it so). A library from no repository - one mlqt_create_library made,
+              or one loaded on its own - or a repository that does not apply its rules, is written as
+              composed, and mlqt_format still formats it: call it once when you have finished writing.
+              In a repository that applies its rules, call mlqt_format only on code nothing has edited.
             - mlqt_format(classId | library | source): one tool for all three.
               - classId formats the .mo file that holds the class and, unless preview=true, writes it and
                 refreshes the graph. It reformats the whole containing file (all classes stored in it),
                 matching how MLQT saves files.
-              - library formats every file of a loaded library in one call.
+              - library formats every file of a loaded library in one call; with preview=true it writes
+                nothing and lists the files a format would change.
               - source is stateless: one or more whole class definitions (model / block / package / record /
                 function / connector / type ... end Name;); nothing is written. It CANNOT format a bare
                 equation, a single declaration or an expression — wrap the fragment in a class first.

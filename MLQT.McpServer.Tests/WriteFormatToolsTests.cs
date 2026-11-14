@@ -1,4 +1,5 @@
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Tools;
 
 namespace MLQT.McpServer.Tests;
@@ -161,6 +162,33 @@ public class WriteFormatToolsTests
         Assert.Contains(res.ChangedFiles, f => f.EndsWith("Two.mo"));
         Assert.Empty(res.Failures);
         Assert.DoesNotContain(";Real", File.ReadAllText(res.ChangedFiles.Single(f => f.EndsWith("One.mo"))));
+    }
+
+    /// <summary>
+    /// A preview reported every file unchanged, so previewing a library whose classes were written
+    /// as composed said nothing needed formatting, and the format itself then changed all of them.
+    /// </summary>
+    [Fact]
+    public async Task Format_ALibraryPreview_NamesTheFilesAFormatWouldChange_AndWritesNone()
+    {
+        using var host = new TestHost();
+        var tools = Load(host, new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Q \"q\"\nend Q;\n",
+            ["package.order"] = "One\nTwo\n",
+            ["One.mo"] = "within Q;\nmodel One \"one\"\n  Real a;Real b;\nend One;\n",
+            ["Two.mo"] = "within Q;\nmodel Two \"two\"\n  Real c;\nend Two;\n",
+        });
+        var one = host.Libraries.GetModelById("Q.One")!;
+        var path = ModelFilePersistence.ResolveFileOwner(host.Libraries, one.Id)!.FilePath;
+        var before = File.ReadAllText(path);
+
+        var res = ToolAssert.Ok<LibraryFormatResult>(await tools.Format(library: "Q", preview: true));
+
+        Assert.True(res.PreviewOnly);
+        Assert.Equal(1, res.Changed);
+        Assert.EndsWith("One.mo", Assert.Single(res.ChangedFiles));
+        Assert.Equal(before, File.ReadAllText(path));
     }
 
     [Fact]

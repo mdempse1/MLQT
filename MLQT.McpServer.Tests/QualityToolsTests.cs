@@ -617,11 +617,16 @@ B
 
         var preview = ToolAssert.Ok<FormatClassResult>(fmt.FormatClass("Foo", preview: true).GetAwaiter().GetResult());
         Assert.True(preview.PreviewOnly);
+        Assert.True(preview.Changed);   // says the format would write it, though nothing was written
         Assert.Equal(before, File.ReadAllText(path));
 
         var written = ToolAssert.Ok<FormatClassResult>(fmt.FormatClass("Foo").GetAwaiter().GetResult());
         Assert.False(written.PreviewOnly);
+        Assert.True(written.Changed);
         Assert.NotNull(written.FilePath);
+
+        // Formatted now, so a second preview has nothing to change.
+        Assert.False(ToolAssert.Ok<FormatClassResult>(fmt.FormatClass("Foo", preview: true).GetAwaiter().GetResult()).Changed);
     }
 
     [Fact]

@@ -186,17 +186,20 @@ public sealed class FormattingTools
             return new ToolError($"Formatting failed: {ex.Message}");
         }
 
-        if (preview)
-        {
-            // Nothing is written, so put the node back the way it was.
-            owner.RestoreSource(snapshot);
-            return new FormatClassResult(classId, PreviewOnly: true, Changed: false, ctx.FilePath, rendered);
-        }
-
         // Compared as it would be written, not as it was rendered: the writer ends the file with a
         // newline, so comparing the raw render against a file that has one reports every already
         // formatted file as changed and rewrites it on every call.
         var changed = NormalizeEol(original) != NormalizeEol(ModelicaFileEncoding.EnsureFinalNewline(rendered));
+
+        if (preview)
+        {
+            // Nothing is written, so put the node back the way it was. Changed says whether a format
+            // would write the file: a preview that always said false told a library preview that no
+            // file needed formatting, whatever the files held.
+            owner.RestoreSource(snapshot);
+            return new FormatClassResult(classId, PreviewOnly: true, Changed: changed, ctx.FilePath, rendered);
+        }
+
         if (changed)
         {
             if (FileWritability.RequireWritable(ctx.FilePath, "format this file") is { } readOnly)

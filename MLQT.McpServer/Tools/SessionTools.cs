@@ -112,7 +112,9 @@ public sealed class SessionTools
     [Description("Create a brand-new, empty top-level Modelica library on disk — the first step of a new " +
                 "project. Writes a directory named after the library, containing a package.mo (a top-level " +
                 "'package Name ... end Name;') and an empty package.order, then loads it so you can add " +
-                "classes with mlqt_write_class. Provide the library name (a Modelica identifier) and the " +
+                "classes with mlqt_write_class. The library is in no repository, so it has no formatting rules " +
+                "and classes are written as composed: run mlqt_format on the library once they are written. " +
+                "Provide the library name (a Modelica identifier) and the " +
                 "directory to create it in (the library folder is created inside it, and missing parent " +
                 "folders are created). Optionally a description and a version. Fails if the target folder " +
                 "already exists, or if a library of that name is already loaded (unload it first with " +
