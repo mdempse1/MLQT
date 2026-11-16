@@ -1437,3 +1437,5 @@ MLQT.Services.ReferenceLibraryLoader.LoadAsync(System.Collections.Generic.IReadO
 MLQT.Services.ReferenceLibraryLoader.ReferenceLibraryLoader(MLQT.Services.Interfaces.ILibraryDataService! libraries) -> void
 MLQT.Services.ReferenceLibraryLoader.UnloadFolder(string! folder) -> int
 static MLQT.Services.LibraryPrecedence.ReadableCopyOutranking((string! Name, string! Location, bool IsReferenceOnly, int Order) copy, System.Collections.Generic.IEnumerable<(string! Name, string! Location, bool IsReferenceOnly, int Order)>! copies) -> string?
+static MLQT.Services.Checking.DictionaryAvailability.AvailableCodes(MLQT.Services.Interfaces.IDictionaryManagerService! dictionaryManager) -> string!
+static MLQT.Services.Checking.DictionaryAvailability.Resolve(string! requested, MLQT.Services.Interfaces.IDictionaryManagerService! dictionaryManager) -> string?

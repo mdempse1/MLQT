@@ -3393,3 +3393,4 @@ ModelicaParser.StyleRules.SuppressionSet.GeneratedImportOf(string! modelId) -> s
 ModelicaParser.StyleRules.SuppressionSet.HasGeneratedImport.get -> bool
 ModelicaParser.Icons.DiagramComponent.SwitchedOff.get -> System.Collections.Generic.IReadOnlyList<ModelicaParser.Icons.DiagramComponent!>?
 ModelicaParser.Icons.DiagramComponent.SwitchedOff.init -> void
+static ModelicaParser.SpellChecking.SpellChecker.NormaliseLanguageCode(string! code) -> string!

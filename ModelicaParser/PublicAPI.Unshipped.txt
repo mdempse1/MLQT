@@ -1,2 +1,1 @@
 #nullable enable
-static ModelicaParser.SpellChecking.SpellChecker.NormaliseLanguageCode(string! code) -> string!
