@@ -174,7 +174,7 @@ public class DymolaInterface : IDymolaSession
         _dymolaUrl = $"http://{hostname}:{portNumber}";
         // No client-wide limit: each request is bounded by CommandTimeout instead, which,
         // unlike HttpClient.Timeout, can still be changed after the first request is sent.
-        _httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        _httpClient = CreateClient(Timeout.InfiniteTimeSpan);
         _rpcId = 0;
         _isOffline = !ConnectWithin(window);
     }
@@ -452,7 +452,7 @@ public class DymolaInterface : IDymolaSession
     /// </summary>
     public static async Task<bool> PingAsync(int port, string hostname = "127.0.0.1", TimeSpan? timeout = null)
     {
-        using var client = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(2) };
+        using var client = CreateClient(timeout ?? TimeSpan.FromSeconds(2));
         try
         {
             var content = new StringContent(JsonRpcRequest("ping", null, 1), Encoding.UTF8, "application/json");
@@ -461,6 +461,15 @@ public class DymolaInterface : IDymolaSession
         }
         catch { return false; }
     }
+
+    /// <summary>
+    /// A client that talks to Dymola directly, never through a proxy. Dymola is always local, and
+    /// a corporate proxy - set system-wide, by a PAC script or by <c>HTTP_PROXY</c> - can be handed
+    /// 127.0.0.1 too: one treated it as an uncategorised website and refused it, so every ping
+    /// failed and Dymola looked absent though it was running.
+    /// </summary>
+    private static HttpClient CreateClient(TimeSpan timeout) =>
+        new(new SocketsHttpHandler { UseProxy = false }) { Timeout = timeout };
 
     private enum ProbeResult { Answered, Busy, Unavailable }
 
