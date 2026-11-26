@@ -88,8 +88,7 @@ public sealed class SearchTools
         // Read in parallel, each class on its own, and reported in id order as before. The options'
         // token is checked before each class is started.
         var hits = new (string Where, string Text)?[toRead.Count];
-        Parallel.For(0, toRead.Count, new ParallelOptions { CancellationToken = cancellationToken },
-            i => hits[i] = Read(toRead[i], q, UsePrefilter ? prefilter : null));
+        EachInParallel(toRead.Count, cancellationToken, i => hits[i] = Read(toRead[i], q, UsePrefilter ? prefilter : null));
 
         for (var i = 0; i < toRead.Count; i++)
         {
@@ -104,6 +103,25 @@ public sealed class SearchTools
         }
 
         return new TextSearchResult(total, items.Count, items);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> for 0 to <paramref name="count"/> - 1 in parallel, checking the token
+    /// before each, and throws what a body threw rather than the <see cref="AggregateException"/>
+    /// <see cref="Parallel.For(int, int, ParallelOptions, Action{int})"/> wraps it in, so a failure reads
+    /// as it did when the classes were read one at a time.
+    /// </summary>
+    internal static void EachInParallel(int count, CancellationToken cancellationToken, Action<int> body)
+    {
+        try
+        {
+            Parallel.For(0, count, new ParallelOptions { CancellationToken = cancellationToken }, body);
+        }
+        catch (AggregateException e) when (e.InnerExceptions.Count > 0)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw();
+            throw;
+        }
     }
 
     // Where in one class the query is. A tree something else holds is used as it is. Otherwise a class
@@ -188,8 +206,7 @@ public sealed class SearchTools
 
         cancellationToken.ThrowIfCancellationRequested();
         var counts = new (int Parameters, int Connectors)[toCount.Count];
-        Parallel.For(0, toCount.Count, new ParallelOptions { CancellationToken = cancellationToken },
-            i => counts[i] = counter.Count(toCount[i]));
+        EachInParallel(toCount.Count, cancellationToken, i => counts[i] = counter.Count(toCount[i]));
 
         var items = new List<InterfaceSearchItem>();
         var total = filtered ? 0 : candidates.Count;

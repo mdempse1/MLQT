@@ -3,8 +3,8 @@
 What CI cannot do for you, and why each item is here. Everything else is already a gate on every
 push — this is only the work that needs a machine, a tool or a decision that no runner has.
 
-**Run these in order - except §7, which belongs before tagging. Each one says what it proves and
-what it costs.**
+**Run these in order - except §7, which belongs before tagging, and §8, which goes with §2 and §3.
+Each one says what it proves and what it costs.**
 
 ---
 
@@ -156,6 +156,26 @@ check 135-169%, and the first call into protected code paid about a second once.
 **Required whenever the release carries a change to a JSON contract, an MCP tool's parameters, or
 anything `CODING_GUIDELINES.md` §Names That Must Survive Obfuscation covers.** It needs a licence for
 the obfuscator, which is why it is here and not in CI.
+
+## 8. The search corpus, by hand
+
+```powershell
+$env:DOTNET_gcServer = "1"
+$lib = "C:\Program Files\Dymola 2026x\Modelica\Library"
+$env:MLQT_TEXT_SEARCH_CORPUS = "$lib\Modelica 4.1.0;$lib\Complex.mo;$lib\ModelicaServices 4.1.0"
+dotnet test MLQT.McpServer.Tests -c Release --filter "FullyQualifiedName~TextSearchCorpusTests" --output Detailed
+```
+
+`mlqt_find`'s text and interface searches skip work - classes the text cannot match, packages parsed
+without their inline classes, interfaces counted once - and **this is what holds the skipping to
+giving exactly the answers of doing all the work**: every text query's total, items and snippets
+against parsing every class whole, and every class's parameter and connector counts against counting
+it alone. It also times both, which is how a client's 60 s timeout was traced to the text search.
+**With the variable unset both tests return immediately.** About two minutes.
+
+**Required whenever the release carries a change to `TextSearchPrefilter`, `SearchTools`, or what a
+text search reads - `ClassInterfaceExtractor`'s description, `DocumentationExtractor`,
+`TextExtractor.StripHtml`.** Figures and what to expect are in the `test-tooling` skill.
 
 ---
 

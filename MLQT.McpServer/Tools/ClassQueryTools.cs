@@ -142,16 +142,28 @@ public sealed class ClassQueryTools
 
     internal object SearchClasses(
         string query,
-        int limit = 50)
+        int limit = 50,
+        string? libraryId = null)
     {
         if (string.IsNullOrWhiteSpace(query))
             return new ToolError("query must be a non-empty search string.");
         if (ToolDiagnostics.RequireLibrary(_libraries, "searching classes") is { } noLib)
             return noLib;
 
+        // The same scope as ListClasses: the library's own classes.
+        IReadOnlySet<string>? inLibrary = null;
+        if (libraryId is not null)
+        {
+            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId);
+            if (error is not null)
+                return error;
+            inLibrary = library!.ModelIds.ToHashSet(StringComparer.Ordinal);
+        }
+
         limit = Math.Clamp(limit, 1, MaxListLimit);
 
         var matches = _libraries.GetAllModels()
+            .Where(m => inLibrary is null || inLibrary.Contains(m.Id))
             .Where(m => m.Id.Contains(query, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
@@ -171,17 +183,15 @@ public sealed class ClassQueryTools
     }
 
     // The class's one-line description plus a short plain-text snippet of its Documentation(info) HTML, so
-    // a search hit conveys what the class is for. Uses the cached parse tree; empty parts come back null.
-    private static (string? Description, string? Snippet) DescriptionAndSnippet(ModelNode node)
-    {
-        var tree = node.Definition.EnsureParsed();
-        if (tree is null)
-            return (null, null);
-
-        var description = ClassInterfaceExtractor.Extract(tree).Description;
-        var (info, _) = DocumentationExtractor.Extract(tree);
-        return (Trimmed(description), Snippet(info));
-    }
+    // a search hit conveys what the class is for. Borrowed, so a search keeps none of the trees it parses
+    // (ModelDefinition.Borrow); empty parts come back null.
+    private static (string? Description, string? Snippet) DescriptionAndSnippet(ModelNode node) =>
+        node.Definition.Borrow(tree =>
+        {
+            var description = ClassInterfaceExtractor.Extract(tree).Description;
+            var (info, _) = DocumentationExtractor.Extract(tree);
+            return (Trimmed(description), Snippet(info));
+        }, ifUnparseable: ((string?)null, (string?)null));
 
     private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

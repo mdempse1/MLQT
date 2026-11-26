@@ -74,9 +74,11 @@ internal sealed partial class TextSearchPrefilter
     /// <c>class _ end _</c>, or null when it has none. It is far smaller to parse than the source, and
     /// it gives the same description and documentation: both are read from the outermost class's own
     /// specifier and class-level annotations, never from its elements, and a class definition is
-    /// replaced by another in the same place. A placeholder that does not fit where it is put - an
-    /// <c>operator</c> prefix left outside the child's text, say - makes the text fail to parse, and
-    /// the caller then parses the source as it is.
+    /// replaced by another in the same place. The child's prefixes (<c>partial</c>, <c>encapsulated</c>,
+    /// <c>operator</c>) are part of its stored text and go with it, and a <c>replaceable</c> or
+    /// <c>redeclare</c> left in front of the placeholder still parses. Over MSL 4.1.0 and eight Dymola
+    /// libraries every one of the 550 packages with inline classes parsed cleanly so; should one not,
+    /// the caller parses the source as it is.
     /// </summary>
     public string? ReducedSource(ModelNode node)
     {
@@ -108,8 +110,8 @@ internal sealed partial class TextSearchPrefilter
 
     // The source with each inline class cut out and a space left in its place, or with 'placeholder' the
     // placeholder class, and a ';' after it when the child's text ended in one, as a stored class's does.
-    // A child whose text is not found as written (a reformatted copy, say) is left in, which only keeps
-    // more classes.
+    // A child whose text is not found as written (a reformatted copy, say), or is found more than once, is
+    // left in, which only keeps more classes.
     private static string OwnText(string code, List<ModelNode>? nested, bool placeholder)
     {
         if (nested is null)
@@ -121,8 +123,11 @@ internal sealed partial class TextSearchPrefilter
             var childCode = child.Definition.ModelicaCode;
             if (string.IsNullOrEmpty(childCode))
                 continue;
+            // Cut only when the text is there exactly once. A second copy - the child written out in the
+            // package's own description, say - leaves no way to tell which is the class, and cutting the
+            // wrong one would take the package's own text with it.
             var at = code.IndexOf(childCode, StringComparison.Ordinal);
-            if (at >= 0)
+            if (at >= 0 && code.IndexOf(childCode, at + 1, StringComparison.Ordinal) < 0)
                 spans.Add((at, at + childCode.Length, childCode.AsSpan().TrimEnd().EndsWith(";")));
         }
         if (spans.Count == 0)

@@ -55,6 +55,19 @@ public class TextSearchTests
     }
 
     [Fact]
+    public void Name_WithAQueryAndLibrary_SearchesOnlyThatLibrary()
+    {
+        using var host = Load(LibraryA, LibraryB);
+        var find = new FindTools(host.Libraries);
+
+        Assert.Equal(2, ToolAssert.Ok<ClassSearchResult>(find.Find("er", match: "name")).Total);
+        var res = ToolAssert.Ok<ClassSearchResult>(find.Find("er", match: "name", library: "A"));
+        Assert.Equal("A.Reader", Assert.Single(res.Items).Id);
+        ToolAssert.Error(find.Find("er", match: "name", library: "NoSuchLibrary"));
+        Assert.All(host.Libraries.GetAllModels(), m => Assert.Null(m.Definition.ParsedCode));
+    }
+
+    [Fact]
     public void Text_WithAnUnknownLibrary_IsAnError()
     {
         using var host = Load(LibraryA);
@@ -62,20 +75,39 @@ public class TextSearchTests
     }
 
     [Theory]
-    [InlineData("text")]
-    [InlineData("code")]
-    [InlineData("interface")]
-    public void ACancelledSearch_StopsBeforeReadingAClass(string match)
+    [InlineData("text", "Mat File Format")]
+    [InlineData("code", "Mat File Format")]
+    [InlineData("interface", "Reader")]
+    public void ACancelledSearch_Stops(string match, string query)
     {
         using var host = Load(LibraryA, LibraryB);
+        var find = new FindTools(host.Libraries);
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
 
-        // The token is checked before each class, so this one is not read at all; a search cancelled
-        // part way stops once the class it is reading is done.
-        Assert.Throws<OperationCanceledException>(() =>
-            new FindTools(host.Libraries).Find("Mat File Format", match: match, cancellationToken: cancelled.Token));
-        Assert.All(host.Libraries.GetAllModels(), m => Assert.Null(m.Definition.ParsedCode));
+        // The search has classes to read, so a cancelled one has work to stop. The token is checked
+        // before each class, so a search cancelled part way stops once the classes it is reading are
+        // done; cancelled before it starts, it reads none.
+        var found = find.Find(query, match: match) switch
+        {
+            TextSearchResult t => t.Total,
+            CodeSearchResult c => c.Total,
+            InterfaceSearchResult i => i.Total,
+            var other => throw new InvalidOperationException($"Unexpected {other}"),
+        };
+        Assert.True(found > 0, $"{match} '{query}' found nothing, so cancelling it proves nothing");
+        Assert.Throws<OperationCanceledException>(() => find.Find(query, match: match, cancellationToken: cancelled.Token));
+    }
+
+    [Fact]
+    public void AFailureReadingOneClass_IsThrownAsItself_NotWrapped()
+    {
+        var e = Assert.Throws<InvalidOperationException>(() => SearchTools.EachInParallel(50, CancellationToken.None, i =>
+        {
+            if (i == 7)
+                throw new InvalidOperationException("class 7");
+        }));
+        Assert.Equal("class 7", e.Message);
     }
 
     [Fact]
@@ -149,6 +181,28 @@ public class TextSearchTests
         var hit = Assert.Single(Text(host, "Mat File Format").Items);
         Assert.Equal(("P", "description"), (hit.Id, hit.MatchedIn));
         Assert.Equal("P", Assert.Single(Text(host, "Holds M").Items).Id);
+    }
+
+    /// <summary>
+    /// An inline class whose text also appears in the package's own description: which copy is the class
+    /// cannot be told by looking, so neither is cut. Taking the first, the reduced package read
+    /// "Write class _ end _;" as its description and the hit was lost.
+    /// </summary>
+    [Fact]
+    public void AnInlineClassWrittenOutInItsPackagesDescription_IsNotCut()
+    {
+        using var host = Load("""
+            package P "Write model A end A; to declare one"
+              model A end A;
+            end P;
+            """);
+
+        var everyClass = ToolAssert.Ok<TextSearchResult>(
+            new SearchTools(host.Libraries) { UsePrefilter = false }.SearchText("Write model A end A"));
+        var prefiltered = Text(host, "Write model A end A");
+
+        Assert.Equal("P", Assert.Single(everyClass.Items).Id);
+        Assert.Equal(everyClass.Items, prefiltered.Items);
     }
 
     [Fact]

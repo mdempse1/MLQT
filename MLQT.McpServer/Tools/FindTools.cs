@@ -30,19 +30,19 @@ public sealed class FindTools
     [McpServerTool(Name = "mlqt_find", ReadOnly = true, OpenWorld = false)]
     [Description("Find Modelica classes in the libraries loaded into MLQT. match picks how: " +
                  "'name' (default) - class ids containing query, or with no query a page of every class, " +
-                 "filtered by library and classType; 'text' - description or documentation prose containing " +
+                 "filtered by classType; 'text' - description or documentation prose containing " +
                  "query; 'interface' - by shape (classType, hasExperiment, minParameters, minConnectors, and " +
                  "query as part of the id); 'code' - every line of class source containing query, e.g. " +
                  "'Placement', 'connect(motor.', 'parameter Real T' - with the class it is in and its file line. " +
                  "Use code instead of grep or your own file search: it covers every loaded library, MSL included, " +
                  "and names the innermost class for each line. For code, regex=true reads query as a regular " +
-                 "expression and ignoreCase=true ignores case. For code, text and interface, library limits the search to one library." +
-                 "limit and offset page the results.")]
+                 "expression and ignoreCase=true ignores case. For every match, library limits the search to " +
+                 "one library. limit and offset page the results.")]
     public object Find(
         [Description("What to look for. For 'name' and 'interface', part of a class id; for 'text', prose; for 'code', text in a line of source.")]
         string? query = null,
         [Description("'name' (default), 'text', 'interface' or 'code'.")] string match = "name",
-        [Description("Optional: one library, by name (e.g. 'Modelica') or id. For 'name' with no query, 'text', 'interface' and 'code'.")]
+        [Description("Optional: one library, by name (e.g. 'Modelica') or id. For every match.")]
         string? library = null,
         [Description("Optional class type, e.g. 'model', 'block', 'connector'. For 'name' with no query, and 'interface'.")]
         string? classType = null,
@@ -60,7 +60,7 @@ public sealed class FindTools
             case null or "" or "name":
                 return string.IsNullOrWhiteSpace(query)
                     ? _classes.ListClasses(library, classType, limit, offset)
-                    : _classes.SearchClasses(query, limit);
+                    : _classes.SearchClasses(query, limit, library);
             case "text":
                 return _search.SearchText(query ?? string.Empty, limit, library, cancellationToken);
             case "interface":
