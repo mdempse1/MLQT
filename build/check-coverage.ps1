@@ -81,6 +81,15 @@
 .PARAMETER SkipTests
     Reuse the coverage already in -ResultsDirectory rather than running the suites again.
 
+.PARAMETER SkipBuild
+    Run the suites as they were last built in -Configuration, without building them first. For CI,
+    whose code-coverage job builds every suite in steps of its own (B370). Locally, leave it off: the
+    suites run with --no-build, so without the build they run whatever Release binaries happen to be
+    on disk - and those can be older than the source. That happened: a Release build made for a
+    timing experiment, with a change switched off, outlived the experiment, and the gate failed tests
+    that passed in every build of the source as it stood. A failure from stale binaries reads exactly
+    like a real one, and so does a pass. Building first costs seconds when nothing has changed.
+
 .PARAMETER MinimumLines
     Smallest class, in coverable lines, that is gated. Below this the percentage is noise.
 #>
@@ -89,6 +98,7 @@ param(
     [string] $Configuration = 'Release',
     [switch] $UpdateBaseline,
     [switch] $SkipTests,
+    [switch] $SkipBuild,
     [string] $ResultsDirectory = 'CoverageResults',
     [string] $ReportDirectory = 'CoverageReport',
     [string] $BaselinePath = 'build/coverage-baseline.json',
@@ -131,6 +141,17 @@ function Fail([string] $message) {
 }
 
 if (-not $SkipTests) {
+    # Each suite is built before any is run, because they are run with --no-build: measuring whatever
+    # binaries were last built measures code that may no longer exist (see -SkipBuild). The suite
+    # projects rather than the solution - exactly what is about to run, and nothing it does not need.
+    if (-not $SkipBuild) {
+        foreach ($suite in $suites) {
+            Write-Host "Building: $($suite.Project)" -ForegroundColor Cyan
+            & dotnet build $suite.Project -c $Configuration --nologo -v q
+            if ($LASTEXITCODE -ne 0) { Fail "$($suite.Project) did not build" }
+        }
+    }
+
     if (Test-Path $ResultsDirectory) { Remove-Item $ResultsDirectory -Recurse -Force }
 
     foreach ($suite in $suites) {

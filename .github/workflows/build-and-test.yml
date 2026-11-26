@@ -615,9 +615,10 @@ jobs:
 
       # Runs the suites, merges their reports, and fails when a class drops below what
       # build/coverage-baseline.json records - see the script header for why it is a ratchet rather
-      # than a flat threshold.
+      # than a flat threshold. -SkipBuild because the steps above have just built every suite, one
+      # command per step; run locally, the script builds them itself.
       - name: Run tests with coverage and gate on it
-        run: pwsh -File build/check-coverage.ps1
+        run: pwsh -File build/check-coverage.ps1 -SkipBuild
 
       # Always, since a green run's report is still worth reading, but kept a week: the newest run
       # always has one, and the ratchet's baseline is the record, not these.

@@ -125,6 +125,24 @@ public class CoverageSuitesTests
     }
 
     [Fact]
+    public void TheGateBuildsWhatItMeasures_UnlessTheCallerHasBuiltIt()
+    {
+        // The suites run with --no-build, so a gate that does not build first measures whatever
+        // binaries were last built - which, once, were a timing experiment's, with a change switched
+        // off, and the gate failed tests every build of the source passed. It builds each suite unless
+        // told -SkipBuild, and the CI job, which builds every suite in steps of its own (B370), says so.
+        var script = Normalised(Path.Combine(RepositoryRoot(), "build", "check-coverage.ps1"));
+        var workflow = Normalised(Path.Combine(RepositoryRoot(), ".github", "workflows", "build-and-test.yml"));
+
+        Assert.Contains("[switch] $SkipBuild", script);
+        Assert.Matches(@"if \(-not \$SkipBuild\) \{\s*foreach \(\$suite in \$suites\) \{[^}]*dotnet build \$suite\.Project -c \$Configuration", script);
+        Assert.True(script.IndexOf("dotnet build $suite.Project", StringComparison.Ordinal)
+                    < script.IndexOf("'test', $suite.Project", StringComparison.Ordinal),
+            "the suites must be built before they are run");
+        Assert.Contains("run: pwsh -File build/check-coverage.ps1 -SkipBuild", workflow);
+    }
+
+    [Fact]
     public void TheSuiteListHasNoDuplicates()
     {
         var suites = SuitesInTheScript();

@@ -167,11 +167,16 @@ suites' tool-free classes, with the same `Requires!=` filters CI's test jobs use
 reaches is ledger debt saying so (B438). Run it locally the same way:
 
 ```powershell
-dotnet build MLQT.slnx -c Release
-./build/check-coverage.ps1                 # gate
+./build/check-coverage.ps1                 # build each suite in Release, then gate
 ./build/check-coverage.ps1 -SkipTests      # re-judge coverage already collected
 ./build/check-coverage.ps1 -UpdateBaseline # re-record accepted debt; review the diff
 ```
+
+**It builds what it measures.** The suites run with `--no-build`, and until 2026-11-26 the script did
+not build them either, so it measured whatever Release binaries were on disk: once a timing
+experiment's, built with a change switched off, and it failed tests that passed in every build of the
+source. `-SkipBuild` is for a caller that has just built them - CI's `code-coverage` job, which builds
+each suite in a step of its own (B370) and passes it; `CoverageSuitesTests` holds both halves.
 
 Also `-Configuration`, `-BaselinePath`, `-MinimumLines` (25, below which a class is not gated),
 `-ResultsDirectory` and `-ReportDirectory`. The suites it runs are the `$suites` list in the script,

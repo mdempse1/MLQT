@@ -74,8 +74,7 @@ bar, each with a reason, and the build fails when one goes backwards, when a cla
 stops meeting it, or when a new class arrives below it.
 
 ```bash
-dotnet build MLQT.slnx -c Release
-./build/check-coverage.ps1                  # the gate, as CI runs it
+./build/check-coverage.ps1                  # the gate, as CI runs it; builds each suite first
 ./build/check-coverage.ps1 -SkipTests       # re-judge coverage already collected
 ./build/check-coverage.ps1 -UpdateBaseline  # re-record accepted debt; review the diff
 ./build/run-all-tests.ps1 -Coverage         # reports, does not gate — and measures more
