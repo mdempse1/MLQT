@@ -236,7 +236,7 @@ public sealed class StyleTools
 
         var snapshot = CurrentBaseline();
         return ToCheckResult(findings, modelsChecked: 1, snapshot, view,
-            BaselineWarnings(snapshot, [([classId], effective)]));
+            BaselineWarnings(snapshot, [([classId], effective)]), UnformattedLayoutNote(findings));
     }
 
     internal async Task<object> CheckLibrary(
@@ -366,7 +366,8 @@ public sealed class StyleTools
             _codeReview.RemoveLogMessagesForModels(checkedIds);
             _codeReview.AddLogMessages(reported);
 
-            return ToCheckResult(reported, modelsChecked, snapshot, view, BaselineWarnings(snapshot, scopes));
+            return ToCheckResult(reported, modelsChecked, snapshot, view, BaselineWarnings(snapshot, scopes),
+                UnformattedLayoutNote(reported));
         }
         finally
         {
@@ -635,9 +636,43 @@ public sealed class StyleTools
         return warnings.Count == 0 ? null : warnings;
     }
 
+    /// <summary>
+    /// A note for the findings that are layout rules the formatter maintains, on classes whose writes
+    /// are not formatted: that mlqt_format fixes them, and why writing did not. Null when there are none.
+    /// </summary>
+    /// <remarks>
+    /// The point an agent decides what to do about them. One that had read "edits format themselves",
+    /// in a repository whose settings left ApplyFormattingRules off - the default - wrote class after
+    /// class with imports after extends and took the findings for something MLQT would put right.
+    /// </remarks>
+    private string? UnformattedLayoutNote(IReadOnlyList<LogMessage> findings)
+    {
+        var whyByClass = new Dictionary<string, string?>(StringComparer.Ordinal);
+        string? Why(string classId)
+        {
+            if (!whyByClass.TryGetValue(classId, out var why))
+                whyByClass[classId] = why = RepositorySettings.WhyWritesAreNotFormatted(
+                    RepositorySettings.ForClass(_libraries, _repositories, classId));
+            return why;
+        }
+
+        var unformatted = findings
+            .Where(f => f.RuleId is { } id && RuleCatalog.SeverityFollowsFormatter(id)
+                        && !string.IsNullOrEmpty(f.ModelName) && Why(f.ModelName) is not null)
+            .ToList();
+        if (unformatted.Count == 0)
+            return null;
+
+        var rules = string.Join(", ", unformatted.Select(f => f.RuleId).Distinct().Order(StringComparer.Ordinal));
+        var reasons = string.Join("; ", unformatted.Select(f => Why(f.ModelName)).Distinct());
+        return $"{unformatted.Count} finding(s) are layout rules the formatter fixes ({rules}). Classes written " +
+               $"here are not formatted as they are written - {reasons} - so call mlqt_format on the class " +
+               "or its library rather than editing the layout by hand.";
+    }
+
     private static CheckResult ToCheckResult(
         IReadOnlyList<LogMessage> findings, int modelsChecked, BaselineStatusSnapshot? baseline, string? view,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null, string? note = null)
     {
         var classified = findings.Select(f => (Finding: f, Status: baseline?.StatusOf(f))).ToList();
         // Filtered before the cap, so a library carrying thousands of accepted findings still returns
@@ -659,6 +694,6 @@ public sealed class StyleTools
                 classified.Count(c => c.Status is FindingStatus.AcceptedDebt),
                 classified.Count(c => c.Status is null),
                 classified.Count - kept.Count);
-        return new CheckResult(modelsChecked, kept.Count, shown, kept.Count > shown.Count, summary, warnings);
+        return new CheckResult(modelsChecked, kept.Count, shown, kept.Count > shown.Count, summary, warnings, note);
     }
 }

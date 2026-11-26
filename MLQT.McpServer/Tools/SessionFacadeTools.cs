@@ -32,7 +32,8 @@ public sealed class SessionFacadeTools
     [McpServerTool(Name = "mlqt_session", ReadOnly = true, OpenWorld = false)]
     [Description("The Modelica libraries MLQT has loaded, and changing that. action 'status' (the default): each library loaded, " +
                  "its version, class count and the dependencies it declares that are not loaded, and each " +
-                 "repository with its branch and revision - an empty list means nothing is loaded yet, so call " +
+                 "repository with its branch, its revision and formatsWrites (whether what you write there is " +
+                 "formatted; if not, run mlqt_format when done) - an empty list means nothing is loaded yet, so call " +
                  "mlqt_load. Each library says when it was loaded: this server may have outlived the conversation " +
                  "that loaded it, or serve another task. 'unload': remove the library named by library (its " +
                  "name, e.g. 'Modelica', or id). 'reset': unload everything and forget the findings, to start " +

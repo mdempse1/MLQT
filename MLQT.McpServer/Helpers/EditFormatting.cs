@@ -97,7 +97,8 @@ internal static class EditFormatting
     {
         if (Deferred.Value
             || session.Repositories is not { } repositories
-            || RepositorySettings.ForClass(libraries, repositories, governingClassId) is not { ApplyFormattingRules: true } settings)
+            || RepositorySettings.ForClass(libraries, repositories, governingClassId) is not { } settings
+            || !RepositorySettings.FormatsWrites(settings))
             return fileContent;
 
         var graph = libraries.CombinedGraph;

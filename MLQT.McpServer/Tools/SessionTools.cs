@@ -105,7 +105,8 @@ public sealed class SessionTools
         var allLoaded = loadLibraries && discovered.All(d => loaded.Any(l => l.Name == d.LibraryName));
         return new LoadRepositoryResult(
             true, repo.Id, repo.Name, WireNames.Of(repo.VcsType), null,
-            detailed || !allLoaded ? discovered : [], loaded, warnings);
+            detailed || !allLoaded ? discovered : [], loaded, warnings,
+            RepositorySettings.FormatsWrites(repo.StyleSettings));
     }
 
     [McpServerTool(Name = "mlqt_create_library", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
@@ -183,7 +184,8 @@ public sealed class SessionTools
     internal IReadOnlyList<RepositorySummary> ListRepositories()
         => _repositories.Repositories.Select(r => new RepositorySummary(
             r.Id, r.Name, WireNames.Of(r.VcsType), r.LocalPath, r.VcsRootPath,
-            r.CurrentBranch, r.CurrentRevision, r.IsLoaded, r.LibraryIds.Count)).ToList();
+            r.CurrentBranch, r.CurrentRevision, r.IsLoaded, r.LibraryIds.Count,
+            RepositorySettings.FormatsWrites(r.StyleSettings))).ToList();
 
     internal object UnloadLibrary(
         string? library = null,

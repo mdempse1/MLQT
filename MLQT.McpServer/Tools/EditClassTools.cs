@@ -321,7 +321,8 @@ public sealed class EditClassTools
         return await ApplyReplacement(classId, ctx, newCode, count, all,
             loose
                 ? "old matched only when differences in white space and line breaks were ignored - the class's layout has " +
-                  "changed since it was read (formatting reflows it); read it again before quoting more of it."
+                  "changed since it was read (mlqt_format reflows it, and so does a write in a repository that " +
+                  "formats its writes); read it again before quoting more of it."
                 : null);
     }
 

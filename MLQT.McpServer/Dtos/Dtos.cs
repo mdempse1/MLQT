@@ -34,6 +34,9 @@ public sealed record LibrarySummary(
 /// <summary>A dependency a library declares via its <c>uses</c> annotation, e.g. Modelica 4.0.0.</summary>
 public sealed record LibraryDependency(string Name, string? Version);
 
+/// <param name="FormatsWrites">Whether a class written in this repository is formatted with its rules
+/// as it is written - its settings' ApplyFormattingRules. When false, what you write is left as you
+/// wrote it: call mlqt_format on it, or its library, when you have finished writing.</param>
 public sealed record RepositorySummary(
     string Id,
     string Name,
@@ -43,13 +46,16 @@ public sealed record RepositorySummary(
     string? CurrentBranch,
     string? CurrentRevision,
     bool IsLoaded,
-    int LibraryCount);
+    int LibraryCount,
+    bool FormatsWrites = false);
 
 public sealed record DiscoveredLibrarySummary(
     string LibraryName,
     string RelativePath,
     string FullPath);
 
+/// <param name="FormatsWrites">As <see cref="RepositorySummary.FormatsWrites"/>; null when the
+/// repository did not load.</param>
 public sealed record LoadRepositoryResult(
     bool Success,
     string? RepositoryId,
@@ -58,7 +64,8 @@ public sealed record LoadRepositoryResult(
     string? ErrorMessage,
     IReadOnlyList<DiscoveredLibrarySummary> DiscoveredLibraries,
     IReadOnlyList<LibrarySummary> LoadedLibraries,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    bool? FormatsWrites = null);
 
 /// <summary>What <c>mlqt_session</c>'s reload returns: what scope was re-read from disk.</summary>
 /// <param name="NotReloaded">Loaded libraries the reload left as they were: those a host supplied

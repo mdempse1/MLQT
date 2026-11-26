@@ -185,8 +185,9 @@ public sealed class GuidanceTools
 
             Edit a class and re-check it:
               mlqt_get_class (source, includeAnnotations=true) -> mlqt_edit_class (replace, or the element
-              operations) -> mlqt_check(classId, checks ['style', 'spelling', 'references']). In a
-              repository that applies its formatting rules the edit is written formatted; no mlqt_format.
+              operations) -> mlqt_check(classId, checks ['style', 'spelling', 'references']). Where the
+              repository formats its writes (formatsWrites: true in mlqt_load and mlqt_session) the edit is
+              written formatted and needs no mlqt_format; elsewhere - the default - call mlqt_format.
 
             Rename a class (updates references too):
               mlqt_refactor_class(classId, 'rename', newName) [preview first] -> the declaration and every
@@ -209,7 +210,7 @@ public sealed class GuidanceTools
             Bring in classes a script generated (a data generator writing .mo files):
               mlqt_write_class(importFrom: the full path of the file or folder, importInto: the package) - each
               class gets a file of its own in the package, its within clause, a line in package.order and the
-              repository's formatting (where its settings apply formatting rules), and is loaded; files the
+              repository's formatting (where it formats its writes: formatsWrites), and is loaded; files the
               script wrote straight into the package's folder are adopted there, and one already as it would
               be written is left alone. Do not write package.order yourself or reload by hand. Re-run it after
               the script regenerates its output; replace=true replaces classes imported from elsewhere earlier.
@@ -516,12 +517,16 @@ public sealed class GuidanceTools
 
         ["formatting"] = """
             Formatting. MLQT only formats COMPLETE class definitions, never loose fragments:
-            - Edits format themselves: in a repository whose settings apply its formatting rules,
-              mlqt_edit_class, mlqt_write_class and a move write the changed file formatted with those
-              rules (a preview shows it so). A library from no repository - one mlqt_create_library made,
-              or one loaded on its own - or a repository that does not apply its rules, is written as
-              composed, and mlqt_format still formats it: call it once when you have finished writing.
-              In a repository that applies its rules, call mlqt_format only on code nothing has edited.
+            - Whether a write is formatted depends on the repository, and usually it is NOT. Only where
+              the repository formats its writes - formatsWrites: true in mlqt_load and mlqt_session, its
+              settings' ApplyFormattingRules, off unless the repository turns it on - do mlqt_edit_class,
+              mlqt_write_class and a move write the changed file formatted with its rules (a preview
+              shows it so). Everywhere else - formatsWrites false, a library from no repository (one
+              mlqt_create_library made, or one loaded on its own) - what you write is left as you wrote
+              it, and mlqt_check still reports the layout rules against it: call mlqt_format on the class
+              or its library once you have finished writing. mlqt_check says so in its note when it
+              reports layout findings on such a class. Where writes are formatted, call mlqt_format only
+              on code nothing has edited.
             - mlqt_format(classId | library | source): one tool for all three.
               - classId formats the .mo file that holds the class and, unless preview=true, writes it and
                 refreshes the graph. It reformats the whole containing file (all classes stored in it),

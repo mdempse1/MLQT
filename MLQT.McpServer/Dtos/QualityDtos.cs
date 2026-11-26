@@ -264,13 +264,16 @@ public sealed record StyleFindingDto(
 /// <see cref="BaselineWarnings"/> says what makes the statuses less than they look: a baseline that
 /// could not be read, or one taken with different rules.
 /// </summary>
+/// <param name="Note">Set when some findings are layout rules the formatter fixes, on classes whose
+/// writes are not formatted - so mlqt_format, not a hand edit, is what fixes them.</param>
 public sealed record CheckResult(
     int ModelsChecked,
     int FindingCount,
     IReadOnlyList<StyleFindingDto> Findings,
     bool Truncated,
     BaselineSummary? Baseline = null,
-    IReadOnlyList<string>? BaselineWarnings = null);
+    IReadOnlyList<string>? BaselineWarnings = null,
+    string? Note = null);
 
 /// <summary>
 /// Every finding of a check counted by where it stands against the baseline, and how many the view

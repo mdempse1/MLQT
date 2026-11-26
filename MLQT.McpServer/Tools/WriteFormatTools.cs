@@ -38,11 +38,13 @@ public sealed class WriteFormatTools
                  "replaced only with replace=true, so a mistaken name cannot overwrite a class. Classes are written " +
                  "in order, so a later one can go in a package an earlier one created; if one fails, the ones " +
                  "before it stay written and none after it is tried. To change part of a class, use " +
-                 "mlqt_edit_class instead. preview=true returns each file without writing (each class is then " +
+                 "mlqt_edit_class instead. What is written is formatted only in a repository that formats its " +
+                 "writes (formatsWrites in mlqt_load and mlqt_session); otherwise it is written as you wrote it, " +
+                 "so call mlqt_format when you have finished. preview=true returns each file without writing (each class is then " +
                  "previewed on its own). Instead of classes, importFrom (a .mo file or a folder of them, written by " +
                  "a script or a data generator) and importInto (a package stored as a folder) bring generated " +
                  "classes in without passing their text: each gets a file of its own in the package, the package's " +
-                 "within clause, the repository's formatting and a place in package.order, then everything is " +
+                 "within clause and a place in package.order, then everything is " +
                  "reloaded - a file the script wrote straight into the package's folder is adopted where it is. All " +
                  "or none: a file that cannot be imported refuses the import and says why.")]
     public async Task<object> WriteClass(
