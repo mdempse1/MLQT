@@ -4,6 +4,7 @@ using ModelContextProtocol.Server;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
@@ -38,11 +39,12 @@ public sealed class SearchTools
     /// only the items returned.
     /// </summary>
     /// <remarks>
-    /// <para><b>Only classes that could match are parsed</b> (<see cref="TextSearchPrefilter"/>), and each
-    /// through <see cref="ModelDefinition.Borrow{T}"/>, so a search keeps no trees. It parsed and kept
-    /// every class's, and took 31 s over the MSL.</para>
-    /// <para><b>Cancellation is checked before each class</b>, so a cancelled search stops once the class
-    /// it is reading is done, and throws <see cref="OperationCanceledException"/>.</para>
+    /// <para><b>Only classes that could match are parsed</b> (<see cref="TextSearchPrefilter"/>), a package
+    /// without the classes written inline in it (<see cref="TextSearchPrefilter.ReducedSource"/>), in
+    /// parallel, and none is kept: a search keeps no trees. It parsed and kept every class's whole
+    /// source, one at a time, and took 31 s over the MSL.</para>
+    /// <para><b>Cancellation is checked before each class</b>, so a cancelled search stops once the
+    /// classes it is reading are done, and throws <see cref="OperationCanceledException"/>.</para>
     /// </remarks>
     internal object SearchText(
         string query,
@@ -75,21 +77,47 @@ public sealed class SearchTools
             .ToList();
         var prefilter = new TextSearchPrefilter(q, candidates);
 
-        foreach (var node in candidates.OrderBy(m => m.Id, StringComparer.Ordinal))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (UsePrefilter && !prefilter.MayMatch(node))
-                continue;
+        cancellationToken.ThrowIfCancellationRequested();
+        var toRead = candidates
+            .Where(m => !UsePrefilter || prefilter.MayMatch(m))
+            .OrderBy(m => m.Id, StringComparer.Ordinal)
+            .ToList();
 
-            var hit = node.Definition.Borrow(tree => MatchText(tree, q), ifUnparseable: null);
-            if (hit is not { } found)
+        // Read in parallel, each class on its own, and reported in id order as before. The options'
+        // token is checked before each class is started.
+        var hits = new (string Where, string Text)?[toRead.Count];
+        Parallel.For(0, toRead.Count, new ParallelOptions { CancellationToken = cancellationToken },
+            i => hits[i] = Read(toRead[i], q, UsePrefilter ? prefilter : null));
+
+        for (var i = 0; i < toRead.Count; i++)
+        {
+            if (hits[i] is not { } found)
                 continue;
             total++;
             if (items.Count < limit)
+            {
+                var node = toRead[i];
                 items.Add(new TextSearchItem(node.Id, node.Name, node.ClassType, found.Where, Snippet(found.Text, q)));
+            }
         }
 
         return new TextSearchResult(total, items.Count, items);
+    }
+
+    // Where in one class the query is. A tree something else holds is used as it is. Otherwise a class
+    // with classes written inline in it is parsed without them, which is most of the time a search of
+    // the MSL took, and as it is only when that text does not parse cleanly; the rest are borrowed.
+    private static (string Where, string Text)? Read(ModelNode node, string q, TextSearchPrefilter? prefilter)
+    {
+        if (node.Definition.ParsedCode is { } held)
+            return MatchText(held, q);
+        if (prefilter?.ReducedSource(node) is { } reduced)
+        {
+            var (tree, errors) = ModelicaParserHelper.ParseWithErrors(reduced);
+            if (errors.Count == 0)
+                return MatchText(tree, q);
+        }
+        return node.Definition.Borrow(tree => MatchText(tree, q), ifUnparseable: null);
     }
 
     // Where in the class the query is: its description first, then its documentation as prose.

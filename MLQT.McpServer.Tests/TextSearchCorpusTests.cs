@@ -41,6 +41,12 @@ public class TextSearchCorpusTests(ITestOutputHelper output)
         var classes = host.Libraries.GetAllModels().ToList();
         output.WriteLine($"Loaded {classes.Count} classes in {load.Elapsed.TotalSeconds:F1} s");
 
+        // How often a package parsed without its inline classes has to be parsed whole after all.
+        var all = new TextSearchPrefilter("x", classes);
+        var reduced = classes.Select(all.ReducedSource).Where(s => s is not null).ToList();
+        var failing = reduced.Count(s => ModelicaParser.Helpers.ModelicaParserHelper.ParseWithErrors(s!).errors.Count > 0);
+        output.WriteLine($"{reduced.Count} classes have inline classes; {failing} of them fail to parse without them");
+
         var search = new SearchTools(host.Libraries);
         var everyClass = new SearchTools(host.Libraries) { UsePrefilter = false };
         foreach (var query in Queries)
@@ -56,9 +62,12 @@ public class TextSearchCorpusTests(ITestOutputHelper output)
             var expected = ToolAssert.Ok<TextSearchResult>(everyClass.SearchText(query, 200));
             reference.Stop();
 
+            var filtering = Stopwatch.StartNew();
             var prefilter = new TextSearchPrefilter(query.Trim(), classes);
             var kept = classes.Count(prefilter.MayMatch);
-            output.WriteLine($"'{query}': {a.Total} hits, {kept} classes parsed; first {first.Elapsed.TotalSeconds:F2} s, " +
+            filtering.Stop();
+            output.WriteLine($"'{query}': {a.Total} hits, {kept} classes parsed (prefilter {filtering.Elapsed.TotalSeconds:F2} s); " +
+                             $"first {first.Elapsed.TotalSeconds:F2} s, " +
                              $"repeat {repeat.Elapsed.TotalSeconds:F2} s, every class parsed {reference.Elapsed.TotalSeconds:F2} s");
 
             Assert.Equal(expected.Total, a.Total);

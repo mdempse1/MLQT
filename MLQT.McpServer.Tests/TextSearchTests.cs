@@ -120,6 +120,37 @@ public class TextSearchTests
     }
 
     [Fact]
+    public void APackage_IsReadWithoutItsInlineClasses_AndGivesTheSameAnswer()
+    {
+        using var host = Load("""
+            package P "a Mat File Format package"
+              model M "inside"
+                Real x;
+              equation
+                x = 1;
+              end M;
+              encapsulated operator record R
+                Real re;
+              end R;
+              annotation (Documentation(info="<html><p>Holds M.</p></html>"));
+            end P;
+            """);
+        var models = host.Libraries.GetAllModels().ToList();
+        var package = models.Single(m => m.Id == "P");
+
+        var reduced = new TextSearchPrefilter("x", models).ReducedSource(package);
+
+        Assert.NotNull(reduced);
+        Assert.DoesNotContain("Real x", reduced);
+        Assert.Empty(ModelicaParser.Helpers.ModelicaParserHelper.ParseWithErrors(reduced).errors);
+        Assert.Null(new TextSearchPrefilter("x", models).ReducedSource(models.Single(m => m.Id == "P.M")));
+
+        var hit = Assert.Single(Text(host, "Mat File Format").Items);
+        Assert.Equal(("P", "description"), (hit.Id, hit.MatchedIn));
+        Assert.Equal("P", Assert.Single(Text(host, "Holds M").Items).Id);
+    }
+
+    [Fact]
     public void TheRunsAClassMustHold_AreTheQuerysLettersAndDigits()
     {
         Assert.Equal(new[] { "Mat", "File", "Format" }, new TextSearchPrefilter("Mat File-Format", []).RequiredRuns);

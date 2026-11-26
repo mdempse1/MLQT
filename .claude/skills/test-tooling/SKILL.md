@@ -266,17 +266,22 @@ On 2026-10-09: 2,939 files, 6,487 classes in 4.3 s, about 1,500 classes a second
 both, then again parsing every class. It asserts the results are identical, which is what holds
 `TextSearchPrefilter` to "skip only what could not match". **Run it after changing how a text search
 reads a class** — the description, the documentation, `TextExtractor.StripHtml` — since the prefilter's
-reasoning rests on them. Use `-c Release` for times worth quoting:
+reasoning rests on them. It also reports how many packages fail to parse with their inline classes
+replaced by a placeholder (`TextSearchPrefilter.ReducedSource`): each of those is parsed whole, so
+that figure should stay at nought. Use `-c Release` and **server GC** for times worth quoting -
+the search parses in parallel, and under the test host's workstation GC that gains nothing:
 
 ```powershell
+$env:DOTNET_gcServer = "1"
 $env:MLQT_TEXT_SEARCH_CORPUS = "C:\Program Files\Dymola 2026x\Modelica\Library\Modelica 4.1.0;C:\Program Files\Dymola 2026x\Modelica\Library\Complex.mo;C:\Program Files\Dymola 2026x\Modelica\Library\ModelicaServices 4.1.0"
 dotnet test MLQT.McpServer.Tests -c Release --filter "FullyQualifiedName~TextSearchCorpusTests" --output Detailed
 ```
 
-On 2026-11-26, MSL 4.1.0 with Complex and ModelicaServices (6,530 classes): 0.5-1.3 s for a query of
-words, against 3.7 s parsing every class; with eight Dymola libraries beside them (9,655 classes),
-0.5-1.6 s against 5.4 s. A query with no ASCII letters or digits to look for (`&`, `ä`), or one as
-common as `x` or `e.g.`, still parses nearly every class and takes as long as the old search.
+On 2026-11-26, MSL 4.1.0 with Complex and ModelicaServices (6,530 classes; 479 packages with inline
+classes, none failing without them): 0.02-0.09 s for a query of words, and 0.24-0.41 s for one the
+prefilter cannot narrow (`&`, `ä`, `x`, `e.g.`), against 3.7 s for the search as it was - every class
+parsed whole, one at a time, every tree kept. With eight Dymola libraries beside them (9,655 classes):
+0.04-0.15 s and 0.27-0.51 s, against 5.4 s.
 
 ## "Where is the time actually going?" — `dotnet-trace`
 

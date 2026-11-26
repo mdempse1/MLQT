@@ -42,12 +42,11 @@ internal sealed partial class TextSearchPrefilter
     public TextSearchPrefilter(string query, IEnumerable<ModelNode> candidates)
     {
         _runs = Runs(query);
-        _nestedByParent = _runs.Length == 0
-            ? new Dictionary<string, List<ModelNode>>()
-            : candidates
-                .Where(m => m.IsNested && m.ParentModelName is not null)
-                .GroupBy(m => m.ParentModelName!, StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        // Built even when there is nothing to look for: ReducedSource needs it whatever the query.
+        _nestedByParent = candidates
+            .Where(m => m.IsNested && m.ParentModelName is not null)
+            .GroupBy(m => m.ParentModelName!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
     }
 
     /// <summary>The runs a class's text must hold, for tests.</summary>
@@ -66,9 +65,29 @@ internal sealed partial class TextSearchPrefilter
         if (code.Contains("&#", StringComparison.Ordinal))
             return true;
 
-        var own = OwnText(code, _nestedByParent.GetValueOrDefault(node.Id));
+        var own = OwnText(code, _nestedByParent.GetValueOrDefault(node.Id), placeholder: false);
         return ReferenceEquals(own, code) || HoldsEveryRun(own) || HoldsEveryRunJoined(own);
     }
+
+    /// <summary>
+    /// <paramref name="node"/>'s source with each class written inline in it replaced by an empty
+    /// <c>class _ end _</c>, or null when it has none. It is far smaller to parse than the source, and
+    /// it gives the same description and documentation: both are read from the outermost class's own
+    /// specifier and class-level annotations, never from its elements, and a class definition is
+    /// replaced by another in the same place. A placeholder that does not fit where it is put - an
+    /// <c>operator</c> prefix left outside the child's text, say - makes the text fail to parse, and
+    /// the caller then parses the source as it is.
+    /// </summary>
+    public string? ReducedSource(ModelNode node)
+    {
+        var code = node.Definition.ModelicaCode;
+        if (string.IsNullOrEmpty(code) || _nestedByParent.GetValueOrDefault(node.Id) is not { } nested)
+            return null;
+        var reduced = OwnText(code, nested, placeholder: true);
+        return ReferenceEquals(reduced, code) ? null : reduced;
+    }
+
+    private const string Placeholder = "class _ end _";
 
     private bool HoldsEveryRun(string text)
     {
@@ -87,14 +106,16 @@ internal sealed partial class TextSearchPrefilter
         return LiteralJoint().IsMatch(text) && HoldsEveryRun(LiteralJoint().Replace(text, string.Empty));
     }
 
-    // The source with each inline class cut out and a space left in its place. A child whose text is not
-    // found as written (a reformatted copy, say) is left in, which only keeps more classes.
-    private static string OwnText(string code, List<ModelNode>? nested)
+    // The source with each inline class cut out and a space left in its place, or with 'placeholder' the
+    // placeholder class, and a ';' after it when the child's text ended in one, as a stored class's does.
+    // A child whose text is not found as written (a reformatted copy, say) is left in, which only keeps
+    // more classes.
+    private static string OwnText(string code, List<ModelNode>? nested, bool placeholder)
     {
         if (nested is null)
             return code;
 
-        var spans = new List<(int Start, int End)>();
+        var spans = new List<(int Start, int End, bool Semicolon)>();
         foreach (var child in nested)
         {
             var childCode = child.Definition.ModelicaCode;
@@ -102,7 +123,7 @@ internal sealed partial class TextSearchPrefilter
                 continue;
             var at = code.IndexOf(childCode, StringComparison.Ordinal);
             if (at >= 0)
-                spans.Add((at, at + childCode.Length));
+                spans.Add((at, at + childCode.Length, childCode.AsSpan().TrimEnd().EndsWith(";")));
         }
         if (spans.Count == 0)
             return code;
@@ -110,14 +131,18 @@ internal sealed partial class TextSearchPrefilter
         spans.Sort((a, b) => a.Start.CompareTo(b.Start));
         var own = new StringBuilder(code.Length);
         var from = 0;
-        foreach (var (start, end) in spans)
+        foreach (var (start, end, semicolon) in spans)
         {
             if (start < from)
             {
                 from = Math.Max(from, end);
                 continue;
             }
-            own.Append(code, from, start - from).Append(' ');
+            own.Append(code, from, start - from);
+            if (placeholder)
+                own.Append(Placeholder).Append(semicolon ? ";" : "");
+            else
+                own.Append(' ');
             from = end;
         }
         own.Append(code, from, code.Length - from);
