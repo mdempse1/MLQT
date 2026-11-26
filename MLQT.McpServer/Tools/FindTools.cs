@@ -36,13 +36,13 @@ public sealed class FindTools
                  "'Placement', 'connect(motor.', 'parameter Real T' - with the class it is in and its file line. " +
                  "Use code instead of grep or your own file search: it covers every loaded library, MSL included, " +
                  "and names the innermost class for each line. For code, regex=true reads query as a regular " +
-                 "expression and ignoreCase=true ignores case; library limits it to one library. " +
+                 "expression and ignoreCase=true ignores case. For code and text, library limits the search to one library. " +
                  "limit and offset page the results.")]
     public object Find(
         [Description("What to look for. For 'name' and 'interface', part of a class id; for 'text', prose; for 'code', text in a line of source.")]
         string? query = null,
         [Description("'name' (default), 'text', 'interface' or 'code'.")] string match = "name",
-        [Description("Optional: one library, by name (e.g. 'Modelica') or id. For 'name' with no query, and for 'code'.")]
+        [Description("Optional: one library, by name (e.g. 'Modelica') or id. For 'name' with no query, 'text' and 'code'.")]
         string? library = null,
         [Description("Optional class type, e.g. 'model', 'block', 'connector'. For 'name' with no query, and 'interface'.")]
         string? classType = null,
@@ -52,7 +52,8 @@ public sealed class FindTools
         [Description("For 'code': read query as a regular expression. Default false.")] bool regex = false,
         [Description("For 'code': ignore case. Default false, since Modelica is case-sensitive.")] bool ignoreCase = false,
         [Description("Most results to return (default 50).")] int limit = 50,
-        [Description("Results to skip, for the next page (default 0). For 'name' with no query, and 'code'.")] int offset = 0)
+        [Description("Results to skip, for the next page (default 0). For 'name' with no query, and 'code'.")] int offset = 0,
+        CancellationToken cancellationToken = default)
     {
         switch (match?.Trim().ToLowerInvariant())
         {
@@ -61,14 +62,14 @@ public sealed class FindTools
                     ? _classes.ListClasses(library, classType, limit, offset)
                     : _classes.SearchClasses(query, limit);
             case "text":
-                return _search.SearchText(query ?? string.Empty, limit);
+                return _search.SearchText(query ?? string.Empty, limit, library, cancellationToken);
             case "interface":
                 return _search.SearchByInterface(classType, query, hasExperiment, minParameters, minConnectors, limit);
             case "code":
                 if (ToolDiagnostics.RequireLibrary(_libraries, "searching code") is { } noLib)
                     return noLib;
                 return CodeSearch.Run(_libraries, query ?? string.Empty, regex, ignoreCase, library,
-                    Math.Clamp(limit, 1, CodeSearch.MaxLimit), Math.Max(offset, 0));
+                    Math.Clamp(limit, 1, CodeSearch.MaxLimit), Math.Max(offset, 0), cancellationToken);
             default:
                 return new Dtos.ToolError($"match must be 'name', 'text', 'interface' or 'code', not '{match}'.");
         }

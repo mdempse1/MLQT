@@ -179,6 +179,7 @@ public sealed class ObfuscationReadinessTests
         ("ToolUsageLogger.cs", "isError.ToString()", "a bool"),
         ("EditTools.cs", "return builder.ToString();", "a StringBuilder"),
         ("EditTools.cs", "return builder.ToString();", "a StringBuilder"),
+        ("TextSearchPrefilter.cs", "return own.ToString();", "a StringBuilder"),
         ("StartupScriptReader.cs", "return builder.ToString();", "a StringBuilder"),
         ("StartupScriptReader.cs", "return builder.ToString();", "a StringBuilder"),
         ("StartupScriptReader.cs", "var s = current.ToString().Trim();", "a StringBuilder"),

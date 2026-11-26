@@ -147,7 +147,7 @@ public sealed class GuidanceTools
 
             Find a class when you don't know its name:
               mlqt_find with match 'name' (id substring), 'text' (description/documentation prose, e.g.
-              'PID controller') or 'interface' (by shape: class type, has connectors/parameters,
+              'PID controller'; library narrows it to one library) or 'interface' (by shape: class type, has connectors/parameters,
               simulatable via an experiment annotation).
 
             Find code - where a name is used, a Placement, a connect, a parameter declaration:

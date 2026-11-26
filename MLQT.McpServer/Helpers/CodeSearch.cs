@@ -27,7 +27,7 @@ internal static class CodeSearch
 
     public static object Run(
         ILibraryDataService libraries, string query, bool regex, bool ignoreCase, string? libraryId,
-        int limit, int offset)
+        int limit, int offset, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(query))
             return new ToolError("query must be the text to look for in the code.");
@@ -77,6 +77,8 @@ internal static class CodeSearch
         {
             foreach (var model in models.OrderBy(m => m.Id, StringComparer.Ordinal))
             {
+                // Before each class, so a cancelled search stops once the class it is reading is done.
+                cancellationToken.ThrowIfCancellationRequested();
                 var code = model.Definition.ModelicaCode;
                 if (string.IsNullOrEmpty(code))
                     continue;
