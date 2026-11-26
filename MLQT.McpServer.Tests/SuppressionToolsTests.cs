@@ -29,11 +29,11 @@ public class SuppressionToolsTests
     {
         using var host = new TestHost();
         var res = ToolAssert.Ok<StructureEditResult>(
-            await Load(host).SuppressRule("P.M", "MLQT.Documentation.ClassDescription", reason: "legacy model"));
+            await Load(host).SuppressRule("P.M", "MLQT.Doc.ClassDescription", reason: "legacy model"));
 
         Assert.True(res.Changed);
         var src = Source(host, "P.M");
-        Assert.Contains("__MLQT(suppress=\"MLQT.Documentation.ClassDescription\"", src);
+        Assert.Contains("__MLQT(suppress=\"MLQT.Doc.ClassDescription\"", src);
         Assert.Contains("reason=\"legacy model\"", src);
     }
 
@@ -42,10 +42,10 @@ public class SuppressionToolsTests
     {
         using var host = new TestHost();
         ToolAssert.Ok<StructureEditResult>(
-            await Load(host).SuppressRule("P.M", "Documentation.ParameterDescription", component: "k"));
+            await Load(host).SuppressRule("P.M", "Doc.ParameterDescription", component: "k"));
 
         var src = Source(host, "P.M");
-        Assert.Contains("__MLQT(suppress=\"Documentation.ParameterDescription\")", src);
+        Assert.Contains("__MLQT(suppress=\"Doc.ParameterDescription\")", src);
         // The waiver is on the parameter line, not the model.
         var kLine = src.Split('\n').Single(l => l.Contains("parameter Real k"));
         Assert.Contains("__MLQT", kLine);
@@ -89,7 +89,7 @@ public class SuppressionToolsTests
     public async Task SuppressRule_UnknownComponent_Errors()
     {
         using var host = new TestHost();
-        var err = ToolAssert.Error(await Load(host).SuppressRule("P.M", "MLQT.X", component: "nope"));
+        var err = ToolAssert.Error(await Load(host).SuppressRule("P.M", "MLQT.Doc.ParameterDescription", component: "nope"));
         Assert.Contains("'nope'", err.Error);
         Assert.Contains("not found", err.Error);
     }
@@ -142,14 +142,67 @@ public class SuppressionToolsTests
         Assert.InRange(mlqtAt, innerStart, innerEnd); // on Inner, not the package
     }
 
-    [Fact]
-    public async Task SuppressRule_UnknownRuleId_NotesButStillWrites()
+    /// <summary>
+    /// A suppression matches a rule id exactly, and every finding carries a catalog id, so one naming no
+    /// rule waives nothing. It was written anyway, with a note: an agent that guessed
+    /// MLQT.Style.NamingConvention for MLQT.Naming.Convention left a waiver that did nothing, and a
+    /// later clean check read as though it had worked. These tests' own first versions made the same
+    /// guess - MLQT.Documentation.ClassDescription for MLQT.Doc.ClassDescription - and passed.
+    /// </summary>
+    [Theory]
+    [InlineData("MLQT.Style.NamingConvention", "MLQT.Naming.Convention")]
+    [InlineData("MLQT.Documentation.ClassDescription", "MLQT.Doc.ClassDescription")]
+    [InlineData("Documentation.ParameterDescription", "MLQT.Doc.ParameterDescription")]
+    public async Task SuppressRule_AnIdThatIsNoRule_IsRefused_WithTheNearestIds(string guessed, string meant)
     {
         using var host = new TestHost();
-        var res = ToolAssert.Ok<StructureEditResult>(
-            await Load(host).SuppressRule("P.M", "MLQT.Totally.Made.Up"));
-        Assert.NotNull(res.Note);
-        Assert.Contains("not a known built-in rule", res.Note!);
+        var tools = Load(host);
+        var before = Source(host, "P.M");
+
+        var err = ToolAssert.Error(await tools.SuppressRule("P.M", guessed));
+
+        Assert.Contains("not a rule id", err.Error);
+        Assert.Contains(meant, err.Error);
+        Assert.Contains("ruleId from the finding", err.Error);
+        Assert.Equal(before, Source(host, "P.M"));
+    }
+
+    [Theory]
+    [InlineData("MLQT.Naming.Convention")]
+    [InlineData("Naming.Convention")]
+    [InlineData("*")]
+    public async Task SuppressRule_ARuleId_WithOrWithoutItsPrefix_OrTheWildcard_IsWritten(string ruleId)
+    {
+        using var host = new TestHost();
+
+        var res = ToolAssert.Ok<StructureEditResult>(await Load(host).SuppressRule("P.M", ruleId, preview: true));
+
+        Assert.Contains($"suppress=\"{ruleId}\"", res.NewFileContent);
+    }
+
+    [Fact]
+    public async Task ASuppressionWrittenByTheTool_WaivesTheFinding()
+    {
+        // The whole point, end to end: the id as the finding gives it, written by the tool, read by the
+        // checker, and the finding gone.
+        using var host = new TestHost();
+        var tools = Load(host);
+        var settings = new ModelicaGraph.StyleCheckingSettings();
+        const string rule = ModelicaParser.StyleRules.RuleIds.ClassDocumentationInfo;   // M has no Documentation(info)
+        settings.SetRuleEnabled(rule, true);
+        var finding = Assert.Single(Check(host, settings), f => f.RuleId == rule);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.SuppressRule("P.M", finding.RuleId!));
+
+        Assert.DoesNotContain(Check(host, settings), f => f.RuleId == rule);
+    }
+
+    private static List<ModelicaParser.DataTypes.LogMessage> Check(TestHost host, ModelicaGraph.StyleCheckingSettings settings)
+    {
+        var node = host.Libraries.GetModelById("P.M")!;
+        var context = MLQT.Services.Checking.StyleCheckContext.Build(
+            settings, host.Libraries.CombinedGraph, host.CustomDictionary, host.DictionaryManager, null);
+        return MLQT.Services.Checking.StyleCheckRunner.Run(node, settings, context);
     }
 
     [Fact]
@@ -157,7 +210,7 @@ public class SuppressionToolsTests
     {
         using var host = new TestHost();
         var res = ToolAssert.Ok<StructureEditResult>(
-            await Load(host).SuppressRule("P.M", "MLQT.Documentation.ClassDescription", preview: true));
+            await Load(host).SuppressRule("P.M", "MLQT.Doc.ClassDescription", preview: true));
 
         Assert.True(res.PreviewOnly);
         Assert.False(res.Changed);

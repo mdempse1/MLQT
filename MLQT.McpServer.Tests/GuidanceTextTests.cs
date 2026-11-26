@@ -29,6 +29,35 @@ public class GuidanceTextTests
         Assert.Equal(Prose.Unwrap(GuidanceTools.Guidance[topic]), answer.Guidance);
     }
 
+    /// <summary>
+    /// The rules topic lists every rule id there is, each on a line of its own as the agent receives it,
+    /// so an id can be looked up rather than guessed - MLQT.Style.NamingConvention for
+    /// MLQT.Naming.Convention was a waiver that did nothing. Generated from the catalog, so a rule added
+    /// to it is listed without anyone writing guidance; this holds that it stays so.
+    /// </summary>
+    [Fact]
+    public void TheRulesTopic_ListsEveryRuleId_OnALineOfItsOwn()
+    {
+        var answer = Assert.IsType<GuidanceResult>(new GuidanceTools().GetGuidance("rules"));
+        var lines = answer.Guidance.Split('\n');
+
+        Assert.NotEmpty(ModelicaParser.StyleRules.RuleCatalog.BuiltIn);
+        Assert.All(ModelicaParser.StyleRules.RuleCatalog.BuiltIn.Values, rule =>
+            Assert.Contains(lines, l => l.StartsWith($"- {rule.Id} - {rule.Title}", StringComparison.Ordinal)));
+        Assert.Contains(lines, l => l.StartsWith("- MLQT.Naming.Convention - ", StringComparison.Ordinal));
+        Assert.DoesNotContain("MLQT.Style.NamingConvention", answer.Guidance);
+    }
+
+    [Fact]
+    public void TheRulesTopic_MarksTheDiagnosticsAsNotWaivable()
+    {
+        var lines = GuidanceTools.RulesTopic().Split('\n');
+
+        foreach (var id in new[] { ModelicaParser.StyleRules.RuleIds.SyntaxError, ModelicaParser.StyleRules.RuleIds.CheckFailed })
+            if (ModelicaParser.StyleRules.RuleCatalog.IsKnown(id))
+                Assert.Contains("cannot be waived", lines.Single(l => l.StartsWith($"- {id} - ", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public void TheInstructions_NameATool_ToLoadForEachKindOfWork()
     {

@@ -80,7 +80,7 @@ Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write 
 
 ## How an agent uses it
 
-The server returns a short set of instructions to the client on connect, and a `mlqt_get_guidance` tool provides fuller, task-oriented recipes on demand (pass one of `overview`, `workflows`, `simulators`, `views`, `editing`, `diagrams`, `dependencies`, `style`, `spelling`, `formatting`, `vcs` or `resources`). The essential workflow:
+The server returns a short set of instructions to the client on connect, and a `mlqt_get_guidance` tool provides fuller, task-oriented recipes on demand (pass one of `overview`, `workflows`, `simulators`, `views`, `editing`, `diagrams`, `dependencies`, `style`, `rules`, `spelling`, `formatting`, `vcs` or `resources`; `rules` lists every rule id, read from the rule catalog). The essential workflow:
 
 1. **Load first.** Almost every tool operates on an in-memory graph. Load with `mlqt_load`: give it a library directory, its `package.mo` or a single `.mo` file, a Git/SVN working copy or a directory of libraries, or the user's Dymola startup script. It also accepts an **encrypted** library (a directory holding a `package.moe`): its classes are recovered from the vendor's generated documentation so references into it resolve, but it is read-only and never reported on — see [encrypted-libraries.md](encrypted-libraries.md). To start a brand-new project, `mlqt_create_library` writes and loads an empty top-level library on disk.
 
@@ -303,6 +303,10 @@ Everywhere else, `mlqt_check` still judges the layout rules the repository turns
 The file is written as composed instead — compact, as the operation built it — when the library came from no repository (there are no rules to apply), when the repository does not apply its formatting rules, and when a class in the file is excluded from formatting (`__MLQT(format=false)`, `preserveOrder=true`, or the repository's excluded list). A rename, a delete and a spelling correction change names and text in place, and are not reformatted.
 
 **A library made with `mlqt_create_library` is in no repository**, so everything written into it is written as composed. `mlqt_format` formats it all the same, with its default layout: run it on the library once its classes are written. `mlqt_format` with `preview` writes nothing and says which files a format would change.
+
+## Waiving a rule
+
+`mlqt_edit_class`'s `suppress_rule` writes `__MLQT(suppress="<rule id>", reason="…")` onto a class, or with `component` onto one component — the same annotation the desktop app's Code Review writes (see [Code Review](code-review.md)). The id must be the finding's own `ruleId`, as `mlqt_check` and `mlqt_list_findings` give it, with or without its `MLQT.` prefix, or `*` for every rule; `mlqt_get_guidance("rules")` lists every id with its title. A waiver matches an id exactly, so an id that is not a rule would waive nothing: it is refused, and the answer names the nearest rule ids. Until it was, a guessed `MLQT.Style.NamingConvention` — the rule is `MLQT.Naming.Convention` — was written into the class and did nothing. To find such a waiver written before then, search the code for `suppress=` with `mlqt_find`'s code match.
 
 ## Automatic diagram connections
 

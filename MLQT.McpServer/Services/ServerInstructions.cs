@@ -57,7 +57,7 @@ internal static class ServerInstructions
         add_connection), a whole one with mlqt_write_class; rename, move or delete with
         mlqt_refactor_class. New project: mlqt_create_library.
 
-        Call mlqt_get_guidance for recipes. Topics: overview, workflows, simulators, views, editing,
-        diagrams, dependencies, style, spelling, formatting, vcs, resources.
+        mlqt_get_guidance has recipes. Topics: overview, workflows, simulators, views, editing,
+        diagrams, dependencies, style, rules, spelling, formatting, vcs, resources.
         """;
 }

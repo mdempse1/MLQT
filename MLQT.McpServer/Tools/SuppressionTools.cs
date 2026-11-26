@@ -54,6 +54,18 @@ public sealed class SuppressionTools
                 "this class could not be read or could not be checked, which means the findings for it are " +
                 "incomplete — fix the source, or report the failure. See Documentation/cli.md.");
 
+        // A suppression matches a rule id exactly - with or without its MLQT. prefix, or `*` - and every
+        // finding MLQT reports carries a catalog id, so one that is not in the catalog waives nothing.
+        // It was written anyway, with a note: an agent that guessed MLQT.Style.NamingConvention for
+        // MLQT.Naming.Convention left a waiver in the source that did nothing, and the next clean check
+        // read as though it had worked.
+        if (ruleId != "*" && !RuleCatalog.IsKnown(ruleId) && !RuleCatalog.IsKnown("MLQT." + ruleId))
+            return new ToolError(
+                $"'{ruleId}' is not a rule id, so a suppression of it would waive nothing; nothing was written. " +
+                $"Nearest: {RuleIdSuggestions.Phrase(ruleId)}. Copy the ruleId from the finding you are " +
+                "waiving - every item mlqt_check and mlqt_list_findings return carries one - or look it up in " +
+                "mlqt_get_guidance's rules topic, which lists every rule id.");
+
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
@@ -79,12 +91,6 @@ public sealed class SuppressionTools
         if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, ruleId, reason, out var newFileContent, out var writeError))
             return new ToolError(writeError ?? "Could not add the suppression annotation.");
 
-        // A rule id that no catalog rule matches is allowed (custom rules, the wildcard), but flag it so a
-        // typo doesn't silently waive nothing.
-        string? note = null;
-        if (ruleId != "*" && !RuleCatalog.IsKnown(ruleId) && !RuleCatalog.IsKnown("MLQT." + ruleId))
-            note = $"Note: '{ruleId}' is not a known built-in rule id — check the id from the finding if you did not intend a custom rule.";
-
         var outcome = await ClassBodyEditor.PersistFileContentAsync(
             _libraries, _resources, _session, owner!.FileOwner, owner.FilePath, newFileContent, preview,
             component is null ? $"suppress '{ruleId}' on '{classId}'" : $"suppress '{ruleId}' on '{classId}.{component}'");
@@ -92,7 +98,7 @@ public sealed class SuppressionTools
         if (outcome is ToolError)
             return outcome;
         var r = (ClassEditResult)outcome;
-        return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, note);
+        return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, Note: null);
     }
 
     internal async Task<object> AcceptSpellingInClass(

@@ -4,6 +4,7 @@ using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
+using ModelicaParser.StyleRules;
 
 namespace MLQT.McpServer.Tools;
 
@@ -21,7 +22,7 @@ public sealed class GuidanceTools
     /// with no text reads to an agent as a server that lost its documentation.
     /// </summary>
     internal static readonly IReadOnlyList<string> Topics =
-        ["overview", "workflows", "simulators", "views", "editing", "diagrams", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
+        ["overview", "workflows", "simulators", "views", "editing", "diagrams", "dependencies", "style", "rules", "spelling", "formatting", "vcs", "resources"];
 
     internal static readonly Dictionary<string, string> Guidance = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -69,7 +70,7 @@ public sealed class GuidanceTools
               use your normal CLI. mlqt_dependencies adds the Modelica-awareness the CLI lacks.
 
             Call mlqt_get_guidance with a topic for recipes: workflows, simulators, views, editing,
-            diagrams, dependencies, style, spelling, formatting, vcs, resources.
+            diagrams, dependencies, style, rules (every rule id), spelling, formatting, vcs, resources.
             """,
 
         ["simulators"] = """
@@ -335,7 +336,7 @@ public sealed class GuidanceTools
               {portA, portB}, by the ports as listed, nested ones too; set_component_placement{name, x1, y1,
               x2, y2, rotation?}; set_class_description{description}; set_component_description{name,
               description}; set_class_documentation{info?, revisions?} (the HTML help); suppress_rule{ruleId,
-              component?, reason?}; accept_spelling{word, reason?}; correct_spelling{word, newWord}. The add
+              component?, reason?} (the finding's own ruleId - see the style topic); accept_spelling{word, reason?}; correct_spelling{word, newWord}. The add
               operations take an optional comment, placed as a // line above the element.
               Restricted-class rules are enforced: equations/connect() only in a model/block/class;
               algorithm statements also in a function; a package holds only constants; a function's public
@@ -465,6 +466,22 @@ public sealed class GuidanceTools
               status, and one taken with different rules reports a newly enabled rule's old findings
               as New - those are not yours to fix.
 
+            Waiving a rule for one class or component (when the finding is deliberate, not to be fixed):
+            - mlqt_edit_class with suppress_rule{ruleId, component?, reason?} writes
+              __MLQT(suppress="<ruleId>", reason="...") onto the class, or onto one component with
+              component. A class-level waiver reaches the classes nested in it too.
+            - ruleId must be the finding's own ruleId, copied from the mlqt_check or mlqt_list_findings
+              item - never a name made up from the rule's description or a setting's name: the naming
+              rule is MLQT.Naming.Convention, not MLQT.Style.NamingConvention, and a class description is
+              MLQT.Doc.ClassDescription. With no finding in hand, look the id up in the rules topic, which
+              lists every one. An id that is not a rule is refused, with the nearest ids, because a waiver
+              of it would match no finding. '*' waives every rule there.
+            - Always give a reason: it is the record of why the rule does not apply.
+            - Re-run mlqt_check on the class: the finding should be gone. A clean check with the rule
+              switched off says nothing about the waiver.
+            - To stop a rule everywhere, it is a repository setting (mlqt_style_settings), the user's
+              decision, not a waiver per class.
+
             Severities are real. A style finding carries the severity its rule is configured with, written
             as 'Style error', 'Style warning' or 'Style info'; a parse diagnostic is a bare 'Error' or
             'Fatal'. The filter is a case-insensitive substring, so 'error' matches both kinds and
@@ -562,17 +579,59 @@ public sealed class GuidanceTools
             - mlqt_check with checks ['resources']: missing files and non-portable absolute-path references
               across the loaded libraries.
             """,
+
+        ["rules"] = RulesTopic(),
     };
+
+    /// <summary>
+    /// Every rule id, by category, with its title: generated from <see cref="RuleCatalog"/> rather than
+    /// written, so it is never a rule short.
+    /// </summary>
+    /// <remarks>
+    /// An agent waiving a rule had no list to look an id up in - the guidance named nine of them, as
+    /// examples - and guessed MLQT.Style.NamingConvention for MLQT.Naming.Convention, a waiver that did
+    /// nothing. Rules are added to the catalog without anyone writing guidance, so the list is read
+    /// from it each time the server starts.
+    /// </remarks>
+    internal static string RulesTopic()
+    {
+        var text = new System.Text.StringBuilder();
+        text.Append("""
+            Rules. Every rule id MLQT reports, by category, with its title. A finding's ruleId is one of these,
+            and it is what suppress_rule{ruleId} and __MLQT(suppress="...") take - with or without its MLQT.
+            prefix, or '*' for every rule; an id not listed here waives nothing and is refused. Whether a
+            rule runs, and at what severity, is the repository's setting (mlqt_style_settings): none is on
+            unless the repository turns it on. Copy the id from a finding when you have one.
+            """);
+
+        foreach (var category in RuleCatalog.BuiltIn.Values
+                     .GroupBy(r => r.Category)
+                     .OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            text.Append("\n\n").Append(category.Key).Append(':');
+            foreach (var rule in category.OrderBy(r => r.Id, StringComparer.Ordinal))
+            {
+                text.Append("\n- ").Append(rule.Id).Append(" - ").Append(rule.Title);
+                if (RuleIds.IsDiagnostic(rule.Id))
+                    text.Append(" (a diagnostic: always reported, and cannot be waived)");
+                else if (rule.GovernedBy is { } governor)
+                    text.Append(" (runs when ").Append(governor).Append(" does)");
+                else if (rule.RequiresRule is { } required)
+                    text.Append(" (needs ").Append(required).Append(" on)");
+            }
+        }
+        return text.ToString();
+    }
 
     [McpServerTool(Name = "mlqt_get_guidance", ReadOnly = true, OpenWorld = false)]
     [Description("Get guidance on reading, editing and checking Modelica code with MLQT's tools. Call with " +
                 "no topic for an overview and the list of topics, or a topic for focused recipes. Read " +
                 "'simulators' when a Modelica simulator's server (OpenModelica, Dymola) is also connected. " +
                 "Topics: overview, workflows, simulators, views, editing, diagrams, dependencies, style, " +
-                "spelling, formatting, vcs, resources.")]
+                "rules (every rule id, for suppress_rule), spelling, formatting, vcs, resources.")]
     public object GetGuidance(
         [Description("Optional topic. Omit for the overview. One of: overview, workflows, simulators, views, " +
-                     "editing, diagrams, dependencies, style, spelling, formatting, vcs, resources.")]
+                     "editing, diagrams, dependencies, style, rules, spelling, formatting, vcs, resources.")]
         string? topic = null)
     {
         var key = string.IsNullOrWhiteSpace(topic) ? "overview" : topic.Trim();

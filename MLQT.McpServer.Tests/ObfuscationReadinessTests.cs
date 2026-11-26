@@ -180,6 +180,8 @@ public sealed class ObfuscationReadinessTests
         ("EditTools.cs", "return builder.ToString();", "a StringBuilder"),
         ("EditTools.cs", "return builder.ToString();", "a StringBuilder"),
         ("TextSearchPrefilter.cs", "return own.ToString();", "a StringBuilder"),
+        ("RuleIdSuggestions.cs", "words.Add(word.ToString().ToLowerInvariant());", "a StringBuilder"),
+        ("GuidanceTools.cs", "return text.ToString();", "a StringBuilder"),
         ("StartupScriptReader.cs", "return builder.ToString();", "a StringBuilder"),
         ("StartupScriptReader.cs", "return builder.ToString();", "a StringBuilder"),
         ("StartupScriptReader.cs", "var s = current.ToString().Trim();", "a StringBuilder"),
