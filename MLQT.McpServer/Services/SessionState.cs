@@ -11,7 +11,24 @@ public sealed class SessionState
     /// with (<see cref="Helpers.EditFormatting"/>). Here rather than on each edit tool because every
     /// write path is already handed the session; null leaves edits written as composed.
     /// </summary>
-    internal MLQT.Services.Interfaces.IRepositoryService? Repositories { get; init; }
+    /// <remarks>
+    /// <b>Settable, and set by the server's call filter</b> when it is null
+    /// (<see cref="Attach"/>). A host that registers a <see cref="SessionState"/> of its own wins over
+    /// MLQT's TryAdd, and this cannot be set from outside the assembly, so such a session had no
+    /// repositories and every class written through it went unformatted, while mlqt_format - which asks
+    /// the repository service itself - formatted it.
+    /// </remarks>
+    internal MLQT.Services.Interfaces.IRepositoryService? Repositories { get; set; }
+
+    /// <summary>
+    /// Gives the session the server's repository service if it has none: every call passes here before
+    /// its tool runs, so whoever registered the session, an edit is formatted as its repository says.
+    /// </summary>
+    internal void Attach(MLQT.Services.Interfaces.IRepositoryService? repositories)
+    {
+        if (Repositories is null && repositories is not null)
+            Repositories = repositories;
+    }
 
     public bool DependenciesAnalyzed { get; set; }
     public bool ResourcesAnalyzed { get; set; }

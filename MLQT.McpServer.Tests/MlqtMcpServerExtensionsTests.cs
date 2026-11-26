@@ -264,16 +264,20 @@ internal sealed class InProcessServer : IAsyncDisposable
     public McpClient Client { get; }
     public IServiceProvider Services => _host.Services;
 
+    /// <param name="before">Registrations of the host's own, made before AddMlqtMcpServer, as a host
+    /// that registers a service of its own does - and so wins over MLQT's TryAdd.</param>
     public static async Task<InProcessServer> StartAsync(
         MlqtMcpServerOptions? options = null,
         Action<IMcpServerBuilder>? after = null,
-        ISettingsService? settings = null)
+        ISettingsService? settings = null,
+        Action<IServiceCollection>? before = null)
     {
         var clientToServer = new Pipe();
         var serverToClient = new Pipe();
 
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
         builder.Services.AddSingleton(settings ?? new InMemorySettingsService());
+        before?.Invoke(builder.Services);
         var mcp = builder.Services.AddMlqtMcpServer(options)
             .WithStreamServerTransport(clientToServer.Reader.AsStream(), serverToClient.Writer.AsStream());
         after?.Invoke(mcp);

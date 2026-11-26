@@ -135,6 +135,10 @@ public static class MlqtMcpServerExtensions
                 // When each library came in, timed by the call that loaded it, whatever loaded it (B505).
                 Note(context.Services);
 
+                // The repositories an edit is formatted with, for a session the host registered itself,
+                // which MLQT's TryAdd did not make and so had none: its edits were written unformatted.
+                context.Services?.GetService<SessionState>()?.Attach(context.Services.GetService<IRepositoryService>());
+
                 if (toolUsageLogger is null)
                     return Noted(await next(context, cancellationToken), context.Services);
 

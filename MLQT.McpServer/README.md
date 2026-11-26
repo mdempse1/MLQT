@@ -90,9 +90,10 @@ builder.Services
   formats for its users sets its culture explicitly where it does.
 - **Every service is `TryAdd`ed**, so one a host registers first is kept. `HeadlessSettingsService`
   creates and writes `%LocalAppData%/MLQT/mcp-settings.json`; a host that must write nothing there
-  registers its own `ISettingsService`. **Leave `SessionState` to it**: the one it registers carries
-  the `IRepositoryService` edits are formatted with (each repository's formatting rules), and a
-  `SessionState` the host registers itself has none, so its edits are written unformatted.
+  registers its own `ISettingsService`. A host may register its own `SessionState` too: the call
+  filter gives it the server's `IRepositoryService` before any tool runs, which is what edits are
+  formatted with (each repository's formatting rules). Until it did, a `SessionState` the host
+  registered had none, and every class written through it went unformatted.
 - **The coercion filter is the first call filter, so the outermost**: a filter the host adds after
   sees the arguments already coerced, and the host's own tools are coerced too, from their schemas.
 - **The same filter lets one call that changes the session run at a time** (`Services/ToolCallGate.cs`).
