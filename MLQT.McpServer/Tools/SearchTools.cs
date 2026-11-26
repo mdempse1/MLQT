@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.ComponentModel;
+using ModelicaGraph;
 using ModelContextProtocol.Server;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
@@ -134,57 +136,115 @@ public sealed class SearchTools
         return null;
     }
 
+    /// <summary>
+    /// Every class of the shape asked for, with its public parameter and connector counts, inherited
+    /// ones included. All of them are counted, so <paramref name="limit"/> caps only the items returned.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Counting a class's interface means walking its bases</b>, and it was done with no cache,
+    /// one class at a time: every class re-parsed its whole chain, and an unfiltered search over the
+    /// MSL and eight Dymola libraries took 15 s. Now one <see cref="ClassElementResolver.InterfaceCache"/>
+    /// and one table of resolved types serve the whole search, the classes are counted in parallel, and
+    /// with no <paramref name="minParameters"/> or <paramref name="minConnectors"/> to test only the
+    /// classes returned are counted at all.</para>
+    /// <para><b>Cancellation is checked before each class</b>, as for a text search.</para>
+    /// </remarks>
     internal object SearchByInterface(
         string? classType = null,
         string? namePattern = null,
         bool? hasExperiment = null,
         int minParameters = 0,
         int minConnectors = 0,
-        int limit = 50)
+        int limit = 50,
+        string? library = null,
+        CancellationToken cancellationToken = default)
     {
         if (ToolDiagnostics.RequireLibrary(_libraries, "searching by interface") is { } noLib)
             return noLib;
 
-        limit = Math.Clamp(limit, 1, MaxLimit);
-        var items = new List<InterfaceSearchItem>();
-        var total = 0;
+        string? onlyLibrary = null;
+        if (library is not null)
+        {
+            var (resolved, error) = EntityResolver.ResolveLibrary(_libraries, library);
+            if (error is not null)
+                return error;
+            onlyLibrary = resolved!.Id;
+        }
 
+        limit = Math.Clamp(limit, 1, MaxLimit);
         var candidates = _libraries.GetAllModels()
             .Where(m => !m.IsParseFailurePlaceholder)
             .Where(m => classType is null || string.Equals(m.ClassType, classType, StringComparison.OrdinalIgnoreCase))
             .Where(m => namePattern is null || m.Id.Contains(namePattern, StringComparison.OrdinalIgnoreCase))
             .Where(m => hasExperiment is null || m.HasExperimentAnnotation == hasExperiment.Value)
-            .OrderBy(m => m.Id, StringComparer.Ordinal);
+            .Where(m => onlyLibrary is null || _libraries.GetOwningLibrary(m.Id)?.Id == onlyLibrary)
+            .OrderBy(m => m.Id, StringComparer.Ordinal)
+            .ToList();
 
-        foreach (var node in candidates)
+        // With no count to test, every candidate is a result, and only the page returned needs counting.
+        var counter = new InterfaceCounter(_libraries.CombinedGraph);
+        var filtered = minParameters > 0 || minConnectors > 0;
+        var toCount = filtered ? candidates : candidates.Take(limit).ToList();
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var counts = new (int Parameters, int Connectors)[toCount.Count];
+        Parallel.For(0, toCount.Count, new ParallelOptions { CancellationToken = cancellationToken },
+            i => counts[i] = counter.Count(toCount[i]));
+
+        var items = new List<InterfaceSearchItem>();
+        var total = filtered ? 0 : candidates.Count;
+        for (var i = 0; i < toCount.Count; i++)
         {
-            var (paramCount, connectorCount) = CountInterface(node);
+            var (paramCount, connectorCount) = counts[i];
             if (paramCount < minParameters || connectorCount < minConnectors)
                 continue;
-            total++;
+            if (filtered)
+                total++;
             if (items.Count < limit)
+            {
+                var node = toCount[i];
                 items.Add(new InterfaceSearchItem(
                     node.Id, node.Name, node.ClassType, paramCount, connectorCount, node.HasExperimentAnnotation));
+            }
         }
 
         return new InterfaceSearchResult(total, items.Count, items);
     }
 
-    private (int Parameters, int Connectors) CountInterface(ModelNode node)
+    /// <summary>
+    /// Counts classes' public parameters and connectors, inherited ones included, for one search: the
+    /// base classes' interfaces and the types components are declared with are worked out once and
+    /// shared by every class, from any thread.
+    /// </summary>
+    private sealed class InterfaceCounter(DirectedGraph graph)
     {
-        var parameters = 0;
-        var connectors = 0;
-        foreach (var m in ClassElementResolver.Collect(_libraries.CombinedGraph, node, includeProtected: false, includeInherited: true))
+        private readonly ClassElementResolver.InterfaceCache _interfaces = new();
+
+        // A component's type, keyed by the class that declares it and the type as written there: an
+        // inherited component is declared in its base, so every class extending that base asks again.
+        private readonly ConcurrentDictionary<(string Owner, string Type), string?> _typeClass = new();
+
+        public (int Parameters, int Connectors) Count(ModelNode node)
         {
-            if (m.Element.Kind != ClassElementKind.Component)
-                continue;
-            var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, m.OwnerId, m.Element.Type, m.OwnerImports);
-            if (m.Element.Causality is not null || typeNode?.ClassType == "connector")
-                connectors++;
-            else if (m.Element.Variability is "parameter" or "constant")
-                parameters++;
+            var parameters = 0;
+            var connectors = 0;
+            foreach (var m in ClassElementResolver.Collect(graph, node, includeProtected: false, includeInherited: true, _interfaces))
+            {
+                if (m.Element.Kind != ClassElementKind.Component)
+                    continue;
+                if (m.Element.Causality is not null || ClassTypeOf(m) == "connector")
+                    connectors++;
+                else if (m.Element.Variability is "parameter" or "constant")
+                    parameters++;
+            }
+            return (parameters, connectors);
         }
-        return (parameters, connectors);
+
+        private string? ClassTypeOf(ResolvedElement m) =>
+            m.Element.Type is not { } type
+                ? null
+                : _typeClass.GetOrAdd((m.OwnerId, type),
+                    key => TypeResolver.Resolve(graph, key.Owner, key.Type, m.OwnerImports)?.ClassType);
     }
 
     private static string Snippet(string text, string query)

@@ -66,6 +66,40 @@ public class SearchToolsTests
     }
 
     [Fact]
+    public void SearchByInterface_Unfiltered_CountsEveryClass_AndCountsThePageItReturns()
+    {
+        using var host = new TestHost();
+        var search = Load(host);
+
+        // With no count to test, every class is a result, and only the page returned is counted.
+        var res = ToolAssert.Ok<InterfaceSearchResult>(search.SearchByInterface(limit: 2));
+        Assert.Equal(host.Libraries.GetAllModels().Count(), res.Total);
+        Assert.Equal(2, res.Count);
+
+        var pid = Assert.Single(ToolAssert.Ok<InterfaceSearchResult>(search.SearchByInterface(namePattern: "Pid")).Items);
+        Assert.Equal((2, 2), (pid.ParameterCount, pid.ConnectorCount));
+    }
+
+    [Fact]
+    public void SearchByInterface_WithLibrary_SearchesOnlyThatLibrary()
+    {
+        using var host = new TestHost();
+        var search = Load(host);
+        host.Libraries.AddLibraryFromFileAsync(host.WriteMoFile("T.mo", """
+            package T "t"
+              block Gain "gain"
+                parameter Real k = 1;
+              end Gain;
+            end T;
+            """)).GetAwaiter().GetResult();
+
+        var res = ToolAssert.Ok<InterfaceSearchResult>(search.SearchByInterface(minParameters: 1, library: "T"));
+
+        Assert.Equal("T.Gain", Assert.Single(res.Items).Id);
+        ToolAssert.Error(search.SearchByInterface(library: "NoSuchLibrary"));
+    }
+
+    [Fact]
     public void SearchByInterface_HasExperiment()
     {
         using var host = new TestHost();

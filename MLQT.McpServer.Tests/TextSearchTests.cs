@@ -64,6 +64,7 @@ public class TextSearchTests
     [Theory]
     [InlineData("text")]
     [InlineData("code")]
+    [InlineData("interface")]
     public void ACancelledSearch_StopsBeforeReadingAClass(string match)
     {
         using var host = Load(LibraryA, LibraryB);

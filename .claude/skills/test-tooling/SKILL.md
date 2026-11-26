@@ -283,6 +283,13 @@ prefilter cannot narrow (`&`, `ä`, `x`, `e.g.`), against 3.7 s for the search a
 parsed whole, one at a time, every tree kept. With eight Dymola libraries beside them (9,655 classes):
 0.04-0.15 s and 0.27-0.51 s, against 5.4 s.
 
+The same file's `AnInterfaceSearch_OverRealLibraries` times `mlqt_find`'s interface search and holds
+every class's parameter and connector counts to the count as it was made before the search shared an
+`InterfaceCache` and ran in parallel. **Run it after changing how the interface search counts.** Over
+the 9,655 classes on 2026-11-26: 0.02 s unfiltered (only the page returned is counted), 0.33 s for
+models with five parameters or more, 2.3 s for classes with two connectors or more - against 11.7 s
+for the old count, and 15 s for the old unfiltered search.
+
 ## "Where is the time actually going?" — `dotnet-trace`
 
 `mlqt check --timings` says which *phase* a run spent its time in, and the application log keeps the

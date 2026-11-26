@@ -74,4 +74,68 @@ public class TextSearchCorpusTests(ITestOutputHelper output)
             Assert.Equal(expected.Items, a.Items);
         }
     }
+
+    /// <summary>
+    /// The interface search over the same libraries: timed unfiltered, by connectors and by parameters,
+    /// and every class's counts held to the count as it was made before the search shared its caches
+    /// and ran in parallel - one class at a time, nothing remembered between them.
+    /// </summary>
+    [Fact]
+    public async Task AnInterfaceSearch_OverRealLibraries()
+    {
+        if (Environment.GetEnvironmentVariable(Variable) is not { Length: > 0 } list)
+            return;
+
+        using var host = new TestHost();
+        foreach (var path in list.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            await host.Libraries.AddLibraryFromPathAsync(path);
+        var search = new SearchTools(host.Libraries);
+
+        foreach (var (what, run) in new (string, Func<object>)[]
+                 {
+                     ("unfiltered", () => search.SearchByInterface(limit: 10)),
+                     ("minConnectors 2", () => search.SearchByInterface(minConnectors: 2, limit: 10)),
+                     ("models, minParameters 5", () => search.SearchByInterface(classType: "model", minParameters: 5, limit: 10)),
+                 })
+        {
+            var clock = Stopwatch.StartNew();
+            var res = ToolAssert.Ok<InterfaceSearchResult>(run());
+            clock.Stop();
+            output.WriteLine($"interface, {what}: {res.Total} classes in {clock.Elapsed.TotalSeconds:F2} s");
+        }
+
+        var all = ToolAssert.Ok<InterfaceSearchResult>(search.SearchByInterface(minConnectors: 0, minParameters: 1, limit: 200));
+        var graph = host.Libraries.CombinedGraph;
+        var reference = Stopwatch.StartNew();
+        var expected = host.Libraries.GetAllModels()
+            .Where(m => !m.IsParseFailurePlaceholder)
+            .OrderBy(m => m.Id, StringComparer.Ordinal)
+            .Select(m => (m.Id, Counts: CountAsBefore(graph, m)))
+            .Where(c => c.Counts.Parameters >= 1)
+            .ToList();
+        reference.Stop();
+        output.WriteLine($"counted as before: {reference.Elapsed.TotalSeconds:F2} s");
+
+        Assert.Equal(expected.Count, all.Total);
+        Assert.Equal(
+            expected.Take(200).Select(e => (e.Id, e.Counts.Parameters, e.Counts.Connectors)),
+            all.Items.Select(i => (i.Id, i.ParameterCount, i.ConnectorCount)));
+    }
+
+    private static (int Parameters, int Connectors) CountAsBefore(ModelicaGraph.DirectedGraph graph, ModelicaGraph.DataTypes.ModelNode node)
+    {
+        var parameters = 0;
+        var connectors = 0;
+        foreach (var m in ModelicaGraph.Analysis.ClassElementResolver.Collect(graph, node, includeProtected: false, includeInherited: true))
+        {
+            if (m.Element.Kind != ModelicaParser.DataTypes.ClassElementKind.Component)
+                continue;
+            var typeNode = ModelicaGraph.Analysis.TypeResolver.Resolve(graph, m.OwnerId, m.Element.Type, m.OwnerImports);
+            if (m.Element.Causality is not null || typeNode?.ClassType == "connector")
+                connectors++;
+            else if (m.Element.Variability is "parameter" or "constant")
+                parameters++;
+        }
+        return (parameters, connectors);
+    }
 }
