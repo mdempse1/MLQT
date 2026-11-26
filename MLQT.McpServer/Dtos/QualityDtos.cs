@@ -312,12 +312,14 @@ public sealed record FindingItem(
     string? RuleId = null,
     string? Status = null);
 
+/// <param name="Note">As <see cref="CheckResult.Note"/>, over every finding the filters kept.</param>
 public sealed record FindingsResult(
     int Total,
     int Offset,
     int Count,
     IReadOnlyList<FindingItem> Items,
-    IReadOnlyList<string>? BaselineWarnings = null);
+    IReadOnlyList<string>? BaselineWarnings = null,
+    string? Note = null);
 
 public sealed record FormatCodeResult(
     string Source);

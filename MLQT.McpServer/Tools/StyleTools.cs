@@ -236,7 +236,7 @@ public sealed class StyleTools
 
         var snapshot = CurrentBaseline();
         return ToCheckResult(findings, modelsChecked: 1, snapshot, view,
-            BaselineWarnings(snapshot, [([classId], effective)]), UnformattedLayoutNote(findings));
+            BaselineWarnings(snapshot, [([classId], effective)]), UnformattedLayoutNote);
     }
 
     internal async Task<object> CheckLibrary(
@@ -367,7 +367,7 @@ public sealed class StyleTools
             _codeReview.AddLogMessages(reported);
 
             return ToCheckResult(reported, modelsChecked, snapshot, view, BaselineWarnings(snapshot, scopes),
-                UnformattedLayoutNote(reported));
+                UnformattedLayoutNote);
         }
         finally
         {
@@ -479,7 +479,9 @@ public sealed class StyleTools
             .ToList();
 
         var page = list.Skip(offset).Take(limit).ToList();
-        return new FindingsResult(list.Count, offset, page.Count, page, BaselineWarnings(snapshot, []));
+        // Over every finding the filters kept, as Total is, so each page says the same.
+        return new FindingsResult(list.Count, offset, page.Count, page, BaselineWarnings(snapshot, []),
+            UnformattedLayoutNote(list.Select(i => (i.ModelId, i.RuleId))));
     }
 
     // ----- settings resolution helpers -----
@@ -645,7 +647,9 @@ public sealed class StyleTools
     /// in a repository whose settings left ApplyFormattingRules off - the default - wrote class after
     /// class with imports after extends and took the findings for something MLQT would put right.
     /// </remarks>
-    private string? UnformattedLayoutNote(IReadOnlyList<LogMessage> findings)
+    /// <param name="findings">The findings the result reports - after its baseline view and filters,
+    /// before paging - so the count the note gives is a count of what the caller was told about.</param>
+    private string? UnformattedLayoutNote(IEnumerable<(string ClassId, string? RuleId)> findings)
     {
         var whyByClass = new Dictionary<string, string?>(StringComparer.Ordinal);
         string? Why(string classId)
@@ -657,22 +661,38 @@ public sealed class StyleTools
         }
 
         var unformatted = findings
-            .Where(f => f.RuleId is { } id && RuleCatalog.SeverityFollowsFormatter(id)
-                        && !string.IsNullOrEmpty(f.ModelName) && Why(f.ModelName) is not null)
+            .Where(f => FormatterFixes(f.RuleId) && !string.IsNullOrEmpty(f.ClassId) && Why(f.ClassId) is not null)
             .ToList();
         if (unformatted.Count == 0)
             return null;
 
         var rules = string.Join(", ", unformatted.Select(f => f.RuleId).Distinct().Order(StringComparer.Ordinal));
-        var reasons = string.Join("; ", unformatted.Select(f => Why(f.ModelName)).Distinct());
+        var reasons = string.Join("; ", unformatted.Select(f => Why(f.ClassId)).Distinct());
         return $"{unformatted.Count} finding(s) are layout rules the formatter fixes ({rules}). Classes written " +
                $"here are not formatted as they are written - {reasons} - so call mlqt_format on the class " +
                "or its library rather than editing the layout by hand.";
     }
 
+    /// <summary>
+    /// Whether the formatter puts right what <paramref name="ruleId"/> reports: a rule whose severity
+    /// follows the formatter, or one governed by such a rule. MLQT.Style.ExtendsAtTop is the second
+    /// kind - "imports first, extends next" seen from the other end, with no flag of its own - and
+    /// asked only the first, the note said nothing about a class whose one finding was an extends
+    /// clause below a component.
+    /// </summary>
+    private static bool FormatterFixes(string? ruleId) =>
+        ruleId is not null
+        && (RuleCatalog.SeverityFollowsFormatter(ruleId)
+            || RuleCatalog.GovernorOf(ruleId) is { } governor && RuleCatalog.SeverityFollowsFormatter(governor));
+
+    private string? UnformattedLayoutNote(IEnumerable<LogMessage> findings) =>
+        UnformattedLayoutNote(findings.Select(f => (f.ModelName, (string?)f.RuleId)));
+
+    /// <param name="noteFor">Works out the result's note from the findings its view keeps, so a note
+    /// never counts findings the view left out.</param>
     private static CheckResult ToCheckResult(
         IReadOnlyList<LogMessage> findings, int modelsChecked, BaselineStatusSnapshot? baseline, string? view,
-        IReadOnlyList<string>? warnings = null, string? note = null)
+        IReadOnlyList<string>? warnings = null, Func<IEnumerable<LogMessage>, string?>? noteFor = null)
     {
         var classified = findings.Select(f => (Finding: f, Status: baseline?.StatusOf(f))).ToList();
         // Filtered before the cap, so a library carrying thousands of accepted findings still returns
@@ -694,6 +714,7 @@ public sealed class StyleTools
                 classified.Count(c => c.Status is FindingStatus.AcceptedDebt),
                 classified.Count(c => c.Status is null),
                 classified.Count - kept.Count);
-        return new CheckResult(modelsChecked, kept.Count, shown, kept.Count > shown.Count, summary, warnings, note);
+        return new CheckResult(modelsChecked, kept.Count, shown, kept.Count > shown.Count, summary, warnings,
+            noteFor?.Invoke(kept.Select(c => c.Finding)));
     }
 }

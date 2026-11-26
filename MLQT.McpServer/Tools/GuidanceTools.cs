@@ -541,8 +541,8 @@ public sealed class GuidanceTools
               shows it so). Everywhere else - formatsWrites false, a library from no repository (one
               mlqt_create_library made, or one loaded on its own) - what you write is left as you wrote
               it, and mlqt_check still reports the layout rules against it: call mlqt_format on the class
-              or its library once you have finished writing. mlqt_check says so in its note when it
-              reports layout findings on such a class. Where writes are formatted, call mlqt_format only
+              or its library once you have finished writing. mlqt_check and mlqt_list_findings say so in
+              their note when they report layout findings on such a class. Where writes are formatted, call mlqt_format only
               on code nothing has edited.
             - mlqt_format(classId | library | source): one tool for all three.
               - classId formats the .mo file that holds the class and, unless preview=true, writes it and

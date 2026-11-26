@@ -52,10 +52,18 @@ public class GuidanceTextTests
     public void TheRulesTopic_MarksTheDiagnosticsAsNotWaivable()
     {
         var lines = GuidanceTools.RulesTopic().Split('\n');
+        var diagnostics = ModelicaParser.StyleRules.RuleCatalog.BuiltIn.Keys
+            .Where(ModelicaParser.StyleRules.RuleIds.IsDiagnostic).ToList();
 
-        foreach (var id in new[] { ModelicaParser.StyleRules.RuleIds.SyntaxError, ModelicaParser.StyleRules.RuleIds.CheckFailed })
-            if (ModelicaParser.StyleRules.RuleCatalog.IsKnown(id))
-                Assert.Contains("cannot be waived", lines.Single(l => l.StartsWith($"- {id} - ", StringComparison.Ordinal)));
+        // Every diagnostic is in the catalog, so the topic lists them all; asked only of those it
+        // happened to list, this passed with none.
+        Assert.Equal(
+            new[] { ModelicaParser.StyleRules.RuleIds.CheckFailed, ModelicaParser.StyleRules.RuleIds.ParseFailure, ModelicaParser.StyleRules.RuleIds.SyntaxError }
+                .Order(StringComparer.Ordinal),
+            diagnostics.Order(StringComparer.Ordinal));
+        Assert.All(diagnostics, id =>
+            Assert.Contains("cannot be waived", lines.Single(l => l.StartsWith($"- {id} - ", StringComparison.Ordinal))));
+        Assert.Equal(diagnostics.Count, lines.Count(l => l.Contains("cannot be waived", StringComparison.Ordinal)));
     }
 
     [Fact]
