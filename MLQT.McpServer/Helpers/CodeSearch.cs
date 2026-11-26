@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using MLQT.McpServer.Dtos;
 using MLQT.Services.Interfaces;
@@ -63,7 +64,7 @@ internal static class CodeSearch
         }
 
         var models = libraries.GetAllModels()
-            .Where(m => !m.IsExternalStub && !m.IsParseFailurePlaceholder)
+            .Where(m => !m.IsParseFailurePlaceholder && IsSearchable(m))
             .Where(m => onlyLibrary is null || libraries.GetOwningLibrary(m.Id)?.Id == onlyLibrary)
             .ToList();
         var nestedByParent = models
@@ -105,6 +106,16 @@ internal static class CodeSearch
         return new CodeSearchResult(query, total, offset, items.Count, total > offset + items.Count, items);
     }
 
+    /// <summary>
+    /// Whether a class's stored source is code to search: a class read from source, or a supplied one,
+    /// whose stored source is the text its host supplied - exactly what <c>mlqt_get_class</c>'s source
+    /// view returns for it, so a hit shows nothing that view would not. Not a class recovered from
+    /// documentation: its stored source is a declaration MLQT synthesized from help pages, which nobody
+    /// wrote and which would answer a search for code that is not there.
+    /// </summary>
+    internal static bool IsSearchable(ModelNode model) =>
+        ReadOnlySources.KindOf(model) != ReadOnlySourceKind.RecoveredFromDocumentation;
+
     // The 0-based lines of 'code' that belong to a class nested in it with a node of its own.
     private static HashSet<int> NestedLines(string code, int lineCount, List<ModelNode>? nested)
     {
@@ -114,14 +125,13 @@ internal static class CodeSearch
         var text = code.Replace("\r\n", "\n", StringComparison.Ordinal);
         foreach (var child in nested)
         {
+            // Found once, and without a read-only class's banner when that is how the package holds it
+            // (InlineClassText): a supplied package reported its children's lines as its own too.
             var childCode = child.Definition.ModelicaCode?.Replace("\r\n", "\n", StringComparison.Ordinal);
-            if (string.IsNullOrEmpty(childCode))
+            if (childCode is null || InlineClassText.Locate(text, childCode) is not { } found)
                 continue;
-            var at = text.IndexOf(childCode, StringComparison.Ordinal);
-            if (at < 0)
-                continue;
-            var first = text.AsSpan(0, at).Count('\n');
-            var last = first + childCode.AsSpan().Count('\n');
+            var first = text.AsSpan(0, found.Start).Count('\n');
+            var last = first + text.AsSpan(found.Start, found.Length).Count('\n');
             for (var line = first; line <= last && line < lineCount; line++)
                 masked.Add(line);
         }

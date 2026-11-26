@@ -246,6 +246,27 @@ public class SuppliedLibraryLoadTests
         Assert.Equal(first, Assert.Single(res.Replaced).OldPath);
     }
 
+    /// <summary>
+    /// A class recovered from documentation stays out of a code search: its stored source is a
+    /// declaration synthesized from help pages, not code anyone wrote. A supplied class's is searched.
+    /// </summary>
+    [Fact]
+    public async Task CodeSearch_SkipsRecoveredClasses_AndSearchesSuppliedOnes()
+    {
+        using var recovered = new TestHost();
+        await recovered.Libraries.AddLibraryFromPathAsync(WriteEncrypted(recovered.NewTempDir(), "VendorLib 2026.1"));
+        Assert.Equal(ReadOnlySourceKind.RecoveredFromDocumentation, VendorLib(recovered).ReadOnlySource);
+        Assert.Contains("Widget", recovered.Libraries.GetModelById("VendorLib.Widget")!.Definition.ModelicaCode);
+
+        Assert.Equal(0, ToolAssert.Ok<CodeSearchResult>(
+            new FindTools(recovered.Libraries).Find("Widget", match: "code")).Total);
+
+        using var supplied = new TestHost();
+        await supplied.Libraries.AddLibraryFromSourceAsync(new Source("2026.1"));
+        Assert.NotEqual(0, ToolAssert.Ok<CodeSearchResult>(
+            new FindTools(supplied.Libraries).Find("Widget", match: "code")).Total);
+    }
+
     /// <summary>A build of another release than the one supplied is what is installed, so replace may put
     /// it in the supplied copy's place.</summary>
     [Fact]

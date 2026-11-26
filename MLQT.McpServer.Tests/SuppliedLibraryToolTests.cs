@@ -346,6 +346,76 @@ public class SuppliedLibraryToolTests : IAsyncLifetime
         Assert.Contains("Vendor.Spring", Json(Tool<SearchTools>().SearchText("linear spring")));
     }
 
+    private CodeSearchResult Code(string query, bool regex = false, string? library = null) =>
+        ToolAssert.Ok<CodeSearchResult>(Tool<FindTools>().Find(query, match: "code", regex: regex, library: library, limit: 500));
+
+    // The source view's text, annotations included: everything mlqt_get_class will show of the class.
+    private string[] SourceViewLines(string classId) =>
+        ToolAssert.Ok<ClassSourceResult>(Tool<ClassQueryTools>().GetClassSource(classId, includeAnnotations: true))
+            .Source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+
+    [Fact]
+    public void CodeSearch_FindsAParameterDeclaredInIt_AtItsLine()
+    {
+        // Once, for the class that declares it - not again for the package it is written in, which holds
+        // it without the banner each supplied class opens with.
+        var hit = Assert.Single(Code("parameter Real c").Items);
+
+        Assert.Equal("Vendor.Spring", hit.ClassId);
+        Assert.Equal(hit.Text, SourceViewLines("Vendor.Spring")[hit.Line - 1].Trim());
+    }
+
+    [Fact]
+    public void CodeSearch_ReturnsHitsFromSourceAndSuppliedLibraries_InOneShape()
+    {
+        var res = Code("Vendor.Spring spring|Spring spring1", regex: true);
+
+        var user = Assert.Single(res.Items, i => i.ClassId == "MyLib.Rig");
+        var supplied = Assert.Single(res.Items, i => i.ClassId == "Vendor.Example");
+        Assert.Equal(2, res.Total);
+        foreach (var hit in new[] { user, supplied })
+        {
+            Assert.True(hit.Line > 0);
+            Assert.False(string.IsNullOrEmpty(hit.Text));
+            Assert.NotNull(hit.FilePath);
+        }
+        Assert.Contains("spring1", supplied.Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every line a code search can return from the supplied library - each line of every class, by
+    /// matching anything - is a line of that class's source view: a hit shows nothing it would not.
+    /// </summary>
+    [Fact]
+    public void CodeSearch_ShowsNothingOfASuppliedClass_BeyondItsSourceView()
+    {
+        var res = Code(".", regex: true, library: "Vendor");
+
+        Assert.NotEmpty(res.Items);
+        Assert.False(res.Truncated);
+        Assert.All(res.Items, hit =>
+        {
+            var line = SourceViewLines(hit.ClassId)[hit.Line - 1].Trim();
+            var shown = hit.Text.EndsWith('…') ? hit.Text[..^1] : hit.Text;
+            Assert.StartsWith(shown, line, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// The package holds its classes without the banner each opens with, and a text search still parses
+    /// it without them rather than whole.
+    /// </summary>
+    [Fact]
+    public void ATextSearch_ReadsItsPackageWithoutItsInlineClasses()
+    {
+        var models = _host.Libraries.GetAllModels().ToList();
+        var reduced = new TextSearchPrefilter("x", models).ReducedSource(models.Single(m => m.Id == "Vendor"));
+
+        Assert.NotNull(reduced);
+        Assert.DoesNotContain("spring constant", reduced);
+        Assert.Empty(ModelicaParser.Helpers.ModelicaParserHelper.ParseWithErrors(reduced).errors);
+    }
+
     [Fact]
     public void TheUsersReferenceIntoIt_Resolves()
     {

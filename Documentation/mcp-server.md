@@ -97,7 +97,10 @@ The server returns a short set of instructions to the client on connect, and a `
 
    **A library supplied by a host from memory** — Modelica text describing a library whose source is
    not available, loaded by a host that embeds the server rather than by a tool — is read in full:
-   every view answers from its declarations and visible equations, as for any library. Each class
+   every view answers from its declarations and visible equations, as for any library, and
+   `mlqt_find`'s code search searches it as it does any other: over the text the source view shows,
+   and nothing more. (A class recovered from documentation is left out of a code search: its source
+   is a declaration MLQT wrote from the help pages, not the vendor's code.) Each class
    opens with a comment saying where it came from, `mlqt_session` gives the library's
    `version` and `readOnlySource: "Supplied"`, `mlqt_get_class`'s info view gives the same `readOnlySource`,
    and every edit tool refuses it. Nothing of it is on disk.

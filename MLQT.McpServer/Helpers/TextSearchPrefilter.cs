@@ -120,15 +120,11 @@ internal sealed partial class TextSearchPrefilter
         var spans = new List<(int Start, int End, bool Semicolon)>();
         foreach (var child in nested)
         {
-            var childCode = child.Definition.ModelicaCode;
-            if (string.IsNullOrEmpty(childCode))
-                continue;
-            // Cut only when the text is there exactly once. A second copy - the child written out in the
-            // package's own description, say - leaves no way to tell which is the class, and cutting the
-            // wrong one would take the package's own text with it.
-            var at = code.IndexOf(childCode, StringComparison.Ordinal);
-            if (at >= 0 && code.IndexOf(childCode, at + 1, StringComparison.Ordinal) < 0)
-                spans.Add((at, at + childCode.Length, childCode.AsSpan().TrimEnd().EndsWith(";")));
+            // Cut only where it is found exactly once, and without a read-only class's banner when that is
+            // how the package holds it (InlineClassText).
+            if (InlineClassText.Locate(code, child.Definition.ModelicaCode) is { } found)
+                spans.Add((found.Start, found.Start + found.Length,
+                    code.AsSpan(found.Start, found.Length).TrimEnd().EndsWith(";")));
         }
         if (spans.Count == 0)
             return code;
