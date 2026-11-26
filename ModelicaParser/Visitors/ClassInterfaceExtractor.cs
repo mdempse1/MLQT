@@ -310,6 +310,7 @@ public static class ClassInterfaceExtractor
                 ClassType = GetClassType(shortClass.class_prefixes()),
                 Type = spec.type_specifier()?.GetText(),
                 TypeModification = SourceText(spec.class_modification()),
+                Modifications = ScalarModifications(spec.class_modification()),
                 ArraySubscripts = Dimensions(spec.array_subscripts()),
                 Prefixes = prefixes,
                 Line = shortClass.Start.Line
@@ -323,6 +324,7 @@ public static class ClassInterfaceExtractor
                 Name = componentName.GetText(),
                 Type = component.type_specifier()?.GetText(),
                 TypeModification = SourceText(declaration.modification()?.class_modification()),
+                Modifications = ScalarModifications(declaration.modification()?.class_modification()),
                 ArraySubscripts = Dimensions(declaration.array_subscripts()),
                 Prefixes = prefixes,
                 Line = component.Start.Line

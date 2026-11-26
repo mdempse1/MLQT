@@ -139,10 +139,15 @@ public sealed record InterfaceSearchResult(int Total, int Count, IReadOnlyList<I
 /// <summary>
 /// A component on a class's diagram. Extent is [x1,y1,x2,y2] in the diagram's own coordinates, with
 /// any <c>origin</c> from the Placement already added in; InheritedFrom names the base class that
-/// declared it, or is null when the class declares it itself.
+/// declared it, or is null when the class declares it itself. Type is the type as declared;
+/// RedeclaredTo is the class a redeclaration makes it in this class - an extends clause's
+/// <c>redeclare</c>, or a replaceable class redeclared - which is the class the diagram draws: its id,
+/// or the name as the redeclaration wrote it when that class is not loaded. Null when nothing
+/// redeclares it.
 /// </summary>
 public sealed record DiagramComponent(
-    string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation, string? InheritedFrom = null);
+    string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation, string? InheritedFrom = null,
+    string? RedeclaredTo = null);
 
 /// <summary>The diagram layout of a class: its components' placements plus its connections.</summary>
 public sealed record DiagramLayoutResult(

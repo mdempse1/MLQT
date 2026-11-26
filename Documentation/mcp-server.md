@@ -339,8 +339,19 @@ diagram is drawn with its diagram layer, not its icon layer**, which are differe
 component shows **its own type's connectors on its icon**, which is what makes a diagram look wired
 rather than like a row of boxes; **line thickness and arrow size are millimetres**, so the units they
 come to depend on how far the view is zoomed; and a component placed with a reversed extent is
-mirrored, but its label is not. `mlqt_get_class`'s layout view reports the same absolute extents and the same
-inherited and protected components, so the numbers and the picture describe one diagram.
+mirrored, but its label is not. **A redeclared component is drawn as the class it is redeclared to**,
+icon, connectors and `%name` alike: a `redeclare` in an `extends` clause or a short class, one in a
+class's body (keeping the placement of the declaration it replaces when it states none), and a
+replaceable class the component is declared with (`replaceable model Engine = PartialEngine`, then
+`redeclare model Engine = Diesel`). What the redeclaration gives the component is what its icon shows:
+its label values and which of its optional connectors are there come from `redeclare Diesel engine(k = 7)`,
+not from the declaration it replaced. A model built from a template, whose components are declared
+against partial classes with empty icons, is otherwise a page of blank boxes. Only when nothing
+redeclares a component is it drawn as its declared class. A short class with no icon of its own
+(`model Gearbox = Manual`, `connector AliasPort = Port`) is drawn with its base's. `mlqt_get_class`'s
+layout view reports the same absolute extents and the same inherited and protected components, and
+names the class a redeclaration makes each component (`redeclaredTo`: its id, or the name as written
+when that class is not loaded), so the numbers and the picture describe one diagram.
 
 A component's parameters are read the way Modelica reads them — the modification the instance was
 given, then the type's own default — and that answers two things at once. A connector declared

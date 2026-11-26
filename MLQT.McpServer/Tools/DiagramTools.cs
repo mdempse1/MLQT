@@ -59,7 +59,8 @@ public sealed class DiagramTools
                     m.Element.Name, m.Element.Type,
                     placement is null ? null : [.. placement.Extent.Select(ToInt)],
                     placement is null or { Rotation: 0 } ? null : ToInt(placement.Rotation),
-                    m.InheritedFrom);
+                    m.InheritedFrom,
+                    RedeclaredTo(node, m));
             })
             .ToList();
 
@@ -69,10 +70,18 @@ public sealed class DiagramTools
         return new DiagramLayoutResult(classId, components, connections);
     }
 
+    // The class a redeclaration makes the component - its id, or the name as the redeclaration wrote
+    // it when that class is not loaded, so a redeclaration MLQT cannot follow still reads as one.
+    private string? RedeclaredTo(ModelicaGraph.DataTypes.ModelNode node, ModelicaGraph.Analysis.ResolvedElement member)
+        => ModelicaGraph.Analysis.RedeclaredClass.For(_libraries.CombinedGraph, node, member) is { Redeclared: true } redeclared
+            ? redeclared.Class?.Id ?? redeclared.Written
+            : null;
+
     [McpServerTool(Name = "mlqt_get_diagram_image", ReadOnly = true, OpenWorld = false)]
     [Description("Render a Modelica class's diagram as a PNG image and return it, so you can LOOK at a layout " +
-                "rather than read its coordinates back. Each component is drawn with its own type's " +
-                "icon at its Placement, with the connection lines between them; a component whose type " +
+                "rather than read its coordinates back. Each component is drawn with its class's icon at " +
+                "its Placement - the class a redeclaration makes it, where one does - with the connection " +
+                "lines between them; a component whose type " +
                 "is not loaded is drawn as a dashed box with its name, so an unresolved type and an " +
                 "absent component do not look alike. Anything placed outside the class's coordinate " +
                 "system is still shown, with the declared canvas outlined - being able to see that is " +

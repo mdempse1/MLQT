@@ -1,1 +1,22 @@
 #nullable enable
+ModelicaGraph.Analysis.ComponentClass
+ModelicaGraph.Analysis.ComponentClass.<Clone>$() -> ModelicaGraph.Analysis.ComponentClass!
+ModelicaGraph.Analysis.ComponentClass.Class.get -> ModelicaGraph.DataTypes.ModelNode?
+ModelicaGraph.Analysis.ComponentClass.Class.init -> void
+ModelicaGraph.Analysis.ComponentClass.ComponentClass(ModelicaGraph.DataTypes.ModelNode? Class, string? Written, bool Redeclared, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? Modifications) -> void
+ModelicaGraph.Analysis.ComponentClass.Deconstruct(out ModelicaGraph.DataTypes.ModelNode? Class, out string? Written, out bool Redeclared, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? Modifications) -> void
+ModelicaGraph.Analysis.ComponentClass.Equals(ModelicaGraph.Analysis.ComponentClass? other) -> bool
+ModelicaGraph.Analysis.ComponentClass.Modifications.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+ModelicaGraph.Analysis.ComponentClass.Modifications.init -> void
+ModelicaGraph.Analysis.ComponentClass.Redeclared.get -> bool
+ModelicaGraph.Analysis.ComponentClass.Redeclared.init -> void
+ModelicaGraph.Analysis.ComponentClass.Written.get -> string?
+ModelicaGraph.Analysis.ComponentClass.Written.init -> void
+override ModelicaGraph.Analysis.ComponentClass.Equals(object? obj) -> bool
+override ModelicaGraph.Analysis.ComponentClass.GetHashCode() -> int
+override ModelicaGraph.Analysis.ComponentClass.ToString() -> string!
+static ModelicaGraph.Analysis.ComponentClass.operator !=(ModelicaGraph.Analysis.ComponentClass? left, ModelicaGraph.Analysis.ComponentClass? right) -> bool
+static ModelicaGraph.Analysis.ComponentClass.operator ==(ModelicaGraph.Analysis.ComponentClass? left, ModelicaGraph.Analysis.ComponentClass? right) -> bool
+static ModelicaGraph.Analysis.RedeclaredClass.For(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! within, ModelicaGraph.Analysis.ResolvedElement! member) -> ModelicaGraph.Analysis.ComponentClass?
+ModelicaGraph.Analysis.RedeclaredClass
+static ModelicaGraph.Analysis.RedeclaredClass.Of(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! within, ModelicaGraph.Analysis.ResolvedElement! member) -> ModelicaGraph.DataTypes.ModelNode?

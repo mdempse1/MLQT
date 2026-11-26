@@ -196,10 +196,13 @@ internal static class DiagramGeometry
         ILibraryDataService libraries, string classId, string classCode, DiagramComponent comp,
         string componentName, string connectorName)
     {
-        var typeText = ComponentTypeText(classCode, componentName);
-        var typeNode = typeText is not null
-            ? TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, null)
-            : InheritedComponentType(libraries, classId, componentName);
+        // The class the component is after its redeclarations, as the image draws it; the type as
+        // written in the text being edited only for a component the graph does not know yet.
+        var typeNode = EffectiveComponentType(libraries, classId, componentName) is { } effective
+            ? effective
+            : ComponentTypeText(classCode, componentName) is { } typeText
+                ? TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, null)
+                : null;
         var member = typeNode is null
             ? null
             : ClassElementResolver
@@ -211,18 +214,17 @@ internal static class DiagramGeometry
         return DiagramSvgRenderer.PortOnEdge(comp, nx, ny);
     }
 
-    // The type of a component the class inherits, resolved in the scope of the base that declares
-    // it - an inherited connection (B316) names components the class's own text does not.
-    private static ModelicaGraph.DataTypes.ModelNode? InheritedComponentType(
+    // The class a component of the class is, declared or inherited - an inherited connection (B316)
+    // names components the class's own text does not - after the redeclarations that reach it
+    // (RedeclaredClass), as DiagramImage draws it.
+    private static ModelicaGraph.DataTypes.ModelNode? EffectiveComponentType(
         ILibraryDataService libraries, string classId, string componentName)
     {
         if (libraries.GetModelById(classId) is not { } node)
             return null;
         var member = DiagramImage.Members(libraries, node)
             .FirstOrDefault(m => string.Equals(m.Element.Name, componentName, StringComparison.Ordinal));
-        return member is null
-            ? null
-            : TypeResolver.Resolve(libraries.CombinedGraph, member.OwnerId, member.Element.Type, member.OwnerImports);
+        return member is null ? null : RedeclaredClass.Of(libraries.CombinedGraph, node, member);
     }
 
     private static (double, double) CausalityOffset(ResolvedElement member)
@@ -499,7 +501,45 @@ internal static class DiagramGeometry
                 : placement;
         }
 
+        RedeclaredWithoutPlacement(libraries, node, result, layer);
         return result;
+    }
+
+    /// <summary>
+    /// A component the class redeclares in its own body without an annotation of its own -
+    /// <c>redeclare Concrete engine;</c> - stays where the declaration it replaces put it, as a tool
+    /// draws it. Read from the class's bases, each of which answers with what it declares or inherits,
+    /// and mapped as the base is. Without this the redeclared component was not on the diagram at all.
+    /// </summary>
+    private static void RedeclaredWithoutPlacement(
+        ILibraryDataService libraries, ModelicaGraph.DataTypes.ModelNode node,
+        Dictionary<string, Placement> result, Layer layer)
+    {
+        var missing = ClassElementResolver
+            .Collect(libraries.CombinedGraph, node, includeProtected: layer == Layer.Diagram, includeInherited: false)
+            .Where(m => m.Element.Kind == ClassElementKind.Component
+                        && m.Element.Prefixes.Contains("redeclare")
+                        && !result.ContainsKey(m.Element.Name))
+            .Select(m => m.Element.Name)
+            .ToList();
+        if (missing.Count == 0)
+            return;
+
+        var maps = BaseMaps(libraries, node, layer);
+        foreach (var (_, baseNode) in ClassElementResolver.DirectBases(libraries.CombinedGraph, node))
+        {
+            if (baseNode.Definition.ModelicaCode is not { Length: > 0 } baseCode)
+                continue;
+            var inBase = Placements(libraries, baseNode.Id, baseCode, layer);
+            foreach (var name in missing.Where(n => !result.ContainsKey(n)).ToList())
+            {
+                if (!inBase.TryGetValue(name, out var placement))
+                    continue;
+                result[name] = maps.TryGetValue(baseNode.Id, out var map) && !map.IsIdentity
+                    ? Mapped(placement, map)
+                    : placement;
+            }
+        }
     }
 
     private static Placement Mapped(Placement placement, CoordinateMap map)

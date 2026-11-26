@@ -119,7 +119,7 @@ internal static class DiagramImage
             // No Placement means Modelica does not draw it either - a parameter, or a component the
             // author never put on the diagram.
             if (placements.TryGetValue(member.Element.Name, out var placement))
-                components.Add(Build(libraries, member, placement, imports));
+                components.Add(Build(libraries, node, member, placement, imports));
         }
 
         return components;
@@ -152,7 +152,7 @@ internal static class DiagramImage
 
         return member is null
             ? new DiagramComponent(name, placement.Extent, placement.Rotation, null, null, placement.RotationCentre)
-            : Build(libraries, member, placement, Imports(node!));
+            : Build(libraries, node!, member, placement, Imports(node!));
     }
 
     /// <summary>
@@ -168,26 +168,33 @@ internal static class DiagramImage
             .Where(m => m.Element.Kind == ClassElementKind.Component);
 
     private static DiagramComponent Build(
-        ILibraryDataService libraries, ResolvedElement member, DiagramGeometry.Placement placement,
+        ILibraryDataService libraries, ModelNode within, ResolvedElement member, DiagramGeometry.Placement placement,
         IReadOnlyList<string> imports)
     {
         // Resolved in the scope of the class that DECLARED it, which for an inherited connector
         // is the base class and not this one.
         var scope = member.InheritedFrom is null ? imports : member.OwnerImports;
-        var type = TypeResolver.Resolve(
-            libraries.CombinedGraph, member.OwnerId, member.Element.Type, scope);
 
-        // What this instance's parameters are: the modification it was given, then the type's
-        // own default. It answers both the %references in the icon's text (B278) and whether a
-        // conditional connector on that icon is there at all (B277).
-        var valueOf = ComponentValues.For(
-            libraries.CombinedGraph, type, member.Element.Modifications);
+        // The class the component IS, after the redeclarations that reach it - an extends clause's
+        // `redeclare Concrete engine`, or a replaceable class redeclared on the way: its icon, its
+        // connectors and its %class are that class's, as Dymola draws it. Drawn with the declared
+        // class, a model built from a template was a page of the template's blank boxes. %class
+        // shows the name as written - the redeclaration's, not the constraining class it replaced -
+        // as it shows a declared component's.
+        var resolved = RedeclaredClass.For(libraries.CombinedGraph, within, member)!;
+        var type = resolved.Class;
+
+        // What this instance's parameters are: the modification it was given - the redeclaration's,
+        // when it was redeclared - then the type's own default. It answers both the %references in
+        // the icon's text (B278) and whether a conditional connector on that icon is there at all
+        // (B277).
+        var valueOf = ComponentValues.For(libraries.CombinedGraph, type, resolved.Modifications);
         var (shown, switchedOff) = type is null ? (null, null) : ConnectorsOn(libraries, type, valueOf);
 
         return new DiagramComponent(
             member.Element.Name, placement.Extent, placement.Rotation,
-            IconOf(libraries, member.OwnerId, member.Element.Type, scope),
-            member.Element.Type,
+            IconOf(libraries, type),
+            resolved.Written,
             placement.RotationCentre,
             shown,
             valueOf,
@@ -228,26 +235,27 @@ internal static class DiagramImage
     /// against the edge plus a <c>%name</c> label - so drawing the icon in a diagram gives a
     /// connector several times the size Dymola draws, and no name beside it.</para>
     /// </summary>
-    private static IconData? IconOf(
-        ILibraryDataService libraries, string classId, string? typeText, IReadOnlyList<string> imports)
+    /// <remarks>
+    /// A short class with no icon of its own wears its base's (<see cref="IconWithInheritance"/>).
+    /// </remarks>
+    private static IconData? IconOf(ILibraryDataService libraries, ModelNode? type)
     {
-        if (string.IsNullOrWhiteSpace(typeText))
+        if (type is null)
             return null;
-
-        var type = TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, imports);
-        if (type?.Definition.ModelicaCode is not { Length: > 0 } source)
-            return null;
-
         if (string.Equals(type.ClassType, "connector", StringComparison.Ordinal)
             && DiagramLayerOf(libraries, type) is { } diagram)
             return diagram;
-
-        var package = ModelicaName.EnclosingPackageOf(type.Id);
-        return IconSvgRenderer.ExtractIconWithInheritance(
-            source,
-            baseName => Resolve(libraries, type.Id, baseName)?.Definition.ModelicaCode,
-            initialPackageContext: package.Length > 0 ? package : null);
+        return IconWithInheritance(libraries, type);
     }
+
+    // The base a short class names (`model Gearbox = Manual`), or null for any other class.
+    private static ModelNode? ShortClassBase(ILibraryDataService libraries, ModelNode node)
+        => node.Definition.Borrow(tree => ClassInterfaceExtractor.Extract(tree).ShortClassBase) is { } written
+            ? ClassElementResolver.DirectBases(libraries.CombinedGraph, node)
+                .Where(b => string.Equals(b.Written.Trim(), written.Trim(), StringComparison.Ordinal))
+                .Select(b => b.Base)
+                .FirstOrDefault()
+            : null;
 
     /// <summary>
     /// The connectors a component shows on its icon, in the icon's own coordinates.
@@ -316,16 +324,31 @@ internal static class DiagramImage
         return (connectors.Count > 0 ? connectors : null, switchedOff.Count > 0 ? switchedOff : null);
     }
 
-    private static IconData? IconWithInheritance(ILibraryDataService libraries, ModelNode type)
+    /// <summary>
+    /// A class's Icon layer, merged down its extends chain - and, for a short class with no icon of
+    /// its own, its base's: <c>model Gearbox = Manual</c> is Manual, and <c>connector AliasPort =
+    /// Port</c> is Port, as an extends clause would make them, while the icon extractor follows only
+    /// extends clauses. A redeclared replaceable class is usually written that way, and so is a
+    /// library's alias of a connector; both were drawn blank.
+    /// </summary>
+    private static IconData? IconWithInheritance(ILibraryDataService libraries, ModelNode? type)
     {
-        if (type.Definition.ModelicaCode is not { Length: > 0 } source)
-            return null;
+        for (var depth = 0; type is not null && depth <= MaxInheritanceDepth; depth++)
+        {
+            if (type.Definition.ModelicaCode is not { Length: > 0 } source)
+                return null;
 
-        var package = ModelicaName.EnclosingPackageOf(type.Id);
-        return IconSvgRenderer.ExtractIconWithInheritance(
-            source,
-            baseName => Resolve(libraries, type.Id, baseName)?.Definition.ModelicaCode,
-            initialPackageContext: package.Length > 0 ? package : null);
+            var current = type;
+            var package = ModelicaName.EnclosingPackageOf(current.Id);
+            var icon = IconSvgRenderer.ExtractIconWithInheritance(
+                source,
+                baseName => Resolve(libraries, current.Id, baseName)?.Definition.ModelicaCode,
+                initialPackageContext: package.Length > 0 ? package : null);
+            if (icon is { HasGraphics: true } || ShortClassBase(libraries, current) is not { } shortBase)
+                return icon;
+            type = shortBase;
+        }
+        return null;
     }
 
     /// <summary>

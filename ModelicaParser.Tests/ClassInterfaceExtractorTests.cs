@@ -273,6 +273,24 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
+    public void ARedeclarationsScalarModifications_AreReadByPath()
+    {
+        // What a redeclared component is given decides its icon's text and its conditional
+        // connectors, as a declared one's modifications do.
+        var iface = Extract("""
+            model M
+              extends T(redeclare Diesel engine(k = 2, gear(n = 3)), redeclare model Gearbox = Manual(r = 4),
+                redeclare Petrol spare);
+            end M;
+            """);
+        var redeclarations = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends).Redeclarations!;
+
+        Assert.Equal(new Dictionary<string, string> { ["k"] = "2", ["gear.n"] = "3" }, redeclarations["engine"].Modifications);
+        Assert.Equal(new Dictionary<string, string> { ["r"] = "4" }, redeclarations["Gearbox"].Modifications);
+        Assert.Null(redeclarations["spare"].Modifications);
+    }
+
+    [Fact]
     public void LeadingComments_AttachToFollowingElement()
     {
         var iface = Extract(

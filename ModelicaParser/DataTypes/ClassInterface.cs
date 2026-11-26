@@ -158,6 +158,15 @@ public sealed record Redeclaration
     /// <summary>The modification the replacement applies to its type, as written, or null.</summary>
     public string? TypeModification { get; init; }
 
+    /// <summary>
+    /// The scalar modifications in <see cref="TypeModification"/>, keyed by path as
+    /// <see cref="ClassElement.Modifications"/> are - <c>redeclare Diesel engine(k = 2, gear(n = 3))</c>
+    /// gives {"k" =&gt; "2", "gear.n" =&gt; "3"} - or null when there are none. They are what the
+    /// redeclared component is given, so they decide its icon's text and which of its conditional
+    /// connectors are there.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Modifications { get; init; }
+
     /// <summary>The replacement's array dimensions as written, or null.</summary>
     public string? ArraySubscripts { get; init; }
 
