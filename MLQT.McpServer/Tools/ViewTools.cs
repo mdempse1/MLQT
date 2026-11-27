@@ -206,26 +206,35 @@ public sealed class ViewTools
         return includeBases ? WithBases(result, node, asText) : result;
     }
 
-    // The class's bases' documentation, nearest first, up to the cap; the rest named, the empty counted.
+    // What one base is, read once: its prose, and whether it declares or does anything itself.
+    private sealed record BaseFacts(string? Description, string? Info, bool HasContent);
+
+    // The class's bases' documentation, nearest first, up to the cap; the rest named, the skipped
+    // counted, the unloaded named.
     private ClassDocumentationResult WithBases(ClassDocumentationResult result, ModelNode node, bool asText)
     {
+        var graph = _libraries.CombinedGraph;
+        var (chain, unloaded) = BasesNearestFirst(graph, node);
+        var facts = new Dictionary<string, BaseFacts>(StringComparer.Ordinal);
+        var iconOnly = new Dictionary<string, bool>(StringComparer.Ordinal);
+
         var bases = new List<BaseDocumentation>();
         var more = new List<string>();
-        var undocumented = 0;
+        var skipped = 0;
         var used = 0;
-        foreach (var baseNode in BasesNearestFirst(_libraries.CombinedGraph, node))
+        foreach (var baseNode in chain)
         {
-            // Borrowed: a base's tree is not this call's to keep.
-            var (description, info) = baseNode.Definition.Borrow<(string?, string?)>(
-                tree => (ClassInterfaceExtractor.Extract(tree).Description, DocumentationExtractor.Extract(tree).Info),
-                (null, null));
+            var (description, info, _) = FactsOf(baseNode, facts);
             if (asText && info is not null)
                 info = TextExtractor.StripHtml(info);
 
-            // An icon class or an empty partial says nothing about what the class does.
-            if (string.IsNullOrWhiteSpace(info))
+            // A base with no prose, or one that only draws - an icon class, which declares nothing and
+            // extends only other icon classes - says nothing about what the class does. MSL documents its
+            // icons ("This icon indicates Modelica functions."), and skipping only the undocumented ones
+            // quoted Modelica.Icons.Function in 1,781 of its classes' answers.
+            if (string.IsNullOrWhiteSpace(info) || IsIconOnly(graph, baseNode, facts, iconOnly))
             {
-                undocumented++;
+                skipped++;
                 continue;
             }
             var size = info.Length + (description?.Length ?? 0);
@@ -236,7 +245,7 @@ public sealed class ViewTools
             }
             // The nearest base is given whole whatever its size, cut only where it alone is over the cap.
             if (size > MaxBaseDocumentationCharacters)
-                info = info[..Math.Max(0, MaxBaseDocumentationCharacters - (description?.Length ?? 0))] +
+                info = CutAt(info, Math.Max(0, MaxBaseDocumentationCharacters - (description?.Length ?? 0)), asText) +
                        $" ... (cut at {MaxBaseDocumentationCharacters} characters; ask for {baseNode.Id}'s documentation view)";
             bases.Add(new BaseDocumentation(baseNode.Id, description, info));
             used += size;
@@ -246,19 +255,71 @@ public sealed class ViewTools
         {
             Bases = bases.Count > 0 ? bases : null,
             MoreBases = more.Count > 0 ? more : null,
-            UndocumentedBases = undocumented > 0 ? undocumented : null,
+            SkippedBases = skipped > 0 ? skipped : null,
+            UnloadedBases = unloaded.Count > 0 ? unloaded : null,
         };
+    }
+
+    // Read once per call: a diamond, or an icon class reached through several bases, is asked about again.
+    private static BaseFacts FactsOf(ModelNode node, Dictionary<string, BaseFacts> facts)
+    {
+        if (facts.TryGetValue(node.Id, out var known))
+            return known;
+        // Borrowed: a base's tree is not this call's to keep.
+        var read = node.Definition.Borrow(tree =>
+        {
+            var iface = ClassInterfaceExtractor.Extract(tree);
+            var declares = iface.Elements.Any(e => e.Kind is ClassElementKind.Component or ClassElementKind.Class);
+            return new BaseFacts(iface.Description, DocumentationExtractor.Extract(tree).Info,
+                declares || BehaviorExtractor.ExtractFromCode(node.Definition.ModelicaCode ?? string.Empty).HasAny);
+        }, new BaseFacts(null, null, HasContent: true));
+        facts[node.Id] = read;
+        return read;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="node"/> only draws: it declares no component or class, has no equation or
+    /// algorithm, and every base it extends is the same. A template that extends an interface with nothing
+    /// of its own is not one - what it extends declares something - and its documentation is kept.
+    /// </summary>
+    private static bool IsIconOnly(ModelicaGraph.DirectedGraph graph, ModelNode node,
+        Dictionary<string, BaseFacts> facts, Dictionary<string, bool> memo, int depth = 0)
+    {
+        if (memo.TryGetValue(node.Id, out var known))
+            return known;
+        memo[node.Id] = false;   // a cycle is no icon
+        var only = !FactsOf(node, facts).HasContent && depth < 32
+                   && ModelicaGraph.ClassImports.BasesOf(node.Definition).Count(b => !TypeResolver.IsPredefined(b))
+                       == ClassElementResolver.DirectBases(graph, node).Count
+                   && ClassElementResolver.DirectBases(graph, node).All(b => IsIconOnly(graph, b.Base, facts, memo, depth + 1));
+        memo[node.Id] = only;
+        return only;
+    }
+
+    // At most `length` characters of `text`; for HTML, never inside a tag, which would leave the markup
+    // broken for whatever renders it.
+    private static string CutAt(string text, int length, bool asText)
+    {
+        var cut = text[..Math.Min(length, text.Length)];
+        if (asText)
+            return cut;
+        var open = cut.LastIndexOf('<');
+        return open > cut.LastIndexOf('>') ? cut[..open] : cut;
     }
 
     /// <summary>
     /// Every class <paramref name="node"/> extends, transitively, nearest first: its own extends clauses
     /// in order, then theirs, a base reached twice listed once. A short class's base is its base.
     /// <see cref="ClassElementResolver.BaseClasses"/> gives them deepest first, the order a diagram
-    /// draws them in; documentation is read the other way, from the class outward.
+    /// draws them in; documentation is read the other way, from the class outward. <c>Unloaded</c> is
+    /// each base written in an extends clause that does not resolve - its library not loaded, or a name
+    /// that is wrong - as "Name, extended by Class", since without it the chain read as complete.
     /// </summary>
-    internal static List<ModelNode> BasesNearestFirst(ModelicaGraph.DirectedGraph graph, ModelNode node)
+    internal static (List<ModelNode> Bases, List<string> Unloaded) BasesNearestFirst(
+        ModelicaGraph.DirectedGraph graph, ModelNode node)
     {
         var result = new List<ModelNode>();
+        var unloaded = new List<string>();
         var visited = new HashSet<string>(StringComparer.Ordinal) { node.Id };
         var level = new List<ModelNode> { node };
         for (var depth = 0; level.Count > 0 && depth < 32; depth++)
@@ -266,7 +327,15 @@ public sealed class ViewTools
             var next = new List<ModelNode>();
             foreach (var cls in level)
             {
-                foreach (var (_, baseNode) in ClassElementResolver.DirectBases(graph, cls))
+                var resolved = ClassElementResolver.DirectBases(graph, cls);
+                foreach (var written in ModelicaGraph.ClassImports.BasesOf(cls.Definition))
+                {
+                    // A predefined type (type Length = Real(...)) is the language's, not a library's, and
+                    // has no class to resolve to.
+                    if (!resolved.Any(r => r.Written == written) && !TypeResolver.IsPredefined(written))
+                        unloaded.Add($"{written}, extended by {cls.Id}");
+                }
+                foreach (var (_, baseNode) in resolved)
                 {
                     if (visited.Add(baseNode.Id))
                         next.Add(baseNode);
@@ -275,7 +344,7 @@ public sealed class ViewTools
             result.AddRange(next);
             level = next;
         }
-        return result;
+        return (result, unloaded);
     }
 
     internal object GetClassBehavior(

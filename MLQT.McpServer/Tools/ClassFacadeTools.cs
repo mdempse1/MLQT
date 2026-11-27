@@ -116,7 +116,35 @@ public sealed class ClassFacadeTools
                 Layout: View("layout", () => _diagram.GetDiagramLayout(classId)),
                 Resources: View("resources", () => _resources.GetClassResources(classId))));
         }
-        return new GetClassResult(WithinBudget(classes, sourceFromLine, MaxAnswerCharacters));
+        return new GetClassResult(WithinBudget(EachBaseOnce(classes), sourceFromLine, MaxAnswerCharacters));
+    }
+
+    /// <summary>
+    /// <paramref name="classes"/> with each base's documentation given once: where an earlier class's
+    /// documentation view gave a base, a later one names it with <c>givenWith</c> and leaves its text out.
+    /// Classes asked for together usually share their interfaces, and five on one interface carried its
+    /// documentation five times, which the answer's size budget then spent on repeats.
+    /// </summary>
+    internal static IReadOnlyList<ClassViews> EachBaseOnce(IReadOnlyList<ClassViews> classes)
+    {
+        var given = new Dictionary<string, string>(StringComparer.Ordinal);
+        var answer = new List<ClassViews>(classes.Count);
+        foreach (var views in classes)
+        {
+            if (views.Documentation is not ClassDocumentationResult { Bases: { Count: > 0 } bases } doc)
+            {
+                answer.Add(views);
+                continue;
+            }
+            var once = bases.Select(b => given.TryGetValue(b.ClassId, out var first)
+                    ? new BaseDocumentation(b.ClassId, null, null, GivenWith: first)
+                    : b)
+                .ToList();
+            foreach (var b in bases)
+                given.TryAdd(b.ClassId, views.ClassId);
+            answer.Add(views with { Documentation = doc with { Bases = once } });
+        }
+        return answer;
     }
 
     /// <summary>
@@ -181,7 +209,8 @@ public sealed class ClassFacadeTools
             }
             answer.Add(new ClassViews(views.ClassId, Truncated:
                 $"Not read: with it the answer would have been over its size limit ({budget} characters). Ask for this " +
-                "class in another call, and for a long source, its other views apart from it."));
+                "class in another call, and for a long source, its other views apart from it; a documentation view " +
+                "is smaller with includeBaseDocumentation=false."));
         }
         return answer;
     }

@@ -122,7 +122,8 @@ public class ClassFacadeToolsTests
             "elements" => (b.Elements, new ViewTools(host.Libraries).ListClassElements("P.B")),
             "behavior" => (b.Behavior, new ViewTools(host.Libraries).GetClassBehavior("P.B")),
             "connections" => (b.Connections, new StructureEditTools(host.Libraries, host.Resources, host.Session).ListConnections("P.B")),
-            "documentation" => (b.Documentation, new ViewTools(host.Libraries).GetClassDocumentation("P.B")),
+            // With its bases, as mlqt_get_class gives it by default.
+            "documentation" => (b.Documentation, new ViewTools(host.Libraries).GetClassDocumentation("P.B", includeBases: true)),
             "layout" => (b.Layout, new DiagramTools(host.Libraries, host.Resources, host.Session).GetDiagramLayout("P.B")),
             "resources" => (b.Resources, new ResourceTools(host.Libraries, host.Resources, host.Session).GetClassResources("P.B")),
             _ => throw new ArgumentOutOfRangeException(nameof(view)),

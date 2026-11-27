@@ -14,14 +14,21 @@ public class DocumentationBasesTests
         within;
         package P "p"
           partial model Icon "an icon only"
-            annotation (Icon(graphics = {Rectangle(extent = {{-100, -100}, {100, 100}})}));
+            annotation (Icon(graphics = {Rectangle(extent = {{-100, -100}, {100, 100}})}),
+              Documentation(info = "<html><p>This icon indicates an engine.</p></html>"));
           end Icon;
+          partial model DerivedIcon "an icon built on an icon"
+            extends Icon;
+            annotation (Documentation(info = "<html><p>This icon indicates a big engine.</p></html>"));
+          end DerivedIcon;
           partial model Interface "the interface"
+            Real speed "shaft speed";
             annotation (Documentation(info = "<html><p>Interface: the ports every engine has.</p></html>"));
           end Interface;
           partial model LibraryInterface "the library's interface"
             extends Interface;
-            extends Icon;
+            extends DerivedIcon;
+            Real bus "the bus";
             annotation (Documentation(info = "<html><p>Library interface: adds a bus.</p></html>"));
           end LibraryInterface;
           partial model Template "a template"
@@ -36,6 +43,13 @@ public class DocumentationBasesTests
             annotation (Documentation(info = "<html><p>Plain.</p></html>"));
           end Plain;
           model Short = Template "a short class";
+          model Sibling "another example on the same template"
+            extends Template;
+          end Sibling;
+          model Orphan "extends what is not loaded"
+            extends Template;
+            extends NotLoaded.Base;
+          end Orphan;
         end P;
         """;
 
@@ -56,8 +70,11 @@ public class DocumentationBasesTests
     }
 
     [Fact]
-    public void TheBases_AreGivenNearestFirst_EachLabelled_AndAnIconOnlyBaseIsSkipped()
+    public void TheBases_AreGivenNearestFirst_EachLabelled_AndIconOnlyBasesAreSkipped()
     {
+        // The icons are documented, as MSL's are ("This icon indicates Modelica functions."), and still
+        // skipped: they declare nothing and extend only icons. The template declares nothing either, and
+        // is kept, because what it extends does declare something.
         using var host = new TestHost();
         var doc = Documentation(Load(host), "P.Example");
 
@@ -65,8 +82,68 @@ public class DocumentationBasesTests
         Assert.Equal(["P.Template", "P.LibraryInterface", "P.Interface"], doc.Bases!.Select(b => b.ClassId));
         Assert.Equal("Template: fill in the torque map.", doc.Bases![0].Info);
         Assert.Equal("a template", doc.Bases![0].Description);
-        Assert.Equal(1, doc.UndocumentedBases);   // P.Icon
+        Assert.Equal(2, doc.SkippedBases);   // P.DerivedIcon, P.Icon
         Assert.Null(doc.MoreBases);
+        Assert.Null(doc.UnloadedBases);
+    }
+
+    [Fact]
+    public void ABaseThatIsNotLoaded_IsNamed_SoTheChainDoesNotReadAsComplete()
+    {
+        using var host = new TestHost();
+        var doc = Documentation(Load(host), "P.Orphan");
+
+        Assert.Equal(["NotLoaded.Base, extended by P.Orphan"], doc.UnloadedBases);
+        Assert.Equal("P.Template", doc.Bases![0].ClassId);
+    }
+
+    [Fact]
+    public void APredefinedTypeExtended_IsNotAnUnloadedBase()
+    {
+        // type Length = Real(unit = "m") extends the language's Real, which has no class to resolve to.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage T \"t\"\n  type Length = Real(unit = \"m\") \"a length\";\nend T;\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var doc = ToolAssert.Ok<ClassDocumentationResult>(new ViewTools(host.Libraries).GetClassDocumentation("T.Length", includeBases: true));
+
+        Assert.Null(doc.UnloadedBases);
+    }
+
+    [Fact]
+    public void InACallForSeveralClasses_EachBaseIsGivenOnce()
+    {
+        using var host = new TestHost();
+        var result = Assert.IsType<GetClassResult>(Load(host).GetClass(["P.Example", "P.Sibling"], ["documentation"])
+            .GetAwaiter().GetResult());
+        var first = Assert.IsType<ClassDocumentationResult>(result.Classes[0].Documentation);
+        var second = Assert.IsType<ClassDocumentationResult>(result.Classes[1].Documentation);
+
+        Assert.All(first.Bases!, b => Assert.NotNull(b.Info));
+        Assert.All(second.Bases!, b => Assert.Equal(("P.Example", null), (b.GivenWith, b.Info)));
+        Assert.Equal(first.Bases!.Select(b => b.ClassId), second.Bases!.Select(b => b.ClassId));
+    }
+
+    [Fact]
+    public void AnHtmlBaseCutForSize_IsNotCutInsideATag()
+    {
+        var paragraphs = string.Concat(Enumerable.Range(0, 2_000).Select(i => $"<p>para {i}</p>"));
+        var package = "within;\npackage H \"h\"\n  partial model Big \"big\"\n    Real x;\n" +
+                      $"    annotation (Documentation(info = \"<html>{paragraphs}</html>\"));\n  end Big;\n" +
+                      "  model Leaf \"leaf\"\n    extends Big;\n  end Leaf;\nend H;\n";
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = package });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var doc = ToolAssert.Ok<ClassDocumentationResult>(
+            new ViewTools(host.Libraries).GetClassDocumentation("H.Leaf", format: "html", includeBases: true));
+
+        var cut = Assert.Single(doc.Bases!).Info!;
+        var body = cut[..cut.IndexOf(" ... (cut at", StringComparison.Ordinal)];
+        Assert.True(body.LastIndexOf('<') < body.LastIndexOf('>'), "the cut left a tag open: " + body[^40..]);
     }
 
     [Fact]
@@ -77,7 +154,7 @@ public class DocumentationBasesTests
 
         Assert.Equal("Example: a 2 l engine.", doc.Info);
         Assert.Null(doc.Bases);
-        Assert.Null(doc.UndocumentedBases);
+        Assert.Null(doc.SkippedBases);
     }
 
     [Fact]
@@ -104,7 +181,7 @@ public class DocumentationBasesTests
         // Five bases of 5,000 characters each: two fit under the cap, the nearest first, and the rest are named.
         var text = new string('x', 5_000);
         var bases = string.Join("\n", Enumerable.Range(1, 5).Select(i =>
-            $"  partial model B{i} \"b{i}\"\n" + (i < 5 ? $"    extends B{i + 1};\n" : "") +
+            $"  partial model B{i} \"b{i}\"\n    Real x{i};\n" + (i < 5 ? $"    extends B{i + 1};\n" : "") +
             $"    annotation (Documentation(info = \"<html><p>{text}</p></html>\"));\n  end B{i};"));
         var package = $"within;\npackage Q \"q\"\n{bases}\n  model Leaf \"leaf\"\n    extends B1;\n  end Leaf;\nend Q;\n";
         using var host = new TestHost();
@@ -122,7 +199,7 @@ public class DocumentationBasesTests
     public void ANearestBaseOverTheCapAlone_IsCut_SayingWhereToReadIt()
     {
         var text = new string('y', ViewTools.MaxBaseDocumentationCharacters + 500);
-        var package = "within;\npackage R \"r\"\n  partial model Big \"big\"\n" +
+        var package = "within;\npackage R \"r\"\n  partial model Big \"big\"\n    Real x;\n" +
                       $"    annotation (Documentation(info = \"<html><p>{text}</p></html>\"));\n  end Big;\n" +
                       "  model Leaf \"leaf\"\n    extends Big;\n  end Leaf;\nend R;\n";
         using var host = new TestHost();

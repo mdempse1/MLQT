@@ -276,9 +276,12 @@ public sealed class GuidanceTools
             - 'documentation': the description plus the Documentation(info/revisions) prose;
               documentationFormat 'text' strips HTML, 'html' returns it raw. It also gives each base
               class's description and info, nearest base first, each under its class id - what a class
-              does is often written once, on the interface it extends. Bases with no info (icon classes)
-              are skipped and counted; a long chain is cut at a size cap and the rest are named under
-              moreBases, to read on their own. includeBaseDocumentation=false gives the class alone.
+              does is often written once, on the interface it extends. Bases with no info, and icon
+              classes (which declare nothing and extend only icons), are skipped and counted under
+              skippedBases; a base whose library is not loaded is named under unloadedBases; a long chain
+              is cut at a size cap and the rest are named under moreBases, to read on their own. In a call
+              for several classes a base is given once, and later classes name it with givenWith.
+              includeBaseDocumentation=false gives the class alone.
             - 'layout': each component's placement on the diagram, origin applied.
             - 'resources': the files it loads, resolved, and whether each exists (runs the dependency
               analysis first if it has not run).
