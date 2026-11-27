@@ -186,6 +186,27 @@ public class ReferenceValidationScopeTests
 
         Assert.Equal(library.Count, every.Count);
         Assert.Equal(library.Unresolved, every.Unresolved);
+        Assert.Equal(ViewTools.EveryLibraryLoaded, every.Id);   // said, not a list of every name
+        Assert.Equal("L", library.Id);
+    }
+
+    // A class rebuilt from an encrypted library's help pages is MLQT's declaration, not the vendor's code;
+    // the runner the other checks go through skips it, and with no target this check covers every
+    // library loaded, encrypted ones included.
+    [Fact]
+    public void AClassRecoveredFromAnEncryptedLibrary_IsNotChecked_AndSaidSo()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = ToolAssert.Ok<ReferenceValidationResult>(tools.ValidateClassReferences());
+        host.Libraries.GetModelById("L.Sub.B")!.IsExternalStub = true;
+
+        var after = ToolAssert.Ok<ReferenceValidationResult>(tools.ValidateClassReferences());
+
+        Assert.Equal(before.ClassesChecked - 1, after.ClassesChecked);
+        Assert.DoesNotContain(after.Unresolved, u => u.ClassId == "L.Sub.B");
+        Assert.Contains("Not checked, as their source is not readable: 1 class recovered from encrypted libraries.", after.Note);
+        Assert.DoesNotContain("recovered", before.Note);
     }
 
     [Fact]

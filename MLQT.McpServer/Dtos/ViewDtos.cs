@@ -105,13 +105,25 @@ public sealed record ClassElementsResult(
     IReadOnlyList<ClassElementView> Elements,
     bool RecoveredFromDocumentation = false);
 
-/// <summary>Documentation of a class: its description plus the Documentation annotation strings.</summary>
+/// <summary>
+/// Documentation of a class: its description plus the Documentation annotation strings, and, when asked
+/// for, each base's documentation, nearest base first (<see cref="Bases"/>). <see cref="MoreBases"/>
+/// names the documented bases the size cap left out, and <see cref="UndocumentedBases"/> counts those
+/// with nothing to say - an icon class, an empty partial.
+/// </summary>
 public sealed record ClassDocumentationResult(
     string Id,
     string Format,
     string? Description,
     string? Info,
-    string? Revisions);
+    string? Revisions,
+    IReadOnlyList<BaseDocumentation>? Bases = null,
+    IReadOnlyList<string>? MoreBases = null,
+    int? UndocumentedBases = null);
+
+/// <summary>One base class's documentation in a class's documentation view: what it says, not its
+/// revision history.</summary>
+public sealed record BaseDocumentation(string ClassId, string? Description, string? Info);
 
 /// <summary>A reference that these (best-effort) resolution rules could not resolve to a loaded class.
 /// <c>Line</c> is the line in the class's own source; <c>FilePath</c>/<c>FileLine</c> are where that is on

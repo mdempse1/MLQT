@@ -58,7 +58,7 @@ public sealed class ClassFacadeTools
                  "'interface' (how to use it: parameters, connectors, extends, inherited members included), " +
                  "'elements' (every declaration, with defaults, modifications and comments), 'behavior' " +
                  "(equations and algorithms), 'connections' (its connect equations), 'documentation' (its Info " +
-                 "and revisions), 'layout' (component placements on the diagram) and 'resources' (the files it " +
+                 "and revisions, and its base classes' Info, nearest first), 'layout' (component placements on the diagram) and 'resources' (the files it " +
                  "loads). Each class answers each view as the view's own tool would, an error included; an " +
                  "unknown class answers once, with the nearest ids. At most 20 classes. An answer is kept to about " +
                  "40,000 characters: a class that does not fit says so in 'truncated', and a long source is cut at a " +
@@ -72,6 +72,10 @@ public sealed class ClassFacadeTools
         [Description("For 'interface' and 'elements': include inherited members. Default true.")] bool includeInherited = true,
         [Description("For 'elements': include protected ones. Default false.")] bool includeProtected = false,
         [Description("For 'documentation': 'text' (default) or 'html'.")] string documentationFormat = "text",
+        [Description("For 'documentation': also each base class's documentation, nearest first, labelled with its " +
+                     "class; bases with none are skipped and long chains are cut, naming the rest. Default true; " +
+                     "false for the class's own alone.")]
+        bool includeBaseDocumentation = true,
         [Description("For 'source': the line to start from, when an earlier answer cut a long source short; it applies " +
                      "to every class named, so ask for that class alone. Default 1.")]
         int sourceFromLine = 1)
@@ -108,7 +112,7 @@ public sealed class ClassFacadeTools
                 Elements: View("elements", () => _views.ListClassElements(classId, includeProtected, includeInherited)),
                 Behavior: View("behavior", () => _views.GetClassBehavior(classId)),
                 Connections: View("connections", () => _structure.ListConnections(classId)),
-                Documentation: View("documentation", () => _views.GetClassDocumentation(classId, documentationFormat)),
+                Documentation: View("documentation", () => _views.GetClassDocumentation(classId, documentationFormat, includeBaseDocumentation)),
                 Layout: View("layout", () => _diagram.GetDiagramLayout(classId)),
                 Resources: View("resources", () => _resources.GetClassResources(classId))));
         }

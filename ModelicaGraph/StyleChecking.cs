@@ -393,7 +393,9 @@ public static class StyleChecking
     /// <summary>
     /// Creates a lookup giving the element names a class inherits — the components and nested classes
     /// declared anywhere up its <c>extends</c> chain — and the public components of each of its
-    /// components' types, one level down, for use as spell-check context words.
+    /// components' types, one level down, for use as spell-check context words. The name, and the
+    /// <c>inheritedElementNames</c> parameter it is passed as, are the shipped ones, from before it gave
+    /// the fields too: renaming them would break what builds on this assembly.
     /// Returns null if the graph is null, in which case only a class's own declarations are known.
     ///
     /// <para>Descriptions and documentation routinely name inherited members ("Temperature at

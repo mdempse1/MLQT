@@ -653,6 +653,55 @@ public class ToolLibraryFoldersTests
         Assert.Empty(ToolLibraryFolders.OtherInstalls(release, [release]));
     }
 
+    [Theory]
+    [InlineData(new[] { "C:/D/bin64/dymola.exe" }, "C:/D/bin64/dymola.exe")]
+    [InlineData(new[] { "C:/D/bin64/dymola.exe", "c:/d/BIN64/dymola.exe" }, "C:/D/bin64/dymola.exe")]   // one release, twice
+    [InlineData(new[] { "C:/A/bin64/dymola.exe", "C:/B/bin64/dymola.exe" }, null)]                     // two: the user says which
+    [InlineData(new[] { "", null }, null)]                                                              // unreadable
+    [InlineData(new string[0], null)]
+    public void TheDymolaRunning_IsTheOneReleaseRunning_OrNone(string?[] paths, string? expected)
+    {
+        Assert.Equal(expected, ToolLibraryFolders.TheOneRunning(paths));
+    }
+
+    [Fact]
+    public void TheDymolaRunning_IsAskedOfTheMachine_WithoutThrowing()
+    {
+        // What is running is the machine's; the point is that asking never fails a load.
+        var running = ToolLibraryFolders.RunningDymola();
+        Assert.True(running is null || Path.IsPathRooted(running));
+    }
+
+    [Fact]
+    public void TheInstallsListed_AreTheReleaseFoldersThatHoldDymola_NewestFirst()
+    {
+        using var host = new TestHost();
+        var programFiles = host.NewTempDir();
+        foreach (var release in new[] { "Dymola 2026x Refresh 1", "Dymola 2027x Beta 2" })
+        {
+            Directory.CreateDirectory(Path.Combine(programFiles, release, "bin64"));
+            File.WriteAllText(Path.Combine(programFiles, release, "bin64", "dymola.exe"), "x");
+        }
+        Directory.CreateDirectory(Path.Combine(programFiles, "Dymola 2025x", "bin64"));   // no executable
+
+        var installs = ToolLibraryFolders.InstalledDymolas(windows: true, programFiles, pathVariable: null);
+
+        Assert.Equal(["Dymola 2027x Beta 2", "Dymola 2026x Refresh 1"],
+            installs.Select(i => Path.GetFileName(ToolLibraryFolders.InstallRoot(i))));
+    }
+
+    [Fact]
+    public void TheNewestTaken_WithoutATestsDetection_ListsTheMachinesInstalls()
+    {
+        // No findDymola and no desktop settings, so detection and the listing are the machine's own: a
+        // build agent finds none, and a workstation the newest with the others named after the reason.
+        var folders = ToolLibraryFolders.For("dymola", null, null, _ => null, runningDymola: () => null);
+
+        Assert.True(folders.Install is null
+            ? folders.InstallReason is null
+            : folders.InstallReason!.StartsWith(ToolLibraryFolders.DetectedReason, StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Dymola_NotFoundAnywhere_SaysToPassToolInstall()
     {

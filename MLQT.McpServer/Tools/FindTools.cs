@@ -94,6 +94,6 @@ public sealed class FindTools
             ? new Dtos.ToolError(
                 $"With match '{match}', query is part of a class id, and an id has no spaces, so '{q}' can match no " +
                 "class. To find classes whose description or documentation holds these words, use match 'text'; " +
-                "for a line of code holding them, match 'code'.")
+                "for a line of code holding them as one phrase, match 'code'.")
             : null;
 }

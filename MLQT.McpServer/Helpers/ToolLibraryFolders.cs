@@ -101,40 +101,60 @@ internal static class ToolLibraryFolders
     /// the beta's libraries, and MLQT checked against other MSL and DymolaCommands versions than Dymola
     /// simulated with (a 2026-11 session).
     /// </summary>
-    internal static string? RunningDymola()
+    internal static string? RunningDymola() => TheOneRunning(RunningDymolaPaths());
+
+    /// <summary>
+    /// The one executable <paramref name="paths"/> name, or null when they name none or more than one:
+    /// with two releases running, which one the user means is theirs to say. Unreadable paths are null.
+    /// </summary>
+    internal static string? TheOneRunning(IEnumerable<string?> paths)
     {
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var distinct = paths.Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return distinct.Count == 1 ? distinct[0] : null;
+    }
+
+    // The executable of each process named dymola; null for one this process may not read - another
+    // user's, or one that has just exited.
+    private static IEnumerable<string?> RunningDymolaPaths()
+    {
+        System.Diagnostics.Process[] processes;
         try
         {
-            foreach (var process in System.Diagnostics.Process.GetProcessesByName("dymola"))
-            {
-                using (process)
-                {
-                    try
-                    {
-                        if (process.MainModule?.FileName is { Length: > 0 } file)
-                            paths.Add(file);
-                    }
-                    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
-                    {
-                        // Another user's process, or one that has just exited: not ours to read.
-                    }
-                }
-            }
+            processes = System.Diagnostics.Process.GetProcessesByName("dymola");
         }
         catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
         {
+            yield break;
+        }
+        foreach (var process in processes)
+        {
+            using (process)
+                yield return MainModuleOf(process);
+        }
+    }
+
+    private static string? MainModuleOf(System.Diagnostics.Process process)
+    {
+        try
+        {
+            return process.MainModule?.FileName;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+        {
             return null;
         }
-        return paths.Count == 1 ? paths.First() : null;
     }
 
     // Every Dymola installed on this machine, as the desktop app's detection orders them.
     private static IReadOnlyList<string> InstalledDymolas() =>
-        DymolaSettings.CandidateDymolaPaths(OperatingSystem.IsWindows(),
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                Environment.GetEnvironmentVariable("PATH"), DateTime.Now.Year + 1)
+        InstalledDymolas(OperatingSystem.IsWindows(), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetEnvironmentVariable("PATH"));
+
+    /// <summary>The Dymola executables that exist among the places detection looks, in its order.</summary>
+    internal static IReadOnlyList<string> InstalledDymolas(bool windows, string programFiles, string? pathVariable) =>
+        DymolaSettings.CandidateDymolaPaths(windows, programFiles, pathVariable, DateTime.Now.Year + 1)
             .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
     /// <summary>

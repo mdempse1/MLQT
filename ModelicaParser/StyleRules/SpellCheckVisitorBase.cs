@@ -17,7 +17,9 @@ namespace ModelicaParser.StyleRules;
 /// base class needs the dependency graph, which the parser layer has no access to, so the caller
 /// supplies the lookup. Without one only the class's own declarations are known — and in a library
 /// built on base classes, a description of an inherited port or parameter is exactly the prose that
-/// gets flagged.</para>
+/// gets flagged. The graph's lookup (<c>StyleChecking.CreateInheritedElementNamesCallback</c>) also gives
+/// the public fields of each component's type, which this class does not distinguish: whatever names
+/// the lookup returns are valid in the class.</para>
 /// </summary>
 public abstract class SpellCheckVisitorBase : VisitorWithModelNameTracking
 {

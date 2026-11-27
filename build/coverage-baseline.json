@@ -26,12 +26,6 @@
                                                                                     "bar":  80,
                                                                                     "reason":  "Writes a usage log to disk. The gap is the IO-failure branches, which the logger swallows by design so a logging fault cannot fail a tool call. Reachable with a locked file; not yet written."
                                                                                 },
-                    "MLQT.McpServer::MLQT.McpServer.Tools.SuppressionTools":  {
-                                                                                  "coverage":  78.6,
-                                                                                  "lines":  75,
-                                                                                  "bar":  80,
-                                                                                  "reason":  "Phase 5c\u0027s authoring path. The covered half is the tool contract; the gap is the failure branches (unwritable file, class not found, malformed rule id). Reachable; not yet written."
-                                                                              },
                     "MLQT.Shared::MLQT.Shared.Components.ChangeReview":  {
                                                                              "coverage":  50.5,
                                                                              "lines":  180,
