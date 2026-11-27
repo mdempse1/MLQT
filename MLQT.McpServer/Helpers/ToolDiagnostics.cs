@@ -134,7 +134,7 @@ internal static class ToolDiagnostics
         var where = nearest is null || nearest == root
             ? $"Library '{root}' is loaded, but has no class '{classId}'."
             : $"Library '{root}' is loaded and has '{nearest}', but no class '{classId}' in it - " +
-              $"mlqt_browse with root_class_id '{nearest}' lists what is there.";
+              $"mlqt_browse with root '{nearest}' lists what is there.";
         var elsewhere = sameLeaf.Count > 0 ? " " + SameLeafSentence(sameLeaf, classId) : "";
 
         return new ToolError($"{where}{elsewhere} {SearchTools}");

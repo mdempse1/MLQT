@@ -164,15 +164,28 @@ public class ReferenceValidationScopeTests
     }
 
     [Fact]
-    public void BothOrNeitherScope_IsAnError()
+    public void BothScopes_IsAnError_NamingTheToolsParameters()
     {
         using var host = new TestHost();
         var tools = Load(host);
 
         var both = Assert.IsType<ToolError>(tools.ValidateClassReferences("L.Top", libraryId: "L"));
-        Assert.Contains("not both", both.Error);
-        var neither = Assert.IsType<ToolError>(tools.ValidateClassReferences());
-        Assert.Contains("library_id", neither.Error);
+        Assert.Contains("Give classId or libraryId, not both", both.Error);
+    }
+
+    // With no target mlqt_check promises the libraries loaded, as its style check gives them; the
+    // references check refused instead, naming class_id and library_id, which the tool does not take.
+    [Fact]
+    public void NeitherScope_ChecksEveryLibraryLoaded()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        var every = ToolAssert.Ok<ReferenceValidationResult>(tools.ValidateClassReferences());
+        var library = ToolAssert.Ok<ReferenceValidationResult>(tools.ValidateClassReferences(libraryId: "L"));
+
+        Assert.Equal(library.Count, every.Count);
+        Assert.Equal(library.Unresolved, every.Unresolved);
     }
 
     [Fact]

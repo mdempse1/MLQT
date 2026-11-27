@@ -46,7 +46,7 @@ public sealed class AnalysisFacadeTools
     }
 
     [McpServerTool(Name = "mlqt_check", ReadOnly = true, OpenWorld = false)]
-    [Description("Check Modelica code: one class (classId), a library (libraryId, or nothing for the one " +
+    [Description("Check Modelica code: one class (classId), a library (libraryId, or nothing for every one " +
                  "loaded), or source text that is not in a file (source). checks picks what to run, default " +
                  "['style']: 'style' (the repository's style rules), 'spelling' (descriptions and documentation, " +
                  "with suggestions for each word flagged), 'references' (type names that do not resolve) and " +
@@ -59,7 +59,7 @@ public sealed class AnalysisFacadeTools
                  "This is a style and static check, not a compile check - the simulator does that.")]
     public async Task<object> Check(
         [Description("Optional: one class by full id.")] string? classId = null,
-        [Description("Optional: one library by name or id. With no target at all, the library loaded.")] string? libraryId = null,
+        [Description("Optional: one library by name or id. With no target at all, every library loaded.")] string? libraryId = null,
         [Description("Optional: Modelica source text to check instead of a loaded class.")] string? source = null,
         [Description("Which checks, e.g. ['style', 'spelling']. Default ['style'].")] IReadOnlyList<string>? checks = null,
         [Description("Optional: style rules to use for this call, in the shape mlqt_style_settings returns.")]

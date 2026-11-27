@@ -159,4 +159,38 @@ public class ToolNamingTests
 
         Assert.True(missing.Count == 0, "First sentences without 'Modelica':\n" + string.Join("\n", missing));
     }
+
+    /// <summary>
+    /// No text the server sends spells a parameter in snake_case: the references check said "Give class_id
+    /// ... or library_id", the agent passed both, and the tool refused them, since it takes classId and
+    /// libraryId (2026-11-27). The parameters are camelCase, so the snake_case spelling of each is a
+    /// name no tool takes, and a string literal holding one tells an agent to pass it.
+    /// </summary>
+    [Fact]
+    public void NoMessageSpellsAParameterInSnakeCase()
+    {
+        var snake = (from type in typeof(ClassQueryTools).Assembly.GetTypes()
+                     where type.GetCustomAttribute<McpServerToolTypeAttribute>() is not null
+                     from method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+                     where method.GetCustomAttribute<McpServerToolAttribute>() is not null
+                     from parameter in method.GetParameters()
+                     where parameter.Name is { } name && name.Any(char.IsUpper)
+                     select Regex.Replace(parameter.Name!, "(?<=[a-z0-9])([A-Z])", "_$1").ToLowerInvariant())
+                    .Distinct()
+                    .ToList();
+        Assert.Contains("class_id", snake);   // the guard is looking for the spelling that went wrong
+
+        var root = ToolCountTests.RepositoryRoot();
+        var separator = Path.DirectorySeparatorChar;
+        var found = (from file in Directory.EnumerateFiles(Path.Combine(root, "MLQT.McpServer"), "*.cs", SearchOption.AllDirectories)
+                     where !file.Contains($"{separator}obj{separator}") && !file.Contains($"{separator}bin{separator}")
+                     from line in File.ReadLines(file).Select((text, i) => (text, number: i + 1))
+                     from literal in Regex.Matches(line.text, "\"(?:[^\"\\\\]|\\\\.)*\"").Select(m => m.Value)
+                     from name in snake
+                     where Regex.IsMatch(literal, $@"\b{name}\b")
+                     select $"{Path.GetFileName(file)}:{line.number}: '{name}' in {literal}")
+                    .ToList();
+
+        Assert.True(found.Count == 0, "Parameters spelt in snake_case:\n" + string.Join("\n", found));
+    }
 }

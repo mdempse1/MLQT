@@ -249,12 +249,12 @@ public sealed class ViewTools
         int limit = 100,
         int offset = 0)
     {
+        // The names are mlqt_check's parameters. This said class_id and library_id, which the tool refused,
+        // and with neither it refused too, where mlqt_check promises the libraries loaded, as style and
+        // spelling give them (2026-11-27).
         if (classId is not null && libraryId is not null)
-            return new ToolError("Give class_id or library_id, not both: class_id checks a class and everything " +
-                                 "inside it, library_id a whole library.");
-        if (classId is null && libraryId is null)
-            return new ToolError("Give class_id (a class, or a package to check everything inside it) or " +
-                                 "library_id (a whole library).");
+            return new ToolError("Give classId or libraryId, not both: classId checks a class and everything " +
+                                 "inside it, libraryId a whole library.");
 
         limit = Math.Clamp(limit, 1, MaxReferenceLimit);
         offset = Math.Max(offset, 0);
@@ -273,11 +273,20 @@ public sealed class ViewTools
         {
             if (ToolDiagnostics.RequireLibrary(_libraries, "validating references") is { } noLib)
                 return noLib;
-            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId!);
-            if (error is not null)
-                return error;
-            scopeId = library!.Name;
-            scope = library.ModelIds.Select(_libraries.GetModelById).OfType<ModelNode>();
+            if (libraryId is null)
+            {
+                // Every library loaded, as mlqt_check's style and spelling checks take no target.
+                scopeId = string.Join(", ", _libraries.Libraries.Select(l => l.Name));
+                scope = _libraries.Libraries.SelectMany(l => l.ModelIds).Select(_libraries.GetModelById).OfType<ModelNode>();
+            }
+            else
+            {
+                var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId);
+                if (error is not null)
+                    return error;
+                scopeId = library!.Name;
+                scope = library.ModelIds.Select(_libraries.GetModelById).OfType<ModelNode>();
+            }
         }
 
         var graph = _libraries.CombinedGraph;
