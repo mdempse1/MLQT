@@ -154,17 +154,31 @@ public class NameUseCollectorTests
             model M "uses nothing"
               import A.B.*;
               import C = D.E;
-              Real x "x" annotation (Dialog(enable = q));
+              Real x "x" annotation (Dialog(group = q));
               model Inner
                 Real y = z;
               end Inner;
-              annotation (Icon(graphics = {Line(points = {{0, 0}})}));
+              annotation (Icon(graphics = {Line(points = {{0, 0}}, color = c)}));
             end M;
             """);
 
         Assert.Equal(["A.B.*", "C = D.E"], Of(uses, NameUseKind.Import));
         Assert.Equal(["Real"], Of(uses, NameUseKind.Type));
         Assert.Empty(Of(uses, NameUseKind.Value));
+    }
+
+    [Fact]
+    public void TheAnnotationValuesAToolEvaluates_AreCollected()
+    {
+        var uses = Collect("""
+            model M
+              Real x annotation (Dialog(enable = e), Placement(visible = p));
+              annotation (Icon(graphics = {Line(points = {{0, 0}}, visible = v,
+                thickness = DynamicSelect(s, d))}));
+            end M;
+            """);
+
+        Assert.Equal(["e", "p", "v", "d"], Of(uses, NameUseKind.Value));
     }
 
     [Fact]

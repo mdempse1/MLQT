@@ -45,8 +45,9 @@ internal sealed record NameUse(NameUseKind Kind, string Text, int Line)
 /// </summary>
 /// <remarks>
 /// <para><b>What is left out is what is not looked up in the class's scope.</b> Annotations, whose
-/// content is annotation grammar rather than Modelica names - all but a graphical <c>visible</c>, which a
-/// tool evaluates in the class's scope (<c>WalkAnnotation</c>); descriptions; a named argument's name,
+/// content is annotation grammar rather than Modelica names - all but the values a tool evaluates in the
+/// class's scope: <c>visible</c>, <c>Dialog(enable)</c> and <c>DynamicSelect</c>'s dynamic argument
+/// (<c>WalkAnnotation</c>); descriptions; a named argument's name,
 /// which is the called function's input; an external clause's function, which is a C name; the names a
 /// <c>for</c> loop or a comprehension binds, inside it; and every nested class, which has a node of its
 /// own and is looked up from there.</para>
@@ -226,10 +227,10 @@ internal static class NameUseCollector
         }
 
         /// <summary>
-        /// The value in an annotation that is an expression in the class's scope and is looked up here:
-        /// <c>visible</c>, of a graphical primitive or a <c>Placement</c> (MLS §18.6). The rest is
-        /// annotation grammar - <c>Line</c>, <c>points</c>, <c>color</c> name nothing in the class - and is
-        /// left out, <c>Dialog(enable)</c> and <c>DynamicSelect</c> included for now.
+        /// The values in an annotation that are expressions in the class's scope (MLS §18.6, §18.7):
+        /// <c>visible</c>, of a graphical primitive or a <c>Placement</c>; <c>enable</c>, of a
+        /// <c>Dialog</c>; and the dynamic argument of <c>DynamicSelect</c>. The rest is annotation
+        /// grammar - <c>Line</c>, <c>points</c>, <c>color</c> name nothing in the class - and is left out.
         /// A tool evaluates these, so a name in one that is not there fails there: a
         /// <c>visible = Lib.Lib.Types.Mode.on == mode</c> naming a package that does not exist was
         /// passed, and only the simulator found it (a 2026-11 session).
@@ -247,6 +248,14 @@ internal static class NameUseCollector
                 case modelicaParser.Named_argumentContext named when IsEvaluated(named.IDENT().GetText()):
                     Walk(named.function_argument(), bound);
                     return;
+                case modelicaParser.PrimaryContext primary
+                    when primary.component_reference()?.GetText() == "DynamicSelect"
+                         && primary.function_call_args()?.function_arguments() is { } arguments:
+                    // DynamicSelect(static, dynamic): the static value is for the editor and names nothing;
+                    // the dynamic one is evaluated from the class's variables as it simulates.
+                    foreach (var dynamic in arguments.function_argument())
+                        Walk(dynamic, bound);
+                    return;
                 default:
                     for (var i = 0; i < node.ChildCount; i++)
                         WalkAnnotation(node.GetChild(i), bound);
@@ -254,7 +263,8 @@ internal static class NameUseCollector
             }
         }
 
-        private static bool IsEvaluated(string name) => name is "visible";
+        // `enable` is a Dialog's; no other annotation MLQT knows has an attribute of that name.
+        private static bool IsEvaluated(string name) => name is "visible" or "enable";
 
         private void WalkFor(ParserRuleContext loop, modelicaParser.For_indicesContext indices, Bound bound)
         {

@@ -188,17 +188,47 @@ public class UndeclaredNameAnalyzerTests
     }
 
     [Fact]
-    public void AnnotationsAndNamedArguments_AreNotLookedUp()
+    public void AnnotationGrammarAndNamedArguments_AreNotLookedUp()
     {
+        // Only the values a tool evaluates are names; Dialog's group, a Line's points and color are not.
         OnlyTheControl(Run(Control, Library("""
               function f
                 input Real u;
                 output Real y = u;
               end f;
               model M
-                parameter Boolean use = true annotation (Dialog(enable = notDeclared));
+                parameter Boolean use = true annotation (Dialog(group = "General", enable = use));
                 Real x = f(u = 1);
-                annotation (Icon(graphics = {Line(points = {{0, 0}})}));
+                annotation (Icon(graphics = {Line(points = {{0, 0}}, color = {0, 0, 255},
+                  thickness = DynamicSelect(0.25, if use then 0.5 else 0.25))}));
+              end M;
+            """)));
+    }
+
+    // A tool evaluates a Dialog's enable, and DynamicSelect's dynamic argument, in the class's scope.
+    [Fact]
+    public void ADialogEnable_AndADynamicSelectsDynamicValue_AreLookedUp()
+    {
+        var findings = Run(Library("""
+              model M
+                parameter Boolean use = true annotation (Dialog(enable = notDeclared));
+                Real x;
+                annotation (Icon(graphics = {Text(extent = {{0, 0}, {1, 1}},
+                  textString = DynamicSelect("x", String(missingVar)))}));
+              end M;
+            """));
+
+        Assert.Equal(["missingVar", "notDeclared"], Names(findings).Order().ToList());
+    }
+
+    [Fact]
+    public void ADynamicSelectsStaticValue_IsNotLookedUp()
+    {
+        OnlyTheControl(Run(Control, Library("""
+              model M
+                Real x;
+                annotation (Icon(graphics = {Text(extent = {{0, 0}, {1, 1}},
+                  textString = DynamicSelect(editorOnly, String(x)))}));
               end M;
             """)));
     }
