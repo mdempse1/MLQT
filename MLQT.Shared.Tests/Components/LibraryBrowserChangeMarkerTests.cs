@@ -269,15 +269,20 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
     ///
     /// <para>A retry cannot click twice: bUnit throws before dispatching, when it finds no handler,
     /// so a failed attempt has done nothing. Each attempt finds the chip afresh.</para>
+    ///
+    /// <para>The wait is inside the attempt too. bUnit records the failed click on the renderer as well as
+    /// throwing it, and rethrows it from the next thing that asks the renderer - the retry's wait for the
+    /// chip, which stood before the <c>try</c>. So the retry never ran: the Windows runner failed the
+    /// same way on 2026-11-27, at the wait, with the exception this loop is here to catch.</para>
     /// </remarks>
     private static void ClickFilterChip(IRenderedComponent<LibraryBrowser> browser, int index)
     {
         const int attempts = 5;
         for (var attempt = 1; ; attempt++)
         {
-            browser.WaitForAssertion(() => Assert.True(FilterChips(browser).Length > index));
             try
             {
+                browser.WaitForAssertion(() => Assert.True(FilterChips(browser).Length > index));
                 browser.InvokeAsync(() => browser.FindAll(".mlqt-change-filter .mud-chip")[index].Click())
                     .GetAwaiter().GetResult();
                 return;
