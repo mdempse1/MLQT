@@ -57,6 +57,7 @@ public static class RuleIds
     // The connect equations a class writes (phase 2).
     public const string IncompatibleConnection = "MLQT.Connection.Incompatible";
     public const string DuplicateConnection = "MLQT.Connection.Duplicate";
+    public const string DeepConnectorReference = "MLQT.Connection.DeepReference";
 
     // A class the library marks obsolete, used (phase 2).
     public const string ObsoleteClass = "MLQT.Reference.Obsolete";

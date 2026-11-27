@@ -1,3 +1,4 @@
 #nullable enable
 ModelicaParser.DataTypes.Redeclaration.Modifications.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
 ModelicaParser.DataTypes.Redeclaration.Modifications.init -> void
+const ModelicaParser.StyleRules.RuleIds.DeepConnectorReference = "MLQT.Connection.DeepReference" -> string!
