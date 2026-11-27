@@ -45,7 +45,8 @@ internal sealed record NameUse(NameUseKind Kind, string Text, int Line)
 /// </summary>
 /// <remarks>
 /// <para><b>What is left out is what is not looked up in the class's scope.</b> Annotations, whose
-/// content is annotation grammar rather than Modelica names; descriptions; a named argument's name,
+/// content is annotation grammar rather than Modelica names - all but a graphical <c>visible</c>, which a
+/// tool evaluates in the class's scope (<c>WalkAnnotation</c>); descriptions; a named argument's name,
 /// which is the called function's input; an external clause's function, which is a C name; the names a
 /// <c>for</c> loop or a comprehension binds, inside it; and every nested class, which has a node of its
 /// own and is looked up from there.</para>
@@ -87,9 +88,16 @@ internal static class NameUseCollector
         {
             switch (node)
             {
+                case modelicaParser.AnnotationContext annotation:
+                    WalkAnnotation(annotation, bound);
+                    return;
+
+                case modelicaParser.CommentContext comment:
+                    if (comment.annotation() is { } componentAnnotation)
+                        WalkAnnotation(componentAnnotation, bound);
+                    return;
+
                 case ITerminalNode:
-                case modelicaParser.AnnotationContext:
-                case modelicaParser.CommentContext:
                 case modelicaParser.String_commentContext:
                 case modelicaParser.Inheritence_modificationContext:
                     return;
@@ -147,6 +155,8 @@ internal static class NameUseCollector
                         WalkDeclaration(declaration.declaration(), typeName, bound);
                         if (declaration.condition_attribute() is { } condition)
                             Walk(condition.expression(), bound);
+                        if (declaration.comment() is { } comment)
+                            Walk(comment, bound);
                     }
                     return;
 
@@ -214,6 +224,37 @@ internal static class NameUseCollector
                     return;
             }
         }
+
+        /// <summary>
+        /// The value in an annotation that is an expression in the class's scope and is looked up here:
+        /// <c>visible</c>, of a graphical primitive or a <c>Placement</c> (MLS §18.6). The rest is
+        /// annotation grammar - <c>Line</c>, <c>points</c>, <c>color</c> name nothing in the class - and is
+        /// left out, <c>Dialog(enable)</c> and <c>DynamicSelect</c> included for now.
+        /// A tool evaluates these, so a name in one that is not there fails there: a
+        /// <c>visible = Lib.Lib.Types.Mode.on == mode</c> naming a package that does not exist was
+        /// passed, and only the simulator found it (a 2026-11 session).
+        /// </summary>
+        private void WalkAnnotation(IParseTree node, Bound bound)
+        {
+            switch (node)
+            {
+                case ITerminalNode:
+                    return;
+                case modelicaParser.Element_modificationContext element
+                    when IsEvaluated(element.name().GetText()) && element.modification()?.modification_expression()?.expression() is { } value:
+                    Walk(value, bound);
+                    return;
+                case modelicaParser.Named_argumentContext named when IsEvaluated(named.IDENT().GetText()):
+                    Walk(named.function_argument(), bound);
+                    return;
+                default:
+                    for (var i = 0; i < node.ChildCount; i++)
+                        WalkAnnotation(node.GetChild(i), bound);
+                    return;
+            }
+        }
+
+        private static bool IsEvaluated(string name) => name is "visible";
 
         private void WalkFor(ParserRuleContext loop, modelicaParser.For_indicesContext indices, Bound bound)
         {

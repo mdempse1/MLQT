@@ -51,16 +51,23 @@ public static partial class TextExtractor
     /// Words are delimited by whitespace and punctuation. Underscores and digits are
     /// kept as part of the word so that identifiers like "transformationMatrixFrom_nxy"
     /// remain intact and can be skipped by ShouldSkipWord.
+    /// A web address, a host name and an e-mail address are not words at all, and nothing in one is
+    /// returned: split at its dots and slashes, a link written out in documentation gave the host's
+    /// name, "com" and "md" as misspellings.
     /// </summary>
     public static IEnumerable<(string word, int charOffset)> TokenizeToWords(string text)
     {
         if (string.IsNullOrEmpty(text))
             yield break;
 
+        var notProse = new bool[text.Length];
+        foreach (Match address in AddressRegex().Matches(text))
+            Array.Fill(notProse, true, address.Index, address.Length);
+
         int start = -1;
         for (int i = 0; i <= text.Length; i++)
         {
-            bool isWordChar = i < text.Length &&
+            bool isWordChar = i < text.Length && !notProse[i] &&
                 (char.IsLetterOrDigit(text[i]) || text[i] == '\'' || text[i] == '_');
 
             if (isWordChar && start < 0)
@@ -201,6 +208,16 @@ public static partial class TextExtractor
         }
         return count;
     }
+
+    // What is an address rather than prose: anything with a scheme (https://, modelica://, file:///), a
+    // host starting www., an e-mail address, or a dotted host name ending in a common top-level domain,
+    // with whatever path follows it. Trailing punctuation that ends the sentence is left out.
+    [GeneratedRegex("""
+        (?:\b[A-Za-z][A-Za-z0-9+.-]*://|\bwww\.)[^\s<>"']*[^\s<>"'.,;:!?)\]]
+        |\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+
+        |\b(?:[A-Za-z0-9-]+\.)+(?-i:com|org|net|edu|gov|int|io|info|biz|eu|uk|de|fr|it|es|nl|se|ch|at|be|jp|cn|us)\b(?:/[^\s<>"']*[^\s<>"'.,;:!?)\]])?
+        """, RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace)]
+    private static partial Regex AddressRegex();
 
     [GeneratedRegex(@"<(code|pre)[^>]*>.*?</\1>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex CodeBlockRegex();

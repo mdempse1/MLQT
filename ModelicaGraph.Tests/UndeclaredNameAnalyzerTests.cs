@@ -203,6 +203,29 @@ public class UndeclaredNameAnalyzerTests
             """)));
     }
 
+    // A tool evaluates a graphic's visible in the class's scope: a Line shown by a mode, written against
+    // a Types package path that does not exist, passed MLQT and failed in the simulator (a 2026-11 session).
+    [Fact]
+    public void AGraphicsVisibleExpression_IsLookedUp_InTheClassAndOnAComponent()
+    {
+        var findings = Run(Control, Library("""
+              type Mode = enumeration(on, off);
+              model M
+                parameter Mode mode = Mode.on;
+                Real x annotation (Placement(visible = showX, transformation(extent = {{0, 0}, {1, 1}})));
+                annotation (Icon(graphics = {
+                  Line(points = {{0, 0}, {1, 1}}, visible = mode == P.P.Mode.on),
+                  Line(points = {{0, 0}, {1, 0}}, visible = mode == Mode.off)}));
+              end M;
+            """));
+
+        var names = Names(findings);
+        Assert.True(names.Count == 3, string.Join(", ", findings.Select(f => $"{f.ElementPath}@{f.LineNumber}")));
+        Assert.Contains("undeclaredControl", names);
+        Assert.Contains("showX", names);
+        Assert.Contains(findings, f => f.ElementPath!.StartsWith("P.P", StringComparison.Ordinal) && f.LineNumber == 5);
+    }
+
     [Fact]
     public void AnExternalFunctionName_IsNotLookedUp()
     {

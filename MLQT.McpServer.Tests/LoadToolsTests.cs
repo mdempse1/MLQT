@@ -57,6 +57,7 @@ public class LoadToolsTests
         {
             DesktopSettingsDirectory = null,
             Environment_ = key => Environment.GetValueOrDefault(key),
+            RunningDymola_ = null,   // the machine's Dymola, running or not, is no part of a test
         };
 
         public async Task<LoadResult> Load(params string[] relative) => await LoadWith(DymolaExe, relative);
@@ -201,6 +202,30 @@ public class LoadToolsTests
         Assert.Empty(res.Replaced);
         Assert.Equal(w.Path_("Dymola/Modelica/Library/Base 1.0"),
             w.Host.Libraries.Libraries.Single(l => l.Name == "Base").SourcePath);
+    }
+
+    [Fact]
+    public async Task ALibraryAScriptImportedFromTheInstall_IsReplacedWhenTheInstallChanges()
+    {
+        // The script names the library, but the install picks the copy: a reload naming the install the
+        // project uses kept the beta's MSL, as explicit (a 2026-11 session).
+        using var w = new World();
+        var script = Path.Combine(w.Root, "startup.mos");
+        File.WriteAllText(script, $"openModel(\"{w.Path_("Project/App/package.mo").Replace('\\', '/')}\");\nimport Base;\n");
+        async Task<LoadResult> LoadScript(string exe) =>
+            ToolAssert.Ok<LoadResult>(await w.Tools().Load(script: script, tool: "dymola", toolInstall: exe));
+
+        var first = await LoadScript(w.DymolaExe);
+        Assert.Equal("explicit", Named(first, "Base").Origin);
+        var second = w.SecondInstall(withBase: true);
+
+        var res = await LoadScript(second);
+
+        Assert.Empty(res.Errors);
+        Assert.Equal(w.Path_("Dymola2/Modelica/Library/Base 1.0"),
+            w.Host.Libraries.Libraries.Single(l => l.Name == "Base").SourcePath);
+        Assert.Contains(res.Replaced, r => r.Name == "Base" && r.NewPath == w.Path_("Dymola2/Modelica/Library/Base 1.0"));
+        Assert.Equal("already loaded", Named(res, "App").FoundBy);     // opened by path: stays as it was
     }
 
     [Fact]
@@ -559,6 +584,52 @@ public class ToolLibraryFoldersTests
         Assert.Single(folders.Folders);
         Assert.Contains("the newest found", folders.Note);
         Assert.Equal(ToolLibraryFolders.DetectedReason, folders.InstallReason);
+    }
+
+    // A 2027x beta installed beside the 2026x Refresh 1 a project used was taken as the newest, and MLQT
+    // checked against the beta's MSL and DymolaCommands (a 2026-11 session).
+
+    [Fact]
+    public void TheDymolaRunning_WinsOverTheNewestInstalled()
+    {
+        using var host = new TestHost();
+        var newest = Install(host, "bin64/dymola.exe", "Modelica/Library");
+        var running = Install(host, "bin64/dymola.exe", "Modelica/Library");
+
+        var folders = ToolLibraryFolders.For("dymola", null, null, _ => null, findDymola: () => newest,
+            runningDymola: () => running);
+
+        Assert.Equal(ToolLibraryFolders.InstallRoot(running), folders.Install);
+        Assert.Equal(ToolLibraryFolders.RunningReason, folders.InstallReason);
+    }
+
+    [Fact]
+    public void TheDymolaGiven_WinsOverTheOneRunning()
+    {
+        using var host = new TestHost();
+        var given = Install(host, "bin64/dymola.exe", "Modelica/Library");
+
+        var folders = ToolLibraryFolders.For("dymola", given, null, _ => null, findDymola: () => "",
+            runningDymola: () => Install(host, "bin64/dymola.exe"));
+
+        Assert.Equal(ToolLibraryFolders.InstallRoot(given), folders.Install);
+    }
+
+    [Fact]
+    public void TheNewestTaken_NamesTheOtherInstalls_AndABeta()
+    {
+        using var host = new TestHost();
+        var root = host.NewTempDir();
+        var beta = Path.Combine(root, "Dymola 2027x Beta 2", "bin64", "dymola.exe");
+        var release = Path.Combine(root, "Dymola 2026x Refresh 1", "bin64", "dymola.exe");
+
+        var folders = ToolLibraryFolders.For("dymola", null, null, _ => null, findDymola: () => beta,
+            allDymola: () => [beta, release]);
+
+        Assert.StartsWith(ToolLibraryFolders.DetectedReason, folders.InstallReason);
+        Assert.Contains($"Also installed: '{Path.Combine(root, "Dymola 2026x Refresh 1")}'", folders.InstallReason);
+        Assert.Contains("It is a beta release", folders.InstallReason);
+        Assert.Empty(ToolLibraryFolders.OtherInstalls(release, [release]));
     }
 
     [Fact]

@@ -317,8 +317,11 @@ public sealed class GuidanceTools
               mlqt_get_class's source view. If it is not found as written, it is looked for again ignoring
               white space and line breaks (a format reflows a class) - strings excepted - and then allowing
               for the annotations the source view hides by default: `Real x;` from the view finds the file's
-              `Real x annotation (Placement(...));`, and the annotation is kept where it was. The answer notes
-              either. To change an annotation itself, read with includeAnnotations=true and quote it. To change
+              `Real x annotation (Placement(...));`, and the annotation is kept where it was; the answer notes
+              that. When old is still not found, the error says where it stops matching the class, or names
+              the comment inside that text which old left out. A replace after remove_component or
+              set_component_placement in the same call fails if that operation rewrote its text: put the
+              replace first. To change an annotation itself, read with includeAnnotations=true and quote it. To change
               a declaration, name it (set_component_modifier, rename_component) rather than quote it. An edit that
               would declare a name twice, or again where a base already declares it, is refused.
             - The element operations, each with its fields:

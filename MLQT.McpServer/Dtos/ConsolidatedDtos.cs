@@ -5,7 +5,8 @@ namespace MLQT.McpServer.Dtos;
 public sealed record SessionStatus(IReadOnlyList<LibrarySummary> Libraries, IReadOnlyList<RepositorySummary> Repositories);
 
 /// <summary>One class as <c>mlqt_get_class</c> read it: each view asked for, holding what that view's own
-/// tool answers (an error included), or <see cref="Error"/> alone when there is no such class.</summary>
+/// tool answers (an error included), or <see cref="Error"/> alone when there is no such class.
+/// <see cref="Truncated"/> says what the answer's size budget left out of it, and how to ask for that.</summary>
 public sealed record ClassViews(
     string ClassId,
     string? Error = null,
@@ -17,7 +18,8 @@ public sealed record ClassViews(
     object? Connections = null,
     object? Documentation = null,
     object? Layout = null,
-    object? Resources = null);
+    object? Resources = null,
+    string? Truncated = null);
 
 /// <summary>What <c>mlqt_get_class</c> read: each class asked for, in order.</summary>
 public sealed record GetClassResult(IReadOnlyList<ClassViews> Classes);

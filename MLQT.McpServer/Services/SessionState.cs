@@ -55,6 +55,15 @@ public sealed class SessionState
     /// </summary>
     internal string? SearchInstall { get; set; }
 
+    /// <summary>
+    /// The explicit libraries a startup script found by name in the tool install's own library folder -
+    /// <c>import Modelica</c>, <c>openModelFile("Modelica")</c> - by id. The script named the library,
+    /// but the install chose the copy, so a load naming another install replaces them as it does what a
+    /// search found. Counted as explicit, they stayed: a reload with the 2026x install kept the MSL and
+    /// DymolaCommands the first load had taken from a 2027x beta (a 2026-11 session).
+    /// </summary>
+    internal HashSet<string> FoundInTheInstall { get; } = new(StringComparer.Ordinal);
+
     // ---- When each library came in (B505) -------------------------------------------------------
     //
     // A server outlives a conversation - a client keeps it across /clear and new sessions - and can be
@@ -108,6 +117,7 @@ public sealed class SessionState
     internal void Reset()
     {
         LibraryOrigins.Clear();
+        FoundInTheInstall.Clear();
         SearchInstall = null;
         DependenciesAnalyzed = false;
         ResourcesAnalyzed = false;

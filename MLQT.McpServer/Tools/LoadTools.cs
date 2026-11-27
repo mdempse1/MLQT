@@ -75,7 +75,8 @@ public sealed class LoadTools
         if (tool is not null && tool.Trim().ToLowerInvariant() is not ("" or "none" or "dymola" or "openmodelica"))
             return new ToolError($"tool must be 'dymola', 'openmodelica' or 'none', not '{tool}'.");
 
-        var folders = ToolLibraryFolders.For(tool, toolInstall, DesktopSettingsDirectory, Environment_);
+        var folders = ToolLibraryFolders.For(tool, toolInstall, DesktopSettingsDirectory, Environment_,
+            runningDymola: RunningDymola_);
         var loader = new DependencyLoader(_libraries, _repositories, _session, Environment_)
         {
             LoadRepository = async (path, loadLibraries) => await _sessionTools.LoadRepository(path, loadLibraries: loadLibraries),
@@ -83,6 +84,7 @@ public sealed class LoadTools
         };
 
         var all = new List<string>();
+        var foundInTheInstall = new List<string>();
         ScriptReadingResult? reading = null;
         if (!string.IsNullOrWhiteSpace(script))
         {
@@ -98,6 +100,12 @@ public sealed class LoadTools
                 read.Unresolved.Select(l => new ScriptLineItem(l.File, l.Line, l.Text, l.Reason)).ToList(),
                 read.CurrentDirectory, read.ModelicaPathSet, read.ModelicaPathAdded);
             all.AddRange(read.Loads.Select(l => l.Path));
+            // Opened by name, and found in the install's own folder: the install chose that copy.
+            foundInTheInstall.AddRange(read.Loads
+                .Where(l => l.Via.EndsWith("import", StringComparison.Ordinal) ||
+                            l.Via.Contains("openModelFile by name", StringComparison.Ordinal))
+                .Where(l => folders.Folders.Any(f => IsUnder(l.Path, f)))
+                .Select(l => l.Path));
             loader.AddSearchFolders(read.ModelicaPathAdded, "the startup script's ModelicaPath");
             if (read.ModelicaPathSet is { } set)
                 loader.AddSearchFolders(set.Split(Path.PathSeparator), "the startup script's ModelicaPath");
@@ -105,7 +113,17 @@ public sealed class LoadTools
         if (paths is not null)
             all.AddRange(paths);
 
-        var result = await loader.LoadAsync(all, withDependencies && !discoverOnly, replace, folders);
+        var result = await loader.LoadAsync(all, withDependencies && !discoverOnly, replace, folders, foundInTheInstall);
         return result with { Script = reading };
+    }
+
+    /// <summary>The Dymola running now, asked when no install is named. A test sets it.</summary>
+    internal Func<string?>? RunningDymola_ { get; set; } = ToolLibraryFolders.RunningDymola;
+
+    private static bool IsUnder(string path, string folder)
+    {
+        var full = Path.GetFullPath(path);
+        var root = Path.GetFullPath(folder).TrimEnd('/', '\\') + Path.DirectorySeparatorChar;
+        return full.StartsWith(root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 }

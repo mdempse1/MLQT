@@ -14,8 +14,9 @@ internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Instal
 /// </summary>
 /// <remarks>
 /// <para><b>Which install.</b> A machine often has many Dymola releases, and the one in use is not
-/// necessarily the newest. So the install is, in order: the one the caller names; the one set in the
-/// desktop app's External Tools settings; the newest found by the detection the app already uses.</para>
+/// necessarily the newest. So the install is, in order: the one the caller names; for Dymola, the one
+/// running now; the one set in the desktop app's External Tools settings; the newest found by the
+/// detection the app already uses, with the others installed named beside it.</para>
 /// <para><b>Dymola</b> keeps its libraries in <c>&lt;install&gt;/Modelica/Library</c>, which it puts first in
 /// its MODELICAPATH. <b>OpenModelica</b> keeps them in the user's library folder
 /// (<c>%AppData%/.openmodelica/libraries</c>, <c>~/.openmodelica/libraries</c>), or where
@@ -31,8 +32,13 @@ internal static class ToolLibraryFolders
     /// unless a test says otherwise: what it finds is the machine's, so a test on a machine with Dymola and
     /// one on a build agent without it would otherwise run different code.</param>
     /// <param name="findOmc">The same for OpenModelica, <see cref="OpenModelicaSettings.FindInstalledOmc"/>.</param>
+    /// <param name="runningDymola">The Dymola running now, asked after the caller's choice and before the
+    /// desktop settings; null asks nothing. <c>mlqt_load</c> passes <see cref="RunningDymola"/>.</param>
+    /// <param name="allDymola">Every Dymola installed, for naming the others when the newest is taken;
+    /// by default the machine's, unless a test gave <paramref name="findDymola"/>.</param>
     public static ToolFolders For(string? tool, string? toolInstall, string? desktopSettingsDirectory,
-        Func<string, string?> environment, Func<string>? findDymola = null, Func<string>? findOmc = null)
+        Func<string, string?> environment, Func<string>? findDymola = null, Func<string>? findOmc = null,
+        Func<string?>? runningDymola = null, Func<IReadOnlyList<string>>? allDymola = null)
     {
         switch (tool?.Trim().ToLowerInvariant())
         {
@@ -40,8 +46,10 @@ internal static class ToolLibraryFolders
                 return new ToolFolders([], null, null);
             case "dymola":
             {
-                var (install, from, reason) = Choose(toolInstall, () => DesktopDymola(desktopSettingsDirectory),
-                    findDymola ?? DymolaSettings.FindInstalledDymola);
+                var (install, from, reason) = Choose(toolInstall, runningDymola ?? (() => null),
+                    () => DesktopDymola(desktopSettingsDirectory), findDymola ?? DymolaSettings.FindInstalledDymola);
+                if (reason == DetectedReason && install is not null)
+                    reason += OtherInstalls(install, (allDymola ?? (findDymola is null ? InstalledDymolas : () => []))());
                 if (install is null)
                     return new ToolFolders([], null, "No Dymola install was found; pass toolInstall with its folder.");
                 var root = InstallRoot(install);
@@ -59,7 +67,7 @@ internal static class ToolLibraryFolders
                     folders.Add(OperatingSystem.IsWindows()
                         ? Path.Combine(environment("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".openmodelica", "libraries")
                         : Path.Combine(environment("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openmodelica", "libraries"));
-                var (install, from, reason) = Choose(toolInstall, () => DesktopOmc(desktopSettingsDirectory),
+                var (install, from, reason) = Choose(toolInstall, () => null, () => DesktopOmc(desktopSettingsDirectory),
                     findOmc ?? OpenModelicaSettings.FindInstalledOmc);
                 string? root = null;
                 if (install is not null)
@@ -83,11 +91,79 @@ internal static class ToolLibraryFolders
     internal const string DetectedReason =
         "the newest found on this machine; if the simulator is running another release, pass toolInstall";
 
-    // The caller's choice, else the desktop settings, else detection, saying which it was.
-    private static (string? Install, string From, string? Reason) Choose(string? given, Func<string?> desktop, Func<string> detect)
+    /// <summary>What the answer says when the install is the one running.</summary>
+    internal const string RunningReason = "the one running now";
+
+    /// <summary>
+    /// The Dymola running on this machine, or null when none is, or more than one release is, or its path
+    /// cannot be read. The release running is the one the user simulates with, which the newest installed
+    /// need not be: with a 2027x beta installed beside the 2026x Refresh 1 a project used, the search took
+    /// the beta's libraries, and MLQT checked against other MSL and DymolaCommands versions than Dymola
+    /// simulated with (a 2026-11 session).
+    /// </summary>
+    internal static string? RunningDymola()
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var process in System.Diagnostics.Process.GetProcessesByName("dymola"))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.MainModule?.FileName is { Length: > 0 } file)
+                            paths.Add(file);
+                    }
+                    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+                    {
+                        // Another user's process, or one that has just exited: not ours to read.
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
+        {
+            return null;
+        }
+        return paths.Count == 1 ? paths.First() : null;
+    }
+
+    // Every Dymola installed on this machine, as the desktop app's detection orders them.
+    private static IReadOnlyList<string> InstalledDymolas() =>
+        DymolaSettings.CandidateDymolaPaths(OperatingSystem.IsWindows(),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetEnvironmentVariable("PATH"), DateTime.Now.Year + 1)
+            .Where(File.Exists)
+            .ToList();
+
+    /// <summary>
+    /// The installs not taken, when the newest was: a machine with several releases is the case where the
+    /// newest is most likely the wrong one, and a beta most of all, so the answer names them and says so.
+    /// </summary>
+    internal static string OtherInstalls(string taken, IReadOnlyList<string> all)
+    {
+        var root = InstallRoot(taken);
+        var others = all.Select(InstallRoot)
+            .Where(r => !string.Equals(r, root, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var beta = Path.GetFileName(root).Contains("beta", StringComparison.OrdinalIgnoreCase)
+            ? " It is a beta release; a project is more often simulated with a released one."
+            : string.Empty;
+        return others.Count == 0
+            ? (beta.Length > 0 ? "." + beta : string.Empty)
+            : $". Also installed: {string.Join(", ", others.Select(o => $"'{o}'"))}.{beta}";
+    }
+
+    // The caller's choice, else the Dymola running, else the desktop settings, else detection, saying which.
+    private static (string? Install, string From, string? Reason) Choose(string? given, Func<string?> running,
+        Func<string?> desktop, Func<string> detect)
     {
         if (!string.IsNullOrWhiteSpace(given))
             return (given, $"'{given}', as given", "as given");
+        if (running() is { Length: > 0 } now)
+            return (now, $"'{now}', the one running now", RunningReason);
         if (desktop() is { Length: > 0 } fromSettings)
             return (fromSettings, $"'{fromSettings}', from the desktop app's External Tools settings",
                 "from the desktop app's External Tools settings");
