@@ -27,6 +27,30 @@ public class SpellingCorrectorTests
         Assert.Contains("the example signal", corrected);
     }
 
+    // The spell check skips addresses, so a word inside one was never reported, and correcting the same
+    // word elsewhere must not rewrite the link.
+    [Fact]
+    public void ReplaceWordInStrings_LeavesAnAddressInADescriptionAlone()
+    {
+        var code = "model Foo \"see www.exmaple.com/exmaple for the exmaple\"\nend Foo;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "exmaple", "example");
+
+        Assert.Equal(1, count);
+        Assert.Contains("see www.exmaple.com/exmaple for the example", corrected);
+    }
+
+    [Fact]
+    public void ReplaceWordInStrings_LeavesAnAddressWrittenOutInDocumentationAlone()
+    {
+        var code = "model Foo\n  annotation (Documentation(info=\"<html><p>An exmaple: https://exmaple.org/exmaple.md</p></html>\"));\nend Foo;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "exmaple", "example");
+
+        Assert.Equal(1, count);
+        Assert.Contains("An example: https://exmaple.org/exmaple.md", corrected);
+    }
+
     [Fact]
     public void ReplaceWordInStrings_IsCaseSensitive()
     {

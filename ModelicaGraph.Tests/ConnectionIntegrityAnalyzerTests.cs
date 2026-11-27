@@ -350,6 +350,141 @@ public class ConnectionIntegrityAnalyzerTests
             Check(model, new StyleCheckingSettings { CheckDuplicateConnections = true }).Select(f => f.RuleId));
     }
 
+    // --- MLQT.Connection.DeepReference ---
+
+    /// <summary>A component with an expandable bus holding a sub-bus, as the report that asked for the rule had.</summary>
+    private const string Buses = """
+          expandable connector DriverBus
+            Real x;
+          end DriverBus;
+          expandable connector ControlBus
+            DriverBus driverBus;
+          end ControlBus;
+          model Aero
+            ControlBus controlBus;
+            Lib.TwoPin r;
+          end Aero;
+          block Controller
+            ControlBus controlBus;
+          end Controller;
+          record Data
+            Real k;
+          end Data;
+        """;
+
+    private static readonly StyleCheckingSettings DeepOnly = new() { CheckDeepConnectorReferences = true };
+
+    private static List<Finding> CheckDeep(string components, string equations) => Check($$"""
+        model Test
+        {{Buses}}
+        {{components}}
+        equation
+        {{equations}}
+        end Test;
+        """, DeepOnly);
+
+    [Fact]
+    public void ReachingThroughAComponentsBusIntoASubBus_IsReported()
+    {
+        // The case Dymola refused: aero is a model, so connect may name aero.controlBus and no deeper.
+        var finding = Assert.Single(CheckDeep(
+            "  Aero aero;\n  Lib.Source button;",
+            "  connect(button.y, aero.controlBus.driverBus.x);"));
+
+        Assert.Equal(RuleIds.DeepConnectorReference, finding.RuleId);
+        Assert.Equal("Test", finding.ModelId);
+        Assert.Equal("aero.controlBus.driverBus.x", finding.ElementPath);
+        Assert.Equal("button.y", finding.Discriminator);
+        Assert.StartsWith(
+            "connect(button.y, aero.controlBus.driverBus.x) reaches through component aero (Test.Aero) " +
+            "into aero.controlBus.driverBus.x.", finding.Message);
+        Assert.Contains("Connect aero.controlBus to a connector of this class", finding.Message);
+    }
+
+    [Theory]
+    [InlineData("aero.controlBus.newSignal")]        // an undeclared bus member, three names
+    [InlineData("aero.r.p")]                         // a connector of a component of a component
+    [InlineData("aero.r.p.v")]
+    [InlineData("aeros[2].controlBus.driverBus")]    // through an element of an array of components
+    [InlineData("controller.controlBus.driverBus")]  // a block is a component as a model is
+    public void AnyArgumentPastAComponentsConnector_IsReported(string port)
+    {
+        var finding = Assert.Single(CheckDeep(
+            "  Aero aero;\n  Aero aeros[2];\n  Controller controller;\n  Lib.Source button;",
+            $"  connect(button.y, {port});"));
+
+        Assert.Equal(ConnectionIntegrityAnalyzer.Normalised(port), finding.ElementPath);
+    }
+
+    [Theory]
+    [InlineData("aero.controlBus")]                  // m.c
+    [InlineData("bus.driverBus.x")]                  // c1.c2.c3, through a connector of the class
+    [InlineData("bus.anything.atAll")]
+    [InlineData("button.y")]
+    [InlineData("u")]
+    public void TheFormsTheLanguageAllows_AreNotReported(string port)
+    {
+        Assert.Empty(CheckDeep(
+            "  Aero aero;\n  ControlBus bus;\n  Lib.Source button;\n  Lib.RealInput u;",
+            $"  connect(button.y, {port});"));
+    }
+
+    [Theory]
+    [InlineData("nowhere.controlBus.driverBus.x")]   // MLQT.Reference.Undeclared's to report
+    [InlineData("data.k.x")]                         // a record holds no connectors: not this rule's
+    [InlineData("Lib.Aero.controlBus.x")]            // a class-qualified name is no component of the class
+    [InlineData(".aero.controlBus.driverBus.x")]
+    [InlineData("other.controlBus.driverBus.x")]     // a type MLQT cannot see
+    public void WhatTheRuleCannotJudge_IsNotReported(string port)
+    {
+        Assert.Empty(CheckDeep(
+            "  Aero aero;\n  Data data;\n  Missing.Thing other;\n  Lib.Source button;",
+            $"  connect(button.y, {port});"));
+    }
+
+    [Fact]
+    public void AnInheritedComponent_IsAComponentOfTheClass()
+    {
+        Assert.Single(Check("""
+            model Test
+              model Holder
+                Lib.TwoPin r;
+              end Holder;
+              extends Holder;
+              Lib.TwoPin s;
+            equation
+              connect(s.p, r.p.v);
+            end Test;
+            """, DeepOnly));
+    }
+
+    [Fact]
+    public void BothArguments_AreJudged_EachWithAFingerprintOfItsOwn()
+    {
+        var findings = CheckDeep(
+            "  parameter Boolean on = true;\n  Aero a;\n  Aero b;",
+            """
+              connect(a.controlBus.driverBus, b.controlBus.driverBus);
+              connect(a.controlBus.driverBus, b.r.n);
+              for i in 1:2 loop
+                connect(a.controlBus.driverBus, b.r.n);
+              end for;
+            """);
+
+        Assert.Equal(6, findings.Count);
+        Assert.Equal(6, findings.Select(f => f.Fingerprint).Distinct().Count());
+    }
+
+    [Fact]
+    public void DeepReference_IsOffByDefault_AndOnlyItReportsWhenOnlyItIsOn()
+    {
+        Assert.False(RuleCatalog.IsEnabledByDefault(RuleIds.DeepConnectorReference));
+        var model = Model("  Lib.TwoPin r;\n  Lib.Heater h;", "  connect(r.p, h.port);\n  connect(r.p, h.port);\n  connect(r.p, h.p.v);");
+
+        Assert.Empty(Check(model, new StyleCheckingSettings()));
+        Assert.Equal([RuleIds.DeepConnectorReference], Check(model, DeepOnly).Select(f => f.RuleId));
+    }
+
     [Theory]
     [InlineData(" a . b [ 1 ] ", "a.b[1]")]
     [InlineData("a.'quoted name'", "a.'quoted name'")]

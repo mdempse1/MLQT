@@ -14,6 +14,7 @@ namespace MLQT.McpServer.Services;
 [JsonSerializable(typeof(CheckResult))]
 [JsonSerializable(typeof(ClassBehaviorResult))]
 [JsonSerializable(typeof(ClassDocumentationResult))]
+[JsonSerializable(typeof(BaseDocumentation))]
 [JsonSerializable(typeof(ClassToWrite))]
 [JsonSerializable(typeof(IReadOnlyList<ClassToWrite>))]
 [JsonSerializable(typeof(ClassEditOperation))]

@@ -188,19 +188,95 @@ public class UndeclaredNameAnalyzerTests
     }
 
     [Fact]
-    public void AnnotationsAndNamedArguments_AreNotLookedUp()
+    public void AnnotationGrammarAndNamedArguments_AreNotLookedUp()
     {
+        // Only the values a tool evaluates are names; Dialog's group, a Line's points and color are not.
         OnlyTheControl(Run(Control, Library("""
               function f
                 input Real u;
                 output Real y = u;
               end f;
               model M
-                parameter Boolean use = true annotation (Dialog(enable = notDeclared));
+                parameter Boolean use = true annotation (Dialog(group = "General", enable = use));
                 Real x = f(u = 1);
-                annotation (Icon(graphics = {Line(points = {{0, 0}})}));
+                annotation (Icon(graphics = {Line(points = {{0, 0}}, color = {0, 0, 255},
+                  thickness = DynamicSelect(0.25, if use then 0.5 else 0.25))}));
               end M;
             """)));
+    }
+
+    // A tool evaluates a Dialog's enable, and DynamicSelect's dynamic argument, in the class's scope.
+    [Fact]
+    public void ADialogEnable_AndADynamicSelectsDynamicValue_AreLookedUp()
+    {
+        var findings = Run(Library("""
+              model M
+                parameter Boolean use = true annotation (Dialog(enable = notDeclared));
+                Real x;
+                annotation (Icon(graphics = {Text(extent = {{0, 0}, {1, 1}},
+                  textString = DynamicSelect("x", String(missingVar)))}));
+              end M;
+            """));
+
+        Assert.Equal(["missingVar", "notDeclared"], Names(findings).Order().ToList());
+    }
+
+    [Fact]
+    public void AnAnnotationValueInAPartialClass_IsLeftToTheClassExtendingIt()
+    {
+        // A partial icon class showing a line by a parameter only its extenders declare, as Buildings'
+        // RefAngleConversion does with ground_1 and ground_2. An equation's name is still judged there.
+        var findings = Run(Library("""
+              package Types
+                type Mode = enumeration(on, off);
+              end Types;
+              partial model Icon
+                annotation (Icon(graphics = {Line(points = {{0, 0}, {1, 1}}, visible = ground_1)}));
+              end Icon;
+              partial model Base
+                parameter P.Types.Mode mode = P.Types.Mode.on;
+                Real x = notDeclared;
+                annotation (Icon(graphics = {Line(points = {{0, 0}, {1, 1}}, visible = mode == P.Gone.Mode.on)}));
+              end Base;
+            """));
+
+        // ground_1 an extender may declare; P.Gone it cannot, since P is found and has no Gone.
+        Assert.Equal(["P.Gone.Mode.on", "notDeclared"], Names(findings).Order(StringComparer.Ordinal).ToList());
+    }
+
+    [Fact]
+    public void ADynamicSelectsStaticValue_IsNotLookedUp()
+    {
+        OnlyTheControl(Run(Control, Library("""
+              model M
+                Real x;
+                annotation (Icon(graphics = {Text(extent = {{0, 0}, {1, 1}},
+                  textString = DynamicSelect(editorOnly, String(x)))}));
+              end M;
+            """)));
+    }
+
+    // A tool evaluates a graphic's visible in the class's scope: a Line shown by a mode, written against
+    // a Types package path that does not exist, passed MLQT and failed in the simulator (a 2026-11 session).
+    [Fact]
+    public void AGraphicsVisibleExpression_IsLookedUp_InTheClassAndOnAComponent()
+    {
+        var findings = Run(Control, Library("""
+              type Mode = enumeration(on, off);
+              model M
+                parameter Mode mode = Mode.on;
+                Real x annotation (Placement(visible = showX, transformation(extent = {{0, 0}, {1, 1}})));
+                annotation (Icon(graphics = {
+                  Line(points = {{0, 0}, {1, 1}}, visible = mode == P.P.Mode.on),
+                  Line(points = {{0, 0}, {1, 0}}, visible = mode == Mode.off)}));
+              end M;
+            """));
+
+        var names = Names(findings);
+        Assert.Equal(3, names.Count);
+        Assert.Contains("undeclaredControl", names);
+        Assert.Contains("showX", names);
+        Assert.Contains(findings, f => f.ElementPath!.StartsWith("P.P", StringComparison.Ordinal) && f.LineNumber == 5);
     }
 
     [Fact]

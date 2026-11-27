@@ -88,7 +88,7 @@ public sealed class SpellingTools
                 MissingDictionaryNote(settings.SpellCheckLanguages));
         }
 
-        return new ToolError("Provide either class_id or source.");
+        return new ToolError("Give classId or source.");
     }
 
     /// <summary>

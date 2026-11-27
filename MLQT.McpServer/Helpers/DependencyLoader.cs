@@ -23,8 +23,8 @@ namespace MLQT.McpServer.Helpers;
 /// MODELICAPATH. The first exact version found wins, the largest build of it; failing that, the newest
 /// copy declaring <c>conversion(noneFromVersion=...)</c> for the version asked for; failing that, nothing,
 /// and every copy seen is reported. A search never replaces a library already loaded - except that a load
-/// naming another tool install than the last search used unloads what searches found, and searches again
-/// (B504).</para>
+/// naming another tool install than the last search used unloads what searches found, and what a startup
+/// script found by name in the old install's library folder, and searches again (B504).</para>
 /// </remarks>
 internal sealed class DependencyLoader
 {
@@ -67,18 +67,26 @@ internal sealed class DependencyLoader
     public void AddSearchFolders(IEnumerable<string> folders, string foundBy) =>
         _extraFolders.AddRange(folders.Select(f => (f, foundBy)));
 
-    public async Task<LoadResult> LoadAsync(IReadOnlyList<string> paths, bool withDependencies, bool replace, ToolFolders tool)
+    /// <param name="foundInTheInstall">Those of <paramref name="paths"/> a startup script found by name in the
+    /// tool install's own library folder: explicit, but replaced as a search's are when the install
+    /// changes (<see cref="SessionState.FoundInTheInstall"/>).</param>
+    public async Task<LoadResult> LoadAsync(IReadOnlyList<string> paths, bool withDependencies, bool replace, ToolFolders tool,
+        IReadOnlyCollection<string>? foundInTheInstall = null)
     {
         var before = _libraries.Libraries.ToList();
         var reportedAlready = new HashSet<string>(StringComparer.Ordinal);
 
+        // Before the explicit loads: a script read against the new install opens that install's copies, and
+        // the old install's, still loaded as explicit, would refuse them as other copies.
+        var unloaded = withDependencies ? SearchAgainIfTheInstallChanged(tool.Install) : new List<(string Id, string Name, string? Version, string Path)>();
+        reportedAlready.UnionWith(unloaded.Select(u => u.Id));
+
+        var tied = new HashSet<string>(foundInTheInstall ?? [], OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var path in paths)
-            await LoadExplicitAsync(path, replace);
+            await LoadExplicitAsync(path, replace, tied.Contains(path));
 
         if (withDependencies)
         {
-            var unloaded = SearchAgainIfTheInstallChanged(tool.Install);
-            reportedAlready.UnionWith(unloaded.Select(u => u.Id));
             await LoadDependenciesAsync(tool);
             ReportWhatTheNewSearchFound(unloaded);
         }
@@ -126,18 +134,19 @@ internal sealed class DependencyLoader
         if (previous is null || SamePath(previous, install))
             return unloaded;
 
-        foreach (var library in _libraries.Libraries.Where(l => OriginOf(l) == Search).ToList())
+        foreach (var library in _libraries.Libraries
+                     .Where(l => OriginOf(l) == Search || _session.IsFoundInTheInstall(l.SourcePath)).ToList())
         {
             unloaded.Add((library.Id, library.Name, library.Version, library.SourcePath));
-            _libraries.RemoveLibrary(library.Id);
-            _session.LibraryOrigins.Remove(library.Id);
+            Unload(library);
         }
         if (unloaded.Count > 0)
         {
             _session.DependenciesAnalyzed = false;
             _session.ResourcesAnalyzed = false;
             _warnings.Add($"The tool install changed from '{previous}' to '{install}', so the {unloaded.Count} " +
-                          "libraries the earlier search found were unloaded and searched for again. If other " +
+                          "libraries the earlier search, or a startup script's import, found there were unloaded and " +
+                          "searched for again. If other " +
                           "work is using this MLQT server, its dependencies changed with them.");
         }
         return unloaded;
@@ -208,7 +217,7 @@ internal sealed class DependencyLoader
 
     private string OriginOf(LoadedLibrary library) => _session.OriginOf(library.Id);
 
-    private async Task LoadExplicitAsync(string path, bool replace)
+    private async Task LoadExplicitAsync(string path, bool replace, bool foundInTheInstall = false)
     {
         var root = LibraryRoot(path);
         if (root is null)
@@ -234,7 +243,7 @@ internal sealed class DependencyLoader
         {
             if (SamePath(existing.SourcePath, root))
             {
-                _session.LibraryOrigins[existing.Id] = Explicit;
+                MarkExplicit(existing, foundInTheInstall);
                 _loaded.Add(Item(existing, Explicit, "already loaded", null, null));
                 return;
             }
@@ -284,8 +293,8 @@ internal sealed class DependencyLoader
 
         if (existing is not null && IsLoaded(existing))
             Unload(existing);
-        _session.LibraryOrigins[library.Id] = Explicit;
-        _loaded.Add(Item(library, Explicit, "given", null, null));
+        MarkExplicit(library, foundInTheInstall);
+        _loaded.Add(Item(library, Explicit, foundInTheInstall ? "found by the startup script in the tool's library folder" : "given", null, null));
     }
 
     /// <summary>
@@ -380,6 +389,19 @@ internal sealed class DependencyLoader
     {
         _libraries.RemoveLibrary(library.Id);
         _session.LibraryOrigins.Remove(library.Id);
+        _session.FoundInTheInstall.Remove(SessionState.InstallKey(library.SourcePath));
+    }
+
+    // Explicit either way; tied to the install when a script found it there by name, and not when a
+    // caller named its path.
+    private void MarkExplicit(LoadedLibrary library, bool foundInTheInstall)
+    {
+        _session.LibraryOrigins[library.Id] = Explicit;
+        var key = SessionState.InstallKey(library.SourcePath);
+        if (foundInTheInstall)
+            _session.FoundInTheInstall.Add(key);
+        else
+            _session.FoundInTheInstall.Remove(key);
     }
 
     // Each library the repository holds is one the caller named, as if its path had been given.

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
+using System.Text.Json;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -57,9 +58,11 @@ public sealed class ClassFacadeTools
                  "'interface' (how to use it: parameters, connectors, extends, inherited members included), " +
                  "'elements' (every declaration, with defaults, modifications and comments), 'behavior' " +
                  "(equations and algorithms), 'connections' (its connect equations), 'documentation' (its Info " +
-                 "and revisions), 'layout' (component placements on the diagram) and 'resources' (the files it " +
+                 "and revisions, and its base classes' Info, nearest first), 'layout' (component placements on the diagram) and 'resources' (the files it " +
                  "loads). Each class answers each view as the view's own tool would, an error included; an " +
-                 "unknown class answers once, with the nearest ids. At most 20 classes.")]
+                 "unknown class answers once, with the nearest ids. At most 20 classes. An answer is kept to about " +
+                 "40,000 characters: a class that does not fit says so in 'truncated', and a long source is cut at a " +
+                 "line, with the sourceFromLine to ask for next.")]
     public async Task<object> GetClass(
         [Description("One or more fully-qualified class ids, e.g. ['Modelica.Blocks.Continuous.Integrator'].")]
         IReadOnlyList<string> classIds,
@@ -68,7 +71,14 @@ public sealed class ClassFacadeTools
         [Description("For 'source': include annotations. Default false.")] bool includeAnnotations = false,
         [Description("For 'interface' and 'elements': include inherited members. Default true.")] bool includeInherited = true,
         [Description("For 'elements': include protected ones. Default false.")] bool includeProtected = false,
-        [Description("For 'documentation': 'text' (default) or 'html'.")] string documentationFormat = "text")
+        [Description("For 'documentation': 'text' (default) or 'html'.")] string documentationFormat = "text",
+        [Description("For 'documentation': also each base class's documentation, nearest first, labelled with its " +
+                     "class; bases with none are skipped and long chains are cut, naming the rest. Default true; " +
+                     "false for the class's own alone.")]
+        bool includeBaseDocumentation = true,
+        [Description("For 'source': the line to start from, when an earlier answer cut a long source short; it applies " +
+                     "to every class named, so ask for that class alone. Default 1.")]
+        int sourceFromLine = 1)
     {
         if (classIds is null || classIds.Count == 0)
             return new ToolError("classIds must name at least one class.");
@@ -97,16 +107,142 @@ public sealed class ClassFacadeTools
             object? View(string name, Func<object> read) => wanted.Contains(name) ? read() : null;
             classes.Add(new ClassViews(classId,
                 Info: View("info", () => _classes.GetClassInfo(classId)),
-                Source: View("source", () => _classes.GetClassSource(classId, includeAnnotations)),
+                Source: View("source", () => FromLine(_classes.GetClassSource(classId, includeAnnotations), sourceFromLine)),
                 Interface: View("interface", () => _views.GetClassInterface(classId, includeInherited)),
                 Elements: View("elements", () => _views.ListClassElements(classId, includeProtected, includeInherited)),
                 Behavior: View("behavior", () => _views.GetClassBehavior(classId)),
                 Connections: View("connections", () => _structure.ListConnections(classId)),
-                Documentation: View("documentation", () => _views.GetClassDocumentation(classId, documentationFormat)),
+                Documentation: View("documentation", () => _views.GetClassDocumentation(classId, documentationFormat, includeBaseDocumentation)),
                 Layout: View("layout", () => _diagram.GetDiagramLayout(classId)),
                 Resources: View("resources", () => _resources.GetClassResources(classId))));
         }
-        return new GetClassResult(classes);
+        return new GetClassResult(WithinBudget(EachBaseOnce(classes), sourceFromLine, MaxAnswerCharacters));
+    }
+
+    /// <summary>
+    /// <paramref name="classes"/> with each base's documentation given once: where an earlier class's
+    /// documentation view gave a base, a later one names it with <c>givenWith</c> and leaves its text out.
+    /// Classes asked for together usually share their interfaces, and five on one interface carried its
+    /// documentation five times, which the answer's size budget then spent on repeats.
+    /// </summary>
+    internal static IReadOnlyList<ClassViews> EachBaseOnce(IReadOnlyList<ClassViews> classes)
+    {
+        var given = new Dictionary<string, string>(StringComparer.Ordinal);
+        var answer = new List<ClassViews>(classes.Count);
+        foreach (var views in classes)
+        {
+            if (views.Documentation is not ClassDocumentationResult { Bases: { Count: > 0 } bases } doc)
+            {
+                answer.Add(views);
+                continue;
+            }
+            var once = bases.Select(b => given.TryGetValue(b.ClassId, out var first)
+                    ? new BaseDocumentation(b.ClassId, null, null, GivenWith: first)
+                    : b)
+                .ToList();
+            foreach (var b in bases)
+                given.TryAdd(b.ClassId, views.ClassId);
+            answer.Add(views with { Documentation = doc with { Bases = once } });
+        }
+        return answer;
+    }
+
+    /// <summary>
+    /// The most characters of JSON one <c>mlqt_get_class</c> answer holds. A client caps what a tool may
+    /// return - Claude Code at 25,000 tokens - and saves a longer answer to a file instead, which the agent
+    /// then has to read with the shell: five classes, one a large parameter record, came to
+    /// 63,000 characters and went to a file (a 2026-11 session). JSON of numbers and escaped source runs
+    /// at about two characters a token, so this keeps well inside that.
+    /// </summary>
+    internal const int MaxAnswerCharacters = 40_000;
+
+    /// <summary>The source view from <paramref name="fromLine"/> on, its numbering kept: the lines
+    /// before it are left out, not renumbered, so a line number still means the class's line.</summary>
+    private static object FromLine(object source, int fromLine)
+    {
+        if (fromLine <= 1 || source is not ClassSourceResult result)
+            return source;
+        var lines = result.Source.Split('\n');
+        return result with { Source = string.Join("\n", lines.Skip(Math.Min(fromLine - 1, lines.Length))) };
+    }
+
+    /// <summary>
+    /// <paramref name="classes"/> cut to <paramref name="budget"/> characters of JSON, in order: each class
+    /// that fits is answered whole; the first that does not has its source cut at a line, when that leaves
+    /// room for it, and says which line to ask from next; every class after that is named, with how to
+    /// ask for it, and nothing else. Nothing is left out without saying so.
+    /// </summary>
+    internal static IReadOnlyList<ClassViews> WithinBudget(IReadOnlyList<ClassViews> classes, int sourceFromLine, int budget)
+    {
+        static int Size(ClassViews c) => JsonSerializer.Serialize(c, McpServerJson.Options).Length;
+
+        var answer = new List<ClassViews>();
+        var used = 0;
+        var full = false;
+        // Room is kept for naming every class after the one that does not fit.
+        const int stub = 200;
+        var remaining = classes.Count;
+        foreach (var views in classes)
+        {
+            remaining--;
+            if (full)
+            {
+                answer.Add(new ClassViews(views.ClassId, Truncated:
+                    $"Not read: the answer had reached its size limit ({budget} characters). Ask for this class in another call."));
+                continue;
+            }
+
+            var size = Size(views);
+            if (used + size <= budget)
+            {
+                answer.Add(views);
+                used += size;
+                continue;
+            }
+
+            full = true;
+            if (CutSource(views, budget - used - remaining * stub, sourceFromLine, Size) is { } cut)
+            {
+                answer.Add(cut);
+                used += Size(cut);
+                continue;
+            }
+            answer.Add(new ClassViews(views.ClassId, Truncated:
+                $"Not read: with it the answer would have been over its size limit ({budget} characters). Ask for this " +
+                "class in another call, and for a long source, its other views apart from it; a documentation view " +
+                "is smaller with includeBaseDocumentation=false."));
+        }
+        return answer;
+    }
+
+    // The class with as many of its source lines as fit in room, and a note saying where to go on; null
+    // when it has no source to cut or not even its first lines fit.
+    private static ClassViews? CutSource(ClassViews views, int room, int fromLine, Func<ClassViews, int> size)
+    {
+        if (views.Source is not ClassSourceResult source)
+            return null;
+        var lines = source.Source.Split('\n');
+        var first = Math.Max(fromLine, 1);
+
+        ClassViews With(int count) => views with
+        {
+            Source = source with { Source = string.Join("\n", lines.Take(count)) },
+            // sourceFromLine applies to every class a call names, so the class is asked for alone.
+            Truncated = $"Source cut for size after line {first + count - 1}, of {first + lines.Length - 1}: ask for this " +
+                        $"class alone, with views ['source'] and sourceFromLine={first + count}.",
+        };
+
+        // The most lines that fit, found by halving.
+        int low = 0, high = lines.Length - 1;
+        while (low < high)
+        {
+            var mid = (low + high + 1) / 2;
+            if (size(With(mid)) <= room)
+                low = mid;
+            else
+                high = mid - 1;
+        }
+        return low >= Math.Max(1, Math.Min(10, lines.Length - 1)) ? With(low) : null;
     }
 
     [McpServerTool(Name = "mlqt_refactor_class", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]

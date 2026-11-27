@@ -52,8 +52,10 @@ public sealed class StyleCheckContext
     public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
 
     /// <summary>
-    /// The element names a class inherits, for the spell checkers' context words. Null when there is
-    /// no graph to resolve base classes with, in which case only a class's own declarations count.
+    /// The element names a class inherits, and the public fields of its components' types, for the spell
+    /// checkers' context words (<see cref="StyleChecking.CreateInheritedElementNamesCallback"/>). Null
+    /// when there is no graph to resolve base classes with, in which case only a class's own
+    /// declarations count. The name is the shipped one, from before it also gave the fields.
     /// </summary>
     public Func<string, IReadOnlySet<string>>? InheritedElementNames { get; private init; }
 

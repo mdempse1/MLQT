@@ -73,7 +73,7 @@ public sealed class EditClassTools
                  "swaps text that must occur exactly once in the class - copy it from mlqt_get_class's source view; " +
                  "text whose spacing or line breaks differ from the file (a formatter reflowed it) is found too, and " +
                  "so is text copied with the view's annotations hidden, whose annotations are kept where they were - " +
-                 "the answer says when either happened; with \"all\":true it swaps every " +
+                 "the answer says when that happened, and when old is not found, where it stops matching; with \"all\":true it swaps every " +
                  "occurrence, and says how many; \"wholeWord\":true matches only where old is not part of a longer " +
                  "name (Ti, not the Ti in TipIn). To rename a component and every reference to it, in other classes " +
                  "too, use mlqt_refactor_class's rename_component instead. An extends clause, an import or " +
@@ -262,14 +262,15 @@ public sealed class EditClassTools
         // space between them: formatting reflows lines and spaces operators, so text copied from a view
         // taken before a format - `x=1;`, one long declaration - was "not in the class" afterwards, and
         // the agent had to search the raw file and try again.
+        // A match found only by ignoring white space says nothing: it was the one place old could mean, and
+        // after mlqt_format nearly every copy matched that way, so a note on each was noise (it was the
+        // fifth item of a 2026-11 session's report).
         var matcher = Matcher(Regex.Escape(find), find, wholeWord);
         var count = matcher.Matches(code).Count;
-        var loose = false;
         if (count == 0 && WhiteSpaceTolerant(find) is { } tolerant)
         {
             matcher = Matcher(tolerant, find, wholeWord);
             count = matcher.Matches(code).Count;
-            loose = count > 0;
         }
 
         // Last, text copied from the source view, which hides annotations by default: the same tokens
@@ -308,10 +309,10 @@ public sealed class EditClassTools
         if (count == 0)
             return new ToolError(
                 $"The text to replace is not in '{classId}'{(wholeWord ? " as a whole word" : "")}, even ignoring " +
-                "differences in white space and line breaks. Copy it from mlqt_get_class's source view with " +
-                "includeAnnotations=true: by default that hides annotations, so its text is not all of the class. To " +
-                "change a declaration, set_component_modifier, set_component_description or mlqt_refactor_class's " +
-                "rename_component name it instead of quoting it.");
+                "differences in white space and line breaks." + WhereItDiffers(code, find) + " Copy it from " +
+                "mlqt_get_class's source view with includeAnnotations=true: by default that hides annotations, so its " +
+                "text is not all of the class. To change a declaration, set_component_modifier, " +
+                "set_component_description or mlqt_refactor_class's rename_component name it instead of quoting it.");
         if (count > 1 && !all)
             return new ToolError(
                 $"The text to replace occurs {count} times in '{classId}'{(wholeWord ? " as a whole word" : "")}. Include " +
@@ -319,13 +320,63 @@ public sealed class EditClassTools
                 (wholeWord ? "" : " wholeWord=true leaves it alone where it is part of a longer name."));
 
         var newCode = matcher.Replace(code, with.Replace("$", "$$", StringComparison.Ordinal), all ? -1 : 1);
-        return await ApplyReplacement(classId, ctx, newCode, count, all,
-            loose
-                ? "old matched only when differences in white space and line breaks were ignored - the class's layout has " +
-                  "changed since it was read (mlqt_format reflows it, and so does a write in a repository that " +
-                  "formats its writes); read it again before quoting more of it."
-                : null);
+        return await ApplyReplacement(classId, ctx, newCode, count, all, null);
     }
+
+    // White space, or a comment, between two tokens.
+    private const string Gap = @"(?:\s|//[^\n]*|/\*[\s\S]*?\*/)*";
+
+    /// <summary>
+    /// Why <paramref name="find"/> is not in <paramref name="code"/>, as far as can be said: the file has a
+    /// comment inside that text, which a copy usually leaves out; or the longest start of it that is in the
+    /// class, and what the class has where the two part. "Not found" alone sent an agent to quote the same
+    /// text again, then to give up on replace (a 2026-11 session, on a component's modifier).
+    /// </summary>
+    internal static string WhereItDiffers(string code, string find)
+    {
+        var tokens = Token.Matches(find).Select(m => m.Value).ToList();
+        if (tokens.Count < 2)
+            return string.Empty;
+
+        string Pattern(int count)
+        {
+            var pattern = new System.Text.StringBuilder(Regex.Escape(tokens[0]));
+            for (var i = 1; i < count; i++)
+                pattern.Append($@"{Gap}(?:{AnnotationConstruct}{Gap})?").Append(Regex.Escape(tokens[i]));
+            return pattern.ToString();
+        }
+
+        var whole = Regex.Matches(code, Pattern(tokens.Count), RegexOptions.CultureInvariant);
+        if (whole.Count == 1 && Regex.Match(whole[0].Value, @"//[^\n]*|/\*[\s\S]*?\*/") is { Success: true } comment)
+            return $" It is there with a comment inside it, which old leaves out: the class has {Quote(comment.Value.TrimEnd())}. " +
+                   "Include the comment in old, and in new to keep it.";
+
+        // The longest start of old that is in the class, and what follows it there. A start that is in the
+        // class has every shorter start in it too, so halving finds it in a few searches of the class - one
+        // search per token was seconds for a long old in a large class.
+        int Found(int count) => Regex.Matches(code, Pattern(count), RegexOptions.CultureInvariant).Count;
+        int low = 1, high = tokens.Count - 1;
+        while (low < high)
+        {
+            var mid = (low + high + 1) / 2;
+            if (Found(mid) > 0)
+                low = mid;
+            else
+                high = mid - 1;
+        }
+        if (low < 2)
+            return string.Empty;
+
+        var matches = Regex.Matches(code, Pattern(low), RegexOptions.CultureInvariant);
+        var first = matches[0];
+        var after = code[(first.Index + first.Length)..].TrimStart();
+        var next = after.Length > 40 ? after[..40] + "..." : after;
+        var where = matches.Count == 1 ? "the class has" : $"the first of the {matches.Count} places it is in the class has";
+        return $" The class has old's text up to {Quote(tokens[low - 1])} (token {low} of {tokens.Count}); " +
+               $"old goes on with {Quote(tokens[low])}, where {where} {Quote(next)}.";
+    }
+
+    private static string Quote(string text) => $"'{text.ReplaceLineEndings(" ")}'";
 
     /// <summary>Writes a replace's result, with the notes the answer carries.</summary>
     private async Task<object> ApplyReplacement(

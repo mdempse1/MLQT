@@ -55,6 +55,23 @@ public sealed class SessionState
     /// </summary>
     internal string? SearchInstall { get; set; }
 
+    /// <summary>
+    /// The explicit libraries a startup script found by name in the tool install's own library folder -
+    /// <c>import Modelica</c>, <c>openModelFile("Modelica")</c> - by the full path they were loaded from.
+    /// The script named the library, but the install chose the copy, so a load naming another install
+    /// replaces them as it does what a search found. Counted as explicit, they stayed: a reload with the
+    /// 2026x install kept the MSL and DymolaCommands the first load had taken from a 2027x beta (a 2026-11
+    /// session). By path, not id, because <c>mlqt_session</c>'s reload loads a library again under a new id.
+    /// </summary>
+    internal HashSet<string> FoundInTheInstall { get; } =
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+    /// <summary>Whether <paramref name="sourcePath"/> is a library <see cref="FoundInTheInstall"/>.</summary>
+    internal bool IsFoundInTheInstall(string sourcePath) => FoundInTheInstall.Contains(InstallKey(sourcePath));
+
+    /// <summary>The form of a library's path <see cref="FoundInTheInstall"/> holds.</summary>
+    internal static string InstallKey(string sourcePath) => Path.GetFullPath(sourcePath).TrimEnd('/', '\\');
+
     // ---- When each library came in (B505) -------------------------------------------------------
     //
     // A server outlives a conversation - a client keeps it across /clear and new sessions - and can be
@@ -108,6 +125,7 @@ public sealed class SessionState
     internal void Reset()
     {
         LibraryOrigins.Clear();
+        FoundInTheInstall.Clear();
         SearchInstall = null;
         DependenciesAnalyzed = false;
         ResourcesAnalyzed = false;

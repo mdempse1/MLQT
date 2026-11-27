@@ -54,8 +54,10 @@ public sealed class CheckTimings
         public const string Coverage = "coverage";
 
         /// <summary>
-        /// Resolving one class's inherited element names, which the spell rules need so that prose
-        /// naming an inherited member is not reported as a misspelling.
+        /// Resolving one class's inherited element names, and the fields of its components' types, which
+        /// the spell rules need so that prose naming either is not reported as a misspelling. Named for
+        /// the first, which is what it did until 2026-11-27; the value is what a report prints, and is
+        /// kept so that a comparison of timings across that date still lines up.
         /// </summary>
         /// <remarks>
         /// Shared and lazy: computed once per class and cached for the rest of the run. Timed where

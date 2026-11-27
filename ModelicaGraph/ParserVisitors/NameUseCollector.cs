@@ -36,6 +36,10 @@ internal sealed record NameUse(NameUseKind Kind, string Text, int Line)
 
     /// <summary>The type a modifier is written on - <see cref="Text"/> - or null for any other use.</summary>
     public string? OwnerType => Kind == NameUseKind.Modifier ? Text : null;
+
+    /// <summary>Written in an annotation's <c>visible</c>, <c>enable</c> or <c>DynamicSelect</c>, which a
+    /// tool evaluates in the instance - so in a partial class, the class extending it may declare it.</summary>
+    public bool InAnnotation { get; init; }
 }
 
 /// <summary>
@@ -45,7 +49,9 @@ internal sealed record NameUse(NameUseKind Kind, string Text, int Line)
 /// </summary>
 /// <remarks>
 /// <para><b>What is left out is what is not looked up in the class's scope.</b> Annotations, whose
-/// content is annotation grammar rather than Modelica names; descriptions; a named argument's name,
+/// content is annotation grammar rather than Modelica names - all but the values a tool evaluates in the
+/// class's scope: <c>visible</c>, <c>Dialog(enable)</c> and <c>DynamicSelect</c>'s dynamic argument
+/// (<c>WalkAnnotation</c>); descriptions; a named argument's name,
 /// which is the called function's input; an external clause's function, which is a C name; the names a
 /// <c>for</c> loop or a comprehension binds, inside it; and every nested class, which has a node of its
 /// own and is looked up from there.</para>
@@ -87,9 +93,16 @@ internal static class NameUseCollector
         {
             switch (node)
             {
+                case modelicaParser.AnnotationContext annotation:
+                    WalkAnnotation(annotation, bound);
+                    return;
+
+                case modelicaParser.CommentContext comment:
+                    if (comment.annotation() is { } componentAnnotation)
+                        WalkAnnotation(componentAnnotation, bound);
+                    return;
+
                 case ITerminalNode:
-                case modelicaParser.AnnotationContext:
-                case modelicaParser.CommentContext:
                 case modelicaParser.String_commentContext:
                 case modelicaParser.Inheritence_modificationContext:
                     return;
@@ -147,6 +160,8 @@ internal static class NameUseCollector
                         WalkDeclaration(declaration.declaration(), typeName, bound);
                         if (declaration.condition_attribute() is { } condition)
                             Walk(condition.expression(), bound);
+                        if (declaration.comment() is { } comment)
+                            Walk(comment, bound);
                     }
                     return;
 
@@ -213,6 +228,55 @@ internal static class NameUseCollector
                         Walk(node.GetChild(i), bound);
                     return;
             }
+        }
+
+        /// <summary>
+        /// The values in an annotation that are expressions in the class's scope (MLS §18.6, §18.7):
+        /// <c>visible</c>, of a graphical primitive or a <c>Placement</c>; <c>enable</c>, of a
+        /// <c>Dialog</c>; and the dynamic argument of <c>DynamicSelect</c>. The rest is annotation
+        /// grammar - <c>Line</c>, <c>points</c>, <c>color</c> name nothing in the class - and is left out.
+        /// A tool evaluates these, so a name in one that is not there fails there: a
+        /// <c>visible = Lib.Lib.Types.Mode.on == mode</c> naming a package that does not exist was
+        /// passed, and only the simulator found it (a 2026-11 session).
+        /// </summary>
+        private void WalkAnnotation(IParseTree node, Bound bound)
+        {
+            switch (node)
+            {
+                case ITerminalNode:
+                    return;
+                case modelicaParser.Element_modificationContext element
+                    when IsEvaluated(element.name().GetText()) && element.modification()?.modification_expression()?.expression() is { } value:
+                    WalkEvaluated(value, bound);
+                    return;
+                case modelicaParser.Named_argumentContext named when IsEvaluated(named.IDENT().GetText()):
+                    WalkEvaluated(named.function_argument(), bound);
+                    return;
+                case modelicaParser.PrimaryContext primary
+                    when primary.component_reference()?.GetText() == "DynamicSelect"
+                         && primary.function_call_args()?.function_arguments() is { } arguments:
+                    // DynamicSelect(static, dynamic): the static value is for the editor and names nothing;
+                    // the dynamic one is evaluated from the class's variables as it simulates.
+                    foreach (var dynamic in arguments.function_argument())
+                        WalkEvaluated(dynamic, bound);
+                    return;
+                default:
+                    for (var i = 0; i < node.ChildCount; i++)
+                        WalkAnnotation(node.GetChild(i), bound);
+                    return;
+            }
+        }
+
+        // `enable` is a Dialog's; no other annotation MLQT knows has an attribute of that name.
+        private static bool IsEvaluated(string name) => name is "visible" or "enable";
+
+        // An evaluated annotation value, each name in it marked as from one.
+        private void WalkEvaluated(IParseTree value, Bound bound)
+        {
+            var from = uses.Count;
+            Walk(value, bound);
+            for (var i = from; i < uses.Count; i++)
+                uses[i] = uses[i] with { InAnnotation = true };
         }
 
         private void WalkFor(ParserRuleContext loop, modelicaParser.For_indicesContext indices, Bound bound)

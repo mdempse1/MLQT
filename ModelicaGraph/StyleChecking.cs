@@ -392,7 +392,10 @@ public static class StyleChecking
 
     /// <summary>
     /// Creates a lookup giving the element names a class inherits — the components and nested classes
-    /// declared anywhere up its <c>extends</c> chain — for use as spell-check context words.
+    /// declared anywhere up its <c>extends</c> chain — and the public components of each of its
+    /// components' types, one level down, for use as spell-check context words. The name, and the
+    /// <c>inheritedElementNames</c> parameter it is passed as, are the shipped ones, from before it gave
+    /// the fields too: renaming them would break what builds on this assembly.
     /// Returns null if the graph is null, in which case only a class's own declarations are known.
     ///
     /// <para>Descriptions and documentation routinely name inherited members ("Temperature at
@@ -414,6 +417,7 @@ public static class StyleChecking
         // And so is the interface of each class the walk passes through: a base class near the root of
         // a library is on the chain of hundreds of others, and re-deriving it means re-parsing it.
         var interfaces = new ClassElementResolver.InterfaceCache();
+        var types = new ComponentTypeNames();
 
         // Timed inside the factory, so only the run that actually resolves a class is charged for it.
         // Without this the cost lands on whichever rule happened to ask first - which is why
@@ -422,12 +426,27 @@ public static class StyleChecking
         return modelId => inheritedNames.GetOrAdd(
             modelId,
             id => CheckTimings.MeasureNested(
-                timings, CheckTimings.Phase.InheritedNames, () => CollectInheritedElementNames(graph, id, interfaces)));
+                timings, CheckTimings.Phase.InheritedNames, () => CollectInheritedElementNames(graph, id, interfaces, types)));
+    }
+
+    /// <summary>
+    /// What one run knows about component types: the type each (owner, written type) resolves to, and
+    /// each type's public component names. Most classes use the same few types - a library's connectors,
+    /// its records - so resolving and collecting them per class made the names lookup four times slower
+    /// over MSL (5.8 s to 22 s); kept per type, the work is done once.
+    /// </summary>
+    private sealed class ComponentTypeNames
+    {
+        public readonly TypeResolver.AncestorCache Ancestors = new();
+        public readonly ConcurrentDictionary<(string Owner, string Type), ModelNode?> Resolved = new();
+        public readonly ConcurrentDictionary<string, IReadOnlyList<string>> Members = new(StringComparer.Ordinal);
     }
 
     private static IReadOnlySet<string> CollectInheritedElementNames(
-        DirectedGraph graph, string modelId, ClassElementResolver.InterfaceCache? interfaces = null)
+        DirectedGraph graph, string modelId, ClassElementResolver.InterfaceCache? interfaces = null,
+        ComponentTypeNames? types = null)
     {
+        types ??= new ComponentTypeNames();
         var node = graph.GetNode<ModelNode>(modelId);
         if (node == null)
             return NoInheritedNames;
@@ -437,13 +456,26 @@ public static class StyleChecking
         foreach (var element in ClassElementResolver.Collect(
                      graph, node, includeProtected: true, includeInherited: true, interfaces))
         {
-            // Only what came from a base class: the class's own declarations are collected by the
-            // visitor, which also has them for classes the graph does not know.
-            if (element.InheritedFrom == null)
-                continue;
-
-            if (element.Element.Kind is ClassElementKind.Component or ClassElementKind.Class)
+            // The class's own declarations are collected by the visitor, which also has them for
+            // classes the graph does not know; what a base declares is added here.
+            if (element.InheritedFrom != null && element.Element.Kind is ClassElementKind.Component or ClassElementKind.Class)
                 names.Add(element.Element.Name);
+
+            // And the public members of every component's type, own components and inherited ones, one
+            // level down: documentation tabulates the fields of the record a model is given - data.JInput
+            // written as JInput - and each was flagged (2026-11-27). Not deeper: a member's members are
+            // another class's business, and every name accepted is one a misspelling can hide behind.
+            if (element.Element.Kind == ClassElementKind.Component && element.Element.Type is { Length: > 0 } written
+                && types.Resolved.GetOrAdd((element.OwnerId, written), key =>
+                    TypeResolver.ResolveWithInheritance(graph, key.Owner, key.Type, element.OwnerImports, types.Ancestors))
+                    is { } type && type.Id != node.Id)
+            {
+                names.UnionWith(types.Members.GetOrAdd(type.Id, _ =>
+                    ClassElementResolver.Collect(graph, type, includeProtected: false, includeInherited: true, interfaces)
+                        .Where(m => m.Element.Kind == ClassElementKind.Component)
+                        .Select(m => m.Element.Name)
+                        .ToList()));
+            }
         }
 
         return names.Count == 0 ? NoInheritedNames : names;

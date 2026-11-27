@@ -332,12 +332,13 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. ‡ † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
-| `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
+| `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). In annotations, the values a tool evaluates in the class's scope are checked too: a graphic's or a `Placement`'s `visible`, a `Dialog`'s `enable` and `DynamicSelect`'s dynamic argument; the rest of an annotation names nothing in the class and is not. A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
 | `MLQT.Conformance.Grammar` | Warning | Code that parses only because MLQT's grammar accepts what Dymola accepts beyond the Modelica Language Specification 3.7. Each finding names the widening it relies on. See [Strict Modelica 3.7 syntax](#strict-modelica-37-syntax). | GUI, CLI, MCP |
 | `MLQT.Resource.Missing` | Error | A file or directory the code refers to that is not there: a `loadResource` call, a `modelica://` URI to a file, a `loadSelector` parameter's file, an external function's `Include` header, or an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation. The [External Resources](external-resources.md) tab shows the same references, and the two always agree. ◊ † | GUI, CLI, MCP |
 | `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ † | GUI, CLI, MCP |
 | `MLQT.Connection.Incompatible` | Error | A `connect` that joins two connectors which cannot be connected: a `Pin` to a `HeatPort`, a connector whose `i` is `flow` to one whose `i` is not, or a `Real` signal to an `Integer` one. The message names both connector classes and their members. ⊗ | GUI, CLI, MCP |
 | `MLQT.Connection.Duplicate` | Warning | The same two ports connected twice in one class, either way round and however spaced. The finding is on the second, and names the line of the first. ⊗ | GUI, CLI, MCP |
+| `MLQT.Connection.DeepReference` | Error | A `connect` argument that reaches further into a component than one of that component's connectors: `connect(button.y, aero.controlBus.driverBus.x)`, through the expandable bus of component `aero` into its sub-bus. MLS §9.1 allows only `c`, `c.c2…` (through a connector of the class) and `m.c`, and Dymola refuses anything else, though OpenModelica accepts it. ⊗ | GUI, CLI, MCP |
 | `MLQT.Reference.Obsolete` | Warning | A use of a class its library marks `annotation(obsolete="...")`, or of anything inside a package marked that way: a component's type, a base class, a function called, an import or a constant. The message quotes the library's, which usually names the replacement. ⊘ † | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
@@ -371,7 +372,19 @@ because what is there depends on the redeclaration or on the connections. `Compl
 operator record from `Complex.mo`, not one of the predefined types of MLS 3.7 §4.9, so `u.re` through
 a `ComplexInput` is judged like any record's member. Without `Complex.mo` loaded, it is a library
 that is not loaded. Each distinct name is reported once per class, at its first use. Over MSL
-4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
+4.1.0 it judges 99% of the names MSL uses and reports three, all in a `Dialog`'s `enable`, which
+Dymola does not fail on: two enumeration literals in `Modelica.Fluid.Dissipation` written in the
+wrong case (`pressureLoss` for `PressureLoss`), and a `use_HeatTransfer` that one of the
+`AST_BatchPlant` example's tanks does not declare. Over Buildings it reports three, also all in
+annotations: a `DynamicSelect` naming a `y` the solar collector pump controller (and its copy under
+`Obsolete`) does not have, and a `visible` naming `Buildings.Templates.HeatingPlants`, a package that
+is not there. Before annotations were read it reported nothing over either.
+
+In a `partial` class, a name an annotation's `visible`, `enable` or `DynamicSelect` misses at its
+first segment is not reported. A tool evaluates those in the instance, where the class extending the
+partial one may declare it: Buildings' icon `RefAngleConversion` shows a line by `ground_1`, which
+only the models using the icon declare. A miss further along a name, as in
+`Buildings.Templates.HeatingPlants`, is reported, because no extender can supply it.
 
 ⊕ **What counts as a dependency cycle.** Top-level libraries are compared, never the packages
 inside one: `Modelica.Blocks` and `Modelica.Electrical` using each other is MSL's own business, since
@@ -413,6 +426,25 @@ the `else` branches of two different `if` statements; the same pair under two `i
 same condition is. `a[1]` and `a[2]` are different ports. Over MSL 4.1 the two rules judge 99% of its 9,627 connections
 and report nothing; over Buildings they report 19 duplicates and no incompatible connection. Whether
 a connector is left unconnected, and whether two ports' directions agree, are not checked yet.
+
+**How deep a connect argument may reach** (`MLQT.Connection.DeepReference`). The Modelica Language
+Specification 3.7, §9.1, allows two forms of connect argument: `c1.c2.….cn`, which starts at a
+connector of the class and goes on through connectors inside it, and `m.c`, which is a connector `c`
+of a component `m` that is not itself a connector. Subscripts may be written on any name in either
+form. So `connect(gainV.u, stackBus.cellBus.v)` is fine where `stackBus` is the class's own
+expandable bus, and `connect(button.y, aero.controlBus)` is fine. But
+`connect(button.y, aero.controlBus.driverBus.x)` reaches past `aero`'s connector into its sub-bus,
+and Dymola refuses it. OpenModelica accepts it, so a model can pass one tool and fail the other. The
+fix is to connect `aero.controlBus` to a bus connector declared in the class and connect to that
+bus's `driverBus.x`. A finding is reported only for an argument of three or more names whose first
+name is a component of the class (inherited ones included) whose type MLQT can see is a `model` or
+`block`. The names after the first are not resolved, because the rule does not depend on them and a
+member of an expandable bus need not be declared. Two other cases are not judged, because under the
+expandable-connector rules they are less clear-cut. One is whether each later name of a `c1.c2…`
+argument is a connector. The other is whether `m.c`'s `c` is one. Over MSL 4.1 (6,487 classes) and
+Buildings (7,510) the rule reports nothing. MSL's three-name arguments, such as
+`stackBus.cellBus.v` in `Modelica.Electrical.Batteries.Utilities.BusTranscription`, all start at a
+bus of the class.
 
 ⊘ **What counts as obsolete, and who is told.** A class is obsolete when it carries the `obsolete`
 annotation itself — a short class such as `type OldAngle = Real(...) annotation(obsolete="...")`
@@ -578,6 +610,7 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckDependencyCycles": true,
     "CheckIncompatibleConnections": true,
     "CheckDuplicateConnections": true,
+    "CheckDeepConnectorReferences": true,
     "CheckObsoleteClasses": true
 }
 ```

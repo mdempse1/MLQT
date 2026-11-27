@@ -36,9 +36,10 @@ public sealed class SearchTools
     internal bool UsePrefilter { get; init; } = true;
 
     /// <summary>
-    /// Every class whose description, or failing that whose documentation prose, contains
-    /// <paramref name="query"/>, ignoring case. All of them are counted, so <paramref name="limit"/> caps
-    /// only the items returned.
+    /// Every class whose description and documentation prose hold every word of
+    /// <paramref name="query"/> between them, in any order, ignoring case; a <c>"quoted phrase"</c> is
+    /// one term, matched as written (<see cref="TextQuery"/>). All of them are counted, so
+    /// <paramref name="limit"/> caps only the items returned.
     /// </summary>
     /// <remarks>
     /// <para><b>Only classes that could match are parsed</b> (<see cref="TextSearchPrefilter"/>), a package
@@ -69,7 +70,9 @@ public sealed class SearchTools
         }
 
         limit = Math.Clamp(limit, 1, MaxLimit);
-        var q = query.Trim();
+        var q = TextQuery.Parse(query.Trim());
+        if (q.Terms.Count == 0)
+            return new ToolError("query must hold at least one word: a pair of quotes with nothing in them is not one.");
         var items = new List<TextSearchItem>();
         var total = 0;
 
@@ -77,7 +80,9 @@ public sealed class SearchTools
             .Where(m => !m.IsParseFailurePlaceholder)
             .Where(m => onlyLibrary is null || _libraries.GetOwningLibrary(m.Id)?.Id == onlyLibrary)
             .ToList();
-        var prefilter = new TextSearchPrefilter(q, candidates);
+        // Every run of letters and digits of every term has to be in the class's text, which is what the
+        // prefilter asks of the whole query: so it rules out exactly what it did for a phrase.
+        var prefilter = new TextSearchPrefilter(string.Join(' ', q.Terms), candidates);
 
         cancellationToken.ThrowIfCancellationRequested();
         var toRead = candidates
@@ -127,7 +132,7 @@ public sealed class SearchTools
     // Where in one class the query is. A tree something else holds is used as it is. Otherwise a class
     // with classes written inline in it is parsed without them, which is most of the time a search of
     // the MSL took, and as it is only when that text does not parse cleanly; the rest are borrowed.
-    private static (string Where, string Text)? Read(ModelNode node, string q, TextSearchPrefilter? prefilter)
+    private static (string Where, string Text)? Read(ModelNode node, TextQuery q, TextSearchPrefilter? prefilter)
     {
         if (node.Definition.ParsedCode is { } held)
             return MatchText(held, q);
@@ -140,17 +145,21 @@ public sealed class SearchTools
         return node.Definition.Borrow(tree => MatchText(tree, q), ifUnparseable: null);
     }
 
-    // Where in the class the query is: its description first, then its documentation as prose.
-    private static (string Where, string Text)? MatchText(modelicaParser.Stored_definitionContext tree, string q)
+    // Where in the class the query's terms are: all in its description, else all in its documentation as
+    // prose, else between the two - a class described as a "Heat exchanger" whose documentation gives the
+    // "effectiveness" is what "heat effectiveness" asks for. The text returned is the one a snippet shows.
+    private static (string Where, string Text)? MatchText(modelicaParser.Stored_definitionContext tree, TextQuery q)
     {
         var description = ClassInterfaceExtractor.Extract(tree).Description;
-        if (!string.IsNullOrEmpty(description) && description.Contains(q, StringComparison.OrdinalIgnoreCase))
-            return ("description", description);
+        if (q.AllIn(description))
+            return ("description", description!);
 
         var info = DocumentationExtractor.Extract(tree).Info;
         var plain = info is null ? null : TextExtractor.StripHtml(info);
-        if (!string.IsNullOrEmpty(plain) && plain.Contains(q, StringComparison.OrdinalIgnoreCase))
-            return ("documentation", plain);
+        if (q.AllIn(plain))
+            return ("documentation", plain!);
+        if (q.AllInAny(description, plain))
+            return ("description and documentation", $"{description} | {plain}");
         return null;
     }
 
@@ -264,14 +273,15 @@ public sealed class SearchTools
                     key => TypeResolver.Resolve(graph, key.Owner, key.Type, m.OwnerImports)?.ClassType);
     }
 
-    private static string Snippet(string text, string query)
+    // The text around the first term found in it.
+    private static string Snippet(string text, TextQuery query)
     {
         var flat = text.Replace('\n', ' ').Replace('\r', ' ').Trim();
-        var idx = flat.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+        var idx = query.FirstIndexIn(flat);
         if (idx < 0)
             return flat.Length <= 160 ? flat : flat[..160] + "…";
         var start = Math.Max(0, idx - 40);
-        var end = Math.Min(flat.Length, idx + query.Length + 80);
+        var end = Math.Min(flat.Length, idx + 120);
         var snippet = flat[start..end];
         return (start > 0 ? "…" : "") + snippet + (end < flat.Length ? "…" : "");
     }

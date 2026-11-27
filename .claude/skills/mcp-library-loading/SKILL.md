@@ -52,13 +52,20 @@ OpenModelica 1.27 User's Guide):
    Which install is searched is decided in this order:
    1. `toolInstall` passed to `mlqt_load`: the install folder or executable. A machine often has
       many Dymola releases, and the one the user runs is not necessarily the newest.
-   2. The tool paths in the desktop app's External Tools settings (`settings.json`), read and nothing
+   2. For Dymola, the one running now (`ToolLibraryFolders.RunningDymola`), when exactly one release
+      is. A 2027x beta installed beside the 2026x Refresh 1 a project used was taken as the newest,
+      and MLQT checked against the beta's MSL and DymolaCommands (2026-11).
+   3. The tool paths in the desktop app's External Tools settings (`settings.json`), read and nothing
       else. The server keeps its own `mcp-settings.json` so that an agent does not inherit a project
       a person had open, and a tool's path is not a project.
-   3. The newest install found by `DymolaSettings.FindInstalledDymola` or
-      `OpenModelicaSettings.FindInstalledOmc`, which already exist.
+   4. The newest install found by `DymolaSettings.FindInstalledDymola` or
+      `OpenModelicaSettings.FindInstalledOmc`, which already exist. The answer then names the other
+      Dymola installs, and says when the one taken is a beta.
 
-   The answer always names the install it searched.
+   The answer always names the install it searched. A load naming another install unloads what the
+   last search found **and what a startup script found by name in the old install's library folder**
+   (`import Modelica`, `openModelFile` by name; `SessionState.FoundInTheInstall`): the script named the
+   library, but the install chose the copy. A library opened by path stays.
 4. **A startup script's ModelicaPath**, when `script` was given: the folders its `AddModelicaPath`
    lines added, or the path its `setenv("MODELICAPATH", ...)` set.
 5. **`MODELICAPATH`**, in its order.

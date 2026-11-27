@@ -1,3 +1,7 @@
 #nullable enable
 ModelicaParser.DataTypes.Redeclaration.Modifications.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
 ModelicaParser.DataTypes.Redeclaration.Modifications.init -> void
+const ModelicaParser.StyleRules.RuleIds.DeepConnectorReference = "MLQT.Connection.DeepReference" -> string!
+override ModelicaParser.StyleRules.SpellCheckDescriptions.OnShortClassScopeReady(modelicaParser.Short_class_specifierContext! context) -> void
+override ModelicaParser.StyleRules.SpellCheckVisitorBase.VisitShort_class_specifier(modelicaParser.Short_class_specifierContext! context) -> object?
+virtual ModelicaParser.StyleRules.SpellCheckVisitorBase.OnShortClassScopeReady(modelicaParser.Short_class_specifierContext! context) -> void

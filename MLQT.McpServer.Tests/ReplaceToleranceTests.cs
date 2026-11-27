@@ -50,7 +50,47 @@ public class ReplaceToleranceTests
         var res = ToolAssert.Ok<EditClassResult>(await tools.EditClass("T.M", [Replace("x=k*y;", "x = 2*k*y;")]));
 
         Assert.Contains("x = 2*k*y;", Source(host));
-        Assert.Contains("white space", Assert.Single(res.Notes));   // the agent learns its copy is stale
+        // Said on every replace after a format, the note was noise: the match was the one place old could mean.
+        Assert.Empty(res.Notes);
+    }
+
+    private const string WithComment = """
+        within;
+        package C "c"
+          model M "m"
+            Real body(min = 0, // lower limit
+              max = 10) "b";
+          equation
+            body = 1;
+          end M;
+        end C;
+        """;
+
+    [Fact]
+    public async Task TextWithACommentInsideItInTheFile_IsRefused_NamingTheComment()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = WithComment.ReplaceLineEndings("\n") });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new EditClassTools(host.Libraries, host.Repositories, host.CustomDictionary, host.DictionaryManager, host.Resources, host.Session);
+
+        var err = ToolAssert.Error(await tools.EditClass("C.M", [Replace("Real body(min = 0, max = 10)", "Real body(min = 0, max = 20)")]));
+
+        Assert.Contains("with a comment inside it", err.Error);
+        Assert.Contains("'// lower limit'", err.Error);
+        Assert.DoesNotContain("max = 20", host.Libraries.GetModelById("C.M")!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task TextNotInTheClass_SaysWhereItStopsMatching()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        var err = ToolAssert.Error(await tools.EditClass("T.M", [Replace("Real x(start = 2);", "Real x(start = 3);")]));
+
+        Assert.Contains("up to '='", err.Error);
+        Assert.Contains("old goes on with '2', where the class has '1);", err.Error);
     }
 
     [Fact]

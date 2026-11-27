@@ -205,6 +205,106 @@ public class TextSearchTests
         Assert.Equal(everyClass.Items, prefiltered.Items);
     }
 
+    // ---- Every word, in any order -----------------------------------------------------------------
+    //
+    // The whole query was one substring, so a search for a class by what it does found only the
+    // documentation that used those words in that order.
+
+    private const string Exchangers = """
+        package H "heat"
+          model Exchanger "Heat exchanger with constant effectiveness"
+          end Exchanger;
+          model Split "Exchanger described here"
+            annotation (Documentation(info="<html><p>The effectiveness is fixed by a parameter.</p></html>"));
+          end Split;
+          model Other "Effectiveness of a pump"
+          end Other;
+        end H;
+        """;
+
+    [Fact]
+    public void EveryWord_IsLookedFor_InAnyOrder()
+    {
+        using var host = Load(Exchangers);
+
+        var hit = Assert.Single(Text(host, "effectiveness heat").Items);
+
+        Assert.Equal(("H.Exchanger", "description"), (hit.Id, hit.MatchedIn));
+    }
+
+    [Fact]
+    public void TheWords_MayBeSplitBetweenDescriptionAndDocumentation()
+    {
+        using var host = Load(Exchangers);
+
+        var hit = Assert.Single(Text(host, "described parameter").Items);
+
+        Assert.Equal(("H.Split", "description and documentation"), (hit.Id, hit.MatchedIn));
+    }
+
+    [Fact]
+    public void AQuotedPhrase_IsOneTerm_MatchedAsWritten()
+    {
+        using var host = Load(Exchangers);
+
+        Assert.Equal(["H.Exchanger"], Text(host, "\"constant effectiveness\"").Items.Select(i => i.Id));
+        Assert.Empty(Text(host, "\"effectiveness constant\"").Items);
+        Assert.Equal(["H.Exchanger"], Text(host, "heat \"constant effectiveness\"").Items.Select(i => i.Id));
+        Assert.Equal(["H.Exchanger", "H.Other", "H.Split"], Text(host, "effectiveness").Items.Select(i => i.Id));
+    }
+
+    // "integrator limit" with match left at its default 'name' found nothing, and said nothing of why.
+    [Theory]
+    [InlineData("name")]
+    [InlineData(null)]
+    [InlineData("interface")]
+    public void Words_WhereAnIdIsWanted_AreRefused_PointingAtText(string? match)
+    {
+        using var host = Load(Exchangers);
+        var find = new FindTools(host.Libraries);
+
+        var err = ToolAssert.Error(match is null ? find.Find("heat exchanger") : find.Find("heat exchanger", match: match));
+
+        Assert.Contains("an id has no spaces", err.Error);
+        Assert.Contains("use match 'text'", err.Error);
+        // A word, or a quoted identifier with a space in it, is part of an id and is looked for as before.
+        // Space around it is trimmed, as it was not before.
+        Assert.Equal(["H.Exchanger"], ToolAssert.Ok<ClassSearchResult>(find.Find(" Exchanger ")).Items.Select(i => i.Id));
+        Assert.Equal(["H.Exchanger"],
+            ToolAssert.Ok<InterfaceSearchResult>(find.Find(" Exchanger ", match: "interface")).Items.Select(i => i.Id));
+        ToolAssert.Ok<ClassSearchResult>(find.Find("H.'heat exchanger'"));
+    }
+
+    [Fact]
+    public void AQueryOfEmptyQuotes_IsAnError()
+    {
+        using var host = Load(Exchangers);
+        ToolAssert.Error(new FindTools(host.Libraries).Find("\"  \"", match: "text"));
+    }
+
+    [Fact]
+    public void AnAndQuery_SkipsOnlyClassesThatCouldNotHaveMatched()
+    {
+        using var host = Load(Exchangers, LibraryA, LibraryB);
+        foreach (var query in new[] { "effectiveness heat", "described parameter", "table Format \"Mat File\"" })
+        {
+            var everyClass = ToolAssert.Ok<TextSearchResult>(
+                new SearchTools(host.Libraries) { UsePrefilter = false }.SearchText(query));
+            Assert.Equal(everyClass.Items, Text(host, query).Items);
+        }
+    }
+
+    [Theory]
+    [InlineData("heat exchanger", "heat|exchanger")]
+    [InlineData("  \"Mat File\"  table ", "Mat File|table")]
+    [InlineData("a \"open quote runs on", "a|open quote runs on")]
+    [InlineData("Heat heat", "Heat")]
+    [InlineData("x\"y z\"w", "x|y z|w")]
+    public void TheQuery_IsCutIntoWordsAndQuotedPhrases(string query, string terms)
+    {
+        Assert.Equal(terms, string.Join("|", TextQuery.Parse(query).Terms));
+    }
+
     [Fact]
     public void TheRunsAClassMustHold_AreTheQuerysLettersAndDigits()
     {

@@ -19,4 +19,7 @@ static ModelicaGraph.Analysis.ComponentClass.operator !=(ModelicaGraph.Analysis.
 static ModelicaGraph.Analysis.ComponentClass.operator ==(ModelicaGraph.Analysis.ComponentClass? left, ModelicaGraph.Analysis.ComponentClass? right) -> bool
 static ModelicaGraph.Analysis.RedeclaredClass.For(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! within, ModelicaGraph.Analysis.ResolvedElement! member) -> ModelicaGraph.Analysis.ComponentClass?
 ModelicaGraph.Analysis.RedeclaredClass
+static ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.ComponentConnectorReachedPast(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! model, string! port) -> string?
+ModelicaGraph.StyleCheckingSettings.CheckDeepConnectorReferences.get -> bool
+ModelicaGraph.StyleCheckingSettings.CheckDeepConnectorReferences.set -> void
 static ModelicaGraph.Analysis.RedeclaredClass.Of(ModelicaGraph.DirectedGraph! graph, ModelicaGraph.DataTypes.ModelNode! within, ModelicaGraph.Analysis.ResolvedElement! member) -> ModelicaGraph.DataTypes.ModelNode?

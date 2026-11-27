@@ -147,8 +147,9 @@ public sealed class GuidanceTools
               and source by default; includeAnnotations=false keeps the source compact).
 
             Find a class when you don't know its name:
-              mlqt_find with match 'name' (id substring), 'text' (description/documentation prose, e.g.
-              'PID controller'; library narrows it to one library) or 'interface' (by shape: class type, has connectors/parameters,
+              mlqt_find with match 'name' (id substring), 'text' (description/documentation prose holding
+              every word, in any order, e.g. 'PID anti-windup'; "a quoted phrase" is one term; library
+              narrows it to one library) or 'interface' (by shape: class type, has connectors/parameters,
               simulatable via an experiment annotation).
 
             Find code - where a name is used, a Placement, a connect, a parameter declaration:
@@ -273,7 +274,14 @@ public sealed class GuidanceTools
               behaviour is NOT merged — basesWithBehavior points to the base classes that declare it.
             - 'connections': its connect equations, nested ones included.
             - 'documentation': the description plus the Documentation(info/revisions) prose;
-              documentationFormat 'text' strips HTML, 'html' returns it raw.
+              documentationFormat 'text' strips HTML, 'html' returns it raw. It also gives each base
+              class's description and info, nearest base first, each under its class id - what a class
+              does is often written once, on the interface it extends. Bases with no info, and icon
+              classes (which declare nothing and extend only icons), are skipped and counted under
+              skippedBases; a base whose library is not loaded is named under unloadedBases; a long chain
+              is cut at a size cap and the rest are named under moreBases, to read on their own. In a call
+              for several classes a base is given once, and later classes name it with givenWith.
+              includeBaseDocumentation=false gives the class alone.
             - 'layout': each component's placement on the diagram, origin applied.
             - 'resources': the files it loads, resolved, and whether each exists (runs the dependency
               analysis first if it has not run).
@@ -317,8 +325,11 @@ public sealed class GuidanceTools
               mlqt_get_class's source view. If it is not found as written, it is looked for again ignoring
               white space and line breaks (a format reflows a class) - strings excepted - and then allowing
               for the annotations the source view hides by default: `Real x;` from the view finds the file's
-              `Real x annotation (Placement(...));`, and the annotation is kept where it was. The answer notes
-              either. To change an annotation itself, read with includeAnnotations=true and quote it. To change
+              `Real x annotation (Placement(...));`, and the annotation is kept where it was; the answer notes
+              that. When old is still not found, the error says where it stops matching the class, or names
+              the comment inside that text which old left out. A replace after remove_component or
+              set_component_placement in the same call fails if that operation rewrote its text: put the
+              replace first. To change an annotation itself, read with includeAnnotations=true and quote it. To change
               a declaration, name it (set_component_modifier, rename_component) rather than quote it. An edit that
               would declare a name twice, or again where a base already declares it, is refused.
             - The element operations, each with its fields:

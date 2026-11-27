@@ -143,6 +143,35 @@ public class TextExtractorTests
         Assert.Equal("here", words[2].word);
     }
 
+    // A link written out in documentation was split at its dots and slashes, and the host's name, "com"
+    // and "md" were reported as misspellings.
+    [Theory]
+    [InlineData("See https://www.racingbody.com/regulation/category/110 for rules.", "See|for|rules")]
+    [InlineData("Read www.racingbody.com/docs/sporting.md today", "Read|today")]
+    [InlineData("Ask support@example.org now", "Ask|now")]
+    [InlineData("Visit racingbody.com, then stop.", "Visit|then|stop")]
+    [InlineData("The modelica://Lib/Resources/notes.txt file", "The|file")]
+    [InlineData("Ends with https://example.com/page.", "Ends|with")]
+    public void TokenizeToWords_SkipsAddresses(string text, string expected)
+    {
+        Assert.Equal(expected, string.Join("|", TextExtractor.TokenizeToWords(text).Select(w => w.word)));
+    }
+
+    [Fact]
+    public void TokenizeToWords_AWordAfterAnAddress_KeepsItsOffset()
+    {
+        var words = TextExtractor.TokenizeToWords("x https://a.com/b mispelt").ToList();
+        Assert.Equal(("mispelt", 18), (words[^1].word, words[^1].charOffset));
+    }
+
+    [Fact]
+    public void TokenizeToWords_ADottedNameThatIsNotAHost_IsStillSplit()
+    {
+        // Only a known top-level domain, in lower case, makes a dotted name a host.
+        var words = TextExtractor.TokenizeToWords("the value.It is").Select(w => w.word).ToList();
+        Assert.Equal(["the", "value", "It", "is"], words);
+    }
+
     [Fact]
     public void TokenizeToWords_StripsLeadingTrailingUnderscores()
     {

@@ -311,6 +311,20 @@ public sealed class StructureEditTools
         var b = portB.Trim();
         var notes = new List<string>();
 
+        // The form MLQT.Connection.DeepReference reports, refused before it is written: Dymola refuses
+        // it, and a check run afterwards was the first to say so.
+        foreach (var port in new[] { a, b })
+        {
+            if (ModelicaGraph.Analysis.ConnectionIntegrityAnalyzer.ComponentConnectorReachedPast(_libraries.CombinedGraph, ctx.Node, port) is { } connector)
+            {
+                return new ToolError(
+                    $"'{port}' reaches past '{connector}' into the component: a connect argument may be a connector of the class, " +
+                    $"one inside it, or a connector of a component ('{connector}'), and no deeper (MLS 9.1). Dymola refuses " +
+                    $"it. Declare a connector in '{classId}' (a bus, for '{connector}'), connect '{connector}' to it, and " +
+                    "connect to the member of that one instead.");
+            }
+        }
+
         var (errA, resA) = CheckPort(classId, a, notes);
         if (errA is not null)
             return errA;
