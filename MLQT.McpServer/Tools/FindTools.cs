@@ -30,8 +30,8 @@ public sealed class FindTools
     [McpServerTool(Name = "mlqt_find", ReadOnly = true, OpenWorld = false)]
     [Description("Find Modelica classes in the libraries loaded into MLQT. match picks how: " +
                  "'name' (default) - class ids containing query, or with no query a page of every class, " +
-                 "filtered by classType; 'text' - description or documentation prose containing " +
-                 "query; 'interface' - by shape (classType, hasExperiment, minParameters, minConnectors, and " +
+                 "filtered by classType; 'text' - classes whose description and documentation prose hold every " +
+                 "word of query between them, in any order (\"a quoted phrase\" is one term, as written); 'interface' - by shape (classType, hasExperiment, minParameters, minConnectors, and " +
                  "query as part of the id); 'code' - every line of class source containing query, e.g. " +
                  "'Placement', 'connect(motor.', 'parameter Real T' - with the class it is in and its file line. " +
                  "Use code instead of grep or your own file search: it covers every loaded library, MSL included, " +
@@ -39,7 +39,7 @@ public sealed class FindTools
                  "expression and ignoreCase=true ignores case. For every match, library limits the search to " +
                  "one library. limit and offset page the results.")]
     public object Find(
-        [Description("What to look for. For 'name' and 'interface', part of a class id; for 'text', prose; for 'code', text in a line of source.")]
+        [Description("What to look for. For 'name' and 'interface', part of a class id, which has no spaces (words are refused, with a pointer to 'text'); for 'text', words that must all appear, or a \"quoted phrase\"; for 'code', text in a line of source.")]
         string? query = null,
         [Description("'name' (default), 'text', 'interface' or 'code'.")] string match = "name",
         [Description("Optional: one library, by name (e.g. 'Modelica') or id. For every match.")]
@@ -58,13 +58,19 @@ public sealed class FindTools
         switch (match?.Trim().ToLowerInvariant())
         {
             case null or "" or "name":
+                if (WordsForAnId(query, "name") is { } wordsForName)
+                    return wordsForName;
+                // Trimmed: space around an id is no part of it, and " Exchanger " found nothing.
                 return string.IsNullOrWhiteSpace(query)
                     ? _classes.ListClasses(library, classType, limit, offset)
-                    : _classes.SearchClasses(query, limit, library);
+                    : _classes.SearchClasses(query.Trim(), limit, library);
             case "text":
                 return _search.SearchText(query ?? string.Empty, limit, library, cancellationToken);
             case "interface":
-                return _search.SearchByInterface(classType, query, hasExperiment, minParameters, minConnectors, limit,
+                if (WordsForAnId(query, "interface") is { } wordsForInterface)
+                    return wordsForInterface;
+                return _search.SearchByInterface(classType, string.IsNullOrWhiteSpace(query) ? null : query.Trim(),
+                    hasExperiment, minParameters, minConnectors, limit,
                     library, cancellationToken);
             case "code":
                 if (ToolDiagnostics.RequireLibrary(_libraries, "searching code") is { } noLib)
@@ -75,4 +81,19 @@ public sealed class FindTools
                 return new Dtos.ToolError($"match must be 'name', 'text', 'interface' or 'code', not '{match}'.");
         }
     }
+
+    /// <summary>
+    /// The refusal for words where part of a class id is wanted. An id has no white space, so such a
+    /// query can match nothing, and the empty answer said nothing of why: "integrator limit" with match
+    /// left at its default 'name' found no class, though LimIntegrator's documentation holds both words
+    /// (2026-11-27). Null when <paramref name="query"/> has no white space inside it, or holds a quoted
+    /// identifier (<c>Lib.'My Model'</c>), the one kind of name a space may be part of.
+    /// </summary>
+    private static Dtos.ToolError? WordsForAnId(string? query, string match) =>
+        query?.Trim() is { Length: > 0 } q && q.Any(char.IsWhiteSpace) && !q.Contains('\'')
+            ? new Dtos.ToolError(
+                $"With match '{match}', query is part of a class id, and an id has no spaces, so '{q}' can match no " +
+                "class. To find classes whose description or documentation holds these words, use match 'text'; " +
+                "for a line of code holding them, match 'code'.")
+            : null;
 }

@@ -147,8 +147,9 @@ public sealed class GuidanceTools
               and source by default; includeAnnotations=false keeps the source compact).
 
             Find a class when you don't know its name:
-              mlqt_find with match 'name' (id substring), 'text' (description/documentation prose, e.g.
-              'PID controller'; library narrows it to one library) or 'interface' (by shape: class type, has connectors/parameters,
+              mlqt_find with match 'name' (id substring), 'text' (description/documentation prose holding
+              every word, in any order, e.g. 'PID anti-windup'; "a quoted phrase" is one term; library
+              narrows it to one library) or 'interface' (by shape: class type, has connectors/parameters,
               simulatable via an experiment annotation).
 
             Find code - where a name is used, a Placement, a connect, a parameter declaration:
