@@ -22,11 +22,13 @@ public class SpellCheckDescriptions : SpellCheckVisitorBase
     protected override void OnClassScopeReady(modelicaParser.Long_class_specifierContext context)
         => CheckStringComment(context.string_comment());
 
+    protected override void OnShortClassScopeReady(modelicaParser.Short_class_specifierContext context)
+        => CheckStringComment(context.comment()?.string_comment());
+
+    // Kept, as part of the shipped surface: the description is checked in OnShortClassScopeReady, once
+    // the base has collected the names it may use.
     public override object? VisitShort_class_specifier([NotNull] modelicaParser.Short_class_specifierContext context)
-    {
-        CheckStringComment(context.comment()?.string_comment());
-        return base.VisitShort_class_specifier(context);
-    }
+        => base.VisitShort_class_specifier(context);
 
     public override object? VisitDer_class_specifier([NotNull] modelicaParser.Der_class_specifierContext context)
     {

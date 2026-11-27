@@ -61,10 +61,39 @@ public abstract class SpellCheckVisitorBase : VisitorWithModelNameTracking
     }
 
     /// <summary>
+    /// A short class's names, collected before its description and documentation are checked, as a long
+    /// class's are: what its base declares, which is what <c>model M = Base(k = 2)</c> is, and an
+    /// enumeration's literals. A short class's documentation naming them was flagged, though its long
+    /// form, <c>model M extends Base(k = 2); end M;</c>, had the same names accepted.
+    /// </summary>
+    public override object? VisitShort_class_specifier(
+        [NotNull] modelicaParser.Short_class_specifierContext context)
+    {
+        if (_scopedNames.Count > 0)
+        {
+            var scope = _scopedNames.Peek();
+            if (_inheritedElementNames?.Invoke(CurrentModelName) is { } inherited)
+                scope.UnionWith(inherited);
+            if (context.enum_list() is { } literals)
+            {
+                foreach (var literal in literals.enumeration_literal())
+                    scope.Add(literal.IDENT().GetText());
+            }
+        }
+        OnShortClassScopeReady(context);
+        return base.VisitShort_class_specifier(context);
+    }
+
+    /// <summary>
     /// Called once the names valid inside the class are known and before its body is walked.
     /// Override to check text that belongs to the class itself.
     /// </summary>
     protected virtual void OnClassScopeReady(modelicaParser.Long_class_specifierContext context)
+    {
+    }
+
+    /// <summary>As <see cref="OnClassScopeReady"/>, for a short class.</summary>
+    protected virtual void OnShortClassScopeReady(modelicaParser.Short_class_specifierContext context)
     {
     }
 
