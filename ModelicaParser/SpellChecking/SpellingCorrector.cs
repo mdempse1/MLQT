@@ -54,8 +54,9 @@ public static class SpellingCorrector
         foreach (var token in collector.DescriptionStrings)
         {
             var original = token.Symbol.Text;
-            var replaced = wordRegex.Replace(original, _ => { total++; return newWord; });
-            if (!ReferenceEquals(replaced, original) && replaced != original)
+            var addresses = TextExtractor.AddressSpans(original).Select(a => (a.Index, a.Index + a.Length)).ToList();
+            var replaced = ReplaceOutside(original, wordRegex, newWord, addresses, ref total);
+            if (replaced != original)
                 edits.Add((token.Symbol.StartIndex, token.Symbol.StopIndex, replaced));
         }
 
@@ -114,8 +115,9 @@ public static class SpellingCorrector
 
     /// <summary>
     /// Replaces matches of <paramref name="wordRegex"/> in an HTML documentation string, skipping
-    /// any occurrence that falls inside an HTML tag (protecting link hrefs and other attributes) or
-    /// inside a code/pre block (protecting code samples).
+    /// any occurrence that falls inside an HTML tag (protecting link hrefs and other attributes),
+    /// inside a code/pre block (protecting code samples), or inside an address written out in the
+    /// text, which the spell check does not read either (<see cref="TextExtractor.AddressSpans"/>).
     /// </summary>
     private static string ReplaceInHtmlProse(string text, Regex wordRegex, string newWord, ref int total)
     {
@@ -124,7 +126,15 @@ public static class SpellingCorrector
             protectedSpans.Add((m.Index, m.Index + m.Length));
         foreach (Match m in HtmlTagRegex.Matches(text))
             protectedSpans.Add((m.Index, m.Index + m.Length));
+        foreach (var (index, length) in TextExtractor.AddressSpans(text))
+            protectedSpans.Add((index, index + length));
+        return ReplaceOutside(text, wordRegex, newWord, protectedSpans, ref total);
+    }
 
+    // Each match of wordRegex replaced, except one starting inside a protected span.
+    private static string ReplaceOutside(string text, Regex wordRegex, string newWord,
+        List<(int start, int end)> protectedSpans, ref int total)
+    {
         int localCount = 0;
         var result = wordRegex.Replace(text, match =>
         {

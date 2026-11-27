@@ -117,6 +117,8 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
                     var verdict = scope.Judge(use);
                     if (verdict.Outcome != Outcome.Undeclared)
                         continue;
+                    if (use.InAnnotation && node.IsPartial && ExtenderCouldDeclare(node, scope, use))
+                        continue;
                     reported.Add(key);
                     (findings ??= []).Add(new Finding
                     {
@@ -136,6 +138,26 @@ public sealed class UndeclaredNameAnalyzer : IGraphAnalyzer
             }
 
             return findings;
+        }
+
+        /// <summary>
+        /// Whether a class extending this partial one could declare what <paramref name="use"/> misses. A tool
+        /// evaluates an annotation's visible, enable or DynamicSelect in the instance, so Buildings' partial
+        /// icon RefAngleConversion may show a line by ground_1, which only the models extending it declare.
+        /// An extender can supply only a component as the first segment, though: in
+        /// <c>Buildings.Templates.HeatingPlants.X</c> the first names a loaded class, and the miss is the
+        /// library's.
+        /// </summary>
+        private bool ExtenderCouldDeclare(ModelNode node, Scope scope, NameUse use)
+        {
+            if (use.Text.StartsWith('.') || ModelicaName.Segments(use.Text) is not [var first, ..])
+                return false;
+            // A first segment naming a loaded class - a top-level one, or one of an enclosing package's -
+            // is that class; otherwise it is a component the class may be given by an extender.
+            if (graph.GetNode<ModelNode>(first) is not null
+                || ModelicaName.EnclosingNamesOf(node.Id).Any(p => graph.GetNode<ModelNode>($"{p}.{first}") is not null))
+                return false;
+            return scope.Judge(use with { Kind = NameUseKind.Value, Text = first }).Outcome != Outcome.Declared;
         }
 
         public DirectedGraph Graph => graph;

@@ -229,6 +229,27 @@ public class LoadToolsTests
     }
 
     [Fact]
+    public async Task ALibraryAScriptImported_IsStillReplaced_AfterItWasLoadedAgainUnderANewId()
+    {
+        // mlqt_session's reload loads a library again, under a new id; the record is by path, so it holds.
+        using var w = new World();
+        var script = Path.Combine(w.Root, "startup.mos");
+        File.WriteAllText(script, "import Base;\n");
+        await w.Tools().Load(script: script, tool: "dymola", toolInstall: w.DymolaExe);
+        var old = w.Host.Libraries.Libraries.Single(l => l.Name == "Base");
+        w.Host.Libraries.RemoveLibrary(old.Id);
+        var again = await w.Host.Libraries.AddLibraryFromPathAsync(old.SourcePath);
+        Assert.NotEqual(old.Id, again.Id);
+        var second = w.SecondInstall(withBase: true);
+
+        var res = ToolAssert.Ok<LoadResult>(await w.Tools().Load(script: script, tool: "dymola", toolInstall: second));
+
+        Assert.Empty(res.Errors);
+        Assert.Equal(w.Path_("Dymola2/Modelica/Library/Base 1.0"),
+            w.Host.Libraries.Libraries.Single(l => l.Name == "Base").SourcePath);
+    }
+
+    [Fact]
     public void ADetectedInstall_SaysToPassAParameterTheToolHas()
     {
         // B504: the newest Dymola found need not be the one running, and only the agent can know

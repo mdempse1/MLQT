@@ -823,24 +823,27 @@ public class StructureEditToolsTests
     /// it (B531): the redeclaration can be written in an extends clause or an instance modifier, where
     /// the walk does not look, and MLQT.Connection.Incompatible leaves such a port alone.
     /// </summary>
-    [Theory]
-    [InlineData("R.ViaExtends", "driver.stepped", "sink.inp")]
-    [InlineData("R.Holder", "own.driver.stepped", "own.sink.inp")]
-    public async Task AddConnection_AMemberOfARedeclaredComponent_IsLeftToTheRedeclaration(string classId, string portA, string portB)
+    [Fact]
+    public async Task AddConnection_AMemberOfARedeclaredComponent_IsLeftToTheRedeclaration()
     {
         using var host = new TestHost();
         var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Redeclared });
         await host.Libraries.AddLibraryFromDirectoryAsync(dir);
         var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
 
-        var res = ToolAssert.Ok<StructureEditResult>(await tools.AddConnection(classId, portA, portB));
+        var res = ToolAssert.Ok<StructureEditResult>(await tools.AddConnection("R.ViaExtends", "driver.stepped", "sink.inp"));
         Assert.True(res.Changed);
         Assert.Contains("'driver' is replaceable", res.Note);
-        Assert.Contains($"connect({portA}, {portB});", Source(host, classId));
+        Assert.Contains("connect(driver.stepped, sink.inp);", Source(host, "R.ViaExtends"));
 
         // Where nothing is replaceable, a member the class does not have is still refused.
         var plain = ToolAssert.Error(await tools.AddConnection("R.Plain", "driver.stepped", "sink.inp"));
         Assert.Contains("'stepped' is not a component of 'R.MinimalDriver'", plain.Error);
+
+        // A connector of a component inside a component is no connect argument at all (MLS 9.3), redeclared
+        // or not: this case once tested the instance modifier's redeclaration, and wrote an illegal connect.
+        var nested = ToolAssert.Error(await tools.AddConnection("R.Holder", "own.driver.stepped", "own.sink.inp"));
+        Assert.Contains("reaches past 'own.driver'", nested.Error);
     }
 
     [Fact]
@@ -882,16 +885,27 @@ public class StructureEditToolsTests
         Assert.Null(res.Note);
     }
 
-    [Fact]
-    public async Task AddConnection_AConnectorInsideAConnector_IsResolved_AndAccepted()
+    [Theory]
+    [InlineData("C.EngineSys", "engine.transmissionFlange.flange", "shaft.flange_a", "engine.transmissionFlange")]
+    [InlineData("C.SubBusSys", "source1.y", "controlBus.engineBus.speed", null)]   // the class's own bus: allowed
+    public async Task AddConnection_ThroughAComponentsConnector_IsRefused_AsDeepReferenceReportsIt(
+        string classId, string portA, string portB, string? reachedPast)
     {
-        // engine.transmissionFlange.flange, MultiBody's FlangeWithBearing: the port is a connector
-        // declared inside the component's connector.
+        // engine.transmissionFlange.flange is m.c.d - a connector inside a component's connector - which
+        // MLS 9.3 does not allow and MLQT.Connection.DeepReference reports. The tool wrote it, so a check
+        // run afterwards was the first to object; aero.controlBus.driverBus.x was written that way, and
+        // Dymola refused it (a 2026-11 session).
         using var host = new TestHost();
-        var res = ToolAssert.Ok<StructureEditResult>(
-            await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "shaft.flange_a"));
-        Assert.True(res.Changed);
-        Assert.Null(res.Note);
+        var result = await LoadConn(host).AddConnection(classId, portA, portB);
+
+        if (reachedPast is null)
+        {
+            ToolAssert.Ok<StructureEditResult>(result);
+            return;
+        }
+        var err = ToolAssert.Error(result);
+        Assert.Contains($"reaches past '{reachedPast}'", err.Error);
+        Assert.Contains("Declare a connector in 'C.EngineSys'", err.Error);
     }
 
     [Theory]
@@ -914,7 +928,7 @@ public class StructureEditToolsTests
         // Resolving the nested port is what lets a wrong one be refused, rather than waved through.
         using var host = new TestHost();
         var err = ToolAssert.Error(
-            await LoadConn(host).AddConnection("C.EngineSys", "engine.transmissionFlange.flange", "engine.transmissionFlange"));
+            await LoadConn(host).AddConnection("C.OwnSubsystem", "engineFlange.flange", "engineFlange"));
         Assert.Contains("Incompatible connectors", err.Error);
     }
 

@@ -219,6 +219,19 @@ public sealed class ConnectionIntegrityAnalyzer : IGraphAnalyzer
     }
 
     /// <summary>
+    /// The component's connector <paramref name="port"/> reaches past (<c>aero.controlBus</c> for
+    /// <c>aero.controlBus.driverBus.x</c>), as <c>MLQT.Connection.DeepReference</c> reports it, or null
+    /// when the port is of a form a connect may take or MLQT cannot tell. The one definition, which the
+    /// MCP server's <c>add_connection</c> asks too: it checked only that the ports exist and are
+    /// compatible, so an agent could still write the connect this rule reports.
+    /// </summary>
+    /// <param name="model">The class the connect is written in.</param>
+    public static string? ComponentConnectorReachedPast(DirectedGraph graph, ModelNode model, string port) =>
+        ThroughComponent(model, port, ClassElementResolver.ReferencesIn(graph, model)) is { } component
+            ? $"{component.Name}.{component.Next}"
+            : null;
+
+    /// <summary>
     /// The component a port reaches into, when the port has three or more names and its first is a
     /// component of the class whose type is a model or block - the one form <c>DeepReference</c> judges.
     /// Null for every other port, and for one whose first name MLQT cannot place.

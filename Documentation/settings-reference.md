@@ -332,7 +332,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. ‡ † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
-| `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
+| `MLQT.Reference.Undeclared` | Error | A name used where nothing of that name is declared: a variable in an equation, algorithm, binding, condition or subscript; a function called; a type, base class or import; a member after a dot (`s.missing`), including an enumeration literal; and the target of a modification (`Sub s(gian = 1)`, `Real x(fixd = true)`, checked against the predefined type's attributes). In annotations, the values a tool evaluates in the class's scope are checked too: a graphic's or a `Placement`'s `visible`, a `Dialog`'s `enable` and `DynamicSelect`'s dynamic argument; the rest of an annotation names nothing in the class and is not. A non-constant of an enclosing class used from a nested one is reported too, since only constants are visible there. Only what cannot have been declared anywhere is reported. ¶ | GUI, CLI, MCP |
 | `MLQT.Conformance.Grammar` | Warning | Code that parses only because MLQT's grammar accepts what Dymola accepts beyond the Modelica Language Specification 3.7. Each finding names the widening it relies on. See [Strict Modelica 3.7 syntax](#strict-modelica-37-syntax). | GUI, CLI, MCP |
 | `MLQT.Resource.Missing` | Error | A file or directory the code refers to that is not there: a `loadResource` call, a `modelica://` URI to a file, a `loadSelector` parameter's file, an external function's `Include` header, or an `IncludeDirectory`, `LibraryDirectory` or `SourceDirectory` annotation. The [External Resources](external-resources.md) tab shows the same references, and the two always agree. ◊ † | GUI, CLI, MCP |
 | `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ † | GUI, CLI, MCP |
@@ -372,7 +372,19 @@ because what is there depends on the redeclaration or on the connections. `Compl
 operator record from `Complex.mo`, not one of the predefined types of MLS 3.7 §4.9, so `u.re` through
 a `ComplexInput` is judged like any record's member. Without `Complex.mo` loaded, it is a library
 that is not loaded. Each distinct name is reported once per class, at its first use. Over MSL
-4.1.0 and Buildings this reports nothing, while judging 99% of the names MSL uses.
+4.1.0 it judges 99% of the names MSL uses and reports three, all in a `Dialog`'s `enable`, which
+Dymola does not fail on: two enumeration literals in `Modelica.Fluid.Dissipation` written in the
+wrong case (`pressureLoss` for `PressureLoss`), and a `use_HeatTransfer` that one of the
+`AST_BatchPlant` example's tanks does not declare. Over Buildings it reports three, also all in
+annotations: a `DynamicSelect` naming a `y` the solar collector pump controller (and its copy under
+`Obsolete`) does not have, and a `visible` naming `Buildings.Templates.HeatingPlants`, a package that
+is not there. Before annotations were read it reported nothing over either.
+
+In a `partial` class, a name an annotation's `visible`, `enable` or `DynamicSelect` misses at its
+first segment is not reported. A tool evaluates those in the instance, where the class extending the
+partial one may declare it: Buildings' icon `RefAngleConversion` shows a line by `ground_1`, which
+only the models using the icon declare. A miss further along a name, as in
+`Buildings.Templates.HeatingPlants`, is reported, because no extender can supply it.
 
 ⊕ **What counts as a dependency cycle.** Top-level libraries are compared, never the packages
 inside one: `Modelica.Blocks` and `Modelica.Electrical` using each other is MSL's own business, since

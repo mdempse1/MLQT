@@ -75,7 +75,7 @@ public class ClassFacadeToolsTests
         var kept = big.Source.Split('\n').Length;
         Assert.InRange(kept, 10, 1999);
         Assert.Contains($"after line {kept}, of 2000", answer[1].Truncated);
-        Assert.Contains($"sourceFromLine={kept + 1}", answer[1].Truncated);
+        Assert.Contains($"ask for this class alone, with views ['source'] and sourceFromLine={kept + 1}", answer[1].Truncated);
         Assert.Null(answer[2].Source);                                        // named, not read
         Assert.Contains("Ask for this class in another call", answer[2].Truncated);
     }

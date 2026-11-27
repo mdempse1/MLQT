@@ -61,8 +61,8 @@ public static partial class TextExtractor
             yield break;
 
         var notProse = new bool[text.Length];
-        foreach (Match address in AddressRegex().Matches(text))
-            Array.Fill(notProse, true, address.Index, address.Length);
+        foreach (var (index, length) in AddressSpans(text))
+            Array.Fill(notProse, true, index, length);
 
         int start = -1;
         for (int i = 0; i <= text.Length; i++)
@@ -208,6 +208,14 @@ public static partial class TextExtractor
         }
         return count;
     }
+
+    /// <summary>
+    /// Where <paramref name="text"/> holds an address rather than prose - a web address, a host name, an
+    /// e-mail address - as (index, length). The spell check skips them, and so does the corrector, which
+    /// would otherwise rewrite a word inside a link the check never reported.
+    /// </summary>
+    internal static IEnumerable<(int Index, int Length)> AddressSpans(string text) =>
+        AddressRegex().Matches(text).Select(m => (m.Index, m.Length));
 
     // What is an address rather than prose: anything with a scheme (https://, modelica://, file:///), a
     // host starting www., an e-mail address, or a dotted host name ending in a common top-level domain,

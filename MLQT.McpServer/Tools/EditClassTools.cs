@@ -351,18 +351,29 @@ public sealed class EditClassTools
             return $" It is there with a comment inside it, which old leaves out: the class has {Quote(comment.Value.TrimEnd())}. " +
                    "Include the comment in old, and in new to keep it.";
 
-        // The longest start of old that is in the class, once only, and what follows it there.
-        for (var count = tokens.Count - 1; count >= 2; count--)
+        // The longest start of old that is in the class, and what follows it there. A start that is in the
+        // class has every shorter start in it too, so halving finds it in a few searches of the class - one
+        // search per token was seconds for a long old in a large class.
+        int Found(int count) => Regex.Matches(code, Pattern(count), RegexOptions.CultureInvariant).Count;
+        int low = 1, high = tokens.Count - 1;
+        while (low < high)
         {
-            var found = Regex.Matches(code, Pattern(count), RegexOptions.CultureInvariant);
-            if (found.Count != 1)
-                continue;
-            var after = code[(found[0].Index + found[0].Length)..].TrimStart();
-            var next = after.Length > 40 ? after[..40] + "..." : after;
-            return $" The class has old's text up to {Quote(tokens[count - 1])} (token {count} of {tokens.Count}); " +
-                   $"old goes on with {Quote(tokens[count])}, where the class has {Quote(next)}.";
+            var mid = (low + high + 1) / 2;
+            if (Found(mid) > 0)
+                low = mid;
+            else
+                high = mid - 1;
         }
-        return string.Empty;
+        if (low < 2)
+            return string.Empty;
+
+        var matches = Regex.Matches(code, Pattern(low), RegexOptions.CultureInvariant);
+        var first = matches[0];
+        var after = code[(first.Index + first.Length)..].TrimStart();
+        var next = after.Length > 40 ? after[..40] + "..." : after;
+        var where = matches.Count == 1 ? "the class has" : $"the first of the {matches.Count} places it is in the class has";
+        return $" The class has old's text up to {Quote(tokens[low - 1])} (token {low} of {tokens.Count}); " +
+               $"old goes on with {Quote(tokens[low])}, where {where} {Quote(next)}.";
     }
 
     private static string Quote(string text) => $"'{text.ReplaceLineEndings(" ")}'";

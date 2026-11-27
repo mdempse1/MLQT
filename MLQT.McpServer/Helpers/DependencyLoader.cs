@@ -135,7 +135,7 @@ internal sealed class DependencyLoader
             return unloaded;
 
         foreach (var library in _libraries.Libraries
-                     .Where(l => OriginOf(l) == Search || _session.FoundInTheInstall.Contains(l.Id)).ToList())
+                     .Where(l => OriginOf(l) == Search || _session.IsFoundInTheInstall(l.SourcePath)).ToList())
         {
             unloaded.Add((library.Id, library.Name, library.Version, library.SourcePath));
             Unload(library);
@@ -389,7 +389,7 @@ internal sealed class DependencyLoader
     {
         _libraries.RemoveLibrary(library.Id);
         _session.LibraryOrigins.Remove(library.Id);
-        _session.FoundInTheInstall.Remove(library.Id);
+        _session.FoundInTheInstall.Remove(SessionState.InstallKey(library.SourcePath));
     }
 
     // Explicit either way; tied to the install when a script found it there by name, and not when a
@@ -397,10 +397,11 @@ internal sealed class DependencyLoader
     private void MarkExplicit(LoadedLibrary library, bool foundInTheInstall)
     {
         _session.LibraryOrigins[library.Id] = Explicit;
+        var key = SessionState.InstallKey(library.SourcePath);
         if (foundInTheInstall)
-            _session.FoundInTheInstall.Add(library.Id);
+            _session.FoundInTheInstall.Add(key);
         else
-            _session.FoundInTheInstall.Remove(library.Id);
+            _session.FoundInTheInstall.Remove(key);
     }
 
     // Each library the repository holds is one the caller named, as if its path had been given.

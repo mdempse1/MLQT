@@ -72,7 +72,8 @@ public sealed class ClassFacadeTools
         [Description("For 'interface' and 'elements': include inherited members. Default true.")] bool includeInherited = true,
         [Description("For 'elements': include protected ones. Default false.")] bool includeProtected = false,
         [Description("For 'documentation': 'text' (default) or 'html'.")] string documentationFormat = "text",
-        [Description("For 'source': the line to start from, when an earlier answer cut a long source short. Default 1.")]
+        [Description("For 'source': the line to start from, when an earlier answer cut a long source short; it applies " +
+                     "to every class named, so ask for that class alone. Default 1.")]
         int sourceFromLine = 1)
     {
         if (classIds is null || classIds.Count == 0)
@@ -193,8 +194,9 @@ public sealed class ClassFacadeTools
         ClassViews With(int count) => views with
         {
             Source = source with { Source = string.Join("\n", lines.Take(count)) },
-            Truncated = $"Source cut for size after line {first + count - 1}, of {first + lines.Length - 1}: ask for the " +
-                        $"source view again with sourceFromLine={first + count}.",
+            // sourceFromLine applies to every class a call names, so the class is asked for alone.
+            Truncated = $"Source cut for size after line {first + count - 1}, of {first + lines.Length - 1}: ask for this " +
+                        $"class alone, with views ['source'] and sourceFromLine={first + count}.",
         };
 
         // The most lines that fit, found by halving.

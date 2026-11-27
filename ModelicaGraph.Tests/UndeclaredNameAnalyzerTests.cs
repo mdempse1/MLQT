@@ -222,6 +222,29 @@ public class UndeclaredNameAnalyzerTests
     }
 
     [Fact]
+    public void AnAnnotationValueInAPartialClass_IsLeftToTheClassExtendingIt()
+    {
+        // A partial icon class showing a line by a parameter only its extenders declare, as Buildings'
+        // RefAngleConversion does with ground_1 and ground_2. An equation's name is still judged there.
+        var findings = Run(Library("""
+              package Types
+                type Mode = enumeration(on, off);
+              end Types;
+              partial model Icon
+                annotation (Icon(graphics = {Line(points = {{0, 0}, {1, 1}}, visible = ground_1)}));
+              end Icon;
+              partial model Base
+                parameter P.Types.Mode mode = P.Types.Mode.on;
+                Real x = notDeclared;
+                annotation (Icon(graphics = {Line(points = {{0, 0}, {1, 1}}, visible = mode == P.Gone.Mode.on)}));
+              end Base;
+            """));
+
+        // ground_1 an extender may declare; P.Gone it cannot, since P is found and has no Gone.
+        Assert.Equal(["P.Gone.Mode.on", "notDeclared"], Names(findings).Order(StringComparer.Ordinal).ToList());
+    }
+
+    [Fact]
     public void ADynamicSelectsStaticValue_IsNotLookedUp()
     {
         OnlyTheControl(Run(Control, Library("""
@@ -250,7 +273,7 @@ public class UndeclaredNameAnalyzerTests
             """));
 
         var names = Names(findings);
-        Assert.True(names.Count == 3, string.Join(", ", findings.Select(f => $"{f.ElementPath}@{f.LineNumber}")));
+        Assert.Equal(3, names.Count);
         Assert.Contains("undeclaredControl", names);
         Assert.Contains("showX", names);
         Assert.Contains(findings, f => f.ElementPath!.StartsWith("P.P", StringComparison.Ordinal) && f.LineNumber == 5);

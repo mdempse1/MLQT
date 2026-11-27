@@ -36,6 +36,10 @@ internal sealed record NameUse(NameUseKind Kind, string Text, int Line)
 
     /// <summary>The type a modifier is written on - <see cref="Text"/> - or null for any other use.</summary>
     public string? OwnerType => Kind == NameUseKind.Modifier ? Text : null;
+
+    /// <summary>Written in an annotation's <c>visible</c>, <c>enable</c> or <c>DynamicSelect</c>, which a
+    /// tool evaluates in the instance - so in a partial class, the class extending it may declare it.</summary>
+    public bool InAnnotation { get; init; }
 }
 
 /// <summary>
@@ -243,10 +247,10 @@ internal static class NameUseCollector
                     return;
                 case modelicaParser.Element_modificationContext element
                     when IsEvaluated(element.name().GetText()) && element.modification()?.modification_expression()?.expression() is { } value:
-                    Walk(value, bound);
+                    WalkEvaluated(value, bound);
                     return;
                 case modelicaParser.Named_argumentContext named when IsEvaluated(named.IDENT().GetText()):
-                    Walk(named.function_argument(), bound);
+                    WalkEvaluated(named.function_argument(), bound);
                     return;
                 case modelicaParser.PrimaryContext primary
                     when primary.component_reference()?.GetText() == "DynamicSelect"
@@ -254,7 +258,7 @@ internal static class NameUseCollector
                     // DynamicSelect(static, dynamic): the static value is for the editor and names nothing;
                     // the dynamic one is evaluated from the class's variables as it simulates.
                     foreach (var dynamic in arguments.function_argument())
-                        Walk(dynamic, bound);
+                        WalkEvaluated(dynamic, bound);
                     return;
                 default:
                     for (var i = 0; i < node.ChildCount; i++)
@@ -265,6 +269,15 @@ internal static class NameUseCollector
 
         // `enable` is a Dialog's; no other annotation MLQT knows has an attribute of that name.
         private static bool IsEvaluated(string name) => name is "visible" or "enable";
+
+        // An evaluated annotation value, each name in it marked as from one.
+        private void WalkEvaluated(IParseTree value, Bound bound)
+        {
+            var from = uses.Count;
+            Walk(value, bound);
+            for (var i = from; i < uses.Count; i++)
+                uses[i] = uses[i] with { InAnnotation = true };
+        }
 
         private void WalkFor(ParserRuleContext loop, modelicaParser.For_indicesContext indices, Bound bound)
         {
