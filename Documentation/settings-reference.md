@@ -338,6 +338,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Resource.AbsolutePath` | Warning | A resource referred to by an absolute file-system path, such as `C:/data/table.mat`, rather than a `modelica://` URI or a path relative to the file. It exists only on the machine it was written on. ◊ † | GUI, CLI, MCP |
 | `MLQT.Connection.Incompatible` | Error | A `connect` that joins two connectors which cannot be connected: a `Pin` to a `HeatPort`, a connector whose `i` is `flow` to one whose `i` is not, or a `Real` signal to an `Integer` one. The message names both connector classes and their members. ⊗ | GUI, CLI, MCP |
 | `MLQT.Connection.Duplicate` | Warning | The same two ports connected twice in one class, either way round and however spaced. The finding is on the second, and names the line of the first. ⊗ | GUI, CLI, MCP |
+| `MLQT.Connection.DeepReference` | Error | A `connect` argument that reaches further into a component than one of that component's connectors: `connect(button.y, aero.controlBus.driverBus.x)`, through the expandable bus of component `aero` into its sub-bus. MLS §9.1 allows only `c`, `c.c2…` (through a connector of the class) and `m.c`, and Dymola refuses anything else, though OpenModelica accepts it. ⊗ | GUI, CLI, MCP |
 | `MLQT.Reference.Obsolete` | Warning | A use of a class its library marks `annotation(obsolete="...")`, or of anything inside a package marked that way: a component's type, a base class, a function called, an import or a constant. The message quotes the library's, which usually names the replacement. ⊘ † | GUI, CLI, MCP |
 
 § **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
@@ -413,6 +414,25 @@ the `else` branches of two different `if` statements; the same pair under two `i
 same condition is. `a[1]` and `a[2]` are different ports. Over MSL 4.1 the two rules judge 99% of its 9,627 connections
 and report nothing; over Buildings they report 19 duplicates and no incompatible connection. Whether
 a connector is left unconnected, and whether two ports' directions agree, are not checked yet.
+
+**How deep a connect argument may reach** (`MLQT.Connection.DeepReference`). The Modelica Language
+Specification 3.7, §9.1, allows two forms of connect argument: `c1.c2.….cn`, which starts at a
+connector of the class and goes on through connectors inside it, and `m.c`, which is a connector `c`
+of a component `m` that is not itself a connector. Subscripts may be written on any name in either
+form. So `connect(gainV.u, stackBus.cellBus.v)` is fine where `stackBus` is the class's own
+expandable bus, and `connect(button.y, aero.controlBus)` is fine. But
+`connect(button.y, aero.controlBus.driverBus.x)` reaches past `aero`'s connector into its sub-bus,
+and Dymola refuses it. OpenModelica accepts it, so a model can pass one tool and fail the other. The
+fix is to connect `aero.controlBus` to a bus connector declared in the class and connect to that
+bus's `driverBus.x`. A finding is reported only for an argument of three or more names whose first
+name is a component of the class (inherited ones included) whose type MLQT can see is a `model` or
+`block`. The names after the first are not resolved, because the rule does not depend on them and a
+member of an expandable bus need not be declared. Two other cases are not judged, because under the
+expandable-connector rules they are less clear-cut. One is whether each later name of a `c1.c2…`
+argument is a connector. The other is whether `m.c`'s `c` is one. Over MSL 4.1 (6,487 classes) and
+Buildings (7,510) the rule reports nothing. MSL's three-name arguments, such as
+`stackBus.cellBus.v` in `Modelica.Electrical.Batteries.Utilities.BusTranscription`, all start at a
+bus of the class.
 
 ⊘ **What counts as obsolete, and who is told.** A class is obsolete when it carries the `obsolete`
 annotation itself — a short class such as `type OldAngle = Real(...) annotation(obsolete="...")`
@@ -578,6 +598,7 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckDependencyCycles": true,
     "CheckIncompatibleConnections": true,
     "CheckDuplicateConnections": true,
+    "CheckDeepConnectorReferences": true,
     "CheckObsoleteClasses": true
 }
 ```

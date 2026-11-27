@@ -718,6 +718,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.DuplicateConnection);
         set => SetRuleEnabled(RuleIds.DuplicateConnection, value);
     }
+    public bool CheckDeepConnectorReferences
+    {
+        get => IsRuleEnabled(RuleIds.DeepConnectorReference);
+        set => SetRuleEnabled(RuleIds.DeepConnectorReference, value);
+    }
     public bool CheckObsoleteClasses
     {
         get => IsRuleEnabled(RuleIds.ObsoleteClass);

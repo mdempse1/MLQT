@@ -132,6 +132,15 @@ shows it, as it shows a missing file. A library with no binary stays unrecorded,
 by default, in a new **Connections** category. `ConnectionIntegrityAnalyzer` reads each class's
 connects through `ConnectClauses.WithEquations`, the one reader, nested ones included.
 
+**Argument form, added 2026-11-27.** `MLQT.Connection.DeepReference` (Error when on, off by default)
+came out of a session in which Dymola rejected `connect(button.y, aero.controlBus.driverBus.x)`
+after MLQT's checks and OpenModelica had both passed it. MLS 3.7 §9.1 allows `c1.c2.….cn` from a
+connector of the class, or exactly `m.c`. So an argument of three or more names whose first is a
+model or block component of the class is reported. Only the first name is resolved. Nothing is
+reported over MSL 4.1 or Buildings. The rest of the form (whether `m.c`'s `c`, and each later name
+of `c1.c2…`, is a connector) is left out, because of how expandable connectors make their members
+connectors.
+
 **One signature.** The MCP server's `ConnectorCompatibility` had a private signature for
 `add_connection`. Promoting it found a bug: an alias connector (`connector Frame_a = Frame`) was the
 text `alias:Frame`, which nothing equals, so wiring an alias to its base was refused - a rule built
