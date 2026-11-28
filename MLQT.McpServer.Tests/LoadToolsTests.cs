@@ -256,8 +256,9 @@ public class LoadToolsTests
         // that - so the answer names the parameter to pass, which must be one mlqt_load has.
         var parameters = typeof(LoadTools).GetMethod(nameof(LoadTools.Load))!.GetParameters().Select(p => p.Name);
 
-        Assert.Contains("toolInstall", parameters);
-        Assert.Contains("pass toolInstall", ToolLibraryFolders.DetectedReason);
+        Assert.Contains("tool", parameters);
+        Assert.Contains("name it in tool, as 'Dymola 2026x Refresh 1'", ToolLibraryFolders.DetectedReason);
+        Assert.Equal(("dymola", "2026x Refresh 1"), ToolLibraryFolders.ParseTool("Dymola 2026x Refresh 1"));
     }
 
     [Fact]
@@ -425,7 +426,9 @@ public class LoadToolsTests
         using var w = new World();
         var tools = w.Tools();
         Assert.IsType<ToolError>(await tools.Load([]));
-        Assert.Contains("'dymola', 'openmodelica' or 'none'", Assert.IsType<ToolError>(await tools.Load([w.Path_("Project/App")], tool: "matlab")).Error);
+        Assert.Contains("'Dymola 2026x Refresh 1', 'OpenModelica 1.27.0' - or 'none'", Assert.IsType<ToolError>(await tools.Load([w.Path_("Project/App")], tool: "matlab")).Error);
+        Assert.Contains("is not Dymola 2026x Refresh 1", Assert.IsType<ToolError>(await tools.Load([w.Path_("Project/App")],
+            tool: "Dymola 2026x Refresh 1", toolInstall: Path.Combine(w.Path_("Programs"), "Dymola 2027x Beta 2"))).Error);
         var res = ToolAssert.Ok<LoadResult>(await tools.Load([w.Path_("Project/Nothing")]));
         Assert.Contains(res.Errors, e => e.Contains("not a library folder"));
     }
@@ -726,12 +729,156 @@ public class ToolLibraryFoldersTests
     }
 
     [Fact]
-    public void AnUnknownTool_IsNamedInTheNote()
+    public void AnUnknownTool_IsAnError_NamingIt()
     {
         var folders = ToolLibraryFolders.For("simulink", null, null, _ => null);
 
         Assert.Empty(folders.Folders);
-        Assert.Contains("'simulink'", folders.Note);
+        Assert.Contains("'simulink'", folders.Error);
+    }
+
+    [Theory]
+    [InlineData("Dymola 2026x Refresh 1", "dymola", "2026x Refresh 1")]
+    [InlineData("  dymola-2026x ", "dymola", "2026x")]
+    [InlineData("Dymola2026x", "dymola", "2026x")]
+    [InlineData("dymola", "dymola", null)]
+    [InlineData("OpenModelica 1.27.0", "openmodelica", "1.27.0")]
+    [InlineData("openmodelica", "openmodelica", null)]
+    [InlineData("none", null, null)]
+    [InlineData("", null, null)]
+    [InlineData(null, null, null)]
+    public void TheTool_IsTheSimulatorAndItsRelease(string? tool, string? kind, string? release)
+    {
+        Assert.Equal((kind, release), ToolLibraryFolders.ParseTool(tool));
+    }
+
+    [Theory]
+    [InlineData("matlab")]
+    [InlineData("dymolax")]
+    public void ATool_NamingNoSimulatorWeKnow_IsNotParsed(string tool) => Assert.Null(ToolLibraryFolders.ParseTool(tool));
+
+    [Theory]
+    [InlineData("Dymola 2026x Refresh 1", "2026xrefresh1")]
+    [InlineData("2026x Refresh 1", "2026xrefresh1")]
+    [InlineData("dymola-2026x-x86_64", "2026x")]
+    [InlineData("Dymola 2026x", "2026x")]
+    public void DymolaReleases_CompareByLettersAndDigits(string name, string key)
+        => Assert.Equal(key, ToolLibraryFolders.DymolaReleaseKey(name));
+
+    // Installs named as Dymola names them, under one folder standing in for Program Files.
+    private static (string Refresh, string Beta) TwoDymolas(TestHost host)
+    {
+        var programFiles = host.NewTempDir();
+        string Make(string release)
+        {
+            Directory.CreateDirectory(Path.Combine(programFiles, release, "Modelica", "Library"));
+            var exe = Path.Combine(programFiles, release, "bin64", "dymola.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(exe)!);
+            File.WriteAllText(exe, "x");
+            return exe;
+        }
+        return (Make("Dymola 2026x Refresh 1"), Make("Dymola 2027x Beta 2"));
+    }
+
+    [Fact]
+    public void TheDymolaReleaseNamed_WinsOverTheNewestAndTheOneRunning()
+    {
+        // The defect: a bare 'dymola' took the newest (a beta) or the one running, while the Dymola server
+        // had been told to open 2026x Refresh 1, so MLQT searched another release's MSL.
+        using var host = new TestHost();
+        var (refresh, beta) = TwoDymolas(host);
+
+        var folders = ToolLibraryFolders.For("Dymola 2026x Refresh 1", null, null, _ => null,
+            runningDymola: () => beta, allDymola: () => [beta, refresh]);
+
+        Assert.Null(folders.Error);
+        Assert.Equal(ToolLibraryFolders.InstallRoot(refresh), folders.Install);
+        Assert.Equal(Path.Combine(folders.Install!, "Modelica", "Library"), Assert.Single(folders.Folders));
+        Assert.Contains("Dymola 2026x Refresh 1 named in tool", folders.InstallReason);
+    }
+
+    [Fact]
+    public void ADymolaReleaseNotInstalled_IsAnError_NamingThoseThatAre()
+    {
+        using var host = new TestHost();
+        var (refresh, beta) = TwoDymolas(host);
+
+        var folders = ToolLibraryFolders.For("Dymola 2025x", null, null, _ => null, allDymola: () => [beta, refresh]);
+
+        Assert.Empty(folders.Folders);
+        Assert.Contains("No Dymola 2025x was found", folders.Error);
+        Assert.Contains(ToolLibraryFolders.InstallRoot(refresh), folders.Error);
+        Assert.Contains(ToolLibraryFolders.InstallRoot(beta), folders.Error);
+    }
+
+    [Fact]
+    public void AToolInstallOfAnotherRelease_IsRefused_AndOneNamingNoneIsTaken()
+    {
+        using var host = new TestHost();
+        var (refresh, beta) = TwoDymolas(host);
+
+        Assert.Contains("is not Dymola 2026x Refresh 1",
+            ToolLibraryFolders.For("Dymola 2026x Refresh 1", beta, null, _ => null, allDymola: () => []).Error);
+
+        var custom = Install(host, "bin64/dymola.exe", "Modelica/Library"); // a temp folder: no release in its name
+        var folders = ToolLibraryFolders.For("Dymola 2026x Refresh 1", custom, null, _ => null, allDymola: () => [refresh]);
+        Assert.Null(folders.Error);
+        Assert.Equal(ToolLibraryFolders.InstallRoot(custom), folders.Install);
+    }
+
+    [Fact]
+    public void ALinuxDymola_IsFoundByTheReleaseInItsFolderName()
+    {
+        using var host = new TestHost();
+        var opt = host.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(opt, "dymola-2026x-x86_64", "Modelica", "Library"));
+        var exe = Path.Combine(opt, "dymola-2026x-x86_64", "bin64", "dymola");
+        Directory.CreateDirectory(Path.GetDirectoryName(exe)!);
+        File.WriteAllText(exe, "x");
+        var launcher = Path.Combine(host.NewTempDir(), "dymola-2026x-x86_64");
+        File.WriteAllText(launcher, "x");
+
+        // The launcher names the release too, but holds no library: the install's folder is taken.
+        var folders = ToolLibraryFolders.For("Dymola 2026x", null, null, _ => null, allDymola: () => [launcher, exe]);
+
+        Assert.Equal(Path.Combine(opt, "dymola-2026x-x86_64"), folders.Install);
+    }
+
+    [Fact]
+    public void TheOpenModelicaVersionNamed_PicksItsInstall_AndOneNotInstalledIsRefused()
+    {
+        using var host = new TestHost();
+        var programFiles = host.NewTempDir();
+        string Make(string folder)
+        {
+            var exe = Path.Combine(programFiles, folder, "bin", "omc.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(exe)!);
+            File.WriteAllText(exe, "x");
+            return exe;
+        }
+        var newer = Make("OpenModelica1.27.0-64bit");
+        var older = Make("OpenModelica1.26.1-64bit");
+
+        var folders = ToolLibraryFolders.For("OpenModelica 1.26", null, null, _ => null, allOmc: () => [newer, older]);
+        Assert.Equal(ToolLibraryFolders.InstallRoot(older), folders.Install);
+
+        Assert.Contains("No OpenModelica 1.25.0 was found",
+            ToolLibraryFolders.For("OpenModelica 1.25.0", null, null, _ => null, allOmc: () => [newer, older]).Error);
+        Assert.Contains("names no OpenModelica version",
+            ToolLibraryFolders.For("OpenModelica latest", null, null, _ => null, allOmc: () => [newer]).Error);
+    }
+
+    [Fact]
+    public void AnOmcWhosePathNamesNoVersion_IsTaken_SayingItCouldNotBeChecked()
+    {
+        using var host = new TestHost();
+        var omc = Install(host, "bin/omc", "lib");
+
+        var folders = ToolLibraryFolders.For("OpenModelica 1.27.0", null, null, _ => null, allOmc: () => [omc]);
+
+        Assert.Null(folders.Error);
+        Assert.Equal(ToolLibraryFolders.InstallRoot(omc), folders.Install);
+        Assert.Contains("could not be checked", folders.InstallReason);
     }
 
     [Fact]

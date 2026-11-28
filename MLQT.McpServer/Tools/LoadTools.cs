@@ -46,7 +46,8 @@ public sealed class LoadTools
                  "the libraries it opens are loaded (it is read, not run; lines it cannot work out are listed). Then, with " +
                  "withDependencies (default true), each library their uses annotations name and nothing has " +
                  "loaded is searched for: beside the library that needs it, in its repository, in the simulation " +
-                 "tool's library folders (tool: 'dymola' or 'openmodelica'; toolInstall picks which install), " +
+                 "tool's library folders (tool: the simulator and the release it runs, e.g. 'Dymola 2026x " +
+                 "Refresh 1' - the release the simulator's server was told to open), " +
                  "then on MODELICAPATH. Naming another install than an earlier load used searches again from it, in place of what that search found. The exact version wins, else the newest copy declaring " +
                  "noneFromVersion for it, else nothing is loaded and every copy seen is listed. The answer " +
                  "names each library, its version, path and how it was found. A path holding no package.mo of " +
@@ -56,8 +57,12 @@ public sealed class LoadTools
         [Description("Library folders, package.mo files or single .mo files, in the order to load them.")]
         IReadOnlyList<string>? paths = null,
         [Description("Also load what these libraries' uses annotations name. Default true.")] bool withDependencies = true,
-        [Description("Whose library folders to search: 'dymola', 'openmodelica' or 'none' (default).")] string? tool = null,
-        [Description("The tool's install folder or executable, when it is not the one in MLQT's settings or the newest.")]
+        [Description("The simulator and its release, whose library folders to search: 'Dymola 2026x Refresh 1', " +
+                     "'OpenModelica 1.27.0', or 'none' (default). Give the release the simulator runs - the one " +
+                     "its MCP server was told to open - or MLQT may load another release's libraries, the MSL " +
+                     "included. A release not installed is refused. A bare 'dymola' takes the one running, else " +
+                     "the newest installed.")] string? tool = null,
+        [Description("The tool's install folder or executable, for an install not in a standard place.")]
         string? toolInstall = null,
         [Description("Load a path even when another copy of that library was loaded explicitly. Default false.")]
         bool replace = false,
@@ -72,11 +77,13 @@ public sealed class LoadTools
     {
         if ((paths is null || paths.Count == 0) && string.IsNullOrWhiteSpace(script))
             return new ToolError("Name at least one library in paths, or a startup script in script.");
-        if (tool is not null && tool.Trim().ToLowerInvariant() is not ("" or "none" or "dymola" or "openmodelica"))
-            return new ToolError($"tool must be 'dymola', 'openmodelica' or 'none', not '{tool}'.");
+        if (ToolLibraryFolders.ParseTool(tool) is null)
+            return new ToolError(ToolLibraryFolders.UnknownTool(tool));
 
         var folders = ToolLibraryFolders.For(tool, toolInstall, DesktopSettingsDirectory, Environment_,
             runningDymola: RunningDymola_);
+        if (folders.Error is { } wrongRelease)
+            return new ToolError(wrongRelease);
         var loader = new DependencyLoader(_libraries, _repositories, _session, Environment_)
         {
             LoadRepository = async (path, loadLibraries) => await _sessionTools.LoadRepository(path, loadLibraries: loadLibraries),

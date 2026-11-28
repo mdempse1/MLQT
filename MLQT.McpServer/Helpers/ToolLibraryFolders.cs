@@ -6,7 +6,8 @@ namespace MLQT.McpServer.Helpers;
 
 /// <summary>Where a simulation tool keeps the libraries it loads, which install that came from, and why
 /// that install (<see cref="InstallReason"/>).</summary>
-internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Install, string? Note, string? InstallReason = null);
+internal sealed record ToolFolders(IReadOnlyList<string> Folders, string? Install, string? Note, string? InstallReason = null,
+    string? Error = null);
 
 /// <summary>
 /// The library folders of the simulation tool a user works with, for the dependency search
@@ -36,18 +37,30 @@ internal static class ToolLibraryFolders
     /// desktop settings; null asks nothing. <c>mlqt_load</c> passes <see cref="RunningDymola"/>.</param>
     /// <param name="allDymola">Every Dymola installed, for naming the others when the newest is taken;
     /// by default the machine's, unless a test gave <paramref name="findDymola"/>.</param>
+    /// <param name="allOmc">Every omc installed, for finding the release <paramref name="tool"/> names; by
+    /// default the machine's, unless a test gave <paramref name="findOmc"/>.</param>
     public static ToolFolders For(string? tool, string? toolInstall, string? desktopSettingsDirectory,
         Func<string, string?> environment, Func<string>? findDymola = null, Func<string>? findOmc = null,
-        Func<string?>? runningDymola = null, Func<IReadOnlyList<string>>? allDymola = null)
+        Func<string?>? runningDymola = null, Func<IReadOnlyList<string>>? allDymola = null,
+        Func<IReadOnlyList<string>>? allOmc = null)
     {
-        switch (tool?.Trim().ToLowerInvariant())
+        if (ParseTool(tool) is not { } parsed)
+            return new ToolFolders([], null, null, Error: UnknownTool(tool));
+        var (kind, release) = parsed;
+        switch (kind)
         {
-            case null or "" or "none":
+            case null:
                 return new ToolFolders([], null, null);
             case "dymola":
             {
-                var (install, from, reason) = Choose(toolInstall, runningDymola ?? (() => null),
-                    () => DesktopDymola(desktopSettingsDirectory), findDymola ?? DymolaSettings.FindInstalledDymola);
+                var (install, from, reason) = release is null
+                    ? Choose(toolInstall, runningDymola ?? (() => null),
+                        () => DesktopDymola(desktopSettingsDirectory), findDymola ?? DymolaSettings.FindInstalledDymola)
+                    : ChooseDymolaRelease(release, toolInstall, runningDymola ?? (() => null),
+                        () => DesktopDymola(desktopSettingsDirectory),
+                        allDymola ?? (findDymola is null ? InstalledDymolas : () => [findDymola()]));
+                if (from == ReleaseError)
+                    return new ToolFolders([], null, null, Error: reason);
                 if (reason == DetectedReason && install is not null)
                     reason += OtherInstalls(install, (allDymola ?? (findDymola is null ? InstalledDymolas : () => []))());
                 if (install is null)
@@ -67,8 +80,13 @@ internal static class ToolLibraryFolders
                     folders.Add(OperatingSystem.IsWindows()
                         ? Path.Combine(environment("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".openmodelica", "libraries")
                         : Path.Combine(environment("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openmodelica", "libraries"));
-                var (install, from, reason) = Choose(toolInstall, () => null, () => DesktopOmc(desktopSettingsDirectory),
-                    findOmc ?? OpenModelicaSettings.FindInstalledOmc);
+                var (install, from, reason) = release is null
+                    ? Choose(toolInstall, () => null, () => DesktopOmc(desktopSettingsDirectory),
+                        findOmc ?? OpenModelicaSettings.FindInstalledOmc)
+                    : ChooseOmcRelease(release, toolInstall, () => DesktopOmc(desktopSettingsDirectory),
+                        allOmc ?? (findOmc is null ? InstalledOmcs : () => [findOmc()]));
+                if (from == ReleaseError)
+                    return new ToolFolders([], null, null, Error: reason);
                 string? root = null;
                 if (install is not null)
                 {
@@ -82,14 +100,169 @@ internal static class ToolLibraryFolders
                     reason);
             }
             default:
-                return new ToolFolders([], null, $"tool must be 'dymola', 'openmodelica' or 'none', not '{tool}'.");
+                return new ToolFolders([], null, null, Error: UnknownTool(tool));
         }
     }
+
+    internal static string UnknownTool(string? tool) =>
+        $"tool must be the simulator and its release - 'Dymola 2026x Refresh 1', 'OpenModelica 1.27.0' - or 'none', not '{tool}'.";
+
+    /// <summary>
+    /// The simulator <paramref name="tool"/> names and the release it gives, if any: <c>Dymola 2026x Refresh 1</c>
+    /// is <c>("dymola", "2026x Refresh 1")</c>, a bare <c>dymola</c> is <c>("dymola", null)</c>, and <c>none</c> or
+    /// nothing is <c>(null, null)</c>. Null when it names no simulator MLQT knows.
+    /// </summary>
+    /// <remarks>The release is asked for because the newest install need not be the one the simulator was told
+    /// to open: a Dymola server is started with a release, and a bare <c>dymola</c> searched another's library
+    /// folder, so MLQT checked against other MSL and DymolaCommands versions than Dymola simulated with.</remarks>
+    internal static (string? Kind, string? Release)? ParseTool(string? tool)
+    {
+        var text = tool?.Trim() ?? string.Empty;
+        if (text.Length == 0 || text.Equals("none", StringComparison.OrdinalIgnoreCase))
+            return (null, null);
+        foreach (var kind in new[] { "openmodelica", "dymola" })
+        {
+            if (!text.StartsWith(kind, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var rest = text[kind.Length..].Trim(' ', '-', '_', '\t');
+            // 'dymolax' is not Dymola: the release has to be set off, or start with its year.
+            if (rest.Length > 0 && text.Length > kind.Length && char.IsLetter(text[kind.Length]))
+                return null;
+            return (kind, rest.Length == 0 ? null : rest);
+        }
+        return null;
+    }
+
+    /// <summary>A Dymola release as letters and digits only, lower case: <c>Dymola 2026x Refresh 1</c>,
+    /// <c>2026x Refresh 1</c> and <c>dymola-2026xRefresh1-x86_64</c> are all <c>2026xrefresh1</c>.</summary>
+    internal static string DymolaReleaseKey(string name)
+    {
+        var key = new string(name.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        if (key.StartsWith("dymola", StringComparison.Ordinal))
+            key = key["dymola".Length..];
+        if (key.EndsWith("x8664", StringComparison.Ordinal))
+            key = key[..^"x8664".Length];
+        return key;
+    }
+
+    /// <summary>
+    /// The release an install path names, or null when it names none: the folder of
+    /// <c>Dymola 2026x Refresh 1\bin64\dymola.exe</c>, <c>/opt/dymola-2026x-x86_64/bin64/dymola</c>, or a Linux
+    /// launcher, <c>/usr/local/bin/dymola-2026x-x86_64</c>, whose own name carries it.
+    /// </summary>
+    internal static string? DymolaReleaseOf(string path)
+    {
+        var file = Path.GetFileNameWithoutExtension(path.TrimEnd('/', '\\'));
+        foreach (var name in new[] { file, Path.GetFileName(InstallRoot(path)) })
+        {
+            if (!name.StartsWith("dymola", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var key = DymolaReleaseKey(name);
+            if (key.Length > 0 && char.IsDigit(key[0]))
+                return key;
+        }
+        return null;
+    }
+
+    // What a Choose returns as From when the release named cannot be used; Reason is then the error.
+    private const string ReleaseError = "\0error";
+
+    /// <summary>
+    /// The Dymola install of the release named: <paramref name="given"/> when it is that release or its path
+    /// names none, else the first of the one running, the desktop settings' and those installed that is.
+    /// None is an error, naming what is installed, so a wrong release is never searched in its place.
+    /// </summary>
+    private static (string? Install, string From, string? Reason) ChooseDymolaRelease(string release,
+        string? given, Func<string?> running, Func<string?> desktop, Func<IReadOnlyList<string>> installed)
+    {
+        var wanted = DymolaReleaseKey(release);
+        var label = $"Dymola {release}";
+        if (!string.IsNullOrWhiteSpace(given))
+        {
+            var givenRelease = DymolaReleaseOf(given);
+            return givenRelease is null || givenRelease == wanted
+                ? (given, $"'{given}', as given", "as given")
+                : (null, ReleaseError, $"toolInstall '{given}' is not {label}, which tool names; pass the install of " +
+                                       "the release the simulator runs, or name its release in tool.");
+        }
+
+        var all = new[] { running(), desktop() }.Concat(installed())
+            .Where(p => !string.IsNullOrEmpty(p)).Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // A Linux launcher names the release but is not the install, so a folder with the library goes first.
+        var match = all.Where(p => DymolaReleaseOf(p) == wanted)
+            .OrderByDescending(p => Directory.Exists(Path.Combine(InstallRoot(p), "Modelica", "Library")))
+            .FirstOrDefault();
+        if (match is not null)
+            return (match, $"'{match}', the {label} named", $"the {label} named in tool");
+
+        var found = all.Select(InstallRoot).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return (null, ReleaseError, $"No {label} was found on this machine" +
+            (found.Count == 0 ? "" : $"; installed: {string.Join(", ", found.Select(f => $"'{f}'"))}") +
+            ". Name one of those in tool, or pass toolInstall with the install's folder.");
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex OmcVersion = new(@"\d+\.\d+(?:\.\d+)?",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>The OpenModelica version an install path names, as <c>OpenModelica1.27.0-64bit</c> does on
+    /// Windows; null for one that names none, as <c>/usr/bin/omc</c> on Linux does.</summary>
+    internal static string? OmcVersionOf(string path) =>
+        OmcVersion.Match(Path.GetFileName(InstallRoot(path))) is { Success: true } m ? m.Value : null;
+
+    // 1.27 is any 1.27.x; 1.27.0 is only itself.
+    private static bool OmcVersionMatches(string installed, string wanted) =>
+        installed == wanted || installed.StartsWith(wanted + ".", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The omc install of the version named, as <see cref="ChooseDymolaRelease"/> does for Dymola, except that an
+    /// install whose path names no version - Linux's <c>/usr/bin/omc</c> - is taken when none names it, saying
+    /// so: its libraries are in the user's library folder whatever the release.
+    /// </summary>
+    private static (string? Install, string From, string? Reason) ChooseOmcRelease(string release,
+        string? given, Func<string?> desktop, Func<IReadOnlyList<string>> installed)
+    {
+        var label = $"OpenModelica {release}";
+        if (OmcVersion.Match(release) is not { Success: true } version)
+            return (null, ReleaseError, $"'{label}' names no OpenModelica version; give it as 'OpenModelica 1.27.0'.");
+        var wanted = version.Value;
+        if (!string.IsNullOrWhiteSpace(given))
+        {
+            var givenVersion = OmcVersionOf(given);
+            return givenVersion is null || OmcVersionMatches(givenVersion, wanted)
+                ? (given, $"'{given}', as given", "as given")
+                : (null, ReleaseError, $"toolInstall '{given}' is not {label}, which tool names.");
+        }
+
+        var all = new[] { desktop() }.Concat(installed())
+            .Where(p => !string.IsNullOrEmpty(p)).Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (all.FirstOrDefault(p => OmcVersionOf(p) is { } v && OmcVersionMatches(v, wanted)) is { } match)
+            return (match, $"'{match}', the {label} named", $"the {label} named in tool");
+        if (all.FirstOrDefault(p => OmcVersionOf(p) is null) is { } unversioned)
+            return (unversioned, $"'{unversioned}', whose path names no version",
+                $"its path names no version, so it could not be checked against {label}");
+        if (all.Count == 0)
+            return (null, string.Empty, null);
+        return (null, ReleaseError, $"No {label} was found on this machine; installed: " +
+            string.Join(", ", all.Select(p => $"'{InstallRoot(p)}'")) +
+            ". Name one of those in tool, or pass toolInstall with the install's folder.");
+    }
+
+    // Every omc installed on this machine, as the desktop app's detection orders them.
+    private static IReadOnlyList<string> InstalledOmcs() =>
+        OpenModelicaSettings.CandidateOmcPaths(OperatingSystem.IsWindows(),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetEnvironmentVariable("PATH"), DateTime.Now.Year + 1 - 2000)
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     /// <summary>What the answer says when the install was detected: the newest release on the machine
     /// need not be the one the simulator is running, and only the caller can know that (B504).</summary>
     internal const string DetectedReason =
-        "the newest found on this machine; if the simulator is running another release, pass toolInstall";
+        "the newest found on this machine, because tool named no release; if the simulator runs another, " +
+        "name it in tool, as 'Dymola 2026x Refresh 1'";
 
     /// <summary>What the answer says when the install is the one running.</summary>
     internal const string RunningReason = "the one running now";

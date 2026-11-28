@@ -97,12 +97,14 @@ public sealed class GuidanceTools
                  following its cd, RunScript and ModelicaPath changes, and a loader function it calls in a
                  library it opened is followed through its if branches. Any line it cannot work out is
                  listed - ask the user about those, or pass the path yourself.
-              2. Leave withDependencies on, with tool 'dymola' or 'openmodelica': what those libraries use
-                 and nothing loaded is then found beside them, in the tool's library folders and on
-                 MODELICAPATH - the MSL, Complex and ModelicaServices included. The answer says which
-                 install it searched and why (toolInstallChosen). If the simulator says it is running
-                 another release, load again with toolInstall: what the first search found is searched for
-                 again from that install.
+              2. Leave withDependencies on, with tool naming the simulator AND the release it runs - the
+                 one its server was told to open, as 'Dymola 2026x Refresh 1' or 'OpenModelica 1.27.0'. What
+                 those libraries use and nothing loaded is then found beside them, in that release's library
+                 folders and on MODELICAPATH - the MSL, Complex and ModelicaServices included. Without the
+                 release MLQT guesses (the Dymola running, else the newest installed), and the newest is
+                 often a beta the project does not use. A release not installed is refused, naming those
+                 that are. The answer says which install it searched and why (toolInstallChosen); naming
+                 another release later searches again from that install.
               3. Read the answer: each library's version and where it came from, and anything not found.
               4. If the simulator's set changes - another project's startup script - load the new paths. What
                  you name explicitly replaces what a search found.
@@ -110,7 +112,8 @@ public sealed class GuidanceTools
 
             Example — find and simulate an MSL example, such as a PID controller:
               1. Simulator: load_library 'Modelica'; then getLoadedLibraries() for the directories.
-              2. MLQT: mlqt_load with the Modelica directory and tool 'openmodelica'; its dependencies follow.
+              2. MLQT: mlqt_load with the Modelica directory and tool 'OpenModelica 1.27.0' (the release
+                 getVersion() gives); its dependencies follow.
               3. MLQT: mlqt_find with match 'text' and 'PID' (or match 'interface' for simulatable models) to
                  find the example, and mlqt_get_class with the documentation and interface views to
                  understand it.

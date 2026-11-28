@@ -49,7 +49,18 @@ OpenModelica 1.27 User's Guide):
 3. **The simulation tool's library folders**, for the `tool` named. For Dymola that is
    `<install>/Modelica/Library`. For OpenModelica it is the user library path above, plus
    `<install>/lib/omlibrary` when that exists (an install before 1.19 shipped its libraries there).
-   Which install is searched is decided in this order:
+
+   **`tool` carries the release** (`Dymola 2026x Refresh 1`, `OpenModelica 1.27.0`;
+   `ToolLibraryFolders.ParseTool`), because a Dymola MCP server is started with a release and a bare
+   `dymola` searched whichever MLQT guessed, not the one the simulator opened. With a release, the
+   install is the first of `toolInstall`, the one running, the desktop settings' and those installed
+   whose folder name is that release (`DymolaReleaseKey` compares letters and digits only, so
+   `/opt/dymola-2026x-x86_64` matches `Dymola 2026x`). None is an error naming what is installed:
+   searching another release would load its MSL silently. A `toolInstall` whose folder names another
+   release is refused too. An omc path naming no version (`/usr/bin/omc`) is taken, saying so, since
+   OpenModelica's libraries are in the user folder whatever the release.
+
+   With a bare `dymola` or `openmodelica`, which install is searched is decided in this order:
    1. `toolInstall` passed to `mlqt_load`: the install folder or executable. A machine often has
       many Dymola releases, and the one the user runs is not necessarily the newest.
    2. For Dymola, the one running now (`ToolLibraryFolders.RunningDymola`), when exactly one release
