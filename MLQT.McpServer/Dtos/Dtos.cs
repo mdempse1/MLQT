@@ -156,7 +156,7 @@ public sealed record PackageTreeNode(
     IReadOnlyList<PackageTreeNode>? Children);
 
 /// <summary>What <c>mlqt_browse</c> returns. <see cref="Count"/> is every class in <see cref="Tree"/>, and
-/// stays at or below maxNodes bar the starting classes, which are always listed. When <see cref="Truncated"/>,
+/// stays at or below maxNodes, and within the reply's size limit, bar the starting classes, which are always listed. When <see cref="Truncated"/>,
 /// <see cref="Note"/> names the packages left unexpanded, so the caller knows where to browse next.</summary>
 public sealed record PackageTreeResult(
     int Count,

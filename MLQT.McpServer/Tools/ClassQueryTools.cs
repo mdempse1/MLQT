@@ -8,6 +8,7 @@ using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.Services.Helpers;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.McpServer.Tools;
@@ -245,6 +246,8 @@ public sealed class ClassQueryTools
         // let depth=4, maxNodes=400 return thousands of classes, more than an agent's reply can hold.
         var roots = rootIds.Select(id => NewBranch(id, childrenByParent)).OfType<TreeBranch>().ToList();
         var count = roots.Count;
+        var size = roots.Sum(r => r.Size);
+        var bySize = false;
         var unexpanded = new List<TreeBranch>();
         var partly = new List<TreeBranch>();
         var queue = new Queue<(TreeBranch Branch, int Depth)>(roots.Select(r => (r, 0)));
@@ -254,23 +257,31 @@ public sealed class ClassQueryTools
             if (branch.ChildIds.Count == 0 || depth >= maxDepth)
                 continue;
 
-            var room = maxNodes - count;
+            var children = branch.ChildIds.Select(id => NewBranch(id, childrenByParent)).OfType<TreeBranch>().ToList();
+            // How many of them fit, in order, within both the class count and the reply's size.
+            var fit = 0;
+            var fitSize = 0;
+            while (fit < children.Count && count + fit < maxNodes && size + fitSize + children[fit].Size <= MaxTreeChars)
+                fitSize += children[fit++].Size;
+            if (fit < children.Count && count + fit < maxNodes)
+                bySize = true;
+
             // A package's children are listed whole or not at all, so a listing never looks complete when it
             // is not - except while nothing has been listed yet, so a single flat package still shows something.
-            var take = branch.ChildIds.Count <= room ? branch.ChildIds.Count
-                     : count == roots.Count && room > 0 ? room
+            var take = fit == children.Count ? fit
+                     : count == roots.Count ? fit
                      : 0;
             if (take == 0)
             {
                 unexpanded.Add(branch);
                 continue;
             }
-            if (take < branch.ChildIds.Count)
+            if (take < children.Count)
                 partly.Add(branch);
 
-            branch.Children = branch.ChildIds.Take(take)
-                .Select(id => NewBranch(id, childrenByParent)).OfType<TreeBranch>().ToList();
-            count += branch.Children.Count;
+            branch.Children = children.Take(take).ToList();
+            count += take;
+            size += branch.Children.Sum(c => c.Size);
             foreach (var child in branch.Children)
                 queue.Enqueue((child, depth + 1));
         }
@@ -279,20 +290,30 @@ public sealed class ClassQueryTools
         return new PackageTreeResult(
             count,
             truncated,
-            truncated ? TruncationNote(maxNodes, unexpanded, partly) : null,
+            truncated ? TruncationNote(maxNodes, bySize, unexpanded, partly) : null,
             roots.Select(r => r.ToNode()).ToList());
     }
 
     internal const int DefaultTreeNodes = 200;
 
-    /// <summary>The most classes one reply may hold. About 120 characters a class, so 500 is some 60k
-    /// characters, inside what an agent's client takes from a tool (B503: a whole tree came back at 30k
-    /// characters in the 2026-10-18 sessions, and a later depth=4 call passed the client's limit).</summary>
+    /// <summary>The most classes one reply may hold, whatever is asked.</summary>
     internal const int MaxTreeNodes = 500;
 
-    private static string TruncationNote(int maxNodes, List<TreeBranch> unexpanded, List<TreeBranch> partly)
+    /// <summary>
+    /// The most characters the classes of one reply may take, estimated as they serialise. Measured on the
+    /// MSL, a class is 110-150 characters, and dotted ids break into many tokens, so 500 deep classes could
+    /// reach a client's 25,000-token limit for a tool's answer; 40,000 characters stays well inside it, at
+    /// some 300 MSL classes (B503: a whole tree came back at 30k characters in the 2026-10-18 sessions, and a
+    /// later depth=4 call passed the client's limit).
+    /// </summary>
+    internal const int MaxTreeChars = 40_000;
+
+    private static string TruncationNote(int maxNodes, bool bySize, List<TreeBranch> unexpanded, List<TreeBranch> partly)
     {
-        var parts = new List<string> { $"Cut at maxNodes={maxNodes}." };
+        var parts = new List<string>
+        {
+            bySize ? $"Cut at the reply's size limit, before maxNodes={maxNodes} was reached." : $"Cut at maxNodes={maxNodes}.",
+        };
         if (partly.Count > 0)
         {
             var p = partly[0];
@@ -315,8 +336,12 @@ public sealed class ClassQueryTools
         var node = _libraries.GetModelById(id);
         if (node is null)
             return null;
-        childrenByParent.TryGetValue(id, out var childIds);
-        return new TreeBranch(node.Id, node.Name, node.ClassType, childIds ?? []);
+        // In the package's own order, as the library browser shows it: the graph's lists are in no order a
+        // reader would recognise, and which classes a cut keeps follows this order.
+        var childIds = childrenByParent.TryGetValue(id, out var ids)
+            ? ChildOrder.Sort(ids.Select(_libraries.GetModelById).OfType<ModelNode>(), node).Select(c => c.Id).ToList()
+            : [];
+        return new TreeBranch(node.Id, node.Name, node.ClassType, childIds);
     }
 
     /// <summary>A node while the tree is being built breadth first; <see cref="ToNode"/> freezes it.</summary>
@@ -325,6 +350,11 @@ public sealed class ClassQueryTools
         public string Id { get; } = id;
         public List<string> ChildIds { get; } = childIds;
         public List<TreeBranch>? Children { get; set; }
+
+        /// <summary>About what this class takes in the reply: its strings, and the property names and
+        /// punctuation around them, which are some 60 characters (<c>{"id":"","name":"","classType":"",
+        /// "childCount":0}</c>, a comma, and its share of a <c>"children":[]</c>).</summary>
+        public int Size => Id.Length + name.Length + classType.Length + 60;
 
         public PackageTreeNode ToNode()
             => new(Id, name, classType, ChildIds.Count, Children?.Select(c => c.ToNode()).ToList());

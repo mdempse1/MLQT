@@ -1,1 +1,3 @@
 #nullable enable
+MLQT.Services.Helpers.ChildOrder
+static MLQT.Services.Helpers.ChildOrder.Sort(System.Collections.Generic.IEnumerable<ModelicaGraph.DataTypes.ModelNode!>! children, ModelicaGraph.DataTypes.ModelNode! parent) -> System.Collections.Generic.List<ModelicaGraph.DataTypes.ModelNode!>!

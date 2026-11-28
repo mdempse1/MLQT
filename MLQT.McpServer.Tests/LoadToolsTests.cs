@@ -58,7 +58,27 @@ public class LoadToolsTests
             DesktopSettingsDirectory = null,
             Environment_ = key => Environment.GetValueOrDefault(key),
             RunningDymola_ = null,   // the machine's Dymola, running or not, is no part of a test
+            InstalledDymolas_ = () => InstalledDymolas,   // nor are its installs, when a release is named
+            InstalledOmcs_ = () => [],
         };
+
+        /// <summary>The Dymola installs a named release is looked for among, as the machine's would be.</summary>
+        public List<string> InstalledDymolas { get; } = [];
+
+        /// <summary>A Dymola install named for <paramref name="release"/> under Programs, with its own library
+        /// folder and, when <paramref name="withBase"/>, a copy of Base in it.</summary>
+        public string NamedInstall(string release, bool withBase)
+        {
+            var folder = $"Programs/Dymola {release}";
+            Directory.CreateDirectory(Path_($"{folder}/Modelica/Library"));
+            if (withBase)
+                Write($"{folder}/Modelica/Library/Base 1.0", Package("Base"));
+            Directory.CreateDirectory(Path_($"{folder}/bin64"));
+            var exe = Path_($"{folder}/bin64/dymola.exe");
+            File.WriteAllText(exe, "not a real Dymola");
+            InstalledDymolas.Add(exe);
+            return exe;
+        }
 
         public async Task<LoadResult> Load(params string[] relative) => await LoadWith(DymolaExe, relative);
 
@@ -250,15 +270,18 @@ public class LoadToolsTests
     }
 
     [Fact]
-    public void ADetectedInstall_SaysToPassAParameterTheToolHas()
+    public void AGuessedInstall_SaysToNameTheRelease_InAFormTheToolAccepts()
     {
-        // B504: the newest Dymola found need not be the one running, and only the agent can know
-        // that - so the answer names the parameter to pass, which must be one mlqt_load has.
-        var parameters = typeof(LoadTools).GetMethod(nameof(LoadTools.Load))!.GetParameters().Select(p => p.Name);
-
-        Assert.Contains("tool", parameters);
-        Assert.Contains("name it in tool, as 'Dymola 2026x Refresh 1'", ToolLibraryFolders.DetectedReason);
-        Assert.Equal(("dymola", "2026x Refresh 1"), ToolLibraryFolders.ParseTool("Dymola 2026x Refresh 1"));
+        // B504: the newest Dymola found need not be the one running, and only the agent can know that - so
+        // a guessed install's answer says to name the release, and every example it gives must be one
+        // ParseTool and the release readers accept, or the advice would lead to a refusal.
+        Assert.Contains("name it in tool", ToolLibraryFolders.DetectedReason);
+        Assert.Contains("in tool", ToolLibraryFolders.NoReleaseNamed);
+        var examples = System.Text.RegularExpressions.Regex.Matches(ToolLibraryFolders.DetectedReason, "'([^']+)'")
+            .Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(2, examples.Count);
+        Assert.All(examples, example => Assert.NotNull(ToolLibraryFolders.ParseTool(example)?.Release));
+        Assert.Equal("2026x r1", ToolLibraryFolders.DymolaReleaseKey(examples[0]));
     }
 
     [Fact]
@@ -421,6 +444,30 @@ public class LoadToolsTests
     }
 
     [Fact]
+    public async Task ANamedRelease_IsTheInstallTheSearchUses_NotTheNewestOrTheOneRunning()
+    {
+        // End to end: the release named in tool picks the library folder the dependency search reads. The
+        // beta is newer and running, and has no Base, so taking it would leave Base not found.
+        using var w = new World();
+        var refresh = w.NamedInstall("2026x Refresh 1", withBase: true);
+        var beta = w.NamedInstall("2027x Beta 2", withBase: false);
+        var tools = w.Tools();
+        tools.RunningDymola_ = () => beta;
+
+        var res = ToolAssert.Ok<LoadResult>(await tools.Load([w.Path_("Project/App")], tool: "Dymola 2026x Refresh 1"));
+
+        Assert.Equal(ToolLibraryFolders.InstallRoot(refresh), res.ToolInstall);
+        Assert.Equal("the Dymola 2026x Refresh 1 named in tool", res.ToolInstallChosen);
+        var base_ = Named(res, "Base");
+        Assert.Equal("the tool's library folder", base_.FoundBy);
+        Assert.StartsWith(ToolLibraryFolders.InstallRoot(refresh), base_.Path);
+
+        var refused = Assert.IsType<ToolError>(await w.Tools().Load([w.Path_("Project/App")], tool: "Dymola 2025x"));
+        Assert.Contains("No Dymola 2025x was found", refused.Error);
+        Assert.Contains(ToolLibraryFolders.InstallRoot(refresh), refused.Error);
+    }
+
+    [Fact]
     public async Task BadArguments_AreRefusedOrReported()
     {
         using var w = new World();
@@ -566,7 +613,7 @@ public class ToolLibraryFoldersTests
         Assert.Equal(install, folders.Install);
         Assert.Equal(Path.Combine(install, "Modelica", "Library"), Assert.Single(folders.Folders));
         Assert.Contains("desktop app", folders.Note);
-        Assert.Equal("from the desktop app's External Tools settings", folders.InstallReason);
+        Assert.Equal("from the desktop app's External Tools settings" + ToolLibraryFolders.NoReleaseNamed, folders.InstallReason);
     }
 
     [Fact]
@@ -624,7 +671,8 @@ public class ToolLibraryFoldersTests
             runningDymola: () => running);
 
         Assert.Equal(ToolLibraryFolders.InstallRoot(running), folders.Install);
-        Assert.Equal(ToolLibraryFolders.RunningReason, folders.InstallReason);
+        // A good guess, but a guess: the answer still asks for the release.
+        Assert.Equal(ToolLibraryFolders.RunningReason + ToolLibraryFolders.NoReleaseNamed, folders.InstallReason);
     }
 
     [Fact]
@@ -758,12 +806,34 @@ public class ToolLibraryFoldersTests
     public void ATool_NamingNoSimulatorWeKnow_IsNotParsed(string tool) => Assert.Null(ToolLibraryFolders.ParseTool(tool));
 
     [Theory]
-    [InlineData("Dymola 2026x Refresh 1", "2026xrefresh1")]
-    [InlineData("2026x Refresh 1", "2026xrefresh1")]
+    [InlineData("Dymola 2026x Refresh 1", "2026x r1")]
+    [InlineData("2026x refresh1", "2026x r1")]
+    [InlineData("dymola-2026xRefresh1-x86_64", "2026x r1")]
+    [InlineData("Dymola Version 2026x Refresh 1 (64-bit), 2025-10-09", "2026x r1")] // what DymolaVersion() reports
     [InlineData("dymola-2026x-x86_64", "2026x")]
     [InlineData("Dymola 2026x", "2026x")]
-    public void DymolaReleases_CompareByLettersAndDigits(string name, string key)
+    [InlineData("Dymola 2023", "2023")]
+    [InlineData("Dymola 2027x Beta 2", "2027x b2")]                                   // never the 2027x release
+    [InlineData("Dymola 2026x Refresh 1 Beta 1", "2026x r1 b1")]
+    [InlineData("latest", null)]
+    public void DymolaReleases_AreReadByTheirParts_WhateverTextCarriesThem(string name, string? key)
         => Assert.Equal(key, ToolLibraryFolders.DymolaReleaseKey(name));
+
+    [Fact]
+    public void WhatDymolaReportsOfItself_FindsItsInstall()
+    {
+        using var host = new TestHost();
+        var (refresh, beta) = TwoDymolas(host);
+
+        var folders = ToolLibraryFolders.For("Dymola Version 2026x Refresh 1 (64-bit), 2025-10-09", null, null,
+            _ => null, allDymola: () => [beta, refresh]);
+
+        Assert.Null(folders.Error);
+        Assert.Equal(ToolLibraryFolders.InstallRoot(refresh), folders.Install);
+        Assert.Contains("the Dymola 2026x Refresh 1 named in tool", folders.InstallReason);
+        Assert.Contains("names no Dymola release",
+            ToolLibraryFolders.For("Dymola latest", null, null, _ => null, allDymola: () => [refresh]).Error);
+    }
 
     // Installs named as Dymola names them, under one folder standing in for Program Files.
     private static (string Refresh, string Beta) TwoDymolas(TestHost host)
@@ -927,7 +997,7 @@ public class ToolLibraryFoldersTests
         var folders = ToolLibraryFolders.For("openmodelica", null, settings, _ => null, findOmc: () => "");
 
         Assert.Equal(ToolLibraryFolders.InstallRoot(omc), folders.Install);
-        Assert.Equal("from the desktop app's External Tools settings", folders.InstallReason);
+        Assert.Equal("from the desktop app's External Tools settings" + ToolLibraryFolders.NoReleaseNamed, folders.InstallReason);
     }
 
     // A settings file the desktop app left half-written is no reason to fail a load: it is read only to

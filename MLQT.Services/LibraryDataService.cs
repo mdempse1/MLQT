@@ -1406,7 +1406,7 @@ public class LibraryDataService : ILibraryDataService
                 if (!library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
                     return [];
 
-                children = SortByPackageOrder(
+                children = ChildOrder.Sort(
                     childIds
                         .Where(id => library.ModelIds.Contains(id))
                         .Select(id => _combinedGraph.GetNode<ModelNode>(id))
@@ -1803,43 +1803,4 @@ public class LibraryDataService : ILibraryDataService
             _ => "image/png"
         };
 
-    /// <summary>
-    /// Sorts child models by package.order if available, falling back to NestedChildrenOrder
-    /// (the order from the source file) when no package.order exists.
-    /// </summary>
-    private List<ModelNode> SortByPackageOrder(List<ModelNode> childModels, ModelNode parentModel)
-    {
-        // Try to get package.order first (from package.order file)
-        string[]? order = parentModel.PackageOrder;
-
-        // Fall back to NestedChildrenOrder (order from source file) if no package.order
-        order ??= parentModel.NestedChildrenOrder;
-
-        if (order == null)
-            return childModels;
-
-        var sortedChildModels = new List<ModelNode>();
-        var childModelsDictionary = new Dictionary<string, ModelNode>();
-        foreach (var m in childModels)
-        {
-            childModelsDictionary.TryAdd(m.Name, m);
-        }
-
-        foreach (var modelName in order)
-        {
-            if (childModelsDictionary.TryGetValue(modelName, out var model))
-            {
-                sortedChildModels.Add(model);
-                childModelsDictionary.Remove(modelName);
-            }
-        }
-
-        // Add any remaining child models that weren't in the order list
-        foreach (var model in childModelsDictionary.Values)
-        {
-            sortedChildModels.Add(model);
-        }
-
-        return sortedChildModels;
-    }
 }

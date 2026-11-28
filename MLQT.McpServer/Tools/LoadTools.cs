@@ -81,7 +81,7 @@ public sealed class LoadTools
             return new ToolError(ToolLibraryFolders.UnknownTool(tool));
 
         var folders = ToolLibraryFolders.For(tool, toolInstall, DesktopSettingsDirectory, Environment_,
-            runningDymola: RunningDymola_);
+            runningDymola: RunningDymola_, allDymola: InstalledDymolas_, allOmc: InstalledOmcs_);
         if (folders.Error is { } wrongRelease)
             return new ToolError(wrongRelease);
         var loader = new DependencyLoader(_libraries, _repositories, _session, Environment_)
@@ -126,6 +126,13 @@ public sealed class LoadTools
 
     /// <summary>The Dymola running now, asked when no install is named. A test sets it.</summary>
     internal Func<string?>? RunningDymola_ { get; set; } = ToolLibraryFolders.RunningDymola;
+
+    /// <summary>Every Dymola installed, searched for the release tool names; null is the machine's. A test
+    /// sets it, so that naming a release reads no install of the machine running the test.</summary>
+    internal Func<IReadOnlyList<string>>? InstalledDymolas_ { get; set; }
+
+    /// <summary>Every omc installed, as <see cref="InstalledDymolas_"/> is for Dymola.</summary>
+    internal Func<IReadOnlyList<string>>? InstalledOmcs_ { get; set; }
 
     private static bool IsUnder(string path, string folder)
     {

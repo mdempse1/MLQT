@@ -54,8 +54,10 @@ OpenModelica 1.27 User's Guide):
    `ToolLibraryFolders.ParseTool`), because a Dymola MCP server is started with a release and a bare
    `dymola` searched whichever MLQT guessed, not the one the simulator opened. With a release, the
    install is the first of `toolInstall`, the one running, the desktop settings' and those installed
-   whose folder name is that release (`DymolaReleaseKey` compares letters and digits only, so
-   `/opt/dymola-2026x-x86_64` matches `Dymola 2026x`). None is an error naming what is installed:
+   whose folder name is that release. `DymolaReleaseKey` reads the release's parts - year, `x`,
+   refresh, beta - out of any text, so `/opt/dymola-2026x-x86_64` matches `Dymola 2026x`, what
+   `DymolaVersion()` reports (`Dymola Version 2026x Refresh 1 (64-bit), 2025-10-09`) matches the
+   Refresh 1 folder, and a beta never matches the release it precedes. None is an error naming what is installed:
    searching another release would load its MSL silently. A `toolInstall` whose folder names another
    release is refused too. An omc path naming no version (`/usr/bin/omc`) is taken, saying so, since
    OpenModelica's libraries are in the user folder whatever the release.

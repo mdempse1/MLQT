@@ -445,15 +445,15 @@ public class SessionAndClassToolsTests
         Assert.Equal(9, result.Count); // Wide, A, B, C and A's five: B's five would make 14
         Assert.Equal(result.Count, AllNodes(result.Tree).Count());
         Assert.True(result.Truncated);
-        Assert.Contains("2 packages were not expanded", result.Note);
+        Assert.Contains("2 packages were not expanded (childCount says how many classes each holds): Wide.B, Wide.C.", result.Note);
         var wide = Assert.Single(result.Tree);
         var expanded = Assert.Single(wide.Children!, c => c.Children is not null);
+        Assert.Equal("Wide.A", expanded.Id); // the first in the package's order
         Assert.Equal(5, expanded.Children!.Count);
         Assert.All(wide.Children!.Where(c => c != expanded), c =>
         {
             Assert.Null(c.Children); // whole or not at all
             Assert.Equal(5, c.ChildCount);
-            Assert.Contains(c.Id, result.Note);
         });
     }
 
@@ -466,7 +466,7 @@ public class SessionAndClassToolsTests
         var result = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("Wide", maxDepth: 2, maxNodes: 4));
 
         var wide = Assert.Single(result.Tree);
-        Assert.Equal(["Wide.A", "Wide.B", "Wide.C"], wide.Children!.Select(c => c.Id).Order());
+        Assert.Equal(["Wide.A", "Wide.B", "Wide.C"], wide.Children!.Select(c => c.Id)); // as written
         Assert.All(wide.Children!, c => Assert.Null(c.Children));
         Assert.True(result.Truncated);
     }
@@ -480,7 +480,7 @@ public class SessionAndClassToolsTests
         var result = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("Wide.A", maxDepth: 1, maxNodes: 3));
 
         var a = Assert.Single(result.Tree);
-        Assert.Equal(2, a.Children!.Count);
+        Assert.Equal(["Wide.A.M1", "Wide.A.M2"], a.Children!.Select(c => c.Id)); // the first two, not any two
         Assert.Equal(5, a.ChildCount);
         Assert.True(result.Truncated);
         Assert.Contains("Wide.A lists 2 of its 5 classes", result.Note);
@@ -507,6 +507,45 @@ public class SessionAndClassToolsTests
             Assert.Equal(ClassQueryTools.MaxTreeNodes, r.Count);
             return r.Note!;
         }
+    }
+
+    [Fact]
+    public void GetPackageTree_ListsChildrenInPackageOrder_NotTheOrderTheyAreWritten()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Ordered \"o\"\nend Ordered;\n",
+            ["package.order"] = "Zeta\nAlpha\nMid\n",
+            ["Alpha.mo"] = "within Ordered;\nmodel Alpha \"a\"\nend Alpha;\n",
+            ["Mid.mo"] = "within Ordered;\nmodel Mid \"m\"\nend Mid;\n",
+            ["Zeta.mo"] = "within Ordered;\nmodel Zeta \"z\"\nend Zeta;\n",
+        });
+        Assert.NotEmpty(host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult().ModelIds);
+
+        var tree = ToolAssert.Ok<PackageTreeResult>(new ClassQueryTools(host.Libraries).GetPackageTree("Ordered")).Tree;
+
+        Assert.Equal(["Ordered.Zeta", "Ordered.Alpha", "Ordered.Mid"], Assert.Single(tree).Children!.Select(c => c.Id));
+    }
+
+    [Fact]
+    public void GetPackageTree_KeepsTheReplyWithinItsSize_BeforeMaxNodes_AndSaysWhichCut()
+    {
+        // Measured on the MSL a class is 110-150 characters, so 500 long ids could pass a client's limit
+        // for one answer: the size cuts first. 400 classes named 120 characters each are far over it.
+        using var host = new TestHost();
+        var longName = new string('L', 116);
+        var models = string.Concat(Enumerable.Range(1000, 400).Select(i => $"  model {longName}{i}\n  end {longName}{i};\n"));
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = $"within;\npackage Long\n{models}end Long;\n" });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var result = ToolAssert.Ok<PackageTreeResult>(new ClassQueryTools(host.Libraries).GetPackageTree("Long", maxNodes: 500));
+
+        Assert.True(result.Truncated);
+        Assert.InRange(result.Count, 2, 400);
+        Assert.Contains("size limit, before maxNodes=500", result.Note);
+        var json = System.Text.Json.JsonSerializer.Serialize(result, MLQT.McpServer.Services.McpServerJson.Options);
+        Assert.InRange(json.Length, 1, ClassQueryTools.MaxTreeChars + 1_000); // the estimate holds against the real thing
     }
 
     [Fact]

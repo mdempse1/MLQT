@@ -41,9 +41,9 @@ internal static class ServerInstructions
 
         MLQT starts EMPTY and keeps its own session: every mlqt_ tool sees only libraries loaded
         into MLQT. Load with mlqt_load: the paths of every library the user's simulator has loaded
-        (OpenModelica: getLoadedLibraries(); Dymola: pass the user's startup script as script), and
-        tool with its release ('Dymola 2026x Refresh 1'); it loads dependencies, MSL too. A
-        simulator's load_library does NOT load anything here. mlqt_session lists what is.
+        (OpenModelica: getLoadedLibraries(); Dymola: its startup script as script), and tool with
+        its release ('Dymola 2026x Refresh 1', 'OpenModelica 1.27.0'); dependencies follow, MSL
+        too. A simulator's load_library does NOT load anything here; see mlqt_session.
 
         Beside a simulator's server (OpenModelica, Dymola): MLQT owns the source files; the simulator
         compiles, checks equations and simulates. Write code with MLQT, then load or reload that FILE

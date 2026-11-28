@@ -67,10 +67,12 @@ public sealed class SessionFacadeTools
 
     [McpServerTool(Name = "mlqt_browse", ReadOnly = true, OpenWorld = false)]
     [Description("The package tree of the loaded Modelica libraries, from root (a class id) or from every library's " +
-                 "top, depth levels down: each class's id, name, kind and how many children it has. At most " +
-                 "maxNodes classes come back, counted across the whole tree; when the tree is bigger, truncated " +
-                 "is true and note names the packages not expanded - browse one of them as root. To find a " +
-                 "class by name or purpose, mlqt_find is quicker than browsing deep.")]
+                 "top, depth levels down, each package's children in its package.order: each class's id, name, " +
+                 "kind and how many children it has. The starting classes are always listed; below them at most " +
+                 "maxNodes classes come back in all, and fewer when their ids are long, so the reply stays a size " +
+                 "a client takes. When the tree is bigger, truncated is true and note names the packages not " +
+                 "expanded - browse one of them as root. To find a class by name or purpose, mlqt_find is " +
+                 "quicker than browsing deep.")]
     public object Browse(
         [Description("Optional: the class to start from, e.g. 'Modelica.Blocks'. Omit to start from every loaded " +
                      "library's top-level class; depth then expands each of them.")]
