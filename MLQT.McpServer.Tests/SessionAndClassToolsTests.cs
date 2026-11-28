@@ -402,15 +402,111 @@ public class SessionAndClassToolsTests
         LoadPackage(host, out _);
         var query = new ClassQueryTools(host.Libraries);
 
-        var roots = ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree());
-        Assert.Contains(roots, n => n.Id == "TestLib");
+        var roots = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree());
+        Assert.Contains(roots.Tree, n => n.Id == "TestLib");
 
-        var sub = ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree("TestLib", maxDepth: 1));
-        var testLib = Assert.Single(sub);
+        var sub = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("TestLib", maxDepth: 1));
+        var testLib = Assert.Single(sub.Tree);
         Assert.Equal(3, testLib.ChildCount);
-        Assert.NotNull(testLib.Children);
+        Assert.Equal(3, testLib.Children!.Count);
+        Assert.Equal(4, sub.Count);
+        Assert.False(sub.Truncated);
+        Assert.Null(sub.Note);
 
         Assert.IsType<ToolError>(query.GetPackageTree("TestLib.Nope"));
+    }
+
+    // Three packages of five models: 19 classes in all.
+    private static ClassQueryTools LoadWide(TestHost host)
+    {
+        var models = string.Concat(Enumerable.Range(1, 5).Select(i => $"    model M{i} \"m\"\n    end M{i};\n"));
+        var packages = string.Concat(new[] { "A", "B", "C" }.Select(p => $"  package {p} \"p\"\n{models}  end {p};\n"));
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = $"within;\npackage Wide \"w\"\n{packages}end Wide;\n",
+        });
+        Assert.NotEmpty(host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult().ModelIds);
+        return new ClassQueryTools(host.Libraries);
+    }
+
+    private static IEnumerable<PackageTreeNode> AllNodes(IEnumerable<PackageTreeNode> nodes)
+        => nodes.SelectMany(n => AllNodes(n.Children ?? []).Prepend(n));
+
+    [Fact]
+    public void GetPackageTree_CountsEveryClassReturned_AgainstMaxNodes()
+    {
+        // The defect: maxNodes counted the packages expanded, not the classes returned, so depth=4,
+        // maxNodes=400 came back with thousands of classes - more than the agent's client would take.
+        using var host = new TestHost();
+        var query = LoadWide(host);
+
+        var result = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("Wide", maxDepth: 2, maxNodes: 10));
+
+        Assert.Equal(9, result.Count); // Wide, A, B, C and A's five: B's five would make 14
+        Assert.Equal(result.Count, AllNodes(result.Tree).Count());
+        Assert.True(result.Truncated);
+        Assert.Contains("2 packages were not expanded", result.Note);
+        var wide = Assert.Single(result.Tree);
+        var expanded = Assert.Single(wide.Children!, c => c.Children is not null);
+        Assert.Equal(5, expanded.Children!.Count);
+        Assert.All(wide.Children!.Where(c => c != expanded), c =>
+        {
+            Assert.Null(c.Children); // whole or not at all
+            Assert.Equal(5, c.ChildCount);
+            Assert.Contains(c.Id, result.Note);
+        });
+    }
+
+    [Fact]
+    public void GetPackageTree_ExpandsBreadthFirst_SoSiblingsComeBeforeGrandchildren()
+    {
+        using var host = new TestHost();
+        var query = LoadWide(host);
+
+        var result = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("Wide", maxDepth: 2, maxNodes: 4));
+
+        var wide = Assert.Single(result.Tree);
+        Assert.Equal(["Wide.A", "Wide.B", "Wide.C"], wide.Children!.Select(c => c.Id).Order());
+        Assert.All(wide.Children!, c => Assert.Null(c.Children));
+        Assert.True(result.Truncated);
+    }
+
+    [Fact]
+    public void GetPackageTree_ListsPartOfAFlatPackage_WhenNothingElseFits_AndSaysSo()
+    {
+        using var host = new TestHost();
+        var query = LoadWide(host);
+
+        var result = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("Wide.A", maxDepth: 1, maxNodes: 3));
+
+        var a = Assert.Single(result.Tree);
+        Assert.Equal(2, a.Children!.Count);
+        Assert.Equal(5, a.ChildCount);
+        Assert.True(result.Truncated);
+        Assert.Contains("Wide.A lists 2 of its 5 classes", result.Note);
+    }
+
+    [Fact]
+    public void GetPackageTree_CapsMaxNodes_WhateverIsAsked()
+    {
+        using var host = new TestHost();
+        var query = LoadWide(host);
+
+        var all = ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree(maxDepth: 8, maxNodes: 1_000_000));
+        Assert.Equal(19, all.Count);
+        Assert.False(all.Truncated);
+        Assert.Contains($"maxNodes={ClassQueryTools.MaxTreeNodes}", TruncationNoteFor(ClassQueryTools.MaxTreeNodes + 1));
+
+        static string TruncationNoteFor(int asked)
+        {
+            using var big = new TestHost();
+            var models = string.Concat(Enumerable.Range(1, asked + 10).Select(i => $"  model M{i}\n  end M{i};\n"));
+            var dir = big.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = $"within;\npackage Big\n{models}end Big;\n" });
+            big.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+            var r = ToolAssert.Ok<PackageTreeResult>(new ClassQueryTools(big.Libraries).GetPackageTree("Big", maxNodes: asked));
+            Assert.Equal(ClassQueryTools.MaxTreeNodes, r.Count);
+            return r.Note!;
+        }
     }
 
     [Fact]
@@ -420,11 +516,8 @@ public class SessionAndClassToolsTests
         LoadPackage(host, out _);
         var query = new ClassQueryTools(host.Libraries);
 
-        var root = Assert.Single(ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree("TestLib", maxDepth: 1, maxNodes: 1)));
-        Assert.NotNull(root.Children); // the one node the budget allows
-
-        var unexpanded = Assert.Single(ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree("TestLib", maxDepth: 2, maxNodes: 1)));
-        Assert.All(unexpanded.Children!, child => Assert.Null(child.Children));
-        Assert.Equal(3, unexpanded.ChildCount);
+        var root = Assert.Single(ToolAssert.Ok<PackageTreeResult>(query.GetPackageTree("TestLib", maxDepth: 2, maxNodes: 1)).Tree);
+        Assert.Null(root.Children); // the root alone fills the budget
+        Assert.Equal(3, root.ChildCount);
     }
 }

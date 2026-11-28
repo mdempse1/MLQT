@@ -155,6 +155,15 @@ public sealed record PackageTreeNode(
     int ChildCount,
     IReadOnlyList<PackageTreeNode>? Children);
 
+/// <summary>What <c>mlqt_browse</c> returns. <see cref="Count"/> is every class in <see cref="Tree"/>, and
+/// stays at or below maxNodes bar the starting classes, which are always listed. When <see cref="Truncated"/>,
+/// <see cref="Note"/> names the packages left unexpanded, so the caller knows where to browse next.</summary>
+public sealed record PackageTreeResult(
+    int Count,
+    bool Truncated,
+    string? Note,
+    IReadOnlyList<PackageTreeNode> Tree);
+
 /// <summary>Uniform error payload returned by tools when a request cannot be satisfied
 /// (e.g. no library loaded, class id not found). Tools return this instead of throwing so the
 /// consuming agent gets an actionable message rather than a transport-level error.</summary>

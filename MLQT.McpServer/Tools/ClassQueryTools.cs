@@ -238,45 +238,95 @@ public sealed class ClassQueryTools
             rootIds = _libraries.Libraries.SelectMany(l => l.TopLevelModelIds);
         }
 
-        var budget = new NodeBudget(Math.Max(maxNodes, 1));
-        var tree = rootIds
-            .Select(id => BuildTree(id, childrenByParent, depth: 0, maxDepth, budget))
-            .Where(n => n is not null)
-            .Cast<PackageTreeNode>()
-            .ToList();
+        maxNodes = Math.Clamp(maxNodes, 1, MaxTreeNodes);
 
-        return tree;
+        // Breadth first, so one deep library cannot spend the whole budget before its siblings are seen,
+        // and every class returned counts against maxNodes - not only the packages expanded, which is what
+        // let depth=4, maxNodes=400 return thousands of classes, more than an agent's reply can hold.
+        var roots = rootIds.Select(id => NewBranch(id, childrenByParent)).OfType<TreeBranch>().ToList();
+        var count = roots.Count;
+        var unexpanded = new List<TreeBranch>();
+        var partly = new List<TreeBranch>();
+        var queue = new Queue<(TreeBranch Branch, int Depth)>(roots.Select(r => (r, 0)));
+        while (queue.Count > 0)
+        {
+            var (branch, depth) = queue.Dequeue();
+            if (branch.ChildIds.Count == 0 || depth >= maxDepth)
+                continue;
+
+            var room = maxNodes - count;
+            // A package's children are listed whole or not at all, so a listing never looks complete when it
+            // is not - except while nothing has been listed yet, so a single flat package still shows something.
+            var take = branch.ChildIds.Count <= room ? branch.ChildIds.Count
+                     : count == roots.Count && room > 0 ? room
+                     : 0;
+            if (take == 0)
+            {
+                unexpanded.Add(branch);
+                continue;
+            }
+            if (take < branch.ChildIds.Count)
+                partly.Add(branch);
+
+            branch.Children = branch.ChildIds.Take(take)
+                .Select(id => NewBranch(id, childrenByParent)).OfType<TreeBranch>().ToList();
+            count += branch.Children.Count;
+            foreach (var child in branch.Children)
+                queue.Enqueue((child, depth + 1));
+        }
+
+        var truncated = unexpanded.Count > 0 || partly.Count > 0;
+        return new PackageTreeResult(
+            count,
+            truncated,
+            truncated ? TruncationNote(maxNodes, unexpanded, partly) : null,
+            roots.Select(r => r.ToNode()).ToList());
     }
 
     internal const int DefaultTreeNodes = 200;
 
-    /// <summary>How many more nodes may have their children listed, shared across one call (B503: a whole
-    /// tree came back at 30k characters in the 2026-10-18 sessions).</summary>
-    private sealed class NodeBudget(int left)
+    /// <summary>The most classes one reply may hold. About 120 characters a class, so 500 is some 60k
+    /// characters, inside what an agent's client takes from a tool (B503: a whole tree came back at 30k
+    /// characters in the 2026-10-18 sessions, and a later depth=4 call passed the client's limit).</summary>
+    internal const int MaxTreeNodes = 500;
+
+    private static string TruncationNote(int maxNodes, List<TreeBranch> unexpanded, List<TreeBranch> partly)
     {
-        public int Left { get; set; } = left;
+        var parts = new List<string> { $"Cut at maxNodes={maxNodes}." };
+        if (partly.Count > 0)
+        {
+            var p = partly[0];
+            parts.Add($"{p.Id} lists {p.Children!.Count} of its {p.ChildIds.Count} classes; " +
+                      "use mlqt_find to search it.");
+        }
+        if (unexpanded.Count > 0)
+        {
+            const int named = 10;
+            var names = string.Join(", ", unexpanded.Take(named).Select(b => b.Id));
+            var more = unexpanded.Count > named ? $" and {unexpanded.Count - named} more" : "";
+            parts.Add($"{unexpanded.Count} packages were not expanded (childCount says how many classes each " +
+                      $"holds): {names}{more}. Browse one of them as root to see inside it.");
+        }
+        return string.Join(" ", parts);
     }
 
-    private PackageTreeNode? BuildTree(string id, Dictionary<string, List<string>> childrenByParent, int depth, int maxDepth, NodeBudget budget)
+    private TreeBranch? NewBranch(string id, Dictionary<string, List<string>> childrenByParent)
     {
         var node = _libraries.GetModelById(id);
         if (node is null)
             return null;
-
         childrenByParent.TryGetValue(id, out var childIds);
-        var childCount = childIds?.Count ?? 0;
+        return new TreeBranch(node.Id, node.Name, node.ClassType, childIds ?? []);
+    }
 
-        IReadOnlyList<PackageTreeNode>? children = null;
-        if (childCount > 0 && depth < maxDepth && budget.Left > 0)
-        {
-            budget.Left--;
-            children = childIds!
-                .Select(childId => BuildTree(childId, childrenByParent, depth + 1, maxDepth, budget))
-                .Where(n => n is not null)
-                .Cast<PackageTreeNode>()
-                .ToList();
-        }
+    /// <summary>A node while the tree is being built breadth first; <see cref="ToNode"/> freezes it.</summary>
+    private sealed class TreeBranch(string id, string name, string classType, List<string> childIds)
+    {
+        public string Id { get; } = id;
+        public List<string> ChildIds { get; } = childIds;
+        public List<TreeBranch>? Children { get; set; }
 
-        return new PackageTreeNode(node.Id, node.Name, node.ClassType, childCount, children);
+        public PackageTreeNode ToNode()
+            => new(Id, name, classType, ChildIds.Count, Children?.Select(c => c.ToNode()).ToList());
     }
 }

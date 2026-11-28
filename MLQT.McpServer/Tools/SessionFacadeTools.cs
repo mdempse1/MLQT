@@ -67,13 +67,17 @@ public sealed class SessionFacadeTools
 
     [McpServerTool(Name = "mlqt_browse", ReadOnly = true, OpenWorld = false)]
     [Description("The package tree of the loaded Modelica libraries, from root (a class id) or from every library's " +
-                 "top, depth levels down: each class's id, kind and description, and how many children it " +
-                 "has. A large tree is cut at maxNodes, and says so; browse a sub-package to see more.")]
+                 "top, depth levels down: each class's id, name, kind and how many children it has. At most " +
+                 "maxNodes classes come back, counted across the whole tree; when the tree is bigger, truncated " +
+                 "is true and note names the packages not expanded - browse one of them as root. To find a " +
+                 "class by name or purpose, mlqt_find is quicker than browsing deep.")]
     public object Browse(
-        [Description("Optional: the class to start from, e.g. 'Modelica.Blocks'. Omit for every library's top.")]
+        [Description("Optional: the class to start from, e.g. 'Modelica.Blocks'. Omit to start from every loaded " +
+                     "library's top-level class; depth then expands each of them.")]
         string? root = null,
-        [Description("How many levels to expand (default 1, max 8).")] int depth = 1,
-        [Description("Most classes to return (default 200).")] int maxNodes = ClassQueryTools.DefaultTreeNodes)
+        [Description("How many levels below the start to expand (default 1, max 8). Each level can multiply the " +
+                     "classes returned, so go deep from a narrow root rather than from every library.")] int depth = 1,
+        [Description("Most classes to return, every level counted (default 200, max 500).")] int maxNodes = ClassQueryTools.DefaultTreeNodes)
         => _classes.GetPackageTree(root, depth, maxNodes);
 
     [McpServerTool(Name = "mlqt_style_settings", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
